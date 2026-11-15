@@ -13,13 +13,7 @@ impl AgentIdentityStore {
         tenant_id: &str,
         client_id: &str,
     ) -> Result<Option<String>, AgentIdentityFailure> {
-        let Ok(encoded) = serde_json::to_string(&(tenant_id, client_id)) else {
-            return Err(AgentIdentityFailure {
-                code: FailureCode::PolicyUnavailable,
-                message: String::from("Agent identity could not be loaded"),
-            });
-        };
-        let cache_key = format!("agent_identity:{encoded}");
+        let cache_key = binding_cache_key(tenant_id, client_id)?;
         if let Some(cached) = self.cached_agent_id(&cache_key).await {
             return Ok(Some(cached));
         }
@@ -27,10 +21,7 @@ impl AgentIdentityStore {
             .identities
             .find_unique(MICROSOFT_ENTRA_PROVIDER, tenant_id, client_id)
             .await
-            .map_err(|_source| AgentIdentityFailure {
-                code: FailureCode::PolicyUnavailable,
-                message: String::from("Agent identity could not be loaded"),
-            })?;
+            .map_err(|_source| identity_unavailable())?;
         let Some(row) = row else {
             self.unbound_client(tenant_id, client_id).await?;
             return Ok(None);
@@ -56,5 +47,23 @@ impl AgentIdentityStore {
         cache
             .write(cache_key, &Json::Text(agent_id.to_owned()), ttl)
             .await;
+    }
+}
+
+// Python's json.dumps writes the (tenant_id, client_id) tuple as an array with ", " between its strings
+fn binding_cache_key(tenant_id: &str, client_id: &str) -> Result<String, AgentIdentityFailure> {
+    let Ok(tenant) = serde_json::to_string(tenant_id) else {
+        return Err(identity_unavailable());
+    };
+    let Ok(client) = serde_json::to_string(client_id) else {
+        return Err(identity_unavailable());
+    };
+    Ok(format!("agent_identity:[{tenant}, {client}]"))
+}
+
+fn identity_unavailable() -> AgentIdentityFailure {
+    AgentIdentityFailure {
+        code: FailureCode::PolicyUnavailable,
+        message: String::from("Agent identity could not be loaded"),
     }
 }

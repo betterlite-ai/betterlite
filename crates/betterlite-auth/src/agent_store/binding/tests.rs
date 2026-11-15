@@ -10,7 +10,7 @@ use crate::agent_store::tests::support::{
 };
 use crate::identity::FailureCode;
 
-const CACHE_KEY: &str = r#"agent_identity:["tenant-1","client-1"]"#;
+const CACHE_KEY: &str = r#"agent_identity:["tenant-1", "client-1"]"#;
 
 #[tokio::test]
 async fn bound_agent_id_reads_the_microsoft_entra_key() {

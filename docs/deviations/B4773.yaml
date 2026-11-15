@@ -1,7 +1,7 @@
 task: B4773
 deviations:
-  - what: The binding cache key is agent_identity: followed by serde_json's compact encoding of the (tenant_id, client_id) tuple, so two identifiers serialize as ["tenant","client"] with no space after the comma, where Python's json.dumps writes ["tenant", "client"] and escapes non-ASCII identifiers by default.
-    why: The key never leaves the process, and only code in this process reads it, so its exact spelling is not observable. The tuple shape and the JSON escaping of either identifier are kept.
+  - what: The binding cache key is agent_identity: followed by an array the code writes itself from two serde_json string encodings joined with ", ", matching Python's json.dumps of the (tenant_id, client_id) tuple for ASCII identifiers; an identifier with non-ASCII characters is escaped differently, because json.dumps defaults to ensure_ascii=True while serde_json writes the characters as UTF-8.
+    why: Rust has no json.dumps, and the tuple shape, the quoted strings and the ", " separator reproduce its output. Only this store writes and reads the key, so the remaining non-ASCII escaping difference cannot change which binding a lookup finds.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/identity_store.py#L94
   - what: Repository calls return Result<Option<Row>, AgentStoreError> and every error is mapped to LiteLLM's typed AgentIdentityFailure with the same code and message at the store method, where LiteLLM catches a bare Exception and returns the same failure value.
     why: Rust returns errors instead of raising them. The failure code, the message and the status the wrapper derives from it are unchanged.
