@@ -1,0 +1,21 @@
+task: B3065
+deviations:
+  - what: Configuration resolution reads the environment through betterlite-config's EnvironmentLookup instead of calling os.getenv directly, and an empty environment value counts as unset.
+    why: All external configuration in betterlite comes through the config crate for consistency and testability; docs/compatibility.md treats an empty env string as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/factory.py#L39-L83
+  - what: The factory is built with its environment lookup, S3 transport, GCS bucket base and the Vantage and Mavvrik senders, and the engine is built with that factory, a usage source, a clock and the transformer, instead of constructing FocusLiteLLMDatabase, FocusTransformer and the destination's SDK clients inside __init__.
+    why: Dependencies come in through constructors, and the destination clients are B3062 to B3064's code, so the engine never builds a network client itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L31-L38
+  - what: All methods are async on tokio instead of asyncio.
+    why: The gateway is built on tokio; the export engine is called from async contexts in the scheduler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L20
+  - what: Factory validation failures and an unsupported provider return typed FactoryError variants instead of raising ValueError and NotImplementedError; the message text keeps LiteLLM's wording, including the lowercased provider name for an unsupported provider.
+    why: Errors are typed thiserror enums in betterlite, and the reachable unsupported-provider raise is the one in _resolve_config, not the dead one in create.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/factory.py#L53-L74
+  - what: A serializer without a file extension returns FilenameError::MissingExtension instead of raising ValueError; the message text is LiteLLM's.
+    why: The engine reports failures as typed errors rather than Python exceptions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L128-L135
+  - what: _sum_column sums the spend values as Decimal from the JSON usage rows and returns Decimal, where LiteLLM sums a polars float column and returns float; _count_unique counts distinct JSON values and skips a row without the column, while a non-numeric value is a typed error.
+    why: betterlite reads money as Decimal everywhere, so the aggregate keeps the stored decimal digits and does not round through a float; polars is not a dependency of the crate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/export_engine.py#L137-L152
+kept_bugs: []
