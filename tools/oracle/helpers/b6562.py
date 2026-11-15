@@ -19,6 +19,5 @@ class Input(TypedDict):
 
 
 def run(input_value: Input) -> JsonValue:
-    params = asyncio.run(get_provider_specific_params())
-    text = json.dumps(params[input_value["provider"]], default=UndefinedAsNull())
-    return ANSWERS.validate_json(text)
+    text = json.dumps(asyncio.run(get_provider_specific_params()), default=UndefinedAsNull())  # type: ignore[no-untyped-call, misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1915
+    return ANSWERS.validate_json(text)[input_value["provider"]]
