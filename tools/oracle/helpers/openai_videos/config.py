@@ -50,17 +50,17 @@ class VideoConfig(Protocol):
     ]: ...
 
     @property
-    def transform_video_create_response(  # ast-grep-ignore: no-long-names
+    def transform_video_create_response(
         self,
     ) -> Callable[[str, httpx.Response, Logging, str | None, Params | None], VideoObject]: ...
 
     @property
-    def transform_video_content_request(  # ast-grep-ignore: no-long-names
+    def transform_video_content_request(
         self,
     ) -> Callable[[str, str, GenericLiteLLMParams, dict[str, str], str | None], UrlParams]: ...
 
     @property
-    def transform_video_content_response(  # ast-grep-ignore: no-long-names
+    def transform_video_content_response(
         self,
     ) -> Callable[[httpx.Response, Logging], bytes]: ...
 
@@ -93,17 +93,17 @@ class VideoConfig(Protocol):
     ) -> Callable[[str, str, GenericLiteLLMParams, dict[str, str]], UrlParams]: ...
 
     @property
-    def transform_video_delete_response(  # ast-grep-ignore: no-long-names
+    def transform_video_delete_response(
         self,
     ) -> Callable[[httpx.Response, Logging], VideoObject]: ...
 
     @property
-    def transform_video_status_retrieve_request(  # ast-grep-ignore: no-long-names
+    def transform_video_status_retrieve_request(
         self,
     ) -> Callable[[str, str, GenericLiteLLMParams, dict[str, str]], UrlParams]: ...
 
     @property
-    def transform_video_status_retrieve_response(  # ast-grep-ignore: no-long-names
+    def transform_video_status_retrieve_response(
         self,
     ) -> Callable[[httpx.Response, Logging, str | None, None], VideoObject]: ...
 
