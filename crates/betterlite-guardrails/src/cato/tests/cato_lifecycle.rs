@@ -340,6 +340,28 @@ async fn post_call_success_hook_skips_a_null_content_without_tool_calls() {
 }
 
 #[tokio::test]
+async fn post_call_success_hook_skips_a_content_that_is_not_text() {
+    let mut response = object(&[(
+        "choices",
+        list(&[object(&[(
+            "message",
+            object(&[(
+                "content",
+                list(&[object(&[
+                    ("type", text("text")),
+                    ("text", text("multimodal")),
+                ])]),
+            )]),
+        )])]),
+    )]);
+    let original = response.clone();
+    let (result, posted) = output_hook(no_action(), &mut response, ResponseKind::Chat).await;
+    result.expect("inspected");
+    assert!(posted.is_empty());
+    assert_eq!(response, original);
+}
+
+#[tokio::test]
 async fn post_call_success_hook_redacts_tool_call_arguments_without_a_content_key() {
     let answer = anonymized(&[
         object(&[("content", text("hello"))]),
