@@ -18,7 +18,10 @@ use serde_json::Value;
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::input::Step;
+use super::input::{
+    Ai21MapStep, MinimaxInfoStep, MinimaxUrlStep, ModelscopeUrlStep, Step, TencentCostStep,
+    TencentMapStep, TencentUrlStep,
+};
 
 fn params_value(names: &[&str]) -> Value {
     Value::Array(
@@ -50,34 +53,57 @@ fn config() -> OpenAiConfig {
     }
 }
 
-fn catalog() -> CatalogCapabilities {
+const fn catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),
     }
 }
 
-fn ai21_map(params: &Object, optional_params: &Object) -> Value {
-    let mut mapped = optional_params.clone();
-    map_ai21_params(params, &mut mapped);
+fn ai21_map(step: &Ai21MapStep) -> Value {
+    let mut mapped = step.optional_params.clone();
+    map_ai21_params(&step.params, &mut mapped);
     Value::Object(mapped)
 }
 
-fn tencent_map(
-    model: &str,
-    supports_reasoning: bool,
-    supports_adaptive_thinking: bool,
-    params: &Object,
-    optional_params: &Object,
-) -> Value {
-    let mut mapped = optional_params.clone();
+fn minimax_info(step: &MinimaxInfoStep) -> Value {
+    let api_key = step.api_key.as_deref().map(SecretString::from);
+    let env_key = step.env_key.as_deref().map(SecretString::from);
+    let global_key = step.global_key.as_deref().map(SecretString::from);
+    let (base, key) = minimax_chat::provider_info(
+        step.api_base.as_deref(),
+        step.env_base.as_deref(),
+        api_key.as_ref(),
+        env_key.as_ref(),
+        global_key.as_ref(),
+    );
+    info_value(base, key)
+}
+
+fn minimax_url(step: &MinimaxUrlStep) -> Value {
+    Value::String(minimax_chat::complete_url(
+        step.api_base.as_deref(),
+        step.env_base.as_deref(),
+    ))
+}
+
+fn modelscope_url(step: &ModelscopeUrlStep) -> Value {
+    Value::String(modelscope_chat::complete_url(step.api_base.as_deref()))
+}
+
+fn tencent_url(step: &TencentUrlStep) -> Value {
+    Value::String(tencent_chat::complete_url(step.api_base.as_deref()))
+}
+
+fn tencent_map(step: &TencentMapStep) -> Value {
+    let mut mapped = step.optional_params.clone();
     TencentParams {
         config: &config(),
         catalog: &catalog(),
-        supports_reasoning,
-        supports_adaptive_thinking,
+        supports_reasoning: step.supports_reasoning,
+        supports_adaptive_thinking: step.supports_adaptive_thinking,
     }
-    .map(model, params, &mut mapped);
+    .map(&step.model, &step.params, &mut mapped);
     Value::Object(mapped)
 }
 
@@ -94,38 +120,33 @@ impl GenericTokenPricing for MissingPricing {
     }
 }
 
-fn tencent_cost(model: &str, prompt_tokens: i64, completion_tokens: i64) -> HelperResult {
-    let total_tokens = prompt_tokens
-        .checked_add(completion_tokens)
-        .ok_or_else(|| {
-            Box::new(HelperError {
-                class: String::from("Overflow"),
-                status: None,
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: String::from("the token counts overflow"),
-            })
-        })?;
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message,
+    })
+}
+
+fn tencent_cost(step: &TencentCostStep) -> HelperResult {
+    let total_tokens = step
+        .prompt_tokens
+        .checked_add(step.completion_tokens)
+        .ok_or_else(|| helper_error("Overflow", String::from("the token counts overflow")))?;
     let usage = CostUsage {
-        prompt_tokens,
-        completion_tokens,
+        prompt_tokens: step.prompt_tokens,
+        completion_tokens: step.completion_tokens,
         total_tokens,
         prompt_details: None,
         completion_details: None,
         cache_read_tokens: None,
         numeric_extras: BTreeMap::new(),
     };
-    let (prompt, completion) = cost_per_token(&MissingPricing, model, &usage).map_err(|error| {
-        Box::new(HelperError {
-            class: String::from("UnknownModel"),
-            status: None,
-            error_type: Some(None),
-            param: Some(None),
-            code: Some(None),
-            message: error.to_string(),
-        })
-    })?;
+    let (prompt, completion) = cost_per_token(&MissingPricing, &step.model, &usage)
+        .map_err(|error| helper_error("UnknownModel", error.to_string()))?;
     let mut value = Object::new();
     value.insert(String::from("ok"), Value::Bool(true));
     value.insert(String::from("prompt"), Value::String(prompt.to_string()));
@@ -139,80 +160,24 @@ fn tencent_cost(model: &str, prompt_tokens: i64, completion_tokens: i64) -> Help
 pub(crate) fn execute(step: &Step) -> HelperResult {
     match step {
         Step::Ai21Params => Ok(params_value(&AI21_PARAMS)),
-        Step::Ai21Map {
-            params,
-            optional_params,
-        } => Ok(ai21_map(params, optional_params)),
-        Step::MinimaxParams {
-            model,
-            supports_reasoning,
-        } => Ok(params_value(&minimax_chat::supported_params(
-            model,
+        Step::Ai21Map(given) => Ok(ai21_map(given)),
+        Step::MinimaxParams(given) => Ok(params_value(&minimax_chat::supported_params(
+            &given.model,
             &config(),
             &catalog(),
-            *supports_reasoning,
+            given.supports_reasoning,
         ))),
-        Step::MinimaxInfo {
-            api_base,
-            env_base,
-            api_key,
-            env_key,
-            global_key,
-        } => {
-            let api_key = api_key
-                .as_ref()
-                .map(|value| SecretString::from(value.as_str()));
-            let env_key = env_key
-                .as_ref()
-                .map(|value| SecretString::from(value.as_str()));
-            let global_key = global_key
-                .as_ref()
-                .map(|value| SecretString::from(value.as_str()));
-            let (base, key) = minimax_chat::provider_info(
-                api_base.as_deref(),
-                env_base.as_deref(),
-                api_key.as_ref(),
-                env_key.as_ref(),
-                global_key.as_ref(),
-            );
-            Ok(info_value(base, key))
-        }
-        Step::MinimaxUrl { api_base, env_base } => Ok(Value::String(minimax_chat::complete_url(
-            api_base.as_deref(),
-            env_base.as_deref(),
-        ))),
-        Step::ModelscopeUrl { api_base } => Ok(Value::String(modelscope_chat::complete_url(
-            api_base.as_deref(),
-        ))),
-        Step::TencentParams {
-            model,
-            supports_reasoning,
-        } => Ok(params_value(&tencent_chat::supported_params(
-            model,
+        Step::MinimaxInfo(given) => Ok(minimax_info(given)),
+        Step::MinimaxUrl(given) => Ok(minimax_url(given)),
+        Step::ModelscopeUrl(given) => Ok(modelscope_url(given)),
+        Step::TencentParams(given) => Ok(params_value(&tencent_chat::supported_params(
+            &given.model,
             &config(),
             &catalog(),
-            *supports_reasoning,
+            given.supports_reasoning,
         ))),
-        Step::TencentUrl { api_base } => Ok(Value::String(tencent_chat::complete_url(
-            api_base.as_deref(),
-        ))),
-        Step::TencentMap {
-            model,
-            supports_reasoning,
-            supports_adaptive_thinking,
-            params,
-            optional_params,
-        } => Ok(tencent_map(
-            model,
-            *supports_reasoning,
-            *supports_adaptive_thinking,
-            params,
-            optional_params,
-        )),
-        Step::TencentCost {
-            model,
-            prompt_tokens,
-            completion_tokens,
-        } => tencent_cost(model, *prompt_tokens, *completion_tokens),
+        Step::TencentUrl(given) => Ok(tencent_url(given)),
+        Step::TencentMap(given) => Ok(tencent_map(given)),
+        Step::TencentCost(given) => tencent_cost(given),
     }
 }

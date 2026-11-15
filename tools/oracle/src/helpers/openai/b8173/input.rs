@@ -11,57 +11,93 @@ pub(crate) struct Input {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
     Ai21Params,
-    Ai21Map {
-        params: Object,
-        #[serde(default)]
-        optional_params: Object,
-    },
-    MinimaxParams {
-        model: String,
-        supports_reasoning: bool,
-    },
-    MinimaxInfo {
-        #[serde(default)]
-        api_base: Option<String>,
-        #[serde(default)]
-        env_base: Option<String>,
-        #[serde(default)]
-        api_key: Option<String>,
-        #[serde(default)]
-        env_key: Option<String>,
-        #[serde(default)]
-        global_key: Option<String>,
-    },
-    MinimaxUrl {
-        #[serde(default)]
-        api_base: Option<String>,
-        #[serde(default)]
-        env_base: Option<String>,
-    },
-    ModelscopeUrl {
-        #[serde(default)]
-        api_base: Option<String>,
-    },
-    TencentParams {
-        model: String,
-        supports_reasoning: bool,
-    },
-    TencentUrl {
-        #[serde(default)]
-        api_base: Option<String>,
-    },
-    TencentMap {
-        model: String,
-        supports_reasoning: bool,
-        #[serde(default)]
-        supports_adaptive_thinking: bool,
-        params: Object,
-        #[serde(default)]
-        optional_params: Object,
-    },
-    TencentCost {
-        model: String,
-        prompt_tokens: i64,
-        completion_tokens: i64,
-    },
+    Ai21Map(Ai21MapStep),
+    MinimaxParams(MinimaxParamsStep),
+    MinimaxInfo(MinimaxInfoStep),
+    MinimaxUrl(MinimaxUrlStep),
+    ModelscopeUrl(ModelscopeUrlStep),
+    TencentParams(TencentParamsStep),
+    TencentUrl(TencentUrlStep),
+    TencentMap(TencentMapStep),
+    TencentCost(TencentCostStep),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Ai21MapStep {
+    pub(crate) params: Object,
+    #[serde(default)]
+    pub(crate) optional_params: Object,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MinimaxParamsStep {
+    pub(crate) model: String,
+    pub(crate) supports_reasoning: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MinimaxInfoStep {
+    #[serde(default)]
+    pub(crate) api_base: Option<String>,
+    #[serde(default)]
+    pub(crate) env_base: Option<String>,
+    #[serde(default)]
+    pub(crate) api_key: Option<String>,
+    #[serde(default)]
+    pub(crate) env_key: Option<String>,
+    #[serde(default)]
+    pub(crate) global_key: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct MinimaxUrlStep {
+    #[serde(default)]
+    pub(crate) api_base: Option<String>,
+    #[serde(default)]
+    pub(crate) env_base: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct ModelscopeUrlStep {
+    #[serde(default)]
+    pub(crate) api_base: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TencentParamsStep {
+    pub(crate) model: String,
+    pub(crate) supports_reasoning: bool,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TencentUrlStep {
+    #[serde(default)]
+    pub(crate) api_base: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TencentMapStep {
+    pub(crate) model: String,
+    pub(crate) supports_reasoning: bool,
+    #[serde(default)]
+    pub(crate) supports_adaptive_thinking: bool,
+    pub(crate) params: Object,
+    #[serde(default)]
+    pub(crate) optional_params: Object,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct TencentCostStep {
+    pub(crate) model: String,
+    pub(crate) prompt_tokens: i64,
+    pub(crate) completion_tokens: i64,
 }
