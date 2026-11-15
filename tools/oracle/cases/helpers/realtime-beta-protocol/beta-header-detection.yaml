@@ -1,0 +1,49 @@
+kind: helper
+name: realtime-beta-protocol-beta-header-detection
+call:
+  realtime_beta_protocol:
+    function: header_detection
+    websockets:
+      - headers: [[OpenAI-Beta, "REALTIME=V1"]]
+        latin1: true
+        scope_error: false
+      - headers: [[OpenAI-Beta, realtime=v1]]
+        latin1: false
+        scope_error: false
+      - headers: [[openai-BETA, Realtime=V1]]
+        latin1: false
+        scope_error: false
+      - headers: [[OpenAI-Beta, "other, realtime=v1"]]
+        latin1: false
+        scope_error: false
+      - headers: [[OpenAI-Beta, realtime=v10]]
+        latin1: false
+        scope_error: false
+      - headers: []
+        latin1: false
+        scope_error: false
+      - headers: [[OpenAI-Beta, realtime=v2]]
+        latin1: false
+        scope_error: false
+      - headers: []
+        latin1: false
+        scope_error: true
+      - headers: [[OpenAI-Beta, realtime=v2], [OpenAI-Beta, realtime=v1]]
+        latin1: false
+        scope_error: false
+      - headers: [[OpenAI-Beta, realtime=v2], [OpenAI-Beta, realtime=v3]]
+        latin1: false
+        scope_error: false
+      - headers: [[OpenAI-Beta, "realtime=v1ÿ"]]
+        latin1: true
+        scope_error: false
+      - headers: [["OpenAI-Betaÿ", realtime=v1]]
+        latin1: true
+        scope_error: false
+      - headers: [[X-Beta, realtime=v1]]
+        latin1: false
+        scope_error: false
+    sessions: []
+    events: []
+env: {}
+compare: {ignore: []}
