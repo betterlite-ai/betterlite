@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-agent-records-generated-user-id
+call:
+  vertex_agent_records:
+    operation: request
+    calls:
+      - messages:
+          - {role: user, content: hi}
+        non_default_params: {}
+        optional_params: {}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - messages:
+          - {role: user, content: hi}
+        non_default_params: {user: ada}
+        optional_params: {}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+      - messages:
+          - {role: user, content: hi}
+        non_default_params: {}
+        optional_params: {user_id: "", user: grace}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}
