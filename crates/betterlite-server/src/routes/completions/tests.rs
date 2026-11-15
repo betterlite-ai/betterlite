@@ -9,6 +9,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request, StatusCode};
+use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use rstest::rstest;
@@ -19,6 +20,8 @@ use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use super::routes;
+use crate::routes::router;
+use crate::routes::tests::state_for;
 use crate::state::ServerState;
 
 const ANSWER: &str = r#"{"id":"cmpl-1","object":"text_completion","created":1700000000,"model":"gpt-3.5-turbo-instruct","choices":[{"text":" hello","index":0,"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":2,"total_tokens":5}}"#;
@@ -35,7 +38,7 @@ fn state(base: &str) -> Arc<ServerState> {
     let source = format!(
         "model_list:\n  - model_name: text-model\n    litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: '{base}', api_key: oracle-key}}\n"
     );
-    crate::routes::tests::state_for(&config(&source))
+    state_for(&config(&source))
 }
 
 async fn serve(listener: TcpListener, status: u16, body: &str) -> String {
@@ -108,7 +111,7 @@ async fn call_with_call_id_in_body(body: &str, include: bool) -> Answered {
     let source = format!(
         "general_settings: {{include_call_id_in_error_body: {include}}}\nmodel_list:\n  - model_name: text-model\n    litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: 'http://{address}/v1', api_key: oracle-key}}\n"
     );
-    let state = crate::routes::tests::state_for(&config(&source));
+    let state = state_for(&config(&source));
     answered(state, listener, "/v1/completions", body, (500, "")).await
 }
 
@@ -117,20 +120,20 @@ async fn answered(
     listener: TcpListener,
     path: &str,
     body: &str,
-    upstream: (u16, &str),
+    provider: (u16, &str),
 ) -> Answered {
-    let (upstream_status, upstream) = upstream;
+    let (provider_status, provider_body) = provider;
     let request = Request::post(path)
         .header("content-type", "application/json")
         .header("authorization", "Bearer oracle-master")
         .header("x-litellm-call-id", "caller-id")
         .body(Body::from(body.to_owned()))
         .expect("request");
-    let (response, sent) = tokio::join!(
+    let (request_result, sent) = tokio::join!(
         routes(&state).oneshot(request),
-        serve(listener, upstream_status, upstream)
+        serve(listener, provider_status, provider_body)
     );
-    let response = response.expect("response");
+    let response = request_result.expect("response");
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
@@ -191,9 +194,11 @@ async fn text_completions_text_completion_tests_behavior(#[case] scenario: Scena
         Scenario::EmptyStringPrompt => empty_string_prompt().await,
         Scenario::EmptyListRejected => empty_list_rejected().await,
         Scenario::MixedPromptRejected => mixed_prompt_rejected().await,
-        Scenario::UnversionedPath => alias("/completions").await,
-        Scenario::EnginesPath => alias("/engines/text-model/completions").await,
-        Scenario::DeploymentsPath => alias("/openai/deployments/text-model/completions").await,
+        Scenario::UnversionedPath => alias("/completions", "text-model").await,
+        Scenario::EnginesPath => alias("/engines/text-model/completions", "wrong").await,
+        Scenario::DeploymentsPath => {
+            alias("/openai/deployments/text-model/completions", "wrong").await;
+        }
         Scenario::ParametersAndControls => parameters_and_controls().await,
         Scenario::ProviderBadRequest => provider_error(400, None).await,
         Scenario::ProviderRateLimit => provider_error(429, Some("throttling_error")).await,
@@ -304,9 +309,9 @@ async fn mixed_prompt_rejected() {
     assert!(answered.sent.is_empty(), "no provider request");
 }
 
-async fn alias(path: &str) {
-    let body = r#"{"model":"wrong","prompt":"hello"}"#;
-    let answered = call(path, body, 200, ANSWER).await;
+async fn alias(path: &str, model: &str) {
+    let body = format!(r#"{{"model":"{model}","prompt":"hello"}}"#);
+    let answered = call(path, &body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::OK);
     assert!(
         answered
@@ -315,7 +320,8 @@ async fn alias(path: &str) {
         "{}",
         answered.sent
     );
-    assert_eq!(answered.body.model.as_deref(), Some("wrong"));
+    // the unversioned path resolves the model in the body; the two alias paths pass theirs in the path
+    assert_eq!(answered.body.model.as_deref(), Some(model));
 }
 
 // matchit 0.8 refuses a catch-all with a literal suffix, so the alias paths take one model segment
@@ -336,21 +342,26 @@ async fn parameters_and_controls() {
     let body = r#"{"model":"text-model","prompt":"hi","temperature":0.7,"logprobs":2,"top_logprobs":1,"max_retries":5,"api_base":"http://evil.example","api_key":"sk-evil","api_version":"2099-01-01","metadata":{"user":"x"},"mock_response":"not a mock","mock_timeout":true,"num_retries":3,"timeout":1,"extra_headers":{"x-caller":"yes"}}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
     assert_eq!(answered.status, StatusCode::OK);
-    assert!(
-        answered.sent.contains(r#""temperature":0.7"#),
-        "{}",
-        answered.sent
-    );
-    assert!(
-        answered.sent.contains(r#""logprobs":2"#),
-        "{}",
-        answered.sent
-    );
-    assert!(
-        answered.sent.contains(r#""top_logprobs":1"#),
-        "{}",
-        answered.sent
-    );
+    assert_sampling_parameters_forwarded(&answered);
+    assert_controls_absent(&answered);
+    assert_upstream_request_headers(&answered);
+}
+
+fn assert_sampling_parameters_forwarded(answered: &Answered) {
+    for expected in [
+        r#""temperature":0.7"#,
+        r#""logprobs":2"#,
+        r#""top_logprobs":1"#,
+    ] {
+        assert!(
+            answered.sent.contains(expected),
+            "{expected} missing: {}",
+            answered.sent
+        );
+    }
+}
+
+fn assert_controls_absent(answered: &Answered) {
     for control in [
         "max_retries",
         "api_base",
@@ -371,27 +382,21 @@ async fn parameters_and_controls() {
             answered.sent
         );
     }
-    assert!(
-        answered
-            .sent
-            .to_ascii_lowercase()
-            .contains("authorization: bearer oracle-key"),
-        "{}",
-        answered.sent
-    );
-    assert!(
-        answered
-            .sent
-            .to_ascii_lowercase()
-            .contains("content-type: application/json"),
-        "{}",
-        answered.sent
-    );
-    assert!(
-        answered.sent.to_ascii_lowercase().contains("x-caller: yes"),
-        "{}",
-        answered.sent
-    );
+}
+
+fn assert_upstream_request_headers(answered: &Answered) {
+    let sent = answered.sent.to_ascii_lowercase();
+    for expected in [
+        "authorization: bearer oracle-key",
+        "content-type: application/json",
+        "x-caller: yes",
+    ] {
+        assert!(
+            sent.contains(expected),
+            "{expected} missing: {}",
+            answered.sent
+        );
+    }
 }
 
 async fn provider_error(status: u16, error_type: Option<&str>) {
@@ -486,50 +491,37 @@ async fn error_bodies_carry_the_call_id_when_the_setting_is_on() {
         "{}",
         disabled.raw
     );
+}
 
+async fn assert_refusal_keeps_the_call_id(body: &str, present: bool) {
+    let answered = call_with_call_id_in_body(body, true).await;
+    assert_eq!(answered.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        answered.raw.contains("litellm_call_id"),
+        present,
+        "{}",
+        answered.raw
+    );
+}
+
+#[tokio::test]
+async fn error_bodies_carry_the_call_id_unless_the_json_is_malformed() {
     // LiteLLM never parses this body, so it has no call id to put in the error body
-    let malformed = call_with_call_id_in_body("{", true).await;
-    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
-    assert!(
-        !malformed.raw.contains("litellm_call_id"),
-        "{}",
-        malformed.raw
-    );
-
+    assert_refusal_keeps_the_call_id("{", false).await;
     // an empty body counts as {}, the way LiteLLM reads it, so its refusal keeps the id
-    let empty = call_with_call_id_in_body("", true).await;
-    assert_eq!(empty.status, StatusCode::BAD_REQUEST);
-    assert!(
-        empty.raw.contains(r#""litellm_call_id":"caller-id""#),
-        "{}",
-        empty.raw
-    );
-
+    assert_refusal_keeps_the_call_id("", true).await;
     // a body that parses as JSON but not as a completion request is read before LiteLLM builds the call id, so the id stays
-    let data = call_with_call_id_in_body(
+    assert_refusal_keeps_the_call_id(
         r#"{"model":"text-model","prompt":"hi","stream":"yes"}"#,
         true,
     )
     .await;
-    assert_eq!(data.status, StatusCode::BAD_REQUEST);
-    assert!(
-        data.raw.contains(r#""litellm_call_id":"caller-id""#),
-        "{}",
-        data.raw
-    );
-
     // this body parsed, so its refusal carries the id LiteLLM had already resolved
-    let refused = call_with_call_id_in_body(
+    assert_refusal_keeps_the_call_id(
         r#"{"model":"text-model","prompt":"hi","fallbacks":["b"]}"#,
         true,
     )
     .await;
-    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
-    assert!(
-        refused.raw.contains(r#""litellm_call_id":"caller-id""#),
-        "{}",
-        refused.raw
-    );
 }
 
 async fn auth_required() {
@@ -538,9 +530,9 @@ async fn auth_required() {
     let source = format!(
         "general_settings: {{master_key: oracle-master}}\nmodel_list:\n  - model_name: text-model\n    litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: 'http://{address}/v1', api_key: oracle-key}}\n"
     );
-    let state = crate::routes::tests::state_for(&config(&source));
+    let state = state_for(&config(&source));
     let application = || {
-        crate::routes::router(
+        router(
             Arc::clone(&state),
             Arc::new(AtomicBool::new(false)),
             Router::new(),
@@ -557,7 +549,7 @@ async fn auth_required() {
         )
         .await
         .expect("response");
-    assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
+    assert_missing_key_is_internal_server_error(unauthorized).await;
     // the authorized call reaches the provider, so its future runs beside the fake provider
     let authorized = application().oneshot(
         Request::post("/v1/completions")
@@ -569,4 +561,14 @@ async fn auth_required() {
     let (response, sent) = tokio::join!(authorized, serve(listener, 200, ANSWER));
     assert_eq!(response.expect("response").status(), StatusCode::OK);
     assert!(sent.starts_with("POST /v1/completions "), "{sent}");
+}
+
+// LiteLLM raises a plain exception for a key it never got, and its server answers that with FastAPI's 500 text
+async fn assert_missing_key_is_internal_server_error(response: Response) {
+    assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    let body = to_bytes(response.into_body(), 1 << 20).await.expect("body");
+    assert_eq!(
+        str::from_utf8(&body).expect("utf8 body"),
+        "Internal Server Error"
+    );
 }

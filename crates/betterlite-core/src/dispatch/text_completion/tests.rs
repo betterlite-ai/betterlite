@@ -9,17 +9,17 @@ use betterlite_openai::text_completion_response::CompletionResponse;
 use http::HeaderMap;
 use rstest::rstest;
 
-use crate::dispatch::Dispatch;
 use crate::dispatch::error::DispatchError;
 use crate::dispatch::log::CallOutcome;
 use crate::dispatch::tests::support::{
     MODEL_ID, RecordingLog, RecordingRules, Trace, context, deployment,
 };
-use crate::operation::Entry;
+use crate::dispatch::{Dispatch, NoRules};
 use crate::operation::text_completion::{
     TextCompletionCall, TextCompletionCallInput, TextCompletionFailure, TextCompletionRequest,
     TextCompletionResult,
 };
+use crate::operation::{Entry, Operation};
 use crate::rules::RuleDecision;
 
 struct FakeCompletion {
@@ -84,12 +84,15 @@ impl TextCompletionCall for FakeCompletion {
     }
 }
 
-fn request(
+fn request<Calls>(
     call_id: &str,
     model_id: &str,
     dispatch: Arc<Dispatch>,
-    calls: Arc<dyn TextCompletionCall>,
-) -> TextCompletionRequest {
+    calls: Arc<Calls>,
+) -> TextCompletionRequest
+where
+    Calls: TextCompletionCall + 'static,
+{
     let body = br#"{"model":"g","prompt":"hello"}"#;
     TextCompletionRequest {
         call_id: call_id.to_owned(),
@@ -145,17 +148,17 @@ async fn lifecycle_order() {
     let log = Arc::new(RecordingLog::new(trace.clone()));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
-        log.clone(),
+        Arc::new(NoRules),
+        Arc::clone(&log),
     ));
     let context = context(None, SystemTime::UNIX_EPOCH);
     dispatch
         .execute(
-            crate::operation::Operation::TextCompletion(request(
+            Operation::TextCompletion(request(
                 "completion-1",
                 MODEL_ID,
                 Arc::clone(&dispatch),
-                calls.clone(),
+                Arc::clone(&calls),
             )),
             &context,
         )
@@ -184,11 +187,11 @@ async fn rules_reject() {
     let context = context(None, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            crate::operation::Operation::TextCompletion(request(
+            Operation::TextCompletion(request(
                 "completion-2",
                 MODEL_ID,
                 Arc::clone(&dispatch),
-                calls.clone(),
+                Arc::clone(&calls),
             )),
             &context,
         )
@@ -208,7 +211,7 @@ async fn deadline_caps_timeout() {
     let log = Arc::new(RecordingLog::new(trace));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
+        Arc::new(NoRules),
         log,
     ));
     let deadline = SystemTime::UNIX_EPOCH
@@ -217,7 +220,7 @@ async fn deadline_caps_timeout() {
     let context = context(Some(deadline), SystemTime::UNIX_EPOCH);
     dispatch
         .execute(
-            crate::operation::Operation::TextCompletion(request(
+            Operation::TextCompletion(request(
                 "completion-3",
                 MODEL_ID,
                 Arc::clone(&dispatch),
@@ -240,13 +243,13 @@ async fn refused_before_transport(
     let log = Arc::new(RecordingLog::new(trace));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
+        Arc::new(NoRules),
         log,
     ));
     let context = context(deadline, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            crate::operation::Operation::TextCompletion(request(
+            Operation::TextCompletion(request(
                 "completion-4",
                 model_id,
                 Arc::clone(&dispatch),
@@ -269,13 +272,13 @@ async fn rejection_error(failure: TextCompletionFailure) -> (DispatchError, Trac
     let log = Arc::new(RecordingLog::new(trace.clone()));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
+        Arc::new(NoRules),
         log,
     ));
     let context = context(None, SystemTime::UNIX_EPOCH);
     let Err(error) = dispatch
         .execute(
-            crate::operation::Operation::TextCompletion(request(
+            Operation::TextCompletion(request(
                 "completion-6",
                 MODEL_ID,
                 Arc::clone(&dispatch),

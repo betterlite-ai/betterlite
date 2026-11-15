@@ -204,7 +204,7 @@ fn operation(
         execution: Arc::clone(&state.execution),
     });
     let streaming = request.stream == Some(true);
-    let request = TextCompletionRequest {
+    let call = TextCompletionRequest {
         call_id: call_id.to_owned(),
         model_id: deployment.model_id.clone(),
         request: Box::new(request),
@@ -212,8 +212,8 @@ fn operation(
         calls,
     };
     if streaming {
-        Operation::TextStream(request)
+        Operation::TextStream(call)
     } else {
-        Operation::TextCompletion(request)
+        Operation::TextCompletion(call)
     }
 }
