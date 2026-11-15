@@ -6,6 +6,7 @@ from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.caching.dual_cache import DualCache
 from litellm.integrations.custom_guardrail import CustomGuardrail
+from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails import auto_router_compression
 from litellm.types.guardrails import GuardrailEventHooks, Mode
@@ -24,6 +25,7 @@ FIXED_MARKER: Final = "fixed-token"
 REQUEST: Final[TypeAdapter[Request]] = TypeAdapter(Request)
 WIRE: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 JSON: Final[TypeAdapter[Json]] = TypeAdapter(Json)
+GUARDRAIL_CLASS: Final = TypeAdapter(type[CustomGuardrail])
 
 
 class Settings(TypedDict):
@@ -85,8 +87,6 @@ class Marked(TypedDict):
 
 
 class Hooked(Protocol):
-    keys: list[UserAPIKeyAuth]
-
     def mark_pre_call_hook_ran(self, data: Request) -> None: ...
 
     async def async_pre_call_deployment_hook(
@@ -106,12 +106,7 @@ class Hooked(Protocol):
     ) -> None: ...
 
 
-# a custom metaclass skips mypy's __init_subclass__ simulation, which reports Any from **kwargs
-class ProbeMeta(type):
-    pass
-
-
-class Probe(CustomGuardrail, metaclass=ProbeMeta):
+class ProbeBase(CustomLogger):
     keys: list[UserAPIKeyAuth]
 
     @override
@@ -159,9 +154,12 @@ class StoredCache(DualCache):
         self.last = value
 
 
-def build_probe(settings: Settings) -> Hooked:
+def build_probe(settings: Settings, keys: list[UserAPIKeyAuth]) -> Hooked:
     event_hook = TypeAdapter(EventHook).validate_python(settings["event_hook"])
-    probe = Probe(
+    probe_class = GUARDRAIL_CLASS.validate_python(
+        type("Probe", (ProbeBase, CustomGuardrail), {"keys": keys})
+    )
+    return probe_class(
         guardrail_name=settings["guardrail_name"],
         event_hook=event_hook,
         default_on=settings["default_on"],
@@ -169,8 +167,6 @@ def build_probe(settings: Settings) -> Hooked:
         mask_request_content=settings["mask_request_content"],
         mask_response_content=settings["mask_response_content"],
     )
-    probe.keys = []
-    return probe
 
 
 def pre_call_token() -> str:
@@ -193,7 +189,7 @@ def suppressing(names: list[str]) -> Generator[None]:
 
 async def seeded(name: str | None, texts: list[str], data: dict[str, Json]) -> StoredCache:
     cache = StoredCache()
-    await Probe(guardrail_name=name, only_scan_new_messages=True).mark_texts_scanned(
+    await CustomGuardrail(guardrail_name=name, only_scan_new_messages=True).mark_texts_scanned(
         texts, REQUEST.validate_python(data), cache
     )
     return cache
@@ -202,14 +198,14 @@ async def seeded(name: str | None, texts: list[str], data: dict[str, Json]) -> S
 async def scan_filter(args: ScanFilterInput) -> Json:
     cache = await seeded(args["guardrail_name"], args["cached"], args["data"])
     request = REQUEST.validate_python(args["data"])
-    kept = await build_probe(args).filter_new_texts_for_session(args["texts"], request, cache)
+    kept = await build_probe(args, []).filter_new_texts_for_session(args["texts"], request, cache)
     return JSON.validate_python(kept)
 
 
 async def scan_mark(args: ScanMarkInput) -> Json:
     cache = await seeded(args["guardrail_name"], args["existing"], args["data"])
     request = REQUEST.validate_python(args["data"])
-    await build_probe(args).mark_texts_scanned(args["texts"], request, cache)
+    await build_probe(args, []).mark_texts_scanned(args["texts"], request, cache)
     return JSON.validate_python(cache.last)
 
 
@@ -218,7 +214,7 @@ def mark_pre_call(args: DataInput) -> Json:
     scratch = REQUEST.validate_json(
         WIRE.dump_json(args["data"]).decode().replace(FIXED_MARKER, token)
     )
-    build_probe(args).mark_pre_call_hook_ran(scratch)
+    build_probe(args, []).mark_pre_call_hook_ran(scratch)
     return WIRE.validate_json(REQUEST.dump_json(scratch).decode().replace(token, FIXED_MARKER))
 
 
@@ -226,16 +222,18 @@ async def already_ran(args: DataInput) -> Json:
     token = pre_call_token()
     data = WIRE.dump_json({"guardrails": [], **args["data"]}).decode()
     kwargs = REQUEST.validate_json(data.replace(FIXED_MARKER, token))
-    probe = build_probe(args)
+    keys: list[UserAPIKeyAuth] = []
+    probe = build_probe(args, keys)
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
-    return not probe.keys
+    return not keys
 
 
 async def stamped_key_fields(args: DataInput) -> Json:
-    probe = build_probe(args)
+    keys: list[UserAPIKeyAuth] = []
+    probe = build_probe(args, keys)
     kwargs = REQUEST.validate_json(WIRE.dump_json({"guardrails": [], **args["data"]}).decode())
     await probe.async_pre_call_deployment_hook(kwargs, CallTypes.completion)
-    [key] = probe.keys
+    [key] = keys
     return {
         "user_id": key.user_id,
         "team_id": key.team_id,
@@ -253,7 +251,7 @@ async def pre_hook(args: DeploymentPreInput) -> Json:
     call_type = None if args["call_type"] is None else CallTypes(args["call_type"])
     try:
         with suppressing(args["suppressed"]):
-            await build_probe(args).async_pre_call_deployment_hook(kwargs, call_type)
+            await build_probe(args, []).async_pre_call_deployment_hook(kwargs, call_type)
     except ImportError:
         return "rejected"
     return WIRE.validate_json(REQUEST.dump_json(kwargs).decode().replace(token, FIXED_MARKER))
@@ -262,7 +260,7 @@ async def pre_hook(args: DeploymentPreInput) -> Json:
 async def post_hook(args: DeploymentPostInput) -> Json:
     try:
         with suppressing(args["suppressed"]):
-            result = await build_probe(args).async_post_call_success_deployment_hook(
+            result = await build_probe(args, []).async_post_call_success_deployment_hook(
                 REQUEST.validate_python(args["request_data"]), ModelResponse(), None
             )
     except ImportError:
