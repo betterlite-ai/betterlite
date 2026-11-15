@@ -1,6 +1,8 @@
 import asyncio
 import base64
-from collections.abc import Coroutine, Sequence
+import os
+from collections.abc import Coroutine, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Final, Literal, Protocol, TypedDict
 
@@ -248,6 +250,22 @@ def native_audio_config() -> Config:
     return config
 
 
+@contextmanager
+def environment(name: str, value: str | None) -> Iterator[None]:
+    previous = os.environ.get(name)
+    if value is None:
+        os.environ.pop(name, None)
+    else:
+        os.environ[name] = value
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop(name, None)
+        else:
+            os.environ[name] = previous
+
+
 def native_config(config: Config, probe: Probe) -> Json:
     empty: dict[str, Json] = {}
     supported: list[Json] = list(config.get_supported_openai_params(model=probe.model))
@@ -257,25 +275,27 @@ def native_config(config: Config, probe: Probe) -> Json:
         model=probe.model,
         drop_params=False,
     )
+    headers: Json
     try:
-        headers: Json = {
-            "ok": True,
-            "value": config.validate_environment(
+        with environment("AZURE_SPEECH_API_KEY", probe.environment_api_key):
+            validated = config.validate_environment(
                 dict(probe.headers), probe.model, NoMessages(), empty, empty, probe.api_key
-            ),
-        }
+            )
     except BaseLLMException as failure:
         headers = {"ok": False, "status": failure.status_code}
+    else:
+        headers = {"ok": True, "value": validated}
     urls: list[Json] = []
     for base in probe.bases:
         try:
-            url = config.get_complete_url(
-                api_base=base,
-                api_key=None,
-                model=probe.model,
-                optional_params=dict(probe.optional_params),
-                litellm_params=empty,
-            )
+            with environment("AZURE_SPEECH_API_BASE", probe.environment_api_base):
+                url = config.get_complete_url(
+                    api_base=base,
+                    api_key=None,
+                    model=probe.model,
+                    optional_params=dict(probe.optional_params),
+                    litellm_params=empty,
+                )
         except BaseLLMException as failure:
             urls.append({"ok": False, "status": failure.status_code})
         else:
