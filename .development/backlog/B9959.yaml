@@ -1,0 +1,13 @@
+id: B9959
+milestone: R2 bug fixes
+title: Server tests bind their own ports
+status: todo
+depends_on: []
+file: tasks/B9959-tests-bind-their-own-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

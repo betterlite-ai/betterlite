@@ -1,0 +1,9 @@
+kind: helper
+name: deepinfra-policy-chat-map-seed
+call:
+  deepinfra_policy:
+    operation: chat_map
+    params:
+      - {model: mistralai/Mistral-7B-Instruct-v0.1, params: {temperature: 0, tool_choice: auto}, optional_params: {}, drop_params: false, global_drop_params: false, supports_reasoning: false, minimum_temperature: 0.0001}
+env: {}
+compare: {ignore: []}

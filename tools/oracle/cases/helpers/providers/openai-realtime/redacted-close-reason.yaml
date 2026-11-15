@@ -1,0 +1,21 @@
+kind: helper
+name: openai-realtime-redacted-close-reason
+call:
+  openai_realtime:
+    kind: error
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: null
+    openai_api_key: null
+    queries: []
+    failures:
+      - {status_code: 0, message: "upstream exploded", close_error: null}
+      - {status_code: 0, message: "upstream exploded Bearer abcdefghij1234567890", close_error: null}
+      - {status_code: 0, message: "boom", close_error: "received 1011 already completed"}
+      - {status_code: 0, message: "boom", close_error: "cannot call websocket.close twice"}
+    http_setups: []
+env: {}
+compare: {ignore: []}
