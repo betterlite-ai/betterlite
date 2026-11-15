@@ -7,6 +7,7 @@ use betterlite_openai::chat::ChatMessage;
 use betterlite_prompts::arguments::json::Object;
 use uuid::Uuid;
 
+use crate::endpoint_target::region::DEFAULT_LOCATION;
 use crate::gemini_options::defaults::GenerationDefaults;
 use crate::legacy_prediction::client::PredictionClient;
 use crate::legacy_prediction::client::PredictionStream;
@@ -77,9 +78,10 @@ where
     )
     .await?;
     let plan = plan::plan(request, &deps)?;
+    // LiteLLM hands an unset location to vertexai.init, whose SDK takes us-central1; the cache key keeps the raw None
     let context = LegacyContext {
         project: deps.project,
-        location: deps.location,
+        location: Some(deps.location.unwrap_or(DEFAULT_LOCATION)),
         model_is_language: false,
         services: deps.services,
     };

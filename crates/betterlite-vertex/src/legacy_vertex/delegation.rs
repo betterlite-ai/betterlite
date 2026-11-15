@@ -3,6 +3,7 @@ use std::future::ready;
 use super::LegacyCompletion;
 use super::error::LegacyVertexError;
 use super::plan::{LegacyPlan, LegacyRoute, endpoint_path};
+use crate::endpoint_target::region::DEFAULT_LOCATION;
 use crate::legacy_prediction::client::PredictionClient;
 use crate::legacy_prediction::execution::LegacyContext;
 use crate::legacy_prediction::execution::completion_entry::complete;
@@ -25,10 +26,10 @@ where
         model,
         prompt,
         route,
-        stream,
+        stream: streaming,
         ..
     } = plan;
-    let invocation = invocation_of(model, prompt, route, context, &access)?;
+    let invocation = invocation_of(model, prompt, route, context, &access);
     let publisher = cached.unwrap_or(client);
     let chosen = match &invocation {
         LegacyInvocation::Chat { .. } | LegacyInvocation::Text { .. } => publisher,
@@ -37,7 +38,7 @@ where
         | LegacyInvocation::Vision { .. } => client,
     };
     let lookup = ready(Ok::<AccessToken, CredentialCacheError>(access));
-    if stream {
+    if streaming {
         let chunks = stream(chosen, invocation, context, lookup).await?;
         return Ok(LegacyCompletion::Chunks(chunks));
     }
@@ -52,45 +53,41 @@ fn invocation_of(
     route: LegacyRoute,
     context: &LegacyContext<'_, '_>,
     access: &AccessToken,
-) -> Result<LegacyInvocation, LegacyVertexError> {
+) -> LegacyInvocation {
     match route {
-        LegacyRoute::Vision => Ok(LegacyInvocation::Vision { model, prompt }),
-        LegacyRoute::Chat { options } => Ok(LegacyInvocation::Chat {
+        LegacyRoute::Vision => LegacyInvocation::Vision { model, prompt },
+        LegacyRoute::Chat { options } => LegacyInvocation::Chat {
             model,
             prompt,
             options,
-        }),
-        LegacyRoute::Text { options, .. } => Ok(LegacyInvocation::Text {
+        },
+        LegacyRoute::Text { options, .. } => LegacyInvocation::Text {
             model,
             prompt,
             options,
-        }),
-        LegacyRoute::Custom { instances, options } => Ok(LegacyInvocation::CustomEndpoint {
+        },
+        LegacyRoute::Custom { instances, options } => LegacyInvocation::CustomEndpoint {
             model,
             prompt,
             instances,
             options,
-        }),
+        },
         LegacyRoute::Private { instances, options } => {
-            let endpoint = private_endpoint(context, access, &model)?;
-            Ok(LegacyInvocation::PrivateEndpoint {
+            let endpoint = private_endpoint(context, access, &model);
+            LegacyInvocation::PrivateEndpoint {
                 model,
                 prompt,
                 endpoint,
                 instances,
                 options,
-            })
+            }
         }
     }
 }
 
 // The SDK resolves the private endpoint against the initialized project and location, not the private literal
-fn private_endpoint(
-    context: &LegacyContext<'_, '_>,
-    access: &AccessToken,
-    model: &str,
-) -> Result<String, LegacyVertexError> {
-    let location = context.location.ok_or(LegacyVertexError::MissingLocation)?;
+fn private_endpoint(context: &LegacyContext<'_, '_>, access: &AccessToken, model: &str) -> String {
+    let location = context.location.unwrap_or(DEFAULT_LOCATION);
     let project = context.project.unwrap_or(&access.project);
-    Ok(endpoint_path(project, location, model))
+    endpoint_path(project, location, model)
 }

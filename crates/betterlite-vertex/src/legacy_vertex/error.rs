@@ -20,8 +20,6 @@ pub enum LegacyVertexError {
     SafetyItemNotMapping,
     #[error("`model_id` is required for the private endpoint")]
     MissingModelId,
-    #[error("location is required for the legacy vertex call")]
-    MissingLocation,
     #[error("Vertex project and location are required for custom endpoint")]
     CustomEndpointContext,
     #[error(transparent)]
@@ -43,7 +41,6 @@ impl LegacyVertexError {
             | Self::Credentials(_)
             | Self::Defaults(_)
             | Self::MissingModelId
-            | Self::MissingLocation
             | Self::CustomEndpointContext
             | Self::Prediction(_)
             | Self::Stream(_) => 500,

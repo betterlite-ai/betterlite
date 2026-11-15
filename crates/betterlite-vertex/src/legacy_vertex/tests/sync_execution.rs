@@ -73,7 +73,10 @@ async fn sync_error_mapping() {
     let fixture = PlanFixture::new(&[(ProviderModelSet::VertexChat, "chat-bison")]);
     let contents = messages("[]");
     let call = request("chat-bison", &contents, options("{}"), false);
-    let client = FixtureClient::with_text_failure(PredictionError::MissingPrediction);
+    let client = FixtureClient::with_text_failure(PredictionError::Http {
+        status: 429,
+        message: String::from("429 Quota exceeded"),
+    });
     let cache = FixtureCache::empty();
     let error = match complete(
         &cache,
@@ -87,7 +90,10 @@ async fn sync_error_mapping() {
         Err(error) => error,
         Ok(_completion) => panic!("the call fails"),
     };
-    assert!(matches!(error, LegacyVertexError::Prediction(_)));
+    assert!(matches!(
+        error,
+        LegacyVertexError::Prediction(PredictionError::Http { status: 429, .. })
+    ));
     assert_eq!(error.status(), 500);
 }
 
@@ -300,11 +306,46 @@ async fn private_builds_endpoint() {
 }
 
 #[tokio::test]
+async fn private_defaults_location() {
+    let encoder = CountingEncoding;
+    let projection = services(&encoder);
+    let mut fixture = PlanFixture::new(&[]);
+    fixture.location = None;
+    let contents = messages(r#"[{"role": "user", "content": "hello"}]"#);
+    let call = request(
+        "private",
+        &contents,
+        options(r#"{"model_id": "123"}"#),
+        false,
+    );
+    let client = FixtureClient::with_endpoint(predictions_reply(&["answer"]));
+    let cache = FixtureCache::empty();
+    complete(
+        &cache,
+        &client,
+        call,
+        fixture.deps(&projection),
+        token_lookup,
+    )
+    .await
+    .expect("a completion");
+    let calls = client.calls();
+    let Call::Endpoint(request) = &calls[0] else {
+        panic!("an endpoint call");
+    };
+    assert_eq!(
+        request.endpoint,
+        "projects/proj/locations/us-central1/endpoints/123"
+    );
+}
+
+#[tokio::test]
 async fn async_private_endpoint() {
     let encoder = CountingEncoding;
     let projection = services(&encoder);
     let mut fixture = PlanFixture::new(&[]);
     fixture.project = None;
+    fixture.location = None;
     let contents = messages("[]");
     let call = request(
         "private",
@@ -568,16 +609,16 @@ async fn vision_returns_none() {
 }
 
 #[tokio::test]
-async fn missing_location_fails() {
+async fn missing_location_defaults_to_us_central1() {
     let encoder = CountingEncoding;
     let projection = services(&encoder);
     let mut fixture = PlanFixture::new(&[(ProviderModelSet::VertexChat, "chat-bison")]);
     fixture.location = None;
     let contents = messages("[]");
     let call = request("chat-bison", &contents, options("{}"), false);
-    let client = FixtureClient::default();
+    let client = FixtureClient::with_text(text_reply("default region"));
     let cache = FixtureCache::empty();
-    let error = match complete(
+    let completion = complete(
         &cache,
         &client,
         call,
@@ -585,12 +626,14 @@ async fn missing_location_fails() {
         token_lookup,
     )
     .await
-    {
-        Err(error) => error,
-        Ok(_completion) => panic!("the call fails"),
+    .expect("a completion");
+    assert!(matches!(completion, LegacyCompletion::Response(_)));
+    let calls = client.calls();
+    let Call::Message(sent) = &calls[0] else {
+        panic!("a message call");
     };
-    assert!(matches!(error, LegacyVertexError::MissingLocation));
-    assert_eq!(error.status(), 500);
+    assert_eq!(sent.location, "us-central1");
+    assert_eq!(cache.keys(), vec![String::from("chat-bison-proj-None")]);
 }
 
 #[tokio::test]
