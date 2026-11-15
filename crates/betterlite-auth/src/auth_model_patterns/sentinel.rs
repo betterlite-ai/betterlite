@@ -8,13 +8,13 @@ pub fn resolve_team_model_sentinel(
     team_id: Option<&str>,
 ) -> Vec<String> {
     let carries_sentinel = models.iter().any(|model| model.as_str() == ALL_TEAM_MODELS);
-    let (Some(view), Some(_)) = (view, team_id) else {
+    let (Some(router_view), Some(_)) = (view, team_id) else {
         return models.to_vec();
     };
     if !carries_sentinel {
         return models.to_vec();
     }
-    let proxy_models = view.model_names();
+    let proxy_models = router_view.model_names();
     let without_sentinel: Vec<String> = models
         .iter()
         .filter(|model| model.as_str() != ALL_TEAM_MODELS)

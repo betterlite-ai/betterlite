@@ -83,12 +83,12 @@ pub fn can_object_call_model(
     fallback_depth: i64,
 ) -> ModelAccessDecision {
     if fallback_depth >= context.max_recurse_depth {
-        let model = match model {
+        let received = match model {
             RequestedModels::None => String::new(),
             RequestedModels::One(name) => name.clone(),
             RequestedModels::Many(names) => names.join(","),
         };
-        return ModelAccessDecision::RecurseDepthExceeded { model };
+        return ModelAccessDecision::RecurseDepthExceeded { model: received };
     }
     match model {
         RequestedModels::None => ModelAccessDecision::Allowed,
@@ -155,7 +155,7 @@ fn potential_models(
 // the global map decides by presence: an empty target there is no alias, and the router is only consulted without an entry
 fn global_alias_target(model: &str, context: &ModelAccessContext<'_>) -> Option<String> {
     if let Some(target) = context.global_model_aliases.get(model) {
-        return Some(target.clone()).filter(|target| !target.is_empty());
+        return Some(target.clone()).filter(|target_name| !target_name.is_empty());
     }
     let view = context.view?;
     view.model_group_alias_target(model)

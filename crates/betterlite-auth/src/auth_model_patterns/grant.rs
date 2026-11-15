@@ -34,8 +34,8 @@ pub fn resolve_key_models(
 pub fn key_model_aliases(aliases: &BTreeMap<String, JsonData>) -> BTreeMap<String, String> {
     let mut decoded = BTreeMap::new();
     for (alias, target) in aliases {
-        if let JsonData::String(target) = target {
-            decoded.insert(alias.clone(), target.clone());
+        if let JsonData::String(value) = target {
+            decoded.insert(alias.clone(), value.clone());
         }
     }
     decoded
@@ -68,8 +68,9 @@ pub fn live_team_alias_target(
     };
     let deleted_team_deployment = matches!(
         (view, team_id),
-        (Some(view), Some(team_id))
-            if target.starts_with(&format!("model_name_{team_id}_")) && !view.has_deployment(target)
+        (Some(router_view), Some(caller_team_id))
+            if target.starts_with(&format!("model_name_{caller_team_id}_"))
+                && !router_view.has_deployment(target)
     );
     if deleted_team_deployment {
         return model.to_owned();

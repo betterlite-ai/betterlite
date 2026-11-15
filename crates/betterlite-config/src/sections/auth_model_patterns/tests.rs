@@ -10,9 +10,8 @@ use betterlite_auth::auth_request_models::RequestedModels;
 use betterlite_error::proxy_error_types::ModelAccessObject;
 
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::database_reencryption::RECURSE_DEPTH_VARIABLE;
 use crate::types::Config;
-
-const RECURSE_DEPTH_VARIABLE: &str = "DEFAULT_MAX_RECURSE_DEPTH";
 
 fn load(environment: &[(&str, &str)]) -> Result<Config, ConfigError> {
     let lookup: BTreeMap<String, String> = environment

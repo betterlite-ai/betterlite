@@ -53,7 +53,7 @@ pub trait BudgetAdmission {
 }
 
 pub(crate) enum StageFailure {
-    Authentication(AuthenticationFailure),
+    Authentication(Box<AuthenticationFailure>),
     ModelAccess(Box<ModelAccessRejection>),
 }
 
@@ -63,19 +63,19 @@ pub(crate) fn dispatch(
     master_key: &SecretString,
 ) -> Result<AuthContext, StageFailure> {
     match backend {
-        AuthBackend::MasterKey => {
-            master_key_stage(input, master_key).map_err(StageFailure::Authentication)
-        }
-        AuthBackend::AuthRequestModels => {
-            auth_request_models_stage(input).map_err(StageFailure::Authentication)
-        }
+        AuthBackend::MasterKey => master_key_stage(input, master_key)
+            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
+        AuthBackend::AuthRequestModels => auth_request_models_stage(input)
+            .map_err(|failure| StageFailure::Authentication(Box::new(failure))),
         AuthBackend::AuthModelPatterns => auth_model_patterns_stage(input),
     }
 }
 
 fn auth_model_patterns_stage(input: &StageInput) -> Result<AuthContext, StageFailure> {
     let StageInput::AuthModelPatterns(stage) = input else {
-        return Err(StageFailure::Authentication(AuthenticationFailure::Missing));
+        return Err(StageFailure::Authentication(Box::new(
+            AuthenticationFailure::Missing,
+        )));
     };
     run_stage(stage).map_err(|rejection| StageFailure::ModelAccess(Box::new(rejection)))
 }

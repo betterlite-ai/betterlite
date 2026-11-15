@@ -133,7 +133,10 @@ fn empty_aliases() -> BTreeMap<String, String> {
 fn denial_of(decision: ModelAccessDecision) -> ModelAccessDeniedProxyException {
     match decision {
         ModelAccessDecision::Denied(denial) => *denial,
-        other => panic!("expected a denial, got {other:?}"),
+        allowed @ (ModelAccessDecision::Allowed
+        | ModelAccessDecision::RecurseDepthExceeded { .. }) => {
+            panic!("expected a denial, got {allowed:?}")
+        }
     }
 }
 
@@ -180,11 +183,6 @@ fn literal_model() {
 
 #[test]
 fn provider_wildcard() {
-    let aliases = empty_aliases();
-    let provider = wildcard_provider();
-    let ctx = context(None, &aliases, &provider);
-    let models = grant(&["openai/*"]);
-
     assert!(is_wildcard_pattern("openai/*"));
     assert!(!is_wildcard_pattern("openai/gpt-4o"));
     assert!(!is_model_allowed_by_pattern("gpt-4o", "openai/gpt-4o"));
@@ -198,6 +196,14 @@ fn provider_wildcard() {
     assert!(!is_model_allowed_by_pattern("a", "a[b-"));
     assert!(!is_model_allowed_by_pattern("a", "a[*"));
     assert!(!is_model_allowed_by_pattern("a", "a(*"));
+}
+
+#[test]
+fn provider_wildcard_grants_after_provider_inference() {
+    let aliases = empty_aliases();
+    let provider = wildcard_provider();
+    let ctx = context(None, &aliases, &provider);
+    let models = grant(&["openai/*"]);
 
     // a model that carries the namespace matches directly
     assert!(check_model_access("openai/gpt-4o", &models, &ctx));
@@ -233,7 +239,7 @@ fn provider_wildcard_keeps_pythons_regex_syntax() {
         backreference
     ));
     // Python's \w is Unicode-aware, and the allowlist engine follows it
-    assert!(is_model_allowed_by_pattern("éllo", "\\w*"));
+    assert!(is_model_allowed_by_pattern("\u{e9}llo", "\\w*"));
 }
 
 #[test]
@@ -349,15 +355,17 @@ fn team_alias_live_target() {
 
 #[test]
 fn team_alias_resolution_rewrites_a_list() {
-    let (view, aliases) = live_alias_fixture();
+    let (mut view, aliases) = live_alias_fixture();
+    let requested = RequestedModels::Many(vec!["team-alias".to_owned(), "stale".to_owned()]);
 
+    // each entry resolves on its own: the live target rewrites, the deleted deployment's stays
     assert_eq!(
-        resolve_team_alias(
-            &RequestedModels::Many(vec!["team-alias".to_owned(), "stale".to_owned()]),
-            &aliases,
-            Some("team-a"),
-            Some(&view)
-        ),
+        resolve_team_alias(&requested, &aliases, Some("team-a"), Some(&view)),
+        RequestedModels::Many(vec!["gpt-4o".to_owned(), "stale".to_owned()])
+    );
+    view.deployments.push(deployment("model_name_team-a_1"));
+    assert_eq!(
+        resolve_team_alias(&requested, &aliases, Some("team-a"), Some(&view)),
         RequestedModels::Many(vec!["gpt-4o".to_owned(), "model_name_team-a_1".to_owned()])
     );
     assert_eq!(
@@ -381,15 +389,14 @@ fn team_alias_grants_the_alias_name() {
     let provider = empty_provider();
     let no_aliases = empty_aliases();
     let mut team_grant = grant(&["gpt-4o"]);
-    team_grant.team_model_aliases = aliases.clone();
+    team_grant.team_model_aliases = aliases;
     team_grant.team_id = Some("team-a".to_owned());
     let ctx = context(Some(&view), &no_aliases, &provider);
     assert!(check_model_access("team-alias", &team_grant, &ctx));
     assert!(check_model_access("stale", &team_grant, &ctx));
     // a team without the alias does not gain it
-    let mut other_team_grant = team_grant.clone();
-    other_team_grant.team_id = Some("team-b".to_owned());
-    assert!(!check_model_access("unaliased", &other_team_grant, &ctx));
+    team_grant.team_id = Some("team-b".to_owned());
+    assert!(!check_model_access("unaliased", &team_grant, &ctx));
 }
 
 #[test]

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 
 use crate::auth_model_patterns::view::{
-    Deployment, DeploymentView, ModelAccessView, ModelGroupAlias,
+    Deployment, DeploymentView, ModelAccessView as _, ModelGroupAlias,
 };
 
 fn listing_deployments() -> Vec<Deployment> {

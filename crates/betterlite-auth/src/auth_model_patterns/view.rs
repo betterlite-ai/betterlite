@@ -39,12 +39,12 @@ impl DeploymentView {
     // Router._get_all_deployments: a team's own public name wins over every exact-name row
     #[must_use]
     pub fn deployed(&self, model_name: &str, team_id: Option<&str>) -> Vec<&Deployment> {
-        if let Some(team_id) = team_id {
+        if let Some(caller_team) = team_id {
             let owned: Vec<&Deployment> = self
                 .deployments
                 .iter()
                 .filter(|deployment| {
-                    deployment.team_id.as_deref() == Some(team_id)
+                    deployment.team_id.as_deref() == Some(caller_team)
                         && deployment.team_public_model_name.as_deref() == Some(model_name)
                 })
                 .collect();
@@ -129,8 +129,8 @@ impl ModelAccessView for DeploymentView {
 }
 
 fn should_include(model_name: &str, deployment: &Deployment, team_id: Option<&str>) -> bool {
-    if let Some(team_id) = team_id
-        && deployment.team_id.as_deref() == Some(team_id)
+    if let Some(caller_team) = team_id
+        && deployment.team_id.as_deref() == Some(caller_team)
         && deployment.team_public_model_name.as_deref() == Some(model_name)
     {
         return true;
@@ -138,11 +138,10 @@ fn should_include(model_name: &str, deployment: &Deployment, team_id: Option<&st
     if deployment.model_name != model_name {
         return false;
     }
-    match team_id {
-        None => true,
-        Some(team_id) => deployment
+    team_id.is_none_or(|caller_team| {
+        deployment
             .team_id
             .as_deref()
-            .is_none_or(|deployment_team| deployment_team == team_id),
-    }
+            .is_none_or(|deployment_team| deployment_team == caller_team)
+    })
 }

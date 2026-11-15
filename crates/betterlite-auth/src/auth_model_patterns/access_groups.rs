@@ -27,7 +27,6 @@ pub trait AccessGroupLookup: Debug + Send + Sync {
     -> Result<AccessGroupResources, AccessGroupError>;
 }
 
-#[must_use]
 pub fn collect_resources(
     access_group_ids: &[String],
     resource_field: ResourceField,
@@ -37,12 +36,12 @@ pub fn collect_resources(
     if access_group_ids.is_empty() {
         return Ok(Vec::new());
     }
-    let Some(lookup) = lookup else {
+    let Some(store) = lookup else {
         return Ok(Vec::new());
     };
     let mut resources: Vec<String> = Vec::new();
     for access_group_id in access_group_ids {
-        let group = match lookup.access_group(access_group_id) {
+        let group = match store.access_group(access_group_id) {
             Ok(group) => group,
             Err(error) => {
                 if check_db_only {

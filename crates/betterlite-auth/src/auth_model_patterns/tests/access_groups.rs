@@ -6,7 +6,7 @@ use crate::auth_model_patterns::access_groups::{
     AccessGroupResources, ResourceField, collect_resources, models_from_access_groups,
 };
 use crate::auth_model_patterns::decision::{can_object_call_model, check_model_access};
-use crate::auth_model_patterns::view::{DeploymentView, ModelAccessView};
+use crate::auth_model_patterns::view::{DeploymentView, ModelAccessView as _};
 
 use super::{FixedGroups, context, deployment, empty_aliases, empty_provider, grant, one};
 
@@ -99,15 +99,22 @@ fn access_group_resources_come_from_the_lookup() {
         ),
         vec!["grouped-model".to_owned()]
     );
-    assert!(
-        collect_resources(
-            &["missing".to_owned()],
-            ResourceField::ModelNames,
-            Some(&lookup),
-            true
-        )
-        .is_err()
+    let error = collect_resources(
+        &["missing".to_owned()],
+        ResourceField::ModelNames,
+        Some(&lookup),
+        true,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the access group missing could not be loaded"
     );
+}
+
+#[test]
+fn collect_resources_answers_every_resource_field() {
+    let lookup = known_lookup();
     // the same collector answers the MCP server and agent id fields
     assert_eq!(
         collect_resources(
