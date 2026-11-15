@@ -100,10 +100,9 @@ pub fn decode_fal_image_reply(
             headers: headers.clone(),
         });
     };
-    Ok(match fields.get("images") {
-        Some(images) => fal_images_to_image_objects(images),
-        None => Vec::new(),
-    })
+    Ok(fields
+        .get("images")
+        .map_or_else(Vec::new, fal_images_to_image_objects))
 }
 
 pub fn append_generation_images(
