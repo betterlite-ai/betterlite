@@ -1,14 +1,14 @@
 id: B4059
 milestone: M7 observability
 title: Prompt registry selection and database row conversion
-status: todo
+status: done
 depends_on: [B4050, B726]
 file: tasks/B4059-prompt-registry-selection.yaml
 covers:
   - "litellm/proxy/prompts/{prompt_registry,prompt_endpoints}.py"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1974
