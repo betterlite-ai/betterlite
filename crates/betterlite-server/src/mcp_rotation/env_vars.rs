@@ -6,19 +6,13 @@ use betterlite_db::mcp_stored_contracts::decode::{
     McpStoredDecodeError, decode_mcp_stored_contract,
 };
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
-use betterlite_secrets::secret_codec::{
-    DecryptPolicy, FailureLog, FailureValue, NonceSource, StoredCipher, StoredValue,
-};
+use betterlite_secrets::secret_codec::{NonceSource, StoredCipher, StoredValue};
 use secrecy::SecretString;
 
-use super::codec::{is_falsey, sealed_text};
+use super::codec::{DROP_UNREADABLE, is_falsey, sealed_text};
 use super::error::RotationCodecError;
 
 const GLOBAL_ENV_VAR_KEY: &str = "mcp_global_env_var";
-const DROP_UNREADABLE: DecryptPolicy = DecryptPolicy {
-    log: FailureLog::Debug,
-    value: FailureValue::Nothing,
-};
 
 pub fn reencrypt_global_env_values<N, D>(
     stored: Option<&JsonValue>,

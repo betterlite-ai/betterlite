@@ -20,7 +20,6 @@ use super::store::{
     StoredUserEnvVarRow,
 };
 
-// Each table is read whole, as find_many with no where does; the row arrives as one JSON object.
 const SERVER_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT server_id, credentials, env_vars, static_headers, env FROM "LiteLLM_MCPServerTable") t"#;
 const OAUTH_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT server_id, credentials FROM "LiteLLM_MCPServerOAuthClient") t"#;
 const USER_CREDENTIAL_ROWS_SQL: &str = r#"SELECT to_jsonb(t)::text FROM (SELECT user_id, server_id, credential_b64 FROM "LiteLLM_MCPUserCredentials") t"#;
@@ -60,11 +59,13 @@ pub struct McpUpdateActions<'db> {
 
 impl McpUpdateActions<'_> {
     async fn changed(&self, data: &[Option<String>], keys: &[String]) -> Result<usize, TableError> {
-        let params: Vec<&(dyn ToSql + Sync)> = keys
-            .iter()
-            .map(|key| key as &(dyn ToSql + Sync))
-            .chain(data.iter().map(|value| value as &(dyn ToSql + Sync)))
-            .collect();
+        let mut params: Vec<&(dyn ToSql + Sync)> = Vec::with_capacity(keys.len() + data.len());
+        for key in keys {
+            params.push(key);
+        }
+        for value in data {
+            params.push(value);
+        }
         let client = self.access.write.session().await?;
         let rows = client
             .execute(self.update_sql, &params)

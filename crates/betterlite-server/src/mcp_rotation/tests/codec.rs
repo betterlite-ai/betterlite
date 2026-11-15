@@ -28,7 +28,6 @@ const SECRET_FIELDS: [&str; 7] = [
 ];
 
 fn encrypted_fields() -> CredentialBlob {
-    let old = cipher(OLD_KEY);
     let mut credentials = CredentialBlob::new();
     for field in SECRET_FIELDS {
         credentials.insert(
@@ -168,7 +167,7 @@ fn credential_invalid_blob(#[case] invalid: JsonValue) {
     assert!(
         matches!(
             &result,
-            Err(RotationCodecError::Encoding(_)) | Err(RotationCodecError::Json(_))
+            Err(RotationCodecError::Encoding(_) | RotationCodecError::Json(_))
         ),
         "a non-object credential blob is rejected"
     );

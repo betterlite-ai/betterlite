@@ -11,7 +11,7 @@ use super::codec::{
 };
 use super::env_vars::reencrypt_global_env_values;
 use super::error::{RotationCodecError, RotationError};
-use super::store::{McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow};
+use super::store::{McpRotationStore, ServerUpdate, StoredServerRow};
 
 pub struct Rotation<'rotation, S, N, D> {
     pub store: &'rotation S,
@@ -40,9 +40,16 @@ where
         }
         let mut oauth_updated = 0_usize;
         for client in self.store.oauth_client_rows().await? {
-            if self.rotate_oauth_client(&client).await? {
-                oauth_updated = oauth_updated.saturating_add(1);
-            }
+            let Some(rotated) =
+                reencrypt_credentials_blob(client.credentials.as_ref(), self.cipher, self.new_key)
+                    .map_err(RotationError::Codec)?
+            else {
+                continue;
+            };
+            self.store
+                .update_oauth_client(&client.server_id, &rotated)
+                .await?;
+            oauth_updated = oauth_updated.saturating_add(1);
         }
         tracing::info!(
             "rotate_mcp_server_credentials_master_key: rotated {updated} MCP server row(s) and {oauth_updated} OAuth-client row(s)"
@@ -76,22 +83,6 @@ where
             return Ok(false);
         }
         self.store.update_server(&row.server_id, &update).await?;
-        Ok(true)
-    }
-
-    async fn rotate_oauth_client(
-        &self,
-        client: &StoredOAuthClientRow,
-    ) -> Result<bool, RotationError<S::Error>> {
-        let Some(rotated) =
-            reencrypt_credentials_blob(client.credentials.as_ref(), self.cipher, self.new_key)
-                .map_err(RotationError::Codec)?
-        else {
-            return Ok(false);
-        };
-        self.store
-            .update_oauth_client(&client.server_id, &rotated)
-            .await?;
         Ok(true)
     }
 

@@ -7,7 +7,7 @@ use betterlite_server::mcp_rotation::rotation::Rotation;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
@@ -81,14 +81,6 @@ impl<S: Subscriber> Layer<S> for LevelCapture {
     }
 }
 
-fn capture_levels() -> (Levels, DefaultGuard) {
-    let levels: Levels = Arc::new(Mutex::new(Vec::new()));
-    let layer = LevelCapture {
-        levels: Arc::clone(&levels),
-    };
-    (levels, set_default(registry().with(layer)))
-}
-
 fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -104,7 +96,11 @@ impl Helper for Op {
         let key = SecretString::from(input.new_master_key.clone());
         let recorder = Arc::new(Mutex::new(Vec::new()));
         let store = prepare_store(input, &recorder)?;
-        let (levels, guard) = capture_levels();
+        let levels: Levels = Arc::new(Mutex::new(Vec::new()));
+        let layer = LevelCapture {
+            levels: Arc::clone(&levels),
+        };
+        let guard = set_default(registry().with(layer));
         let rotation = Rotation {
             store: &store,
             cipher: &cipher,

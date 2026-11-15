@@ -1,4 +1,4 @@
-use std::mem::take;
+use std::mem::{replace, take};
 
 use betterlite_db::mcp_server_encoding::credentials::{CredentialBlob, credentials_blob_to_dict};
 use betterlite_db::mcp_stored_contracts::JsonValue;
@@ -28,7 +28,7 @@ const KEEP_ORIGINAL: DecryptPolicy = DecryptPolicy {
     log: FailureLog::Debug,
     value: FailureValue::Original,
 };
-const DROP_UNREADABLE: DecryptPolicy = DecryptPolicy {
+pub const DROP_UNREADABLE: DecryptPolicy = DecryptPolicy {
     log: FailureLog::Debug,
     value: FailureValue::Nothing,
 };
@@ -79,7 +79,8 @@ where
         let Some(value) = credentials.get_mut(field) else {
             continue;
         };
-        *value = sealed_text(cipher.encrypt_value(stored_value(take(value)), key)?);
+        *value =
+            sealed_text(cipher.encrypt_value(stored_value(replace(value, JsonValue::Null)), key)?);
     }
     Ok(())
 }

@@ -173,33 +173,6 @@ class RotateUserEnvVars(CaseInput):
 Input = RotateServers | RotateUserCredentials | RotateUserEnvVars
 
 
-def server_rows(servers: list[ServerInput]) -> list[Row]:
-    return [
-        Row(
-            server["server_id"],
-            server.get("credentials"),
-            server.get("env_vars"),
-            server.get("static_headers"),
-            server.get("env"),
-        )
-        for server in servers
-    ]
-
-
-def credential_rows(rows: list[CredentialInput]) -> list[Row]:
-    return [
-        Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
-        for row in rows
-    ]
-
-
-def env_var_rows(rows: list[EnvVarInput]) -> list[Row]:
-    return [
-        Row(row["server_id"], user_id=row["user_id"], values_b64=row["values_b64"])
-        for row in rows
-    ]
-
-
 def run_case(value: Input, recorder: Recorder, rotation: Coroutine[None, None, None]) -> JsonValue:
     os.environ[SALT_ENV] = value["salt_key"]
     sys.modules[PROXY_SERVER_NAME] = ProxyServerStub()
@@ -224,8 +197,18 @@ def rotate_servers(value: RotateServers) -> JsonValue:
     oauth_clients = [
         Row(client["server_id"], client.get("credentials")) for client in value["oauth_clients"]
     ]
+    servers = [
+        Row(
+            server["server_id"],
+            server.get("credentials"),
+            server.get("env_vars"),
+            server.get("static_headers"),
+            server.get("env"),
+        )
+        for server in value["servers"]
+    ]
     tables = {
-        SERVER_TABLE: RecordingTable("servers", server_rows(value["servers"]), recorder),
+        SERVER_TABLE: RecordingTable("servers", servers, recorder),
         OAUTH_TABLE: RecordingTable("oauth_clients", oauth_clients, recorder),
     }
     rotation: Coroutine[None, None, None] = rotate_mcp_server_credentials_master_key(
@@ -236,7 +219,11 @@ def rotate_servers(value: RotateServers) -> JsonValue:
 
 def rotate_user_credentials(value: RotateUserCredentials) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
-    table = RecordingTable("user_credentials", credential_rows(value["rows"]), recorder)
+    rows = [
+        Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
+        for row in value["rows"]
+    ]
+    table = RecordingTable("user_credentials", rows, recorder)
     rotation: Coroutine[None, None, None] = rotate_mcp_user_credentials_master_key(
         FakeClient({CREDENTIAL_TABLE: table}), value["new_master_key"]
     )
@@ -245,7 +232,11 @@ def rotate_user_credentials(value: RotateUserCredentials) -> JsonValue:
 
 def rotate_user_env_vars(value: RotateUserEnvVars) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
-    table = RecordingTable("user_env_vars", env_var_rows(value["rows"]), recorder)
+    rows = [
+        Row(row["server_id"], user_id=row["user_id"], values_b64=row["values_b64"])
+        for row in value["rows"]
+    ]
+    table = RecordingTable("user_env_vars", rows, recorder)
     rotation: Coroutine[None, None, None] = rotate_mcp_user_env_vars_master_key(
         FakeClient({ENV_VAR_TABLE: table}), value["new_master_key"]
     )

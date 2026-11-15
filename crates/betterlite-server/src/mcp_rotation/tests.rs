@@ -402,17 +402,17 @@ async fn postgres_rows_and_failures() {
     };
     let availability = Availability::default();
     let journal = Arc::new(Mutex::new(Vec::new()));
-    let client = Some(PrismaClient {
+    let prisma = Some(PrismaClient {
         writer: &writer,
         reader: &writer,
         availability: &availability,
     });
     let publish = recording_publisher(&journal);
     let store = PostgresRotationStore {
-        servers: PrismaTableRepository::new(client, publish.clone(), MCPServerTable),
-        oauth_clients: PrismaTableRepository::new(client, publish.clone(), MCPServerOAuthClient),
-        user_credentials: PrismaTableRepository::new(client, publish.clone(), MCPUserCredentials),
-        user_env_vars: PrismaTableRepository::new(client, publish, McpUserEnvVars),
+        servers: PrismaTableRepository::new(prisma, publish.clone(), MCPServerTable),
+        oauth_clients: PrismaTableRepository::new(prisma, publish.clone(), MCPServerOAuthClient),
+        user_credentials: PrismaTableRepository::new(prisma, publish.clone(), MCPUserCredentials),
+        user_env_vars: PrismaTableRepository::new(prisma, publish, McpUserEnvVars),
     };
     let old = cipher(OLD_KEY);
     let key = new_key();
