@@ -1,0 +1,65 @@
+kind: helper
+name: anthropic-follow-up-preserves-assistant-text
+call:
+  b3775: {
+      "kind": "plan",
+      "api_key": null,
+      "timeout": null,
+      "seed": {
+        "call_id": "call-1",
+        "hashes": [
+          "abcdef123456"
+        ]
+      },
+      "messages": [
+        {
+          "role": "user",
+          "content": "hello"
+        }
+      ],
+      "tools": {
+        "tool_calls": [
+          {
+            "id": "toolu_1",
+            "type": "function",
+            "name": "headroom_retrieve",
+            "arguments": {
+              "hash": "abcdef123456"
+            }
+          }
+        ]
+      },
+      "model": "gpt-4o",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "thinking"
+          },
+          {
+            "type": "tool_use",
+            "id": "toolu_1",
+            "name": "headroom_retrieve",
+            "input": {
+              "hash": "abcdef123456"
+            }
+          }
+        ]
+      },
+      "optional_params": {},
+      "kwargs": {
+        "litellm_call_id": "call-1"
+      },
+      "logging": null,
+      "replies": [
+        {
+          "kind": "answer",
+          "status": 200,
+          "body": {
+            "original_content": "original text"
+          }
+        }
+      ]
+    }
+env: {}
+compare: {ignore: []}

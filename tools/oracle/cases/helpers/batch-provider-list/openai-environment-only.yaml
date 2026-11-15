@@ -1,0 +1,13 @@
+kind: helper
+name: openai-environment-only
+call:
+  batch_provider_list:
+    request:
+      provider: openai
+    litellm_settings: {}
+    environment:
+      OPENAI_API_KEY: env-key
+      OPENAI_BASE_URL: https://env.example/v1
+      OPENAI_ORGANIZATION: env-org
+env: {}
+compare: {ignore: []}

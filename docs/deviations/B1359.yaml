@@ -1,0 +1,9 @@
+task: B1359
+deviations:
+  - what: Audio sent to a stream whose response relay has already ended fails with a closed-queue error, where LiteLLM puts it into a request queue nobody reads and the audio is dropped.
+    why: The stream is over and no provider call can carry that audio; betterlite reports the lost data to the caller instead of accepting a message that would vanish.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L365-L367
+  - what: A half-close on a stream whose response relay has already ended returns Ok, where LiteLLM awaits a put into a request queue that nothing drains and blocks forever once the queue is full.
+    why: The relay is gone, so no provider call can consume the half-close marker; blocking the rotation or the finish that follows would hang the session, and returning Ok lets it move on to the next stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/realtime_backend.py#L187-L188
+kept_bugs: []

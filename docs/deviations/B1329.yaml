@@ -1,0 +1,11 @@
+task: B1329
+deviations:
+  - what: "A functionResponse's nested parts pass through as the caller sent them; LiteLLM rebuilds them through google-genai's FunctionResponsePart records, so camelCase keys become snake_case and an inline blob's data fails the count request outright."
+    why: "Google's JSON API takes either spelling, and no working LiteLLM setup can count contents carrying inline media, so copying that failure would refuse input LiteLLM itself cannot carry."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L42-L47
+  - what: "A count reply larger than 1 MiB is refused with a 500 instead of parsed; LiteLLM parses whatever the HTTP client has read."
+    why: "A countTokens reply carries a handful of counters, so the cap bounds decoding memory and still leaves room for every field Google returns."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L146
+  - what: "Contents that are not the list Google's API declares, and functionResponse records Google's model refuses, answer 400; LiteLLM forwards some of those shapes so Google answers 400, and for the rest its cleaner raises an unhandled exception that surfaces as a 500."
+    why: "The request is malformed by the caller's hand, so a 400 naming the field and path is the answer, and a server-error 500 would hide a client mistake."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/count_tokens/handler.py#L39-L46
