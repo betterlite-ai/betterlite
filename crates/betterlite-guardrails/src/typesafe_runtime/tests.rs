@@ -418,6 +418,12 @@ fn ticking_now() -> SystemTime {
         .expect("ticking time")
 }
 
+fn pre_epoch_now() -> SystemTime {
+    UNIX_EPOCH
+        .checked_sub(Duration::from_secs(1))
+        .expect("a time before the epoch")
+}
+
 #[test]
 fn new_uses_litellm_defaults_when_only_the_key_is_configured() {
     let args = TypeSafeArgs {
@@ -806,6 +812,28 @@ async fn a_failed_call_is_recorded_and_forwarded_under_fail_open() {
     );
     let duration = recorded_duration(record).expect("the record carries a duration");
     assert!((0.0..1.0).contains(&duration));
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn a_pre_epoch_clock_records_zero_times() {
+    let (base_url, _requests, mut server) =
+        serve(StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()).await;
+    let mut guard = guard_at(&base_url, args(&base_url));
+    guard.clock = pre_epoch_now;
+    let mut data = request_data();
+    apply_request(&guard, inputs(two_exchanges()), &mut data)
+        .await
+        .expect("fail_open forwards the request");
+    let record = &records(&data)[0];
+    assert_eq!(
+        field(record, "start_time"),
+        Some(&GuardrailValue::Decimal(0.0))
+    );
+    assert_eq!(
+        field(record, "end_time"),
+        Some(&GuardrailValue::Decimal(0.0))
+    );
     server.shutdown().await;
 }
 
