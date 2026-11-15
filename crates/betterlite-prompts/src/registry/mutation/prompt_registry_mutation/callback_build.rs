@@ -14,15 +14,6 @@ pub fn build_prompt_callback(
         }
     })?;
     let callback = backend.initializer(&prompt.litellm_params, prompt);
-    let parsed_prompt = PromptSpec {
-        prompt_id: prompt.prompt_id.clone(),
-        litellm_params: prompt.litellm_params.clone(),
-        prompt_info: prompt.prompt_info.clone(),
-        created_at: prompt.created_at,
-        updated_at: prompt.updated_at,
-        version: prompt.version,
-        environment: prompt.environment.clone(),
-        created_by: prompt.created_by.clone(),
-    };
+    let parsed_prompt = prompt.clone();
     Ok((parsed_prompt, callback))
 }

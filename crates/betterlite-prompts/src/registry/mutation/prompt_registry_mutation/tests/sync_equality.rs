@@ -102,7 +102,21 @@ fn a_differing_prompt_info_reloads_the_prompt(#[case] mutate: fn(&mut PromptInfo
 
 #[test]
 fn an_equal_row_returns_the_stored_prompt_without_reloading() {
-    let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
+    let mut prompt = prompt_spec("greeting.v1", "development", "dotprompt");
+    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.dotprompt_content = Some("template".to_owned());
+    prompt.litellm_params.provider_specific_query_params = Some(IndexMap::from([(
+        "query".to_owned(),
+        json_value("\"value\""),
+    )]));
+    prompt.litellm_params.extra.insert(
+        "gitlab_config".to_owned(),
+        json_value("{\"project\":\"group/repo\"}"),
+    );
+    prompt
+        .prompt_info
+        .extra
+        .insert("custom".to_owned(), json_value("1"));
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
     let mut row = prompt.clone();

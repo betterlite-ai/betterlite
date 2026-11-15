@@ -50,29 +50,23 @@ impl PromptBackend {
         params: &PromptLiteLLMParams,
         prompt: &PromptSpec,
     ) -> PromptManagementClient {
-        match self {
-            Self::DotPrompt => {
-                let registered_id = params
+        let prompt_id = match self {
+            Self::DotPrompt => Some(
+                params
                     .prompt_id
                     .clone()
                     .or_else(|| strip_version_suffix(&prompt.prompt_id).map(str::to_owned))
-                    .unwrap_or_else(|| prompt.prompt_id.clone());
-                registered_client(Some(registered_id))
-            }
-            Self::Bitbucket | Self::GenericPromptManagement => {
-                registered_client(params.prompt_id.clone())
-            }
-            Self::Gitlab => registered_client(Some(prompt.prompt_id.clone())),
+                    .unwrap_or_else(|| prompt.prompt_id.clone()),
+            ),
+            Self::Bitbucket | Self::GenericPromptManagement => params.prompt_id.clone(),
+            Self::Gitlab => Some(prompt.prompt_id.clone()),
+        };
+        PromptManagementClient {
+            prompt_id,
+            prompt_template: Vec::new(),
+            prompt_template_model: None,
+            prompt_optional_params: None,
+            completed_messages: None,
         }
-    }
-}
-
-const fn registered_client(prompt_id: Option<String>) -> PromptManagementClient {
-    PromptManagementClient {
-        prompt_id,
-        prompt_template: Vec::new(),
-        prompt_template_model: None,
-        prompt_optional_params: None,
-        completed_messages: None,
     }
 }

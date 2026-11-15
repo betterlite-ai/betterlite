@@ -1,10 +1,13 @@
 #![cfg(test)]
 
 use betterlite_models::prompt_spec::{PromptInfo, PromptSpec};
+use indexmap::IndexMap;
 
 use super::callback_build::build_prompt_callback;
-use super::support::{client, prompt_spec};
+use super::support::{api_key, client, prompt_spec};
 use crate::registry::mutation::prompt_registry_mutation::error::PromptRegistryError;
+use crate::registry::mutation::prompt_registry_mutation::methods::same_litellm_params;
+use crate::tests::json_value;
 
 fn timestamp(text: &str) -> chrono::DateTime<chrono::Utc> {
     chrono::DateTime::parse_from_rfc3339(text)
@@ -24,10 +27,20 @@ fn returns_the_parsed_spec_and_the_initializer_client() {
 fn the_parsed_spec_copies_every_field_of_the_input() {
     let mut prompt = prompt_spec("greeting.v1", "production", "gitlab");
     prompt.litellm_params.api_base = Some("https://gitlab.example.test".to_owned());
+    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.dotprompt_content = Some("template".to_owned());
+    prompt.litellm_params.provider_specific_query_params = Some(IndexMap::from([(
+        "query".to_owned(),
+        json_value("\"value\""),
+    )]));
+    prompt.litellm_params.extra.insert(
+        "gitlab_config".to_owned(),
+        json_value("{\"project\":\"group/repo\"}"),
+    );
     prompt.prompt_info = PromptInfo {
         prompt_type: "db".to_owned(),
         environment: "staging".to_owned(),
-        extra: indexmap::IndexMap::new(),
+        extra: IndexMap::from([("custom".to_owned(), json_value("1"))]),
     };
     prompt.created_at = Some(timestamp("2024-01-02T03:04:05Z"));
     prompt.updated_at = Some(timestamp("2024-02-03T04:05:06Z"));
@@ -40,12 +53,15 @@ fn the_parsed_spec_copies_every_field_of_the_input() {
     assert_eq!(parsed.updated_at, prompt.updated_at);
     assert_eq!(parsed.version, Some(4));
     assert_eq!(parsed.created_by, Some("someone".to_owned()));
-    assert_eq!(parsed.prompt_info.prompt_type, "db");
-    assert_eq!(parsed.prompt_info.environment, "staging");
     assert_eq!(
         parsed.litellm_params.api_base,
         Some("https://gitlab.example.test".to_owned())
     );
+    assert!(same_litellm_params(
+        &parsed.litellm_params,
+        &prompt.litellm_params
+    ));
+    assert_eq!(parsed.prompt_info, prompt.prompt_info);
 }
 
 #[test]
