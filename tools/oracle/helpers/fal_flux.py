@@ -27,18 +27,24 @@ Profile: TypeAlias = Literal["ultra", "pro_v11", "schnell", "dev"]
 Params: TypeAlias = dict[str, JsonValue]
 
 
+GenerationRequest: TypeAlias = Callable[[str, str, Params, Params, dict[str, str]], Params]
+GenerationResponse: TypeAlias = Callable[
+    [str, httpx.Response, ImageResponse, Logging, Params, Params, Params, None], ImageResponse
+]
+
+
 class FluxConfig(Protocol):
     IMAGE_GENERATION_ENDPOINT: str
-    get_supported_openai_params: Callable[[str], Sequence[str]]
-    map_openai_params: Callable[[Params, Params, str, bool], Params]
-    get_complete_url: Callable[[str | None, str | None, str, Params, Params], str]
-    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
-        [str, str, Params, Params, dict[str, str]], Params
-    ]
-    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
-        [str, httpx.Response, ImageResponse, Logging, Params, Params, Params, None],
-        ImageResponse,
-    ]
+    @property
+    def get_supported_openai_params(self) -> Callable[[str], Sequence[str]]: ...
+    @property
+    def map_openai_params(self) -> Callable[[Params, Params, str, bool], Params]: ...
+    @property
+    def get_complete_url(self) -> Callable[[str | None, str | None, str, Params, Params], str]: ...
+    @property
+    def transform_image_generation_request(self) -> GenerationRequest: ...  # ast-grep-ignore: no-long-names
+    @property
+    def transform_image_generation_response(self) -> GenerationResponse: ...  # ast-grep-ignore: no-long-names
 
 
 class HiddenRecord(BaseModel):
