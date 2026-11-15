@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use betterlite_auth::auth_request_models::catalog::{
-    CatalogError, ManagedIdDecoders, ManagedIdError, ManagedIdField, ModelCatalog,
+    CatalogError, ManagedIdDecoders, ManagedIdError, ManagedIdFamily, ModelCatalog,
     RequestModelResolver,
 };
 use betterlite_auth::auth_request_models::managed::resolve_model_id_with_router;
@@ -54,52 +54,46 @@ pub fn resolve(stage: &RequestModelStageInput) -> Result<RequestedModels, Catalo
 pub struct CoreDecoders;
 
 impl ManagedIdDecoders for CoreDecoders {
-    fn legacy_file_batch(
+    fn decode_family(
         &self,
+        family: ManagedIdFamily,
         resource_id: &str,
         catalog: Option<&dyn ModelCatalog>,
         candidates: &mut Vec<String>,
     ) -> Result<(), ManagedIdError> {
-        push_optional_model(candidates, routing::decode_model_from_file_id(resource_id));
-        if let Some(unified) = is_base64_encoded_unified_id(resource_id, MANAGED_FILE_ID_PREFIX) {
-            push_model_candidates(candidates, legacy::target_model_names(&unified));
-            push_optional_model(
+        match family {
+            ManagedIdFamily::LegacyFileBatch => {
+                push_optional_model(candidates, routing::decode_model_from_file_id(resource_id));
+                let Some(unified) =
+                    is_base64_encoded_unified_id(resource_id, MANAGED_FILE_ID_PREFIX)
+                else {
+                    return Ok(());
+                };
+                push_model_candidates(candidates, legacy::target_model_names(&unified));
+                push_optional_model(
+                    candidates,
+                    resolve_model_id_with_router(legacy::unified_batch_model_id(&unified), catalog),
+                );
+            }
+            ManagedIdFamily::Unified => {
+                let Some(parts) = parse_unified_id(resource_id) else {
+                    return Ok(());
+                };
+                push_optional_model(
+                    candidates,
+                    resolve_model_id_with_router(parts.model_id, catalog),
+                );
+                push_model_candidates(candidates, parts.target_model_names);
+            }
+            ManagedIdFamily::Video => push_optional_model(
                 candidates,
-                resolve_model_id_with_router(legacy::unified_batch_model_id(&unified), catalog),
-            );
-        }
-        Ok(())
-    }
-
-    fn unified(
-        &self,
-        resource_id: &str,
-        catalog: Option<&dyn ModelCatalog>,
-        candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        if let Some(parts) = parse_unified_id(resource_id) {
-            push_optional_model(
+                resolve_model_id_with_router(decode_video_id(resource_id).model_id, catalog),
+            ),
+            ManagedIdFamily::Character => push_optional_model(
                 candidates,
-                resolve_model_id_with_router(parts.model_id, catalog),
-            );
-            push_model_candidates(candidates, parts.target_model_names);
+                resolve_model_id_with_router(decode_character_id(resource_id).model_id, catalog),
+            ),
         }
-        Ok(())
-    }
-
-    fn video_character(
-        &self,
-        resource_id: &str,
-        field: ManagedIdField,
-        catalog: Option<&dyn ModelCatalog>,
-        candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        let model_id = match field {
-            ManagedIdField::Video => decode_video_id(resource_id).model_id,
-            ManagedIdField::Character => decode_character_id(resource_id).model_id,
-            ManagedIdField::Other => None,
-        };
-        push_optional_model(candidates, resolve_model_id_with_router(model_id, catalog));
         Ok(())
     }
 }

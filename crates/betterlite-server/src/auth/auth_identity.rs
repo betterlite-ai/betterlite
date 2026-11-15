@@ -61,7 +61,7 @@ fn auth_request_models_stage(input: &StageInput) -> Result<AuthContext, Authenti
         return Err(AuthenticationFailure::Missing);
     };
     match crate::auth::auth_request_models::resolve(stage) {
-        Ok(_models) => Ok(stage.context.clone()),
+        Ok(_) => Ok(stage.context.clone()),
         Err(error) => {
             tracing::debug!(error = %error, "the request model stage failed");
             Err(AuthenticationFailure::Missing)
@@ -73,7 +73,9 @@ fn master_key_stage(
     input: &StageInput,
     master_key: &SecretString,
 ) -> Result<AuthContext, AuthenticationFailure> {
-    let StageInput::MasterKey(presented) = input;
+    let StageInput::MasterKey(presented) = input else {
+        return Err(AuthenticationFailure::Missing);
+    };
     let matched = presented.as_ref().is_some_and(|key| {
         !key.expose_secret().is_empty()
             && bool::from(

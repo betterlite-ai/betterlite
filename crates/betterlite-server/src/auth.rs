@@ -92,10 +92,10 @@ pub(crate) async fn authenticate(
         let input = match backend {
             AuthBackend::MasterKey => StageInput::MasterKey(presented_key.clone()),
             AuthBackend::AuthRequestModels => {
-                let Some(context) = authenticated.clone() else {
+                let Some(context) = authenticated.as_ref() else {
                     return authentication_error(&AuthenticationFailure::Missing);
                 };
-                let stage = model_stage_input(&request, context, &resolver);
+                let stage = model_stage_input(&request, context.clone(), &resolver);
                 StageInput::AuthRequestModels(Box::new(stage))
             }
         };
@@ -145,7 +145,7 @@ fn headers_json(headers: &HeaderMap) -> JsonObject {
 }
 fn query_json(query: Option<&str>) -> JsonObject {
     let mut object = JsonObject::new();
-    for (name, value) in url::form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
+    for (name, value) in form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
         object.insert(name.into_owned(), Json::Text(value.into_owned()));
     }
     object

@@ -14,7 +14,7 @@ use betterlite_auth::auth_request_models::catalog::{
     CatalogError, Collaborators, DeploymentRecord, ModelCatalog, RequestModelResolver,
 };
 use betterlite_auth::auth_request_models::sources::{
-    DispatchContext, RequestSnapshot, extract_model_candidates_from_request,
+    DispatchContext, RequestSnapshot, request_model_candidates,
 };
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
@@ -39,10 +39,7 @@ struct FakeCatalog {
 }
 
 impl ModelCatalog for FakeCatalog {
-    fn resolve_model_name_from_model_id(
-        &self,
-        model_id: &str,
-    ) -> Result<Option<String>, CatalogError> {
+    fn resolve_model_name(&self, model_id: &str) -> Result<Option<String>, CatalogError> {
         if self.failing {
             return Err(CatalogError::InvalidDeployment);
         }
@@ -69,10 +66,7 @@ impl ModelCatalog for FakeCatalog {
 struct FailingCatalog;
 
 impl ModelCatalog for FailingCatalog {
-    fn resolve_model_name_from_model_id(
-        &self,
-        _model_id: &str,
-    ) -> Result<Option<String>, CatalogError> {
+    fn resolve_model_name(&self, _model_id: &str) -> Result<Option<String>, CatalogError> {
         Err(CatalogError::InvalidDeployment)
     }
 
@@ -102,12 +96,14 @@ fn config_with_master_key(master_key: &str) -> Config {
 }
 
 fn master_context(master_key: &SecretString) -> AuthContext {
-    dispatch(
+    match dispatch(
         AuthBackend::MasterKey,
         &StageInput::MasterKey(Some(master_key.clone())),
         master_key,
-    )
-    .expect("the master key stage authenticates")
+    ) {
+        Ok(context) => context,
+        Err(_failure) => panic!("the master key stage authenticates"),
+    }
 }
 
 fn stage_input(
@@ -154,8 +150,7 @@ fn candidates_with_catalog(body: &JsonObject, catalog: &dyn ModelCatalog) -> Vec
         catalog: Some(catalog),
         decoders: &decoders,
     };
-    extract_model_candidates_from_request(&request, &collaborators)
-        .expect("the catalog lookup succeeds")
+    request_model_candidates(&request, &collaborators).expect("the catalog lookup succeeds")
 }
 
 fn managed(text: &str) -> String {
@@ -172,23 +167,24 @@ fn stage_is_registered() {
         master_context(&master_key),
         "/v1/chat/completions",
         r#"{"model": "gpt-4"}"#,
-        state.auth_request_models.resolver(),
+        Arc::clone(&state.auth_request_models.resolver),
     );
     let input = StageInput::AuthRequestModels(Box::new(stage));
-    let forwarded = dispatch(AuthBackend::AuthRequestModels, &input, &master_key)
-        .expect("the B732 constructor dispatches to the production model stage");
+    let Ok(forwarded) = dispatch(AuthBackend::AuthRequestModels, &input, &master_key) else {
+        panic!("the B732 constructor dispatches to the production model stage");
+    };
     assert_eq!(forwarded.principal.subject, "master_key");
     let failing = Arc::new(RequestModelResolver {
         catalog: Arc::new(FailingCatalog),
         decoders: Arc::new(CoreDecoders),
     });
-    let stage = stage_input(
+    let failing_stage = stage_input(
         master_context(&master_key),
         "/azure/gpt-4/chat/completions",
         r#"{"model": "gpt-4"}"#,
         failing,
     );
-    let failing_input = StageInput::AuthRequestModels(Box::new(stage));
+    let failing_input = StageInput::AuthRequestModels(Box::new(failing_stage));
     assert!(dispatch(AuthBackend::AuthRequestModels, &failing_input, &master_key).is_err());
 }
 
@@ -209,8 +205,8 @@ fn azure_request(
         .body(Body::from(r#"{"model": "gpt-4"}"#))
         .expect("the request builds");
     request.extensions_mut().insert(Arc::clone(reached));
-    if let Some(resolver) = resolver {
-        request.extensions_mut().insert(resolver);
+    if let Some(custom) = resolver {
+        request.extensions_mut().insert(custom);
     }
     request
 }

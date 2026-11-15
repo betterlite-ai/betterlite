@@ -7,7 +7,7 @@ use crate::auth::auth_request_models::CoreDecoders;
 use crate::state::shared::Shared;
 
 pub struct Slot {
-    resolver: Arc<RequestModelResolver>,
+    pub resolver: Arc<RequestModelResolver>,
 }
 
 impl Slot {
@@ -19,10 +19,5 @@ impl Slot {
                 decoders: Arc::new(CoreDecoders),
             }),
         }
-    }
-
-    #[must_use]
-    pub fn resolver(&self) -> Arc<RequestModelResolver> {
-        Arc::clone(&self.resolver)
     }
 }
