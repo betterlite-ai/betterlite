@@ -20,7 +20,6 @@ pub fn parse_bucket_object(object_key: &str, bytes: &[u8]) -> Option<Value> {
     };
     match serde_saphyr::from_str::<Value>(text) {
         Ok(value) => Some(value),
-        Err(error) if matches!(error, serde_saphyr::Error::Eof { .. }) => Some(Value::Null),
         Err(error) => {
             tracing::error!(object_key, %error, "Config object is not valid YAML");
             None
