@@ -254,19 +254,10 @@ fn run_logged(
     };
     let env = prepost_env(state, &redactor, &sink, Some(&logger));
     let mut log = LogContext { state, env: &env };
-    drive(call, stages, &mut log, supplied)
-}
-
-fn drive(
-    call: &mut RerankCall<'_>,
-    stages: &Stages<'_>,
-    log: &mut LogContext<'_, '_>,
-    supplied: Option<SuppliedClient<'_, FixtureClient>>,
-) -> Result<RerankResponse, RerankCallError> {
     let target = stages
         .runtime
         .block_on(resolve_target(call, stages.source))?;
-    let prepared = prepare_request(call, &target, log)?;
+    let prepared = prepare_request(call, &target, &mut log)?;
     let reply = stages.runtime.block_on(dispatch_request(
         call,
         &prepared,
@@ -274,7 +265,7 @@ fn drive(
         stages.factory,
         log.state,
     ))?;
-    transform_response(call, &reply, GENERATED_ID, log)
+    transform_response(call, &reply, GENERATED_ID, &mut log)
 }
 
 const VALID_REPLY: &str = r#"{"id":"resp-1","results":[{"index":1,"relevanceScore":0.5},{"index":0,"relevanceScore":0.25}]}"#;
@@ -659,7 +650,7 @@ fn results_index_score_failures() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
     for body in [
         r#"{"usage":{}}"#,
-        r#"[]"#,
+        "[]",
         r#"{"results":[]}"#,
         r#"{"results":null}"#,
         r#"{"results":{"index":0}}"#,
@@ -890,10 +881,10 @@ fn transport_logging_async() {
 
 fn transport_logging_fallback() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let mut mismatched_async = call(&documented, auth_params());
-    mismatched_async.is_async = true;
+    let mut async_mismatch = call(&documented, auth_params());
+    async_mismatch.is_async = true;
     let async_fallback_run = run_case(
-        mismatched_async,
+        async_mismatch,
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
     );
@@ -901,10 +892,10 @@ fn transport_logging_fallback() {
     assert_eq!(async_fallback_run.async_calls, 1);
     assert!(async_fallback_run.with_logging());
 
-    let mut mismatched_sync = call(&documented, auth_params());
-    mismatched_sync.is_async = false;
+    let mut sync_mismatch = call(&documented, auth_params());
+    sync_mismatch.is_async = false;
     let sync_fallback_run = run_case(
-        mismatched_sync,
+        sync_mismatch,
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Async),
     );
