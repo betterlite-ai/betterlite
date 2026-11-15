@@ -202,7 +202,7 @@ fn embedding_config(env_key: Option<&str>, env_base: Option<&str>) -> DashscopeE
             missing_key_message: DASHSCOPE_MISSING_KEY_MESSAGE.to_owned(),
             default_base: DASHSCOPE_DEFAULT_BASE.to_owned(),
             env_base: env_base.map(str::to_owned),
-            env_key: env_key.map(str::to_owned),
+            env_key: env_key.map(SecretString::from),
             fallback_key: None,
             empty_key_is_set: true,
         },

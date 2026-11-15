@@ -53,7 +53,10 @@ impl BaseRerankConfig for DashscopeRerankConfig {
             request.api_key.map(|key| key.expose_secret().as_str()),
         )?;
         let mut headers = Headers::new();
-        headers.insert(AUTHORIZATION_HEADER.to_owned(), format!("Bearer {key}"));
+        headers.insert(
+            AUTHORIZATION_HEADER.to_owned(),
+            format!("Bearer {}", key.expose_secret()),
+        );
         headers.insert(ACCEPT_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
         headers.insert(CONTENT_TYPE_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
         headers.extend(

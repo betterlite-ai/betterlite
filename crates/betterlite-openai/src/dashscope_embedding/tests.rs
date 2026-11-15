@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use super::error::get_error_class;
@@ -23,7 +24,7 @@ fn plain_identity(env_key: Option<&str>, env_base: Option<&str>) -> FamilyIdenti
         missing_key_message: DASHSCOPE_MISSING_KEY_MESSAGE.to_owned(),
         default_base: DASHSCOPE_DEFAULT_BASE.to_owned(),
         env_base: env_base.map(str::to_owned),
-        env_key: env_key.map(str::to_owned),
+        env_key: env_key.map(SecretString::from),
         fallback_key: None,
         empty_key_is_set: true,
     }
@@ -49,36 +50,58 @@ fn params(entries: &[(&str, Json)]) -> IndexMap<String, Json> {
 #[test]
 fn resolve_key_prefers_the_argument_over_the_environment() {
     let identity = plain_identity(Some("sk-env"), None);
-    assert_eq!(resolve_key(&identity, Some("sk-arg")).unwrap(), "sk-arg");
-    assert_eq!(resolve_key(&identity, None).unwrap(), "sk-env");
+    assert_eq!(
+        resolve_key(&identity, Some("sk-arg"))
+            .unwrap()
+            .expose_secret(),
+        "sk-arg"
+    );
+    assert_eq!(
+        resolve_key(&identity, None).unwrap().expose_secret(),
+        "sk-env"
+    );
 }
 
 #[test]
 fn resolve_key_takes_an_empty_argument_for_a_plain_dashscope_brand() {
     let identity = plain_identity(Some("sk-env"), None);
-    assert_eq!(resolve_key(&identity, Some("")).unwrap(), "");
+    assert_eq!(
+        resolve_key(&identity, Some("")).unwrap().expose_secret(),
+        ""
+    );
 }
 
 #[test]
 fn resolve_key_skips_an_empty_argument_for_a_brand_key() {
     let identity = FamilyIdentity {
         empty_key_is_set: false,
-        fallback_key: Some("sk-fallback".to_owned()),
+        fallback_key: Some(SecretString::from("sk-fallback")),
         ..plain_identity(Some("sk-env"), None)
     };
-    assert_eq!(resolve_key(&identity, Some("")).unwrap(), "sk-env");
-    assert_eq!(resolve_key(&identity, Some("sk-arg")).unwrap(), "sk-arg");
+    assert_eq!(
+        resolve_key(&identity, Some("")).unwrap().expose_secret(),
+        "sk-env"
+    );
+    assert_eq!(
+        resolve_key(&identity, Some("sk-arg"))
+            .unwrap()
+            .expose_secret(),
+        "sk-arg"
+    );
 }
 
 #[test]
 fn resolve_key_falls_through_to_the_fallback_and_then_the_message() {
     let identity = FamilyIdentity {
         empty_key_is_set: false,
-        env_key: Some(String::new()),
-        fallback_key: Some("sk-fallback".to_owned()),
+        env_key: Some(SecretString::default()),
+        fallback_key: Some(SecretString::from("sk-fallback")),
         ..plain_identity(None, None)
     };
-    assert_eq!(resolve_key(&identity, None).unwrap(), "sk-fallback");
+    assert_eq!(
+        resolve_key(&identity, None).unwrap().expose_secret(),
+        "sk-fallback"
+    );
     let identity = FamilyIdentity {
         empty_key_is_set: false,
         fallback_key: None,
@@ -91,6 +114,40 @@ fn resolve_key_falls_through_to_the_fallback_and_then_the_message() {
             message: DASHSCOPE_MISSING_KEY_MESSAGE.to_owned()
         }
     );
+}
+
+#[test]
+fn family_identity_equality_compares_the_keys_and_the_policy() {
+    let identity = plain_identity(Some("sk-env"), None);
+    assert_eq!(identity, plain_identity(Some("sk-env"), None));
+    assert_ne!(identity, plain_identity(Some("sk-other"), None));
+    let with_fallback = FamilyIdentity {
+        fallback_key: Some(SecretString::from("sk-fallback")),
+        ..plain_identity(None, None)
+    };
+    assert_eq!(
+        with_fallback,
+        FamilyIdentity {
+            fallback_key: Some(SecretString::from("sk-fallback")),
+            ..plain_identity(None, None)
+        }
+    );
+    assert_ne!(
+        with_fallback,
+        FamilyIdentity {
+            fallback_key: Some(SecretString::from("sk-other")),
+            ..plain_identity(None, None)
+        }
+    );
+    assert_ne!(with_fallback, plain_identity(None, None));
+}
+
+#[test]
+fn the_debug_output_redacts_the_keys() {
+    let identity = plain_identity(Some("sk-secret"), Some("https://env.test"));
+    let rendered = format!("{identity:?}");
+    assert!(!rendered.contains("sk-secret"));
+    assert!(rendered.contains("[REDACTED]"));
 }
 
 #[rstest]

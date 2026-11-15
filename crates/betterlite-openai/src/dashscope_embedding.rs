@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 
 use crate::openai_base_config::Headers;
 
@@ -31,7 +32,10 @@ impl DashscopeEmbeddingConfig {
         let key = resolve_key(&self.identity, api_key)?;
         let mut resolved = Headers::new();
         resolved.insert(CONTENT_TYPE_HEADER.to_owned(), JSON_CONTENT_TYPE.to_owned());
-        resolved.insert(AUTHORIZATION_HEADER.to_owned(), format!("Bearer {key}"));
+        resolved.insert(
+            AUTHORIZATION_HEADER.to_owned(),
+            format!("Bearer {}", key.expose_secret()),
+        );
         resolved.extend(
             headers
                 .iter()
