@@ -1,6 +1,7 @@
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_router::classifier_message_text::asks::current_ask_and_system_prompt;
+use betterlite_router::classifier_message_text::error::ClassifierTextError;
 use betterlite_router::classifier_message_text::markers::{
     MarkerPair, is_codex_user_agent, reminder_markers_for_request,
 };
@@ -61,17 +62,17 @@ pub(crate) fn run(
     });
     let codex = input.user_agent.as_deref().is_some_and(is_codex_user_agent);
     let markers = reminder_markers_for_request(configured.as_deref(), codex);
-    let (ask, system_prompt) =
-        current_ask_and_system_prompt(&input.messages, markers).map_err(invalid_request)?;
+    let (ask, system_prompt) = current_ask_and_system_prompt(&input.messages, markers)
+        .map_err(|error| invalid_request(&error))?;
     let plan_sentinel = matched_plan_mode_sentinel(
         input.body.as_ref(),
         Some(&input.messages),
         &input.plan_mode_patterns,
         markers,
     )
-    .map_err(invalid_request)?;
+    .map_err(|error| invalid_request(&error))?;
     let fields = Fields {
-        ask: ask.map(|ask| ask.text),
+        ask: ask.map(|extracted| extracted.text),
         system_prompt: system_prompt.map(|prompt| prompt.text),
         markers: markers
             .iter()
@@ -85,9 +86,7 @@ pub(crate) fn run(
     Ok(ProbeOutput::ClassifierMessageText(Output(Box::new(fields))))
 }
 
-fn invalid_request(
-    error: betterlite_router::classifier_message_text::error::ClassifierTextError,
-) -> OperationError {
+fn invalid_request(error: &ClassifierTextError) -> OperationError {
     OperationError::InvalidRequest {
         message: error.to_string(),
     }
