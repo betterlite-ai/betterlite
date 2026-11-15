@@ -44,7 +44,6 @@ pub(super) fn client_assertion(
     encode(&header, &claims, &key)
         .map_err(|_error| CredError::Misconfigured(SIGNING_DETAIL.to_owned()))
 }
-
 fn encoding_key(auth: &PrivateKeyJwtAuth, algorithm: Algorithm) -> Option<EncodingKey> {
     let material = auth.private_key.expose_secret().as_bytes();
     let block = pem::parse(material).ok();

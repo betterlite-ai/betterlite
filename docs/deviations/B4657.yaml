@@ -1,6 +1,6 @@
 task: B4657
 deviations:
-  - what: An unreachable token endpoint reports "token exchange failed: token endpoint unreachable (TransportError)"; LiteLLM names the caught httpx exception class (ConnectError, ReadError, Timeout) in the same slot.
+  - what: 'An unreachable token endpoint reports "token exchange failed: token endpoint unreachable (TransportError)"; LiteLLM names the caught httpx exception class (ConnectError, ReadError, Timeout) in the same slot.'
     why: betterlite's outbound client has one transport error type, so the detail names that type. The CredError variant, the 502-class mapping and the fail-closed behavior are the same; only the type name inside the detail differs.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L103-L107
   - what: A private-key JWT configured with ES512 is rejected as misconfigured; LiteLLM's PyJWT signs ES512 when the key is an EC P-521 key.
@@ -15,4 +15,7 @@ deviations:
   - what: A token minted for a different fingerprint over a still-live slot keeps that slot's earlier expiry in LiteLLM; betterlite gives the new token its own TTL from its expires_in.
     why: LiteLLM's InMemoryCache.set_cache leaves an existing TTL in place while it is unexpired, so a shorter-lived re-mint can be served past its own expiry. Betterlite stores the new expiry, so a cached token never outlives the lifetime the endpoint granted it. Only the slot's lifetime differs; the fingerprint mismatch itself re-mints in both.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L148-L153
+  - what: An EC private key in SEC1 form (a BEGIN EC PRIVATE KEY PEM block) is refused as misconfigured; LiteLLM hands the key string to PyJWT, whose cryptography loader reads SEC1 as well as PKCS#8 and PKCS#1.
+    why: jsonwebtoken's aws-lc signer builds an ECDSA key only from PKCS#8 DER, so betterlite parses the PEM itself and has no SEC1 to PKCS#8 conversion. RSA in PKCS#1 or PKCS#8 and EC or Ed in PKCS#8 all sign; a SEC1 EC key takes the same CredError.of_misconfigured path LiteLLM uses for a key it cannot load.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/outbound_credentials/token_endpoint.py#L269-L281
 kept_bugs: []
