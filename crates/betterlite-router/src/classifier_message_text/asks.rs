@@ -3,9 +3,7 @@ use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::MarkerPair;
-use crate::classifier_message_text::text::{
-    human_text, json_human_text, message_text, strip_reminder_blocks,
-};
+use crate::classifier_message_text::text::{message_text, strip_reminder_blocks};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExtractedAsk {
@@ -19,16 +17,51 @@ pub struct SystemPrompt {
     pub message_index: usize,
 }
 
-pub fn human_asks_newest_first(
-    messages: &[ChatMessage],
+// one message's role and human text, so a typed history and a raw body's messages share the scans
+pub trait ClassifierMessage {
+    fn classifier_role(&self) -> Option<&str>;
+    fn human_text(&self, markers: &[MarkerPair<'_>]) -> Result<String, ClassifierTextError>;
+}
+
+impl ClassifierMessage for ChatMessage {
+    fn classifier_role(&self) -> Option<&str> {
+        Some(role_name(self.role))
+    }
+
+    fn human_text(&self, markers: &[MarkerPair<'_>]) -> Result<String, ClassifierTextError> {
+        Ok(strip_reminder_blocks(
+            &message_text(self.content.as_ref())?,
+            markers,
+        ))
+    }
+}
+
+impl ClassifierMessage for Json {
+    fn classifier_role(&self) -> Option<&str> {
+        json_role(self)
+    }
+
+    fn human_text(&self, markers: &[MarkerPair<'_>]) -> Result<String, ClassifierTextError> {
+        Ok(strip_reminder_blocks(
+            &message_text(json_content(self))?,
+            markers,
+        ))
+    }
+}
+
+pub fn human_asks_newest_first<T>(
+    messages: &[T],
     markers: &[MarkerPair<'_>],
-) -> Result<Vec<ExtractedAsk>, ClassifierTextError> {
+) -> Result<Vec<ExtractedAsk>, ClassifierTextError>
+where
+    T: ClassifierMessage,
+{
     let mut asks: Vec<ExtractedAsk> = Vec::new();
     for (index, message) in messages.iter().enumerate().rev() {
-        if message.role != Role::User {
+        if message.classifier_role() != Some("user") {
             continue;
         }
-        let text = human_text(message.content.as_ref(), markers)?;
+        let text = message.human_text(markers)?;
         if !text.is_empty() {
             asks.push(ExtractedAsk {
                 text,
@@ -49,21 +82,26 @@ pub fn conversation_is_continuing(messages: Option<&[ChatMessage]>) -> bool {
     })
 }
 
-pub fn newest_turn_ask(
-    messages: &[ChatMessage],
+pub fn newest_turn_ask<T>(
+    messages: &[T],
     markers: &[MarkerPair<'_>],
-) -> Result<Option<ExtractedAsk>, ClassifierTextError> {
-    for (index, message) in messages.iter().enumerate().rev() {
-        if message.role != Role::User {
-            continue;
-        }
-        let text = human_text(message.content.as_ref(), markers)?;
-        return Ok((!text.is_empty()).then_some(ExtractedAsk {
-            text,
-            message_index: index,
-        }));
-    }
-    Ok(None)
+) -> Result<Option<ExtractedAsk>, ClassifierTextError>
+where
+    T: ClassifierMessage,
+{
+    let Some((index, message)) = messages
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, message)| message.classifier_role() == Some("user"))
+    else {
+        return Ok(None);
+    };
+    let text = message.human_text(markers)?;
+    Ok((!text.is_empty()).then_some(ExtractedAsk {
+        text,
+        message_index: index,
+    }))
 }
 
 pub fn current_ask_and_system_prompt(
@@ -88,21 +126,6 @@ pub fn current_ask_and_system_prompt(
         }
     }
     Ok((current_ask, system_prompt))
-}
-
-pub fn last_human_ask_index(
-    messages: &[ChatMessage],
-    markers: &[MarkerPair<'_>],
-) -> Result<Option<usize>, ClassifierTextError> {
-    for (index, message) in messages.iter().enumerate().rev() {
-        if message.role != Role::User {
-            continue;
-        }
-        if !human_text(message.content.as_ref(), markers)?.is_empty() {
-            return Ok(Some(index));
-        }
-    }
-    Ok(None)
 }
 
 pub fn is_reminder_only_turn(
@@ -141,27 +164,10 @@ pub fn newest_turn_is_human_ask(
     let Some(newest_activity) = newest_activity else {
         return Ok(false);
     };
-    Ok(last_human_ask_index(messages, markers)? == Some(newest_activity))
-}
-
-pub fn json_human_asks_newest_first(
-    messages: &[Json],
-    markers: &[MarkerPair<'_>],
-) -> Result<Vec<ExtractedAsk>, ClassifierTextError> {
-    let mut asks: Vec<ExtractedAsk> = Vec::new();
-    for (index, message) in messages.iter().enumerate().rev() {
-        if json_role(message) != Some("user") {
-            continue;
-        }
-        let text = json_human_text(json_content(message), markers)?;
-        if !text.is_empty() {
-            asks.push(ExtractedAsk {
-                text,
-                message_index: index,
-            });
-        }
-    }
-    Ok(asks)
+    let newest_ask = human_asks_newest_first(messages, markers)?
+        .first()
+        .map(|ask| ask.message_index);
+    Ok(newest_ask == Some(newest_activity))
 }
 
 #[must_use]

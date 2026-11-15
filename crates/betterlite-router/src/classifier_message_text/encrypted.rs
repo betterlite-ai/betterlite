@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 
-use crate::classifier_message_text::asks::json_human_asks_newest_first;
+use crate::classifier_message_text::asks::human_asks_newest_first;
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::MarkerPair;
 
@@ -57,7 +57,7 @@ where
     for item in items.iter().rev() {
         let resolved = resolve_item(item)?;
         if !resolved.is_empty()
-            && !json_human_asks_newest_first(&resolved, markers)
+            && !human_asks_newest_first(&resolved, markers)
                 .map_err(E::from)?
                 .is_empty()
         {

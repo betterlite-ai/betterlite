@@ -4,7 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatMessage, ContentPart, MessageContent, Role};
 use indexmap::IndexMap;
 
-use crate::classifier_message_text::asks::ExtractedAsk;
+use crate::classifier_message_text::asks::{ExtractedAsk, human_asks_newest_first};
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::{
     CODEX_REMINDER_MARKERS, DEFAULT_REMINDER_MARKERS, MarkerPair,
@@ -62,6 +62,13 @@ fn one_pair<'marker>(open: &'marker str, close: &'marker str) -> Vec<MarkerPair<
 
 fn ask_texts(asks: &[ExtractedAsk]) -> Vec<&str> {
     asks.iter().map(|ask| ask.text.as_str()).collect()
+}
+
+fn last_ask_index(messages: &[ChatMessage], markers: &[MarkerPair<'_>]) -> Option<usize> {
+    human_asks_newest_first(messages, markers)
+        .unwrap()
+        .first()
+        .map(|ask| ask.message_index)
 }
 
 fn resolver(

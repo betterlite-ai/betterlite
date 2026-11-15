@@ -4,9 +4,7 @@ use betterlite_openai::chat::ChatMessage;
 use crate::classifier_message_text::asks::{json_content, json_role, role_name};
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::markers::MarkerPair;
-use crate::classifier_message_text::text::{
-    human_text, json_human_text, json_message_text, message_text,
-};
+use crate::classifier_message_text::text::{message_text, strip_reminder_blocks};
 
 pub const PLAN_MODE_TOOL_NAME: &str = "exit_plan_mode";
 
@@ -29,15 +27,8 @@ impl PlanMessage<'_> {
 
     fn text(&self) -> Result<String, ClassifierTextError> {
         match self {
-            Self::Raw(message) => json_message_text(json_content(message)),
+            Self::Raw(message) => message_text(json_content(message)),
             Self::Typed(message) => message_text(message.content.as_ref()),
-        }
-    }
-
-    fn human_text(&self, markers: &[MarkerPair<'_>]) -> Result<String, ClassifierTextError> {
-        match self {
-            Self::Raw(message) => json_human_text(json_content(message), markers),
-            Self::Typed(message) => human_text(message.content.as_ref(), markers),
         }
     }
 }
@@ -108,7 +99,7 @@ fn system_scope_texts(
     let mut texts: Vec<String> = Vec::new();
     match body_system {
         Some(Json::Text(text)) => texts.push(text.clone()),
-        Some(Json::List(_)) => texts.push(json_message_text(body_system)?),
+        Some(Json::List(_)) => texts.push(message_text(body_system)?),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_)) | None => {}
     }
     for message in messages {
@@ -131,7 +122,7 @@ fn plan_last_human_ask_index(
         if message.role() != Some("user") {
             continue;
         }
-        if !message.human_text(markers)?.is_empty() {
+        if !strip_reminder_blocks(&message.text()?, markers).is_empty() {
             return Ok(Some(index));
         }
     }

@@ -1,22 +1,22 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::{MessageContent, Role};
+use betterlite_openai::chat::{ChatMessage, Role};
 use rstest::rstest;
 
 use super::{
     STILL_ACTIVE, SYSTEM_SENTINEL, TAIL_SENTINEL, ask_texts, body, codex_markers, default_markers,
-    encrypted_item, kind_part, one_pair, parts, resolved_ask, resolver, text, text_part,
+    encrypted_item, kind_part, last_ask_index, one_pair, parts, resolved_ask, resolver, text,
+    text_part,
 };
 use crate::classifier_message_text::asks::{
-    conversation_is_continuing, current_ask_and_system_prompt, human_asks_newest_first,
-    is_reminder_only_turn, json_human_asks_newest_first, last_human_ask_index, newest_turn_ask,
-    newest_turn_is_human_ask,
+    ExtractedAsk, conversation_is_continuing, current_ask_and_system_prompt,
+    human_asks_newest_first, is_reminder_only_turn, newest_turn_ask, newest_turn_is_human_ask,
 };
 use crate::classifier_message_text::encrypted::encrypted_classifier_task;
 use crate::classifier_message_text::error::ClassifierTextError;
 use crate::classifier_message_text::image::inline_image_part;
 use crate::classifier_message_text::markers::reminder_markers_for_request;
 use crate::classifier_message_text::plan::{PLAN_MODE_TOOL_NAME, matched_plan_mode_sentinel};
-use crate::classifier_message_text::text::{human_text, message_text, strip_reminder_blocks};
+use crate::classifier_message_text::text::{message_text, strip_reminder_blocks};
 
 #[derive(Debug, Clone, Copy)]
 enum Behavior {
@@ -126,22 +126,83 @@ fn classifier_message_text_behaviors(#[case] behavior: Behavior) {
         Behavior::MessageTextJoinsTextParts => assert_message_text_joins_text_parts(),
         Behavior::MessageTextKeepsPlainString => assert_message_text_keeps_plain_string(),
         Behavior::MessageTextDropsToolResults => assert_message_text_drops_tool_results(),
-        Behavior::StripDefaultReminder => assert_strip_default_reminder(),
+        Behavior::StripDefaultReminder => assert_eq!(
+            strip_reminder_blocks(
+                "before <system-reminder>hidden</system-reminder> after",
+                default_markers()
+            ),
+            "before after"
+        ),
         Behavior::StripCodexEnvelope => assert_strip_codex_envelope(),
         Behavior::StripNestedLeavesOuterTail => assert_strip_nested_leaves_outer_tail(),
         Behavior::StripUnclosedStays => assert_strip_unclosed_stays(),
-        Behavior::StripCaseInsensitive => assert_strip_case_insensitive(),
+        Behavior::StripCaseInsensitive => assert_eq!(
+            strip_reminder_blocks(
+                "<SYSTEM-REMINDER>upper</SYSTEM-REMINDER> keep",
+                default_markers()
+            ),
+            "keep"
+        ),
         Behavior::StripAdjacentBlocksJoin => assert_strip_adjacent_blocks_join(),
-        Behavior::HumanTextStripsBeforeMatching => assert_human_text_strips(),
-        Behavior::NewestAskSkipsToolTurns => assert_newest_ask_skips_tool_turns(),
-        Behavior::NewestAskSkipsReminderTurns => assert_newest_ask_skips_reminder_turns(),
+        Behavior::HumanTextStripsBeforeMatching => {
+            let messages = [text(
+                Role::User,
+                "<system-reminder>noise</system-reminder> the real ask",
+            )];
+            assert_asks(&messages, &["the real ask"]);
+        }
+        Behavior::NewestAskSkipsToolTurns => {
+            let messages = [
+                text(Role::User, "first ask"),
+                text(Role::Assistant, "calling the tool"),
+                parts(
+                    Role::User,
+                    vec![kind_part(
+                        "tool_result",
+                        "content",
+                        serde_json::json!("done"),
+                    )],
+                ),
+            ];
+            let asks = assert_asks(&messages, &["first ask"]);
+            assert_eq!(asks.first().unwrap().message_index, 0);
+        }
+        Behavior::NewestAskSkipsReminderTurns => {
+            let messages = [
+                text(Role::User, "the ask"),
+                text(Role::User, "<system-reminder>budget</system-reminder>"),
+            ];
+            assert_asks(&messages, &["the ask"]);
+        }
         Behavior::NewestTurnAsk => assert_newest_turn_ask(),
         Behavior::ReminderOnlyTextParts => assert_reminder_only_text_parts(),
         Behavior::NewestTurnWithTrailingSystem => assert_newest_turn_with_trailing_system(),
-        Behavior::CurrentAskAndSystemPrompt => assert_current_ask_and_system_prompt(),
+        Behavior::CurrentAskAndSystemPrompt => {
+            let messages = [
+                text(Role::System, "older system"),
+                text(Role::User, "older ask"),
+                text(Role::System, "newer system"),
+                text(Role::Assistant, "reply"),
+                text(Role::User, "newest ask"),
+            ];
+            assert_extracted(&messages, "newest ask", "newer system");
+        }
         Behavior::CurrentAskWithCodexMarkers => assert_current_ask_with_codex_markers(),
         Behavior::AskFunctionsUseCodexMarkers => assert_ask_functions_use_codex_markers(),
-        Behavior::SystemPromptNotStripped => assert_system_prompt_not_stripped(),
+        Behavior::SystemPromptNotStripped => {
+            let messages = [
+                text(
+                    Role::System,
+                    "<system-reminder>constraint</system-reminder>",
+                ),
+                text(Role::User, "ask"),
+            ];
+            assert_extracted(
+                &messages,
+                "ask",
+                "<system-reminder>constraint</system-reminder>",
+            );
+        }
         Behavior::ConversationContinuingWithAssistant => {
             assert_conversation_continuing_with_assistant()
         }
@@ -172,14 +233,59 @@ fn classifier_message_text_behaviors(#[case] behavior: Behavior) {
         Behavior::InlineImageAnthropicBase64 => assert_inline_image_anthropic_base64(),
         Behavior::InlineImageInputImage => assert_inline_image_input_image(),
         Behavior::EncryptedTaskKeptContent => assert_encrypted_task_kept_content(),
-        Behavior::EncryptedTaskSkippedForMessages => assert_encrypted_task_skipped_for_messages(),
+        Behavior::EncryptedTaskSkippedForMessages => {
+            assert_encrypted_skip(vec![encrypted_item()], true, vec![resolved_ask()]);
+        }
         Behavior::EncryptedTaskSkippedForYoungerAsk => {
-            assert_encrypted_task_skipped_for_younger_ask()
+            let items = vec![
+                encrypted_item(),
+                body(
+                    serde_json::json!({"type": "message", "role": "user", "content": "later ask"}),
+                ),
+            ];
+            let resolved = vec![
+                resolved_ask(),
+                vec![body(
+                    serde_json::json!({"role": "user", "content": "later ask"}),
+                )],
+            ];
+            assert_encrypted_skip(items, false, resolved);
         }
         Behavior::EncryptedTaskSkippedWithoutEncryptedPart => {
-            assert_encrypted_task_skipped_without_encrypted_part();
+            let items = vec![body(serde_json::json!({
+                "type": "agent_message",
+                "content": [{"type": "input_text", "text": "hello"}]
+            }))];
+            assert_encrypted_skip(items, false, vec![resolved_ask()]);
         }
     }
+}
+
+fn assert_asks(messages: &[ChatMessage], expected: &[&str]) -> Vec<ExtractedAsk> {
+    let asks = human_asks_newest_first(messages, default_markers()).unwrap();
+    assert_eq!(ask_texts(&asks), expected);
+    asks
+}
+
+fn assert_extracted(messages: &[ChatMessage], expected_ask: &str, expected_system: &str) {
+    let (ask, system) = current_ask_and_system_prompt(messages, default_markers()).unwrap();
+    assert_eq!(ask.map(|ask| ask.text).as_deref(), Some(expected_ask));
+    assert_eq!(
+        system.map(|system| system.text).as_deref(),
+        Some(expected_system)
+    );
+}
+
+fn assert_encrypted_skip(items: Vec<Json>, has_messages: bool, resolved: Vec<Vec<Json>>) {
+    let input = Json::List(items);
+    let task = encrypted_classifier_task::<ClassifierTextError, _>(
+        Some(&input),
+        has_messages,
+        resolver(resolved),
+        default_markers(),
+    )
+    .unwrap();
+    assert_eq!(task, None);
 }
 
 fn assert_message_text_joins_text_parts() {
@@ -217,16 +323,6 @@ fn assert_message_text_drops_tool_results() {
     assert_eq!(message_text(message.content.as_ref()).unwrap(), "");
 }
 
-fn assert_strip_default_reminder() {
-    assert_eq!(
-        strip_reminder_blocks(
-            "before <system-reminder>hidden</system-reminder> after",
-            default_markers()
-        ),
-        "before after"
-    );
-}
-
 fn assert_strip_codex_envelope() {
     assert_eq!(
         strip_reminder_blocks(
@@ -257,16 +353,6 @@ fn assert_strip_unclosed_stays() {
     assert_eq!(strip_reminder_blocks(text, default_markers()), text);
 }
 
-fn assert_strip_case_insensitive() {
-    assert_eq!(
-        strip_reminder_blocks(
-            "<SYSTEM-REMINDER>upper</SYSTEM-REMINDER> keep",
-            default_markers()
-        ),
-        "keep"
-    );
-}
-
 fn assert_strip_adjacent_blocks_join() {
     assert_eq!(
         strip_reminder_blocks(
@@ -275,42 +361,6 @@ fn assert_strip_adjacent_blocks_join() {
         ),
         ""
     );
-}
-
-fn assert_human_text_strips() {
-    let content =
-        MessageContent::Text("<system-reminder>noise</system-reminder> the real ask".to_owned());
-    assert_eq!(
-        human_text(Some(&content), default_markers()).unwrap(),
-        "the real ask"
-    );
-}
-
-fn assert_newest_ask_skips_tool_turns() {
-    let messages = [
-        text(Role::User, "first ask"),
-        text(Role::Assistant, "calling the tool"),
-        parts(
-            Role::User,
-            vec![kind_part(
-                "tool_result",
-                "content",
-                serde_json::json!("done"),
-            )],
-        ),
-    ];
-    let asks = human_asks_newest_first(&messages, default_markers()).unwrap();
-    assert_eq!(ask_texts(&asks), ["first ask"]);
-    assert_eq!(asks.first().unwrap().message_index, 0);
-}
-
-fn assert_newest_ask_skips_reminder_turns() {
-    let messages = [
-        text(Role::User, "the ask"),
-        text(Role::User, "<system-reminder>budget</system-reminder>"),
-    ];
-    let asks = human_asks_newest_first(&messages, default_markers()).unwrap();
-    assert_eq!(ask_texts(&asks), ["the ask"]);
 }
 
 fn assert_newest_turn_ask() {
@@ -337,19 +387,6 @@ fn assert_reminder_only_text_parts() {
 fn assert_newest_turn_with_trailing_system() {
     let messages = [text(Role::User, "ask"), text(Role::System, "trailing")];
     assert!(newest_turn_is_human_ask(Some(&messages), default_markers()).unwrap());
-}
-
-fn assert_current_ask_and_system_prompt() {
-    let messages = [
-        text(Role::System, "older system"),
-        text(Role::User, "older ask"),
-        text(Role::System, "newer system"),
-        text(Role::Assistant, "reply"),
-        text(Role::User, "newest ask"),
-    ];
-    let (ask, system) = current_ask_and_system_prompt(&messages, default_markers()).unwrap();
-    assert_eq!(ask.unwrap().text, "newest ask");
-    assert_eq!(system.unwrap().text, "newer system");
 }
 
 fn assert_current_ask_with_codex_markers() {
@@ -392,14 +429,8 @@ fn assert_ask_functions_use_codex_markers() {
         text(Role::Assistant, "reply"),
         text(Role::User, "<environment_context>ctx</environment_context>"),
     ];
-    assert_eq!(
-        last_human_ask_index(&messages, codex_markers()).unwrap(),
-        Some(0)
-    );
-    assert_eq!(
-        last_human_ask_index(&messages, default_markers()).unwrap(),
-        Some(2)
-    );
+    assert_eq!(last_ask_index(&messages, codex_markers()), Some(0));
+    assert_eq!(last_ask_index(&messages, default_markers()), Some(2));
     let codex_asks = human_asks_newest_first(&messages, codex_markers()).unwrap();
     assert_eq!(ask_texts(&codex_asks), ["the question"]);
     let default_asks = human_asks_newest_first(&messages, default_markers()).unwrap();
@@ -412,21 +443,6 @@ fn assert_ask_functions_use_codex_markers() {
     );
     assert!(!newest_turn_is_human_ask(Some(&messages), codex_markers()).unwrap());
     assert!(newest_turn_is_human_ask(Some(&messages), default_markers()).unwrap());
-}
-
-fn assert_system_prompt_not_stripped() {
-    let messages = [
-        text(
-            Role::System,
-            "<system-reminder>constraint</system-reminder>",
-        ),
-        text(Role::User, "ask"),
-    ];
-    let (_, system) = current_ask_and_system_prompt(&messages, default_markers()).unwrap();
-    assert_eq!(
-        system.unwrap().text,
-        "<system-reminder>constraint</system-reminder>"
-    );
 }
 
 fn assert_conversation_continuing_with_assistant() {
@@ -694,52 +710,6 @@ fn assert_encrypted_task_kept_content() {
     );
 }
 
-fn assert_encrypted_task_skipped_for_messages() {
-    let input = Json::List(vec![encrypted_item()]);
-    let task = encrypted_classifier_task::<ClassifierTextError, _>(
-        Some(&input),
-        true,
-        resolver(vec![resolved_ask()]),
-        default_markers(),
-    )
-    .unwrap();
-    assert_eq!(task, None);
-}
-
-fn assert_encrypted_task_skipped_for_younger_ask() {
-    let items = vec![
-        encrypted_item(),
-        body(serde_json::json!({"type": "message", "role": "user", "content": "later ask"})),
-    ];
-    let input = Json::List(items);
-    let resolved = vec![
-        resolved_ask(),
-        vec![body(
-            serde_json::json!({"role": "user", "content": "later ask"}),
-        )],
-    ];
-    let task =
-        encrypted_classifier_task(Some(&input), false, resolver(resolved), default_markers())
-            .unwrap();
-    assert_eq!(task, None);
-}
-
-fn assert_encrypted_task_skipped_without_encrypted_part() {
-    let items = vec![body(serde_json::json!({
-        "type": "agent_message",
-        "content": [{"type": "input_text", "text": "hello"}]
-    }))];
-    let input = Json::List(items);
-    let task = encrypted_classifier_task(
-        Some(&input),
-        false,
-        resolver(vec![resolved_ask()]),
-        default_markers(),
-    )
-    .unwrap();
-    assert_eq!(task, None);
-}
-
 #[test]
 fn json_human_asks_use_raw_message_roles() {
     let messages = vec![
@@ -749,7 +719,7 @@ fn json_human_asks_use_raw_message_roles() {
         body(serde_json::json!({"role": "assistant", "content": "reply"})),
         body(serde_json::json!({"role": "user", "content": 7})),
     ];
-    let asks = json_human_asks_newest_first(&messages, default_markers()).unwrap();
+    let asks = human_asks_newest_first(&messages, default_markers()).unwrap();
     assert_eq!(ask_texts(&asks), ["ask"]);
     assert_eq!(asks.first().unwrap().message_index, 0);
 }
