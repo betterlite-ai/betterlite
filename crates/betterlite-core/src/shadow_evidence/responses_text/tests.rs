@@ -54,8 +54,14 @@ const MESSAGE: &str = r#"{"type":"message","id":"msg_1","role":"assistant","stat
     "[tool call] search({})"
 )]
 #[case::empty_output(&response("[]"), "")]
-#[case::missing_id(r#"{"created_at":1,"output":[]}"#, "")]
-#[case::missing_created_at(r#"{"id":"resp_1","output":[]}"#, "")]
+#[case::missing_id(
+    r#"{"created_at":1,"output":[{"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Hello","annotations":[]}]}]}"#,
+    ""
+)]
+#[case::missing_created_at(
+    &format!(r#"{{"id":"resp_1","output":[{MESSAGE}]}}"#),
+    ""
+)]
 #[case::output_not_a_list(&response(r#""x""#), "")]
 #[case::output_item_not_an_object(&response(r#"["text"]"#), "")]
 #[case::non_object_response("5", "")]
@@ -82,6 +88,13 @@ const MESSAGE: &str = r#"{"type":"message","id":"msg_1","role":"assistant","stat
 #[case::message_without_status_still_reads_text(
     &response(r#"[{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"Hello","annotations":[]}]}]"#),
     "Hello"
+)]
+#[case::prose_only_keeps_its_whitespace(
+    &response(&format!(
+        "[{}]",
+        with_message(r#"[{"type":"output_text","text":" hi ","annotations":[]}]"#)
+    )),
+    " hi "
 )]
 #[case::trailing_prose_space_is_trimmed_around_a_call(
     &response(&format!(

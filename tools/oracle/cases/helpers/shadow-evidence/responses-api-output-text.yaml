@@ -60,7 +60,30 @@ calls:
       operation: responses_text
       response:
         created_at: 1
-        output: []
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: Hello
+                annotations: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: responses_text
+      response:
+        id: resp_1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: Hello
+                annotations: []
       metadata: {}
       routed_model: ""
 env: {}

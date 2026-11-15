@@ -28,5 +28,15 @@ calls:
             finish_reason: ""
       metadata: {}
       routed_model: gpt-4o
+  - b4081:
+      operation: chat_text
+      response:
+        choices:
+          - message:
+              role: assistant
+              content: " hi "
+            finish_reason: stop
+      metadata: {}
+      routed_model: gpt-4o
 env: {}
 compare: {ignore: []}

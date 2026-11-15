@@ -42,6 +42,10 @@ fn chat(message: &str) -> String {
     r#"{"choices":[{"message":{"tool_calls":{"one":{}},"function_call":{"name":"legacy","arguments":"{}"}}}]}"#,
     "[tool call] legacy({})"
 )]
+#[case::listed_calls_win_over_function_call(
+    r#"{"choices":[{"message":{"content":null,"tool_calls":[{"function":{"name":"search","arguments":"{}"}}],"function_call":{"name":"legacy","arguments":"{}"}}}]}"#,
+    "[tool call] search({})"
+)]
 #[case::custom_tool_call(
     r#"{"choices":[{"message":{"content":null,"tool_calls":[{"type":"custom","custom":{"name":"c","input":"raw"}}]}}]}"#,
     "[tool call] c(raw)"
@@ -81,6 +85,11 @@ fn chat(message: &str) -> String {
     r#"{"choices":[{"message":{"content":"hi","tool_calls":{}}}]}"#,
     "hi"
 )]
+#[case::empty_function_call_is_absent(
+    r#"{"choices":[{"message":{"content":"hi","function_call":{}}}]}"#,
+    "hi"
+)]
+#[case::prose_only_keeps_its_whitespace(r#"{"choices":[{"message":{"content":" hi "}}]}"#, " hi ")]
 #[case::prose_whitespace_is_trimmed_around_calls(
     r#"{"choices":[{"message":{"content":" hi ","tool_calls":[{"function":{"name":"f","arguments":"{}"}}]}}]}"#,
     "hi  [tool call] f({})"
