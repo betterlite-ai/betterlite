@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Error as IoError;
 use std::path::PathBuf;
 use std::str::FromStr as _;
 use std::sync::Mutex;
@@ -22,7 +21,7 @@ use super::options::{map_openai_params, request_body, supported_params};
 use super::pricing::{ImageBilling, compatible_image_cost};
 use super::reply::decode_compatible_image_reply;
 use crate::api::image_contracts::records::{
-    ImageData, ImageHeaders, ImageHttpResponse, ImageResponse,
+    ImageData, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
 };
 
 fn settings(environment: &[(&str, &str)]) -> Settings {
@@ -41,7 +40,7 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn params(entries: &[(&str, &str)]) -> crate::api::image_contracts::records::ImageParams {
+fn params(entries: &[(&str, &str)]) -> ImageParams {
     entries
         .iter()
         .map(|(name, value)| {
@@ -827,7 +826,7 @@ fn a_rate_of_the_wrong_type_names_the_field() {
     assert!(matches!(error, ImageCostError::WrongFieldType { .. }));
 }
 
-fn check_seed(name: &str, bytes: &[u8], host: Host) -> Result<(), IoError> {
+fn check_seed(name: &str, bytes: &[u8], host: Host) {
     let response = ImageHttpResponse {
         status_code: 200,
         headers: ImageHeaders::new(),
@@ -839,7 +838,6 @@ fn check_seed(name: &str, bytes: &[u8], host: Host) -> Result<(), IoError> {
         Host::CometApi => name.starts_with("valid-cometapi"),
     };
     assert!(!must_decode || decoded.is_ok(), "{name}: {decoded:?}");
-    Ok(())
 }
 
 #[test]
@@ -852,14 +850,11 @@ fn replays_compatible_image_corpus() {
         .collect::<Vec<_>>();
     paths.sort();
     assert!(!paths.is_empty(), "no compatible image reply corpus seeds");
-    paths
-        .into_iter()
-        .try_for_each(|path| {
-            let bytes = fs::read(&path)?;
-            let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-            [Host::Aiml, Host::CometApi]
-                .iter()
-                .try_for_each(|host| check_seed(&name, &bytes, *host))
-        })
-        .unwrap();
+    for path in paths {
+        let bytes = fs::read(&path).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+        for host in [Host::Aiml, Host::CometApi] {
+            check_seed(&name, &bytes, host);
+        }
+    }
 }
