@@ -19,8 +19,8 @@ use chrono::DateTime;
 use rstest::rstest;
 
 use super::super::logging::{
-    PrePostLogger, REDACTED_VALUE, SECRET_FIELD, SonioxLogger, SonioxPostCall, SonioxPreCall,
-    log_post_call, log_pre_call, redacted_body,
+    PrePostLogger, REDACTED_VALUE, SECRET_FIELD, SonioxEvent, SonioxLogger, SonioxPostCall,
+    SonioxPreCall, log_post_call, log_pre_call, redacted_body,
 };
 
 #[derive(Default)]
@@ -42,15 +42,12 @@ impl Recorder {
 }
 
 impl SonioxLogger for Recorder {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
         self.fail()?;
-        self.pre = Some(record);
-        Ok(())
-    }
-
-    fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError> {
-        self.fail()?;
-        self.post = Some(record);
+        match event {
+            SonioxEvent::PreCall(record) => self.pre = Some(record),
+            SonioxEvent::PostCall(record) => self.post = Some(record),
+        }
         Ok(())
     }
 }
@@ -143,7 +140,7 @@ fn redacts_every_non_null_secret_value(#[case] value: &str) {
     );
     assert_eq!(redacted.get("model"), Some(&Json::Text(String::from("m"))));
     assert_eq!(
-        body.get(SECRET_FIELD).map(|field| field.to_string()),
+        body.get(SECRET_FIELD).map(ToString::to_string),
         Some(String::from(value))
     );
 }
@@ -311,8 +308,8 @@ fn records_the_pre_call_through_b249() {
             state: &mut state,
             env: &env,
         };
-        log_pre_call(&mut logger, "https://api.soniox.test", &body);
-    }
+        log_pre_call(&mut logger, "https://api.soniox.test", &body)
+    };
 
     let details = &state.model_call_details;
     let Some(Json::Object(additional)) = details.get("additional_args") else {
@@ -354,8 +351,8 @@ fn records_the_post_call_through_b249() {
             Some(&AudioFile::Text("clip.wav")),
             &response,
             &body,
-        );
-    }
+        )
+    };
 
     let expected_json: Json = serde_json::from_str(
         r#"{

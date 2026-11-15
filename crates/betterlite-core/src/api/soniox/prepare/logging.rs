@@ -26,9 +26,13 @@ pub struct SonioxPostCall {
     pub body: IndexMap<String, Json>,
 }
 
+pub enum SonioxEvent {
+    PreCall(SonioxPreCall),
+    PostCall(SonioxPostCall),
+}
+
 pub trait SonioxLogger {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError>;
-    fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError>;
+    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError>;
 }
 
 pub struct PrePostLogger<'call, 'env> {
@@ -37,47 +41,43 @@ pub struct PrePostLogger<'call, 'env> {
 }
 
 impl SonioxLogger for PrePostLogger<'_, '_> {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
-        pre_call(
-            self.state,
-            &PreCall {
-                input: Json::Null,
-                model: None,
-                additional_args: AdditionalArgs {
-                    api_base: Some(record.url),
-                    headers: None,
-                    complete_input_dict: Some(RawBody::Object(record.body)),
-                    request_str: None,
-                    openai_sdk: None,
-                    passthrough: IndexMap::from([(
-                        String::from(ATRANSCRIPTION_FIELD),
-                        Json::Bool(true),
-                    )]),
-                },
-            },
-            self.env,
-        )
-        .map(drop)
-    }
-
-    fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError> {
-        post_call(
-            self.state,
-            &PostCall {
-                original_response: record.original_response,
-                input: record.input,
-                additional_args: AdditionalArgs {
-                    api_base: None,
-                    headers: None,
-                    complete_input_dict: Some(RawBody::Object(record.body)),
-                    request_str: None,
-                    openai_sdk: None,
-                    passthrough: IndexMap::new(),
-                },
-            },
-            self.env,
-        );
-        Ok(())
+    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
+        match event {
+            SonioxEvent::PreCall(record) => {
+                let call = PreCall {
+                    input: Json::Null,
+                    model: None,
+                    additional_args: AdditionalArgs {
+                        api_base: Some(record.url),
+                        headers: None,
+                        complete_input_dict: Some(RawBody::Object(record.body)),
+                        request_str: None,
+                        openai_sdk: None,
+                        passthrough: IndexMap::from([(
+                            String::from(ATRANSCRIPTION_FIELD),
+                            Json::Bool(true),
+                        )]),
+                    },
+                };
+                pre_call(self.state, &call, self.env).map(drop)
+            }
+            SonioxEvent::PostCall(record) => {
+                let call = PostCall {
+                    original_response: record.original_response,
+                    input: record.input,
+                    additional_args: AdditionalArgs {
+                        api_base: None,
+                        headers: None,
+                        complete_input_dict: Some(RawBody::Object(record.body)),
+                        request_str: None,
+                        openai_sdk: None,
+                        passthrough: IndexMap::new(),
+                    },
+                };
+                post_call(self.state, &call, self.env);
+                Ok(())
+            }
+        }
     }
 }
 
@@ -87,7 +87,7 @@ pub fn log_pre_call(logger: &mut dyn SonioxLogger, api_base: &str, body: &Object
         url: format!("{api_base}{TRANSCRIPTIONS_PATH}"),
         body: redacted_body(body),
     };
-    drop(logger.pre_call(record));
+    drop(logger.record(SonioxEvent::PreCall(record)));
 }
 
 pub fn log_post_call(
@@ -104,7 +104,7 @@ pub fn log_post_call(
         original_response: Json::Object(logged_object(original_response)),
         body: redacted_body(body),
     };
-    drop(logger.post_call(record));
+    drop(logger.record(SonioxEvent::PostCall(record)));
 }
 
 #[must_use]

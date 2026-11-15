@@ -5,7 +5,8 @@ use betterlite_core::api::soniox::prepare::body::build_create_body;
 use betterlite_core::api::soniox::prepare::decode::decode_soniox_reply;
 use betterlite_core::api::soniox::prepare::error::PrepareError;
 use betterlite_core::api::soniox::prepare::logging::{
-    SonioxLogger, SonioxPostCall, SonioxPreCall, log_post_call, log_pre_call, redacted_body,
+    SonioxEvent, SonioxLogger, SonioxPostCall, SonioxPreCall, log_post_call, log_pre_call,
+    redacted_body,
 };
 use betterlite_core::api::soniox::prepare::raise::raise_for_response;
 use betterlite_core::api::soniox::prepare::{PrepareInput, Prepared, prepare};
@@ -37,32 +38,27 @@ impl Recorder {
 }
 
 impl SonioxLogger for Recorder {
-    fn pre_call(&mut self, record: SonioxPreCall) -> Result<(), PrePostError> {
+    fn record(&mut self, event: SonioxEvent) -> Result<(), PrePostError> {
         self.refuse_when_failing()?;
-        let SonioxPreCall { url, body } = record;
-        self.recorded = Some(json!({
-            "input": Value::Null,
-            "additional_args": {
-                "api_base": url,
-                "atranscription": true,
-                "complete_input_dict": body,
-            },
-        }));
-        Ok(())
-    }
-
-    fn post_call(&mut self, record: SonioxPostCall) -> Result<(), PrePostError> {
-        self.refuse_when_failing()?;
-        let SonioxPostCall {
-            input,
-            original_response,
-            body,
-        } = record;
-        self.recorded = Some(json!({
-            "input": input,
-            "additional_args": { "complete_input_dict": body },
-            "original_response": original_response,
-        }));
+        self.recorded = Some(match event {
+            SonioxEvent::PreCall(SonioxPreCall { url, body }) => json!({
+                "input": Value::Null,
+                "additional_args": {
+                    "api_base": url,
+                    "atranscription": true,
+                    "complete_input_dict": body,
+                },
+            }),
+            SonioxEvent::PostCall(SonioxPostCall {
+                input,
+                original_response,
+                body,
+            }) => json!({
+                "input": input,
+                "additional_args": { "complete_input_dict": body },
+                "original_response": original_response,
+            }),
+        });
         Ok(())
     }
 }
