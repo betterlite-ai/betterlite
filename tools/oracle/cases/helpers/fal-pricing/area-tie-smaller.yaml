@@ -1,0 +1,27 @@
+kind: helper
+name: fal-pricing-area-tie-smaller
+call:
+  fal_pricing:
+    operation: area_tie_smaller
+    model: fal_ai/fal-ai/tie
+    catalog:
+      fal_ai/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.75}
+      fal_ai/high/1000-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.1}
+      fal_ai/high/1100-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.2}
+    cases:
+      - images: [{}]
+        optional_params: {image_size: {width: 1050, height: 1000}}
+        model_info: null
+      - images: [{}]
+        optional_params: {image_size: {width: 1150, height: 1000}}
+        model_info: null
+      - images: [{}]
+        optional_params: {}
+        model_info: null
+      - images: [{width: 1000, height: 1000}]
+        optional_params: {}
+        model_info: null
+    passthrough_cases: []
+env: {}
+compare:
+  ignore: []
