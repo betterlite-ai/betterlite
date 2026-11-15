@@ -3,8 +3,6 @@ config: |
   model_list:
     - model_name: live-target
       litellm_params: {model: openai/live-target-upstream, api_base: "{{upstream}}", api_key: oracle-key}
-    - model_name: live-target
-      litellm_params: {model: openai/live-target-upstream, api_base: "{{upstream}}", api_key: oracle-key}
 env: {}
 request:
   method: POST
