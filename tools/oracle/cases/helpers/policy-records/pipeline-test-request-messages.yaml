@@ -1,0 +1,26 @@
+kind: helper
+name: pipeline-test-request-messages
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PipelineTestRequest
+    value:
+      pipeline:
+        mode: pre_call
+        steps:
+          - guardrail: hipaa
+      test_messages:
+        - role: user
+          content: hello
+        - role: assistant
+          content: hi
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PipelineTestRequest
+      value:
+        pipeline: {}
+env: {}
+compare: {ignore: []}
