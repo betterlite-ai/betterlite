@@ -23,16 +23,14 @@ fn value_text(value: &GuardrailValue) -> String {
 fn evidence_header(metadata: &mut BTreeMap<String, GuardrailValue>) -> Option<String> {
     let evidence = metadata.get("pillar_evidence")?;
     let truncated = truncate_evidence_payload(evidence, MAX_PILLAR_HEADER_VALUE_BYTES);
-    let was_truncated = truncated.was_truncated;
-    let encoded = truncated.encoded;
     metadata.insert("pillar_evidence".to_owned(), truncated.evidence);
-    if was_truncated {
+    if truncated.was_truncated {
         metadata.insert(
             "pillar_evidence_truncated".to_owned(),
             GuardrailValue::Boolean(true),
         );
     }
-    Some(encoded)
+    Some(truncated.encoded)
 }
 
 // LiteLLM's build_pillar_response_headers, plus the truncated evidence and header map its store keeps
