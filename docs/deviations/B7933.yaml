@@ -1,0 +1,32 @@
+task: B7933
+deviations:
+  - what: Names imported from the openai package through litellm.types.llms.openai are replaced by betterlite's own local equivalents.
+    why: The wheel does not depend on openai or httpx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L7-L12
+  - what: DynamoTextType, PolicyMethod and PolicyApplicableTo derive from enum.StrEnum where LiteLLM declares them as class X(str, enum.Enum).
+    why: The repository's ruff rules require StrEnum over a str mixin. Members, values and compare-by-value behavior are identical; str() returns the value rather than Class.MEMBER, and Python runtime formatting is outside the compatibility policy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py#L22-L38
+  - what: Open JSON positions are declared as dict[str, JsonValue] where LiteLLM writes a bare dict or dict[str, Any], and coerce_stream_holdback_value takes a JsonValue where LiteLLM takes Any, so a non-JSON Python value in such a field raises invalid-json-value where LiteLLM accepts and keeps it.
+    why: The repository's ast-grep rules reject Any and bare dict in type positions. JsonValue names the same open JSON, and the values these fields and functions receive over the API arrive as JSON.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L41-L44
+  - what: EnkryptAIGuardrailConfigModel validates a supplied optional_params value into a BaseModel that can be dumped; LiteLLM leaves the generic parameter of its base unresolved, so the value becomes a bare BaseModel whose model_dump and repr raise TypeError.
+    why: LiteLLM cannot process a supplied optional_params value for this class at all, so no working setup can rely on the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/enkryptai.py#L142
+  - what: DynamoAIGuardrailConfigModel validates a supplied optional_params value into a BaseModel that can be dumped; LiteLLM leaves the generic parameter of its base unresolved, so the value becomes a bare BaseModel whose model_dump and repr raise TypeError.
+    why: LiteLLM cannot process a supplied optional_params value for this class at all, so no working setup can rely on the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/dynamoai.py#L99
+  - what: GuardrailsAIGuardrailConfigModel validates a supplied optional_params value into a BaseModel that can be dumped; LiteLLM leaves the generic parameter of its base unresolved, so the value becomes a bare BaseModel whose model_dump and repr raise TypeError.
+    why: LiteLLM cannot process a supplied optional_params value for this class at all, so no working setup can rely on the behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/guardrails_ai.py#L8
+  - what: structured_messages_from_response takes a JsonValue and returns rows typed as a role-keyed TypedDict with any further keys allowed, where LiteLLM declares object and Sequence[AllMessageValues] and casts the unchecked JSON.
+    why: Validating against betterlite's AllMessageValues drops extra message keys and rejects rows that carry only a role, which changes what LiteLLM passes through, and betterlite's rules forbid object and cast.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L162-L167
+  - what: GenericGuardrailAPIResponse.from_dict takes dict[str, JsonValue] instead of a bare dict, and its structured_messages attribute holds the role-keyed rows.
+    why: The wheel types every JSON payload it accepts and keeps the whole payload to JSON values instead of an untyped dict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L203-L216
+  - what: The ported models carry no pydantic Field descriptions and no class docstrings, so model_json_schema() has no description keys where LiteLLM's does, and the provider_specific_params UI response shows the field name instead of LiteLLM's help text. Keys, required keys, types, Literal values, defaults, constraints and json_schema_extra entries are unchanged.
+    why: The repository keeps no docstrings and caps a module at 300 lines; the description prose is most of the LiteLLM files, while every key, type, default and limit stays identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L41-L44
+  - what: GenericGuardrailAPIResponse is a dataclass with eq and repr disabled whose generated __init__ takes the same seven annotated parameters in the same order with the same defaults as LiteLLM's hand-written __init__, so instances assign and expose the same attributes while the class is a dataclass, carries its defaulted fields as class-level attributes and gains a __match_args__ tuple.
+    why: A hand-written seven-argument __init__ trips ruff PLR0913 and PLR0917 and the task cannot add a suppression; the generated constructor keeps LiteLLM's signature, positional construction, attribute identity and identity-based equality.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/generic_guardrail_api.py#L170-L200
