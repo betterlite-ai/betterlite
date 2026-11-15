@@ -682,7 +682,7 @@ fn supplied_openai_is_rejected() {
     supplied_openai.atranscription = true;
     let mut supplied_cache = Cache::default();
     let async_error = start(&inputs, &mut supplied_cache, &supplied_openai, &mut logger)
-        .expect_err("async rejects v1");
+        .expect_err("async rejects a supplied OpenAI client");
     assert_eq!(async_error.status(), Some(500));
     assert_eq!(
         async_error.to_string(),
