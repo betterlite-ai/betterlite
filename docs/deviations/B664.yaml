@@ -3,9 +3,6 @@ deviations:
   - what: A string toolUse input that holds NaN, Infinity or -Infinity is not JSON in betterlite, so the arguments become {} instead of the non-JSON text NaN.
     why: Python's json.loads accepts those tokens, but they are not valid JSON and every OpenAI realtime client would fail to parse the function_call_arguments.done event that carries them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1186
-  - what: A string toolUse input nested more than 128 levels deep becomes {}, and a toolUse event whose input nests that deep is refused with a typed error.
-    why: The parser caps nesting so that a hostile tool input cannot exhaust the stack, where json.loads only stops at Python's recursion limit.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L1186
   - what: A usage difference that does not fit in 64 bits returns a typed error instead of a larger integer.
     why: The cumulative usage counts are 64-bit integers in the shared usage record, so a delta outside that range cannot be represented on the wire.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/realtime/transformation.py#L863-L875
