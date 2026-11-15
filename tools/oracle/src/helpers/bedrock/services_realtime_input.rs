@@ -1,15 +1,25 @@
+use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
+
 use betterlite_bedrock::realtime_input::RealtimeInput;
-use betterlite_bedrock::realtime_input::decode::{ClientEvent, decode_realtime_client_input};
 use betterlite_bedrock::realtime_input::error::InputError;
 use betterlite_bedrock::realtime_session::RealtimeSession;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
+use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use super::services_realtime_session::FixedIds;
 use crate::helpers::{Helper, HelperResult, OrHelperError};
 
 mod tests;
+
+const INVALID_JSON: &str = "Invalid JSON message";
+const UNKNOWN_TYPE: &str = "Unknown message type: ";
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -59,8 +69,18 @@ fn run_step(state: &mut RealtimeInput, step: &Step, source: &FixedIds) -> Helper
             Vec::new(),
         ),
         Step::Send { message } => {
-            let warnings = warning_kinds(message);
-            match state.transform_realtime_request(message.as_bytes(), source) {
+            let warnings = Warnings::default();
+            let subscriber = registry().with(warnings.clone());
+            let outcome = with_default(subscriber, || {
+                state.transform_realtime_request(message.as_bytes(), source)
+            });
+            let captured = warnings
+                .0
+                .lock()
+                .map(|messages| messages.clone())
+                .unwrap_or_default();
+            let warnings = warning_kinds(&captured);
+            match outcome {
                 Ok(frames) => (true, serde_json::to_value(frames)?, warnings),
                 Err(InputError::Malformed { .. } | InputError::InvalidJson { .. }) => {
                     (false, json!([]), warnings)
@@ -80,10 +100,44 @@ fn run_step(state: &mut RealtimeInput, step: &Step, source: &FixedIds) -> Helper
     }))
 }
 
-fn warning_kinds(message: &str) -> Vec<String> {
-    match decode_realtime_client_input(message.as_bytes()) {
-        Err(InputError::InvalidJson { .. }) => vec!["invalid_json".to_owned()],
-        Ok(ClientEvent::Unknown(name)) => vec![format!("unknown_type:{name}")],
-        Ok(_) | Err(InputError::Malformed { .. }) => Vec::new(),
+#[derive(Clone, Default)]
+struct Warnings(Arc<Mutex<Vec<String>>>);
+
+#[derive(Default)]
+struct Message(String);
+
+impl Visit for Message {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
     }
+}
+
+impl<S: Subscriber> Layer<S> for Warnings {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        if *event.metadata().level() != Level::WARN {
+            return;
+        }
+        let mut message = Message::default();
+        event.record(&mut message);
+        if let Ok(mut messages) = self.0.lock() {
+            messages.push(message.0.trim_matches('"').to_owned());
+        }
+    }
+}
+
+fn warning_kinds(messages: &[String]) -> Vec<String> {
+    messages
+        .iter()
+        .filter_map(|message| {
+            if message.starts_with(INVALID_JSON) {
+                Some("invalid_json".to_owned())
+            } else {
+                message
+                    .strip_prefix(UNKNOWN_TYPE)
+                    .map(|kind| format!("unknown_type:{kind}"))
+            }
+        })
+        .collect()
 }
