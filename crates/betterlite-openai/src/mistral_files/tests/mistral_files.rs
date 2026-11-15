@@ -6,10 +6,10 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use rstest::rstest;
 
 use super::super::error::MistralFilesError;
-use super::super::records::{MistralFile, MistralFileDeleted, MistralPurpose};
+use super::super::records::{MistralFile, MistralFileDeleted, MistralFileList, MistralPurpose};
 use super::super::transformation::{
     FileUploadRequest, SUPPORTED_OPENAI_PARAMS, create_upload, file_url, list_request,
-    openai_purpose, to_file_deleted, to_file_object, upload_purpose,
+    openai_purpose, to_file_deleted, to_file_list, to_file_object, upload_purpose,
 };
 use super::settings;
 use crate::files::records::{BinaryContent, FileKind, FileStatus, FilesPurpose};
@@ -239,6 +239,46 @@ fn readback_keeps_a_supplied_creation_time_and_expiry() {
     assert_eq!(object.created_at, 7);
     assert_eq!(object.expires_at, Some(9));
     assert_eq!(object.purpose, FilesPurpose::Batch);
+}
+
+#[test]
+fn a_list_readback_maps_every_file_and_its_purpose() {
+    let list: MistralFileList = serde_json::from_str(
+        r#"{"data": [
+            {"id": "file_ocr", "bytes": 5, "filename": "scan.pdf", "purpose": "ocr"},
+            {"id": "file_user", "purpose": "user_data"},
+            {"id": "file_fine", "purpose": "fine-tune", "created_at": 7},
+            {"id": "file_batch", "purpose": "batch", "expires_at": 9},
+            {"id": "file_missing"}
+        ]}"#,
+    )
+    .expect("a native file list");
+    let objects = to_file_list(&list, 1_704_153_600);
+    let purposes: Vec<FilesPurpose> = objects.iter().map(|object| object.purpose).collect();
+    assert_eq!(
+        purposes,
+        [
+            FilesPurpose::UserData,
+            FilesPurpose::UserData,
+            FilesPurpose::FineTune,
+            FilesPurpose::Batch,
+            FilesPurpose::Batch,
+        ]
+    );
+    let created: Vec<i64> = objects.iter().map(|object| object.created_at).collect();
+    assert_eq!(
+        created,
+        [
+            1_704_153_600,
+            1_704_153_600,
+            7,
+            1_704_153_600,
+            1_704_153_600
+        ]
+    );
+    assert_eq!(objects[0].bytes, 5);
+    assert_eq!(objects[1].bytes, 0);
+    assert_eq!(objects[3].expires_at, Some(9));
 }
 
 #[test]

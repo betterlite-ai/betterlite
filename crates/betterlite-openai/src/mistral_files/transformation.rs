@@ -1,5 +1,7 @@
 use super::error::MistralFilesError;
-use super::records::{FileUpload, MistralFile, MistralFileDeleted, MistralPurpose};
+use super::records::{
+    FileUpload, MistralFile, MistralFileDeleted, MistralFileList, MistralPurpose,
+};
 use crate::files::records::{FileDeleted, FileKind, FileObject, FileStatus, FilesPurpose};
 use crate::mistral_identity::base_url;
 use betterlite_config::sections::mistral_resources::Settings;
@@ -85,6 +87,13 @@ pub fn to_file_object(file: &MistralFile, now: i64) -> FileObject {
         expires_at: file.expires_at,
         status_details: None,
     }
+}
+#[must_use]
+pub fn to_file_list(list: &MistralFileList, now: i64) -> Vec<FileObject> {
+    list.data
+        .iter()
+        .map(|file| to_file_object(file, now))
+        .collect()
 }
 #[must_use]
 pub fn to_file_deleted(deleted: &MistralFileDeleted) -> FileDeleted {
