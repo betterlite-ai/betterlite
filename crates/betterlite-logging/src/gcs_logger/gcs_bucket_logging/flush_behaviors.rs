@@ -40,3 +40,5 @@ where
         tracing::debug!("GCS Bucket periodic flush completed");
     }
 }
+
+mod tests;

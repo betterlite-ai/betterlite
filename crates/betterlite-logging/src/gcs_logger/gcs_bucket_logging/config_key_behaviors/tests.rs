@@ -78,7 +78,7 @@ async fn a_non_object_dynamic_params_object_is_refused(#[case] dynamic_params: J
 
 #[test]
 fn sanitization_hashes_the_key_into_eight_hex_digits() {
-    assert_eq!(sanitize_config_key("bucket|default"), "config-ba0c8dc7");
+    assert_eq!(sanitize_config_key("audit|default"), "config-99a16a92");
     assert_eq!(
         sanitize_config_key("other|/creds/a.json"),
         "config-24b24882"

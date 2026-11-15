@@ -142,13 +142,13 @@ async fn a_service_account_token_carries_the_cloud_platform_scope() {
 
 #[tokio::test]
 async fn an_authorized_user_refreshes_with_the_cloud_platform_scope() {
-    let server = token_server("ya29.refreshed").await;
+    let server = token_server("token-refreshed").await;
     let document = authorized_user_document("refresh-1", &server);
     let access = GoogleCloudAuth::default()
         .ensure_access_token_async(token_request(Some(&document)))
         .await
         .expect("the authorized user refreshes a token");
-    assert_eq!(access.token.expose_secret(), "ya29.refreshed");
+    assert_eq!(access.token.expose_secret(), "token-refreshed");
     let requests = refresh_requests(&server);
     assert_eq!(requests.len(), 1);
     assert_eq!(requests[0].grant_type, "refresh_token");
@@ -158,7 +158,7 @@ async fn an_authorized_user_refreshes_with_the_cloud_platform_scope() {
 
 #[tokio::test]
 async fn the_same_document_reuses_its_credential() {
-    let server = token_server("ya29.refreshed").await;
+    let server = token_server("token-refreshed").await;
     let document = authorized_user_document("refresh-1", &server);
     let auth = GoogleCloudAuth::default();
     let first = auth
@@ -175,8 +175,8 @@ async fn the_same_document_reuses_its_credential() {
 
 #[tokio::test]
 async fn different_documents_get_their_own_credentials() {
-    let first_server = token_server("ya29.first").await;
-    let second_server = token_server("ya29.second").await;
+    let first_server = token_server("token-first").await;
+    let second_server = token_server("token-second").await;
     let auth = GoogleCloudAuth::default();
     let first = auth
         .ensure_access_token_async(token_request(Some(&authorized_user_document(
@@ -192,8 +192,8 @@ async fn different_documents_get_their_own_credentials() {
         ))))
         .await
         .expect("the second document refreshes a token");
-    assert_eq!(first.token.expose_secret(), "ya29.first");
-    assert_eq!(second.token.expose_secret(), "ya29.second");
+    assert_eq!(first.token.expose_secret(), "token-first");
+    assert_eq!(second.token.expose_secret(), "token-second");
     assert_eq!(first_server.captured().len(), 1);
     assert_eq!(second_server.captured().len(), 1);
 }

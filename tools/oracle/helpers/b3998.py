@@ -2,15 +2,17 @@ import asyncio
 import os
 import re
 from datetime import UTC, datetime
-from typing import Literal, NotRequired, Protocol, TypedDict
+from typing import Generic, Literal, NotRequired, Protocol, TypedDict, TypeVar
 
 import httpx
 from litellm.integrations.gcs_bucket import gcs_bucket_mock_client
 from litellm.integrations.gcs_bucket.gcs_bucket import GCSBucketLogger
 from litellm.proxy import proxy_server
+from litellm.types.integrations.gcs_bucket import GCSLogQueueItem
 from pydantic import JsonValue, TypeAdapter
 
 JSON_VALUE = TypeAdapter(JsonValue)
+Item = TypeVar("Item")
 WAIT_SECONDS = 1.5
 EPOCH_SECONDS = 0.0
 # LiteLLM gates GCS logging on its paid tier, which betterlite does not have
@@ -80,49 +82,125 @@ class Background(Protocol):
     async def flush_queue(self) -> None: ...
 
 
-class Retriever(Protocol):
+class MockClient(Protocol):
+    def mock_vertex_auth_methods(self) -> None: ...
+
+
+class QueueView(Protocol):
+    @property
+    def maxsize(self) -> int: ...
+
+    def qsize(self) -> int: ...
+
+
+class PayloadId(TypedDict):
+    id: str
+
+
+class QueueEntry(TypedDict):
+    payload: PayloadId
+
+
+QUEUE_ENTRIES = TypeAdapter(list[QueueEntry])
+
+
+# the logger's queue items carry Any, so the members that touch them are typed here
+class Bridge(Generic[Item]):
+    batch_size: int
+    flush_interval: float
+    use_batched_logging: bool
+    log_queue: QueueView
+
+    def _drain_queue_batch(self) -> list[Item]:
+        raise NotImplementedError
+
+    def _group_items_by_config(self, items: list[Item]) -> dict[str, list[Item]]:
+        raise NotImplementedError
+
+    def _combine_payloads_to_ndjson(self, items: list[Item]) -> str:
+        raise NotImplementedError
+
+    async def _send_grouped_batch(
+        self, items: list[Item], config_key: str
+    ) -> tuple[int, int]:
+        raise NotImplementedError
+
+    def _get_config_key(self, kwargs: dict[str, JsonValue]) -> str:
+        raise NotImplementedError
+
+    def _sanitize_config_key(self, config_key: str) -> str:
+        raise NotImplementedError
+
+    def _get_object_date_from_datetime(self, value: datetime) -> str:
+        raise NotImplementedError
+
     async def get_request_response_payload(
         self,
         request_id: str,
         start_time_utc: datetime | None,
         end_time_utc: datetime | None,
-    ) -> dict[str, JsonValue] | None: ...
+    ) -> dict[str, JsonValue] | None:
+        raise NotImplementedError
 
-
-class MockClient(Protocol):
-    def mock_vertex_auth_methods(self) -> None: ...
-
-
-class Probe(GCSBucketLogger):
-    def config(self, dynamic: dict[str, JsonValue]) -> tuple[str, str]:
-        key = self._get_config_key({"standard_callback_dynamic_params": dynamic})
-        return key, self._sanitize_config_key(key)
-
-    def date(self, value: datetime) -> str:
-        return self._get_object_date_from_datetime(value)
-
-    def drain_ids(self) -> list[str]:
-        items = self._drain_queue_batch()
-        return [item["payload"]["id"] for item in items]
-
-    def remaining(self) -> int:
-        return self.log_queue.qsize()
-
-    def groups(self) -> JsonValue:
-        grouped = self._group_items_by_config(self._drain_queue_batch())
-        pairs = [
-            [key, [item["payload"]["id"] for item in items]]
-            for key, items in grouped.items()
+    def oracle_settings(self) -> JsonValue:
+        settings: list[JsonValue] = [
+            self.batch_size,
+            self.flush_interval,
+            self.use_batched_logging,
+            self.log_queue.maxsize,
         ]
-        return JSON_VALUE.validate_python(pairs)
+        return settings
 
-    def ndjson(self) -> tuple[list[JsonValue], bool]:
+    def oracle_drain(self) -> JsonValue:
+        entries = QUEUE_ENTRIES.validate_python(self._drain_queue_batch())
+        ids: list[JsonValue] = [entry["payload"]["id"] for entry in entries]
+        report: dict[str, JsonValue] = {"drained": ids, "remaining": self.log_queue.qsize()}
+        return report
+
+    def oracle_groups(self) -> JsonValue:
+        grouped = self._group_items_by_config(self._drain_queue_batch())
+        pairs: list[JsonValue] = []
+        for key, items in grouped.items():
+            entries = QUEUE_ENTRIES.validate_python(items)
+            ids: list[JsonValue] = [entry["payload"]["id"] for entry in entries]
+            pairs.append([key, ids])
+        report: dict[str, JsonValue] = {"groups": pairs}
+        return report
+
+    def oracle_ndjson(self) -> JsonValue:
         text = self._combine_payloads_to_ndjson(self._drain_queue_batch())
         lines = [JSON_VALUE.validate_json(line) for line in text.split("\n")]
-        return lines, text.endswith("\n")
+        report: dict[str, JsonValue] = {
+            "lines": lines,
+            "trailing_newline": text.endswith("\n"),
+        }
+        return report
 
-    async def grouped_counts(self) -> tuple[int, int]:
-        return await self._send_grouped_batch(self._drain_queue_batch(), "oracle")
+    async def oracle_grouped(self) -> JsonValue:
+        sent, errors = await self._send_grouped_batch(self._drain_queue_batch(), "oracle")
+        counts: list[JsonValue] = [sent, errors]
+        return counts
+
+    def oracle_config(self, dynamic: dict[str, JsonValue]) -> JsonValue:
+        key = self._get_config_key({"standard_callback_dynamic_params": dynamic})
+        report: dict[str, JsonValue] = {
+            "key": key,
+            "sanitized": self._sanitize_config_key(key),
+        }
+        return report
+
+    async def oracle_retrieve(self, request_id: str, start: datetime) -> JsonValue:
+        found = await self.get_request_response_payload(request_id, start, None)
+        report: dict[str, JsonValue] = {"payload": found}
+        return report
+
+    def oracle_date(self, value: datetime) -> JsonValue:
+        report: dict[str, JsonValue] = {"date": self._get_object_date_from_datetime(value)}
+        return report
+
+
+class Probe(GCSBucketLogger, Bridge[GCSLogQueueItem]):
+    pass
 
 
 class Recorder:
@@ -141,10 +219,11 @@ class Recorder:
         if request.method == "POST":
             body = [JSON_VALUE.validate_json(line) for line in text.split("\n")]
             url = mask(url)
+        authorization = request.headers.get_list("authorization")
         entry: dict[str, JsonValue] = {
             "method": request.method,
             "url": url,
-            "authorization": request.headers.get("authorization"),
+            "authorization": authorization[0] if authorization else None,
             "body": body,
         }
         self.requests.append(entry)
@@ -199,64 +278,48 @@ async def queue_step(
             await sink.async_log_failure_event(kwargs, response, 0.0, 0.0)
         return None
     if action == "settings":
-        return JSON_VALUE.validate_python(
-            [
-                probe.batch_size,
-                probe.flush_interval,
-                probe.use_batched_logging,
-                probe.log_queue.maxsize,
-            ]
-        )
+        return probe.oracle_settings()
     if action == "drain":
-        return JSON_VALUE.validate_python(
-            {"drained": probe.drain_ids(), "remaining": probe.remaining()}
-        )
+        return probe.oracle_drain()
     if action == "group":
-        return JSON_VALUE.validate_python({"groups": probe.groups()})
-    lines, trailing = probe.ndjson()
-    result: dict[str, JsonValue] = {"lines": lines, "trailing_newline": trailing}
-    return result
+        return probe.oracle_groups()
+    return probe.oracle_ndjson()
 
 
 async def describe_step(step: Step, input_value: Input, probe: Probe) -> JsonValue:
     action = step["do"]
     if action == "config":
         dynamic = input_value.get("dynamic")
-        key, sanitized = probe.config({} if dynamic is None else dynamic)
-        return JSON_VALUE.validate_python({"key": key, "sanitized": sanitized})
+        return probe.oracle_config({} if dynamic is None else dynamic)
     if action == "retrieve":
-        retriever: Retriever = probe
         request_id = input_value.get("request_id")
         start_time = input_value.get("start_time")
         if request_id is None or start_time is None:
             raise ValueError("a retrieve step needs request_id and start_time")
         start = datetime.fromtimestamp(start_time, tz=UTC)
-        found = await retriever.get_request_response_payload(request_id, start, None)
-        payload: JsonValue = None if found is None else JSON_VALUE.validate_python(found)
-        return JSON_VALUE.validate_python({"payload": payload})
+        return await probe.oracle_retrieve(request_id, start)
     timestamp = input_value.get("timestamp")
     if timestamp is None:
         raise ValueError("a date step needs timestamp")
-    value = datetime.fromtimestamp(timestamp, tz=UTC)
-    return JSON_VALUE.validate_python({"date": probe.date(value)})
+    return probe.oracle_date(datetime.fromtimestamp(timestamp, tz=UTC))
 
 
 async def send_step(step: Step, probe: Probe, recorder: Recorder) -> JsonValue:
     action = step["do"]
     background: Background = probe
     if action == "grouped":
-        counts = await probe.grouped_counts()
-        return JSON_VALUE.validate_python(list(counts))
+        return await probe.oracle_grouped()
+    report: dict[str, JsonValue] = {}
     if action == "send":
         await background.async_send_batch()
-        return JSON_VALUE.validate_python({"uploads": recorder.uploads()})
-    if action == "flush":
+    elif action == "flush":
         probe.last_flush_time = EPOCH_SECONDS
         await background.flush_queue()
-        updated = probe.last_flush_time > EPOCH_SECONDS
-        return JSON_VALUE.validate_python({"updated": updated, "uploads": recorder.uploads()})
-    await asyncio.sleep(WAIT_SECONDS)
-    return JSON_VALUE.validate_python({"uploads": recorder.uploads()})
+        report["updated"] = probe.last_flush_time > EPOCH_SECONDS
+    else:
+        await asyncio.sleep(WAIT_SECONDS)
+    report["uploads"] = recorder.uploads()
+    return report
 
 
 async def perform(
@@ -281,10 +344,13 @@ async def drive(input_value: Input) -> JsonValue:
     probe.async_httpx_client.client = httpx.AsyncClient(
         transport=httpx.MockTransport(recorder.handle)
     )
-    results: list[JsonValue] = []
-    for step in input_value["steps"]:
-        results.append(await perform(step, input_value, probe, probe, recorder))
-    return JSON_VALUE.validate_python({"steps": results, "requests": recorder.requests})
+    results = [
+        await perform(step, input_value, probe, probe, recorder)
+        for step in input_value["steps"]
+    ]
+    requests: list[JsonValue] = [*recorder.requests]
+    answer: dict[str, JsonValue] = {"steps": results, "requests": requests}
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
