@@ -122,7 +122,7 @@ pub(super) fn fetch(input: &Value) -> HelperResult {
         .form
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .as_ref()
+        .as_deref()
         .map(form_view);
     Ok(serde_json::json!({"result": result, "form": form}))
 }
