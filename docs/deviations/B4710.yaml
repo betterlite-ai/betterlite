@@ -1,0 +1,14 @@
+task: B4710
+deviations:
+  - what: blank_to_none takes Option<&str>, so no non-string value can reach it and read as absent the way LiteLLM's isinstance check reads one.
+    why: LiteLLM duck-types its argument, so a number or list reads as absent; docs/compatibility.md keeps wrong-typed values out of parity, and the typed request rejects one before it reaches the helper.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L107-L110
+  - what: A returned row whose env_vars column is a JSON boolean or number is a typed McpEncodingError instead of a TypeError on a truthy value and a silent no-op on a falsey one.
+    why: Prisma rows written by current code never carry those shapes, and a working setup cannot rely on the crash; betterlite reports the corrupt column by name instead of answering 500 or skipping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L243-L269
+  - what: JSON columns are serialized with serde_json, which keeps NUL bytes that LiteLLM's safe_dumps strips.
+    why: safe_dumps belongs to B192; a credential or header value holding a NUL byte is a pathological value no working setup stores, and PostgreSQL rejects it loudly (22P05) rather than silently changing the secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L11-L13
+  - what: A stored credentials blob whose text is malformed or is valid JSON that is not an object is a typed McpEncodingError instead of a Python exception.
+    why: LiteLLM's _credentials_blob_to_mutable_dict passes whatever json.loads produced on to callers that then fail with an unhandled TypeError, and a working setup cannot store such a row; betterlite names the corrupt credentials column instead of answering 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L474-L476

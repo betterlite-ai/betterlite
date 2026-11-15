@@ -1,7 +1,7 @@
 id: B1356
 milestone: M3 providers
 title: Chirp session constraints, transcript deltas and billed turns
-status: todo
+status: done
 depends_on: [B1123, B1001, B1004, B193, B171]
 file: tasks/B1356-chirp-session-events.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/vertex_ai_speech_to_text.py"
 parent: B033
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1905

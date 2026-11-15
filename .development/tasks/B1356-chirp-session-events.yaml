@@ -25,6 +25,8 @@ description: >-
   B1357. Budget 320 core code, 205 tests and 165 oracle lines, cap 775.
 scope:
   paths:
+    - "tools/oracle/helpers/b6413.py"
+    - "crates/betterlite-core/src/api/vertex_chirp_protocol*"
     - crates/betterlite-core/src/api/vertex_chirp_protocol.rs
     - crates/betterlite-core/src/api/vertex_chirp_protocol/**
     - tools/oracle/src/helpers/core_ops/chirp_events.rs

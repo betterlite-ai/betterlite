@@ -1,0 +1,24 @@
+kind: helper
+name: chirp-events-trace-seed
+call:
+  chirp_events:
+    function: trace
+    session_id: sess_seed
+    session:
+      model: chirp_3
+      language: fr-CA
+      sample_rate: 48000
+      server_vad: true
+    frames:
+      - kind: configured
+      - kind: response
+        speech_event: begin
+        results:
+          - transcript: seeded
+            is_final: true
+        billed_seconds: 0.5
+      - kind: turn_discarded
+        billed_seconds: 1.0
+      - kind: turn_finished
+env: {}
+compare: {ignore: []}

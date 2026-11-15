@@ -1,0 +1,10 @@
+kind: helper
+name: minimax-speech-reply-non-zero-status
+call:
+  b8174:
+    steps:
+      - kind: speech_reply
+        status: 401
+        body: '{"status": 2, "ced": "invalid api key"}'
+env: {}
+compare: {ignore: []}
