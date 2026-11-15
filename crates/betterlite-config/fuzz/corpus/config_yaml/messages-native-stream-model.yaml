@@ -1,0 +1,8 @@
+model_list:
+  - model_name: claude-native-stream
+    litellm_params:
+      model: anthropic/claude-sonnet-4-20250514
+      api_key: sk-native-stream
+
+litellm_settings:
+  request_timeout: 30
