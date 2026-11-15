@@ -117,8 +117,8 @@ fn object_failure(
         GUARDRAIL_NAME_KEY.to_owned(),
         GuardrailValue::Text(guardrail_name(&guardrail.base)),
     );
-    if let Some(response) = response {
-        detail.insert(RESPONSE_KEY.to_owned(), response);
+    if let Some(scan_response) = response {
+        detail.insert(RESPONSE_KEY.to_owned(), scan_response);
     }
     // call_scan and call_grounding hand back the block_on_error text as the error's Display
     GuardrailFailure::HttpObject {

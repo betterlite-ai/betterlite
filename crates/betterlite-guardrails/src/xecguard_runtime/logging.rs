@@ -101,16 +101,16 @@ fn response_value(result: &ResponseBody) -> Result<GuardrailValue, XecGuardRunti
 }
 
 fn carries_guardrail_information(kwargs: &RequestData) -> bool {
-    let Some(litellm_params) = kwargs.get(LITELLM_PARAMS_KEY) else {
+    let Some(encoded_params) = kwargs.get(LITELLM_PARAMS_KEY) else {
         return false;
     };
-    let Ok(litellm_params) = serde_json::from_str::<RequestData>(litellm_params.get()) else {
+    let Ok(litellm_params) = serde_json::from_str::<RequestData>(encoded_params.get()) else {
         return false;
     };
-    let Some(metadata) = litellm_params.get(METADATA_KEY) else {
+    let Some(encoded_metadata) = litellm_params.get(METADATA_KEY) else {
         return false;
     };
-    let Ok(metadata) = serde_json::from_str::<RequestData>(metadata.get()) else {
+    let Ok(metadata) = serde_json::from_str::<RequestData>(encoded_metadata.get()) else {
         return false;
     };
     metadata

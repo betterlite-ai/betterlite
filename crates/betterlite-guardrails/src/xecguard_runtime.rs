@@ -54,8 +54,8 @@ impl XecGuardGuard {
         crate::xecguard_primitives::logging_hook::logging_hook(
             kwargs,
             result,
-            async |kwargs: &mut RequestData, result: &mut ResponseBody| {
-                self.async_logging_hook(kwargs, result).await;
+            async |hooked_kwargs: &mut RequestData, hooked_result: &mut ResponseBody| {
+                self.async_logging_hook(hooked_kwargs, hooked_result).await;
                 Ok::<(), XecGuardRuntimeError>(())
             },
         )

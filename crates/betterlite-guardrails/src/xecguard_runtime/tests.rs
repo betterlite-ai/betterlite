@@ -48,6 +48,9 @@ const GROUNDING_REQUEST: &str = r#"{"model":"gpt-4o","messages":[{"role":"user",
 const LOGGED_REQUEST: &str = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}],"standard_logging_object":{"id":"call-1"}}"#;
 const LOGGED_WITH_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":[{"guardrail_name":"older"}]}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
 const LOGGED_WITH_EMPTY_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":[]}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
+const LOGGED_WITH_NULL_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":null}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
+const LOGGED_WITH_STRING_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":"yes"}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
+const LOGGED_WITH_DICT_INFORMATION: &str = r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{"id":"call-1","guardrail_information":{"guardrail_name":"older"}}}"#;
 
 static CLOCK_TICKS: AtomicU64 = AtomicU64::new(0);
 
@@ -73,6 +76,13 @@ enum Case {
     LoggingEmptyHistory,
     LoggingFailedScan,
     LoggingSwallowedFailure,
+    EmptyHistory,
+    DefaultGuardrailName,
+    GroundingFailureFailsOpen,
+    GroundingFailureBlocks,
+    LoggingScansNullInformation,
+    LoggingSkipsStringInformation,
+    LoggingReplacesNonListEntry,
 }
 
 #[rstest]
@@ -96,6 +106,13 @@ enum Case {
 #[case::logging_empty_history(Case::LoggingEmptyHistory)]
 #[case::logging_failed_scan(Case::LoggingFailedScan)]
 #[case::logging_swallowed_failure(Case::LoggingSwallowedFailure)]
+#[case::empty_history(Case::EmptyHistory)]
+#[case::default_guardrail_name(Case::DefaultGuardrailName)]
+#[case::grounding_failure_fails_open(Case::GroundingFailureFailsOpen)]
+#[case::grounding_failure_blocks(Case::GroundingFailureBlocks)]
+#[case::logging_scans_null_information(Case::LoggingScansNullInformation)]
+#[case::logging_skips_string_information(Case::LoggingSkipsStringInformation)]
+#[case::logging_replaces_non_list_entry(Case::LoggingReplacesNonListEntry)]
 #[tokio::test]
 async fn xecguard_runtime_cases(#[case] case: Case) {
     match case {
@@ -119,6 +136,13 @@ async fn xecguard_runtime_cases(#[case] case: Case) {
         Case::LoggingEmptyHistory => logging_empty_history().await,
         Case::LoggingFailedScan => logging_failed_scan().await,
         Case::LoggingSwallowedFailure => logging_swallowed_failure().await,
+        Case::EmptyHistory => empty_history().await,
+        Case::DefaultGuardrailName => default_guardrail_name().await,
+        Case::GroundingFailureFailsOpen => grounding_failure_fails_open().await,
+        Case::GroundingFailureBlocks => grounding_failure_blocks().await,
+        Case::LoggingScansNullInformation => logging_scans_null_information().await,
+        Case::LoggingSkipsStringInformation => logging_skips_string_information().await,
+        Case::LoggingReplacesNonListEntry => logging_replaces_non_list_entry().await,
     }
 }
 
@@ -144,8 +168,8 @@ fn xecguard_runtime_sync_logging_hook_appends_an_entry() {
     let mock = mock((200, SAFE), (200, SAFE));
     let guard = guard_at(&mock.base);
     let kwargs = logged(LOGGED_REQUEST);
-    let (kwargs, _result) = guard.logging_hook(kwargs, chat_body("answer"));
-    let entries = logged_entries(&kwargs);
+    let (hooked, _result) = guard.logging_hook(kwargs, chat_body("answer"));
+    let entries = logged_entries(&hooked);
     assert_eq!(entries.len(), 1);
     assert_eq!(text(field(&entries[0], "guardrail_status")), "success");
     assert_eq!(text(field(&entries[0], "guardrail_mode")), "logging_only");
@@ -392,6 +416,11 @@ async fn grounding_block() {
         detail.get("guardrail_name").map_or("", text),
         GUARDRAIL_NAME
     );
+    let response = detail
+        .get("xecguard_response")
+        .expect("the grounding result");
+    assert_eq!(text(field(response, "decision")), "UNSAFE");
+    assert_eq!(text(field(response, "trace_id")), "trace-3");
     let seen = seen(&mock);
     assert_eq!(seen.len(), 2);
     assert_eq!(seen[1].path, "/xecguard/v1/grounding");
@@ -590,6 +619,130 @@ async fn logging_swallowed_failure() {
     );
 }
 
+async fn empty_history() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut data = request_data(r#"{"model":"gpt-4o"}"#);
+    let original = GuardrailApiInputs::default();
+    let returned = guard
+        .apply_guardrail(
+            original.clone(),
+            &mut data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect("a pass with no messages");
+    assert_eq!(returned, original);
+    assert!(seen(&mock).is_empty());
+}
+
+async fn default_guardrail_name() {
+    let mock = mock((200, UNSAFE), (200, SAFE));
+    assert_eq!(blocked_name(&mock.base, None).await, "xecguard");
+    assert_eq!(blocked_name(&mock.base, Some("")).await, "xecguard");
+    assert_eq!(seen(&mock).len(), 2);
+}
+
+async fn blocked_name(api_base: &str, name: Option<&str>) -> String {
+    let guard = guard_named(api_base, name);
+    let mut data = request_data(USER_REQUEST);
+    let failure = guard
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &mut data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect_err("an UNSAFE scan blocks the request");
+    let (_status, detail) = blocked_object(&failure);
+    detail.get("guardrail_name").map_or("", text).to_owned()
+}
+
+async fn grounding_failure_fails_open() {
+    let mock = mock((200, SAFE), (500, "{}"));
+    let guard = guard_with_block(&mock.base, false);
+    let mut data = request_data(GROUNDING_REQUEST);
+    let original = inputs(&["answer"]);
+    let returned = guard
+        .apply_guardrail(
+            original.clone(),
+            &mut data,
+            GuardrailInputType::Response,
+            None,
+        )
+        .await
+        .expect("a fail-open grounding pass");
+    assert_eq!(returned, original);
+    let seen = seen(&mock);
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[1].path, "/xecguard/v1/grounding");
+}
+
+async fn grounding_failure_blocks() {
+    let mock = mock((200, SAFE), (500, "{}"));
+    let guard = guard_with_block(&mock.base, true);
+    let mut data = request_data(GROUNDING_REQUEST);
+    let failure = guard
+        .apply_guardrail(
+            inputs(&["answer"]),
+            &mut data,
+            GuardrailInputType::Response,
+            None,
+        )
+        .await
+        .expect_err("block_on_error blocks an unreachable grounding API");
+    let (status, detail) = blocked_object(&failure);
+    assert_eq!(status, 400);
+    let message = detail.get("error").map_or("", text);
+    assert!(
+        message.starts_with("XecGuard API unreachable (block_on_error=True): "),
+        "{message}"
+    );
+    assert_eq!(
+        detail.get("guardrail_name").map_or("", text),
+        GUARDRAIL_NAME
+    );
+    assert!(detail.get("xecguard_response").is_none());
+    assert_eq!(seen(&mock).len(), 2);
+}
+
+async fn logging_scans_null_information() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_NULL_INFORMATION);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    assert_eq!(logged_entries(&kwargs).len(), 1);
+    assert_eq!(seen(&mock).len(), 1);
+}
+
+async fn logging_skips_string_information() {
+    let mock = mock((200, UNSAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_STRING_INFORMATION);
+    let before = values(&kwargs);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    assert_eq!(values(&kwargs), before);
+    assert!(seen(&mock).is_empty());
+}
+
+async fn logging_replaces_non_list_entry() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_DICT_INFORMATION);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    let entries = logged_entries(&kwargs);
+    assert_eq!(entries.len(), 1);
+    assert_eq!(text(field(&entries[0], "guardrail_mode")), "logging_only");
+}
+
 type Reply = (u16, &'static str);
 
 #[derive(Clone)]
@@ -634,7 +787,7 @@ fn serve(listener: StdTcpListener, seen: Arc<Mutex<Vec<Seen>>>, scan: Reply, gro
         .build()
         .expect("the mock runtime");
     runtime.block_on(async move {
-        let listener = TcpListener::from_std(listener).expect("the tokio listener");
+        let tokio_listener = TcpListener::from_std(listener).expect("the tokio listener");
         let handler = move |uri: Uri, bytes: Bytes| {
             let sink = Arc::clone(&seen);
             let reply = reply_for(uri.path(), scan, grounding);
@@ -649,7 +802,7 @@ fn serve(listener: StdTcpListener, seen: Arc<Mutex<Vec<Seen>>>, scan: Reply, gro
                 (status, [("content-type", "application/json")], reply.1)
             }
         };
-        axum::serve(listener, Router::new().fallback(handler))
+        axum::serve(tokio_listener, Router::new().fallback(handler))
             .into_future()
             .await
             .expect("the mock server");
@@ -728,13 +881,13 @@ fn new_guard(args: XecGuardArgs, settings: &RuntimeSettings, base: GuardrailBase
 }
 
 fn guard_at(api_base: &str) -> XecGuardGuard {
+    guard_named(api_base, Some(GUARDRAIL_NAME))
+}
+
+fn guard_named(api_base: &str, name: Option<&str>) -> XecGuardGuard {
     let mut input = args();
     input.api_base = Some(api_base.to_owned());
-    new_guard(
-        input,
-        &RuntimeSettings::default(),
-        base(Some(GUARDRAIL_NAME), None),
-    )
+    new_guard(input, &RuntimeSettings::default(), base(name, None))
 }
 
 fn guard_with_block(api_base: &str, block_on_error: bool) -> XecGuardGuard {
@@ -800,8 +953,8 @@ fn values(kwargs: &RequestData) -> GuardrailValue {
 }
 
 fn logged_entries(kwargs: &RequestData) -> Vec<GuardrailValue> {
-    let logged = values(kwargs);
-    let standard = field(&logged, "standard_logging_object");
+    let payload = values(kwargs);
+    let standard = field(&payload, "standard_logging_object");
     match field(standard, "guardrail_information") {
         GuardrailValue::Array(entries) => entries.clone(),
         _ => Vec::new(),
