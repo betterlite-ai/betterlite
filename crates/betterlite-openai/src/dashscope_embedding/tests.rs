@@ -121,6 +121,13 @@ fn family_identity_equality_compares_the_keys_and_the_policy() {
     let identity = plain_identity(Some("sk-env"), None);
     assert_eq!(identity, plain_identity(Some("sk-env"), None));
     assert_ne!(identity, plain_identity(Some("sk-other"), None));
+    assert_ne!(
+        identity,
+        FamilyIdentity {
+            empty_key_is_set: false,
+            ..plain_identity(Some("sk-env"), None)
+        }
+    );
     let with_fallback = FamilyIdentity {
         fallback_key: Some(SecretString::from("sk-fallback")),
         ..plain_identity(None, None)
