@@ -12,12 +12,14 @@ call:
       choices:
       - index: 0
         text: Hel
-    - choices:
+    - created: 1700000500
+      choices:
       - index: 0
         text: lo
       - index: 1
         text: '!'
-    - choices:
+    - created: 1700000999
+      choices:
       - index: 0
         text: null
         finish_reason: stop
@@ -30,7 +32,7 @@ call:
           - b: -0.2
     counter: {messages: 3, text: 2}
     messages: []
-    now: 1700000000
+    now: 1800000000
 calls:
 - streamed_response_assembly:
     function: assemble
@@ -43,12 +45,14 @@ calls:
       choices:
       - index: 0
         text: Hel
-    - choices:
+    - created: 1700000500
+      choices:
       - index: 0
         text: lo
       - index: 1
         text: '!'
-    - choices:
+    - created: 1700000999
+      choices:
       - index: 0
         text: null
         finish_reason: stop
@@ -61,7 +65,7 @@ calls:
           - b: -0.2
     counter: {messages: 0, text: 2}
     messages: null
-    now: 1700000000
+    now: 1800000000
 - streamed_response_assembly:
     function: assemble
     chunks:
@@ -79,7 +83,7 @@ calls:
         logprobs: null
     counter: {messages: 3, text: 1}
     messages: []
-    now: 1700000000
+    now: 1800000000
 - streamed_response_assembly:
     function: assemble
     chunks:
@@ -94,6 +98,6 @@ calls:
         logprobs: null
     counter: {messages: 3, text: 1}
     messages: []
-    now: 1700000000
+    now: 1800000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

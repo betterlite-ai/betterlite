@@ -51,11 +51,6 @@ pub struct Choice {
 
 impl Choice {
     #[must_use]
-    pub const fn is_text(&self) -> bool {
-        matches!(self.text, TextField::Present(_))
-    }
-
-    #[must_use]
     pub fn text_value(&self) -> Option<&str> {
         match &self.text {
             TextField::Present(JsonValue::String(text)) => Some(text),

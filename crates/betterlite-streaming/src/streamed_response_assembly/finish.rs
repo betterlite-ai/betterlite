@@ -4,17 +4,15 @@ use crate::stream_base_assembly::StreamedChunks;
 use crate::stream_base_assembly::provider_metadata::{
     ProviderMetadataContext, apply_provider_metadata,
 };
+use crate::stream_base_assembly::response::BaseResponse;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
 use crate::stream_usage_assembly::wire::{ReasoningChoice, ReasoningMessage, Usage};
 use crate::stream_usage_assembly::{UsageRequest, calculate_usage, count_reasoning_tokens};
 
-use super::AssemblyError;
-use super::Request;
-use super::content;
 use super::cost::{self, CostInput, RESPONSE_COST_KEY};
-use super::project;
 use super::records::Chunk;
 use super::response::{ChatChoice, ChatMessage, ChatResponse, Draft};
+use super::{AssemblyError, Request, content, project};
 
 #[derive(Clone, Copy)]
 pub(crate) enum ReasoningMode {
@@ -29,6 +27,25 @@ pub(crate) async fn finish_chat<L, C>(
     mode: ReasoningMode,
     hooks: &VerboseHooks<L, C>,
 ) -> Result<ChatResponse, AssemblyError>
+where
+    L: LoggerSink + Sync,
+    C: ConsoleSink + Sync,
+{
+    let mut usage = estimate_usage(request, streamed, &draft, mode, hooks).await?;
+    propagate_hidden_fields(&mut draft.base.hidden_params, &streamed.chunks)?;
+    apply_costs(request, &mut draft.base, &mut usage)?;
+    apply_metadata(request, streamed, &mut draft.base)?;
+    build_response(draft, usage)
+}
+
+// LiteLLM hands the first sorted chunk's model to the counters, not the base model a later chunk may replace.
+async fn estimate_usage<L, C>(
+    request: &Request<'_>,
+    streamed: &StreamedChunks,
+    draft: &Draft,
+    mode: ReasoningMode,
+    hooks: &VerboseHooks<L, C>,
+) -> Result<Usage, AssemblyError>
 where
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
@@ -49,48 +66,68 @@ where
         }
     };
     let projected = project::usage_chunks(&streamed.chunks)?;
+    let first_model = streamed
+        .chunks
+        .first()
+        .and_then(|chunk| chunk.model.as_deref())
+        .unwrap_or_default();
     let usage_request = UsageRequest {
         chunks: &projected,
-        model: &draft.base.model,
+        model: first_model,
         completion_output: &output,
         messages: request.messages,
         reasoning_tokens,
         count_prompt_tokens: request.count_prompt_tokens,
     };
-    let mut usage = calculate_usage(request.counter, hooks, &usage_request).await?;
-    propagate_hidden_fields(&mut draft.base.hidden_params, &streamed.chunks)?;
-    let input = CostInput {
-        model: &draft.base.model,
-        usage: &usage,
-        hidden_params: &draft.base.hidden_params,
+    calculate_usage(request.counter, hooks, &usage_request)
+        .await
+        .map_err(AssemblyError::from)
+}
+
+fn apply_costs(
+    request: &Request<'_>,
+    base: &mut BaseResponse,
+    usage: &mut Usage,
+) -> Result<(), AssemblyError> {
+    let stamp_input = CostInput {
+        model: &base.model,
+        usage,
+        hidden_params: &base.hidden_params,
     };
-    if let Some(stamped) = cost::stamp_usage_cost(&input, request.logging)? {
+    if let Some(stamped) = cost::stamp_usage_cost(&stamp_input, request.logging)? {
         usage.cost = Some(stamped);
     }
     let input = CostInput {
-        model: &draft.base.model,
-        usage: &usage,
-        hidden_params: &draft.base.hidden_params,
+        model: &base.model,
+        usage,
+        hidden_params: &base.hidden_params,
     };
     let reported = cost::stream_builder_response_cost(&input, request.logging, request.costs)?;
     if let Some(value) = reported.and_then(cost::response_cost_value) {
-        draft
-            .base
-            .hidden_params
+        base.hidden_params
             .insert(RESPONSE_COST_KEY.to_owned(), value);
     }
-    if let Some(services) = request.metadata {
-        let context = ProviderMetadataContext {
-            custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
-            redactor: services.redactor,
-            resolver: services.resolver,
-            selector: services.selector,
-            projection: services.projection,
-        };
-        let chunks = project::base_chunks(&streamed.chunks)?;
-        apply_provider_metadata(&mut draft.base, &chunks, &context);
-    }
-    build_response(draft, usage)
+    Ok(())
+}
+
+fn apply_metadata(
+    request: &Request<'_>,
+    streamed: &StreamedChunks,
+    base: &mut BaseResponse,
+) -> Result<(), AssemblyError> {
+    let Some(services) = request.metadata else {
+        return Ok(());
+    };
+    let context = ProviderMetadataContext {
+        custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
+        redactor: services.redactor,
+        resolver: services.resolver,
+        selector: services.selector,
+        projection: services.projection,
+    };
+    let chunks = project::base_chunks(&streamed.chunks)?;
+    apply_provider_metadata(base, &chunks, &context);
+    Ok(())
 }
 
 async fn reasoning_tokens(

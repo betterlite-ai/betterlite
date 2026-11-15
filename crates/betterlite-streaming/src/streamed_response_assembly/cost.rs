@@ -56,13 +56,13 @@ pub fn stamp_usage_cost(
     input: &CostInput<'_>,
     logging: Option<&dyn StreamLogging>,
 ) -> Result<Option<Decimal>, CostError> {
-    let Some(logging) = logging else {
+    let Some(active_logging) = logging else {
         return Ok(None);
     };
     if input.usage.cost.is_some() {
         return Ok(None);
     }
-    match logging.response_cost(input)? {
+    match active_logging.response_cost(input)? {
         Some(computed) if computed > Decimal::ZERO => Ok(Some(computed)),
         Some(_) | None => Ok(None),
     }

@@ -8,11 +8,10 @@ use crate::stream_tool_assembly::records::{
     AssemblyInput, AssemblyOutput, FunctionInput, FunctionOutput, ToolInput, ToolOutput,
 };
 
-use super::AssemblyError;
 use super::content::combined_provider_fields;
-use super::project;
 use super::records::{Choice, Chunk, Delta};
 use super::response::Draft;
+use super::{AssemblyError, project};
 
 // The non-simple path: each field joins its own selected chunks, and later content overwrites a cleared text.
 pub(crate) fn apply(draft: &mut Draft, chunks: &[Chunk], now: i64) -> Result<(), AssemblyError> {
@@ -165,9 +164,9 @@ fn joined_lists(chunks: &[Chunk], field: ListField) -> Option<Vec<JsonValue>> {
             ListField::Annotations => delta.annotations.as_ref(),
             ListField::Images => delta.images.as_ref(),
         };
-        if let Some(items) = items {
+        if let Some(list) = items {
             selected = true;
-            joined.extend(items.iter().cloned());
+            joined.extend(list.iter().cloned());
         }
     }
     selected.then_some(joined)

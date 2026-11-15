@@ -1,0 +1,212 @@
+use crate::stream_content_assembly::wire::{AudioResponse, ExpiryValue, ThinkingBlock};
+use crate::streamed_response_assembly::records::Chunk;
+
+use super::support::chunks;
+use super::{FIXED_NOW, Harness, chat_of, value};
+
+pub(super) async fn complex_content_order() {
+    complex_tool_calls().await;
+    complex_function_call().await;
+    complex_function_call_only().await;
+    complex_lists().await;
+    complex_thinking().await;
+    complex_audio().await;
+    complex_audio_default_expiry().await;
+}
+
+pub(super) async fn complex_tool_calls() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi"}}]},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+            "function": {"name": "get_weather", "arguments": ""}}]}}]},
+        {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0,
+            "function": {"arguments": "{\"city\":\"Paris\"}"}}]}}]},
+        {"choices": [{"index": 0, "delta": {"content": " there"}, "finish_reason": "stop"}],
+         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+    ]"#,
+    );
+    let response = chat_of(&Harness::new(Some(stream))).await;
+    let message = &response.choices[0].message;
+    assert_eq!(message.content.as_deref(), Some("Hi there"));
+    let calls = message
+        .tool_calls
+        .as_ref()
+        .expect("the tool call fragments are assembled");
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].id, "call_1");
+    assert_eq!(calls[0].kind, "function");
+    let function = calls[0]
+        .function
+        .as_ref()
+        .expect("the assembled call carries its function");
+    assert_eq!(function.name.as_deref(), Some("get_weather"));
+    assert_eq!(function.arguments, r#"{"city":"Paris"}"#);
+    assert!(message.function_call.is_none());
+    assert_eq!(response.usage.completion_tokens, 5);
+    assert_eq!(response.usage.completion_tokens_details, None);
+}
+
+pub(super) async fn complex_function_call() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi"}}]},
+        {"choices": [{"index": 0, "delta": {"function_call": {"name": "get_weather",
+            "arguments": "{\"city\":\""}}}]},
+        {"choices": [{"index": 0, "delta": {"function_call": {"arguments": "Paris\"}"}}}]},
+        {"choices": [{"index": 0, "delta": {"content": " there"}}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 2;
+    let response = chat_of(&harness).await;
+    let message = &response.choices[0].message;
+    assert_eq!(message.content.as_deref(), Some("Hi there"));
+    assert!(message.tool_calls.is_none());
+    let function = message
+        .function_call
+        .as_ref()
+        .expect("the function call fragments are assembled");
+    assert_eq!(function.name.as_deref(), Some("get_weather"));
+    assert_eq!(function.arguments, r#"{"city":"Paris"}"#);
+}
+
+pub(super) async fn complex_function_call_only() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"role": "assistant", "function_call": {"name": "get_weather",
+            "arguments": "{\"city\":\""}}}]},
+        {"choices": [{"index": 0, "delta": {"function_call": {"arguments": "Paris\"}"}}}]},
+        {"choices": [{"index": 0, "delta": {}, "finish_reason": "function_call"}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 2;
+    let response = chat_of(&harness).await;
+    let message = &response.choices[0].message;
+    assert_eq!(message.content, None);
+    let function = message
+        .function_call
+        .as_ref()
+        .expect("the function call fragments are assembled");
+    assert_eq!(function.arguments, r#"{"city":"Paris"}"#);
+}
+
+pub(super) async fn complex_lists() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"content": "A",
+            "annotations": [{"url": "u1"}], "images": [{"url": "img1"}]}}]},
+        {"choices": [{"index": 0, "delta": {"annotations": [{"url": "u2"}], "images": []}}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 1;
+    let response = chat_of(&harness).await;
+    let message = &response.choices[0].message;
+    assert_eq!(
+        message.annotations,
+        Some(vec![value(r#"{"url": "u1"}"#), value(r#"{"url": "u2"}"#)])
+    );
+    assert_eq!(message.images, Some(vec![value(r#"{"url": "img1"}"#)]));
+}
+
+pub(super) async fn complex_thinking() {
+    let mut harness = Harness::new(Some(thinking_stream()));
+    harness.messages = true;
+    harness.counter.text = 2;
+    harness.counter.response_text = 3;
+    let response = chat_of(&harness).await;
+    let message = &response.choices[0].message;
+    assert_eq!(message.reasoning_content.as_deref(), Some("thinking"));
+    assert_eq!(
+        message.thinking_blocks,
+        Some(vec![
+            ThinkingBlock::Thinking {
+                thinking: "deep".to_owned(),
+                signature: "sig".to_owned(),
+            },
+            ThinkingBlock::Redacted {
+                data: "d1".to_owned(),
+            },
+        ])
+    );
+    assert_eq!(
+        harness.counter.seen_reasoning().as_deref(),
+        Some("thinking")
+    );
+    assert_eq!(response.usage.completion_tokens, 3);
+    let details = response
+        .usage
+        .completion_tokens_details
+        .expect("the complex path counts reasoning tokens");
+    assert_eq!(details.reasoning_tokens, Some(2));
+    assert_eq!(details.text_tokens, Some(1));
+}
+
+fn thinking_stream() -> Vec<Chunk> {
+    chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"role": "assistant",
+            "thinking_blocks": [{"type": "thinking", "thinking": "deep", "signature": "sig"}],
+            "reasoning_content": "think"}}]},
+        {"choices": [{"index": 0, "delta": {
+            "thinking_blocks": [{"type": "redacted_thinking", "data": "d1"}],
+            "reasoning_content": "ing"}}]}
+    ]"#,
+    )
+}
+
+pub(super) async fn complex_audio() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"content": "A",
+            "audio": {"id": "a1", "data": "YQ==", "transcript": "hi"}}}]},
+        {"choices": [{"index": 0, "delta": {
+            "audio": {"data": "Yg==", "transcript": "!", "expires_at": 1600000000}}}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 1;
+    let response = chat_of(&harness).await;
+    assert_eq!(
+        response.choices[0].message.audio,
+        Some(AudioResponse {
+            data: "YWI=".to_owned(),
+            expires_at: ExpiryValue::Signed(1_600_000_000),
+            transcript: "hi!".to_owned(),
+            id: Some("a1".to_owned()),
+        })
+    );
+}
+
+pub(super) async fn complex_audio_default_expiry() {
+    let stream = chunks(
+        r#"[
+        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+         "choices": [{"index": 0, "delta": {"content": "A",
+            "audio": {"data": "YQ==", "transcript": "hi", "expires_at": false}}}]}
+    ]"#,
+    );
+    let mut harness = Harness::new(Some(stream));
+    harness.messages = true;
+    harness.counter.response_text = 1;
+    let response = chat_of(&harness).await;
+    let audio = response.choices[0]
+        .message
+        .audio
+        .as_ref()
+        .expect("the audio fragments are assembled");
+    assert_eq!(audio.expires_at, ExpiryValue::Signed(FIXED_NOW + 3600));
+    assert_eq!(audio.data, "YQ==");
+}

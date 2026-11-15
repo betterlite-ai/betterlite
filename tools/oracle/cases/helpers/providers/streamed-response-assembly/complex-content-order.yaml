@@ -189,5 +189,31 @@ calls:
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
     now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          function_call:
+            name: get_weather
+            arguments: '{"city":"'
+    - choices:
+      - index: 0
+        delta:
+          function_call:
+            arguments: 'Paris"}'
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: function_call
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

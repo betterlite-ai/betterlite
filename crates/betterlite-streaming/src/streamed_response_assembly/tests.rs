@@ -9,8 +9,15 @@ use super::response::{ChatResponse, Response, TextResponse};
 use super::{AssemblyError, MetadataServices, Request, StreamLogging, stream_chunk_builder};
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue};
 
-mod cases;
+mod boundary;
+mod citations;
+mod complex;
+mod hidden;
+mod reported_cost;
+mod simple;
+mod stamping;
 mod support;
+mod text_completion;
 
 use support::{FixtureCosts, FixtureCounter, chunks, hooks};
 
@@ -155,13 +162,13 @@ enum Proof {
 #[tokio::test]
 async fn streamed_response_assembly_cases(#[case] proof: Proof) {
     match proof {
-        Proof::EmptyAndErrorBoundary => cases::empty_and_error_boundary().await,
-        Proof::TextCompletionAssembly => cases::text_completion_assembly().await,
-        Proof::SimpleTextPath => cases::simple_text_path().await,
-        Proof::ComplexContentOrder => cases::complex_content_order().await,
-        Proof::ProviderFieldsCitations => cases::provider_fields_citations().await,
-        Proof::UsageHiddenMetadata => cases::usage_hidden_metadata().await,
-        Proof::ReportedCostPrecedence => cases::reported_cost_precedence().await,
-        Proof::UsageCostStamping => cases::usage_cost_stamping().await,
+        Proof::EmptyAndErrorBoundary => boundary::empty_and_error_boundary().await,
+        Proof::TextCompletionAssembly => text_completion::text_completion_assembly().await,
+        Proof::SimpleTextPath => simple::simple_text_path().await,
+        Proof::ComplexContentOrder => complex::complex_content_order().await,
+        Proof::ProviderFieldsCitations => citations::provider_fields_citations().await,
+        Proof::UsageHiddenMetadata => hidden::usage_hidden_metadata().await,
+        Proof::ReportedCostPrecedence => reported_cost::reported_cost_precedence().await,
+        Proof::UsageCostStamping => stamping::usage_cost_stamping().await,
     }
 }

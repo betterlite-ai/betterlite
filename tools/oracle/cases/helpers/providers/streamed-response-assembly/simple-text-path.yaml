@@ -113,5 +113,30 @@ calls:
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
     now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta:
+          content: B
+      - index: 1
+        delta:
+          tool_calls: []
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

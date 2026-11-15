@@ -162,7 +162,7 @@ where
         .iter()
         .find(|chunk| !chunk.choices.is_empty())
         .and_then(|chunk| chunk.choices.first());
-    if first_choice.is_some_and(records::Choice::is_text) {
+    if first_choice.is_some_and(|choice| matches!(choice.text, records::TextField::Present(_))) {
         let assembled = text::assemble_text(request, &streamed.chunks, hooks).await?;
         return Ok(Some(Response::Text(assembled)));
     }
