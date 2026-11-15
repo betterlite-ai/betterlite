@@ -259,6 +259,16 @@ fn model_per_team_adds_nothing_without_team_limits() {
 }
 
 #[test]
+fn model_per_team_without_a_team_id_uses_none_text() {
+    let builder = builder(60, &[("gpt4", "gpt-4")]);
+    let auth = auth(r#"{"team_metadata": {"model_rpm_limit": {"gpt-4": 9}}}"#);
+    let mut descriptors = Vec::new();
+    builder.team_model_descriptor(&auth, Some("gpt4"), &mut descriptors);
+    assert_eq!(descriptors.len(), 1);
+    assert_eq!(descriptors[0].value, "None:gpt-4");
+}
+
+#[test]
 fn model_per_project_reads_project_metadata() {
     let builder = builder(60, &[("gpt4", "gpt-4")]);
     let auth = auth(
