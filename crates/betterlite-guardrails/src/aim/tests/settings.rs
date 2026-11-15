@@ -146,7 +146,7 @@ fn aim_guardrail_missing_api_key_is_an_error() {
 
 #[test]
 fn aim_guardrail_stream_frame_limit_is_one_mebibyte() {
-    assert_eq!(MAX_STREAM_FRAME_BYTES, 1_048_576);
+    assert_eq!(MAX_STREAM_FRAME_BYTES, 0x0010_0000);
 }
 
 #[tokio::test]

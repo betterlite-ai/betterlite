@@ -143,16 +143,15 @@ async fn aim_guardrail_websocket_connector_bounds_the_handshake_wait() {
         let (_stream, _peer) = listener.accept().await.unwrap();
         time::sleep(Duration::from_secs(5)).await;
     });
-    let error = AimWebSocketConnector
+    let result = AimWebSocketConnector
         .connect(
             &url,
             &headers(),
             Duration::from_millis(50),
             Duration::from_secs(5),
         )
-        .await
-        .unwrap_err();
-    assert!(matches!(error, AimError::ConnectTimeout));
+        .await;
+    assert!(matches!(result, Err(AimError::ConnectTimeout)));
     tasks.abort_all();
 }
 

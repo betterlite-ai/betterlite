@@ -13,7 +13,7 @@ use futures_util::StreamExt as _;
 use serde_json::json;
 
 use super::fakes::{Built, build};
-use super::{HookArg, Input, Op, Settings, StreamArgs, failure};
+use super::{HookArg, Input, Op, OutputArgs, RequestArgs, Settings, StreamArgs, failure};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 const ANALYZE_PATH: &str = "/fw/v1/analyze";
@@ -34,124 +34,131 @@ fn prepared(
 }
 
 fn recorded(built: &Built) -> HelperResult {
-    let posts = built
-        .state
-        .posts
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    let Some(post) = posts.first() else {
-        return Err(failure(
-            "ValueError",
-            "the guardrail sent no request".to_owned(),
-        ));
+    let (url, headers, bytes) = {
+        let posts = built
+            .state
+            .posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let Some(post) = posts.first() else {
+            return Err(failure(
+                "ValueError",
+                "the guardrail sent no request".to_owned(),
+            ));
+        };
+        let mut headers: BTreeMap<String, String> = post
+            .headers
+            .iter()
+            .filter(|(header, _)| {
+                header.as_str().starts_with("x-aim-")
+                    || matches!(header.as_str(), "authorization" | "content-type")
+            })
+            .filter_map(|(header, value)| {
+                Some((header.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+            })
+            .collect();
+        // the real HttpPoster adds this header; the fake poster records the caller's map
+        headers.insert("content-type".to_owned(), "application/json".to_owned());
+        (post.url.clone(), headers, post.body.clone())
     };
-    let mut headers: BTreeMap<String, String> = post
-        .headers
-        .iter()
-        .filter(|(header, _)| {
-            header.as_str().starts_with("x-aim-")
-                || matches!(header.as_str(), "authorization" | "content-type")
-        })
-        .filter_map(|(header, value)| {
-            Some((header.as_str().to_owned(), value.to_str().ok()?.to_owned()))
-        })
-        .collect();
-    // the real HttpPoster adds this header; the fake poster records the caller's map
-    headers.insert("content-type".to_owned(), "application/json".to_owned());
-    let body = serde_json::from_slice::<GuardrailValue>(&post.body)
+    let body = serde_json::from_slice::<GuardrailValue>(&bytes)
         .map_err(|error| failure("ValueError", error.to_string()))?;
     Ok(json!({
-        "path_ok": post.url.ends_with(ANALYZE_PATH),
+        "path_ok": url.ends_with(ANALYZE_PATH),
         "headers": headers,
         "body": body,
     }))
 }
 
 fn rejection(error: &AimError) -> Option<serde_json::Value> {
-    match error {
-        AimError::Rejected { code, .. } => Some(json!({
-            "status": 400,
-            "type": "invalid_request_error",
-            "param": null,
-            "code": code,
-        })),
-        _ => None,
-    }
+    let AimError::Rejected { code, .. } = error else {
+        return None;
+    };
+    Some(json!({
+        "status": 400,
+        "type": "invalid_request_error",
+        "param": null,
+        "code": code,
+    }))
 }
 
 fn execute(input: &Input) -> HelperResult {
     match input {
-        Input::Request(args) => {
-            let (built, runtime) = match prepared(
-                &args.settings,
-                &args.environment,
-                &args.answer,
-                args.answer_status,
-                &[],
-            ) {
-                Ok(prepared) => prepared,
-                Err(error) if error.class == "AimMissingSecrets" => {
-                    return Ok(json!({"missing_secrets": true}));
-                }
-                Err(error) => return Err(error),
-            };
-            let mut data = args.request_data.clone();
-            let hook = match args.hook {
-                HookArg::PreCall => AimHook::PreCall,
-                HookArg::Moderation => AimHook::Moderation,
-            };
-            let outcome = runtime.block_on(call_aim_guardrail(
-                &built.guardrail,
-                &mut data,
-                hook,
-                args.key_alias.as_deref(),
-            ));
-            let blocked = match outcome {
-                Ok(()) => None,
-                Err(error) => match rejection(&error) {
-                    Some(blocked) => Some(blocked),
-                    None => return Err(failure("AimError", error.to_string())),
-                },
-            };
-            Ok(json!({
-                "request": recorded(&built)?,
-                "request_data": data,
-                "blocked": blocked,
-            }))
-        }
-        Input::Output(args) => {
-            let (built, runtime) = prepared(
-                &args.settings,
-                &args.environment,
-                &args.answer,
-                args.answer_status,
-                &[],
-            )?;
-            let verdict = runtime.block_on(call_aim_guardrail_on_output(
-                &built.guardrail,
-                &args.request_data,
-                &args.output,
-                args.key_alias.as_deref(),
-            ));
-            let output = match verdict {
-                Ok(AimOutput::Blocked { detection_message }) => {
-                    json!({"detected": detection_message.is_some(), "redacted_output": null})
-                }
-                Ok(AimOutput::Redacted { output }) => {
-                    json!({"detected": false, "redacted_output": output})
-                }
-                Ok(AimOutput::Unchanged) => {
-                    json!({"detected": false, "redacted_output": args.output})
-                }
-                Err(error) => match rejection(&error) {
-                    Some(blocked) => json!({"detected": false, "rejected": blocked}),
-                    None => return Err(failure("AimError", error.to_string())),
-                },
-            };
-            Ok(json!({"request": recorded(&built)?, "output": output}))
-        }
+        Input::Request(args) => execute_request(args),
+        Input::Output(args) => execute_output(args),
         Input::Stream(args) => stream(args),
     }
+}
+
+fn execute_request(args: &RequestArgs) -> HelperResult {
+    let (built, runtime) = match prepared(
+        &args.settings,
+        &args.environment,
+        &args.answer,
+        args.answer_status,
+        &[],
+    ) {
+        Ok(prepared) => prepared,
+        Err(error) if error.class == "AimMissingSecrets" => {
+            return Ok(json!({"missing_secrets": true}));
+        }
+        Err(error) => return Err(error),
+    };
+    let mut data = args.request_data.clone();
+    let hook = match args.hook {
+        HookArg::PreCall => AimHook::PreCall,
+        HookArg::Moderation => AimHook::Moderation,
+    };
+    let outcome = runtime.block_on(call_aim_guardrail(
+        &built.guardrail,
+        &mut data,
+        hook,
+        args.key_alias.as_deref(),
+    ));
+    let blocked = match outcome {
+        Ok(()) => None,
+        Err(error) => match rejection(&error) {
+            Some(blocked) => Some(blocked),
+            None => return Err(failure("AimError", error.to_string())),
+        },
+    };
+    Ok(json!({
+        "request": recorded(&built)?,
+        "request_data": data,
+        "blocked": blocked,
+    }))
+}
+
+fn execute_output(args: &OutputArgs) -> HelperResult {
+    let (built, runtime) = prepared(
+        &args.settings,
+        &args.environment,
+        &args.answer,
+        args.answer_status,
+        &[],
+    )?;
+    let verdict = runtime.block_on(call_aim_guardrail_on_output(
+        &built.guardrail,
+        &args.request_data,
+        &args.output,
+        args.key_alias.as_deref(),
+    ));
+    let output = match verdict {
+        Ok(AimOutput::Blocked { detection_message }) => {
+            json!({"detected": detection_message.is_some(), "redacted_output": null})
+        }
+        Ok(AimOutput::Redacted { output }) => {
+            json!({"detected": false, "redacted_output": output})
+        }
+        Ok(AimOutput::Unchanged) => {
+            json!({"detected": false, "redacted_output": args.output})
+        }
+        Err(error) => match rejection(&error) {
+            Some(blocked) => json!({"detected": false, "rejected": blocked}),
+            None => return Err(failure("AimError", error.to_string())),
+        },
+    };
+    Ok(json!({"request": recorded(&built)?, "output": output}))
 }
 
 fn stream(args: &StreamArgs) -> HelperResult {

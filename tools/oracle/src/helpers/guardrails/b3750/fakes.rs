@@ -42,16 +42,15 @@ impl AimPoster for Fake {
         body: &[u8],
         _timeout: Option<Duration>,
     ) -> Result<AimHttpResponse, AimError> {
-        let mut posts = self
-            .state
+        self.state
             .posts
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        posts.push(Recorded {
-            url: url.to_owned(),
-            headers: headers.clone(),
-            body: body.to_vec(),
-        });
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Recorded {
+                url: url.to_owned(),
+                headers: headers.clone(),
+                body: body.to_vec(),
+            });
         Ok(AimHttpResponse {
             status: self.status,
             body: self.body.clone(),
@@ -88,12 +87,12 @@ impl AimSocketConnector for Fake {
         _read: Duration,
     ) -> Result<AimSocket, AimError> {
         Ok(AimSocket {
-            reader: Box::new(Fake {
+            reader: Box::new(Self {
                 state: Arc::clone(&self.state),
                 status: self.status,
                 body: Vec::new(),
             }),
-            writer: Box::new(Fake {
+            writer: Box::new(Self {
                 state: Arc::clone(&self.state),
                 status: self.status,
                 body: Vec::new(),
@@ -148,9 +147,13 @@ pub(super) fn build(
         connector,
         Some(Duration::from_secs(30)),
     )
-    .map_err(|error| match error {
-        AimError::MissingSecrets => failure("AimMissingSecrets", error.to_string()),
-        _ => failure("AimError", error.to_string()),
-    })?;
+    .map_err(|error| construction_failure(&error))?;
     Ok(Built { guardrail, state })
+}
+
+fn construction_failure(error: &AimError) -> Box<crate::helpers::HelperError> {
+    if matches!(error, AimError::MissingSecrets) {
+        return failure("AimMissingSecrets", error.to_string());
+    }
+    failure("AimError", error.to_string())
 }

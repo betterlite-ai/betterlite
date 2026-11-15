@@ -48,8 +48,10 @@ struct State {
 
 impl State {
     fn record(&self, url: &str, headers: &HeaderMap, body: &[u8]) {
-        let mut posts = self.posts.lock().unwrap_or_else(PoisonError::into_inner);
-        posts.push((url.to_owned(), headers.clone(), body.to_vec()));
+        self.posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((url.to_owned(), headers.clone(), body.to_vec()));
     }
 }
 
@@ -92,12 +94,11 @@ impl AimFrameReader for Fake {
 #[async_trait]
 impl AimFrameWriter for Fake {
     async fn send_text(&mut self, text: String) -> Result<(), AimError> {
-        let mut sent = self
-            .state
+        self.state
             .sent
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        sent.push(text);
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(text);
         Ok(())
     }
 }
@@ -117,7 +118,7 @@ impl AimSocketConnector for Fake {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push((open, read));
-        let half = || Fake {
+        let half = || Self {
             state: Arc::clone(&self.state),
             status: self.status,
             body: Vec::new(),
@@ -186,10 +187,12 @@ fn body_of(state: &State) -> Value {
 }
 
 fn header_of(state: &State, name: &str) -> Option<String> {
-    let posts = state.posts.lock().unwrap_or_else(PoisonError::into_inner);
-    let headers = &posts[0].1;
-    headers
-        .get(name)
+    state
+        .posts
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .first()
+        .and_then(|post| post.1.get(name))
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned)
 }
@@ -201,14 +204,8 @@ fn rejection(error: AimError) -> &'static str {
     code
 }
 
-#[tokio::test]
-async fn aim_guardrail_posts_role_projected_inspection_messages() {
-    let fixture = fixture(
-        StatusCode::OK,
-        r#"{"required_action": {"action_type": "monitor_action"}}"#,
-        &[],
-    );
-    let mut data: BTreeMap<String, GuardrailValue> = serde_json::from_value(json!({
+fn projection_data() -> BTreeMap<String, GuardrailValue> {
+    serde_json::from_value(json!({
         "messages": [
             {"role": "system", "content": "be nice"},
             {"role": "tool", "content": "tool output"},
@@ -217,7 +214,23 @@ async fn aim_guardrail_posts_role_projected_inspection_messages() {
         "litellm_call_id": "call-1",
         "metadata": {"headers": {"x-aim-user-email": "user@example.com"}}
     }))
-    .unwrap();
+    .unwrap()
+}
+
+fn assert_headers(state: &State, expected: &[(&str, &str)]) {
+    for &(name, value) in expected {
+        assert_eq!(header_of(state, name).as_deref(), Some(value));
+    }
+}
+
+#[tokio::test]
+async fn aim_guardrail_posts_role_projected_inspection_messages() {
+    let fixture = fixture(
+        StatusCode::OK,
+        r#"{"required_action": {"action_type": "monitor_action"}}"#,
+        &[],
+    );
+    let mut data = projection_data();
     call_aim_guardrail(
         &fixture.guardrail,
         &mut data,
@@ -234,29 +247,16 @@ async fn aim_guardrail_posts_role_projected_inspection_messages() {
             {"role": "user", "content": "hello"}
         ]})
     );
-    assert_eq!(
-        header_of(&fixture.state, "authorization").as_deref(),
-        Some("Bearer aim-key")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-litellm-hook").as_deref(),
-        Some("pre_call")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-litellm-version").as_deref(),
-        Some("1.105.1")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-call-id").as_deref(),
-        Some("call-1")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-user-email").as_deref(),
-        Some("user@example.com")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-gateway-key-alias").as_deref(),
-        Some("alias")
+    assert_headers(
+        &fixture.state,
+        &[
+            ("authorization", "Bearer aim-key"),
+            ("x-aim-litellm-hook", "pre_call"),
+            ("x-aim-litellm-version", "1.105.1"),
+            ("x-aim-call-id", "call-1"),
+            ("x-aim-user-email", "user@example.com"),
+            ("x-aim-gateway-key-alias", "alias"),
+        ],
     );
 }
 
@@ -587,6 +587,38 @@ fn texts(items: &[Result<VerifiedChunk, AimError>]) -> Vec<&str> {
         .collect()
 }
 
+fn assert_stream_recording(fixture: &Fixture) {
+    let sent = fixture
+        .state
+        .sent
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(sent.len(), 3);
+    assert_eq!(sent.last().map(String::as_str), Some(r#"{"done":true}"#));
+    drop(sent);
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-litellm-hook").as_deref(),
+        Some("output")
+    );
+    assert_eq!(
+        header_of(&fixture.state, "x-aim-gateway-key-alias").as_deref(),
+        Some("alias")
+    );
+    let posts = fixture
+        .state
+        .posts
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(posts[0].0, "ws://aim.test/fw/v1/analyze/stream");
+    drop(posts);
+    let timings = fixture
+        .state
+        .timings
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(*timings, vec![(CONNECT_TIMEOUT, Duration::from_secs(30))]);
+}
+
 #[tokio::test]
 async fn aim_guardrail_stream_yields_verified_chunks_in_order() {
     let first = r#"{"verified_chunk": {"id": "chatcmpl-1", "choices": [{"index": 0, "delta": {"content": "he"}}]}}"#;
@@ -603,33 +635,7 @@ async fn aim_guardrail_stream_yields_verified_chunks_in_order() {
     let items = drain(&fixture, chunks).await;
     assert_eq!(items.len(), 2);
     assert_eq!(texts(&items), ["he", "llo"]);
-    let sent = fixture
-        .state
-        .sent
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(sent.len(), 3);
-    assert_eq!(sent.last().map(String::as_str), Some(r#"{"done":true}"#));
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-litellm-hook").as_deref(),
-        Some("output")
-    );
-    assert_eq!(
-        header_of(&fixture.state, "x-aim-gateway-key-alias").as_deref(),
-        Some("alias")
-    );
-    let posts = fixture
-        .state
-        .posts
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(posts[0].0, "ws://aim.test/fw/v1/analyze/stream");
-    let timings = fixture
-        .state
-        .timings
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    assert_eq!(*timings, vec![(CONNECT_TIMEOUT, Duration::from_secs(30))]);
+    assert_stream_recording(&fixture);
 }
 
 #[tokio::test]
@@ -785,9 +791,9 @@ async fn aim_guardrail_http_poster_sends_the_request_and_returns_the_status_and_
 
 #[rstest]
 #[case::small(4, true)]
-#[case::just_inside(1_048_575, true)]
-#[case::at_the_limit(1_048_576, true)]
-#[case::just_outside(1_048_577, false)]
+#[case::just_inside(MAX_RESPONSE_BYTES.saturating_sub(1), true)]
+#[case::at_the_limit(MAX_RESPONSE_BYTES, true)]
+#[case::just_outside(MAX_RESPONSE_BYTES.saturating_add(1), false)]
 #[tokio::test]
 async fn aim_guardrail_http_poster_limits_the_response_size(
     #[case] size: usize,
