@@ -1,0 +1,24 @@
+kind: helper
+name: attachment-create-request-scope-wildcard
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyAttachmentCreateRequest
+    value:
+      policy_name: baseline
+      scope: "*"
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyAttachmentCreateRequest
+      value:
+        policy_name: healthcare
+        teams: [healthcare-team]
+        keys: ["dev-key-*"]
+        models: ["gpt-4*"]
+        tags: ["health-*"]
+        default: true
+env: {}
+compare: {ignore: []}

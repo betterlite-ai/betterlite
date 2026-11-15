@@ -1,0 +1,143 @@
+kind: helper
+name: anthropic-request-thinking-history-warning
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: f
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: true
+    optional_params:
+      thinking:
+        budget_tokens: 1024
+        type: enabled
+    strips_billing_metadata: false
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: f
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: false
+    optional_params:
+      thinking:
+        budget_tokens: 1024
+        type: enabled
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: f
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: true
+    optional_params:
+      thinking: null
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: null
+      role: assistant
+      thinking_blocks:
+      - signature: sig
+        thinking: t
+        type: thinking
+      tool_calls:
+      - function:
+          arguments: '{}'
+          name: f
+        id: call_1
+        type: function
+    model: plain-model
+    modify_params: true
+    optional_params:
+      thinking:
+        budget_tokens: 1024
+        type: enabled
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: a
+      role: assistant
+    model: plain-model
+    modify_params: true
+    optional_params:
+      thinking:
+        budget_tokens: 1024
+        type: enabled
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []
