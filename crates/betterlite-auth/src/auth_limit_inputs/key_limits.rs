@@ -132,17 +132,8 @@ fn model_max_budget_limits(
         let JsonData::Object(entry) = budget else {
             continue;
         };
-        let Some(value) = entry.get(budget_field) else {
+        let Some(integer) = entry.get(budget_field).and_then(limit_integer) else {
             continue;
-        };
-        if matches!(value, JsonData::Null) {
-            continue;
-        }
-        let JsonData::Number(number) = value else {
-            return None;
-        };
-        let Some(integer) = json_integer(number) else {
-            return None;
         };
         limits.insert(model.clone(), integer);
     }
@@ -153,22 +144,26 @@ fn model_max_budget_limits(
     }
 }
 
-// a stored model limit map is dict[str, int]; anything else is not a limit the limiter can compare
+// a stored entry the limiter cannot compare is skipped; the entries it can compare stay enforced
 pub(super) fn integer_limits(value: &JsonData) -> Option<ModelLimits> {
     let JsonData::Object(fields) = value else {
         return None;
     };
     let mut limits = ModelLimits::new();
     for (model, limit) in fields {
-        let JsonData::Number(number) = limit else {
-            return None;
-        };
-        let Some(integer) = json_integer(number) else {
-            return None;
+        let Some(integer) = limit_integer(limit) else {
+            continue;
         };
         limits.insert(model.clone(), integer);
     }
     Some(limits)
+}
+
+fn limit_integer(value: &JsonData) -> Option<i64> {
+    let JsonData::Number(number) = value else {
+        return None;
+    };
+    json_integer(number)
 }
 
 fn json_integer(number: &Number) -> Option<i64> {

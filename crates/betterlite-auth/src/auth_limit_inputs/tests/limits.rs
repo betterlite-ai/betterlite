@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
+use serde_json::Number;
 
 use crate::auth_limit_inputs::deployment::DeploymentLimitValue;
 use crate::auth_limit_inputs::error::AuthLimitInputsError;
@@ -80,6 +81,41 @@ fn budget_nested_dict_nonnull() {
     assert_eq!(rpm, Some(support::limits(&[("gpt-4", 5)])));
     let tpm = get_key_model_tpm_limit(&auth, &support::query(Some("gpt-4"), None)).unwrap();
     assert_eq!(tpm, None);
+}
+
+#[test]
+fn budget_malformed_entry_skipped() {
+    let auth = support::auth(&[(
+        "model_max_budget",
+        support::object(&[
+            (
+                "gpt-4",
+                support::object(&[("rpm_limit", support::number(10))]),
+            ),
+            (
+                "gpt-3",
+                support::object(&[("rpm_limit", support::text("abc"))]),
+            ),
+            (
+                "gpt-5",
+                support::object(&[("rpm_limit", JsonData::Number(Number::from(u64::MAX)))]),
+            ),
+            ("gpt-6", support::text("not-a-dict")),
+        ]),
+    )]);
+    let limits = get_key_model_rpm_limit(&auth, &support::query(Some("gpt-4"), None)).unwrap();
+    assert_eq!(limits, Some(support::limits(&[("gpt-4", 10)])));
+    let malformed = support::auth(&[(
+        "model_max_budget",
+        support::object(&[(
+            "gpt-4",
+            support::object(&[("rpm_limit", support::text("abc"))]),
+        )]),
+    )]);
+    assert_eq!(
+        get_key_model_rpm_limit(&malformed, &support::query(Some("gpt-4"), None)).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -353,6 +389,56 @@ fn tenant_accessor_fields() {
     assert_eq!(
         model_limit_from_metadata(&missing, MetadataAccessor::Project, ModelRateLimitKey::Tpm),
         None
+    );
+}
+
+#[test]
+fn metadata_malformed_entry_skipped() {
+    let limits = support::object(&[
+        ("gpt-4", support::number(10)),
+        ("gpt-3", support::text("abc")),
+        ("gpt-5", JsonData::Number(Number::from(u64::MAX))),
+    ]);
+    let key = support::auth(&[(
+        "metadata",
+        support::object(&[("model_rpm_limit", limits.clone())]),
+    )]);
+    assert_eq!(
+        get_key_own_model_rate_limit(&key, ModelRateLimitKey::Rpm),
+        Some(support::limits(&[("gpt-4", 10)]))
+    );
+    let team = support::auth(&[(
+        "team_metadata",
+        support::object(&[("model_rpm_limit", limits.clone())]),
+    )]);
+    assert_eq!(
+        get_key_model_rpm_limit(&team, &support::query(Some("gpt-4"), None)).unwrap(),
+        Some(support::limits(&[("gpt-4", 10)]))
+    );
+    let organization = support::auth(&[(
+        "organization_metadata",
+        support::object(&[("model_rpm_limit", limits.clone())]),
+    )]);
+    assert_eq!(
+        model_limit_from_metadata(
+            &organization,
+            MetadataAccessor::Organization,
+            ModelRateLimitKey::Rpm,
+        ),
+        Some(support::limits(&[("gpt-4", 10)]))
+    );
+    let mcp = support::auth(&[(
+        "metadata",
+        support::object(&[("mcp_rpm_limit", limits.clone())]),
+    )]);
+    assert_eq!(
+        get_key_mcp_rpm_limit(&mcp),
+        Some(support::limits(&[("gpt-4", 10)]))
+    );
+    let tag = support::auth(&[("metadata", support::object(&[("tag_rpm_limit", limits)]))]);
+    assert_eq!(
+        get_key_tag_rpm_limit(&tag),
+        Some(support::limits(&[("gpt-4", 10)]))
     );
 }
 
