@@ -13,10 +13,8 @@ use serde_json::json;
 use crate::helpers::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
-struct HumanizedItem {
-    #[serde(default)]
+pub(crate) struct HumanizedItem {
     detected: Option<bool>,
-    #[serde(default)]
     detector_type: Option<String>,
 }
 
@@ -24,17 +22,12 @@ struct HumanizedItem {
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
     HumanizeLakeraBlockReasons {
-        #[serde(default)]
         breakdown: Option<Vec<HumanizedItem>>,
     },
     ValidateAdvisoryConfig {
-        #[serde(default)]
         on_flagged: Option<LakeraOnFlagged>,
-        #[serde(default)]
         advisory_system_message: Option<String>,
-        #[serde(default)]
         payload: Option<bool>,
-        #[serde(default)]
         breakdown: Option<bool>,
     },
     BuildLakeraInspectionMessages {
@@ -50,7 +43,7 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::HumanizeLakeraBlockReasons { breakdown } => {
-                let items = breakdown_items(breakdown);
+                let items = breakdown_items(breakdown.as_deref());
                 json!({ "reason": humanize_lakera_block_reasons(Some(items.as_slice())) })
             }
             Input::ValidateAdvisoryConfig {
@@ -59,9 +52,8 @@ impl Helper for Op {
                 payload,
                 breakdown,
             } => {
-                let on_flagged = on_flagged.unwrap_or(LakeraOnFlagged::Block);
                 let verdict = validate_advisory_config(
-                    on_flagged,
+                    on_flagged.unwrap_or(LakeraOnFlagged::Block),
                     advisory_system_message.as_deref(),
                     *payload,
                     *breakdown,
@@ -79,9 +71,8 @@ impl Helper for Op {
     }
 }
 
-fn breakdown_items(items: &Option<Vec<HumanizedItem>>) -> Vec<BreakdownItem> {
+fn breakdown_items(items: Option<&[HumanizedItem]>) -> Vec<BreakdownItem> {
     items
-        .as_deref()
         .unwrap_or_default()
         .iter()
         .map(|item| BreakdownItem {
