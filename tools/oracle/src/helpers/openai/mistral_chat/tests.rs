@@ -23,7 +23,7 @@ fn helper_seeds_select_mistral_chat() {
     let rejected: Vec<&str> = sources
         .iter()
         .filter(|source| {
-            let case: HelperCase = serde_saphyr::from_str(source).expect("a helper case");
+            let case: HelperCase = serde_saphyr::from_str(source.as_str()).expect("a helper case");
             let decodes = serde_json::from_value::<super::Input>(case.call.input.clone()).is_ok();
             case.call.operation != "mistral_chat"
                 || !decodes
