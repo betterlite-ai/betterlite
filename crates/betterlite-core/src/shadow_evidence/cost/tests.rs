@@ -62,6 +62,10 @@ fn price(cost: Decimal) -> ModelPrice {
     r#"{"model":"gpt-4o","usage":{"prompt_tokens":1000},"_hidden_params":{"response_cost":0.5}}"#,
     Decimal::new(5, 1)
 )]
+#[case::a_zero_stamp_is_a_stamp(
+    r#"{"model":"gpt-4o","_hidden_params":{"response_cost":0}}"#,
+    Decimal::ZERO
+)]
 fn stamp_is_the_billed_cost(#[case] response: &str, #[case] expected: Decimal) {
     let prices = price(Decimal::new(7, 0));
     assert_eq!(call_cost(&json(response), &prices), expected);
