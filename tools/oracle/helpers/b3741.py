@@ -3,7 +3,7 @@ import datetime as dt
 import time
 import urllib.parse
 import uuid
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -97,6 +97,10 @@ class EvaluatePayload(BaseModel):
     agent_id: str | None = Field(default=None, alias="agentId")
 
 
+class LoggingDetails(Protocol):
+    model_call_details: dict[str, JsonValue]
+
+
 class ScriptedReplies:
     def __init__(self, replies: list[ScriptedReply], *, repeat_last_reply: bool) -> None:
         self.replies = replies
@@ -106,19 +110,16 @@ class ScriptedReplies:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(capture_request(request))
-        reply = self.next_reply()
-        if reply["raw"] is not None:
-            return httpx.Response(reply["status"], content=reply["raw"])
-        return httpx.Response(reply["status"], json=reply["body"])
-
-    def next_reply(self) -> ScriptedReply:
         if self.used < len(self.replies):
             reply = self.replies[self.used]
             self.used += 1
-            return reply
-        if self.repeat_last_reply and self.replies:
-            return self.replies[-1]
-        raise ValueError("the scripted replies are exhausted")
+        elif self.repeat_last_reply and self.replies:
+            reply = self.replies[-1]
+        else:
+            raise ValueError("the scripted replies are exhausted")
+        if reply["raw"] is not None:
+            return httpx.Response(reply["status"], content=reply["raw"])
+        return httpx.Response(reply["status"], json=reply["body"])
 
 
 class Probe(Agent365Guardrail):
@@ -126,10 +127,7 @@ class Probe(Agent365Guardrail):
         return await self._get_obo_token(assertion)
 
     async def post_allowing(
-        self,
-        url: str,
-        headers: dict[str, str],
-        data: dict[str, str],
+        self, url: str, headers: dict[str, str], data: dict[str, str]
     ) -> httpx.Response:
         return await self._post_allowing_error_status(url=url, headers=headers, data=data)
 
@@ -151,8 +149,7 @@ def capture_request(request: httpx.Request) -> dict[str, JsonValue]:
 
 
 def make_guardrail() -> Probe:
-    # the positional fields are guardrail_name, tenant_id, client_id and client_secret
-    return Probe(
+    return Probe(  # positional: guardrail_name, tenant_id, client_id and client_secret
         "agent-365-guard", "tenant-abc", "client-xyz", "secret-123",
         event_hook=GuardrailEventHooks.pre_mcp_call, default_on=True,
     )
@@ -170,13 +167,10 @@ def exchange_outcome(error: Agent365TokenExchangeError) -> dict[str, JsonValue]:
 def malformed_variant(handler: ScriptedReplies) -> str:
     reply = handler.replies[min(handler.used, len(handler.replies)) - 1]
     raw = reply["raw"]
-    if raw is None:
-        body = reply["body"]
-    else:
-        try:
-            body = JSON.validate_json(raw)
-        except ValidationError:
-            return "non_json_body"
+    try:
+        body = reply["body"] if raw is None else JSON.validate_json(raw)
+    except ValidationError:
+        return "non_json_body"
     try:
         fields = FIELDS.validate_python(body)
     except ValidationError:
@@ -187,9 +181,7 @@ def malformed_variant(handler: ScriptedReplies) -> str:
 
 
 async def token_outcome(
-    guardrail: Probe,
-    assertion: str,
-    handler: ScriptedReplies,
+    guardrail: Probe, assertion: str, handler: ScriptedReplies
 ) -> dict[str, JsonValue]:
     try:
         token = await guardrail.fetch_token(assertion)
@@ -219,9 +211,7 @@ async def post_outcome(guardrail: Probe, step: PostRequest) -> dict[str, JsonVal
 
 
 async def run_step(
-    guardrail: Probe,
-    step: TokenStep,
-    handler: ScriptedReplies,
+    guardrail: Probe, step: TokenStep, handler: ScriptedReplies
 ) -> dict[str, JsonValue]:
     if step["kind"] == "token":
         return await token_outcome(guardrail, step["assertion"], handler)
@@ -231,11 +221,9 @@ async def run_step(
 
 
 async def run_exchange(
-    guardrail: Probe,
-    steps: list[TokenStep],
-    handler: ScriptedReplies,
-) -> list[dict[str, JsonValue]]:
-    outcomes = [await run_step(guardrail, step, handler) for step in steps]
+    guardrail: Probe, steps: list[TokenStep], handler: ScriptedReplies
+) -> list[JsonValue]:
+    outcomes: list[JsonValue] = [await run_step(guardrail, step, handler) for step in steps]
     await guardrail.async_handler.client.aclose()
     return outcomes
 
@@ -260,14 +248,15 @@ def assertion_result(args: AssertionCheck) -> JsonValue:
 def payload_request(args: PayloadAssembly) -> RequestPayload:
     logging_obj = Logging(
         model="mcp", messages=None, stream=False, call_type="call_mcp_tool",
-        start_time=FIXED_START,
-        litellm_call_id=args["litellm_call_id"], function_id="fn-1",
+        start_time=FIXED_START, litellm_call_id=args["litellm_call_id"], function_id="fn-1",
     )
     if args["mcp_session_id"] is not None:
-        logging_obj.model_call_details["mcp_tool_call_metadata"] = {
+        details: LoggingDetails = logging_obj
+        details.model_call_details["mcp_tool_call_metadata"] = {
             "mcp_session_id": args["mcp_session_id"]
         }
-    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"], "litellm_logging_obj": logging_obj}
+    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"]}
+    data["litellm_logging_obj"] = logging_obj
     if args["metadata"] is not None:
         data["metadata"] = args["metadata"]
     if args["litellm_metadata"] is not None:
@@ -287,24 +276,19 @@ def cache_entries(guardrail: Probe) -> list[list[JsonValue]]:
     return [[key, token, round(expires_at - now)] for key, token, expires_at in entries]
 
 
-def conversation_marker(conversation: str) -> str:
-    try:
-        parsed = uuid.UUID(conversation)
-    except ValueError:
-        return conversation
-    if parsed.version != UUID_VERSION:
-        return conversation
-    return UUID_MARKER
-
-
 def payload_result(args: PayloadAssembly) -> JsonValue:
     request_data = payload_request(args)
     auth = UserAPIKeyAuth(key_alias=args["key_alias"])
     payload = EvaluatePayload.model_validate(make_guardrail().build_payload(request_data, auth))
-    payload.conversation_id = conversation_marker(payload.conversation_id)
+    try:
+        generated = uuid.UUID(payload.conversation_id).version == UUID_VERSION
+    except ValueError:
+        generated = False
+    if generated:
+        payload.conversation_id = UUID_MARKER
     return {
         "payload": JSON.validate_json(payload.model_dump_json(by_alias=True, exclude_none=True)),
-        "conversation_id_is_uuid4": payload.conversation_id == UUID_MARKER,
+        "conversation_id_is_uuid4": generated,
     }
 
 
