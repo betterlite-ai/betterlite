@@ -18,7 +18,8 @@ CallT = TypeVar("CallT")
 
 
 def project(calls: list[CallT] | None, value: Callable[[CallT], JsonValue]) -> list[JsonValue]:
-    return [] if calls is None else [value(call) for call in calls]
+    resolved: list[CallT] = [] if calls is None else calls
+    return [value(call) for call in resolved]
 
 
 def run(input_value: Input) -> JsonValue:

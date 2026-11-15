@@ -47,13 +47,9 @@ def chunk_value(call: Call) -> JsonValue:
         record = Failure.model_validate(error, from_attributes=True)
         failure: Object = {"error": {"status": record.status_code}}
         return failure
-    record = CHUNK_RECORD.validate_json(parsed.model_dump_json())
-    delta: ChunkDelta = {}
-    choices = record.get("choices")
-    if choices:
-        inner = choices[0].get("delta")
-        if inner is not None:
-            delta = inner
+    choices = CHUNK_RECORD.validate_json(parsed.model_dump_json()).get("choices")
+    inner = None if not choices else choices[0].get("delta")
+    delta: ChunkDelta = {} if inner is None else inner
     value: Object = {
         "content": delta.get("content"),
         "reasoning_content": delta.get("reasoning_content"),

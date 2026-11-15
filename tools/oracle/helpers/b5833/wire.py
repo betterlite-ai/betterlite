@@ -1,6 +1,9 @@
 from typing import Literal, Required, TypedDict
 
+import litellm
 from pydantic import JsonValue
+
+litellm.suppress_debug_info = True
 
 Answer = Literal["yes", "no", "fail"]
 Object = dict[str, JsonValue]
