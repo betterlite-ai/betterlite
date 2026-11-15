@@ -227,15 +227,17 @@ fn match_answer(answer: &PolicyResponse) -> Result<(), ZscalerAiGuardError> {
 
 fn status_code_is_200(status_code: Option<&GuardrailValue>) -> bool {
     match status_code {
-        Some(GuardrailValue::SignedInteger(200)) | Some(GuardrailValue::UnsignedInteger(200)) => {
-            true
-        }
+        Some(GuardrailValue::SignedInteger(200) | GuardrailValue::UnsignedInteger(200)) => true,
         Some(GuardrailValue::Decimal(value)) => *value == 200.0,
-        Some(GuardrailValue::Null)
-        | Some(GuardrailValue::Boolean(_))
-        | Some(GuardrailValue::Text(_))
-        | Some(GuardrailValue::Array(_))
-        | Some(GuardrailValue::Object(_))
+        Some(
+            GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Text(_)
+            | GuardrailValue::Array(_)
+            | GuardrailValue::Object(_),
+        )
         | None => false,
     }
 }

@@ -29,15 +29,15 @@ pub(super) struct Mock {
 
 pub(super) async fn mock(status: u16, reply: &str) -> Mock {
     let recorded = Arc::new(Mutex::new(Vec::new()));
-    let recorder = Arc::clone(&recorded);
+    let captures = Arc::clone(&recorded);
     let reply = reply.to_owned();
     let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let recorder = Arc::clone(&recorder);
+        let captures = Arc::clone(&captures);
         let reply = reply.clone();
         async move {
             let body =
                 serde_json::from_slice::<GuardrailValue>(&bytes).unwrap_or(GuardrailValue::Null);
-            recorder.lock().unwrap().push(Seen {
+            captures.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 headers,
                 body,

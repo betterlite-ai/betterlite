@@ -14,7 +14,7 @@ use serde_json::json;
 use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
 use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use crate::routing_mock_scripts::{MockScript, redact};
 
 pub(crate) struct Op;
 
@@ -62,7 +62,7 @@ fn call(input: &ZscalerCall) -> HelperResult {
         .map_err(|error| failure("MockError", None, error.to_string()))?
         .into_iter()
         .next();
-    output(result, recorded)
+    output(result, recorded, input.settings.api_key.as_deref())
 }
 
 fn start_mock(answer: &UpstreamAnswer) -> Result<MockProvider, Box<HelperError>> {
@@ -81,6 +81,7 @@ fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
 fn output(
     result: Result<Inputs, ZscalerAiGuardError>,
     recorded: Option<crate::routing_mock_scripts::ProviderCall>,
+    api_key: Option<&str>,
 ) -> HelperResult {
     let (path, headers, body) = match recorded {
         Some(provider_call) => (
@@ -90,10 +91,11 @@ fn output(
         ),
         None => (None, None, None),
     };
+    let headers = headers.map(|headers| header_subset(&headers, api_key));
     match result {
         Ok(inputs) => Ok(json!({
             "path": path,
-            "headers": header_subset(headers.as_ref()),
+            "headers": headers,
             "body": body,
             "inputs": inputs,
         })),
@@ -102,7 +104,7 @@ fn output(
             "status": error.status_code().as_u16(),
             "detail": error.detail(),
             "path": path,
-            "headers": header_subset(headers.as_ref()),
+            "headers": headers,
             "body": body,
         })),
         Err(error) => Err(failure(
@@ -141,7 +143,10 @@ fn build_guardrail(input: &ZscalerCall, base: &str) -> Result<ZscalerAiGuard, Bo
         .map_err(|error| failure("ValueError", None, error.to_string()))
 }
 
-fn header_subset(headers: Option<&BTreeMap<String, String>>) -> Option<BTreeMap<String, String>> {
+fn header_subset(
+    headers: &BTreeMap<String, String>,
+    api_key: Option<&str>,
+) -> BTreeMap<String, String> {
     const NAMES: [&str; 5] = [
         "authorization",
         "content-type",
@@ -149,16 +154,28 @@ fn header_subset(headers: Option<&BTreeMap<String, String>>) -> Option<BTreeMap<
         "user-api-key-team-id",
         "user-api-key-user-id",
     ];
-    headers.map(|headers| {
-        NAMES
-            .iter()
-            .filter_map(|name| {
-                headers
-                    .get(*name)
-                    .map(|value| ((*name).to_owned(), value.clone()))
-            })
-            .collect()
-    })
+    NAMES
+        .iter()
+        .filter_map(|name| {
+            let value = if *name == "authorization" {
+                authorization_value(headers, api_key)?
+            } else {
+                headers.get(*name)?.clone()
+            };
+            Some(((*name).to_owned(), value))
+        })
+        .collect()
+}
+
+// the mock hashes the credential headers, so the configured bearer token is hashed the same way and reported in full when it matches
+fn authorization_value(
+    recorded: &BTreeMap<String, String>,
+    api_key: Option<&str>,
+) -> Option<String> {
+    let expected = format!("Bearer {}", api_key.unwrap_or_default());
+    let mut probe = BTreeMap::from([("authorization".to_owned(), expected.clone())]);
+    redact(&mut probe);
+    (recorded.get("authorization") == probe.get("authorization")).then_some(expected)
 }
 
 fn failure(class_name: &str, status: Option<u16>, message: String) -> Box<HelperError> {

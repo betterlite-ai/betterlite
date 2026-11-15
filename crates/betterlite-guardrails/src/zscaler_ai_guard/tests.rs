@@ -14,7 +14,7 @@ use super::metadata;
 use super::printed::{quote_text, repr_text, str_text};
 use super::{SUPPORTED_EVENT_HOOKS, ZscalerAiGuard};
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use support::{args, environment, guardrail, inputs, mock, request_data};
+use support::{args, guardrail, inputs, mock, request_data};
 
 #[test]
 fn supported_hooks_are_pre_call_and_post_call() {
@@ -713,6 +713,28 @@ async fn an_answer_under_the_size_limit_is_read() {
 }
 
 #[tokio::test]
+async fn an_answer_over_the_size_limit_is_a_500() {
+    let content = "x".repeat(super::MAX_RESPONSE_BYTES);
+    let reply =
+        format!(r#"{{"statusCode": 200, "action": "ALLOW", "transactionId": "{content}"}}"#);
+    let mock = mock(200, &reply).await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        ZscalerAiGuardError::ResponseTooLarge { .. }
+    ));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
 async fn a_decimal_200_status_code_is_accepted() {
     let mock = mock(200, r#"{"statusCode": 200.0, "action": "ALLOW"}"#).await;
     let guardrail = guardrail(&mock.base);
@@ -785,7 +807,7 @@ async fn a_large_unsigned_policy_id_is_sent() {
     let seen = mock.seen.lock().unwrap();
     assert_eq!(
         serde_json::to_value(&seen[0].body).unwrap(),
-        serde_json::json!({"direction": "IN", "content": "hello", "policyId": 18446744073709551615_u64})
+        serde_json::json!({"direction": "IN", "content": "hello", "policyId": u64::MAX})
     );
 }
 
