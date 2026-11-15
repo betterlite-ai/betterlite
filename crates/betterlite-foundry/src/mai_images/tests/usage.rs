@@ -1,9 +1,8 @@
 use betterlite_prompts::arguments::json::Object;
 
-use crate::mai_images::error::MaiImageError;
 use crate::mai_images::usage::normalize_mai_image_usage;
 
-use super::support::object;
+use super::support::{kind, object, variant};
 
 fn normalized(usage: &str) -> Object {
     normalize_mai_image_usage(Some(&object(usage))).unwrap()
@@ -19,7 +18,19 @@ pub(super) fn usage_alias_priority() {
     let zeros = counts(0, 0, 0, 0, 0);
     assert_eq!(normalize_mai_image_usage(None).unwrap(), zeros);
     assert_eq!(normalized("{}"), zeros);
-    // text: num_input_text_tokens, then details.text_tokens, then input_tokens
+    assert_eq!(
+        normalized(r#"{"num_input_text_tokens":null,"input_tokens":null}"#),
+        zeros
+    );
+    text_aliases();
+    image_aliases();
+    output_aliases();
+    explicit_input_and_total();
+    extra_fields_and_types();
+}
+
+// text: num_input_text_tokens, then details.text_tokens, then input_tokens
+fn text_aliases() {
     assert_eq!(
         normalized(
             r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":9},"input_tokens":20}"#
@@ -31,11 +42,10 @@ pub(super) fn usage_alias_priority() {
         counts(13, 4, 9, 0, 13)
     );
     assert_eq!(normalized(r#"{"input_tokens":7}"#), counts(7, 0, 7, 0, 7));
-    assert_eq!(
-        normalized(r#"{"num_input_text_tokens":null,"input_tokens":null}"#),
-        zeros
-    );
-    // image: num_input_image_tokens, then details.image_tokens
+}
+
+// image: num_input_image_tokens, then details.image_tokens
+fn image_aliases() {
     assert_eq!(
         normalized(r#"{"num_input_image_tokens":3,"input_tokens_details":{"image_tokens":8}}"#),
         counts(3, 3, 0, 0, 3)
@@ -44,7 +54,10 @@ pub(super) fn usage_alias_priority() {
         normalized(r#"{"input_tokens_details":"not an object","num_input_text_tokens":1}"#),
         counts(1, 0, 1, 0, 1)
     );
-    // output: output_tokens, num_output_tokens, output_image_tokens
+}
+
+// output: output_tokens, num_output_tokens, output_image_tokens
+fn output_aliases() {
     assert_eq!(
         normalized(r#"{"output_tokens":1,"num_output_tokens":2,"output_image_tokens":3}"#),
         counts(0, 0, 0, 1, 1)
@@ -57,7 +70,10 @@ pub(super) fn usage_alias_priority() {
         normalized(r#"{"output_tokens":null,"output_image_tokens":3}"#),
         counts(0, 0, 0, 3, 3)
     );
-    // an explicit input or total, zero included, wins over the sum
+}
+
+// an explicit input or total, zero included, wins over the sum
+fn explicit_input_and_total() {
     assert_eq!(
         normalized(r#"{"num_input_text_tokens":4,"input_tokens":0,"output_tokens":2}"#),
         counts(0, 0, 4, 2, 2)
@@ -74,10 +90,9 @@ pub(super) fn usage_alias_priority() {
         normalized(r#"{"num_input_text_tokens":4,"num_input_image_tokens":6,"output_tokens":2}"#),
         counts(10, 6, 4, 2, 12)
     );
-    keeps_extra_fields_and_checks_types();
 }
 
-fn keeps_extra_fields_and_checks_types() {
+fn extra_fields_and_types() {
     let mut expected = counts(2, 0, 2, 0, 2);
     expected.extend(object(r#"{"cost":0.5,"extra":{"kept":true}}"#));
     assert_eq!(
@@ -91,40 +106,32 @@ fn keeps_extra_fields_and_checks_types() {
         normalized(r#"{"num_input_text_tokens":5,"input_tokens_details":{"text_tokens":"x"}}"#),
         counts(5, 0, 5, 0, 5)
     );
+    wrong_types_and_overflow();
+}
+
+fn wrong_types_and_overflow() {
+    let usage = |text: &str| kind(normalize_mai_image_usage(Some(&object(text))));
+    assert_eq!(usage(r#"{"num_input_text_tokens":"5"}"#), "field_type");
+    assert_eq!(usage(r#"{"output_tokens":true}"#), "field_type");
+    assert_eq!(
+        usage(r#"{"input_tokens_details":{"image_tokens":1.5}}"#),
+        "field_type"
+    );
+    assert_eq!(
+        usage(r#"{"input_tokens":9223372036854775808}"#),
+        "field_type"
+    );
+    let max = i64::MAX;
+    let input_overflow = format!(r#"{{"num_input_text_tokens":{max},"num_input_image_tokens":1}}"#);
+    assert_eq!(usage(&input_overflow), "token_overflow");
+    let total_overflow = format!(r#"{{"input_tokens":{max},"output_tokens":1}}"#);
+    assert_eq!(usage(&total_overflow), "token_overflow");
     let wrong =
         normalize_mai_image_usage(Some(&object(r#"{"num_input_text_tokens":"5"}"#))).unwrap_err();
-    assert!(matches!(
-        wrong,
-        MaiImageError::FieldType {
-            field: "num_input_text_tokens"
-        }
-    ));
+    assert_eq!(variant(&wrong), "field_type");
     assert_eq!(wrong.status_code(), Some(500));
-    let fractional = object(r#"{"input_tokens_details":{"image_tokens":1.5}}"#);
-    assert!(matches!(
-        normalize_mai_image_usage(Some(&fractional)).unwrap_err(),
-        MaiImageError::FieldType {
-            field: "input_tokens_details.image_tokens"
-        }
-    ));
-    let input_overflow = object(&format!(
-        r#"{{"num_input_text_tokens":{},"num_input_image_tokens":1}}"#,
-        i64::MAX
-    ));
-    assert!(matches!(
-        normalize_mai_image_usage(Some(&input_overflow)).unwrap_err(),
-        MaiImageError::TokenOverflow {
-            field: "input_tokens"
-        }
-    ));
-    let total_overflow = object(&format!(
-        r#"{{"input_tokens":{},"output_tokens":1}}"#,
-        i64::MAX
-    ));
-    assert!(matches!(
-        normalize_mai_image_usage(Some(&total_overflow)).unwrap_err(),
-        MaiImageError::TokenOverflow {
-            field: "total_tokens"
-        }
-    ));
+    assert_eq!(
+        wrong.to_string(),
+        "the Azure AI MAI image field num_input_text_tokens has the wrong type"
+    );
 }

@@ -1,0 +1,24 @@
+kind: helper
+name: foundry-mai-images-usage-alias-priority
+call:
+  foundry_mai_images:
+    usages:
+      - null
+      - {}
+      - {num_input_text_tokens: 5, input_tokens_details: {text_tokens: 9}, input_tokens: 20}
+      - {input_tokens_details: {text_tokens: 9, image_tokens: 4}}
+      - {input_tokens: 7}
+      - {num_input_text_tokens: null, input_tokens: null}
+      - {num_input_image_tokens: 3, input_tokens_details: {image_tokens: 8}}
+      - {input_tokens_details: not an object, num_input_text_tokens: 1}
+      - {output_tokens: 1, num_output_tokens: 2, output_image_tokens: 3}
+      - {num_output_tokens: 2, output_image_tokens: 3}
+      - {output_tokens: null, output_image_tokens: 3}
+      - {num_input_text_tokens: 4, input_tokens: 0, output_tokens: 2}
+      - {num_input_text_tokens: 4, output_tokens: 2, total_tokens: 99}
+      - {num_input_text_tokens: 4, output_tokens: 2, total_tokens: 0}
+      - {num_input_text_tokens: 4, num_input_image_tokens: 6, output_tokens: 2}
+      - {input_tokens: 2, cost: 0.5, extra: {kept: true}, input_tokens_details: {cached_tokens: 1}}
+      - {num_input_text_tokens: 5, input_tokens_details: {text_tokens: x}}
+env: {}
+compare: {ignore: []}

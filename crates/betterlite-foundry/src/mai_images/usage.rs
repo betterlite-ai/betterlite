@@ -61,11 +61,8 @@ fn alias_counts(usage: &Object) -> Result<AliasCounts, MaiImageError> {
     })
 }
 
-pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, MaiImageError> {
-    // None gives the same zeroed shape as an empty usage object
-    let empty = Object::new();
-    let usage = reported.unwrap_or(&empty);
-    let counts = alias_counts(usage)?;
+// An explicit input or total, zero included, wins over the sum of what was counted
+fn totals(usage: &Object, counts: &AliasCounts) -> Result<(i64, i64), MaiImageError> {
     let input_tokens = match token_field((usage, "input_tokens", "input_tokens"))? {
         Some(explicit) => explicit,
         None => counts
@@ -83,6 +80,15 @@ pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, Ma
                 field: "total_tokens",
             })?,
     };
+    Ok((input_tokens, total_tokens))
+}
+
+pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, MaiImageError> {
+    // None gives the same zeroed shape as an empty usage object
+    let empty = Object::new();
+    let usage = reported.unwrap_or(&empty);
+    let counts = alias_counts(usage)?;
+    let (input_tokens, total_tokens) = totals(usage, &counts)?;
     let details = Object::from_iter([
         (
             "image_tokens".to_owned(),
@@ -94,18 +100,14 @@ pub fn normalize_mai_image_usage(reported: Option<&Object>) -> Result<Object, Ma
         ),
     ]);
     let mut normalized = usage.clone();
-    normalized.insert(
-        "input_tokens".to_owned(),
-        Json::Number(Number::from(input_tokens)),
-    );
+    let numbers = [
+        ("input_tokens", input_tokens),
+        ("output_tokens", counts.output),
+        ("total_tokens", total_tokens),
+    ];
+    for (key, value) in numbers {
+        normalized.insert(key.to_owned(), Json::Number(Number::from(value)));
+    }
     normalized.insert("input_tokens_details".to_owned(), Json::Object(details));
-    normalized.insert(
-        "output_tokens".to_owned(),
-        Json::Number(Number::from(counts.output)),
-    );
-    normalized.insert(
-        "total_tokens".to_owned(),
-        Json::Number(Number::from(total_tokens)),
-    );
     Ok(normalized)
 }

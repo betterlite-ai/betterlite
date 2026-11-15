@@ -19,6 +19,30 @@ pub(super) fn mapped(
     map_openai_params(&object(non_default), object(optional), MODEL, drop_params)
 }
 
+pub(super) fn variant(error: &MaiImageError) -> &'static str {
+    match error {
+        MaiImageError::ApiBaseRequired { .. } => "api_base_required",
+        MaiImageError::UnsupportedSize { .. } => "unsupported_size",
+        MaiImageError::InvalidSize { .. } => "invalid_size",
+        MaiImageError::SizeBelowMinimum { .. } => "below_minimum",
+        MaiImageError::SizeAboveMaximum { .. } => "above_maximum",
+        MaiImageError::CountNotWhole { .. } => "count_not_whole",
+        MaiImageError::CountNotOne { .. } => "count_not_one",
+        MaiImageError::UnsupportedParam { .. } => "unsupported_param",
+        MaiImageError::NotJson { .. } => "not_json",
+        MaiImageError::NotAnObject => "not_an_object",
+        MaiImageError::FieldType { .. } => "field_type",
+        MaiImageError::TokenOverflow { .. } => "token_overflow",
+    }
+}
+
+pub(super) fn kind<Success>(result: Result<Success, MaiImageError>) -> &'static str {
+    match result {
+        Ok(_) => "ok",
+        Err(error) => variant(&error),
+    }
+}
+
 pub(super) struct RecordedCall {
     pub(super) input: String,
     pub(super) api_key: Option<String>,

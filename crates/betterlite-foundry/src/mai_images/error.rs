@@ -35,7 +35,7 @@ pub enum MaiImageError {
         "Parameter {name} is not supported for model {model}. Supported parameters are n, size and width/height. Set drop_params=True to drop unsupported parameters."
     )]
     UnsupportedParam { model: String, name: String },
-    #[error("{}", record.message)]
+    #[error("{}", .record.message)]
     NotJson {
         record: Box<OpenAiErrorRecord>,
         #[source]
@@ -64,6 +64,25 @@ impl MaiImageError {
             Self::NotJson { record, .. } => Some(record.status_code),
             Self::NotAnObject | Self::FieldType { .. } | Self::TokenOverflow { .. } => Some(500),
             Self::ApiBaseRequired { .. } => None,
+        }
+    }
+
+    // every UnsupportedParamsError this module raises names azure_ai as its provider
+    #[must_use]
+    pub const fn llm_provider(&self) -> Option<&'static str> {
+        match self {
+            Self::UnsupportedSize { .. }
+            | Self::InvalidSize { .. }
+            | Self::SizeBelowMinimum { .. }
+            | Self::SizeAboveMaximum { .. }
+            | Self::CountNotWhole { .. }
+            | Self::CountNotOne { .. }
+            | Self::UnsupportedParam { .. } => Some("azure_ai"),
+            Self::ApiBaseRequired { .. }
+            | Self::NotJson { .. }
+            | Self::NotAnObject
+            | Self::FieldType { .. }
+            | Self::TokenOverflow { .. } => None,
         }
     }
 }
