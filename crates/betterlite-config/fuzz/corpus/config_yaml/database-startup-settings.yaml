@@ -1,0 +1,3 @@
+general_settings:
+  disable_prisma_schema_update: false
+  database_url: postgresql://writer:secret@db.example:5432/litellm?schema=tenant
