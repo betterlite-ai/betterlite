@@ -429,10 +429,10 @@ fn skips_a_group_without_a_known_window() {
             Some(4096),
         )],
     )];
-    let error = outcome(&candidates, None, 0).unwrap_err();
-    assert_error(&error, ErrorKind::Unavailable, NO_COMPACTOR);
-    let error = outcome(&candidates, None, 500).unwrap_err();
-    assert_error(&error, ErrorKind::Unavailable, NO_COMPACTOR);
+    let empty = outcome(&candidates, None, 0).unwrap_err();
+    assert_error(&empty, ErrorKind::Unavailable, NO_COMPACTOR);
+    let full = outcome(&candidates, None, 500).unwrap_err();
+    assert_error(&full, ErrorKind::Unavailable, NO_COMPACTOR);
 }
 
 fn counts_text_and_object_thinking_blocks_by_truthiness() {

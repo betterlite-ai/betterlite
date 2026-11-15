@@ -11,7 +11,7 @@ use super::super::compactor::{
 };
 use super::super::contracts::{
     Candidate, Conversation, Deployment, History, InputBudget, ModelLimits, NativeCapability,
-    OutputAllowance, ParentPayload, ParentTools, ResponsesPayload, SummaryTools,
+    OutputAllowance, ParentPayload, ParentTools, ResponsesPayload, SummaryRequest, SummaryTools,
 };
 use super::super::error::{CompactionError, ErrorKind};
 use super::super::history::{portable_history, tool_ids};
@@ -573,7 +573,7 @@ fn small_group(provider: bool, capability: NativeCapability, window: i64) -> Vec
 }
 
 fn supported_group() -> Vec<Candidate> {
-    small_group(true, NativeCapability::Supported, 200_000)
+    vec![candidate("large", vec![capable_deployment()])]
 }
 
 fn two_groups(first_provider: bool) -> Vec<Candidate> {
@@ -632,19 +632,57 @@ fn selects_the_first_eligible_group() {
     assert_eq!(selected.unwrap(), "large");
 }
 
+struct OlderResponses {
+    conversation: Vec<Json>,
+    tools: Vec<Json>,
+    request: Json,
+    system: Json,
+    user: Json,
+}
+
+fn older_responses() -> OlderResponses {
+    OlderResponses {
+        conversation: items(OLDER_RESPONSES),
+        tools: items(r#"[{"type":"function","name":"f"}]"#),
+        request: json(r#"{"model":"parent-model"}"#),
+        system: json("\"instructions\""),
+        user: json("\"caller\""),
+    }
+}
+
+fn assert_older_summary(
+    summary: &SummaryRequest,
+    converter: &CheckedConverter,
+    responses: &OlderResponses,
+) {
+    assert_eq!(summary.model, "parent-model");
+    assert_eq!(
+        summary.messages,
+        messages(r#"[{"role":"user","content":"older"}]"#)
+    );
+    assert_eq!(summary.tools, Some(SummaryTools::Chat(Vec::new())));
+    assert_eq!(
+        (summary.system.as_ref(), summary.user.as_ref()),
+        (Some(&responses.system), Some(&responses.user))
+    );
+    assert_eq!(summary.max_tokens, 4096);
+    assert_eq!(converter.items.lock().unwrap().as_slice(), from_ref(&3));
+    assert_eq!(
+        converter.requests.lock().unwrap().as_slice(),
+        from_ref(&responses.request)
+    );
+    assert_eq!(converter.tools.lock().unwrap().as_slice(), from_ref(&1));
+}
+
 fn responses_compactor_input_uses_the_older_history() {
-    let conversation = items(OLDER_RESPONSES);
-    let tools = items(r#"[{"type":"function","name":"f"}]"#);
-    let request_payload = json(r#"{"model":"parent-model"}"#);
-    let system = json("\"instructions\"");
-    let user = json("\"caller\"");
+    let responses = older_responses();
     let payload = ResponsesPayload {
         model: "parent-model",
-        items: conversation.as_slice(),
-        tools: tools.as_slice(),
-        request: &request_payload,
-        system: Some(&system),
-        user: Some(&user),
+        items: responses.conversation.as_slice(),
+        tools: responses.tools.as_slice(),
+        request: &responses.request,
+        system: Some(&responses.system),
+        user: Some(&responses.user),
     };
     let history = History {
         instruction_count: 1,
@@ -654,9 +692,9 @@ fn responses_compactor_input_uses_the_older_history() {
         results: Vec::new(),
     };
     let converter = CheckedConverter {
-        seen_items: Mutex::new(Vec::new()),
-        seen_requests: Mutex::new(Vec::new()),
-        seen_tools: Mutex::new(Vec::new()),
+        items: Mutex::new(Vec::new()),
+        requests: Mutex::new(Vec::new()),
+        tools: Mutex::new(Vec::new()),
     };
     let summary = compactor_input(
         &ParentInput::Responses(&ResponsesInput {
@@ -667,26 +705,7 @@ fn responses_compactor_input_uses_the_older_history() {
         4096,
     )
     .unwrap();
-    assert_eq!(summary.model, "parent-model");
-    assert_eq!(
-        summary.messages,
-        messages(r#"[{"role":"user","content":"older"}]"#)
-    );
-    assert_eq!(summary.tools, Some(SummaryTools::Chat(Vec::new())));
-    assert_eq!((summary.system, summary.user), (Some(system), Some(user)));
-    assert_eq!(summary.max_tokens, 4096);
-    assert_eq!(
-        converter.seen_items.lock().unwrap().as_slice(),
-        from_ref(&3)
-    );
-    assert_eq!(
-        converter.seen_requests.lock().unwrap().as_slice(),
-        from_ref(&request_payload)
-    );
-    assert_eq!(
-        converter.seen_tools.lock().unwrap().as_slice(),
-        from_ref(&1)
-    );
+    assert_older_summary(&summary, &converter, &responses);
 }
 
 fn counts_the_summary_request() {

@@ -101,9 +101,9 @@ impl CompactionCounter for FailingCounter {
 }
 
 pub(super) struct CheckedConverter {
-    pub(super) seen_items: Mutex<Vec<usize>>,
-    pub(super) seen_requests: Mutex<Vec<Json>>,
-    pub(super) seen_tools: Mutex<Vec<usize>>,
+    pub(super) items: Mutex<Vec<usize>>,
+    pub(super) requests: Mutex<Vec<Json>>,
+    pub(super) tools: Mutex<Vec<usize>>,
 }
 
 impl ResponsesPrefix for CheckedConverter {
@@ -112,11 +112,11 @@ impl ResponsesPrefix for CheckedConverter {
         items: &[Json],
         request: &Json,
     ) -> Result<Vec<ChatMessage>, CompactionError> {
-        self.seen_items
+        self.items
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(items.len());
-        self.seen_requests
+        self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(request.clone());
@@ -124,7 +124,7 @@ impl ResponsesPrefix for CheckedConverter {
     }
 
     fn tools(&self, tools: &[Json]) -> Result<Vec<Tool>, CompactionError> {
-        self.seen_tools
+        self.tools
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(tools.len());
