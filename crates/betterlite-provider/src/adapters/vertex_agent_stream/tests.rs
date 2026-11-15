@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,10 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -25,6 +29,8 @@ use futures_util::stream;
 use futures_util::stream::BoxStream;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
 use tokio::runtime::{Builder, Runtime};
 use uuid::Uuid;
 
@@ -779,19 +785,63 @@ fn an_overlong_line_ends_the_stream() {
     ));
 }
 
-#[test]
-fn a_read_error_after_a_finish_reason_ends_the_stream() {
-    let (chunk, after) = runtime().block_on(async {
-        let mut stream = stream_from(vec![
-            Ok(b"data: {\"finish_reason\": \"STOP\"}\n".to_vec()),
-            Err(HttpError::Timeout),
-        ])
-        .await;
-        let chunk = stream.next_chunk().await.unwrap().unwrap();
-        (chunk, stream.next_chunk().await)
-    });
+const FINISH_LINE: &[u8] = b"data: {\"finish_reason\": \"STOP\"}\n";
+
+async fn after_finish(error: HttpError) -> Result<Option<Chunk>, VertexAgentStreamError> {
+    let mut stream = stream_from(vec![Ok(FINISH_LINE.to_vec()), Err(error)]).await;
+    let chunk = stream.next_chunk().await.unwrap().unwrap();
     assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
-    assert!(after.unwrap().is_none());
+    stream.next_chunk().await
+}
+
+#[tokio::test]
+async fn a_read_error_after_a_finish_reason_ends_the_stream() {
+    let source = reqwest::Client::new().get("not a url").build().unwrap_err();
+    assert!(!source.is_timeout());
+    assert!(
+        after_finish(HttpError::Request(source))
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        after_finish(HttpError::TooLarge { limit: 1 })
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn a_timeout_after_a_finish_reason_raises() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(50))
+        .build()
+        .unwrap();
+    let source = client.get(url).send().await.unwrap_err();
+    assert!(source.is_timeout());
+    for error in [HttpError::Request(source), HttpError::Timeout] {
+        let after = after_finish(error).await;
+        assert!(matches!(
+            expect_error(after, "a timeout after the finish reason ended the stream"),
+            VertexAgentStreamError::Body { .. }
+        ));
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_silent_stream_after_a_finish_reason_times_out() {
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let mut stream = opened(held(&dropped, Some(FINISH_LINE.to_vec()))).await;
+    let chunk = stream.next_chunk().await.unwrap().unwrap();
+    assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
+    let error = expect_error(
+        stream.next_chunk().await,
+        "the silent stream ended cleanly after the finish reason",
+    );
+    assert!(matches!(error, VertexAgentStreamError::Timeout));
 }
 
 #[tokio::test(start_paused = true)]
@@ -864,4 +914,49 @@ async fn an_invalid_url_is_refused() {
         "the invalid URL was accepted",
     );
     assert!(matches!(error, VertexAgentStreamError::Url { .. }));
+}
+
+#[tokio::test]
+async fn the_proxied_client_posts_and_streams_the_reply_body() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let reply_body = content_line("wire");
+    let reply = format!(
+        "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{reply_body}",
+        reply_body.len()
+    );
+    let server = tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(socket.read_u8().await.unwrap());
+        }
+        let head_text = String::from_utf8(head).unwrap();
+        let length: usize = head_text
+            .lines()
+            .find_map(|line| line.strip_prefix("content-length: "))
+            .map_or(0, |value| value.parse().unwrap());
+        let mut sent = vec![0_u8; length];
+        socket.read_exact(&mut sent).await.unwrap();
+        socket.write_all(reply.as_bytes()).await.unwrap();
+        head_text
+    });
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::outbound(&policy).unwrap();
+    assert!(matches!(client.kind(), ClientKind::Async));
+    let head = client
+        .post(OutboundRequest {
+            method: http::Method::POST,
+            url: url::Url::parse(&format!("http://{address}/stream")).unwrap(),
+            query: Vec::new(),
+            headers: HeaderMap::new(),
+            body: RequestBody::Json(b"{}".to_vec()),
+            deadline: Duration::from_secs(5),
+        })
+        .await
+        .unwrap();
+    assert_eq!(head.status, 200);
+    let received: Vec<u8> = head.chunks.map(|frame| frame.unwrap()).concat().await;
+    assert_eq!(received, reply_body.into_bytes());
+    assert!(server.await.unwrap().starts_with("POST /stream HTTP/1.1"));
 }

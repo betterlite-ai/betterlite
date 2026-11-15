@@ -121,7 +121,7 @@ pub struct VertexAgentStream {
     decoder: LineDecoder,
     pending: VecDeque<String>,
     done: bool,
-    // a finished chunk ends the stream for LiteLLM's wrapper, so a later read failure is not seen
+    // a finished chunk ends the stream for LiteLLM's wrapper, so a later read failure (not a timeout) is not seen
     finished: bool,
 }
 
@@ -161,7 +161,22 @@ impl VertexAgentStream {
                 }
                 Err(error) => {
                     self.end();
-                    return if self.finished { Ok(None) } else { Err(error) };
+                    // LiteLLM's wrapper ends cleanly only on a read or protocol error, a timeout still raises
+                    let timed_out = match &error {
+                        VertexAgentStreamError::Body {
+                            source: HttpError::Request(source),
+                        } => source.is_timeout(),
+                        VertexAgentStreamError::Body {
+                            source: HttpError::Timeout,
+                        }
+                        | VertexAgentStreamError::Timeout => true,
+                        _ => false,
+                    };
+                    return if self.finished && !timed_out {
+                        Ok(None)
+                    } else {
+                        Err(error)
+                    };
                 }
             }
         }

@@ -2866,6 +2866,7 @@ dependencies = [
  "mutants",
  "pem",
  "regex",
+ "reqwest",
  "rstest",
  "rust_decimal",
  "secrecy",
