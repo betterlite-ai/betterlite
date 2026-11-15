@@ -365,7 +365,7 @@ fn the_edit_request_pops_strength_and_defaults_it() {
         "recraft/recraftv3",
         None,
         None,
-        params(&[("strength", integer(1))]),
+        params(&[("strength", integer(3))]),
     );
     let (defaulted, _) = RecraftImageEditConfig::transform_image_edit_request(
         "recraft/recraftv3",
@@ -382,7 +382,7 @@ fn the_edit_request_pops_strength_and_defaults_it() {
 
     assert_eq!(
         serialized(&supplied),
-        json(r#"{"model":"recraft/recraftv3","strength":1}"#)
+        json(r#"{"model":"recraft/recraftv3","strength":3}"#)
     );
     assert_eq!(
         serialized(&defaulted),
