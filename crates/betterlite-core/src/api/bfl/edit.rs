@@ -179,8 +179,8 @@ pub fn transform_image_edit_request(
     match mask {
         MaskInput::Absent => {}
         MaskInput::Null => return Err(EditError::UnsupportedMedia { field: MASK_FIELD }),
-        MaskInput::Media(media) => {
-            let mask_bytes = read_media_bytes(media, MASK_FIELD, 0, max_depth)?;
+        MaskInput::Media(mask_media) => {
+            let mask_bytes = read_media_bytes(mask_media, MASK_FIELD, 0, max_depth)?;
             data.insert("mask".to_owned(), Json::Text(BASE64.encode(mask_bytes)));
         }
     }
@@ -191,21 +191,21 @@ pub fn transform_image_edit_request(
 }
 
 // ast-grep-ignore: no-long-names
-pub async fn async_transform_image_edit_request(
+pub fn async_transform_image_edit_request(
     prompt: Option<&str>,
     image: Option<&mut SuppliedMedia>,
     mask: MaskInput<'_>,
     image_edit_optional_params: &ImageParams,
     max_depth: i64,
 ) -> Result<ImageEditForm, EditError> {
-    // LiteLLM's async override downloads the first-image candidate before transforming; this build refuses it instead
+    // LiteLLM's async override downloads the first-image candidate before transforming; this build refuses it instead, so nothing here awaits
     if let Some(media) = image.as_deref()
         && is_remote_candidate(media)
     {
         return Err(EditError::UnsupportedMediaUrl { field: IMAGE_FIELD });
     }
-    if let MaskInput::Media(media) = &mask
-        && is_remote_candidate(media)
+    if let MaskInput::Media(mask_media) = &mask
+        && is_remote_candidate(mask_media)
     {
         return Err(EditError::UnsupportedMediaUrl { field: MASK_FIELD });
     }

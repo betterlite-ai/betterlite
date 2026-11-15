@@ -98,7 +98,7 @@ class EditConfig(Protocol):
 
 
 CONFIG: EditConfig = TypeAdapter(EditConfig, config=ARBITRARY).validate_python(
-    BlackForestLabsImageEditConfig()
+    BlackForestLabsImageEditConfig.__new__(BlackForestLabsImageEditConfig)
 )
 
 
@@ -135,31 +135,22 @@ class SampleCall(TypedDict):
 EditCall: TypeAlias = PrepareCall | DefaultsCall | EndpointCall | SampleCall
 
 
-def media_from(spec: MediaSpec) -> Media:
+def media_from(spec: MediaSpec, handles: list[io.BytesIO]) -> Media:
     if spec["kind"] == "bytes":
         return base64.b64decode(spec["data"])
     if spec["kind"] == "file":
         handle = io.BytesIO(base64.b64decode(spec["data"]))
         handle.seek(spec["position"])
+        handles.append(handle)
         return handle
     if spec["kind"] == "text":
         return spec["text"]
-    return [media_from(item) for item in spec["items"]]
+    return [media_from(item, handles) for item in spec["items"]]
 
 
-def position_list(media: Media | None) -> list[int]:
-    match media:
-        case None:
-            return []
-        case io.BytesIO():
-            return [media.tell()]
-        case list():
-            return [at for item in media for at in position_list(item)]
-        case bytes() | str():
-            return []
-
-
-def masked(call: PrepareCall) -> tuple[dict[str, JsonValue | Media], Media | None]:
+def masked(
+    call: PrepareCall, handles: list[io.BytesIO]
+) -> tuple[dict[str, JsonValue | Media], Media | None]:
     optional: dict[str, JsonValue | Media] = dict(call["options"])
     spec = call["mask"]
     if spec["kind"] == "absent":
@@ -167,18 +158,19 @@ def masked(call: PrepareCall) -> tuple[dict[str, JsonValue | Media], Media | Non
     if spec["kind"] == "null":
         optional["mask"] = None
         return optional, None
-    mask = media_from(spec["media"])
+    mask = media_from(spec["media"], handles)
     optional["mask"] = mask
     return optional, mask
 
 
 def prepared(call: PrepareCall) -> JsonValue:
-    image = None if call["image"] is None else media_from(call["image"])
-    optional, mask = masked(call)
+    handles: list[io.BytesIO] = []
+    image = None if call["image"] is None else media_from(call["image"], handles)
+    optional, mask = masked(call, handles)
     body, files = CONFIG.transform_image_edit_request(
         MODEL, call["prompt"], image, optional, {}, {}
     )
-    after = [*position_list(image), *position_list(mask)]
+    after = [handle.tell() for handle in handles]
     answer: dict[str, JsonValue] = {
         "data": JSON.validate_python(body),
         "files": len(files),
@@ -213,9 +205,10 @@ def sample(call: SampleCall) -> JsonValue:
     raw_response = httpx.Response(call["status"], content=call["body"].encode())
     response = CONFIG.transform_image_edit_response(MODEL, raw_response, None)
     dumped = IMAGES.validate_json(response.model_dump_json())
-    entries: list[JsonValue] = [
-        JSON.validate_python({"url": image["url"]}) for image in dumped["data"]
-    ]
+    entries: list[JsonValue] = []
+    for image in dumped["data"]:
+        entry: dict[str, JsonValue] = {"url": image["url"]}
+        entries.append(entry)
     answer: dict[str, JsonValue] = {"created": dumped["created"], "data": entries}
     return JSON.validate_python(answer)
 

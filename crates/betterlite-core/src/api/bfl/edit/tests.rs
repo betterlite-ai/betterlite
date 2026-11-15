@@ -104,7 +104,7 @@ fn constants_match_the_edit_class() {
             "right"
         ]
     );
-    assert!(!MULTIPART_FORM_DATA);
+    const { assert!(!MULTIPART_FORM_DATA) };
 }
 
 #[test]
@@ -394,7 +394,7 @@ fn bfl_edit_depth_settings() {
     let configured = load_depth(&[("DEFAULT_MAX_RECURSE_DEPTH", "1")]);
     assert_eq!(configured, 1);
     let mut shallow = nested(2);
-    let error = transform_image_edit_request(
+    let shallow_error = transform_image_edit_request(
         Some("edit it"),
         Some(&mut shallow),
         MaskInput::Absent,
@@ -402,7 +402,7 @@ fn bfl_edit_depth_settings() {
         configured,
     )
     .unwrap_err();
-    assert!(matches!(error, EditError::MediaDepth { field } if field == "image"));
+    assert!(matches!(shallow_error, EditError::MediaDepth { field } if field == "image"));
 
     let unset = load_depth(&[]);
     assert_eq!(unset, 100);
@@ -418,7 +418,7 @@ fn bfl_edit_depth_settings() {
     assert_eq!(form.data.get("input_image"), Some(&text("ZGVlcA==")));
 
     let mut past_limit = nested(101);
-    let error = transform_image_edit_request(
+    let past_error = transform_image_edit_request(
         Some("edit it"),
         Some(&mut past_limit),
         MaskInput::Absent,
@@ -426,11 +426,11 @@ fn bfl_edit_depth_settings() {
         unset,
     )
     .unwrap_err();
-    assert!(matches!(error, EditError::MediaDepth { field } if field == "image"));
+    assert!(matches!(past_error, EditError::MediaDepth { field } if field == "image"));
 }
 
-#[tokio::test]
-async fn async_transform_prepares_local_media_like_the_sync_path() {
+#[test]
+fn async_transform_prepares_local_media_like_the_sync_path() {
     let mut image = listed(vec![media_bytes("image")]);
     let mut mask = media_file("mask", 1);
     let configured = params(&[("seed", number(4))]);
@@ -441,7 +441,6 @@ async fn async_transform_prepares_local_media_like_the_sync_path() {
         &configured,
         DEPTH,
     )
-    .await
     .unwrap();
     let direct = form_for_like_sync(&mut image, &mut mask, &configured);
 
@@ -464,8 +463,8 @@ fn form_for_like_sync(
     .unwrap()
 }
 
-#[tokio::test]
-async fn async_transform_rejects_a_remote_image_before_transforming() {
+#[test]
+fn async_transform_rejects_a_remote_image_before_transforming() {
     let mut image = listed(vec![SuppliedMedia::Text(
         "https://example.test/in.png".to_owned(),
     )]);
@@ -477,7 +476,6 @@ async fn async_transform_rejects_a_remote_image_before_transforming() {
         &empty_params(),
         DEPTH,
     )
-    .await
     .unwrap_err();
 
     // LiteLLM fetches the image before the mask, so the image error wins when both are remote
@@ -485,8 +483,8 @@ async fn async_transform_rejects_a_remote_image_before_transforming() {
     assert_eq!(error.code(), Some("unsupported_media_url"));
 }
 
-#[tokio::test]
-async fn async_transform_rejects_a_remote_mask_before_transforming() {
+#[test]
+fn async_transform_rejects_a_remote_mask_before_transforming() {
     // the async override reaches its mask download before the sync transform ever looks at the image
     let mut mask = SuppliedMedia::Text("https://example.test/mask.png".to_owned());
     let error = async_transform_image_edit_request(
@@ -496,7 +494,6 @@ async fn async_transform_rejects_a_remote_mask_before_transforming() {
         &empty_params(),
         DEPTH,
     )
-    .await
     .unwrap_err();
 
     assert!(matches!(error, EditError::UnsupportedMediaUrl { field } if field == "mask"));

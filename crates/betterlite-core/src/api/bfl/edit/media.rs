@@ -25,7 +25,7 @@ pub enum SuppliedMedia {
     Bytes(Vec<u8>),
     Text(String),
     File(SuppliedFile),
-    List(Vec<SuppliedMedia>),
+    List(Vec<Self>),
 }
 
 #[derive(Debug)]

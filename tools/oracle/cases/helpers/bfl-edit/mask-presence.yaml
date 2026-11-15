@@ -18,7 +18,7 @@ calls:
       operation: mask_presence
       prompt: null mask
       image: {kind: bytes, data: aW1hZ2U=}
-      mask: {kind: null}
+      mask: {kind: "null"}
       options: {}
   - bfl_edit:
       operation: mask_presence

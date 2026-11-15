@@ -89,7 +89,10 @@ impl Helper for Op {
             Input::FirstImageOnly(params)
             | Input::RestoredFileCursor(params)
             | Input::MaskPresence(params) => prepare(params),
-            Input::EditDefaults(params) => defaults(params),
+            Input::EditDefaults(params) => {
+                let mapped = map_openai_params(&params.options, &params.model, params.drop_params);
+                Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS, "mapped": mapped}))
+            }
             Input::EndpointFill(params) => endpoint(params),
             Input::SampleRequired(params) => sample(params),
         }
@@ -195,11 +198,6 @@ fn prepare(params: &PrepareParams) -> HelperResult {
         after.extend(positions(media));
     }
     Ok(json!({"data": form.data, "files": form.files.len(), "positions": after}))
-}
-
-fn defaults(params: &DefaultsParams) -> HelperResult {
-    let mapped = map_openai_params(&params.options, &params.model, params.drop_params);
-    Ok(json!({"supported": SUPPORTED_OPENAI_PARAMS, "mapped": mapped}))
 }
 
 fn endpoint(params: &EndpointParams) -> HelperResult {
