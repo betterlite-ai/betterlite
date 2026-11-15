@@ -1,0 +1,7 @@
+# with GCS_MOCK off, initialization leaves the transport alone, so the download reaches it
+kind: helper
+name: gcs-storage-auth-init-skips-mock-setup-when-disabled
+call:
+  b3997: {"action": "initialize", "environment": {"GCS_MOCK": "false", "GCS_BUCKET_NAME": "mock-bucket"}, "object_name": "mock-object", "status": 418, "body": "original-response"}
+env: {}
+compare: {ignore: []}
