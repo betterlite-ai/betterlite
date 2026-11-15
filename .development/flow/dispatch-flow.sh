@@ -12,7 +12,7 @@ maintenance() {
   fi
 }
 maintenance
-# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit reruns once `gate availability <id>` finds a runner left on its own ladder, and says once that it waits, since a grant moves it to another vendor (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, a run whose reviewer hit its timeout reruns after a pause that doubles from 30 minutes, six times at most, and a worker ladder that ran out on a timeout gets one more start the same way, three times at most (a slow night API, not a wrong answer; the counts live in the journal), and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch gets main merged and its early draft PR's branch (early-pr.sh) merged back, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
+# Dispatches one task and lands it. The gate keeps the task's progress in its journal until it merges, so this flow only pauses and reruns: a run that ends with every runner at its usage limit reruns once `gate availability <id>` finds a runner left on its own ladder, and says once that it waits, since a grant moves it to another vendor (uncapped, since a rerun against a marked vendor costs seconds), a run whose agent ended without an answer waits 20 minutes and reruns up to 4 times, a run whose reviewer hit its timeout reruns after a pause that doubles from 30 minutes, six times at most, and a worker ladder that ran out on a timeout gets one more start the same way, three times at most (a slow night API, not a wrong answer; the counts live in the journal), and a stale branch gets main merged and one rerun. Any other error is a cap the architect handles. An existing branch gets main merged first; a ready branch takes its early draft PR's commit (early-pr.sh) when that commit sits on its head, gets main merged only when the two conflict or both changed Cargo.lock, merges the draft branch back otherwise, then is pushed, gets its PR with auto-merge and its done mark (a push or PR that GitHub refuses lands again after 5 minutes, three times at most), and is watched until it merges; a red CI run on the PR goes back to the worker as a fix round with its FAIL lines, eight rounds at most (stage 3, since CI is the only place that builds); once it merged, its checkout (target included) and temp folder are removed right away, since refs/betterlite/completed keeps its head, and the flow then waits for main's run on it to log the result. Usage: [GRANT=N] bash dispatch-flow.sh <id> <run> [note], where GRANT goes to the first dispatch only; LAND_ONLY=1 skips the dispatch for a branch that is already ready. Copied over dispatch-flow.sh once PR 388 is on main, so the feeder and the respawn scripts keep their names.
 GH_TOKEN=$(gh auth token --user HardMax71)
 export GH_TOKEN
 id=$1
@@ -71,7 +71,8 @@ land_again() {
 }
 if [[ -z "${LAND_ONLY}" ]]; then
   waiting=
-  while ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
+  # a grant moves the next start to another vendor, so a used-up ladder does not hold a granted run
+  while [[ -z "${grant}" ]] && ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
     if [[ -z "${waiting}" ]] && grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
       say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
       waiting=1
@@ -155,17 +156,17 @@ if [[ -z "${LAND_ONLY}" ]]; then
       PAUSES=$((${PAUSES:-0} + 1)) exec bash "${P}/dispatch-flow.sh" "${id}" "${run}p" "${note}"
     fi
     reason=$(grep -m1 -o -E 'cannot dispatch [^:]+: .*' "${log}")
-    # a run that hit its timeout met a slow API at night, so it reruns after a doubling pause before the task parks
+    # a run that hit its timeout met a slow or hung API at night, so it reruns after a doubling pause before the task parks; night reviews that timed out had no answer at all, so theirs starts at 5 minutes (Max, 11-15)
     case ${reason} in
-      *"reviewer hit its "*" minute timeout before its answer"*) kind=review who=reviewer cap=6 ;;
-      *"ladder ran out of attempts"*" minute timeout before its final answer"*) kind=worker who=worker cap=3 ;;
+      *"reviewer hit its "*" minute timeout before its answer"*) kind=review who=reviewer cap=6 first=5 ;;
+      *"ladder ran out of attempts"*" minute timeout before its final answer"*) kind=worker who=worker cap=3 first=30 ;;
       *) kind= ;;
     esac
     if [[ -n ${kind} ]]; then
       reruns=$(cat "${main}/.git/betterlite/${id}/${kind}-reruns" 2> /dev/null)
       if [[ "${reruns:-0}" -lt ${cap} ]]; then
         echo "$((${reruns:-0} + 1))" > "${main}/.git/betterlite/${id}/${kind}-reruns"
-        pause=$((30 << ${reruns:-0}))
+        pause=$((first << ${reruns:-0}))
         say "paused: the ${who} hit its timeout, so the ${kind} runs again in ${pause} minutes"
         sleep $((pause * 60))
         maintenance
@@ -183,15 +184,25 @@ if [[ -z "${LAND_ONLY}" ]]; then
   fi
 fi
 landing=$(jq '.land_only = "1"' "${args}") && printf '%s\n' "${landing}" > "${args}"
-merge=$(bash "${P}/merge-main.sh" "${worktree}")
-grep -q -E '^merged' <<< "${merge}" || {
-  park "ready, but main does not merge cleanly"
-  exit 3
-}
+branch=$(git -C "${worktree}" branch --show-current)
+git -C "${worktree}" fetch -q origin main
+# the draft run checked the reviewed head with the done mark on top, so the PR keeps that commit and its run (Max, 11-15)
+drafted=
+git -C "${worktree}" fetch -q origin "refs/heads/${branch}" 2> /dev/null && drafted=$(git -C "${worktree}" rev-parse -q --verify 'FETCH_HEAD^1')
+tip=$(git -C "${worktree}" rev-parse HEAD)
+[[ -n "${drafted}" ]] && [[ "${drafted}" == "${tip}" ]] && git -C "${worktree}" merge -q --ff-only FETCH_HEAD
+fork=$(git -C "${worktree}" merge-base origin/main HEAD)
+# the queue tests the PR merged with main, but CI's cargo fetch --locked refuses a lock that both sides changed and git merged without cargo
+if { ! git -C "${worktree}" diff --quiet "${fork}" origin/main -- Cargo.lock && ! git -C "${worktree}" diff --quiet "${fork}" HEAD -- Cargo.lock; } || ! git -C "${worktree}" merge-tree --write-tree origin/main HEAD > /dev/null; then
+  merge=$(bash "${P}/merge-main.sh" "${worktree}")
+  grep -q -E '^merged' <<< "${merge}" || {
+    park "ready, but main does not merge cleanly"
+    exit 3
+  }
+fi
 if ! bash "${P}/crate-cycles.sh" "${worktree}" > /dev/null; then LAND_ONLY='' exec bash "${P}/dispatch-flow.sh" "${id}" "${run}d" ""; fi
 cd "${worktree}" || exit 3
 exec >> "${L}/land-${id}.log" 2>&1
-branch=$(git branch --show-current)
 # an early draft PR's branch holds the done mark on a commit this checkout never had
 rm -f -- "${main}/.git/betterlite/${id}/ci-failures"
 if git fetch -q origin "refs/heads/${branch}" 2> /dev/null && ! git merge-base --is-ancestor FETCH_HEAD HEAD; then
