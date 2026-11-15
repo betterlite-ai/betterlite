@@ -1,0 +1,32 @@
+kind: helper
+name: succeeded-count-and-error-multiplicity
+call:
+  mistral_resources:
+    env: {}
+    files: null
+    creates: []
+    jobs:
+      - id: job-counts
+        endpoint: /v1/chat/completions
+        status: SUCCESS
+        created_at: 100
+        completed_at: 200
+        total_requests: 9
+        succeeded_requests: 3
+        completed_requests: 99
+        failed_requests: 1
+        output_file: out-1
+        error_file: err-1
+        metadata: {team: a}
+        errors:
+          - {message: bad row}
+          - {message: rate limited, count: 3}
+          - {message: zero, count: 0}
+      - id: job-first
+        input_files: [file-first, file-second]
+        endpoint: /v1/chat/completions
+        status: RUNNING
+        created_at: 100
+    retrieve: []
+env: {}
+compare: {ignore: []}
