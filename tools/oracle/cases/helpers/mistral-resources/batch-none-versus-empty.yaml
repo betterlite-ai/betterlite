@@ -1,0 +1,31 @@
+kind: helper
+name: batch-none-versus-empty
+call:
+  mistral_resources:
+    env: {}
+    files: null
+    creates:
+      - model: mistral-small-latest
+        api_base: null
+        api_key: Key
+        data: {input_file_id: file-1, endpoint: /v1/chat/completions, metadata: {name: team}}
+      - model: mistral-ocr-latest
+        api_base: "https://proxy.example/v1/"
+        api_key: Other
+        data: {input_file_id: "", endpoint: /v1/ocr, metadata: {}}
+      - model: m
+        api_base: null
+        api_key: Key
+        data: {endpoint: /v1/embeddings}
+      - model: m
+        api_base: null
+        api_key: Key
+        data: {input_file_id: f}
+      - model: m
+        api_base: null
+        api_key: null
+        data: {input_file_id: f, endpoint: /v1/responses}
+    jobs: []
+    retrieve: []
+env: {}
+compare: {ignore: []}

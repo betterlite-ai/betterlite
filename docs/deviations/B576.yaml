@@ -1,0 +1,5 @@
+task: B576
+deviations:
+  - what: A max_tokens or max_completion_tokens that is a float, carries an exponent, or is an integer past i64 fails with a 400 naming max_tokens when adaptive thinking is capped for a model without it; a literal past u64 fails while mapping. LiteLLM compares Python's unbounded number, sends a fractional budget_tokens when max_tokens is fractional, and stores any size of int.
+    why: B2201's cap compares an i64 budget against an i64 max_tokens, and the Anthropic request needs an integer token count; a fractional budget cannot be represented, and the value falls outside the int the field declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1568-L1578

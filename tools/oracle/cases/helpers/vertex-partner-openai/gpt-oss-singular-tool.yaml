@@ -1,0 +1,40 @@
+kind: helper
+name: vertex-partner-openai-gpt-oss-singular-tool
+call:
+  vertex_partner_openai:
+    token_alias_overwrite:
+      ai21_model: jamba-1.5-large@001
+      ai21_requested: {max_tokens: 8, max_completion_tokens: 16, temperature: 0.5}
+      ai21_optional_params: {max_tokens: 1}
+      llama_model: meta/llama-3.1-405b-instruct-maas
+      llama_requested: {max_tokens: 4, max_completion_tokens: 12, max_retries: 3}
+      llama_optional_params: {}
+    self_deployed_exclusions:
+      publisher_model: meta/llama-3.1-405b-instruct-maas
+      deployed_model: openai/gpt-5
+      requested: {store: true, max_retries: 2, temperature: 0.1, response_format: {type: json_object}}
+      optional_params: {}
+    gpt_oss_singular_tool:
+      model: openai/gpt-oss-120b-maas
+      funded_model: groq/openai/gpt-oss-120b
+      requested: {tool: legacy, tools: [{type: function, function: {name: f}}], tool_choice: auto, function_call: auto, functions: [{name: f}], reasoning_effort: high, temperature: 0.2}
+      optional_params: {}
+    missing_reply_defaults:
+      requested_model: meta/llama-3.1-405b-instruct-maas
+      reply: {choices: [{index: 0, finish_reason: stop, message: {content: hi}}]}
+      named_reply: {id: reply-1, created: 11, model: upstream-model, choices: [{index: 0, finish_reason: stop, message: {content: hi}}]}
+    initial_missing_role:
+      chunks:
+        - {id: chunk-1, created: 7, model: m, choices: [{index: 0, delta: {content: Hel}}]}
+        - {id: chunk-1, created: 7, model: m, choices: [{index: 0, delta: {content: lo}}]}
+    initial_terminal_split:
+      chunks:
+        - {id: chunk-9, created: 7, model: m, choices: [{index: 1, delta: {role: null, content: null}, finish_reason: stop}]}
+        - {id: chunk-9, created: 7, model: m, choices: [{index: 0, delta: {content: x}}]}
+    empty_initial_delta:
+      chunks:
+        - {id: chunk-1, created: 7, model: m, choices: [{index: 0, delta: {content: ""}}]}
+        - {id: chunk-1, created: 7, model: m, choices: [{index: 0, delta: {}}]}
+        - {id: chunk-1, created: 7, model: m, choices: [{index: 0, delta: {content: x, provider_specific_fields: {source: vertex}}}]}
+env: {}
+compare: {ignore: []}

@@ -324,3 +324,17 @@ path = "fuzz_targets/responses_chat_event_line.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "stability_image"
+path = "fuzz_targets/stability_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "soniox_reply"
+path = "fuzz_targets/soniox_reply.rs"
+test = false
+doc = false
+bench = false

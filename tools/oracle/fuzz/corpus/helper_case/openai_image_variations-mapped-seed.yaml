@@ -1,0 +1,11 @@
+kind: helper
+name: openai-image-variations-mapped-seed
+call:
+  openai_image_variations:
+    function: n_size_format_user
+    probes:
+      - model: dall-e-2
+        existing_params: {n: 1}
+        non_default_params: {n: 2, style: vivid}
+env: {}
+compare: {ignore: []}
