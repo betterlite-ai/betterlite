@@ -88,9 +88,11 @@ def embedding_answer(case: EmbeddingCase) -> JsonValue:
 
 def embeddings(cases: list[EmbeddingCase], replies: list[ReplyCase]) -> JsonValue:
     answers: list[JsonValue] = [embedding_answer(case) for case in cases]
-    return JSON.validate_python(
-        {"requests": answers, "replies": embedding_replies(replies)}
-    )
+    values: dict[str, JsonValue] = {
+        "requests": answers,
+        "replies": embedding_replies(replies),
+    }
+    return JSON.validate_python(values)
 
 
 def response_answer(case: ResponsesCase) -> JsonValue:
@@ -142,20 +144,17 @@ def decisions(cases: list[DecisionsCase]) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    result: JsonValue
     if input_value["op"] == "chat_params":
-        result = chat_params(input_value["cases"])
-    elif input_value["op"] == "chunk":
+        return chat_params(input_value["cases"])
+    if input_value["op"] == "chunk":
         handler = OpenRouterChatCompletionStreamingHandler(iter([]), sync_stream=True)
-        result = chunks(input_value["cases"], handler)
-    elif input_value["op"] == "embedding":
-        result = embeddings(input_value["cases"], input_value["replies"])
-    elif input_value["op"] == "responses":
-        result = responses_cases(input_value["cases"])
-    elif input_value["op"] == "decisions":
-        result = decisions(input_value["cases"])
-    elif input_value["op"] == "request":
-        result = requests(input_value["cases"])
-    else:
-        result = responses(input_value["cases"])
-    return result
+        return chunks(input_value["cases"], handler)
+    if input_value["op"] == "embedding":
+        return embeddings(input_value["cases"], input_value["replies"])
+    if input_value["op"] == "responses":
+        return responses_cases(input_value["cases"])
+    if input_value["op"] == "decisions":
+        return decisions(input_value["cases"])
+    if input_value["op"] == "request":
+        return requests(input_value["cases"])
+    return responses(input_value["cases"])

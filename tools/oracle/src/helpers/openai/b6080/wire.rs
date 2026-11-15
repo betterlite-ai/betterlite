@@ -14,34 +14,36 @@ const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
 pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
     let config = config();
-    let mut bodies = Vec::with_capacity(cases.len());
-    for case in cases {
-        let body = config
-            .transform_request(&ChatRequest {
-                model: &case.model,
-                messages: &case.messages,
-                optional_params: &case.optional_params,
-                litellm_params: &Object::new(),
-                headers: &Headers::new(),
-            })
-            .or_value_error()?;
-        bodies.push(serde_json::to_value(&body).or_value_error()?);
-    }
-    Ok(Value::Array(bodies))
+    let bodies = cases
+        .iter()
+        .map(|case| {
+            config
+                .transform_request(&ChatRequest {
+                    model: &case.model,
+                    messages: &case.messages,
+                    optional_params: &case.optional_params,
+                    litellm_params: &Object::new(),
+                    headers: &Headers::new(),
+                })
+                .or_value_error()
+        })
+        .collect::<Result<Vec<Object>, Box<HelperError>>>()?;
+    serde_json::to_value(&bodies).or_value_error()
+}
+
+fn reply_cost(case: &ReplyCase) -> HelperResult {
+    let config = config();
+    let reply = config
+        .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
+        .or_value_error()?;
+    let cost = reply.additional_headers.get(COST_HEADER);
+    Ok(json!({"cost": cost}))
 }
 
 pub(super) fn responses(cases: &[ReplyCase]) -> HelperResult {
-    let config = config();
     let mut costs = Vec::with_capacity(cases.len());
     for case in cases {
-        let reply = config
-            .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
-            .or_value_error()?;
-        let cost = match reply.additional_headers.get(COST_HEADER) {
-            Some(cost) => serde_json::to_value(cost).or_value_error()?,
-            None => Value::Null,
-        };
-        costs.push(json!({"cost": cost}));
+        costs.push(reply_cost(case)?);
     }
     Ok(Value::Array(costs))
 }
