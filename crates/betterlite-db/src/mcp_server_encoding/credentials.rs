@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem::take;
 
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{
@@ -78,7 +79,7 @@ pub fn decrypt_credentials(credentials: &mut CredentialBlob, cipher: &DbCipher) 
         let Some(JsonValue::String(text)) = credentials.get_mut(field) else {
             continue;
         };
-        let stored = StoredValue::<()>::Text(SecretString::from(std::mem::take(text)));
+        let stored = StoredValue::<()>::Text(SecretString::from(take(text)));
         if let Some(StoredValue::Text(plaintext)) =
             cipher.decrypt_value(stored, field, DECRYPT_POLICY)
         {

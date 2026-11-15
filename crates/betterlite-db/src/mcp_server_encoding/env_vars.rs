@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::mem::take;
 
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::{
@@ -61,7 +62,7 @@ pub fn decrypt_global_env_var_values(env_vars: &mut [McpEnvVar], cipher: &DbCiph
         if !is_global_env_var_scope(Some(entry.scope)) || entry.value.is_empty() {
             continue;
         }
-        let stored = StoredValue::<()>::Text(SecretString::from(std::mem::take(&mut entry.value)));
+        let stored = StoredValue::<()>::Text(SecretString::from(take(&mut entry.value)));
         if let Some(StoredValue::Text(plaintext)) =
             cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY)
         {
@@ -87,7 +88,7 @@ pub fn decrypt_stored_env_var_values(env_vars: &mut [JsonValue], cipher: &DbCiph
         if text.is_empty() {
             continue;
         }
-        let stored = StoredValue::<()>::Text(SecretString::from(std::mem::take(text)));
+        let stored = StoredValue::<()>::Text(SecretString::from(take(text)));
         if let Some(StoredValue::Text(plaintext)) =
             cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY)
         {
