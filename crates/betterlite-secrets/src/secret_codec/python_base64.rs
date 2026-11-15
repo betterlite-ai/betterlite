@@ -34,7 +34,7 @@ const STRICT: GeneralPurpose = GeneralPurpose::new(
 );
 
 // Python 3.13 ignores interior padding but requires padding for a final partial group.
-pub(crate) fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, SecretError> {
+pub fn decode_lenient(text: &str, url_alphabet: bool) -> Result<Vec<u8>, SecretError> {
     bounded_ascii(text)?;
     let mut sextets = String::with_capacity(text.len());
     let mut trailing_pads = 0_usize;

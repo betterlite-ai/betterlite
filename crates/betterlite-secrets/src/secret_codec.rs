@@ -1,6 +1,6 @@
 pub mod bearer;
 pub mod diagnostics;
-mod python_base64;
+pub mod python_base64;
 pub mod sealing;
 pub mod secret_map;
 

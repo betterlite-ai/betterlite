@@ -4,12 +4,12 @@ use betterlite_db::mcp_server_encoding::credentials::{CredentialBlob, credential
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
+use betterlite_secrets::secret_codec::python_base64::decode_lenient;
 use betterlite_secrets::secret_codec::{
     DecryptPolicy, FailureLog, FailureValue, NonceSource, StoredCipher, StoredValue,
 };
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::blob::decode_legacy_base64_text;
 use super::error::RotationCodecError;
 
 // The pinned credential field list; aws_region_name and aws_service_name are not secrets.
@@ -60,8 +60,9 @@ pub fn sealed_text(sealed: StoredValue<JsonValue>) -> JsonValue {
 }
 
 fn legacy_text(stored: &str) -> Option<SecretString> {
-    decode_legacy_base64_text(stored)
+    decode_lenient(stored, true)
         .ok()
+        .and_then(|bytes| String::from_utf8(bytes).ok())
         .map(SecretString::from)
 }
 

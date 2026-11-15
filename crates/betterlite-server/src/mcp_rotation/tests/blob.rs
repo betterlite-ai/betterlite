@@ -9,7 +9,7 @@ use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::secret_codec::MAX_ENCODED_BYTES;
 use rstest::rstest;
 
-use super::super::blob::{decode_legacy_base64_text, decode_mcp_rotation_blob};
+use super::super::blob::decode_mcp_rotation_blob;
 use super::super::error::RotationCodecError;
 use super::support::json;
 
@@ -67,9 +67,9 @@ fn rotation_blob_rejects_oversize_and_depth() {
 #[case::null_byte("AA==", "\0")]
 #[case::url_safe("4b-_", "\u{1fff}")]
 fn legacy_base64_matches_cpython(#[case] text: &str, #[case] expected: &str) {
-    assert_eq!(
-        decode_legacy_base64_text(text).unwrap(),
-        expected,
+    let decoded = decode_mcp_rotation_blob(text.as_bytes()).unwrap();
+    assert!(
+        decoded == JsonValue::String(expected.to_owned()),
         "{text:?}"
     );
 }
@@ -84,7 +84,7 @@ fn legacy_base64_matches_cpython(#[case] text: &str, #[case] expected: &str) {
 #[case::not_base64("not json")]
 fn legacy_base64_rejects_like_cpython(#[case] rejected: &str) {
     assert!(
-        decode_legacy_base64_text(rejected).is_err(),
+        decode_mcp_rotation_blob(rejected.as_bytes()).is_err(),
         "{rejected:?} must not decode"
     );
 }
@@ -92,9 +92,10 @@ fn legacy_base64_rejects_like_cpython(#[case] rejected: &str) {
 #[test]
 fn legacy_base64_size_limit_is_enforced() {
     let at_limit = " ".repeat(MAX_ENCODED_BYTES);
-    assert_eq!(decode_legacy_base64_text(&at_limit).unwrap(), "");
+    let decoded = decode_mcp_rotation_blob(at_limit.as_bytes()).unwrap();
+    assert!(decoded == JsonValue::String(String::new()));
     let over_limit = " ".repeat(MAX_ENCODED_BYTES + 1);
-    assert!(decode_legacy_base64_text(&over_limit).is_err());
+    assert!(decode_mcp_rotation_blob(over_limit.as_bytes()).is_err());
 }
 
 #[rstest]
