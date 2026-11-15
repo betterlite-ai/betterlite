@@ -1,5 +1,13 @@
+use std::sync::Arc;
+
 use async_trait::async_trait;
+use betterlite_config::sections::local_ttl_cache::Settings;
+use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
+use betterlite_core::api::api_boundaries::ApiLimits;
+use betterlite_core::api::responses_input_messages::error::InputMessagesError;
+use betterlite_core::api::responses_input_messages::{InputRequest, input_messages};
 use betterlite_models::decisions::Json;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 
@@ -18,6 +26,10 @@ pub enum TokenCountError {
     NoInput,
     #[error("a message of the request does not read as a chat message")]
     Message(#[from] serde_json::Error),
+    #[error("the Responses input does not convert to chat messages: {0}")]
+    ResponsesInput(#[from] InputMessagesError),
+    #[error("the Responses input count needs a cache redactor: {0}")]
+    Redaction(#[from] betterlite_redact::error::RedactionError),
     #[error(transparent)]
     Counter(#[from] CountError),
 }
@@ -34,6 +46,8 @@ pub trait TokenCounter {
 #[derive(Clone, Copy, Debug)]
 pub struct TokenPayload<'payload> {
     pub messages: Option<&'payload [Json]>,
+    pub input: Option<&'payload Json>,
+    pub instructions: Option<&'payload str>,
     pub system: Option<&'payload Json>,
     pub tools: &'payload [Json],
 }
@@ -79,7 +93,7 @@ where
     C: TokenCounter + Sync + ?Sized,
 {
     let Some(messages) = payload.messages else {
-        return Err(TokenCountError::NoInput);
+        return count_input_tokens(payload, counter).await;
     };
     let mut wire_messages = Vec::new();
     if let Some(message) = system_message(payload.system)? {
@@ -88,6 +102,36 @@ where
     for message in messages {
         let value = serde_json::to_value(message)?;
         wire_messages.push(serde_json::from_value(value)?);
+    }
+    counter.count_messages(&wire_messages, payload.tools).await
+}
+
+// The Responses half of _count_pre_call_check_tokens: the input becomes chat messages through the shared transform.
+async fn count_input_tokens<C>(
+    payload: &TokenPayload<'_>,
+    counter: &C,
+) -> Result<usize, TokenCountError>
+where
+    C: TokenCounter + Sync + ?Sized,
+{
+    let input = payload.input.as_ref().ok_or(TokenCountError::NoInput)?;
+    let request = InputRequest {
+        input: Some(input.clone()),
+        instructions: payload.instructions.map(str::to_owned),
+    };
+    let cache = DualLocalCache::new(
+        None,
+        None,
+        &Settings::default(),
+        Arc::new(|| 0.0_f64),
+        Diagnostics {
+            redactor: Arc::new(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?),
+            emit: Arc::new(|_event| {}),
+        },
+    );
+    let mut wire_messages = Vec::new();
+    for message in input_messages(&request, false, ApiLimits::default(), &cache)? {
+        wire_messages.push(serde_json::from_value(message)?);
     }
     counter.count_messages(&wire_messages, payload.tools).await
 }
@@ -104,7 +148,9 @@ where
     L: TokenLimits + Sync + ?Sized,
     C: TokenCounter + Sync + ?Sized,
 {
-    payload.messages?;
+    if payload.messages.is_none() && payload.input.is_none() {
+        return None;
+    }
     if !deployments
         .iter()
         .any(|deployment| limits.max_input_tokens(deployment, model).is_some())

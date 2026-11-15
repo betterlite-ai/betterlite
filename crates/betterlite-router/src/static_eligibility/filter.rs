@@ -165,7 +165,8 @@ pub fn eligible(
         return single_eligibility(input.model, active, causes);
     }
     let mut deployments = filter_web_search(active, &input.facts.tools, &mut causes)?;
-    if input.enable_pre_call_checks && input.facts.messages.is_some() {
+    let countable_input = input.facts.messages.is_some() || input.facts.input.is_some();
+    if input.enable_pre_call_checks && countable_input {
         let (filtered, pre_call_causes) = pre_call_filters(
             input.model,
             input.facts,

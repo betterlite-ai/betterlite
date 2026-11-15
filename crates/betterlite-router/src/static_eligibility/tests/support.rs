@@ -13,6 +13,8 @@ use crate::static_eligibility::tokens::{TokenCountError, TokenCounter, TokenLimi
 pub(crate) fn facts() -> RequestFacts {
     RequestFacts {
         messages: None,
+        input: None,
+        instructions: None,
         system: None,
         tools: Vec::new(),
         response_format: false,

@@ -4,6 +4,8 @@ use betterlite_models::decisions::Json;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RequestFacts {
     pub messages: Option<Vec<Json>>,
+    pub input: Option<Json>,
+    pub instructions: Option<String>,
     pub system: Option<Json>,
     pub tools: Vec<Json>,
     pub response_format: bool,

@@ -1,4 +1,7 @@
+use std::sync::Mutex;
+
 use betterlite_models::decisions::Json;
+use betterlite_tokenizer::count::request::Message;
 use rstest::rstest;
 
 use super::support::{
@@ -89,6 +92,7 @@ enum Behavior {
     ContextDropsOverTheWindow,
     ContextRaisesWhenNoWindowFits,
     ContextSkipsWithoutMessages,
+    ContextFiltersAResponsesInput,
     CompactionSkipsTheContextWindow,
     ParamsDropsUnsupportedResponseFormat,
     ParamsKeepsSupportedResponseFormat,
@@ -114,6 +118,7 @@ enum Behavior {
 #[case::context_drops_over(Behavior::ContextDropsOverTheWindow)]
 #[case::context_raises_when_no_window_fits(Behavior::ContextRaisesWhenNoWindowFits)]
 #[case::context_skips_without_messages(Behavior::ContextSkipsWithoutMessages)]
+#[case::context_filters_responses_input(Behavior::ContextFiltersAResponsesInput)]
 #[case::compaction_skips_context(Behavior::CompactionSkipsTheContextWindow)]
 #[case::params_drop_unsupported(Behavior::ParamsDropsUnsupportedResponseFormat)]
 #[case::params_keep_supported(Behavior::ParamsKeepsSupportedResponseFormat)]
@@ -144,6 +149,7 @@ fn static_eligibility_behaviors(#[case] behavior: Behavior) {
         Behavior::ContextDropsOverTheWindow => context_drops_over(),
         Behavior::ContextRaisesWhenNoWindowFits => context_raises_when_no_window_fits(),
         Behavior::ContextSkipsWithoutMessages => context_skips_without_messages(),
+        Behavior::ContextFiltersAResponsesInput => context_filters_a_responses_input(),
         Behavior::CompactionSkipsTheContextWindow => compaction_skips_the_context_window(),
         Behavior::ParamsDropsUnsupportedResponseFormat => params_drops_unsupported(),
         Behavior::ParamsKeepsSupportedResponseFormat => params_keeps_supported(),
@@ -329,6 +335,34 @@ fn context_skips_without_messages() {
     )
     .unwrap();
     assert_eq!(ids(&result.deployments), ["tiny"]);
+}
+
+// An input-only Responses lookup enters the pre-call filters, and the window at the input count stays.
+fn context_filters_a_responses_input() {
+    let facts = RequestFacts {
+        input: Some(Json::Text("hello world".to_owned())),
+        input_token_count: Some(9),
+        ..empty_facts()
+    };
+    let result = run(
+        pool(vec![
+            spec("gpt", "below", "openai/gpt-4o", r#"{"max_input_tokens":8}"#),
+            spec("gpt", "edge", "openai/gpt-4o", r#"{"max_input_tokens":9}"#),
+        ]),
+        &facts,
+        true,
+        &support(),
+    )
+    .unwrap();
+    assert_eq!(ids(&result.deployments), ["edge"]);
+    assert_eq!(
+        result.causes,
+        [Cause::ContextWindow {
+            model_name: "gpt".to_owned(),
+            max_input_tokens: 8,
+            input_tokens: 9,
+        }]
+    );
 }
 
 fn compaction_skips_the_context_window() {
@@ -684,12 +718,16 @@ async fn count_request_tokens_prefixes_the_anthropic_system_block() {
     let messages: Vec<Json> = vec![message("hello")];
     let payload = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: Some(&Json::Text("be brief".to_owned())),
         tools: &[],
     };
     assert_eq!(count_request_tokens(&payload, &counter).await.unwrap(), 2);
     let empty = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: Some(&Json::Text(String::new())),
         tools: &[],
     };
@@ -701,6 +739,8 @@ async fn count_request_tokens_rejects_a_request_without_messages() {
     let counter = FixedCounter { count: 0 };
     let payload = TokenPayload {
         messages: None,
+        input: None,
+        instructions: None,
         system: None,
         tools: &[],
     };
@@ -710,12 +750,134 @@ async fn count_request_tokens_rejects_a_request_without_messages() {
     ));
 }
 
+#[derive(Default)]
+struct RecordingCounter {
+    counted: Mutex<Vec<Message>>,
+}
+
+#[async_trait::async_trait]
+impl TokenCounter for RecordingCounter {
+    async fn count_messages(
+        &self,
+        messages: &[Message],
+        _tools: &[Json],
+    ) -> Result<usize, crate::static_eligibility::tokens::TokenCountError> {
+        self.counted
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .extend_from_slice(messages);
+        Ok(messages.len())
+    }
+}
+
+#[tokio::test]
+async fn count_request_tokens_converts_a_responses_input() {
+    let counter = FixedCounter { count: 0 };
+    let text = Json::Text("hello world".to_owned());
+    let string_payload = TokenPayload {
+        messages: None,
+        input: Some(&text),
+        instructions: Some("be brief"),
+        system: None,
+        tools: &[],
+    };
+    assert_eq!(
+        count_request_tokens(&string_payload, &counter)
+            .await
+            .unwrap(),
+        2
+    );
+    let items: Json = serde_json::from_str(r#"[{"role":"user","content":"hello world"}]"#).unwrap();
+    let list_payload = TokenPayload {
+        messages: None,
+        input: Some(&items),
+        instructions: None,
+        system: None,
+        tools: &[],
+    };
+    assert_eq!(
+        count_request_tokens(&list_payload, &counter).await.unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn count_request_tokens_prefers_the_chat_messages_over_the_input() {
+    let counter = FixedCounter { count: 0 };
+    let messages: Vec<Json> = vec![message("hello")];
+    let input = Json::Text("ignored".to_owned());
+    let payload = TokenPayload {
+        messages: Some(&messages),
+        input: Some(&input),
+        instructions: Some("ignored"),
+        system: None,
+        tools: &[],
+    };
+    assert_eq!(count_request_tokens(&payload, &counter).await.unwrap(), 1);
+}
+
+#[tokio::test]
+async fn count_request_tokens_inspects_a_reasoning_item_without_replaying_it() {
+    let counter = RecordingCounter::default();
+    let input: Json = serde_json::from_str(
+        r#"[{"type":"reasoning","content":[{"type":"reasoning_text","text":"think"}]}]"#,
+    )
+    .unwrap();
+    let payload = TokenPayload {
+        messages: None,
+        input: Some(&input),
+        instructions: None,
+        system: None,
+        tools: &[],
+    };
+    assert_eq!(count_request_tokens(&payload, &counter).await.unwrap(), 1);
+    let counted = counter
+        .counted
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    assert_eq!(counted.len(), 1);
+    assert_eq!(
+        counted.first().map(|message| message.role.as_str()),
+        Some("user")
+    );
+    assert!(
+        counted
+            .first()
+            .is_some_and(|message| message.reasoning_content.is_none())
+    );
+}
+
+#[tokio::test]
+async fn count_for_pre_call_checks_counts_a_responses_input() {
+    let counter = FixedCounter { count: 7 };
+    let input = Json::Text("hello".to_owned());
+    let payload = TokenPayload {
+        messages: None,
+        input: Some(&input),
+        instructions: None,
+        system: None,
+        tools: &[],
+    };
+    let windowed = vec![spec(
+        "gpt",
+        "d1",
+        "openai/gpt-4o",
+        r#"{"max_input_tokens":100}"#,
+    )];
+    assert_eq!(
+        count_for_pre_call_checks(MODEL, &windowed, &payload, &InfoLimits, &counter).await,
+        Some(8)
+    );
+}
+
 #[tokio::test]
 async fn count_for_pre_call_checks_needs_messages_and_a_declared_window() {
     let counter = FixedCounter { count: 7 };
     let messages: Vec<Json> = vec![message("hello")];
     let with_messages = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: None,
         tools: &[],
     };
@@ -740,6 +902,8 @@ async fn count_for_pre_call_checks_needs_messages_and_a_declared_window() {
             &windowed,
             &TokenPayload {
                 messages: None,
+                input: None,
+                instructions: None,
                 system: None,
                 tools: &[]
             },
@@ -767,6 +931,8 @@ async fn count_for_pre_call_checks_swallows_a_counter_failure() {
     let messages: Vec<Json> = vec![message("hello")];
     let payload = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: None,
         tools: &[],
     };
@@ -789,6 +955,8 @@ async fn count_request_tokens_counts_a_system_block_list_once() {
     let blocks: Json = serde_json::from_str(r#"[{"type":"text","text":"be brief"}]"#).unwrap();
     let listed = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: Some(&blocks),
         tools: &[],
     };
@@ -796,6 +964,8 @@ async fn count_request_tokens_counts_a_system_block_list_once() {
     let none = Json::List(Vec::new());
     let empty = TokenPayload {
         messages: Some(&messages),
+        input: None,
+        instructions: None,
         system: Some(&none),
         tools: &[],
     };
