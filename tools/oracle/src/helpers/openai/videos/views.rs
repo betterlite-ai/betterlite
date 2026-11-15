@@ -21,8 +21,7 @@ use serde_json::{Value, json};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use super::input::{
-    Body, Call, Create, CreateResponse, Environment, ErrorCall, ListRequest, Reference, Request,
-    Response,
+    AuthCall, Body, Call, Create, CreateResponse, ErrorCall, ListRequest, Reference, Response,
 };
 
 type VideoReply = fn(&[u8], Option<&str>) -> Result<VideoObject, VideoError>;
@@ -49,11 +48,13 @@ pub(super) fn run_call(call: &Call) -> HelperResult {
         Call::RemixResponse(response) => video_response_view(response, remix_response),
         Call::ListRequest(request) => list_request_view(request),
         Call::ListResponse(response) => list_response_view(response),
-        Call::DeleteRequest(request) => path_request_view(request),
+        Call::DeleteRequest(request) | Call::StatusRequest(request) => request_view(
+            path_url(&request.video_id, &request.api_base, "")
+                .map(|path| (path, VideoOptions::new())),
+        ),
         Call::DeleteResponse(body) => delete_response_view(body),
-        Call::StatusRequest(request) => path_request_view(request),
         Call::StatusResponse(response) => video_response_view(response, status_response),
-        Call::ValidateEnvironment(environment) => environment_view(environment),
+        Call::ValidateEnvironment(environment) => Ok(environment_view(environment)),
         Call::CompleteUrl(complete) => {
             Ok(json!({"url": complete_url(complete.api_base.as_deref())}))
         }
@@ -140,11 +141,6 @@ fn list_request_view(call: &ListRequest) -> HelperResult {
     request_view(Ok(listed))
 }
 
-fn path_request_view(call: &Request) -> HelperResult {
-    let url = path_url(&call.video_id, &call.api_base, "");
-    request_view(url.map(|path| (path, VideoOptions::new())))
-}
-
 fn delete_response_view(body: &Body) -> HelperResult {
     let bytes = STANDARD.decode(&body.body_base64).or_value_error()?;
     let video = decode_video(&bytes).or_value_error()?;
@@ -169,7 +165,7 @@ fn list_response_view(call: &Response) -> HelperResult {
     serde_json::to_value(&list).or_value_error()
 }
 
-fn environment_view(call: &Environment) -> HelperResult {
+fn environment_view(call: &AuthCall) -> Value {
     let configured = VideoCredentials {
         api_key: call.api_key.as_deref().map(SecretString::from),
         params_api_key: call.params_api_key.as_deref().map(SecretString::from),
@@ -187,5 +183,5 @@ fn environment_view(call: &Environment) -> HelperResult {
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
         .collect();
-    Ok(json!({"headers": exposed}))
+    json!({"headers": exposed})
 }

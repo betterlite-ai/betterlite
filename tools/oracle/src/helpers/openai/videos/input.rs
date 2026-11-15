@@ -24,7 +24,7 @@ pub(crate) enum Call {
     DeleteResponse(Body),
     StatusRequest(Request),
     StatusResponse(Response),
-    ValidateEnvironment(Environment),
+    ValidateEnvironment(AuthCall),
     CompleteUrl(CompleteUrl),
     ErrorClass(ErrorCall),
 }
@@ -101,7 +101,7 @@ pub(crate) struct ListRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct Environment {
+pub(crate) struct AuthCall {
     pub(crate) headers: BTreeMap<String, String>,
     pub(crate) api_key: Option<String>,
     pub(crate) params_api_key: Option<String>,
