@@ -58,8 +58,10 @@ fn every_copilot_chat_seed_is_a_valid_helper_case() {
     assert!(seeds.iter().all(|(name, source)| {
         let case: HelperCase =
             serde_saphyr::from_str(source).expect("a seed parses as a helper case");
-        let _: Seed = serde_saphyr::from_str(source)
-            .unwrap_or_else(|error| panic!("{name} must call copilot_chat: {error}"));
+        drop(
+            serde_saphyr::from_str::<Seed>(source)
+                .unwrap_or_else(|error| panic!("{name} must call copilot_chat: {error}")),
+        );
         validate_helper(Path::new("<helper>"), &case).is_ok()
     }));
 }
@@ -117,7 +119,7 @@ fn a_tool_only_reply_gets_null_content_and_normalized_usage() {
     );
     assert_eq!(
         reply["usage"],
-        json!({"input_tokens": 3, "output_tokens": 4, "prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7})
+        json!({"input_tokens": 3_i64, "output_tokens": 4_i64, "prompt_tokens": 3_i64, "completion_tokens": 4_i64, "total_tokens": 7_i64})
     );
 }
 
@@ -126,7 +128,7 @@ fn an_empty_probe_reply_has_empty_content_and_finish_reason_length() {
     let reply = answer("empty_probe");
     assert_eq!(
         reply["choices"],
-        json!([{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "length"}])
+        json!([{"index": 0_i64, "message": {"role": "assistant", "content": ""}, "finish_reason": "length"}])
     );
 }
 
@@ -135,7 +137,7 @@ fn usage_that_already_has_openai_names_is_kept() {
     let reply = answer("usage_already_normalized");
     assert_eq!(
         reply["usage"],
-        json!({"prompt_tokens": 2, "completion_tokens": 3, "total_tokens": 9})
+        json!({"prompt_tokens": 2_i64, "completion_tokens": 3_i64, "total_tokens": 9_i64})
     );
     assert_eq!(reply["choices"][0]["finish_reason"], "stop");
 }
