@@ -83,13 +83,18 @@ fn the_chat_case_reports_the_pinned_supported_params_and_mapping() {
 }
 
 #[test]
-fn the_embedding_case_reports_urls_headers_bodies_replies_and_errors() {
+fn the_embedding_case_reports_the_urls() {
     let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_urls"][0]["url"],
         json!("https://api.sambanova.ai/v1/embeddings")
     );
     assert_eq!(result["embedding_urls"][5]["url"], Value::Null);
+}
+
+#[test]
+fn the_embedding_case_reports_the_headers() {
+    let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_headers"][1]["headers"]["Authorization"],
         json!("Bearer None")
@@ -114,10 +119,20 @@ fn the_embedding_case_reports_urls_headers_bodies_replies_and_errors() {
         result["embedding_headers"][7]["headers"]["Authorization"],
         json!("Bearer ")
     );
+}
+
+#[test]
+fn the_embedding_case_reports_the_request_bodies() {
+    let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_requests"][2]["request"],
         json!({"input": "text", "model": "other"})
     );
+}
+
+#[test]
+fn the_embedding_case_reports_the_replies() {
+    let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_replies"][0]["model"],
         json!("embed-model")
@@ -140,6 +155,11 @@ fn the_embedding_case_reports_urls_headers_bodies_replies_and_errors() {
         result["embedding_replies"][4]["usage"],
         json!({"prompt_tokens": 0_i32, "total_tokens": 9_i32})
     );
+}
+
+#[test]
+fn the_embedding_case_reports_the_errors() {
+    let result = run_case("embedding-url-headers-body.yaml");
     assert_eq!(
         result["embedding_errors"][0]["request_url"],
         json!("https://docs.litellm.ai/docs")
