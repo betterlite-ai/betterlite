@@ -2,16 +2,6 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::secret_types::SecretAccessMode;
 
-pub fn read_boolean_text(
-    name: &str,
-    value: Option<&str>,
-) -> Result<Option<bool>, betterlite_env::EnvError> {
-    value
-        .map(|text| betterlite_env::flag(name, text))
-        .transpose()
-        .map(Option::flatten)
-}
-
 #[must_use]
 pub fn normalize_nonempty_secret_str(value: Option<&SecretString>) -> Option<SecretString> {
     value

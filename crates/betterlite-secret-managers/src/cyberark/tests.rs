@@ -6,16 +6,17 @@ use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tokio::time::Instant;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::{MakeWriter, fmt};
 
-use super::CyberArkSecretManager;
 use super::transport::{
     ClientCertificate, ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod,
 };
+use super::{CyberArkSecretManager, CyberArkSettings};
 
 pub(super) const AUTH_ROUTE: &str = "POST http://127.0.0.1:8080/authn/default/admin/authenticate";
 pub(super) const TOKEN_JSON: &str = "{\"protected\":\"abc\"}";
@@ -215,4 +216,52 @@ pub(super) fn capture_logs() -> (LogBuffer, DefaultGuard) {
         .with_writer(buffer.clone())
         .finish();
     (buffer, set_default(subscriber))
+}
+
+#[rstest]
+#[case::false_lower(Some("false"), false)]
+#[case::false_upper(Some("FALSE"), false)]
+#[case::false_mixed(Some("False"), false)]
+#[case::false_padded(Some(" false "), false)]
+#[case::true_lower(Some("true"), true)]
+#[case::true_upper(Some("TRUE"), true)]
+#[case::unset(None, true)]
+#[case::empty(Some(""), true)]
+#[case::blank(Some("   "), true)]
+#[case::zero(Some("0"), true)]
+#[case::no(Some("no"), true)]
+#[case::off(Some("off"), true)]
+#[case::other_word(Some("maybe"), true)]
+fn ssl_verification_turns_off_only_on_false(#[case] text: Option<&str>, #[case] verify: bool) {
+    let mut pairs = vec![("CYBERARK_API_KEY", "key")];
+    pairs.extend(text.map(|value| ("CYBERARK_SSL_VERIFY", value)));
+    let settings = CyberArkSettings::from_environment(&environment(&pairs)).unwrap();
+    assert_eq!(settings.verify_tls, verify);
+}
+
+#[tokio::test(start_paused = true)]
+async fn false_turns_off_tls_verification_on_the_conjur_request() {
+    let (manager, transport) = scripted(
+        &[
+            ("CYBERARK_API_KEY", "key"),
+            ("CYBERARK_SSL_VERIFY", "false"),
+        ],
+        &[(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])],
+    );
+    manager.authorization().await.unwrap();
+    let seen = transport.recorded();
+    let login = seen.first().unwrap();
+    assert!(!login.verify_tls);
+}
+
+#[tokio::test(start_paused = true)]
+async fn another_word_keeps_tls_verification_on_the_conjur_request() {
+    let (manager, transport) = scripted(
+        &[("CYBERARK_API_KEY", "key"), ("CYBERARK_SSL_VERIFY", "off")],
+        &[(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])],
+    );
+    manager.authorization().await.unwrap();
+    let seen = transport.recorded();
+    let login = seen.first().unwrap();
+    assert!(login.verify_tls);
 }

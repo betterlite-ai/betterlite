@@ -17,6 +17,7 @@ description: >-
   task adds no deviation row.
 scope:
   paths:
+  - "crates/betterlite-secret-managers/src/cyberark/cyberark_auth/tests.rs"
   - crates/betterlite-secret-managers/src/cyberark.rs
   - crates/betterlite-secret-managers/src/cyberark/tests.rs
   - crates/betterlite-secret-managers/src/secret_helpers.rs
