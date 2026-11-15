@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-gemini-images-mappings-seed
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings:
+      - prompt: a red fox
+        non_default_params: {size: 1280x896, imageConfig: {imageSize: 2K}}
+        optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

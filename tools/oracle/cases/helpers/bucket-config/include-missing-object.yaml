@@ -1,0 +1,10 @@
+kind: helper
+name: bucket-config-include-missing-object
+call:
+  b4143:
+    operation: load_config
+    object_key: config.yaml
+    objects:
+      config.yaml: {include: [missing.yaml]}
+env: {}
+compare: {ignore: []}

@@ -124,7 +124,7 @@ dod:
     type=internal_server_error,param=null,code="500",message="No module named 'litellm_enterprise'"
     after one provider request and no managed-object write. A completed native response or a
     stream does not enter that import branch and succeeds. Cache polling remains usable. This
-    is the current managed-files/batches choice retained pending Max, not an implemented paid feature.
+    is open-source LiteLLM's behavior without the enterprise hook, not an implemented paid feature.
   proof: [managed-background, oracle]
 - text: >-
     blocked_create_body_and_stream injects B104 ModifyResponseException with model=gpt-4o,
@@ -207,7 +207,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/responses-public-dispatch/public-dispatch-projection.yaml
 deviations:
 - what: Native queued/in_progress background creation remains HTTP 500 internal_server_error,param=null,code="500" without managed storage; cache polling succeeds independently.
-  why: Max's managed-files/batches choice remains open. Keep the current no-enterprise behavior instead of implementing an unavailable hook.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/response_api_endpoints/endpoints.py#L389-L393
 - what: Polling IDs carry private trusted ownership; another owner receives 403 permission_error,param=null,code="403" on lifecycle access.
   why: The architect's existing polling-ownership decision requires B080 to supply identity before the initial cache write.

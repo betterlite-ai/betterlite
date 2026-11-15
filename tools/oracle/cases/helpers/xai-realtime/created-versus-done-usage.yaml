@@ -1,0 +1,27 @@
+kind: helper
+name: xai-realtime-created-versus-done-usage
+call:
+  xai_realtime:
+    kind: sequence
+    events:
+      - {type: response.created, response: {id: response-1, usage: {}}}
+      - {type: response.created, response: {id: response-1, usage: null}}
+      - {type: response.created, response: {id: response-1, usage: {total_tokens: 9, input_tokens: 4, output_tokens: 5, input_token_details: {cached_tokens: 2, reasoning_tokens: 1}, output_token_details: {audio_tokens: 7, extra: 1}}}}
+      - {type: response.created, response: {id: response-1, usage: bad}}
+      - {type: response.created, response: {id: response-1}}
+      - {type: response.done, response: {id: response-1, usage: {}}}
+      - {type: response.done, response: {id: response-1, usage: {total_tokens: 9, output_token_details: {cached_tokens: 2}}}}
+      - {type: response.done, response: {id: response-1, usage: null}}
+      - {type: response.done, response: {id: response-1, usage: bad}}
+      - {type: response.done, response: {id: response-1, usage: true}}
+      - {type: response.done, response: {id: response-1}}
+      - {type: response.done}
+      - {type: response.in_progress, response: {id: response-1, usage: {}}}
+      - {type: response.done, response: {id: response-1, usage: {input_token_details: null, output_token_details: bad}}}
+    sessions: []
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}
