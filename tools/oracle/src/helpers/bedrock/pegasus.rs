@@ -71,8 +71,8 @@ impl TokenCounter for UnusedCounter {
 }
 
 // HelperError lives in betterlite-oracle-helper-api, so the orphan rule forbids a From impl here.
-fn helper_error(error: PegasusError) -> Box<HelperError> {
-    let (class, status) = match &error {
+fn helper_error(error: &PegasusError) -> Box<HelperError> {
+    let (class, status) = match error {
         PegasusError::Bedrock { status, .. } => ("BedrockError", Some(*status)),
         PegasusError::Header(_) => ("HeaderError", None),
         PegasusError::ReplyNotObject
@@ -103,7 +103,7 @@ impl Helper for Op {
             Input::PegasusMediaSource(call) | Input::TextVideoPrompt(call) => Ok(json!({
                 "request": serde_json::to_value(
                     transform_request(&call.messages, &call.optional_params)
-                        .map_err(helper_error)?
+                        .map_err(|error| helper_error(&error))?
                 )?,
             })),
             Input::ResponseFormatJson(call) | Input::PegasusOptions(call) => mapping_case(call),
@@ -115,9 +115,10 @@ impl Helper for Op {
 }
 
 fn mapping_case(call: &MappingCall) -> HelperResult {
-    let mapped =
-        map_openai_params(&call.non_default, call.optional_params.clone()).map_err(helper_error)?;
-    let request = transform_request(&call.messages, &mapped).map_err(helper_error)?;
+    let mapped = map_openai_params(&call.non_default, call.optional_params.clone())
+        .map_err(|error| helper_error(&error))?;
+    let request =
+        transform_request(&call.messages, &mapped).map_err(|error| helper_error(&error))?;
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": serde_json::to_value(&mapped)?,
@@ -142,7 +143,7 @@ fn reply_case(call: &ReplyCall) -> HelperResult {
             &mut response,
             &UnusedCounter,
         ))
-        .map_err(helper_error)?;
+        .map_err(|error| helper_error(&error))?;
     Ok(response_json(&response))
 }
 
