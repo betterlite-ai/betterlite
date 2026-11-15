@@ -705,3 +705,22 @@ fn list_models_rejects_a_created_of_another_type() {
     );
     server.finish();
 }
+
+#[test]
+fn list_models_renders_a_number_id_and_an_empty_null_owned_by() {
+    let server = TestServer::start(vec![Answer::json(
+        200,
+        r#"{"data":[{"id":5,"owned_by":null}]}"#,
+    )]);
+
+    let (result, stdout, _stderr) = run(list(OutputFormat::Table), &server);
+
+    result.unwrap();
+    let row = stdout
+        .lines()
+        .find(|line| line.contains('5'))
+        .unwrap_or_default();
+    assert!(row.contains('5'), "{stdout}");
+    assert!(!row.contains("null"), "{stdout}");
+    server.finish();
+}

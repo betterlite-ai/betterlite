@@ -318,6 +318,27 @@ fn import_models_takes_the_provider_before_the_first_slash() {
 }
 
 #[test]
+fn import_models_uses_the_whole_model_id_when_it_has_no_slash() {
+    let file = yaml("model_list:\n  - model_name: m\n    litellm_params:\n      model: gpt-4o\n");
+    let server = TestServer::start(Vec::new());
+
+    let (result, stdout, _stderr) = run(import(&file, true, None, None), &server);
+
+    result.unwrap();
+    let summary = stdout
+        .split("Model Import Summary")
+        .nth(1)
+        .unwrap_or_default();
+    let provider = summary
+        .lines()
+        .find(|line| line.contains("gpt-4o"))
+        .unwrap_or_default();
+    assert!(provider.contains("gpt-4o"), "{stdout}");
+    assert!(provider.contains('1'), "{stdout}");
+    server.finish();
+}
+
+#[test]
 fn filter_model_accepts_a_model_with_the_required_fields() {
     let model = object(r#"{"model_name":"m","litellm_params":{"model":"openai/gpt"}}"#);
 
@@ -464,6 +485,33 @@ fn summary_counts_each_provider_and_totals_them() {
         .unwrap_or_default();
     assert!(total.contains('2'), "{stdout}");
     assert!(!total.contains("[bold]"), "{stdout}");
+    server.finish();
+}
+
+#[test]
+fn summary_counts_two_models_from_the_same_provider() {
+    let file = yaml(
+        "model_list:\n  - model_name: first\n    litellm_params:\n      model: openai/gpt-4o\n  - model_name: second\n    litellm_params:\n      model: openai/gpt-4o-mini\n",
+    );
+    let server = TestServer::start(Vec::new());
+
+    let (result, stdout, _stderr) = run(import(&file, true, None, None), &server);
+
+    result.unwrap();
+    let summary = stdout
+        .split("Model Import Summary")
+        .nth(1)
+        .unwrap_or_default();
+    let openai = summary
+        .lines()
+        .find(|line| line.contains("openai"))
+        .unwrap_or_default();
+    assert!(openai.contains('2'), "{stdout}");
+    let total = summary
+        .lines()
+        .find(|line| line.contains("Total"))
+        .unwrap_or_default();
+    assert!(total.contains('2'), "{stdout}");
     server.finish();
 }
 
