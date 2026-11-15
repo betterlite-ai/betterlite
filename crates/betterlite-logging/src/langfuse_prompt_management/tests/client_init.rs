@@ -1,10 +1,22 @@
 use std::sync::Arc;
 
+use rstest::rstest;
+
 use super::support;
-use crate::langfuse_logger::LangfuseLoggerError;
+use crate::langfuse_logger::{LangfuseLoggerError, LangfuseServices};
 use crate::langfuse_prompt_management::LangfusePromptManagementError;
 use crate::langfuse_prompt_management::clients::{
     LangfusePromptClients, PROMPT_CLIENT_CACHE_CAPACITY, PromptClientRequest,
+};
+
+// the request each case starts from; a case overrides one of its six fields
+const BASE: PromptClientRequest<'static> = PromptClientRequest {
+    public_key: Some("pk-1"),
+    secret: Some("sk-1"),
+    secret_key: None,
+    host: Some(support::HOST),
+    flush_interval: 1,
+    allow_env_credentials: false,
 };
 
 fn request<'request>(
@@ -18,6 +30,14 @@ fn request<'request>(
         host: Some(host),
         flush_interval: 1,
         allow_env_credentials: false,
+    }
+}
+
+fn fill_cache(clients: &LangfusePromptClients, services: &LangfuseServices, keys: &[String]) {
+    for key in keys {
+        clients
+            .client_init(services, &request(key.as_str(), support::HOST))
+            .expect("the client builds");
     }
 }
 
@@ -37,48 +57,43 @@ async fn identical_credentials_and_host_share_one_client() {
     assert_eq!(builder.configs().len(), 1);
 }
 
-#[tokio::test]
-async fn every_one_of_the_six_arguments_separates_the_cache() {
+#[rstest]
+#[case::public_key(PromptClientRequest {
+    public_key: Some("pk-2"),
+    ..BASE
+})]
+#[case::secret(PromptClientRequest {
+    secret: Some("sk-2"),
+    ..BASE
+})]
+#[case::secret_key(PromptClientRequest {
+    secret_key: Some("sk-3"),
+    ..BASE
+})]
+#[case::host(PromptClientRequest {
+    host: Some("http://other.test"),
+    ..BASE
+})]
+#[case::flush_interval(PromptClientRequest {
+    flush_interval: 2,
+    ..BASE
+})]
+#[case::allow_env_credentials(PromptClientRequest {
+    allow_env_credentials: true,
+    ..BASE
+})]
+fn every_one_of_the_six_arguments_separates_the_cache(#[case] variant: PromptClientRequest<'_>) {
     let builder = support::RecordingBuilder::default();
     let variables = support::env(support::HOST);
     let services = support::services(&support::borrowed(&variables), Arc::new(builder.clone()));
     let clients = LangfusePromptClients::default();
-    let base = request("pk-1", support::HOST);
-    let variants = [
-        PromptClientRequest {
-            public_key: Some("pk-2"),
-            ..base
-        },
-        PromptClientRequest {
-            secret: Some("sk-2"),
-            ..base
-        },
-        PromptClientRequest {
-            secret_key: Some("sk-3"),
-            ..base
-        },
-        PromptClientRequest {
-            host: Some("http://other.test"),
-            ..base
-        },
-        PromptClientRequest {
-            flush_interval: 2,
-            ..base
-        },
-        PromptClientRequest {
-            allow_env_credentials: true,
-            ..base
-        },
-    ];
-    for variant in variants {
-        clients
-            .client_init(&services, &variant)
-            .expect("the variant builds");
-    }
     clients
-        .client_init(&services, &base)
-        .expect("the base builds");
-    assert_eq!(builder.configs().len(), 7);
+        .client_init(&services, &BASE)
+        .expect("the base client builds");
+    clients
+        .client_init(&services, &variant)
+        .expect("the variant client builds");
+    assert_eq!(builder.configs().len(), 2);
 }
 
 #[tokio::test]
@@ -90,11 +105,7 @@ async fn the_eleventh_client_evicts_the_least_recently_used_one() {
     let keys: Vec<String> = (0..=PROMPT_CLIENT_CACHE_CAPACITY)
         .map(|index| format!("pk-{index}"))
         .collect();
-    for key in &keys {
-        clients
-            .client_init(&services, &request(key.as_str(), support::HOST))
-            .expect("the client builds");
-    }
+    fill_cache(&clients, &services, &keys);
     assert_eq!(builder.configs().len(), PROMPT_CLIENT_CACHE_CAPACITY + 1);
     clients
         .client_init(&services, &request(keys[0].as_str(), support::HOST))
@@ -138,11 +149,7 @@ async fn reading_a_cached_client_makes_it_the_most_recently_used() {
     let keys: Vec<String> = (0..PROMPT_CLIENT_CACHE_CAPACITY)
         .map(|index| format!("pk-{index}"))
         .collect();
-    for key in &keys {
-        clients
-            .client_init(&services, &request(key.as_str(), support::HOST))
-            .expect("the client builds");
-    }
+    fill_cache(&clients, &services, &keys);
     clients
         .client_init(&services, &request(keys[0].as_str(), support::HOST))
         .expect("the cached client is touched");
