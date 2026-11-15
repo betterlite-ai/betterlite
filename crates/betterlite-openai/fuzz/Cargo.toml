@@ -602,6 +602,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mistral_resource"
+path = "fuzz_targets/mistral_resource.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "text_response"
 path = "fuzz_targets/text_response.rs"
 test = false
