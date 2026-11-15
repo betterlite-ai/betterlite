@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,7 +19,7 @@ use crate::qualifire::convert;
 use crate::qualifire::error::QualifireError;
 use crate::qualifire::request::{self, CheckRequest};
 use crate::qualifire::settings::{self, Check, OnFlagged};
-use crate::qualifire::wire::BlockDetail;
+use crate::qualifire::wire::{BlockDetail, QualifireResponse};
 use crate::qualifire::{QualifireGuardrail, SUPPORTED_EVENT_HOOKS};
 
 #[derive(Clone, Default)]
@@ -228,7 +228,7 @@ fn an_empty_name_leaves_the_guardrail_unnamed() {
 fn blocked_is_a_bad_request_and_a_non_2xx_answer_keeps_its_status() {
     let detail = BlockDetail {
         error: "Violated guardrail policy".to_owned(),
-        qualifire_response: crate::qualifire::wire::QualifireResponse {
+        qualifire_response: QualifireResponse {
             score: GuardrailValue::Null,
             status: GuardrailValue::Null,
         },
@@ -332,7 +332,11 @@ fn tools_that_are_not_a_list_are_an_error() {
 #[test]
 fn a_tool_that_is_not_an_object_is_an_error() {
     let tools = json(r#"["lookup"]"#);
-    assert!(convert::api_tools(Some(&tools)).is_err());
+    let error = convert::api_tools(Some(&tools)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the Qualifire guardrail cannot read tools in the request messages"
+    );
 }
 
 #[test]
@@ -354,7 +358,11 @@ fn a_function_tool_without_a_function_is_skipped() {
 #[test]
 fn a_tool_definition_with_a_wrong_typed_name_is_an_error() {
     let tools = json(r#"[{"name": 5}]"#);
-    assert!(convert::api_tools(Some(&tools)).is_err());
+    let error = convert::api_tools(Some(&tools)).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "the Qualifire guardrail cannot read tools in the request messages"
+    );
 }
 
 #[rstest]
@@ -463,10 +471,7 @@ fn settings_treat_an_empty_evaluation_id_as_unset() {
     args.evaluation_id = Some(String::new());
     let resolved = resolve(&args, &NoSecrets, &environment(&[]));
     assert_eq!(resolved.evaluation_id, None);
-    assert_eq!(
-        resolved.checks,
-        [Check::PromptInjections].into_iter().collect()
-    );
+    assert_eq!(resolved.checks, BTreeSet::from([Check::PromptInjections]));
 }
 
 #[test]
@@ -483,7 +488,7 @@ fn settings_enable_each_check_from_its_flag() {
 }
 
 #[rstest]
-#[case::negative(-1.0)]
+#[case::negative(-1.0_f64)]
 #[case::nan(f64::NAN)]
 #[case::infinite(f64::INFINITY)]
 #[case::too_large(f64::MAX)]
@@ -500,7 +505,7 @@ fn a_timeout_a_duration_cannot_represent_is_rejected_at_build(#[case] seconds: f
 #[test]
 fn the_guardrail_is_built_from_its_arguments() {
     let mut args = args();
-    args.timeout = Some(3.0);
+    args.timeout = Some(3.0_f64);
     args.on_flagged = Some("monitor".to_owned());
     let guardrail = QualifireGuardrail::new(
         &args,

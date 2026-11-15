@@ -14,6 +14,7 @@ use reqwest::StatusCode;
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::{NoSecrets, args, inputs, json, text};
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -62,17 +63,17 @@ async fn mock(status: StatusCode, body: String, delay: Duration) -> Mock {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let log = Arc::clone(&seen);
     let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
-        let log = Arc::clone(&log);
-        let body = body.clone();
+        let call_log = Arc::clone(&log);
+        let call_body = body.clone();
         async move {
-            log.lock().unwrap().push(Seen {
+            call_log.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 api_key: header(&headers, "x-qualifire-api-key"),
                 content_type: header(&headers, "content-type"),
                 body: bytes.to_vec(),
             });
-            tokio::time::sleep(delay).await;
-            (status, body)
+            sleep(delay).await;
+            (status, call_body)
         }
     };
     let mut server = JoinSet::new();
@@ -397,7 +398,7 @@ async fn a_redirect_answer_keeps_its_status() {
 async fn a_slow_answer_times_out() {
     let server = mock(StatusCode::OK, CLEAN.to_owned(), Duration::from_secs(30)).await;
     let mut args = args();
-    args.timeout = Some(0.2);
+    args.timeout = Some(0.2_f64);
     let result = run_request(&guardrail(&server, args), user_text("hello")).await;
     let Err(error) = result else {
         panic!("a slow answer times out");

@@ -653,9 +653,9 @@ fn a_null_tools_value_skips_the_tool_selection_check() {
         assertions: &[],
         available_tools: Some(&tools),
     };
-    let plan = guardrail.plan(&invoke).unwrap();
+    let invoke_plan = guardrail.plan(&invoke).unwrap();
     assert_eq!(
-        payload_value(&plan.payload()),
+        payload_value(&invoke_plan.payload()),
         json(
             r#"{"evaluation_id": "e1", "input": "hi", "output": "", "messages": [{"role": "user", "content": "hi"}]}"#
         )

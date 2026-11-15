@@ -23,7 +23,7 @@ fn qualifire_args_copy_the_connection_settings() {
             .unwrap();
     assert_eq!(built.api_base.as_deref(), Some("https://qualifire.test"));
     assert_eq!(built.api_key.unwrap().expose_secret(), "key");
-    assert_eq!(built.timeout, Some(3.5));
+    assert_eq!(built.timeout, Some(3.5_f64));
 }
 
 #[test]
