@@ -1,0 +1,25 @@
+kind: helper
+name: file-storage-contracts-responses-batch-missing-input
+call:
+  file_storage_contracts:
+    calls:
+      - function: responses_batch
+        body: {model: m}
+        custom_llm_provider: null
+      - function: responses_batch
+        body: {model: m, input: null}
+        custom_llm_provider: null
+      - function: responses_batch
+        body: {}
+        custom_llm_provider: null
+      - function: responses_batch
+        body: {model: 123, input: hi}
+        custom_llm_provider: null
+      - function: responses_batch
+        body: {model: m, input: ""}
+        custom_llm_provider: null
+      - function: responses_batch
+        body: {input: hi}
+        custom_llm_provider: null
+env: {}
+compare: {ignore: []}
