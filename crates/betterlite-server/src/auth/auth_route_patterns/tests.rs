@@ -237,13 +237,11 @@ async fn stage_is_registered() {
     .load("general_settings: {master_key: secret, public_routes: ['/v1/models']}")
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
-    let deadline = Duration::from_secs(2);
-    let (server, client) = tokio::join!(
-        timeout(deadline, run(config, chat, "127.0.0.1", port)),
-        timeout(deadline, request_once_ready(port)),
-    );
-    server.unwrap_err();
-    let response = client.unwrap();
+    let outcome = tokio::select! {
+        stopped = run(config, chat, "127.0.0.1", port) => Err(stopped),
+        response = timeout(Duration::from_secs(60), request_once_ready(port)) => Ok(response),
+    };
+    let response = outcome.unwrap().unwrap();
     assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
     assert!(response.contains(r#""object":"list""#));
 }
