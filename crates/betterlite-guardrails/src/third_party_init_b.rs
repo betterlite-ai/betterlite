@@ -65,6 +65,17 @@ impl<'a> ParamsView<'a> {
     }
 }
 
+// a top-level param that LiteLLM's model gives a default: absent takes it, an explicit null stays null
+pub(crate) fn defaulted<T>(view: &ParamsView<'_>, name: &str, default: T) -> InitResult<Option<T>>
+where
+    T: DeserializeOwned,
+{
+    match view.merged.get(name) {
+        None => Ok(Some(default)),
+        entry => decode(name, entry),
+    }
+}
+
 // the class reads the literal spelling, not the wire enum, so the text keeps LiteLLM's values
 pub(crate) const fn unreachable_fallback_text(fallback: UnreachableFallback) -> &'static str {
     match fallback {

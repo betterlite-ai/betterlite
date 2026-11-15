@@ -29,7 +29,8 @@ pub fn initialize_xecguard(
     guardrail_name: Option<&str>,
 ) -> InitResult<XecGuardArgs> {
     let values = &params.base.extra.0;
-    let grounding_strictness = decode("grounding_strictness", values.get("grounding_strictness"))?;
+    let grounding_strictness: Option<String> =
+        decode("grounding_strictness", values.get("grounding_strictness"))?;
     if let Some(strictness) = &grounding_strictness {
         if !GROUNDING_STRICTNESS.contains(&strictness.as_str()) {
             return Err(ThirdPartyInitBError::InvalidParam {

@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use secrecy::SecretString;
 
 use super::error::ThirdPartyInitBError;
-use super::{InitResult, ParamsView, decode};
+use super::{InitResult, ParamsView, decode, defaulted};
 
 mod tests;
 
@@ -46,8 +46,8 @@ pub fn initialize_pillar(
         default_on: params.base.fields.default_on.unwrap_or_default(),
         async_mode: decode("async_mode", view.merged.get("async_mode"))?,
         persist_session: decode("persist_session", view.merged.get("persist_session"))?,
-        include_scanners: decode("include_scanners", view.merged.get("include_scanners"))?,
-        include_evidence: decode("include_evidence", view.merged.get("include_evidence"))?,
+        include_scanners: defaulted(&view, "include_scanners", true)?,
+        include_evidence: defaulted(&view, "include_evidence", true)?,
         fallback_on_error: decode("fallback_on_error", view.merged.get("fallback_on_error"))?,
         timeout: decode("timeout", view.merged.get("timeout"))?.or(params.base.fields.timeout),
     })
