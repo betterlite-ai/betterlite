@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::tls::Verification;
 use betterlite_core::api::realtime_contracts::close::close_after_handshake_refusal;
-use betterlite_core::api::realtime_contracts::transport::WebSocketScope;
+use betterlite_core::api::realtime_contracts::transport::{ClientWebSocket as _, WebSocketScope};
 use betterlite_openai::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use betterlite_openai::realtime::failure::{
     ClientAction, RealtimeClose, RealtimeFailure, client_action,
@@ -18,8 +18,8 @@ use serde_json::{Value, json};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 use self::probe::{
-    RecordingLogger, RecordingSocket, beta_realtime, closed_json, helper_error, runtime, sent_json,
-    socket_headers,
+    RecordedCall, RecordingLogger, RecordingSocket, beta_realtime, closed_json, helper_error,
+    runtime, sent_json, socket_headers,
 };
 
 mod probe;
@@ -120,7 +120,7 @@ fn query_json(value: &QueryParams) -> Value {
     )
 }
 
-fn pre_call_json(call: &probe::RecordedCall) -> Value {
+fn pre_call_json(call: &RecordedCall) -> Value {
     json!({
         "input": Value::Null,
         "api_base": call.api_base,
@@ -198,7 +198,7 @@ fn failure_action(
     outcome.map_err(|error| helper_error(&error.to_string()))
 }
 
-fn failure_frame(action: &ClientAction) -> Option<&RealtimeClose> {
+const fn failure_frame(action: &ClientAction) -> Option<&RealtimeClose> {
     match action {
         ClientAction::Close(frame) | ClientAction::IgnoreCloseFailure { attempted: frame } => {
             Some(frame)
@@ -210,7 +210,7 @@ fn failure_frame(action: &ClientAction) -> Option<&RealtimeClose> {
 fn failure_answer(input: &Input) -> HelperResult {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| helper_error(&error.to_string()))?;
-    let runtime = runtime()?;
+    let executor = runtime()?;
     let mut failures = Vec::with_capacity(input.failures.len());
     for failure in &input.failures {
         let mut socket = RecordingSocket {
@@ -223,10 +223,10 @@ fn failure_answer(input: &Input) -> HelperResult {
         };
         let action = failure_action(input.kind, failure, &redactor)?;
         if let Some(frame) = failure_frame(&action) {
-            drop(runtime.block_on(socket.close(frame.code, Some(&frame.reason))));
+            drop(executor.block_on(socket.close(frame.code, Some(&frame.reason))));
         }
         if let ClientAction::RefuseHandshake { status_code } = action {
-            runtime
+            executor
                 .block_on(close_after_handshake_refusal(&mut socket, status_code))
                 .map_err(|error| helper_error(&error.to_string()))?;
         }

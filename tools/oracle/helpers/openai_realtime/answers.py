@@ -19,10 +19,12 @@ from .types import (
     HttpSetup,
     Input,
     QuerySetup,
+    RealtimeRunner,
 )
 
 HTTP_CONFIG = OpenAIRealtimeHTTPConfig()
 VALIDATOR: HeadersValidator = HTTP_CONFIG
+RUNNER: RealtimeRunner = OpenAIRealtime()
 
 
 class PreCallDetails(BaseModel):
@@ -91,7 +93,7 @@ async def probe_call(
     RECORDED.clear()
     install(server)
     try:
-        await OpenAIRealtime().async_realtime(
+        await RUNNER.async_realtime(
             model=input_value["model"],
             websocket=server.client,
             logging_obj=logging_obj,

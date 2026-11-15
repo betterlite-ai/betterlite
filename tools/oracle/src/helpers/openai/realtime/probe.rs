@@ -11,6 +11,7 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use betterlite_openai::realtime::url::QueryParams;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 
 use crate::helpers::HelperError;
 
@@ -94,14 +95,18 @@ pub(super) fn helper_error(message: &str) -> Box<HelperError> {
 }
 
 pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| helper_error(&error.to_string()))
 }
 
-pub(super) fn socket_headers(input: &Input) -> Vec<HeaderPair> {
-    input
+pub(super) fn socket_headers(input: &Input) -> Vec<(String, String)> {
+    input.scope_headers.clone()
+}
+
+pub(super) fn beta_realtime(input: &Input) -> bool {
+    let headers: Vec<HeaderPair> = input
         .scope_headers
         .iter()
         .map(|(name, value)| {
@@ -110,11 +115,7 @@ pub(super) fn socket_headers(input: &Input) -> Vec<HeaderPair> {
                 HeaderField::Text(value.clone()),
             )
         })
-        .collect()
-}
-
-pub(super) fn beta_realtime(input: &Input) -> bool {
-    let headers = socket_headers(input);
+        .collect();
     openai_beta_realtime_header(Some(&HeaderScope { headers: &headers }))
 }
 

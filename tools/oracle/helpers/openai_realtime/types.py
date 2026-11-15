@@ -1,5 +1,6 @@
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
+from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.realtime import RealtimeQueryParams
 from pydantic import JsonValue, TypeAdapter
 
@@ -56,6 +57,18 @@ class HeadersValidator(Protocol):
     def validate_environment(
         self, headers: dict[str, str], model: str, api_key: str | None = None
     ) -> dict[str, str]: ...
+
+
+class RealtimeRunner(Protocol):
+    async def async_realtime(
+        self,
+        model: str,
+        websocket: object,
+        logging_obj: Logging,
+        api_base: str | None = None,
+        api_key: str | None = None,
+        query_params: RealtimeQueryParams | None = None,
+    ) -> None: ...
 
 
 QUERY: TypeAdapter[RealtimeQueryParams] = TypeAdapter(RealtimeQueryParams)
