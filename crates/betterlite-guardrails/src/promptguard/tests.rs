@@ -827,7 +827,10 @@ async fn an_answer_cut_off_before_its_length_is_a_failed_call() {
 async fn the_configured_timeout_bounds_the_guard_call() {
     let router = Router::new().route(
         "/api/v1/guard",
-        post(|| async { std::future::pending::<()>().await }),
+        post(|| async {
+            std::future::pending::<()>().await;
+            StatusCode::OK
+        }),
     );
     let (base, mut server) = serve(router).await;
     let mut failing = with_base(args(Some("test-key"), Some(true)), Some(&base));
