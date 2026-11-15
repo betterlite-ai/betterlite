@@ -17,6 +17,7 @@ use betterlite_logging::datadog_logging::transport::{
     PostRequest, Transport, TransportFailure, TransportResponse,
 };
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use secrecy::SecretString;
 use serde_json::{Map, Value, json};
@@ -154,6 +155,7 @@ pub(super) fn event(call: &ActionCall) -> Result<Arc<LoggerEvent>, Box<HelperErr
     Ok(Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(metadata),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream,
         guardrail_snapshot: None,
     }))

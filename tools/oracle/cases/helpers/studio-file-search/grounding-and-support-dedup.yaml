@@ -1,0 +1,11 @@
+kind: helper
+name: grounding-and-support-dedup
+call:
+  studio_file_search:
+    calls:
+      - function: search_reply
+        status: 200
+        body: '{"candidates":[{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"text":"first passage","uri":"files/a","title":"a.txt"}}],"groundingSupports":[{"segment":{"text":"answer one"},"groundingChunkIndices":[0],"confidenceScores":[0.5,0.9]}]}},{"groundingMetadata":{"groundingChunks":[{"retrievedContext":{"text":"second passage","uri":"files/b","title":"b.txt"}}],"groundingSupports":[{"segment":{"text":"first passage"},"groundingChunkIndices":[1]},{"segment":{"text":"answer one"}},{"segment":{"text":"answer two"},"groundingChunkIndices":[0,1],"confidenceScores":[0.25]}]}}]}'
+        query: seed query
+env: {}
+compare: {ignore: []}

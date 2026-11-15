@@ -21,6 +21,7 @@ betterlite-a2a = { path = "../betterlite-a2a" }
 betterlite-anthropic = { path = "../betterlite-anthropic" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }

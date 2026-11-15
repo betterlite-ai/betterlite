@@ -1,5 +1,4 @@
 crates/betterlite-transcribe/tools/refresh_operations.py
-tools/management-cli/litellm/proxy/client/cli/commands/statusline_script.py
 tools/oracle/helpers/a2a_text.py
 tools/oracle/helpers/agent_host_policy.py
 tools/oracle/helpers/aleph_alpha.py
@@ -636,7 +635,5 @@ tools/oracle/litellm/probes/usage_routing.py
 tools/oracle/litellm/probes/usage_routing_v2.py
 tools/oracle/litellm/probes/usage_v2_accounting.py
 tools/oracle/litellm/probes/wildcard_catalog.py
-tools/oracle/sdk_http/dispatch.py
 tools/oracle/sdk_http/openai_chat.py
-tools/oracle/sdk_http/vector_query_embedding.py
 tools/oracle/sdk_http/vector_store_embedding_executor.py

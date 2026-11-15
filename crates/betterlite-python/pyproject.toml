@@ -9,6 +9,7 @@ description = "betterlite: LiteLLM's SDK and proxy with Rust inside"
 license = "MIT"
 requires-python = ">=3.10"
 dependencies = [
+  "pydantic==2.14.1",
   "python-dotenv==1.2.4",
   "typing-extensions==4.16.0",
 ]

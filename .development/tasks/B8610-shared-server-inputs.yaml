@@ -86,7 +86,7 @@ description: >-
   so no request arrives before every area finished its startup work. In crates/betterlite/src/lifespan.rs, run_proxy
   turns B8613's `Started` into StartupOutputs (cloning the Arcs, so stop still holds its own) and calls the new run. If
   main.rs still calls server::run itself, change that call too. B4471's gateway and backend binaries call server::run
-  as well (in crates/betterlite-gateway and crates/betterlite-backend), so change those calls too. Update the callers of application() in server/tests.rs
+  through the shared serve function B4471 put beside run_with in server.rs (each binary's main.rs calls it), so run them through the same lifespan as well, B051's database startup included. Update the callers of application() in server/tests.rs
   to pass StartupOutputs built from in-memory values.
 
   Shutdown state and the health slot. ServerState (crates/betterlite-server/src/state.rs) holds `shutdown:
@@ -183,9 +183,7 @@ scope:
     - crates/betterlite/src/lifespan.rs
     - crates/betterlite/src/lifespan/**
     - crates/betterlite/src/main.rs
-    - crates/betterlite-gateway/src/lib.rs
     - crates/betterlite-gateway/src/main.rs
-    - crates/betterlite-backend/src/lib.rs
     - crates/betterlite-backend/src/main.rs
   lint_tables: false
 references:
@@ -214,6 +212,8 @@ dod:
     proof: [inputs-tests, app-mount]
   - text: A WebSocket upgrade GET on a LiteLLM WebSocket path skips the HTTP master key stage, any other request, an upgrade on another path included, still needs a key, and with_key_auth gives a public router the same key check on the paths an area chooses.
     proof: [inputs-tests]
+  - text: The gateway and backend binaries run the same lifespan as betterlite, B051's database startup included, so a database startup failure makes each exit with status 2.
+    proof: [component-database-startup]
 checks:
   optional: []
   commands:
@@ -240,6 +240,9 @@ checks:
     - id: server-regression
       why: the wider inputs broke the existing server, route or lifespan tests
       run: grep -q 'pub struct StartupOutputs' crates/betterlite-server/src/server/inputs.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::/) | test(/^routes::/)' && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::/)'
+    - id: component-database-startup
+      why: a component binary skips the lifespan's database startup or exits with another status when it fails
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^server::tests::component_database_startup_failure/)'
 oracle_cases: []
 deviations: []
 out_of_scope:

@@ -9,6 +9,7 @@ mod development;
 mod deviations;
 mod dispatch;
 mod error;
+mod exceptions;
 mod facts;
 mod gate_lock;
 mod git;
@@ -54,7 +55,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
     #[command(
-        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set prints --workspace"
+        about = "Print the nextest package flags for the packages a change against GATE_BASE can affect: --workspace, -p flags, or nothing; GATE_ALL_TESTS set takes every package"
     )]
     Affected {
         #[arg(
@@ -62,11 +63,17 @@ enum Command {
             help = "Print only the packages the change edits, without the ones that depend on them"
         )]
         edited: bool,
+        #[command(flatten)]
+        shard: affected::Shard,
     },
     #[command(
         about = "Validate every spec file under .development/ and the committed JSON Schemas"
     )]
     Validate,
+    #[command(
+        about = "Print every exception to check later as CSV: tasks merged with new expects or a raised line budget, and the advisories and duplicate crates deny.toml allows"
+    )]
+    Exceptions,
     #[command(about = "Print the checks a task runs")]
     List {
         task: String,
@@ -77,8 +84,10 @@ enum Command {
         about = "Check task prerequisites without running builds, tests, coverage or mutants"
     )]
     Preflight { task: String },
-    #[command(about = "Check account backoff before preparing a checkout; starts no agents")]
-    Availability,
+    #[command(
+        about = "Check account backoff before preparing a checkout, and with a task whether a runner left on its ladder can start; starts no agents"
+    )]
+    Availability { task: Option<String> },
     #[command(about = "Run every check of a task; exit 1 when any check fails")]
     Run {
         task: String,
@@ -246,29 +255,31 @@ fn run_selection(
     Ok((verdict.lines, verdict.passed))
 }
 
+fn preflight(development: &Development, id: &str) -> Result<(Vec<String>, bool), GateError> {
+    let task = development.task(id)?;
+    let selection =
+        checks::selection::builtins_and(development, &task, checks::selection::prerequisite)?;
+    let verdict = checks::run(development, &task, &selection)?;
+    Ok((verdict.lines, verdict.passed))
+}
+
 fn run_command(
     command: Command,
     development: &Development,
 ) -> Result<(Vec<String>, bool), GateError> {
     match command {
-        Command::Affected { edited } => Ok((affected::affected(&development.root, edited)?, true)),
-        Command::Availability => {
-            dispatch::availability(development)?;
+        Command::Affected { edited, shard } => {
+            Ok((affected::affected(&development.root, edited, shard)?, true))
+        }
+        Command::Availability { task } => {
+            dispatch::availability(development, task.as_deref())?;
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
+        Command::Exceptions => Ok((exceptions::exceptions(development)?, true)),
         Command::Shellcheck { paths } => shellcheck::shellcheck(&development.root, &paths),
         Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
-        Command::Preflight { task: id } => {
-            let task = development.task(&id)?;
-            let selection = checks::selection::builtins_and(
-                development,
-                &task,
-                checks::selection::prerequisite,
-            )?;
-            let verdict = checks::run(development, &task, &selection)?;
-            Ok((verdict.lines, verdict.passed))
-        }
+        Command::Preflight { task } => preflight(development, &task),
         Command::Run {
             task,
             only,

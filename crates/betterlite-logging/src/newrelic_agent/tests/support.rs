@@ -91,6 +91,7 @@ pub(super) fn event_with_dynamic(
     Arc::new(LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(dynamic_params),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     })

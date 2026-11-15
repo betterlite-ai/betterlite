@@ -126,6 +126,7 @@ fn logger_event(input: &Input, event: &EventInput) -> LoggerEvent {
     LoggerEvent {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(event.dynamic_params.clone().unwrap_or(Json::Null)),
+        litellm_metadata: Arc::new(IndexMap::new()),
         stream: false,
         guardrail_snapshot: None,
     }
