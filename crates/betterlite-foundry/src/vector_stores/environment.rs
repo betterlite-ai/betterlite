@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::iter::once;
 use std::sync::Arc;
 
 use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
@@ -37,9 +38,8 @@ pub fn endpoints_by_type() -> VectorStoreIndexEndpoints {
     .iter()
     .map(|(method, path)| ((*method).to_owned(), (*path).to_owned()))
     .collect();
-    let write = [("POST", "/docs/index")]
-        .iter()
-        .map(|(method, path)| ((*method).to_owned(), (*path).to_owned()))
+    let write = once(("POST", "/docs/index"))
+        .map(|(method, path)| (method.to_owned(), path.to_owned()))
         .collect();
     VectorStoreIndexEndpoints {
         read: Some(read),
