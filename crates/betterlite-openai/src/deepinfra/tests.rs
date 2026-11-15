@@ -791,7 +791,8 @@ fn a_failing_post_call_hook_falls_back_without_a_warning() {
 
 #[test]
 fn the_byte_decoder_is_bounded_and_returns_json() {
-    let _decoded = decode_deepinfra_rerank(b"{\"scores\": []}", limits()).unwrap();
+    let decoded = decode_deepinfra_rerank(b"{\"scores\": []}", limits()).unwrap();
+    assert_eq!(decoded, model_object(r#"{"scores": []}"#));
     let _bounded =
         decode_deepinfra_rerank(b"{\"scores\": []}", RerankLimits { max_body_bytes: 14 }).unwrap();
     assert!(matches!(
