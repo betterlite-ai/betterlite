@@ -1,5 +1,5 @@
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_bedrock::realtime_input::RealtimeInput;
 use betterlite_bedrock::realtime_input::error::InputError;
@@ -77,8 +77,8 @@ fn run_step(state: &mut RealtimeInput, step: &Step, source: &FixedIds) -> Helper
             let captured = warnings
                 .0
                 .lock()
-                .map(|messages| messages.clone())
-                .unwrap_or_default();
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
             let warnings = warning_kinds(&captured);
             match outcome {
                 Ok(frames) => (true, serde_json::to_value(frames)?, warnings),
@@ -121,9 +121,10 @@ impl<S: Subscriber> Layer<S> for Warnings {
         }
         let mut message = Message::default();
         event.record(&mut message);
-        if let Ok(mut messages) = self.0.lock() {
-            messages.push(message.0.trim_matches('"').to_owned());
-        }
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(message.0.trim_matches('"').to_owned());
     }
 }
 
