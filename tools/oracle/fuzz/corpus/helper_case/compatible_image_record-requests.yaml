@@ -1,0 +1,40 @@
+kind: helper
+name: compatible-image-record-seed-requests
+call:
+  compatible_image_record:
+    function: request
+    requests:
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {num_images: 2}
+        api_key: null
+        api_base: null
+        env: {AIML_API_KEY: key}
+        reply: {status: 200, headers: {}, body: '{"images":[{"url":"https://mock/a.png"}]}'}
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply: {status: 200, headers: {}, body: '{}'}
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {}
+        api_key: explicit
+        api_base: "https://proxy.example/v1"
+        env: {}
+        reply: {status: 200, headers: {}, body: '{"data":[]}'}
+      - host: cometapi
+        model: any-model
+        prompt: a cat
+        optional_params: {}
+        api_key: explicit
+        api_base: null
+        env: {}
+        reply: {status: 200, headers: {}, body: '{"output":{"choices":[{"image_base64":"b64"}]}}'}
+env: {}
+compare: {ignore: []}

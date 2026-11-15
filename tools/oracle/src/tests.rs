@@ -24,9 +24,10 @@ use serde_json::Value;
 use crate::OracleError;
 use crate::artifacts;
 use crate::case::{
-    Case, Compare, Ignore, LoadedCase, UpstreamAnswer, helper::validate_helper, load_cases,
+    Case, Compare, HelperCase, Ignore, LoadedCase, UpstreamAnswer, helper::validate_helper,
+    load_cases,
 };
-use crate::cli::Options;
+use crate::cli::{Arguments, Options, helper_cases_calling};
 use crate::compare;
 use crate::gateway::{self, GatewayInput};
 use crate::helpers::HelperOutput;
@@ -179,7 +180,7 @@ fn exit_status_maps_success_and_difference() {
 
 #[test]
 fn oracle_error_preserves_typed_sources() {
-    let cli_error = <Options as clap::Parser>::try_parse_from(["oracle", "--unknown"])
+    let cli_error = <Arguments as clap::Parser>::try_parse_from(["oracle", "--unknown"])
         .expect_err("an unknown option should fail parsing");
     let cli = OracleError::from(cli_error);
     assert!(matches!(cli, OracleError::Cli(_)));
@@ -532,6 +533,53 @@ fn replays_the_helper_case_corpus() {
     assert!(serde_saphyr::from_str("kind: helper\nname: ''\ncall: {url_path: {function: segment, value: id}}\nenv: {}\ncompare: {ignore: []}\n").map_err(|error| error.to_string()).and_then(|parsed| validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())).is_err());
 }
 
+#[rstest::rstest]
+#[case::without_k(&["oracle", "cases"], None)]
+#[case::with_k(&["oracle", "cases", "-k", "b4710"], Some("b4710"))]
+fn cli_reads_k_as_the_helper_operation(#[case] argv: &[&str], #[case] operation: Option<&str>) {
+    let arguments = <Arguments as clap::Parser>::try_parse_from(argv.iter().copied()).unwrap();
+    assert_eq!(arguments.operation.as_deref(), operation);
+    assert_eq!(arguments.options.paths, vec![PathBuf::from("cases")]);
+    assert!(!arguments.options.self_check);
+}
+
+fn mixed_cases() -> Vec<LoadedCase> {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases/helpers/mcp-server-encoding");
+    let mut cases = load_cases(&[folder]).unwrap();
+    let other: HelperCase = serde_saphyr::from_str(
+        "kind: helper\nname: other\ncall:\n  url_path:\n    function: segments\n    value: a\n    field_name: path\nenv: {}\ncompare:\n  ignore: []\n",
+    )
+    .unwrap();
+    cases.push(LoadedCase::Helper(other));
+    cases.push(LoadedCase::Http(test_case()));
+    cases
+}
+
+#[rstest::rstest]
+#[case::b4710("b4710", 18)]
+#[case::other_operation("url_path", 1)]
+fn k_keeps_only_the_helper_cases_calling_the_operation(
+    #[case] operation: &str,
+    #[case] count: usize,
+) {
+    let selected = helper_cases_calling(mixed_cases(), operation).unwrap();
+    assert_eq!(selected.len(), count);
+    for loaded in &selected {
+        assert!(matches!(loaded, LoadedCase::Helper(helper) if helper.call.operation == operation));
+    }
+}
+
+#[rstest::rstest]
+#[case::prefix("b47")]
+#[case::http_case_name("test")]
+fn k_fails_when_no_helper_case_calls_the_operation(#[case] operation: &str) {
+    let error = helper_cases_calling(mixed_cases(), operation).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("invalid case <arguments>: no helper case calls operation {operation}")
+    );
+}
+
 #[test]
 fn helper_comparison_reports_differences() {
     let left: HelperOutput = serde_json::from_str(r#"{"ok":true,"value":"left"}"#).unwrap();
@@ -787,7 +835,9 @@ fn runner_selects_cases_and_gateways() {
             .unwrap_or_default()
             .is_empty()
     );
-    let normal = <Options as clap::Parser>::try_parse_from(["oracle", "cases"]).unwrap();
+    let normal = <Arguments as clap::Parser>::try_parse_from(["oracle", "cases"])
+        .unwrap()
+        .options;
     runner::run_cases(&normal, Vec::new()).unwrap_err();
     let group_root = env::temp_dir().join(format!("betterlite-empty-group-{}", process::id()));
     fs::create_dir_all(&group_root).unwrap();

@@ -1,0 +1,31 @@
+kind: helper
+name: openai-evals-eval-get-delete-cancel
+call:
+  openai_evals:
+    eval_get_delete_cancel:
+      probes:
+        - operation: get
+          eval_id: eval/1
+          api_base: https://fixture.test
+          headers: {X-Kept: 'yes'}
+        - operation: delete
+          eval_id: ev.al-1
+          api_base: https://fixture.test
+        - operation: cancel
+          eval_id: 'ev al'
+          api_base: https://fixture.test
+          headers: {X-Kept: cancel}
+        - operation: get
+          eval_id: ''
+          api_base: https://fixture.test
+        - operation: get
+          eval_id: '.'
+          api_base: https://fixture.test
+        - operation: delete
+          eval_id: '..'
+          api_base: https://fixture.test
+        - operation: cancel
+          eval_id: 'a b/c?d#e'
+          api_base: https://fixture.test
+env: {}
+compare: {ignore: []}
