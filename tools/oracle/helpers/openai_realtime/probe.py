@@ -50,7 +50,7 @@ class ProbeClient(ClientSocket):
 class ProbeConnection:
     def __init__(self, failure: FailureSetup | None, mode: FailMode) -> None:
         self.failure = failure
-        self.mode = mode
+        self.mode: FailMode = mode
 
     async def __aenter__(self) -> Self:
         failure = self.failure
@@ -68,7 +68,7 @@ class ProbeConnection:
         _traceback: TracebackType | None,
     ) -> None: ...
 
-    async def recv(self, _decode: bool = True) -> str:
+    async def recv(self, *, _decode: bool = True) -> str:
         # the relay task waits for the client loop to cancel it; no upstream frame is relayed
         await asyncio.Future[None]()
         return ""
@@ -83,7 +83,7 @@ class ProbeServer:
     ) -> None:
         self.client = ProbeClient(scope_headers, close_error)
         self.failure: FailureSetup | None = None
-        self.mode = mode
+        self.mode: FailMode = mode
         self.url: str | None = None
         self.headers: dict[str, str] | None = None
         self.max_size: int | None = None
@@ -100,7 +100,7 @@ class ProbeServer:
         self.url = url
         self.headers = additional_headers
         self.max_size = max_size
-        self.ssl_kind = ssl_kind(ssl)
+        self.ssl_kind = ssl_kind(value=ssl)
         return ProbeConnection(self.failure, self.mode)
 
 
@@ -129,7 +129,7 @@ class FakeWebsockets(ModuleType):
         )
 
 
-def ssl_kind(value: bool | str | ssl_module.SSLContext | None) -> SslKind:
+def ssl_kind(*, value: bool | str | ssl_module.SSLContext | None) -> SslKind:
     if value is None:
         return "none"
     if value is True:

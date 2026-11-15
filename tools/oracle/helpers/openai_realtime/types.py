@@ -1,4 +1,4 @@
-from typing import Literal, Protocol, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict, Unpack
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.realtime import RealtimeQueryParams
@@ -48,12 +48,6 @@ class CloseFrame(TypedDict):
     reason: str | None
 
 
-class HeadersValidator(Protocol):
-    def validate_environment(
-        self, headers: dict[str, str], model: str, api_key: str | None = None
-    ) -> dict[str, str]: ...
-
-
 class ClientSocket(Protocol):
     async def send_text(self, data: str) -> None: ...
 
@@ -62,16 +56,42 @@ class ClientSocket(Protocol):
     async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
 
+class RealtimeHttpConfig(Protocol):
+    def validate_environment(
+        self, headers: dict[str, str], model: str, api_key: str | None = None
+    ) -> dict[str, str]: ...
+
+    def get_api_base(self, api_base: str | None) -> str: ...
+
+    def get_api_key(self, api_key: str | None) -> str: ...
+
+    def get_complete_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+    def get_realtime_calls_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+    def get_transcription_session_url(
+        self, api_base: str | None, model: str, api_version: str | None = None
+    ) -> str: ...
+
+
+# the handler only matches this protocol when the call names timeout and litellm_metadata too
+class RealtimeCall(TypedDict):
+    model: str
+    websocket: ClientSocket
+    logging_obj: Logging
+    api_base: str | None
+    api_key: str | None
+    timeout: float | None
+    query_params: RealtimeQueryParams | None
+    litellm_metadata: dict[str, JsonValue] | None
+
+
 class RealtimeRunner(Protocol):
-    async def async_realtime(
-        self,
-        model: str,
-        websocket: ClientSocket,
-        logging_obj: Logging,
-        api_base: str | None = None,
-        api_key: str | None = None,
-        query_params: RealtimeQueryParams | None = None,
-    ) -> None: ...
+    async def async_realtime(self, **call: Unpack[RealtimeCall]) -> None: ...
 
 
 QUERY: TypeAdapter[RealtimeQueryParams] = TypeAdapter(RealtimeQueryParams)
