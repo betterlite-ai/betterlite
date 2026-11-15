@@ -155,13 +155,15 @@ fn execute_output(args: &OutputArgs) -> HelperResult {
             "request": request,
             "output": {"detected": false, "redacted_output": args.output},
         })),
-        Err(error) => match rejection(&error) {
-            Some(blocked) => Ok(json!({
-                "request": request,
-                "output": {"detected": false, "rejected": blocked},
-            })),
-            None => Err(failure("AimError", error.to_string())),
-        },
+        Err(error) => rejection(&error).map_or_else(
+            || Err(failure("AimError", error.to_string())),
+            |blocked| {
+                Ok(json!({
+                    "request": request,
+                    "output": {"detected": false, "rejected": blocked},
+                }))
+            },
+        ),
     }
 }
 
