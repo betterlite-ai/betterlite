@@ -1,0 +1,12 @@
+kind: helper
+name: pacing
+call:
+  b6414:
+    function: pacing
+    model: muse-voice-transcribe-1.0
+    access_token: Bearer pacing-token
+    session: '{"type":"session.update","session":{"input_audio_format":"pcm16"}}'
+    lengths: [960, 960, 3840, 960]
+    ticks: [0.0, 0.01, 5.0, 5.0]
+env: {}
+compare: {ignore: []}
