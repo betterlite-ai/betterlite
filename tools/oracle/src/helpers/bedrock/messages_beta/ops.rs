@@ -87,7 +87,8 @@ fn web_search(request: &Object, model: &str) -> HelperResult {
             error_type: None,
             param: None,
             code: None,
-            message: error.to_string(),
+            // LiteLLM's exception __str__ prefixes the class, and the Python helper lets it escape
+            message: format!("litellm.BadRequestError: {error}"),
         })),
     }
 }
