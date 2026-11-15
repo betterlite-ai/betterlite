@@ -282,6 +282,28 @@ fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail
     );
 }
 
+#[tokio::test]
+async fn hook_does_not_mask_a_keyword_while_the_phrase_is_in_the_buffer() {
+    let mut categories = exception_category();
+    categories.category_keywords.insert(
+        "alpha".to_owned(),
+        (
+            "other_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let opening = format!("allowed phrase alpha {}", "a".repeat(900));
+    let mut case = stream_case(short_items(&opening, " done"));
+    case.categories = categories;
+    let run = run_stream(&case).await;
+    assert!(run.outcome.is_ok(), "the stream has no block");
+    let (expected_contents, expected_detections) = untrimmed(&case);
+    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    assert!(expected_detections.is_empty());
+    assert!(response_detections(record(&run)).is_empty());
+}
+
 #[test]
 fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end() {
     let sentence = format!("attack {}", "a".repeat(93));

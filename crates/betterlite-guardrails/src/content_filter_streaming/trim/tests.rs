@@ -245,6 +245,28 @@ fn trim_drops_the_prefix_and_remembers_the_exception_phrase() {
 }
 
 #[test]
+fn trim_records_a_dropped_phrase_once() {
+    let mut categories = CategoryLoadResult::default();
+    categories
+        .loaded_categories
+        .insert("stream".to_owned(), category(&["allowed phrase"]));
+    let source = source(&categories, &[], &[]);
+    let buffered = format!("allowed phrase{}", "x".repeat(1085));
+    let mut open_state = state(&buffered, 1049, CarriedMatches::default());
+    open_state.seen_exception_phrases = vec!["allowed phrase".to_owned()];
+    let scan_plan = StreamedScanPlan {
+        context_chars: 512,
+        exception_phrases: vec!["allowed phrase".to_owned()],
+        conditional_words: Vec::new(),
+    };
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &scan_plan);
+    assert_eq!(
+        trimmed.seen_exception_phrases,
+        vec!["allowed phrase".to_owned()]
+    );
+}
+
+#[test]
 fn trim_scans_the_halves_as_the_suppressed_whole_scan_did() {
     let categories = phrase_category();
     let source = source(&categories, &[], &[]);
