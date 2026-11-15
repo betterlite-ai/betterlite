@@ -16,6 +16,13 @@ betterlite-anthropic = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "anthropic_completion"
+path = "fuzz_targets/anthropic_completion.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "anthropic_count_tokens"
 path = "fuzz_targets/anthropic_count_tokens.rs"
 test = false
@@ -46,6 +53,13 @@ bench = false
 [[bin]]
 name = "anthropic_skills"
 path = "fuzz_targets/anthropic_skills.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "anthropic_stream_decode"
+path = "fuzz_targets/anthropic_stream_decode.rs"
 test = false
 doc = false
 bench = false

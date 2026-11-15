@@ -333,6 +333,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "soniox_reply"
+path = "fuzz_targets/soniox_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "muse_frames"
+path = "fuzz_targets/muse_frames.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "batch_output_usage"
 path = "fuzz_targets/batch_output_usage.rs"
 test = false
