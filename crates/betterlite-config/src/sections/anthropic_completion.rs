@@ -127,7 +127,10 @@ where
             for item in items {
                 resolved.push(match item {
                     Json::Object(fields) => Json::Object(resolved_fields(fields, path, lookup)?),
-                    other => other,
+                    item @ Json::Null
+                    | item @ Json::Bool(_)
+                    | item @ Json::Number(_)
+                    | item @ Json::Text(_) => item,
                 });
             }
             Ok(Json::List(resolved))
