@@ -1,5 +1,6 @@
 use crate::gcs_mock::auth::VertexAuth;
 use crate::gcs_mock::client::GcsHttpClient;
+use std::fmt::Debug;
 
 use super::GcsBucketLogger;
 use super::QueuedItem;
@@ -9,8 +10,8 @@ pub async fn send_individual_logs<Auth, Http>(
     logger: &GcsBucketLogger<Auth, Http>,
     items: &[QueuedItem],
 ) where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     for item in items {
         send_single_log_item(logger, item).await;

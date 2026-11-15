@@ -13,9 +13,9 @@ use super::super::tests::support::{
     Answer, FakeAuth, RecordingClient, SequenceIds, SetClock, now, open,
 };
 use super::{
-    BATCH_SIZE_ENV, DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL_SECONDS, DEFAULT_QUEUE_SIZE,
-    DEFAULT_USE_BATCHED_LOGGING, FLUSH_INTERVAL_ENV, GcsSettings, QUEUE_SIZE_ENV,
-    USE_BATCHED_LOGGING_ENV, start,
+    BASE_BATCH_SIZE, BASE_FLUSH_INTERVAL_SECONDS, BATCH_SIZE_ENV, DEFAULT_BATCH_SIZE,
+    DEFAULT_FLUSH_INTERVAL_SECONDS, DEFAULT_QUEUE_SIZE, DEFAULT_USE_BATCHED_LOGGING,
+    FLUSH_INTERVAL_ENV, GcsSettings, QUEUE_SIZE_ENV, USE_BATCHED_LOGGING_ENV, start,
 };
 
 fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -54,6 +54,33 @@ fn environment_values_override_every_setting() {
     assert_eq!(settings.flush_interval.as_secs(), 7);
     assert!(!settings.use_batched_logging);
     assert_eq!(settings.queue_capacity, 3);
+}
+
+#[test]
+fn a_zero_batch_size_and_flush_interval_take_the_base_logger_defaults() {
+    let settings = GcsSettings::from_environment(&environment(&[
+        (BATCH_SIZE_ENV, "0"),
+        (FLUSH_INTERVAL_ENV, "0"),
+    ]))
+    .expect("the zero settings parse");
+    assert_eq!(settings.batch_size, BASE_BATCH_SIZE);
+    assert_eq!(settings.batch_size, 512);
+    assert_eq!(
+        settings.flush_interval.as_secs(),
+        BASE_FLUSH_INTERVAL_SECONDS
+    );
+    assert_eq!(settings.flush_interval.as_secs(), 5);
+}
+
+#[test]
+fn a_batch_size_and_flush_interval_of_one_are_kept() {
+    let settings = GcsSettings::from_environment(&environment(&[
+        (BATCH_SIZE_ENV, "1"),
+        (FLUSH_INTERVAL_ENV, "1"),
+    ]))
+    .expect("the settings parse");
+    assert_eq!(settings.batch_size, 1);
+    assert_eq!(settings.flush_interval.as_secs(), 1);
 }
 
 #[test]

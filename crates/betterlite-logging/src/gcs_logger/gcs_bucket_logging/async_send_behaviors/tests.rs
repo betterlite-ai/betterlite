@@ -10,13 +10,7 @@ use super::async_send_batch;
 #[tokio::test]
 async fn batched_mode_uploads_one_grouped_object() {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
     async_send_batch(&harness.logger).await;
     let requests = harness.requests();
     assert_eq!(requests.len(), 1);
@@ -33,13 +27,7 @@ async fn individual_mode_uploads_each_item() {
         Some("bucket"),
         Answer::ok("{}"),
     );
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
     async_send_batch(&harness.logger).await;
     let requests = harness.requests();
     assert_eq!(requests.len(), 2);
@@ -64,13 +52,7 @@ async fn only_the_batch_size_is_sent() {
         Some("bucket"),
         Answer::ok("{}"),
     );
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
     async_send_batch(&harness.logger).await;
     assert_eq!(harness.requests().len(), 1);
     assert_eq!(harness.queue_len(), 1);

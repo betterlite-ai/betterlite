@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::PoisonError;
 
@@ -14,8 +15,8 @@ use super::{GcsBucketLogger, QueuedItem};
 // LiteLLM flushes a full queue once to make room, then puts the item; asyncio's maxsize 0 means unbounded
 pub async fn enqueue<Auth, Http>(logger: &GcsBucketLogger<Auth, Http>, event: &LoggerEvent)
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let capacity = logger.settings.queue_capacity;
     let queued = logger
@@ -26,23 +27,16 @@ where
     if capacity > 0 && queued >= capacity {
         flush_queue(logger).await;
     }
-    let remaining = logger
-        .queue
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .len();
-    if capacity > 0 && remaining >= capacity {
-        tracing::warn!(
+    let item = queued_item(event);
+    let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
+    if capacity > 0 && queue.len() >= capacity {
+        tracing::error!(
             capacity,
-            remaining,
-            "GCS Bucket log queue is still full after a flush; the item is queued anyway"
+            "GCS Bucket log queue is still full after a flush; the log is dropped"
         );
+        return;
     }
-    logger
-        .queue
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push_back(queued_item(event));
+    queue.push_back(item);
 }
 
 fn queued_item(event: &LoggerEvent) -> QueuedItem {

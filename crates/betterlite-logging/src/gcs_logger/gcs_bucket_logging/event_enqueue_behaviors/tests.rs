@@ -1,7 +1,10 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::super::tests::support::{
     Answer, capture_logs, dynamic, event, event_with_response, metadata, open,
@@ -101,41 +104,35 @@ async fn an_unbounded_queue_never_flushes_on_enqueue() {
         Answer::ok("{}"),
     );
     let (logs, _guard) = capture_logs();
-    for id in ["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
+    harness
+        .enqueue_all(&["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"])
         .await;
-    }
     assert!(harness.requests().is_empty());
     assert_eq!(harness.queue_len(), 3);
     assert!(!logs.text().contains("still full"));
 }
 
 #[tokio::test]
-async fn a_queue_still_full_after_the_flush_warns() {
-    let harness = open(
-        &[
-            ("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1"),
-            ("GCS_BATCH_SIZE", "0"),
-        ],
+async fn a_queue_still_full_after_the_flush_drops_the_new_item() {
+    let mut harness = open(
+        &[("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1")],
         Some("bucket"),
         Answer::ok("{}"),
     );
+    Arc::get_mut(&mut harness.logger)
+        .expect("the harness holds the only handle")
+        .settings
+        .batch_size = 0;
     let (logs, _guard) = capture_logs();
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
+    assert!(harness.requests().is_empty());
+    assert_eq!(harness.queue_len(), 1);
+    assert_eq!(harness.queued()[0].payload.id, "chatcmpl-1");
     assert!(logs.text().contains("still full"));
 }
 
 #[tokio::test]
-async fn a_flush_that_frees_room_does_not_warn() {
+async fn a_flush_that_frees_room_keeps_the_new_item_without_an_error() {
     let harness = open(
         &[
             ("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1"),
@@ -145,47 +142,19 @@ async fn a_flush_that_frees_room_does_not_warn() {
         Answer::ok("{}"),
     );
     let (logs, _guard) = capture_logs();
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
+    assert_eq!(harness.queue_len(), 1);
+    assert_eq!(harness.queued()[0].payload.id, "chatcmpl-2");
     assert!(!logs.text().contains("still full"));
 }
 
+#[rstest]
+#[case::empty_object(Json::Object(IndexMap::new()))]
+#[case::null(Json::Null)]
+#[case::boolean(Json::Bool(true))]
 #[tokio::test]
-async fn a_zero_batch_size_flushes_nothing_and_keeps_the_item() {
-    let harness = open(
-        &[
-            ("LITELLM_ASYNCIO_QUEUE_MAXSIZE", "1"),
-            ("GCS_BATCH_SIZE", "0"),
-        ],
-        Some("bucket"),
-        Answer::ok("{}"),
-    );
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
-    assert!(harness.requests().is_empty());
-    assert_eq!(harness.queue_len(), 2);
-}
-
-#[tokio::test]
-async fn a_response_without_a_text_id_queues_an_empty_response_id() {
+async fn a_response_without_a_text_id_queues_an_empty_response_id(#[case] response: Json) {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
-    for response in [Json::Object(IndexMap::new()), Json::Null, Json::Bool(true)] {
-        enqueue(&harness.logger, &event_with_response(response)).await;
-    }
-    let ids: Vec<String> = harness
-        .queued()
-        .iter()
-        .map(|item| item.response_id.clone())
-        .collect();
-    assert_eq!(ids, vec![String::new(), String::new(), String::new()]);
+    enqueue(&harness.logger, &event_with_response(response)).await;
+    assert_eq!(harness.queued()[0].response_id, "");
 }

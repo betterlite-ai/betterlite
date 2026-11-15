@@ -60,7 +60,7 @@ pub(super) struct Step {
     pub(super) metadata: Option<IndexMap<String, Json>>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct Reply {
     pub(super) status: u16,

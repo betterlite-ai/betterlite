@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -22,6 +23,9 @@ pub const DEFAULT_BATCH_SIZE: usize = 2048;
 pub const DEFAULT_FLUSH_INTERVAL_SECONDS: u64 = 20;
 pub const DEFAULT_USE_BATCHED_LOGGING: bool = true;
 pub const DEFAULT_QUEUE_SIZE: usize = 1000;
+// CustomBatchLogger.__init__ replaces a falsy batch size and flush interval with litellm.DEFAULT_BATCH_SIZE and DEFAULT_FLUSH_INTERVAL_SECONDS
+pub const BASE_BATCH_SIZE: usize = 512;
+pub const BASE_FLUSH_INTERVAL_SECONDS: u64 = 5;
 
 #[derive(Debug, Error)]
 pub enum SettingsError {
@@ -43,10 +47,16 @@ pub struct GcsSettings {
 
 impl GcsSettings {
     pub fn from_environment(environment: &dyn EnvironmentSource) -> Result<Self, SettingsError> {
-        let batch_size =
-            setting::<usize>(environment, BATCH_SIZE_ENV)?.unwrap_or(DEFAULT_BATCH_SIZE);
-        let flush_seconds = setting::<u64>(environment, FLUSH_INTERVAL_ENV)?
-            .unwrap_or(DEFAULT_FLUSH_INTERVAL_SECONDS);
+        let batch_size = match setting::<usize>(environment, BATCH_SIZE_ENV)? {
+            None => DEFAULT_BATCH_SIZE,
+            Some(0) => BASE_BATCH_SIZE,
+            Some(size) => size,
+        };
+        let flush_seconds = match setting::<u64>(environment, FLUSH_INTERVAL_ENV)? {
+            None => DEFAULT_FLUSH_INTERVAL_SECONDS,
+            Some(0) => BASE_FLUSH_INTERVAL_SECONDS,
+            Some(seconds) => seconds,
+        };
         let queue_capacity =
             setting::<usize>(environment, QUEUE_SIZE_ENV)?.unwrap_or(DEFAULT_QUEUE_SIZE);
         let use_batched_logging = match environment.get(USE_BATCHED_LOGGING_ENV) {
@@ -86,8 +96,8 @@ pub fn start<Auth, Http>(
     deps: GcsDeps,
 ) -> Result<Arc<GcsBucketLogger<Auth, Http>>, SettingsError>
 where
-    Auth: VertexAuth + Clone + 'static,
-    Http: GcsHttpClient + 'static,
+    Auth: VertexAuth + Clone + Debug + 'static,
+    Http: GcsHttpClient + Debug + 'static,
 {
     let settings = GcsSettings::from_environment(base.environment.as_ref())?;
     let last_flush_time = deps.clock.now();

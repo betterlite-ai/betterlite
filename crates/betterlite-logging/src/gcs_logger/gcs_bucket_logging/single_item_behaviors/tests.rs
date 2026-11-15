@@ -5,7 +5,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 
 use super::super::tests::support::{
-    Answer, body_of, capture_logs, item, metadata, open, upload_name,
+    Answer, body_text, capture_logs, item, metadata, open, upload_name,
 };
 use super::send_single_log_item;
 
@@ -21,7 +21,8 @@ async fn a_success_item_is_uploaded_under_the_response_id() {
         upload_name(&requests[0]).as_deref(),
         Some("2024-03-09/chatcmpl-1")
     );
-    let body = body_of(&requests[0]).expect("the body is JSON");
+    let text = body_text(&requests[0]).expect("the body is text");
+    let body = serde_json::from_str::<Json>(&text).expect("the body is JSON");
     let Json::Object(fields) = body else {
         panic!("the body is a JSON object");
     };

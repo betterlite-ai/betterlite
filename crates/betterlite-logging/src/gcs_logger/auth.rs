@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::Path;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
@@ -52,9 +52,9 @@ pub enum AuthError {
 }
 
 // one built credential per configured document, since the crate caches the token inside it
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct GoogleCloudAuth {
-    credentials: Mutex<BTreeMap<CredentialKey, AccessTokenCredentials>>,
+    credentials: Arc<Mutex<BTreeMap<CredentialKey, AccessTokenCredentials>>>,
 }
 
 impl GoogleCloudAuth {

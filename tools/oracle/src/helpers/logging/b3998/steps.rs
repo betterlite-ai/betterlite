@@ -120,24 +120,20 @@ fn config_step(input: &Input, session: &Session) -> Result<Value, Box<HelperErro
 fn group_step(session: &Session) -> Result<Value, Box<HelperError>> {
     let items = drain_queue_batch(&session.logger);
     let grouped = group_items_by_config(&session.logger, &items).or_value_error()?;
-    let groups: Vec<Value> = grouped
-        .iter()
-        .map(|(key, group)| {
-            let ids: Vec<&str> = group.iter().map(|item| item.payload.id.as_str()).collect();
-            json!([key, ids])
-        })
-        .collect();
+    let mut groups = Vec::new();
+    for (key, group) in &grouped {
+        let ids: Vec<&str> = group.iter().map(|item| item.payload.id.as_str()).collect();
+        groups.push(json!([key, ids]));
+    }
     Ok(json!({"groups": groups}))
 }
 
 fn ndjson_step(session: &Session) -> Result<Value, Box<HelperError>> {
-    let items = drain_queue_batch(&session.logger);
-    let text = combine_payloads_to_ndjson(&items).or_value_error()?;
-    let lines = text
-        .split('\n')
-        .map(serde_json::from_str::<Value>)
-        .collect::<Result<Vec<_>, _>>()
-        .or_value_error()?;
+    let text = combine_payloads_to_ndjson(&drain_queue_batch(&session.logger)).or_value_error()?;
+    let mut lines = Vec::new();
+    for line in text.split('\n') {
+        lines.push(serde_json::from_str::<Value>(line).or_value_error()?);
+    }
     Ok(json!({"lines": lines, "trailing_newline": text.ends_with('\n')}))
 }
 
@@ -153,9 +149,10 @@ async fn send_step(session: &Session) -> Value {
 }
 
 async fn retrieve_step(input: &Input, session: &Session) -> Result<Value, Box<HelperError>> {
-    let Some(request_id) = &input.request_id else {
-        return Err(failure("ValueError", "a retrieve step needs request_id"));
-    };
+    let request_id = input
+        .request_id
+        .as_ref()
+        .ok_or_else(|| failure("ValueError", "a retrieve step needs request_id"))?;
     let start = input.start_time.map(timestamp).transpose()?;
     let payload = get_request_response_payload(&session.logger, request_id, start)
         .await

@@ -1,5 +1,6 @@
 use crate::gcs_mock::auth::VertexAuth;
 use crate::gcs_mock::client::GcsHttpClient;
+use std::fmt::Debug;
 
 use super::GcsBucketLogger;
 use super::drain_batch_behaviors::drain_queue_batch;
@@ -9,8 +10,8 @@ use super::individual_logs_behaviors::send_individual_logs;
 
 pub async fn async_send_batch<Auth, Http>(logger: &GcsBucketLogger<Auth, Http>)
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let items = drain_queue_batch(logger);
     if items.is_empty() {

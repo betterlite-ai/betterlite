@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::super::tests::support::{Answer, dynamic, open};
 use super::{ConfigKeyError, config_key, sanitize_config_key};
@@ -63,18 +64,16 @@ async fn a_non_string_field_is_refused() {
     );
 }
 
+#[rstest]
+#[case::boolean(Json::Bool(true))]
+#[case::text(Json::Text("bucket".to_owned()))]
+#[case::list(Json::List(Vec::new()))]
 #[tokio::test]
-async fn a_non_object_dynamic_params_object_is_refused() {
+async fn a_non_object_dynamic_params_object_is_refused(#[case] dynamic_params: Json) {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
-    for dynamic_params in [
-        Json::Bool(true),
-        Json::Text("bucket".to_owned()),
-        Json::List(Vec::new()),
-    ] {
-        let error =
-            config_key(&harness.logger, &dynamic_params).expect_err("the params must be an object");
-        assert!(matches!(error, ConfigKeyError::Params));
-    }
+    let error =
+        config_key(&harness.logger, &dynamic_params).expect_err("the params must be an object");
+    assert!(matches!(error, ConfigKeyError::Params));
 }
 
 #[test]

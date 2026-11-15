@@ -32,7 +32,7 @@ pub(super) struct AuthFailure;
 pub(super) struct TransportFailure;
 
 // LiteLLM's gcs_bucket_mock_client answers with this token and the storage host
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub(super) struct FixedAuth;
 
 #[async_trait]
@@ -83,7 +83,7 @@ impl IdSource for FixedIds {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(super) struct RecordingClient {
     pub(super) sent: Arc<Mutex<Vec<GcsRequest>>>,
     replies: Arc<Mutex<VecDeque<Reply>>>,

@@ -30,6 +30,7 @@ pub enum GcsTransportError {
     Send(#[source] TransportError),
 }
 
+#[derive(Debug)]
 pub struct PooledGcsClient {
     pub client: ProxiedClient,
 }
@@ -130,3 +131,5 @@ fn response_of(
         elapsed: started.elapsed(),
     }
 }
+
+mod tests;

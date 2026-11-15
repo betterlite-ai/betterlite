@@ -2,6 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 use sha2::{Digest as _, Sha256};
+use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::gcs_mock::auth::VertexAuth;
@@ -26,8 +27,8 @@ pub fn config_key<Auth, Http>(
     dynamic: &Json,
 ) -> Result<String, ConfigKeyError>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let fields = match dynamic {
         Json::Null => None,

@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use std::fmt::Debug;
 
 use crate::gcs_mock::auth::VertexAuth;
 use crate::gcs_mock::client::GcsHttpClient;
@@ -12,8 +13,8 @@ pub fn group_items_by_config<Auth, Http>(
     items: &[QueuedItem],
 ) -> Result<IndexMap<String, Vec<QueuedItem>>, ConfigKeyError>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let mut grouped: IndexMap<String, Vec<QueuedItem>> = IndexMap::new();
     for item in items {

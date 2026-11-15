@@ -1,10 +1,6 @@
 #![cfg(test)]
 
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-
-use super::super::event_enqueue_behaviors::enqueue;
-use super::super::tests::support::{Answer, event, open};
+use super::super::tests::support::{Answer, open};
 use super::drain_queue_batch;
 
 #[tokio::test]
@@ -17,13 +13,9 @@ async fn the_drain_stops_at_the_batch_size() {
         Some("bucket"),
         Answer::ok("{}"),
     );
-    for id in ["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
+    harness
+        .enqueue_all(&["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"])
         .await;
-    }
     let first = drain_queue_batch(&harness.logger);
     assert_eq!(
         first
@@ -56,13 +48,9 @@ async fn the_drain_takes_items_in_queue_order() {
         Some("bucket"),
         Answer::ok("{}"),
     );
-    for id in ["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
+    harness
+        .enqueue_all(&["chatcmpl-1", "chatcmpl-2", "chatcmpl-3"])
         .await;
-    }
     let drained = drain_queue_batch(&harness.logger);
     assert_eq!(
         drained

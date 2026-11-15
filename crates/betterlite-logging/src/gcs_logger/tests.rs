@@ -2,6 +2,8 @@
 
 use std::fs;
 
+use base64::Engine as _;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::gcs_client::gcs_storage_auth::STORAGE_ENDPOINT;
@@ -10,6 +12,13 @@ use crate::gcs_mock::auth::{
 };
 
 use super::auth::{AuthError, GoogleCloudAuth};
+
+pub(crate) mod support;
+
+use support::{
+    CLOUD_PLATFORM, JwtClaims, authorized_user_document, refresh_requests,
+    service_account_document, token_server,
+};
 
 fn token_request(credentials: Option<&str>) -> EnsureAccessToken {
     EnsureAccessToken {
@@ -108,4 +117,83 @@ async fn malformed_credentials_json_is_refused() {
         .await
         .expect_err("the document is not JSON");
     assert!(matches!(error, AuthError::Document));
+}
+
+#[tokio::test]
+async fn a_service_account_token_carries_the_cloud_platform_scope() {
+    let document = service_account_document("first@example.iam.gserviceaccount.com");
+    let access = GoogleCloudAuth::default()
+        .ensure_access_token_async(token_request(Some(&document)))
+        .await
+        .expect("the service account builds a token");
+    let claims = access
+        .token
+        .expose_secret()
+        .split('.')
+        .nth(1)
+        .expect("the token is a JWT");
+    let claims = URL_SAFE_NO_PAD
+        .decode(claims)
+        .expect("the claims are base64url");
+    let claims: JwtClaims = serde_json::from_slice(&claims).expect("the claims are JSON");
+    assert_eq!(claims.scope, CLOUD_PLATFORM);
+    assert_eq!(claims.iss, "first@example.iam.gserviceaccount.com");
+}
+
+#[tokio::test]
+async fn an_authorized_user_refreshes_with_the_cloud_platform_scope() {
+    let server = token_server("ya29.refreshed").await;
+    let document = authorized_user_document("refresh-1", &server);
+    let access = GoogleCloudAuth::default()
+        .ensure_access_token_async(token_request(Some(&document)))
+        .await
+        .expect("the authorized user refreshes a token");
+    assert_eq!(access.token.expose_secret(), "ya29.refreshed");
+    let requests = refresh_requests(&server);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(requests[0].grant_type, "refresh_token");
+    assert_eq!(requests[0].refresh_token, "refresh-1");
+    assert_eq!(requests[0].scope, CLOUD_PLATFORM);
+}
+
+#[tokio::test]
+async fn the_same_document_reuses_its_credential() {
+    let server = token_server("ya29.refreshed").await;
+    let document = authorized_user_document("refresh-1", &server);
+    let auth = GoogleCloudAuth::default();
+    let first = auth
+        .ensure_access_token_async(token_request(Some(&document)))
+        .await
+        .expect("the first call refreshes a token");
+    let second = auth
+        .ensure_access_token_async(token_request(Some(&document)))
+        .await
+        .expect("the second call reuses the token");
+    assert_eq!(first.token.expose_secret(), second.token.expose_secret());
+    assert_eq!(server.captured().len(), 1);
+}
+
+#[tokio::test]
+async fn different_documents_get_their_own_credentials() {
+    let first_server = token_server("ya29.first").await;
+    let second_server = token_server("ya29.second").await;
+    let auth = GoogleCloudAuth::default();
+    let first = auth
+        .ensure_access_token_async(token_request(Some(&authorized_user_document(
+            "refresh-1",
+            &first_server,
+        ))))
+        .await
+        .expect("the first document refreshes a token");
+    let second = auth
+        .ensure_access_token_async(token_request(Some(&authorized_user_document(
+            "refresh-2",
+            &second_server,
+        ))))
+        .await
+        .expect("the second document refreshes a token");
+    assert_eq!(first.token.expose_secret(), "ya29.first");
+    assert_eq!(second.token.expose_secret(), "ya29.second");
+    assert_eq!(first_server.captured().len(), 1);
+    assert_eq!(second_server.captured().len(), 1);
 }

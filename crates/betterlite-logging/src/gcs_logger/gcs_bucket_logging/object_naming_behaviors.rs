@@ -1,6 +1,7 @@
 use betterlite_context::cloud_storage::sanitize_component;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::fields::payload::StandardLoggingPayload;
@@ -27,8 +28,8 @@ pub fn get_object_name<Auth, Http>(
     metadata: &IndexMap<String, Json>,
 ) -> Result<String, ObjectNameError>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let date = get_object_date(logger.clock.now());
     let mut object_name = if payload.error_str.is_none() {

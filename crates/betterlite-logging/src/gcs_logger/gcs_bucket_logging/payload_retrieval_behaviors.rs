@@ -1,5 +1,6 @@
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Days, Utc};
+use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::gcs_client::gcs_storage_auth::download_behaviors::download_gcs_object;
@@ -23,8 +24,8 @@ pub async fn get_request_response_payload<Auth, Http>(
     start_time_utc: Option<DateTime<Utc>>,
 ) -> Result<Option<Json>, RetrievalError>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let Some(start) = start_time_utc else {
         return Err(RetrievalError::MissingStartTime);

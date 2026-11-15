@@ -1,3 +1,4 @@
+use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::gcs_client::gcs_storage_auth::config_resolution_behaviors::logging_config;
@@ -10,14 +11,13 @@ use crate::types::gcs_storage_auth::type_definitions::{GcsLoggingKwargs, GcsLogg
 
 use super::GcsBucketLogger;
 use super::QueuedItem;
-use super::grouped_batch_behaviors::dynamic_params;
 use super::object_naming_behaviors::{ObjectNameError, get_object_name};
 
 #[derive(Debug, Error)]
 pub enum SingleUploadError<Auth, Http>
 where
-    Auth: VertexAuth,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Debug,
+    Http: GcsHttpClient + Debug,
 {
     #[error("the GCS item upload failed")]
     Client(#[from] GcsClientError<Auth, Http>),
@@ -32,8 +32,8 @@ pub async fn send_single_log_item<Auth, Http>(
     logger: &GcsBucketLogger<Auth, Http>,
     item: &QueuedItem,
 ) where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     if let Err(error) = upload_item(logger, item).await {
         tracing::error!(
@@ -48,11 +48,11 @@ async fn upload_item<Auth, Http>(
     item: &QueuedItem,
 ) -> Result<(), SingleUploadError<Auth, Http>>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let kwargs = GcsLoggingKwargs {
-        dynamic_params: dynamic_params(item.dynamic_params.as_ref()),
+        dynamic_params: Some(item.dynamic_params.as_ref().clone()),
     };
     let config = logging_config(&logger.base, &kwargs).await?;
     let headers = construct_request_headers(

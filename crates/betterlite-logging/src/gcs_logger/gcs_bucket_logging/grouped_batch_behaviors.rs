@@ -1,4 +1,4 @@
-use betterlite_models::decisions::Json;
+use std::fmt::Debug;
 use thiserror::Error;
 
 use crate::gcs_client::gcs_storage_auth::config_resolution_behaviors::logging_config;
@@ -14,19 +14,11 @@ use super::QueuedItem;
 use super::naming_format_behaviors::{generate_batch_object_name, get_object_date};
 use super::ndjson_behaviors::combine_payloads_to_ndjson;
 
-// a null dynamic params object means the base bucket, as kwargs.get(...) returning None does in LiteLLM
-pub(super) fn dynamic_params(dynamic: &Json) -> Option<Json> {
-    match dynamic {
-        Json::Null => None,
-        other => Some(other.clone()),
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum BatchUploadError<Auth, Http>
 where
-    Auth: VertexAuth,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Debug,
+    Http: GcsHttpClient + Debug,
 {
     #[error("the GCS batch upload failed")]
     Client(#[from] GcsClientError<Auth, Http>),
@@ -40,8 +32,8 @@ pub async fn send_grouped_batch<Auth, Http>(
     items: &[QueuedItem],
 ) -> (usize, usize)
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     if items.is_empty() {
         return (0, 0);
@@ -63,8 +55,8 @@ async fn upload_group<Auth, Http>(
     items: &[QueuedItem],
 ) -> Result<(), BatchUploadError<Auth, Http>>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     let kwargs = logging_kwargs(items);
     let config = logging_config(&logger.base, &kwargs).await?;
@@ -95,7 +87,7 @@ fn logging_kwargs(items: &[QueuedItem]) -> GcsLoggingKwargs {
         return GcsLoggingKwargs::default();
     };
     GcsLoggingKwargs {
-        dynamic_params: dynamic_params(first.dynamic_params.as_ref()),
+        dynamic_params: Some(first.dynamic_params.as_ref().clone()),
     }
 }
 

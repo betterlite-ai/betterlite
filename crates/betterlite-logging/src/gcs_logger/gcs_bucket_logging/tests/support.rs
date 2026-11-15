@@ -24,6 +24,7 @@ use crate::fields::status::{GuardrailStatus, LoggingStatus, StatusFields};
 use crate::gcs_client::gcs_storage_auth::GcsBucketBase;
 use crate::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use crate::gcs_client::gcs_storage_auth::initialization_behaviors::initialize;
+use crate::gcs_logger::gcs_bucket_logging::event_enqueue_behaviors::enqueue;
 use crate::gcs_logger::gcs_bucket_logging::initialization_behaviors::start;
 use crate::gcs_logger::gcs_bucket_logging::{GcsBucketLogger, GcsDeps, QueuedItem};
 use crate::gcs_logger::runtime::IdSource;
@@ -44,7 +45,7 @@ pub(crate) struct AuthFailure;
 #[error("the test transport failed")]
 pub(crate) struct TransportFailure;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub(crate) struct FakeAuth;
 
 #[async_trait]
@@ -101,7 +102,7 @@ impl Answer {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct RecordingClient {
     pub(crate) sent: Arc<Mutex<Vec<GcsRequest>>>,
     answers: Arc<Mutex<VecDeque<Answer>>>,
@@ -207,6 +208,12 @@ pub(crate) struct Harness {
 }
 
 impl Harness {
+    pub(crate) async fn enqueue_all(&self, ids: &[&str]) {
+        for id in ids {
+            enqueue(&self.logger, &event(id, None, Json::Null, IndexMap::new())).await;
+        }
+    }
+
     pub(crate) fn requests(&self) -> Vec<GcsRequest> {
         self.client.requests()
     }
@@ -417,16 +424,6 @@ pub(crate) fn upload_name(request: &GcsRequest) -> Option<String> {
     url.query_pairs()
         .find(|(key, _)| key == "name")
         .map(|(_, value)| value.into_owned())
-}
-
-pub(crate) fn body_of(request: &GcsRequest) -> Option<Json> {
-    let GcsRequest::Post(write) = request else {
-        return None;
-    };
-    let Json::Text(text) = write.data.as_ref()? else {
-        return None;
-    };
-    serde_json::from_str::<Json>(text).ok()
 }
 
 pub(crate) fn body_text(request: &GcsRequest) -> Option<String> {

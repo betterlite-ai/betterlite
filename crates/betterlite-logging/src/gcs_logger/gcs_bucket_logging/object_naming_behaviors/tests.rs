@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
+use rstest::rstest;
 
 use super::super::tests::support::{Answer, metadata, open, payload};
 use super::{ObjectNameError, get_object_name};
@@ -76,20 +77,22 @@ async fn a_failure_with_a_custom_log_id_uses_the_custom_name() {
     assert_eq!(name, format!("2024-03-09/custom-{SECOND_ID}-my-run"));
 }
 
+#[rstest]
+#[case::dots("...")]
+#[case::slash("/")]
+#[case::spaced_slash(" / ")]
 #[tokio::test]
-async fn a_custom_log_id_that_sanitizes_to_nothing_keeps_the_standard_name() {
+async fn a_custom_log_id_that_sanitizes_to_nothing_keeps_the_standard_name(#[case] empty: &str) {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
-    for empty in ["...", "/", " / "] {
-        let litellm_metadata = metadata("gcs_log_id", Json::Text(empty.to_owned()));
-        let name = get_object_name(
-            &harness.logger,
-            &payload("chatcmpl-1", None),
-            "chatcmpl-1",
-            &litellm_metadata,
-        )
-        .expect("the name builds");
-        assert_eq!(name, "2024-03-09/chatcmpl-1");
-    }
+    let litellm_metadata = metadata("gcs_log_id", Json::Text(empty.to_owned()));
+    let name = get_object_name(
+        &harness.logger,
+        &payload("chatcmpl-1", None),
+        "chatcmpl-1",
+        &litellm_metadata,
+    )
+    .expect("the name builds");
+    assert_eq!(name, "2024-03-09/chatcmpl-1");
 }
 
 #[tokio::test]

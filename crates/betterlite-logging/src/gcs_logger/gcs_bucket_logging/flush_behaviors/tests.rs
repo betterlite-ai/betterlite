@@ -16,13 +16,7 @@ use super::flush_queue;
 #[tokio::test]
 async fn flushing_sends_the_queued_items() {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
-    for id in ["chatcmpl-1", "chatcmpl-2"] {
-        enqueue(
-            &harness.logger,
-            &event(id, None, Json::Null, IndexMap::new()),
-        )
-        .await;
-    }
+    harness.enqueue_all(&["chatcmpl-1", "chatcmpl-2"]).await;
     flush_queue(&harness.logger).await;
     assert_eq!(harness.requests().len(), 1);
     assert_eq!(harness.queue_len(), 0);

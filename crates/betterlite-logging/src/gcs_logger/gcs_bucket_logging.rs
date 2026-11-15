@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -69,8 +70,8 @@ pub struct GcsDeps {
 #[async_trait]
 impl<Auth, Http> CallbackLogger for GcsBucketLogger<Auth, Http>
 where
-    Auth: VertexAuth + Clone,
-    Http: GcsHttpClient,
+    Auth: VertexAuth + Clone + Debug,
+    Http: GcsHttpClient + Debug,
 {
     fn callback_name(&self) -> &str {
         CALLBACK_NAME
