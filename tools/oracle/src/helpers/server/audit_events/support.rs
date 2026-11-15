@@ -84,8 +84,8 @@ fn payload_view(payload: &AuditLogPayload) -> JsonValue {
         "action": payload.action,
         "table_name": payload.table_name,
         "object_id": payload.object_id,
-        "before_value": payload.before_value.as_deref().map(|text| serde_json::from_str(text).unwrap_or_default()),
-        "updated_values": payload.updated_values.as_deref().map(|text| serde_json::from_str(text).unwrap_or_default()),
+        "before_value": payload.before_value.as_deref().map(|text| serde_json::from_str::<JsonValue>(text).unwrap_or_default()),
+        "updated_values": payload.updated_values.as_deref().map(|text| serde_json::from_str::<JsonValue>(text).unwrap_or_default()),
     })
 }
 
