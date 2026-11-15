@@ -3,10 +3,7 @@ use std::sync::atomic::Ordering;
 
 use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::TableActions as _;
-use deadpool_postgres::{Client, GenericClient as _};
-use tokio_postgres::GenericClient as _;
-use tokio_postgres::Transaction as PgTransaction;
-use tokio_postgres::types::ToSql;
+use deadpool_postgres::{Client, GenericClient as _, Transaction};
 
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::budget_permission_rows::JsonData;
@@ -14,13 +11,10 @@ use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::session::PostgresStore;
 
 use super::actions::_mcp_server_table_actions;
-use super::filter::{FindServers, identifier_candidates};
-use super::rows::{KeyValues, RowFields, SERVER_TABLE, ServerUpdate, server_id_of};
-use super::sql;
-use super::types::{LockedWrite, LockedWriteOutcome, McpServerAccess, McpTableError, ServerWrite};
-use super::{
-    _identifier_where, _mcp_identifier_lock_keys, ADVISORY_LOCK_SQL, McpIdentifierConflict,
-};
+use super::filter::FindServers;
+use super::rows::{KeyValues, SERVER_TABLE, ServerUpdate};
+use super::sql::{self, Scope, Select};
+use super::types::{McpServerAccess, McpTableError, ServerWrite};
 
 pub struct McpTableStore<'db> {
     pub(crate) client: PrismaClient<'db>,
@@ -32,10 +26,13 @@ impl<'db> McpTableStore<'db> {
         client: Option<PrismaClient<'db>>,
         publish: PublishChange<TableError>,
     ) -> Result<Self, McpTableError> {
-        let Some(client) = client else {
+        let Some(connected) = client else {
             return Err(McpTableError::from(DbError::NoDbConnected));
         };
-        Ok(Self { client, publish })
+        Ok(Self {
+            client: connected,
+            publish,
+        })
     }
 
     #[must_use]
@@ -50,42 +47,25 @@ impl<'db> McpTableStore<'db> {
         }
         self.client.reader
     }
+}
 
-    pub async fn write_if_identifier_free(
-        &self,
-        request: &LockedWrite,
-    ) -> Result<LockedWriteOutcome, McpTableError> {
-        let mut client = self.client.writer.session().await?;
-        let transaction = client
-            .transaction()
-            .await
-            .map_err(|source| McpTableError::Database(backend(source)))?;
-        let identifiers = [request.server_name.as_deref(), request.alias.as_deref()];
-        for key in _mcp_identifier_lock_keys(&identifiers) {
-            let params: [&(dyn ToSql + Sync); 1] = [&key];
-            transaction
-                .execute(ADVISORY_LOCK_SQL, &params)
-                .await
-                .map_err(|source| McpTableError::Database(backend(source)))?;
+impl From<&FindServers> for Select {
+    fn from(request: &FindServers) -> Self {
+        Self {
+            predicate: request.filter.as_ref().map(|filter| filter.predicate(1)),
+            descending: request.descending,
+            take: request.take,
         }
-        if let Some(conflict) = locked_conflict(&transaction, request).await? {
-            return Ok(LockedWriteOutcome::Conflict(conflict));
-        }
-        let written = apply_write(&transaction, &request.write).await?;
-        transaction
-            .commit()
-            .await
-            .map_err(|source| McpTableError::Database(backend(source)))?;
-        (self.publish)(SERVER_TABLE.name)
-            .await
-            .map_err(McpTableError::Table)?;
-        Ok(LockedWriteOutcome::Written(written))
     }
 }
 
 impl McpServerAccess for McpTableStore<'_> {
     async fn find_servers(&self, request: &FindServers) -> Result<Vec<JsonData>, McpTableError> {
-        sql::select_servers(self.reader(), &SERVER_TABLE, request).await
+        let client = self.reader().session().await?;
+        let statement = sql::select_sql(&SERVER_TABLE, &Select::from(request));
+        sql::rows(&client, &statement)
+            .await
+            .map_err(McpTableError::Table)
     }
 
     async fn update_server(
@@ -94,64 +74,48 @@ impl McpServerAccess for McpTableStore<'_> {
     ) -> Result<Option<JsonData>, McpTableError> {
         let table = _mcp_server_table_actions(Some(self.client), Arc::clone(&self.publish))?;
         let filter = KeyValues::from([("server_id", request.server_id.clone())]);
-        let row = table.update(request.data.clone(), filter).await?;
-        Ok(row)
-    }
-}
-
-async fn locked_conflict(
-    transaction: &PgTransaction<'_>,
-    request: &LockedWrite,
-) -> Result<Option<McpIdentifierConflict>, McpTableError> {
-    let candidates =
-        identifier_candidates(request.server_name.as_deref(), request.alias.as_deref());
-    for (field, value) in candidates {
-        let filter = _identifier_where(value, request.exclude_server_id.as_deref());
-        let Some((predicate, binds)) = filter.predicate(1) else {
-            continue;
-        };
-        let select = sql::Select {
-            predicate: Some(predicate),
-            binds: &binds,
-            descending: false,
-            take: Some(1),
-        };
-        let query = sql::select_sql(&SERVER_TABLE, &select);
-        let row = transaction
-            .query_opt(&query, &sql::params(&binds))
+        table
+            .update(request.data.clone(), filter)
             .await
-            .map_err(|source| McpTableError::Database(backend(source)))?;
-        let Some(row) = row else {
-            continue;
-        };
-        return Ok(Some(McpIdentifierConflict {
-            field,
-            value: value.to_owned(),
-            server_id: server_id_of(&sql::row_data(&row)?)?,
-        }));
+            .map_err(McpTableError::Table)
     }
-    Ok(None)
 }
 
-async fn apply_write(
-    transaction: &PgTransaction<'_>,
-    write: &ServerWrite,
-) -> Result<Option<JsonData>, McpTableError> {
-    let (query, binds) = match write {
-        ServerWrite::Create(data) => sql::insert_sql(&SERVER_TABLE, data, false)?,
-        ServerWrite::Update { server_id, data } => {
-            let filter = KeyValues::from([("server_id", server_id.clone())]);
-            sql::update_statement(&SERVER_TABLE, data, &filter, true)?
-        }
-    };
-    let row = transaction
-        .query_opt(&query, &sql::params(&binds))
-        .await
-        .map_err(|source| McpTableError::Database(backend(source)))?;
-    let Some(row) = row else {
-        return Ok(None);
-    };
-    Ok(Some(sql::row_data(&row)?))
+// the server table seen through an open transaction, as LiteLLM's tx.litellm_mcpservertable
+pub(crate) struct LockedTable<'tx> {
+    pub(crate) transaction: &'tx Transaction<'tx>,
+}
+
+impl LockedTable<'_> {
+    pub(crate) async fn write(
+        &self,
+        write: &ServerWrite,
+    ) -> Result<Option<JsonData>, McpTableError> {
+        let statement = match write {
+            ServerWrite::Create(data) => sql::insert_sql(&SERVER_TABLE, data, false)?,
+            ServerWrite::Update(update) => {
+                let filter = KeyValues::from([("server_id", update.server_id.clone())]);
+                sql::update_statement(&SERVER_TABLE, &update.data, &filter, Scope::Unique)?
+            }
+        };
+        Ok(sql::rows(self.transaction, &statement).await?.pop())
+    }
+}
+
+impl McpServerAccess for LockedTable<'_> {
+    async fn find_servers(&self, request: &FindServers) -> Result<Vec<JsonData>, McpTableError> {
+        let statement = sql::select_sql(&SERVER_TABLE, &Select::from(request));
+        sql::rows(self.transaction, &statement)
+            .await
+            .map_err(McpTableError::Table)
+    }
+
+    async fn update_server(
+        &self,
+        request: &ServerUpdate,
+    ) -> Result<Option<JsonData>, McpTableError> {
+        self.write(&ServerWrite::Update(request.clone())).await
+    }
 }
 
 pub struct TransactionManager {
@@ -159,7 +123,7 @@ pub struct TransactionManager {
 }
 
 impl TransactionManager {
-    pub async fn begin(&mut self) -> Result<deadpool_postgres::Transaction<'_>, McpTableError> {
+    pub async fn begin(&mut self) -> Result<Transaction<'_>, McpTableError> {
         self.client
             .transaction()
             .await

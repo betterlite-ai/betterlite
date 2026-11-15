@@ -1,3 +1,4 @@
+use std::ptr;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
@@ -9,20 +10,20 @@ use crate::mcp::table_access::actions::{
     _mcp_server_table_actions, _oauth_client_table_actions, _user_credential_actions,
     _user_env_var_actions,
 };
-use crate::mcp::table_access::store::{_db_transaction_manager, McpTableStore};
+use crate::mcp::table_access::rows::{
+    CREDENTIAL_TABLE, ENV_VAR_TABLE, OAUTH_CLIENT_TABLE, SERVER_TABLE,
+};
+use crate::mcp::table_access::store::McpTableStore;
 use crate::mcp::table_access::types::McpTableError;
 use crate::postgres_store::errors::DbError;
 use crate::postgres_store::session::PostgresStore;
 
 fn publisher() -> PublishChange<TableError> {
-    Arc::new(|_name: &str| {
-        let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
-        future
-    })
+    Arc::new(|_name: &str| -> PublishFuture<TableError> { Box::pin(async { Ok(()) }) })
 }
 
-#[tokio::test]
-async fn every_mcp_table_handle_needs_a_database_client() {
+#[test]
+fn every_mcp_table_handle_binds_its_own_table() {
     let writer = PostgresStore { pool: None };
     let availability = Availability::default();
     let client = PrismaClient {
@@ -30,40 +31,43 @@ async fn every_mcp_table_handle_needs_a_database_client() {
         reader: &writer,
         availability: &availability,
     };
-    assert!(_mcp_server_table_actions(Some(client), publisher()).is_ok());
-    assert!(_oauth_client_table_actions(Some(client), publisher()).is_ok());
-    assert!(_user_credential_actions(Some(client), publisher()).is_ok());
-    assert!(_user_env_var_actions(Some(client), publisher()).is_ok());
-    let absent: Option<PrismaClient<'static>> = None;
-    assert!(matches!(
-        _mcp_server_table_actions(absent, publisher()),
-        Err(McpTableError::Database(DbError::NoDbConnected))
-    ));
+    let server = _mcp_server_table_actions(Some(client), publisher()).expect("a server handle");
+    assert_eq!(server.actions.table.relation, SERVER_TABLE.relation);
+    assert!(ptr::eq(server.actions.store, &writer));
+    let oauth = _oauth_client_table_actions(Some(client), publisher()).expect("an oauth handle");
+    assert_eq!(oauth.actions.table.relation, OAUTH_CLIENT_TABLE.relation);
+    let credentials =
+        _user_credential_actions(Some(client), publisher()).expect("a credential handle");
+    assert_eq!(
+        credentials.actions.table.relation,
+        CREDENTIAL_TABLE.relation
+    );
+    let env_vars = _user_env_var_actions(Some(client), publisher()).expect("an env-var handle");
+    assert_eq!(env_vars.actions.table.relation, ENV_VAR_TABLE.relation);
+    assert_eq!(env_vars.actions.table.name, "litellm_mcpuserenvvars");
 }
 
-#[tokio::test]
-async fn a_store_without_a_pool_cannot_open_a_transaction() {
-    let writer = PostgresStore { pool: None };
-    let error = _db_transaction_manager(&writer)
-        .await
+#[test]
+fn every_mcp_table_handle_needs_a_database_client() {
+    let absent: Option<PrismaClient<'static>> = None;
+    let missing = _mcp_server_table_actions(absent, publisher())
         .err()
-        .expect("no pool means no session");
+        .expect("no client means no handle");
     assert!(matches!(
-        error,
+        missing,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let absent: Option<PrismaClient<'static>> = None;
-    let error = McpTableStore::new(absent, publisher())
+    let unbuilt = McpTableStore::new(absent, publisher())
         .err()
         .expect("a store needs a client");
     assert!(matches!(
-        error,
+        unbuilt,
         McpTableError::Database(DbError::NoDbConnected)
     ));
 }
 
-#[tokio::test]
-async fn a_degraded_reader_falls_back_to_the_writer() {
+#[test]
+fn a_degraded_reader_falls_back_to_the_writer() {
     let writer = PostgresStore { pool: None };
     let reader = PostgresStore { pool: None };
     let availability = Availability::default();
@@ -72,12 +76,10 @@ async fn a_degraded_reader_falls_back_to_the_writer() {
         reader: &reader,
         availability: &availability,
     };
-    let store = McpTableStore::new(Some(client), publisher())
-        .ok()
-        .expect("a client builds a store");
-    assert!(std::ptr::eq(store.reader(), &reader));
+    let store = McpTableStore::new(Some(client), publisher()).expect("a client builds a store");
+    assert!(ptr::eq(store.reader(), &reader));
     availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
-    assert!(std::ptr::eq(store.reader(), &writer));
+    assert!(ptr::eq(store.reader(), &writer));
 }

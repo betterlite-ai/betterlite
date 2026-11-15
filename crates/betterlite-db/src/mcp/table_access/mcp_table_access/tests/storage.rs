@@ -7,11 +7,9 @@ use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
 use crate::mcp::table_access::_mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::actions::_mcp_server_table_actions;
-use crate::mcp::table_access::filter::{FindServers, ServerFilter};
-use crate::mcp::table_access::rows::{
-    CREDENTIAL_TABLE, KeyValues, RowFields, SERVER_TABLE, ServerUpdate,
-};
-use crate::mcp::table_access::sql::{self, Select};
+use crate::mcp::table_access::filter::FindServers;
+use crate::mcp::table_access::rows::{CREDENTIAL_TABLE, KeyValues, RowFields, ServerUpdate};
+use crate::mcp::table_access::sql;
 use crate::mcp::table_access::store::{_db_transaction_manager, McpTableStore};
 use crate::mcp::table_access::types::{LockedWrite, McpServerAccess, McpTableError, ServerWrite};
 use crate::mcp::table_access::user_tables::{
@@ -31,54 +29,36 @@ fn store<'db>(writer: &'db PostgresStore, availability: &'db Availability) -> Mc
         reader: writer,
         availability,
     };
-    McpTableStore::new(Some(client), publisher())
-        .ok()
-        .expect("a client builds a store")
+    McpTableStore::new(Some(client), publisher()).expect("a client builds a store")
 }
 
 fn row() -> RowFields {
-    RowFields::texts([("server_id", "s1")])
+    RowFields::texts(&[("server_id", "s1")])
+}
+
+fn no_database(error: &TableError) -> bool {
+    matches!(error, TableError::Database(DbError::NoDbConnected))
 }
 
 #[tokio::test]
 async fn sql_reads_without_a_pool_report_no_database() {
-    let store = PostgresStore { pool: None };
-    let binds = ["s1".to_owned()];
-    let select = Select {
-        predicate: Some("\"server_id\" = $1".to_owned()),
-        binds: &binds,
-        descending: false,
-        take: None,
-    };
-    let error = sql::select(&store, &SERVER_TABLE, &select)
+    let pool_less = PostgresStore { pool: None };
+    let keyed = sql::select_keyed(&pool_less, &CREDENTIAL_TABLE, None)
         .await
-        .err()
-        .expect("no pool means no rows");
+        .expect_err("no pool means no rows");
     assert!(matches!(
-        error,
+        keyed,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let request = FindServers {
-        filter: Some(ServerFilter::ServerIds(vec!["s1".to_owned()])),
-        descending: false,
-        take: None,
-    };
-    let error = sql::select_servers(&store, &SERVER_TABLE, &request)
+    let statement = Ok(("SELECT 1".to_owned(), Vec::new()));
+    let ran = sql::run(&pool_less, statement)
         .await
-        .err()
-        .expect("no pool means no rows");
-    assert!(matches!(
-        error,
-        McpTableError::Database(DbError::NoDbConnected)
-    ));
-    let error = sql::select_keyed(&store, &CREDENTIAL_TABLE, None)
+        .expect_err("no pool means no session");
+    assert!(no_database(&ran));
+    let refused = sql::run(&pool_less, Err(TableError::MissingRow))
         .await
-        .err()
-        .expect("no pool means no rows");
-    assert!(matches!(
-        error,
-        McpTableError::Database(DbError::NoDbConnected)
-    ));
+        .expect_err("a statement that failed to build never runs");
+    assert!(matches!(refused, TableError::MissingRow));
 }
 
 #[tokio::test]
@@ -91,135 +71,92 @@ async fn table_actions_without_a_pool_report_no_database() {
         availability: &availability,
     };
     let table = _mcp_server_table_actions(Some(client), publisher())
-        .ok()
         .expect("a client builds table actions");
-    let error = table
+    let filter = KeyValues::from([("server_id", "s1".to_owned())]);
+    let created = table
         .create(row())
         .await
-        .err()
-        .expect("no pool means no insert");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let error = table
+        .expect_err("no pool means no insert");
+    assert!(no_database(&created));
+    let created_many = table
         .create_many(vec![row()])
         .await
-        .err()
-        .expect("no pool means no insert");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let filter = KeyValues::from([("server_id", "s1".to_owned())]);
-    let error = table
+        .expect_err("no pool means no insert");
+    assert!(no_database(&created_many));
+    let updated = table
         .update(row(), filter.clone())
         .await
-        .err()
-        .expect("no pool means no update");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let error = table
+        .expect_err("no pool means no update");
+    assert!(no_database(&updated));
+    let updated_many = table
         .update_many(row(), filter.clone())
         .await
-        .err()
-        .expect("no pool means no update");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let error = table
+        .expect_err("no pool means no update");
+    assert!(no_database(&updated_many));
+    let upserted = table
         .upsert(KeyValues::new(), row())
         .await
-        .err()
-        .expect("no pool means no upsert");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let error = table
+        .expect_err("no pool means no upsert");
+    assert!(no_database(&upserted));
+    let deleted = table
         .delete(filter.clone())
         .await
-        .err()
-        .expect("no pool means no delete");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
-    let error = table
+        .expect_err("no pool means no delete");
+    assert!(no_database(&deleted));
+    let deleted_many = table
         .delete_many(filter)
         .await
-        .err()
-        .expect("no pool means no delete");
-    assert!(matches!(
-        error,
-        TableError::Database(DbError::NoDbConnected)
-    ));
+        .expect_err("no pool means no delete");
+    assert!(no_database(&deleted_many));
 }
 
 #[tokio::test]
 async fn a_pool_less_store_reports_no_database_for_reads_updates_and_locked_writes() {
     let writer = PostgresStore { pool: None };
     let availability = Availability::default();
-    let error = _db_transaction_manager(&writer)
+    let opened = _db_transaction_manager(&writer)
         .await
         .err()
         .expect("no pool means no session");
     assert!(matches!(
-        error,
+        opened,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let store = store(&writer, &availability);
+    let table = store(&writer, &availability);
     let request = FindServers {
         filter: None,
         descending: false,
         take: None,
     };
-    let error = store
+    let found = table
         .find_servers(&request)
         .await
-        .err()
-        .expect("no pool means no rows");
+        .expect_err("no pool means no rows");
     assert!(matches!(
-        error,
+        found,
         McpTableError::Database(DbError::NoDbConnected)
     ));
     let update = ServerUpdate {
         server_id: "s1".to_owned(),
         data: row(),
     };
-    let error = store
+    let updated = table
         .update_server(&update)
         .await
-        .err()
-        .expect("no pool means no update");
-    assert!(matches!(
-        error,
-        McpTableError::Table(TableError::Database(DbError::NoDbConnected))
-    ));
+        .expect_err("no pool means no update");
+    assert!(matches!(updated, McpTableError::Table(error) if no_database(&error)));
     let write = LockedWrite {
         server_name: Some("srv".to_owned()),
         alias: None,
         exclude_server_id: None,
         write: ServerWrite::Create(row()),
     };
-    let error = store
-        .write_if_identifier_free(&write)
+    let locked = _mcp_server_write_if_identifier_free(&table, &write)
         .await
         .err()
         .expect("no pool means no locks");
     assert!(matches!(
-        error,
-        McpTableError::Database(DbError::NoDbConnected)
-    ));
-    let error = _mcp_server_write_if_identifier_free(&store, &write)
-        .await
-        .err()
-        .expect("no pool means no locks");
-    assert!(matches!(
-        error,
+        locked,
         McpTableError::Database(DbError::NoDbConnected)
     ));
 }
@@ -228,37 +165,30 @@ async fn a_pool_less_store_reports_no_database_for_reads_updates_and_locked_writ
 async fn user_table_helpers_without_a_pool_report_no_database() {
     let writer = PostgresStore { pool: None };
     let availability = Availability::default();
-    let store = store(&writer, &availability);
-    let error = _db_find_user_credential_row(&store, "u1", "s1")
+    let table = store(&writer, &availability);
+    let credential = _db_find_user_credential_row(&table, "u1", "s1")
         .await
-        .err()
-        .expect("no pool means no credential");
+        .expect_err("no pool means no credential");
     assert!(matches!(
-        error,
+        credential,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let error = _db_find_user_credential_rows(&store, None)
+    let credentials = _db_find_user_credential_rows(&table, None)
         .await
-        .err()
-        .expect("no pool means no credentials");
+        .expect_err("no pool means no credentials");
     assert!(matches!(
-        error,
+        credentials,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let error = _db_find_user_env_var_rows(&store, None)
+    let env_vars = _db_find_user_env_var_rows(&table, None)
         .await
-        .err()
-        .expect("no pool means no environment");
+        .expect_err("no pool means no environment");
     assert!(matches!(
-        error,
+        env_vars,
         McpTableError::Database(DbError::NoDbConnected)
     ));
-    let error = _db_upsert_user_credential_row(&store, "u1", "s1", "blob")
+    let upserted = _db_upsert_user_credential_row(&table, "u1", "s1", "blob")
         .await
-        .err()
-        .expect("no pool means no upsert");
-    assert!(matches!(
-        error,
-        McpTableError::Table(TableError::Database(DbError::NoDbConnected))
-    ));
+        .expect_err("no pool means no upsert");
+    assert!(matches!(upserted, McpTableError::Table(error) if no_database(&error)));
 }

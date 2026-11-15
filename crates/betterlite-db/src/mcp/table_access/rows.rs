@@ -5,7 +5,6 @@ use crate::budget_permission_rows::JsonData;
 use crate::managed_resource_rows::mcp::{McpServerTable, decode_server};
 use crate::mcp_server_encoding::env_vars::decrypt_global_env_var_values;
 use crate::mcp_stored_contracts::JsonValue;
-use crate::mcp_stored_contracts::PinnedMCPTool;
 use crate::stored_cipher::DbCipher;
 
 use super::types::McpTableError;
@@ -17,10 +16,10 @@ pub struct RowFields(pub BTreeMap<&'static str, JsonValue>);
 
 impl RowFields {
     #[must_use]
-    pub fn texts<Entries: IntoIterator<Item = (&'static str, &str)>>(entries: Entries) -> Self {
+    pub fn texts(entries: &[(&'static str, &str)]) -> Self {
         let mut fields = BTreeMap::new();
         for (key, value) in entries {
-            fields.insert(key, JsonValue::String(value.to_owned()));
+            fields.insert(*key, JsonValue::String((*value).to_owned()));
         }
         Self(fields)
     }
@@ -93,15 +92,4 @@ pub(crate) fn readable_server(
         decrypt_global_env_var_values(env_vars, cipher);
     }
     Ok(server)
-}
-
-// each tool goes through model_dump and the mapping through safe_dumps; PinnedMCPTool is transparent over its definition
-pub(crate) fn pinned_snapshot(
-    tools: Option<&BTreeMap<String, PinnedMCPTool>>,
-) -> Result<String, McpTableError> {
-    let mut snapshot: BTreeMap<&String, &PinnedMCPTool> = BTreeMap::new();
-    if let Some(tools) = tools {
-        snapshot.extend(tools);
-    }
-    serde_json::to_string(&snapshot).map_err(McpTableError::Json)
 }

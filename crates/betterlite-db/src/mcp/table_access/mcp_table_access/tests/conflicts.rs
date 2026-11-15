@@ -95,10 +95,7 @@ async fn empty_identifiers_do_not_query_for_a_collision() {
 
 #[test]
 fn the_identifier_predicate_keeps_null_rows_and_hides_drafts() {
-    let filter = _identifier_where("Shared", Some("s1"));
-    let Some((predicate, binds)) = filter.predicate(1) else {
-        panic!("the identifier filter always renders a predicate");
-    };
+    let (predicate, binds) = _identifier_where("Shared", Some("s1")).predicate(1);
     assert_eq!(
         predicate,
         "((LOWER(\"server_name\") = LOWER($1) OR LOWER(\"alias\") = LOWER($1)) AND (\"approval_status\" IS NULL OR \"approval_status\" <> 'draft')) AND \"server_id\" <> $2"
@@ -117,15 +114,15 @@ fn the_identifier_predicate_keeps_null_rows_and_hides_drafts() {
 fn lock_keys_are_signed_big_endian_blake2b_digests() {
     assert_eq!(
         _mcp_identifier_lock_keys(&[Some("a")]),
-        vec![5_603_257_361_941_401_104]
+        vec![5_603_257_361_941_401_104_i64]
     );
     assert_eq!(
         _mcp_identifier_lock_keys(&[Some("mcp")]),
-        vec![8_703_809_971_163_426_483]
+        vec![8_703_809_971_163_426_483_i64]
     );
     assert_eq!(
         _mcp_identifier_lock_keys(&[Some("alias")]),
-        vec![-5_559_374_156_414_036_648]
+        vec![-5_559_374_156_414_036_648_i64]
     );
 }
 
@@ -135,7 +132,7 @@ fn lock_keys_come_from_sorted_deduplicated_lowercased_identifiers() {
         _mcp_identifier_lock_keys(&[Some("B"), None, Some("a"), Some(""), Some("b"), Some("A")]);
     assert_eq!(
         keys,
-        vec![5_603_257_361_941_401_104, 5_257_132_140_804_914_424]
+        vec![5_603_257_361_941_401_104_i64, 5_257_132_140_804_914_424_i64]
     );
     assert!(_mcp_identifier_lock_keys(&[None, Some("")]).is_empty());
 }

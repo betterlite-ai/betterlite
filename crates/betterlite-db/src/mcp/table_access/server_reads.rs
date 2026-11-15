@@ -9,70 +9,52 @@ use super::types::{McpServerAccess, McpTableError};
 
 #[must_use]
 pub fn _identifier_field(fields: &RowFields, field: &str) -> Option<String> {
-    match fields.0.get(field) {
-        Some(JsonValue::String(value)) => Some(value.clone()),
-        _ => None,
-    }
-}
-
-pub(crate) async fn find_readable<Access: McpServerAccess>(
-    table: &Access,
-    cipher: &DbCipher,
-    filter: ServerFilter,
-    take: Option<u32>,
-) -> Result<Vec<McpServerTable>, McpTableError> {
-    let request = FindServers {
-        filter: Some(filter),
-        descending: false,
-        take,
+    let Some(JsonValue::String(value)) = fields.0.get(field) else {
+        return None;
     };
-    super::_readable_mcp_servers(table.find_servers(&request).await?, cipher)
+    Some(value.clone())
 }
 
-pub async fn _db_find_mcp_server_rows<Access: McpServerAccess>(
+pub async fn _db_find_mcp_server_rows<Access>(
     table: &Access,
     filter: Option<ServerFilter>,
-) -> Result<Vec<JsonData>, McpTableError> {
-    let request = FindServers {
-        filter,
-        descending: false,
-        take: None,
-    };
-    table.find_servers(&request).await
+) -> Result<Vec<JsonData>, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    table
+        .find_servers(&FindServers {
+            filter,
+            descending: false,
+            take: None,
+        })
+        .await
 }
 
-pub async fn _db_find_mcp_server_row<Access: McpServerAccess>(
-    table: &Access,
-    server_id: &str,
-) -> Result<Option<JsonData>, McpTableError> {
-    let filter = ServerFilter::ServerId(server_id.to_owned());
-    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
-    Ok(rows.into_iter().next())
-}
-
-pub async fn get_mcp_server<Access: McpServerAccess>(
+pub async fn get_mcp_server<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_id: &str,
-) -> Result<Option<McpServerTable>, McpTableError> {
-    let filter = Some(ServerFilter::ServerId(server_id.to_owned()));
-    let request = FindServers {
-        filter,
-        descending: false,
-        take: Some(1),
-    };
-    let Some(mut row) = table.find_servers(&request).await?.pop() else {
+) -> Result<Option<McpServerTable>, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    let Some(mut row) = super::_db_find_mcp_server_row(table, server_id).await? else {
         return Ok(None);
     };
     readable_server(&mut row, cipher).map(Some)
 }
 
-pub async fn get_mcp_servers<Access: McpServerAccess>(
+// the IN predicate returns rows in table order, not in the caller's order
+pub async fn get_mcp_servers<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_ids: &[String],
-) -> Result<Vec<McpServerTable>, McpTableError> {
-    // the IN predicate returns rows in table order, not in the caller's order
+) -> Result<Vec<McpServerTable>, McpTableError>
+where
+    Access: McpServerAccess,
+{
     let filter = ServerFilter::ServerIds(server_ids.to_vec());
-    find_readable(table, cipher, filter, None).await
+    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
+    super::_readable_mcp_servers(rows, cipher)
 }

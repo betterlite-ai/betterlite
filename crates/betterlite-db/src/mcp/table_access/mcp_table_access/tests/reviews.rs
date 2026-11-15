@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::DateTime;
 
-use crate::mcp::table_access::rows::RowFields;
+use crate::mcp::table_access::rows::{RowFields, ServerUpdate};
 use crate::mcp::table_access::types::McpTableError;
 use crate::mcp::table_access::{
     _db_update_mcp_server_row, approve_mcp_server, reject_mcp_server, set_mcp_server_pinned_tools,
@@ -11,17 +11,22 @@ use crate::mcp_stored_contracts::{JsonValue, PinnedMCPTool};
 
 use super::support::{FakeStore, cipher, row};
 
+fn only_update(store: &FakeStore) -> ServerUpdate {
+    let updates = store.updates();
+    assert_eq!(updates.len(), 1);
+    updates.first().cloned().expect("one update ran")
+}
+
 #[tokio::test]
 async fn update_of_a_missing_server_is_not_found() {
     let store = FakeStore::new(Vec::new());
     let error = _db_update_mcp_server_row(
         &store,
         "missing",
-        RowFields::texts([("updated_by", "admin")]),
+        RowFields::texts(&[("updated_by", "admin")]),
     )
     .await
-    .err()
-    .expect("the fake store has no such row");
+    .expect_err("the fake store has no such row");
     assert!(matches!(
         &error,
         McpTableError::ServerNotFound { server_id } if server_id.as_str() == "missing"
@@ -30,6 +35,20 @@ async fn update_of_a_missing_server_is_not_found() {
         error.to_string(),
         "MCP server not found, passed server_id=missing"
     );
+}
+
+#[tokio::test]
+async fn update_of_a_stored_server_returns_the_written_row() {
+    let store = FakeStore::new(vec![row(r#"{"server_id":"s1","transport":"http"}"#)]);
+    let written =
+        _db_update_mcp_server_row(&store, "s1", RowFields::texts(&[("updated_by", "admin")]))
+            .await
+            .expect("s1 is stored");
+    assert_eq!(
+        written,
+        row(r#"{"server_id":"s1","transport":"http","updated_by":"admin"}"#)
+    );
+    assert_eq!(only_update(&store).server_id, "s1");
 }
 
 #[tokio::test]
@@ -43,16 +62,16 @@ async fn approve_marks_the_server_active_with_a_review_time() {
     assert_eq!(server.approval_status.as_deref(), Some("active"));
     assert_eq!(server.updated_by.as_deref(), Some("admin"));
     assert!(server.reviewed_at.is_some());
-    let updates = store.updates();
-    let stored = updates[0]
-        .data
-        .0
-        .get("reviewed_at")
-        .expect("the update records reviewed_at");
-    let JsonValue::String(reviewed_at) = stored else {
+    let update = only_update(&store);
+    assert_eq!(
+        update.data.0.keys().copied().collect::<Vec<_>>(),
+        vec!["approval_status", "reviewed_at", "updated_by"]
+    );
+    let Some(JsonValue::String(reviewed_at)) = update.data.0.get("reviewed_at") else {
         panic!("reviewed_at is stored as text");
     };
-    assert!(DateTime::parse_from_rfc3339(reviewed_at).is_ok());
+    let parsed = DateTime::parse_from_rfc3339(reviewed_at).expect("reviewed_at is RFC 3339");
+    assert_eq!(parsed.offset().local_minus_utc(), 0);
 }
 
 #[tokio::test]
@@ -60,8 +79,7 @@ async fn approve_of_a_missing_server_is_not_found() {
     let store = FakeStore::new(Vec::new());
     let error = approve_mcp_server(&store, &cipher(), "gone", "admin")
         .await
-        .err()
-        .expect("the fake store has no such row");
+        .expect_err("the fake store has no such row");
     assert!(matches!(
         error,
         McpTableError::ServerNotFound { server_id } if server_id.as_str() == "gone"
@@ -78,6 +96,7 @@ async fn reject_records_rejected_status_and_the_notes_when_given() {
         .expect("the fake store never fails");
     assert_eq!(server.approval_status.as_deref(), Some("rejected"));
     assert_eq!(server.review_notes.as_deref(), Some("unsafe tools"));
+    assert_eq!(server.updated_by.as_deref(), Some("admin"));
     assert!(server.reviewed_at.is_some());
 }
 
@@ -90,8 +109,15 @@ async fn reject_without_notes_leaves_the_stored_notes_alone() {
         .await
         .expect("the fake store never fails");
     assert_eq!(server.review_notes.as_deref(), Some("old"));
-    let updates = store.updates();
-    assert!(updates[0].data.0.get("review_notes").is_none());
+    assert_eq!(
+        only_update(&store)
+            .data
+            .0
+            .keys()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec!["approval_status", "reviewed_at", "updated_by"]
+    );
 }
 
 #[tokio::test]
@@ -114,17 +140,12 @@ async fn pinned_tools_are_stored_as_a_json_snapshot() {
             .description,
         "Echo"
     );
-    let updates = store.updates();
-    let stored = updates[0]
-        .data
-        .0
-        .get("pinned_tools")
-        .expect("the update stores the snapshot");
+    assert_eq!(server.updated_by.as_deref(), Some("admin"));
     assert_eq!(
-        stored,
-        &JsonValue::String(
+        only_update(&store).data.0.get("pinned_tools"),
+        Some(&JsonValue::String(
             r#"{"echo":{"description":"Echo","input_schema":{"type":"object"}}}"#.to_owned()
-        )
+        ))
     );
 }
 
@@ -136,9 +157,8 @@ async fn unpinning_stores_an_empty_snapshot() {
         .expect("the fake store never fails")
         .expect("the server exists");
     assert!(server.pinned_tools.is_none());
-    let updates = store.updates();
     assert_eq!(
-        updates[0].data.0.get("pinned_tools"),
+        only_update(&store).data.0.get("pinned_tools"),
         Some(&JsonValue::String("{}".to_owned()))
     );
 }

@@ -4,11 +4,13 @@ use blake2::Blake2b;
 use blake2::digest::Digest as _;
 use blake2::digest::consts::U8;
 use chrono::{SecondsFormat, Utc};
+use deadpool_postgres::GenericClient as _;
 
 use crate::budget_permission_rows::JsonData;
 use crate::managed_resource_rows::ManagedRowsDecodeError;
 use crate::managed_resource_rows::mcp::McpServerTable;
 use crate::mcp_stored_contracts::PinnedMCPTool;
+use crate::postgres_store::errors::backend;
 use crate::stored_cipher::DbCipher;
 
 pub mod actions;
@@ -24,11 +26,11 @@ mod mcp_table_access;
 
 use filter::{FindServers, ServerFilter, identifier_candidates};
 use rows::{RowFields, ServerUpdate, server_id_of};
-use server_reads::{_db_find_mcp_server_row, find_readable};
-use store::McpTableStore;
+use server_reads::_db_find_mcp_server_rows;
+use store::{_db_transaction_manager, LockedTable, McpTableStore};
 use types::{
     ACTIVE, IdentifierField, LockedWrite, LockedWriteOutcome, MCPSubmissionsSummary,
-    McpServerAccess, McpTableError, PENDING_REVIEW, REJECTED, ReviewUpdate,
+    McpServerAccess, McpTableError, PENDING_REVIEW, REJECTED,
 };
 
 pub const ADVISORY_LOCK_SQL: &str = "SELECT pg_advisory_xact_lock($1::bigint)";
@@ -64,31 +66,29 @@ pub fn _mcp_identifier_lock_keys(identifiers: &[Option<&str>]) -> Vec<i64> {
     normalized.dedup();
     let mut keys = Vec::with_capacity(normalized.len());
     for identifier in &normalized {
-        keys.push(lock_key(identifier));
+        let mut hasher = Blake2b::<U8>::new();
+        hasher.update(MCP_IDENTIFIER_DOMAIN.as_bytes());
+        hasher.update(identifier.as_bytes());
+        let mut bytes = [0_u8; 8];
+        bytes.copy_from_slice(&hasher.finalize());
+        keys.push(i64::from_be_bytes(bytes));
     }
     keys
 }
 
-fn lock_key(normalized: &str) -> i64 {
-    let mut hasher = Blake2b::<U8>::new();
-    hasher.update(MCP_IDENTIFIER_DOMAIN.as_bytes());
-    hasher.update(normalized.as_bytes());
-    let mut bytes = [0_u8; 8];
-    bytes.copy_from_slice(&hasher.finalize());
-    i64::from_be_bytes(bytes)
-}
-
-pub async fn find_identifier_conflict<Access: McpServerAccess>(
+pub async fn find_identifier_conflict<Access>(
     table: &Access,
     server_name: Option<&str>,
     alias: Option<&str>,
     exclude_server_id: Option<&str>,
-) -> Result<Option<McpIdentifierConflict>, McpTableError> {
+) -> Result<Option<McpIdentifierConflict>, McpTableError>
+where
+    Access: McpServerAccess,
+{
     // alias is checked before server_name so the reported field is deterministic
     for (field, value) in identifier_candidates(server_name, alias) {
-        let filter = Some(_identifier_where(value, exclude_server_id));
         let request = FindServers {
-            filter,
+            filter: Some(_identifier_where(value, exclude_server_id)),
             descending: false,
             take: Some(1),
         };
@@ -103,30 +103,78 @@ pub async fn find_identifier_conflict<Access: McpServerAccess>(
     Ok(None)
 }
 
-// ast-grep-ignore: no-long-names, no-one-line-functions
+// ast-grep-ignore: no-long-names
 pub async fn _mcp_server_write_if_identifier_free(
     store: &McpTableStore<'_>,
     request: &LockedWrite,
 ) -> Result<LockedWriteOutcome, McpTableError> {
-    store.write_if_identifier_free(request).await
+    let mut manager = _db_transaction_manager(store.client.writer).await?;
+    let transaction = manager.begin().await?;
+    // execute_raw's pg_advisory_xact_lock per identifier holds until this transaction ends
+    let identifiers = [request.server_name.as_deref(), request.alias.as_deref()];
+    for key in _mcp_identifier_lock_keys(&identifiers) {
+        transaction
+            .execute(ADVISORY_LOCK_SQL, &[&key])
+            .await
+            .map_err(|source| McpTableError::Database(backend(source)))?;
+    }
+    let locked = LockedTable {
+        transaction: &transaction,
+    };
+    let conflict = find_identifier_conflict(
+        &locked,
+        request.server_name.as_deref(),
+        request.alias.as_deref(),
+        request.exclude_server_id.as_deref(),
+    )
+    .await?;
+    if let Some(collision) = conflict {
+        return Ok(LockedWriteOutcome::Conflict(collision));
+    }
+    let written = locked.write(&request.write).await?;
+    transaction
+        .commit()
+        .await
+        .map_err(|source| McpTableError::Database(backend(source)))?;
+    Ok(LockedWriteOutcome::Written(written))
+}
+
+// Prisma's find_unique on the server_id primary key
+pub async fn _db_find_mcp_server_row<Access>(
+    table: &Access,
+    server_id: &str,
+) -> Result<Option<JsonData>, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    let unique = FindServers {
+        filter: Some(ServerFilter::ServerId(server_id.to_owned())),
+        descending: false,
+        take: Some(1),
+    };
+    let mut found = table.find_servers(&unique).await?;
+    Ok(found.pop())
 }
 
 // missing row raises ValueError("MCP server not found, passed server_id={server_id}")
-pub async fn _db_update_mcp_server_row<Access: McpServerAccess>(
+pub async fn _db_update_mcp_server_row<Access>(
     table: &Access,
     server_id: &str,
     data: RowFields,
-) -> Result<JsonData, McpTableError> {
+) -> Result<JsonData, McpTableError>
+where
+    Access: McpServerAccess,
+{
     let update = ServerUpdate {
         server_id: server_id.to_owned(),
         data,
     };
-    let Some(row) = table.update_server(&update).await? else {
-        return Err(McpTableError::ServerNotFound {
+    table
+        .update_server(&update)
+        .await?
+        .ok_or_else(|| McpTableError::ServerNotFound {
             server_id: server_id.to_owned(),
-        });
-    };
-    Ok(row)
+        })
 }
 
 pub fn _readable_mcp_servers(
@@ -148,78 +196,96 @@ pub fn _readable_mcp_servers(
 }
 
 // line up with _db_find_mcp_server_rows: approval_status None means every row where it is NULL or not draft
-pub async fn get_all_mcp_servers<Access: McpServerAccess>(
+pub async fn get_all_mcp_servers<Access>(
     table: &Access,
     cipher: &DbCipher,
     approval_status: Option<&str>,
-) -> Result<Vec<McpServerTable>, McpTableError> {
+) -> Result<Vec<McpServerTable>, McpTableError>
+where
+    Access: McpServerAccess,
+{
     let filter = approval_status.map_or(ServerFilter::NotDraft, |status| {
         ServerFilter::ApprovalStatus(status.to_owned())
     });
-    find_readable(table, cipher, filter, None).await
+    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
+    _readable_mcp_servers(rows, cipher)
 }
 
-// approval_status active after approve; rejected with review_notes (when given) after reject
-async fn review_server<Access: McpServerAccess>(
+// reviewed_at is the current UTC time and updated_by the reviewer on both review outcomes
+async fn review_server<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_id: &str,
     touched_by: &str,
-    review: ReviewUpdate<'_>,
-) -> Result<McpServerTable, McpTableError> {
+    outcome: &[(&'static str, &str)],
+) -> Result<McpServerTable, McpTableError>
+where
+    Access: McpServerAccess,
+{
     let reviewed_at = Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true);
     let mut entries = vec![
-        ("approval_status", review.status),
         ("reviewed_at", reviewed_at.as_str()),
         ("updated_by", touched_by),
     ];
-    if let Some(notes) = review.notes {
-        entries.push(("review_notes", notes));
-    }
-    let mut row = _db_update_mcp_server_row(table, server_id, RowFields::texts(entries)).await?;
+    entries.extend_from_slice(outcome);
+    let mut row = _db_update_mcp_server_row(table, server_id, RowFields::texts(&entries)).await?;
     rows::readable_server(&mut row, cipher)
 }
 
-pub async fn approve_mcp_server<Access: McpServerAccess>(
+pub async fn approve_mcp_server<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_id: &str,
     touched_by: &str,
-) -> Result<McpServerTable, McpTableError> {
-    let review = ReviewUpdate {
-        status: ACTIVE,
-        notes: None,
-    };
-    review_server(table, cipher, server_id, touched_by, review).await
+) -> Result<McpServerTable, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    review_server(
+        table,
+        cipher,
+        server_id,
+        touched_by,
+        &[("approval_status", ACTIVE)],
+    )
+    .await
 }
 
-pub async fn reject_mcp_server<Access: McpServerAccess>(
+// approval_status rejected; review_notes is written only when given, so a reject without notes keeps the stored ones
+pub async fn reject_mcp_server<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_id: &str,
     touched_by: &str,
     review_notes: Option<&str>,
-) -> Result<McpServerTable, McpTableError> {
-    let review = ReviewUpdate {
-        status: REJECTED,
-        notes: review_notes,
-    };
-    review_server(table, cipher, server_id, touched_by, review).await
+) -> Result<McpServerTable, McpTableError>
+where
+    Access: McpServerAccess,
+{
+    let mut outcome = vec![("approval_status", REJECTED)];
+    if let Some(notes) = review_notes {
+        outcome.push(("review_notes", notes));
+    }
+    review_server(table, cipher, server_id, touched_by, &outcome).await
 }
 
 // model_dump on each tool then safe_dumps over the mapping, which the transparent PinnedMCPTool reproduces
-pub async fn set_mcp_server_pinned_tools<Access: McpServerAccess>(
+pub async fn set_mcp_server_pinned_tools<Access>(
     table: &Access,
     cipher: &DbCipher,
     server_id: &str,
     pinned_tools: Option<&BTreeMap<String, PinnedMCPTool>>,
     touched_by: &str,
-) -> Result<Option<McpServerTable>, McpTableError> {
+) -> Result<Option<McpServerTable>, McpTableError>
+where
+    Access: McpServerAccess,
+{
     if _db_find_mcp_server_row(table, server_id).await?.is_none() {
         return Ok(None);
     }
-    let snapshot = rows::pinned_snapshot(pinned_tools)?;
-    let data = RowFields::texts([
+    let snapshot = serde_json::to_string(&pinned_tools.cloned().unwrap_or_default())
+        .map_err(McpTableError::Json)?;
+    let data = RowFields::texts(&[
         ("pinned_tools", snapshot.as_str()),
         ("updated_by", touched_by),
     ]);
@@ -228,10 +294,13 @@ pub async fn set_mcp_server_pinned_tools<Access: McpServerAccess>(
 }
 
 // ast-grep-ignore: no-long-names
-pub async fn get_active_submitted_mcp_server_ids_for_user<Access: McpServerAccess>(
+pub async fn get_active_submitted_mcp_server_ids_for_user<Access>(
     table: &Access,
     user_id: &str,
-) -> Result<Vec<String>, McpTableError> {
+) -> Result<Vec<String>, McpTableError>
+where
+    Access: McpServerAccess,
+{
     if user_id.is_empty() {
         return Ok(Vec::new());
     }
@@ -239,7 +308,7 @@ pub async fn get_active_submitted_mcp_server_ids_for_user<Access: McpServerAcces
     let filter = ServerFilter::SubmittedByActive {
         user_id: user_id.to_owned(),
     };
-    let rows = server_reads::_db_find_mcp_server_rows(table, Some(filter)).await?;
+    let rows = _db_find_mcp_server_rows(table, Some(filter)).await?;
     let mut server_ids = Vec::with_capacity(rows.len());
     for row in &rows {
         server_ids.push(server_id_of(row)?);
@@ -248,10 +317,13 @@ pub async fn get_active_submitted_mcp_server_ids_for_user<Access: McpServerAcces
 }
 
 // counts across pending_review, active and rejected submissions; total is the number of items
-pub async fn get_mcp_submissions<Access: McpServerAccess>(
+pub async fn get_mcp_submissions<Access>(
     table: &Access,
     cipher: &DbCipher,
-) -> Result<MCPSubmissionsSummary, McpTableError> {
+) -> Result<MCPSubmissionsSummary, McpTableError>
+where
+    Access: McpServerAccess,
+{
     let request = FindServers {
         filter: Some(ServerFilter::Submitted),
         descending: true,

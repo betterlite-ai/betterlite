@@ -58,7 +58,7 @@ pub struct MCPSubmissionsSummary {
 
 pub enum ServerWrite {
     Create(RowFields),
-    Update { server_id: String, data: RowFields },
+    Update(ServerUpdate),
 }
 
 pub struct LockedWrite {
@@ -66,11 +66,6 @@ pub struct LockedWrite {
     pub alias: Option<String>,
     pub exclude_server_id: Option<String>,
     pub write: ServerWrite,
-}
-
-pub struct ReviewUpdate<'a> {
-    pub status: &'a str,
-    pub notes: Option<&'a str>,
 }
 
 pub enum LockedWriteOutcome {

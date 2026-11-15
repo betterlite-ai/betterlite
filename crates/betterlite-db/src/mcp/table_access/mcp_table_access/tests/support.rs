@@ -34,16 +34,12 @@ pub(super) struct FakeStore {
 }
 
 impl FakeStore {
-    pub(super) fn new(rows: Vec<JsonData>) -> Self {
+    pub(super) const fn new(rows: Vec<JsonData>) -> Self {
         Self {
             rows: Mutex::new(rows),
             updates: Mutex::new(Vec::new()),
             finds: Mutex::new(Vec::new()),
         }
-    }
-
-    pub(super) fn rows(&self) -> Vec<JsonData> {
-        self.rows.lock().expect("the rows are not poisoned").clone()
     }
 
     pub(super) fn updates(&self) -> Vec<ServerUpdate> {
@@ -68,9 +64,9 @@ impl McpServerAccess for FakeStore {
             .expect("the finds are not poisoned")
             .push(request.clone());
         let mut selected = {
-            let rows = self.rows.lock().expect("the rows are not poisoned");
+            let stored_rows = self.rows.lock().expect("the rows are not poisoned");
             let mut matched = Vec::new();
-            for stored in &*rows {
+            for stored in &*stored_rows {
                 if request
                     .filter
                     .as_ref()
@@ -98,8 +94,8 @@ impl McpServerAccess for FakeStore {
             .lock()
             .expect("the updates are not poisoned")
             .push(request.clone());
-        let mut rows = self.rows.lock().expect("the rows are not poisoned");
-        for stored in &mut *rows {
+        let mut stored_rows = self.rows.lock().expect("the rows are not poisoned");
+        for stored in &mut *stored_rows {
             if text(stored, "server_id") == Some(request.server_id.as_str()) {
                 apply(stored, &request.data);
                 return Ok(Some(stored.clone()));
@@ -142,7 +138,7 @@ fn filter_matches(stored: &JsonData, filter: &ServerFilter) -> bool {
                 .any(|candidate| candidate.is_some_and(|name| name.eq_ignore_ascii_case(value)));
             let excluded = exclude_server_id
                 .as_deref()
-                .is_some_and(|excluded| text(stored, "server_id") == Some(excluded));
+                .is_some_and(|own_id| text(stored, "server_id") == Some(own_id));
             named && !excluded && text(stored, "approval_status") != Some("draft")
         }
         ServerFilter::ApprovalStatus(status) => {
@@ -165,11 +161,8 @@ fn text<'row>(stored: &'row JsonData, name: &str) -> Option<&'row str> {
     let JsonData::Object(fields) = stored else {
         return None;
     };
-    let Some(value) = fields.get(name) else {
-        return None;
-    };
-    match value {
-        JsonData::String(text) => Some(text),
+    match fields.get(name)? {
+        JsonData::String(value) => Some(value),
         JsonData::Null
         | JsonData::Bool(_)
         | JsonData::Number(_)

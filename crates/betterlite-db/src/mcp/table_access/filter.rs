@@ -21,31 +21,27 @@ pub enum ServerFilter {
 }
 
 impl ServerFilter {
-    pub(crate) fn predicate(&self, first_param: usize) -> Option<(String, Vec<String>)> {
+    pub(crate) fn predicate(&self, first_param: usize) -> (String, Vec<String>) {
         match self {
-            Self::ServerId(server_id) => Some((
+            Self::ServerId(server_id) => (
                 format!("\"server_id\" = ${first_param}"),
                 vec![server_id.clone()],
-            )),
-            Self::ServerIds(server_ids) => Some(list_predicate(server_ids, first_param)),
+            ),
+            Self::ServerIds(server_ids) => list_predicate(server_ids, first_param),
             Self::Identifiers {
                 value,
                 exclude_server_id,
-            } => Some(identifier_predicate(
-                value,
-                exclude_server_id.as_deref(),
-                first_param,
-            )),
-            Self::ApprovalStatus(status) => Some((
+            } => identifier_predicate(value, exclude_server_id.as_deref(), first_param),
+            Self::ApprovalStatus(status) => (
                 format!("\"approval_status\" = ${first_param}"),
                 vec![status.clone()],
-            )),
-            Self::NotDraft => Some((NOT_DRAFT_PREDICATE.to_owned(), Vec::new())),
-            Self::SubmittedByActive { user_id } => Some((
+            ),
+            Self::NotDraft => (NOT_DRAFT_PREDICATE.to_owned(), Vec::new()),
+            Self::SubmittedByActive { user_id } => (
                 format!("\"submitted_by\" = ${first_param} AND \"approval_status\" = '{ACTIVE}'"),
                 vec![user_id.clone()],
-            )),
-            Self::Submitted => Some(("\"submitted_at\" IS NOT NULL".to_owned(), Vec::new())),
+            ),
+            Self::Submitted => ("\"submitted_at\" IS NOT NULL".to_owned(), Vec::new()),
         }
     }
 }
@@ -70,18 +66,17 @@ fn identifier_predicate(
     exclude_server_id: Option<&str>,
     first_param: usize,
 ) -> (String, Vec<String>) {
-    let mut predicate = format!(
+    let named = format!(
         "((LOWER(\"server_name\") = LOWER(${first_param}) OR LOWER(\"alias\") = LOWER(${first_param})) AND {NOT_DRAFT_PREDICATE})"
     );
-    let mut binds = vec![value.to_owned()];
-    if let Some(exclude_server_id) = exclude_server_id {
-        predicate.push_str(&format!(
-            " AND \"server_id\" <> ${}",
-            first_param.saturating_add(1)
-        ));
-        binds.push(exclude_server_id.to_owned());
-    }
-    (predicate, binds)
+    let Some(own_server_id) = exclude_server_id else {
+        return (named, vec![value.to_owned()]);
+    };
+    let own_param = first_param.saturating_add(1);
+    (
+        format!("{named} AND \"server_id\" <> ${own_param}"),
+        vec![value.to_owned(), own_server_id.to_owned()],
+    )
 }
 
 // alias first so the reported field is deterministic; empty identifiers cannot collide
@@ -94,8 +89,8 @@ pub(crate) fn identifier_candidates<'value>(
         (IdentifierField::Alias, alias),
         (IdentifierField::ServerName, server_name),
     ];
-    for (field, value) in ordered {
-        if let Some(value) = value
+    for (field, candidate) in ordered {
+        if let Some(value) = candidate
             && !value.is_empty()
         {
             candidates.push((field, value));
@@ -109,13 +104,4 @@ pub struct FindServers {
     pub filter: Option<ServerFilter>,
     pub descending: bool,
     pub take: Option<u32>,
-}
-
-impl FindServers {
-    pub(crate) fn predicate(&self, first_param: usize) -> Option<(String, Vec<String>)> {
-        match &self.filter {
-            Some(filter) => filter.predicate(first_param),
-            None => None,
-        }
-    }
 }
