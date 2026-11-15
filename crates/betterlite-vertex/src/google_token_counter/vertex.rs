@@ -25,17 +25,21 @@ where
     T: CountTransport,
     F: RemoteMediaFetcher + Sync,
 {
+    let transport = runtime.transport;
+    let refresh = runtime.refresh;
+    let catalog = runtime.catalog;
+    let fetcher = runtime.fetcher;
     let contents: Cow<'_, Json> = match call
         .contents
         .filter(|contents| !matches!(contents, Json::Null))
     {
         Some(contents) => Cow::Borrowed(contents),
-        None => Cow::Owned(history_contents(call, runtime.fetcher).await?),
+        None => Cow::Owned(history_contents(call, fetcher).await?),
     };
     let headers = BTreeMap::new();
     let input = VertexCountInput {
         model: call.model_to_use,
-        contents: &*contents,
+        contents: &contents,
         api_key: call.deployment.api_key,
         api_base: call.deployment.api_base,
         headers: &headers,
@@ -43,14 +47,7 @@ where
         settings,
         timeout: call.deployment.timeout,
     };
-    let reply = count_tokens(
-        runtime.transport,
-        runtime.refresh,
-        runtime.catalog,
-        &input,
-        deadline,
-    )
-    .await?;
+    let reply = count_tokens(transport, refresh, catalog, &input, deadline).await?;
     reply_with_total(call, reply)
 }
 

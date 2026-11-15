@@ -36,10 +36,11 @@ use super::vertex_counter;
 
 pub(super) const DEADLINE: Duration = Duration::from_secs(5);
 
+#[derive(Clone)]
 pub(super) struct Sent {
     pub(super) url: String,
-    headers: HeaderMap,
-    body: Vec<u8>,
+    pub(super) headers: HeaderMap,
+    pub(super) body: Vec<u8>,
 }
 
 impl Sent {
@@ -86,8 +87,7 @@ impl Script {
     }
 
     pub(super) fn sent(&self) -> Vec<Sent> {
-        let mut sent = self.sent.lock().unwrap();
-        std::mem::take(&mut *sent)
+        self.sent.lock().unwrap().clone()
     }
 }
 

@@ -7,7 +7,6 @@ use betterlite_models::decisions::Json;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::message_content::Message;
 
-use crate::google_count_tokens::error::GoogleCountError;
 use crate::google_count_tokens::transport::{CountTransport, count as count_google};
 use crate::google_token_counter::deployment::DeploymentParams;
 use crate::google_token_counter::error::CountTokensError;

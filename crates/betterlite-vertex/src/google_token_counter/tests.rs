@@ -255,7 +255,7 @@ async fn selection_studio_none_contents() {
 
 #[tokio::test]
 async fn selection_vertex_missing_total() {
-    let script = Script::replying(br#"{}"#);
+    let script = Script::replying(b"{}");
     let catalog = BundledCatalog::default().get();
     let refresh = refresh();
     let mint = RecordingMint::default();
@@ -357,7 +357,7 @@ async fn selection_vertex_settings_fallback() {
 
 #[tokio::test]
 async fn selection_studio_missing_total() {
-    let script = Script::replying(br#"{}"#);
+    let script = Script::replying(b"{}");
     let options = deployment("gemini/gemini-2.0-flash", params(None, None, None), None);
     let messages = [];
     let request = call("gemini-2.0-flash", &messages, None, options);

@@ -50,8 +50,5 @@ impl<'call> DeploymentParams<'call> {
 }
 
 fn is_named(credentials: &ConfiguredCredentials) -> bool {
-    match credentials.as_text() {
-        Some(text) => !text.is_empty(),
-        None => true,
-    }
+    credentials.as_text().is_none_or(|text| !text.is_empty())
 }
