@@ -616,7 +616,8 @@ fn assert_caller_beta_scenario(
     let headers = validated_headers(&caller_headers, params, litellm_params, settings, &messages);
     if scenario.header_absent {
         assert!(!headers.values.contains_key(OAUTH_BETA_HEADER_NAME));
-    } else if let Some(value) = scenario.expected_header {
+    }
+    if let Some(value) = scenario.expected_header {
         assert_eq!(
             fixture::header(&headers, OAUTH_BETA_HEADER_NAME),
             Some(value)
