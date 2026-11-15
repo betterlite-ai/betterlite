@@ -1,0 +1,30 @@
+task: B513
+deviations:
+  - what: >-
+      A reply whose created is missing, null or zero keeps the shared decoder's rule (the supplied clock, and zero
+      stays zero), where LiteLLM's ImagesResponse requires created and its ImageResponse replaces a zero.
+    why: this slice reuses B511's image reply decoder instead of adding a second image JSON parser.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L192-L196
+  - what: >-
+      An optional parameter named image reports missing data instead of replacing the uploaded image as LiteLLM's
+      image plus optional params dict merge does.
+    why: the upload is a typed ImageFile part here, so a JSON option cannot take its place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/transformation.py#L32-L44
+  - what: >-
+      A 2xx variation reply that carries an error object and no data fails as a 500 here, where LiteLLM builds an
+      ImageResponse success with empty data and a wall-clock created.
+    why: the shared reply decoder refuses the error object instead of reporting an empty success.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L190-L206
+  - what: >-
+      A usage.input_tokens_details object keeps only image_tokens and text_tokens, where LiteLLM's
+      ImageUsageInputTokensDetails allows extra keys and dumps them too.
+    why: the shared image reply decoder declares that detail type without a passthrough map, and this slice may not edit it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2588-L2593
+  - what: >-
+      An absent or null timeout, or a supplied client without one, is bounded here by that client's deadline, or by
+      600 seconds when the client has none, where LiteLLM passes the timeout straight to OpenAI at handler.py
+      L179-L186 and to AsyncOpenAI at handler.py L62-L69, and the OpenAI client's None leaves that request with no
+      timeout at all.
+    why: Rule bounded-inputs requires a timeout on every outbound call, so None cannot be passed through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L179-L186
+kept_bugs: []

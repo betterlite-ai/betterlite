@@ -1,0 +1,29 @@
+task: B3752
+deviations:
+  - what: When Alice is unreachable with fail_closed policy, betterlite raises GuardrailRaisedException with status_code 400 (invalid_request_error), not 503 (service_unavailable).
+    why: GuardrailRaisedException defaults to status_code=400 when not passed explicitly. The _on_unreachable method in alice.py:304-316 does not pass status_code, so the default applies. This matches BLOCK and MASK verdicts which also take the default 400.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1090-L1110
+  - what: Alice error messages use betterlite's own wording in outage scenarios, not LiteLLM's exact text.
+    why: Error messages are betterlite's own per rule errors-match-litellm, with status codes unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L304-L317
+  - what: MASK verdict that cannot be applied in full is refused outright rather than partially applied.
+    why: LiteLLM's behavior; a single out-of-range or malformed replacement blocks the whole verdict so content Alice meant to replace never reaches the model unmasked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L267-L292
+  - what: The model_dump branch of the bounded serializer is not ported; betterlite's request_data is typed JSON, so the serializer only ever receives JSON values.
+    why: LiteLLM's _json_safe walks live Python objects and calls model_dump(mode="json") on pydantic models, returning null when that raises. betterlite's request body is BTreeMap<String, GuardrailValue>, which cannot hold a Python object or a non-JSON value, so the credential stripping, depth and size rules are the whole observable surface; bytes, datetime and OpenTelemetry spans cannot reach this serializer. A Python object that a future caller injects would need its own serialization before it enters request_data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L327-L373
+  - what: binds_unreachable_fallback answers from the constructor's parameter-name list passed in as data, instead of calling inspect.signature on a live class.
+    why: betterlite has no conduct-litellm-guard package to introspect; B9451's Conduct builder always answers with the missing-package error, so the helper's input is the parameter names inspect.signature would have returned, and the membership rule stays LiteLLM's, **kwargs included in neither branch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/conduct/conduct.py#L90-L92
+  - what: An Alice response body over 1048576 bytes is refused before it is parsed, following unreachable_fallback, where LiteLLM parses a response of any length.
+    why: The bounded-inputs rule needs finite memory on every outbound read, and a verdict is a small JSON object, so a megabyte is malformed rather than large. MAX_RESPONSE_BYTES in crates/betterlite-guardrails/src/alice/transport.rs draws the line, and alice_guardrail_refuses_a_body_over_the_response_cap proves the contrast with the body exactly at the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L213-L236
+  - what: A verdict body whose fields do not have AliceVerdict's declared types is a malformed verdict and follows unreachable_fallback, where LiteLLM reads only the fields the selected verdict branch uses.
+    why: betterlite parses the answer into the typed AliceVerdict before enforcing, so one wrongly typed field fails the whole verdict even when the branch never reads it; LiteLLM's TypedDict is unchecked at runtime, so a BLOCK with a malformed replacements field still blocks and a MASK with a float replacement index raises the mask rejection. Those bodies fall outside the types LiteLLM declares, and the malformed_verdict case of alice_guardrail_outages_fail_closed_by_default proves betterlite's side.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L238-L302
+  - what: unreachable_fallback is matched case-insensitively, so FAIL_OPEN selects fail_open, where LiteLLM stores the string as written and compares it to "fail_open" exactly.
+    why: LiteLLM's Literal only declares fail_closed and fail_open, and a config outside it silently falls to fail_closed there rather than failing startup. Case folding makes the value behave as the author wrote it, and every value LiteLLM declares behaves identically on both sides; alice_conduct_decisions_lowercases_the_fallback_value and alice_guardrail_config_section_lowercases_the_fallback_value prove it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L149-L166
+  - what: A fail_open outage is logged at the tracing ERROR level, where LiteLLM logs it at CRITICAL.
+    why: tracing has no CRITICAL level; ERROR is its highest and the level a CRITICAL record maps onto. The message, the policy and the unchanged inputs match, and alice_guardrail_fail_open_logs_at_error_level proves the record is emitted at ERROR.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/alice/alice.py#L304-L316

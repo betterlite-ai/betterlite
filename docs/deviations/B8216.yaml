@@ -1,0 +1,17 @@
+task: B8216
+deviations:
+  - what: The initializer returns ZscalerArgs and registers nothing.
+    why: B3682 owns the registry and the callback registration, as with B3681.
+    link: ""
+  - what: A missing api_key sends an empty bearer token ("Bearer ").
+    why: LiteLLM formats a missing key with Python's str text and sends "Bearer None"; docs/compatibility.md does not carry Python str text over, and no working setup can authenticate without a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L265-L269
+  - what: A policy answer larger than 1 MiB fails with a typed ResponseTooLarge error instead of being read.
+    why: bounded-inputs in .development/rules.yaml caps every inbound read; a real policy answer is a few hundred bytes, so only a broken or hostile endpoint reaches the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L315-L316
+  - what: A connection that fails before an answer is not retried, where LiteLLM's AsyncHTTPHandler builds a second client and repeats the request once on ConnectError or RemoteProtocolError.
+    why: The pooled client is injected by the caller and attempts each request once, so a guardrail never delivers the same policy check twice; B3976 records the same policy for the shared client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: A positive timeout that no Duration can represent (infinity or an overflowing value) fails settings resolution with a typed error, where LiteLLM keeps the value and passes it to httpx; NaN takes the non-positive fallback to 5.0 with its warning.
+    why: A Rust Duration cannot hold a nonfinite or overflowing value, and an unusable timeout fails at load instead of disabling the bounded request wait on every call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/zscaler_ai_guard/zscaler_ai_guard.py#L86-L102

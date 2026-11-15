@@ -1,0 +1,28 @@
+kind: helper
+name: auth-limit-inputs-tenant-mcp-tag-fields
+call:
+  auth_limit_inputs:
+    function: tenant_fields
+    auth:
+      api_key: sk-oracle
+      metadata:
+        mcp_rpm_limit:
+          github: 3
+        tag_rpm_limit:
+          tag-1: 5
+      team_metadata:
+        model_rpm_limit:
+          gpt-4: 1
+        mcp_rpm_limit:
+          github: 7
+      organization_metadata:
+        model_itpm_limit:
+          gpt-4: 4
+        model_otpm_limit:
+          gpt-4: 5
+      project_metadata:
+        model_tpm_limit:
+          gpt-4: 6
+env: {}
+compare:
+  ignore: []
