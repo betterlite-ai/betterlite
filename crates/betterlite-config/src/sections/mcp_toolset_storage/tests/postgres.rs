@@ -21,8 +21,9 @@ use tokio_postgres::types::ToSql;
 use crate::loader::startup::process_environment;
 use crate::sections::mcp_toolset_storage::sql::MCPToolsetRepository;
 use crate::sections::mcp_toolset_storage::{
-    NewMCPToolsetRequest, UpdateMCPToolsetRequest, create_mcp_toolset, delete_mcp_toolset,
-    get_mcp_toolset, get_mcp_toolset_by_name, list_mcp_toolsets, update_mcp_toolset,
+    MCPToolsetStorageError, NewMCPToolsetRequest, UpdateMCPToolsetRequest, create_mcp_toolset,
+    delete_mcp_toolset, get_mcp_toolset, get_mcp_toolset_by_name, list_mcp_toolsets,
+    update_mcp_toolset,
 };
 
 use super::tool;
@@ -337,6 +338,21 @@ async fn postgres_stores_the_tools_column_as_a_json_string() {
     let kind: String = row.get(1);
     assert_eq!(kind, "string");
     assert_eq!(stored, r#""[{\"server_id\":\"s1\",\"tool_name\":\"t1\"}]""#);
+    case.close().await;
+}
+
+#[tokio::test]
+async fn postgres_surfaces_a_query_error_as_a_storage_error() {
+    let case = Case::new().await;
+    case.execute("DROP TABLE \"LiteLLM_MCPToolsetTable\"", &[])
+        .await;
+    let error = get_mcp_toolset(&case.repository(), "id-1")
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        MCPToolsetStorageError::Table(TableError::Database(_))
+    ));
     case.close().await;
 }
 
