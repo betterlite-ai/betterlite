@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-agent-records-state-delta-fallback
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          {"content":{"parts":[{}]},"actions":{"state_delta":{"a":5,"b":"","c":"first","d":"second"}}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 2
+        completion_tokens: 3
+        counter: fixed
+      - status: 200
+        body: |-
+          {"actions":{"state_delta":{"only":42}}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 2
+        completion_tokens: 3
+        counter: fixed
+env: {}
+compare: {ignore: []}

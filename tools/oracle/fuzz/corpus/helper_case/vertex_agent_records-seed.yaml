@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-agent-records-seed
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          {"content":{"parts":[{"text":"first"}]}}
+          {"content":{"parts":[{"text":"last"}]}}
+        model: agent_engine/7
+        messages:
+          - {role: user, content: hi}
+        prompt_tokens: 3
+        completion_tokens: 2
+        counter: fixed
+env: {}
+compare: {ignore: []}
