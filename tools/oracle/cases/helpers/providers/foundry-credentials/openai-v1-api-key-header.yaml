@@ -6,6 +6,10 @@ call:
       - api_key: v1-key
         header: api-key
       - api_key: v1-key
+        header: Api-Key
+      - api_key: v1-key
+        header: Ocp-Apim-Subscription-Key
+      - api_key: v1-key
       - api_key: v1-key
         header: api-key
         params: {tenant_id: tenant, client_id: client, client_secret: secret}

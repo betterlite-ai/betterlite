@@ -21,9 +21,7 @@ use serde_json::{Value, json};
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use super::fixture::{EchoSources, secrets};
-use super::{
-    AgentStep, AuthStep, GateStep, HeaderName, HostStep, Input, NativeStep, SettingsStep,
-};
+use super::{AgentStep, AuthStep, GateStep, HeaderName, HostStep, Input, NativeStep, SettingsStep};
 
 #[derive(Clone, Copy)]
 enum AgentOutput {
@@ -100,6 +98,8 @@ fn auth_step(step: &AuthStep) -> Value {
     let header = match step.header {
         HeaderName::Authorization => ApiKeyHeader::Authorization,
         HeaderName::ApiKey => ApiKeyHeader::ApiKey,
+        HeaderName::ApiKeyTitleCase => ApiKeyHeader::ApiKeyTitleCase,
+        HeaderName::OcpApimSubscriptionKey => ApiKeyHeader::OcpApimSubscriptionKey,
     };
     let api_key = step.api_key.clone().map(SecretString::from);
     let request = AuthHeaderRequest {

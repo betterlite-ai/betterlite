@@ -91,6 +91,10 @@ pub(crate) enum HeaderName {
     Authorization,
     #[serde(rename = "api-key")]
     ApiKey,
+    #[serde(rename = "Api-Key")]
+    ApiKeyTitleCase,
+    #[serde(rename = "Ocp-Apim-Subscription-Key")]
+    OcpApimSubscriptionKey,
 }
 
 pub(crate) struct Op;
