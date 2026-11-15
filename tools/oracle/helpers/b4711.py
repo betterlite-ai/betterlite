@@ -1,10 +1,11 @@
 import asyncio
 from collections import UserDict
 from contextlib import suppress
+from types import TracebackType
 from typing import Final, Literal, Self, TypedDict
 
 from litellm.proxy._experimental.mcp_server import db as mcp_db
-from litellm.proxy._types import LiteLLM_MCPServerTable, NewMCPServerRequest
+from litellm.proxy._types import NewMCPServerRequest
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient
 from litellm.types.mcp_server.mcp_server_manager import PinnedMCPTool
@@ -51,11 +52,14 @@ class PinnedView(TypedDict):
     pinned_tools: dict[str, Where] | None
 
 
-class SubmissionsOutput(TypedDict):
+class SubmissionCounts(TypedDict):
     total: int
     pending_review: int
     active: int
     rejected: int
+
+
+class SubmissionsOutput(SubmissionCounts):
     server_ids: list[str]
 
 
@@ -111,39 +115,14 @@ class ActiveSubmissions(Rows):
     user_id: str
 
 
-Input = (
-    FindConflict
-    | CreateIfFree
-    | GetAll
-    | GetServer
-    | Review
-    | PinnedTools
-    | Submissions
-    | ActiveSubmissions
-)
-Output = (
-    ConflictView
-    | CreateOutput
-    | list[ServerView]
-    | ServerView
-    | ReviewOutput
-    | PinnedView
-    | SubmissionsOutput
-)
-Answer = Output | list[str] | None
+Reads = FindConflict | GetAll | GetServer | ActiveSubmissions
+Input = Reads | CreateIfFree | Review | PinnedTools | Submissions
+Views = ConflictView | ServerView | list[ServerView] | PinnedView
+Answer = Views | CreateOutput | ReviewOutput | SubmissionsOutput | list[str] | None
 STRING: Final = TypeAdapter(str)
-OPERATORS: Final = TypeAdapter(Where)
-BRANCHES: Final = TypeAdapter(list[Where])
-OPTIONS: Final = TypeAdapter(list[JsonValue])
-PINNED_INPUT: Final = TypeAdapter(dict[str, PinnedMCPTool] | None)
 SERVER_VIEW: Final = TypeAdapter(ServerView)
-REVIEW_VIEW: Final = TypeAdapter(ReviewView)
-REVIEWED: Final = TypeAdapter(Reviewed)
 PINNED_VIEW: Final = TypeAdapter(PinnedView)
-
-
-class CapturedCreateError(Exception):
-    pass
+PINNED_INPUT: Final = TypeAdapter(dict[str, PinnedMCPTool] | None)
 
 
 class FakeRow(UserDict[str, JsonValue]):
@@ -157,11 +136,11 @@ class FakeRow(UserDict[str, JsonValue]):
 
 def field_matches(value: JsonValue, condition: JsonValue) -> bool:
     try:
-        operators = OPERATORS.validate_python(condition)
+        operators = TypeAdapter(Where).validate_python(condition)
     except ValidationError:
         return value == condition
     if "in" in operators:
-        return value in OPTIONS.validate_python(operators["in"])
+        return value in TypeAdapter(list[JsonValue]).validate_python(operators["in"])
     if "not" in operators:
         return value is not None and value != operators["not"]
     if operators.get("mode") == "insensitive":
@@ -170,11 +149,10 @@ def field_matches(value: JsonValue, condition: JsonValue) -> bool:
     return value == operators.get("equals")
 
 
-# Prisma's AND, OR and NOT take lists of where objects; every other key is a column condition
 def where_matches(values: FakeRow, where: Where) -> bool:
     for key, condition in where.items():
         if key in {"AND", "OR", "NOT"}:
-            branches = BRANCHES.validate_python(condition)
+            branches = TypeAdapter(list[Where]).validate_python(condition)
             nested = [where_matches(values, branch) for branch in branches]
             if key == "AND":
                 matched = all(nested)
@@ -189,22 +167,29 @@ def where_matches(values: FakeRow, where: Where) -> bool:
     return True
 
 
-# the table doubles as the transaction LiteLLM opens around the advisory locks
-class FakeTable:
+class FakeTable(PrismaWrapper):
     def __init__(self, rows: list[Where]) -> None:
         self.rows = [FakeRow(row) for row in rows]
         self.locks: list[int] = []
         self.created = False
-        self.litellm_mcpservertable = self
+
+    def tx(self) -> Self:
+        return self
+
+    @override
+    def __getattr__(self, name: str) -> Self:
+        del name
+        return self
 
     async def __aenter__(self) -> Self:
         return self
 
-    async def __aexit__(self, *_raised: object) -> None:
+    async def __aexit__(
+        self, kind: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         pass
 
-    async def execute_raw(self, query: str, *args: int) -> int:
-        del query
+    async def execute_raw(self, _query: str, *args: int) -> int:
         self.locks.extend(args)
         return 0
 
@@ -220,14 +205,13 @@ class FakeTable:
         return selected if take is None else selected[:take]
 
     async def find_first(self, where: Where) -> FakeRow | None:
-        matches = await self.find_many(where=where, take=1)
-        return matches[0] if matches else None
+        return next(iter(await self.find_many(where=where, take=1)), None)
 
     find_unique = find_first
 
     async def create(self, data: Where) -> FakeRow:
         self.created = True
-        raise CapturedCreateError(data)
+        raise LookupError(data)
 
     async def update(self, where: Where, data: Where) -> FakeRow | None:
         found = await self.find_first(where)
@@ -236,23 +220,9 @@ class FakeTable:
         return found
 
 
-class FakeDb(PrismaWrapper):
-    def __init__(self, table: FakeTable) -> None:
-        self.table = table
-
-    def tx(self) -> FakeTable:
-        return self.table
-
-    @override
-    def __getattr__(self, name: str) -> FakeTable:
-        del name
-        return self.table
-
-
 class FakeClient(PrismaClient):
     def __init__(self, rows: list[Where]) -> None:
-        self.fake_table = FakeTable(rows)
-        self.db = FakeDb(self.fake_table)
+        self.db = self.fake_table = FakeTable(rows)
 
 
 def conflict_view(conflict: mcp_db.McpIdentifierConflict | None) -> ConflictView | None:
@@ -266,12 +236,10 @@ def create_call(client: FakeClient, value: CreateIfFree) -> CreateOutput:
         server_name=value["server_name"], alias=value["alias"]
     )
     conflict: mcp_db.McpIdentifierConflict | None = None
-    with suppress(CapturedCreateError):
+    with suppress(LookupError):
         match asyncio.run(mcp_db.create_mcp_server_if_identifier_free(client, request, "tester")):
             case mcp_db.McpIdentifierConflict() as found:
                 conflict = found
-            case LiteLLM_MCPServerTable():
-                pass
     table = client.fake_table
     return {"conflict": conflict_view(conflict), "lock_keys": table.locks, "written": table.created}
 
@@ -284,61 +252,49 @@ def review_call(client: FakeClient, value: Review) -> ReviewOutput:
             client, value["server_id"], value["touched_by"], value["review_notes"]
         )
     dump = asyncio.run(review).model_dump_json()
-    reviewed_at_present = REVIEWED.validate_json(dump)["reviewed_at"] is not None
-    return {**REVIEW_VIEW.validate_json(dump), "reviewed_at_present": reviewed_at_present}
+    reviewed_at = TypeAdapter(Reviewed).validate_json(dump)["reviewed_at"]
+    view = TypeAdapter(ReviewView).validate_json(dump)
+    return {**view, "reviewed_at_present": reviewed_at is not None}
 
 
-def get_all_call(client: FakeClient, value: GetAll) -> list[ServerView]:
-    ids = value["server_ids"]
-    if ids is None:
-        reads = mcp_db.get_all_mcp_servers(client, value["approval_status"])
-    else:
-        reads = mcp_db.get_mcp_servers(client, ids)
-    servers = asyncio.run(reads)
-    return [SERVER_VIEW.validate_json(server.model_dump_json()) for server in servers]
-
-
-def run(input_value: Input) -> Answer:
+def run(call: Input) -> Answer:
     answer: Answer = None
-    client = FakeClient(input_value["rows"])
-    match input_value["function"]:
+    client = FakeClient(call["rows"])
+    match call["function"]:
         case "find_conflict":
             found = mcp_db.find_mcp_server_identifier_conflict(
                 client,
-                server_name=input_value["server_name"],
-                alias=input_value["alias"],
-                exclude_server_id=input_value["exclude_server_id"],
+                server_name=call["server_name"],
+                alias=call["alias"],
+                exclude_server_id=call["exclude_server_id"],
             )
             answer = conflict_view(asyncio.run(found))
         case "create_if_free":
-            answer = create_call(client, input_value)
+            answer = create_call(client, call)
         case "get_all":
-            answer = get_all_call(client, input_value)
+            ids = call["server_ids"]
+            if ids is None:
+                reads = mcp_db.get_all_mcp_servers(client, call["approval_status"])
+            else:
+                reads = mcp_db.get_mcp_servers(client, ids)
+            answer = [SERVER_VIEW.validate_json(s.model_dump_json()) for s in asyncio.run(reads)]
         case "get_server":
-            server = asyncio.run(mcp_db.get_mcp_server(client, input_value["server_id"]))
+            server = asyncio.run(mcp_db.get_mcp_server(client, call["server_id"]))
             answer = None if server is None else SERVER_VIEW.validate_json(server.model_dump_json())
         case "review":
-            answer = review_call(client, input_value)
+            answer = review_call(client, call)
         case "pinned_tools":
-            tools = PINNED_INPUT.validate_python(input_value["pinned_tools"])
+            tools = PINNED_INPUT.validate_python(call["pinned_tools"])
             pin = mcp_db.set_mcp_server_pinned_tools(
-                client, input_value["server_id"], tools, input_value["touched_by"]
+                client, call["server_id"], tools, call["touched_by"]
             )
             server = asyncio.run(pin)
             answer = None if server is None else PINNED_VIEW.validate_json(server.model_dump_json())
         case "submissions":
             summary = asyncio.run(mcp_db.get_mcp_submissions(client))
-            submitted: SubmissionsOutput = {
-                "total": summary.total,
-                "pending_review": summary.pending_review,
-                "active": summary.active,
-                "rejected": summary.rejected,
-                "server_ids": [item.server_id for item in summary.items],
-            }
-            answer = submitted
+            counts = TypeAdapter(SubmissionCounts).validate_json(summary.model_dump_json())
+            answer = SubmissionsOutput(**counts, server_ids=[i.server_id for i in summary.items])
         case "active_submissions":
-            active = mcp_db.get_active_submitted_mcp_server_ids_for_user(
-                client, input_value["user_id"]
-            )
+            active = mcp_db.get_active_submitted_mcp_server_ids_for_user(client, call["user_id"])
             answer = asyncio.run(active)
     return answer
