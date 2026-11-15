@@ -80,10 +80,9 @@ fn image_count(value: Option<&Json>) -> i64 {
             .as_i64()
             .or_else(|| number.as_f64().and_then(|float| float.trunc().to_i64()))
             .unwrap_or(1),
-        Some(Json::Bool(true)) => 1,
         Some(Json::Bool(false)) => 0,
         Some(Json::Text(text)) => text.trim().parse::<i64>().unwrap_or(1),
-        None | Some(Json::Null | Json::List(_) | Json::Object(_)) => 1,
+        None | Some(Json::Bool(true) | Json::Null | Json::List(_) | Json::Object(_)) => 1,
     }
 }
 
