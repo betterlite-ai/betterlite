@@ -11,10 +11,10 @@ pub(crate) struct WarningLog(Arc<Mutex<Vec<String>>>);
 
 impl WarningLog {
     pub(crate) fn warnings(&self) -> Vec<String> {
-        match self.0.lock() {
-            Ok(warnings) => warnings.clone(),
-            Err(_) => Vec::new(),
+        if let Ok(warnings) = self.0.lock() {
+            return warnings.clone();
         }
+        Vec::new()
     }
 }
 

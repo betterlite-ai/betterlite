@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use rstest::rstest;
 
@@ -5,6 +7,7 @@ use crate::auth_limit_inputs::estimates::{
     ESTIMATE_PER_MODEL_FIELD, ESTIMATED_OUTPUT_TOKENS_FIELD, get_estimated_output_tokens,
 };
 use crate::auth_limit_inputs::tests::support;
+use crate::resolved_key::auth::UserAPIKeyAuth;
 
 fn global_metadata(value: JsonData) -> JsonData {
     support::object(&[(ESTIMATED_OUTPUT_TOKENS_FIELD, value)])
@@ -14,15 +17,12 @@ fn per_model_metadata(value: JsonData) -> JsonData {
     support::object(&[(ESTIMATE_PER_MODEL_FIELD, value)])
 }
 
-fn lookup_estimate(
-    auth: &crate::resolved_key::auth::UserAPIKeyAuth,
-    model: Option<&str>,
-) -> (Option<i64>, Vec<String>) {
+fn lookup_estimate(auth: &UserAPIKeyAuth, model: Option<&str>) -> (Option<i64>, Vec<String>) {
     support::collect_warnings(|| get_estimated_output_tokens(auth, model))
 }
 
 #[rstest]
-#[case::integer(JsonData::Number(serde_json::Number::from(12)), 12)]
+#[case::integer(JsonData::Number(serde_json::Number::from(12_i64)), 12)]
 #[case::integer_string(support::text("12"), 12)]
 #[case::padded_string(support::text(" 12 "), 12)]
 #[case::zero_fraction(support::text("12.0"), 12)]
@@ -38,8 +38,8 @@ fn positive_int_coercion(#[case] value: JsonData, #[case] expected: i64) {
 }
 
 #[rstest]
-#[case::zero(JsonData::Number(serde_json::Number::from(0)))]
-#[case::negative(JsonData::Number(serde_json::Number::from(-5)))]
+#[case::zero(JsonData::Number(serde_json::Number::from(0_i64)))]
+#[case::negative(JsonData::Number(serde_json::Number::from(-5_i64)))]
 #[case::bool_false(JsonData::Bool(false))]
 fn zero_negative_invalid_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
@@ -59,7 +59,7 @@ fn zero_negative_invalid_warn(#[case] value: JsonData) {
 #[case::underscore_in_fraction(support::text("12.0_0"))]
 #[case::sign_only(support::text("+"))]
 #[case::list(JsonData::Array(Vec::new()))]
-#[case::map(JsonData::Object(std::collections::BTreeMap::new()))]
+#[case::map(JsonData::Object(BTreeMap::new()))]
 fn malformed_scalar_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
     let (estimate, warnings) = lookup_estimate(&auth, None);
@@ -146,9 +146,9 @@ fn malformed_fields_independent() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(-5)),
         ]),
     )]);
-    let (estimate, warnings) = lookup_estimate(&broken_global, Some("gpt-4"));
-    assert_eq!(estimate, Some(3001));
-    assert!(warnings.is_empty());
+    let (global_estimate, global_warnings) = lookup_estimate(&broken_global, Some("gpt-4"));
+    assert_eq!(global_estimate, Some(3001));
+    assert!(global_warnings.is_empty());
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn missing_estimate_none() {
         "metadata",
         support::object(&[("unrelated", support::text("value"))]),
     )]);
-    let (estimate, warnings) = lookup_estimate(&unrelated, Some("gpt-4"));
-    assert_eq!(estimate, None);
-    assert!(warnings.is_empty());
+    let (unrelated_estimate, unrelated_warnings) = lookup_estimate(&unrelated, Some("gpt-4"));
+    assert_eq!(unrelated_estimate, None);
+    assert!(unrelated_warnings.is_empty());
 }

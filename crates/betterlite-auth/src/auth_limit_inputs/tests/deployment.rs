@@ -16,7 +16,7 @@ fn empty_object() -> Json {
 }
 
 #[rstest]
-#[case::integer(Json::Number(Number::from(-7)), DeploymentLimitValue::Integer(-7))]
+#[case::integer(Json::Number(Number::from(-7_i64)), DeploymentLimitValue::Integer(-7))]
 #[case::unsigned(
     Json::Number(Number::from(u64::MAX)),
     DeploymentLimitValue::Unsigned(u64::MAX)

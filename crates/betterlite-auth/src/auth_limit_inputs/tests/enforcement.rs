@@ -45,7 +45,7 @@ fn omitted_metadata_preserves() {
         &caller("internal_user"),
         ManagementEntity::Key,
     );
-    assert!(outcome.is_ok());
+    outcome.unwrap();
 }
 
 #[test]
@@ -86,15 +86,13 @@ fn top_level_nonnull_overlays() {
         estimate_per_model: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &unchanged,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &unchanged,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
     let changed = OutputTokenEstimateRequest {
         metadata: Some(&metadata),
         estimate: Some(1),
@@ -128,7 +126,7 @@ fn top_level_null_no_clear() {
         &caller("internal_user"),
         ManagementEntity::Key,
     );
-    assert!(outcome.is_ok());
+    outcome.unwrap();
 }
 
 #[test]
@@ -141,15 +139,13 @@ fn admin_estimate_bypass() {
         estimate_per_model: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &request,
-            Some(&stored),
-            &caller("proxy_admin"),
-            ManagementEntity::Team,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &request,
+        Some(&stored),
+        &caller("proxy_admin"),
+        ManagementEntity::Team,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -162,15 +158,13 @@ fn nonadmin_identical_allowed() {
         estimate_per_model: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &request,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &request,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -230,15 +224,13 @@ fn batch_omitted_preserves() {
         metadata: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_batch_admin_only(
-            &request,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_batch_admin_only(
+        &request,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -250,15 +242,13 @@ fn batch_identical_allowed() {
         metadata: Some(&metadata),
         model_fields_set: &set,
     };
-    assert!(
-        enforce_batch_admin_only(
-            &request,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_batch_admin_only(
+        &request,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -316,15 +306,13 @@ fn per_model_estimate_resent_unchanged_allowed() {
         estimate_per_model: Some(&same),
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &unchanged,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Team,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &unchanged,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Team,
+    )
+    .unwrap();
     let other = support::limits(&[("gpt-4", 6)]);
     let changed = OutputTokenEstimateRequest {
         estimate_per_model: Some(&other),
@@ -354,15 +342,13 @@ fn integral_float_estimate_equals_integer() {
         estimate_per_model: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &request,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &request,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
     let other = OutputTokenEstimateRequest {
         estimate: Some(2001),
         ..request
@@ -389,15 +375,13 @@ fn stored_null_estimate_counts_as_absent() {
         estimate_per_model: None,
         model_fields_set: &set,
     };
-    assert!(
-        enforce_estimate_admin_only(
-            &request,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_estimate_admin_only(
+        &request,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
 }
 
 #[test]
@@ -412,15 +396,13 @@ fn batch_unsigned_values_compare_exactly() {
         metadata: Some(&same),
         model_fields_set: &set,
     };
-    assert!(
-        enforce_batch_admin_only(
-            &unchanged,
-            Some(&stored),
-            &caller("internal_user"),
-            ManagementEntity::Key,
-        )
-        .is_ok()
-    );
+    enforce_batch_admin_only(
+        &unchanged,
+        Some(&stored),
+        &caller("internal_user"),
+        ManagementEntity::Key,
+    )
+    .unwrap();
     let changed = BatchLimitRequest {
         metadata: Some(&different),
         model_fields_set: &set,
@@ -445,13 +427,11 @@ fn batch_admin_bypass() {
         metadata: Some(&metadata),
         model_fields_set: &set,
     };
-    assert!(
-        enforce_batch_admin_only(
-            &request,
-            Some(&stored),
-            &caller("proxy_admin"),
-            ManagementEntity::Team,
-        )
-        .is_ok()
-    );
+    enforce_batch_admin_only(
+        &request,
+        Some(&stored),
+        &caller("proxy_admin"),
+        ManagementEntity::Team,
+    )
+    .unwrap();
 }

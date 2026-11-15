@@ -49,6 +49,33 @@ model_list:
   litellm_params: {model: openai/gpt-4, default_api_key_rpm_limit: \"20\"}
 - model_name: gpt-3
   litellm_params: {model: openai/gpt-3, default_api_key_tpm_limit: 0}
+";
+    let loaded = settings(source).unwrap();
+    assert_eq!(loaded.deployments.len(), 3);
+    assert_eq!(
+        loaded.deployments[0],
+        DeploymentLimitDefaults {
+            model_name: "gpt-4".to_owned(),
+            default_api_key_rpm_limit: Some(Json::Number(serde_json::Number::from(10_i64))),
+            default_api_key_tpm_limit: Some(Json::Number(serde_json::Number::from(100_i64))),
+        }
+    );
+    assert_eq!(
+        scalar(loaded.deployments[1].default_api_key_rpm_limit.as_ref()),
+        Scalar::Text("20")
+    );
+    assert_eq!(loaded.deployments[1].default_api_key_tpm_limit, None);
+    assert_eq!(loaded.deployments[2].default_api_key_rpm_limit, None);
+    assert_eq!(
+        scalar(loaded.deployments[2].default_api_key_tpm_limit.as_ref()),
+        Scalar::Integer(0)
+    );
+}
+
+#[test]
+fn deployment_limit_values_stay_raw() {
+    let source = "\
+model_list:
 - model_name: broken
   litellm_params: {model: openai/broken, default_api_key_rpm_limit: not-a-number, default_api_key_tpm_limit: 1.5}
 - model_name: cleared
@@ -57,51 +84,18 @@ model_list:
   litellm_params: {model: openai/absent}
 ";
     let loaded = settings(source).unwrap();
-    assert_eq!(loaded.deployments.len(), 6);
-    let first = &loaded.deployments[0];
-    assert_eq!(
-        first,
-        &DeploymentLimitDefaults {
-            model_name: "gpt-4".to_owned(),
-            default_api_key_rpm_limit: Some(Json::Number(serde_json::Number::from(10))),
-            default_api_key_tpm_limit: Some(Json::Number(serde_json::Number::from(100))),
-        }
-    );
+    assert_eq!(loaded.deployments.len(), 3);
     assert_eq!(
         scalar(loaded.deployments[0].default_api_key_rpm_limit.as_ref()),
-        Scalar::Integer(10)
-    );
-    assert_eq!(
-        scalar(loaded.deployments[0].default_api_key_tpm_limit.as_ref()),
-        Scalar::Integer(100)
-    );
-    assert_eq!(
-        scalar(loaded.deployments[1].default_api_key_rpm_limit.as_ref()),
-        Scalar::Text("20")
-    );
-    assert_eq!(
-        scalar(loaded.deployments[1].default_api_key_tpm_limit.as_ref()),
-        Scalar::Other
-    );
-    assert_eq!(
-        scalar(loaded.deployments[2].default_api_key_rpm_limit.as_ref()),
-        Scalar::Other
-    );
-    assert_eq!(
-        scalar(loaded.deployments[2].default_api_key_tpm_limit.as_ref()),
-        Scalar::Integer(0)
-    );
-    assert_eq!(
-        scalar(loaded.deployments[3].default_api_key_rpm_limit.as_ref()),
         Scalar::Text("not-a-number")
     );
     assert_eq!(
-        scalar(loaded.deployments[3].default_api_key_tpm_limit.as_ref()),
+        scalar(loaded.deployments[0].default_api_key_tpm_limit.as_ref()),
         Scalar::Float(1.5)
     );
-    assert_eq!(loaded.deployments[4].default_api_key_rpm_limit, None);
-    assert_eq!(loaded.deployments[5].default_api_key_rpm_limit, None);
-    assert_eq!(loaded.deployments[5].default_api_key_tpm_limit, None);
+    assert_eq!(loaded.deployments[1].default_api_key_rpm_limit, None);
+    assert_eq!(loaded.deployments[2].default_api_key_rpm_limit, None);
+    assert_eq!(loaded.deployments[2].default_api_key_tpm_limit, None);
 }
 
 #[test]

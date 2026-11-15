@@ -19,6 +19,7 @@ use betterlite_auth::auth_limit_inputs::metadata_limits::{
 use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use serde_json::json;
+use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use crate::helpers::{Helper, HelperResult, OrHelperError as _};
@@ -110,7 +111,7 @@ fn estimated_output_tokens(
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.clone())).or_value_error()?;
     let captured = WarningLog::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let estimate = tracing::subscriber::with_default(subscriber, || {
+    let estimate = with_default(subscriber, || {
         get_estimated_output_tokens(&auth, model_name)
     });
     Ok(json!({ "estimate": estimate, "warnings": captured.warnings() }))

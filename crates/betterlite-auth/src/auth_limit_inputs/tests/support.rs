@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use betterlite_db::budget_permission_rows::JsonData;
 use serde_json::Number;
 use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
@@ -149,10 +150,10 @@ where
 {
     let captured = WarningLog::default();
     let subscriber = registry().with(captured.clone());
-    let result = tracing::subscriber::with_default(subscriber, run);
-    let warnings = match captured.0.lock() {
-        Ok(warnings) => warnings.clone(),
-        Err(_) => Vec::new(),
-    };
+    let result = with_default(subscriber, run);
+    let warnings = captured
+        .0
+        .lock()
+        .map_or_else(|_| Vec::new(), |warnings| warnings.clone());
     (result, warnings)
 }

@@ -205,11 +205,11 @@ fn integer_string_bytes_bool(#[case] value: DeploymentLimitValue, #[case] expect
 }
 
 #[rstest]
-#[case::truncates_positive(1.9, 1)]
-#[case::truncates_negative(-1.9, -1)]
-#[case::truncates_half_up(2.5, 2)]
-#[case::truncates_half_down(-2.5, -2)]
-#[case::keeps_whole(3.0, 3)]
+#[case::truncates_positive(1.9_f64, 1)]
+#[case::truncates_negative(-1.9_f64, -1)]
+#[case::truncates_half_up(2.5_f64, 2)]
+#[case::truncates_half_down(-2.5_f64, -2)]
+#[case::keeps_whole(3.0_f64, 3)]
 fn decimal_truncation(#[case] value: f64, #[case] expected: i64) {
     let limits = support::deployment_rpm_limits(Some(DeploymentLimitValue::Float(value))).unwrap();
     assert_eq!(limits, Some(support::limits(&[("gpt-4", expected)])));
@@ -317,27 +317,34 @@ fn tenant_accessor_fields() {
             limit_field("model_rpm_limit", &[("gpt-4", 1)]),
         ),
         (
-            "organization_metadata",
-            support::object(&[
-                ("model_rpm_limit", support::number_object(&[("gpt-4", 2)])),
-                ("model_tpm_limit", support::number_object(&[("gpt-4", 3)])),
-                ("model_itpm_limit", support::number_object(&[("gpt-4", 4)])),
-                ("model_otpm_limit", support::number_object(&[("gpt-4", 5)])),
-            ]),
-        ),
-        (
             "project_metadata",
             limit_field("model_tpm_limit", &[("gpt-4", 6)]),
         ),
     ]);
     let team = model_limit_from_metadata(&auth, MetadataAccessor::Team, ModelRateLimitKey::Rpm);
     assert_eq!(team, Some(support::limits(&[("gpt-4", 1)])));
-    let org_rpm = model_limit_from_metadata(
+    let project =
+        model_limit_from_metadata(&auth, MetadataAccessor::Project, ModelRateLimitKey::Tpm);
+    assert_eq!(project, Some(support::limits(&[("gpt-4", 6)])));
+}
+
+#[test]
+fn organization_accessor_rate_limit_keys() {
+    let auth = support::auth(&[(
+        "organization_metadata",
+        support::object(&[
+            ("model_rpm_limit", support::number_object(&[("gpt-4", 2)])),
+            ("model_tpm_limit", support::number_object(&[("gpt-4", 3)])),
+            ("model_itpm_limit", support::number_object(&[("gpt-4", 4)])),
+            ("model_otpm_limit", support::number_object(&[("gpt-4", 5)])),
+        ]),
+    )]);
+    let rpm = model_limit_from_metadata(
         &auth,
         MetadataAccessor::Organization,
         ModelRateLimitKey::Rpm,
     );
-    assert_eq!(org_rpm, Some(support::limits(&[("gpt-4", 2)])));
+    assert_eq!(rpm, Some(support::limits(&[("gpt-4", 2)])));
     assert_eq!(
         model_limit_from_metadata(
             &auth,
@@ -354,9 +361,10 @@ fn tenant_accessor_fields() {
         ),
         Some(support::limits(&[("gpt-4", 5)]))
     );
-    let project =
-        model_limit_from_metadata(&auth, MetadataAccessor::Project, ModelRateLimitKey::Tpm);
-    assert_eq!(project, Some(support::limits(&[("gpt-4", 6)])));
+}
+
+#[test]
+fn tenant_accessor_absent_or_empty() {
     let absent = support::auth(&[]);
     assert_eq!(
         model_limit_from_metadata(&absent, MetadataAccessor::Team, ModelRateLimitKey::Rpm),
@@ -402,7 +410,7 @@ fn metadata_malformed_entry_skipped() {
     );
     let organization = support::auth(&[(
         "organization_metadata",
-        support::object(&[("model_rpm_limit", limits.clone())]),
+        support::object(&[("model_rpm_limit", limits)]),
     )]);
     assert_eq!(
         model_limit_from_metadata(
@@ -412,6 +420,15 @@ fn metadata_malformed_entry_skipped() {
         ),
         Some(support::limits(&[("gpt-4", 10)]))
     );
+}
+
+#[test]
+fn mcp_and_tag_malformed_entry_skipped() {
+    let limits = support::object(&[
+        ("gpt-4", support::number(10)),
+        ("gpt-3", support::text("abc")),
+        ("gpt-5", JsonData::Number(Number::from(u64::MAX))),
+    ]);
     let mcp = support::auth(&[(
         "metadata",
         support::object(&[("mcp_rpm_limit", limits.clone())]),
