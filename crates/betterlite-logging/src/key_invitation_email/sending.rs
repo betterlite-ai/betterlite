@@ -100,10 +100,7 @@ where
                 email_logo_url: &branding.logo_url,
                 recipient_email,
                 key_budget: event.max_budget.and_then(|budget| budget.to_f64()),
-                key_token: event
-                    .token
-                    .as_ref()
-                    .map(|token| token.expose_secret().as_str()),
+                key_token: event.token.as_ref().map(|token| token.expose_secret()),
                 base_url,
                 email_support_contact: &branding.support_contact,
             };
