@@ -1,0 +1,25 @@
+kind: helper
+name: mcp-client-credentials-mint-expires-in-shapes
+call:
+  b4661:
+    function: mint
+    config:
+      client_id: gateway-client
+      client_secret: gateway-secret
+      token_url: https://idp.example.com/token
+    outcomes:
+      - {kind: success, body: '{"access_token": "tok-text", "expires_in": "3600", "scope": " read  write "}'}
+      - {kind: success, body: '{"access_token": "tok-float", "expires_in": 3600.5}'}
+      - {kind: success, body: '{"access_token": "tok-bool", "expires_in": true}'}
+      - {kind: success, body: '{"access_token": "tok-null", "expires_in": null}'}
+      - {kind: success, body: '{"access_token": "tok-underscored", "expires_in": " 3_600 "}'}
+      - {kind: success, body: '{"access_token": "tok-words", "expires_in": "soon"}'}
+    operations:
+      - {server_id: text}
+      - {server_id: float}
+      - {server_id: truthy}
+      - {server_id: 'null'}
+      - {server_id: underscored}
+      - {server_id: words}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: subtitle-implies-diarization
+call:
+  studio_transcription:
+    steps:
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {response_format: vtt}}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {response_format: json}}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {timestamp_granularities: [segment]}}
+      - {step: request, model: gemini/gemini-3.5-transcribe, content: audio, optional: {timestamp_granularities: [segment, word]}}
+env: {}
+compare: {ignore: []}

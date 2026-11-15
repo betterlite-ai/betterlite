@@ -2,13 +2,11 @@ use std::collections::{BTreeMap, VecDeque};
 use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_azure::azure_arc_identity::{ArcRequest, ArcResponse, ArcTransport};
+use betterlite_azure::azure_arc_identity::{ArcTransport, MetadataRequest, MetadataResponse};
 use betterlite_azure::azure_hosted_identity::request::{
     HostedRequest, HostedResponse, HostedTransport,
 };
-use betterlite_azure::azure_managed_identity::imds::{
-    CONNECTION_TIMEOUT_SECONDS, ImdsRequest, ImdsResponse, ImdsTransport,
-};
+use betterlite_azure::azure_managed_identity::imds::{CONNECTION_TIMEOUT_SECONDS, ImdsTransport};
 use betterlite_azure::oidc_exchange::transport::{HttpReply, Transport as OidcTransport};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
@@ -70,13 +68,10 @@ impl Shared {
     }
 }
 
-fn header_map<I>(headers: I) -> BTreeMap<String, String>
-where
-    I: IntoIterator<Item = (String, String)>,
-{
+fn header_map(headers: &[(String, SecretString)]) -> BTreeMap<String, String> {
     headers
-        .into_iter()
-        .map(|(name, value)| (name.to_lowercase(), value))
+        .iter()
+        .map(|(name, value)| (name.to_lowercase(), value.expose_secret().to_owned()))
         .filter(|(name, _)| KEPT_HEADERS.contains(&name.as_str()))
         .collect()
 }
@@ -94,22 +89,22 @@ pub(crate) struct SharedTransport {
 }
 
 impl ImdsTransport for SharedTransport {
-    fn get(&self, request: &ImdsRequest) -> io::Result<ImdsResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         record(
             &self.shared,
             json!({
                 "method": "GET",
                 "url": request.url,
                 "params": BTreeMap::from_iter(request.query.iter().cloned()),
-                "headers": header_map(request.headers.iter().cloned()),
+                "headers": header_map(&request.headers),
                 "form": null,
                 // the Python pipeline only records a timeout a request sets itself, so the transport default stays null
-                "timeout": (request.timeout_seconds != CONNECTION_TIMEOUT_SECONDS)
-                    .then_some(request.timeout_seconds),
+                "timeout": (request.timeout.as_secs() != CONNECTION_TIMEOUT_SECONDS)
+                    .then_some(request.timeout.as_secs()),
             }),
         );
         let reply = self.shared.next()?;
-        Ok(ImdsResponse {
+        Ok(MetadataResponse {
             status: reply.status,
             headers: reply.headers.into_iter().collect(),
             body: SecretString::from(reply.body),
@@ -152,7 +147,7 @@ impl HostedTransport for SharedTransport {
 }
 
 impl ArcTransport for SharedTransport {
-    fn get(&self, _request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, _request: &MetadataRequest) -> io::Result<MetadataResponse> {
         Err(io::Error::other(
             "Arc identity is not part of the managed identity cases",
         ))

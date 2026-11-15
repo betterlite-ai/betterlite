@@ -1,0 +1,13 @@
+kind: helper
+name: fresh-login-valid
+call:
+  b4577:
+    operation: fresh_login
+    stored:
+      base_url: http://gateway.test:4000
+      key: sk-live
+      timestamp: 1000.0
+      expires_at: 4000000000.0
+    tty: false
+env: {}
+compare: {ignore: []}
