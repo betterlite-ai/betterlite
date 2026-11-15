@@ -1,0 +1,36 @@
+task: B1531
+deviations:
+  - what: >-
+      A returned width or height, an image_size map value, a keyed catalog dimension, a resolution integer or a
+      num_images count beyond the 64-bit range is refused here and the fallback takes over, where LiteLLM's Python
+      int carries any magnitude.
+    why: betterlite parses these JSON integers into u64 and i64, so a value past the range cannot name a row, a
+      resolution key or an image count. No catalog entry can hold such a key here either, since the same parse
+      rejects it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L72-L83
+  - what: >-
+      A keyed catalog key whose dimension segment is padded with spaces, holds underscores or uses non-ASCII digits
+      does not become a row here, where Python int() reads all three.
+    why: the segment parses with Rust's u64 from_str, which takes ASCII digits and a leading plus only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L78-L80
+  - what: >-
+      Two keyed rows with equal pixel area tie by catalog key order, where LiteLLM keeps the order its model_cost
+      dict was built in. An equal-distance target picks the smaller area first on both sides.
+    why: B193's typed catalog stores entries in a BTreeMap, so the source insertion order is not available. The
+      sorted key order is stable and the only order betterlite can promise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L115-L117
+  - what: >-
+      A price read from the catalog or a deployment stays a Decimal, so per-image sums are exact and the megapixel
+      count comes from integer division, where LiteLLM converts each catalog price with float(), sums binary floats
+      and divides the pixel count as a float before ceil. For prices that are not binary fractions, or for a pixel
+      count too large for a float to hold exactly, the digits can differ in the last places.
+    why: the task and the project's money rule require Decimal from ingestion, never floating point. Oracle cases
+      use values every float represents exactly, so both sides agree there.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L119-L129
+kept_bugs:
+  - what: >-
+      A catalog price of true counts as a numeric one, so it prices an image at 1, because the source's
+      isinstance(raw_cost, (int, float)) check accepts Python bools.
+    why: The task asks to preserve the source's acceptance of boolean catalog price values by normalizing them to
+      Decimal one at the seam, and a setup that writes true into its cost map keeps its price after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L98-L100
