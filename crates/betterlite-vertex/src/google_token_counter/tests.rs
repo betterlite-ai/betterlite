@@ -406,6 +406,35 @@ async fn selection_vertex_null_contents() {
 }
 
 #[tokio::test]
+async fn selection_tools_and_system_are_ignored() {
+    let script = Script::replying(br#"{"totalTokens":2}"#);
+    let catalog = BundledCatalog::default().get();
+    let refresh = refresh();
+    let mint = RecordingMint::default();
+    let options = deployment(
+        "vertex_ai/gemini-2.0-flash",
+        params(Some("proj"), Some("us-central1"), None),
+        None,
+    );
+    let contents = json("[]");
+    let tools = json(r#"[{"functionDeclarations":[]}]"#);
+    let system = json(r#""be brief""#);
+    let request = CountTokensCall {
+        model_to_use: "gemini-2.0-flash",
+        messages: &[],
+        contents: Some(&contents),
+        deployment: options,
+        request_model: "gemini-2.0-flash",
+        tools: Some(&tools),
+        system: Some(&system),
+    };
+    vertex_count(&script, &mint, &refresh, &catalog, &request)
+        .await
+        .unwrap();
+    assert_eq!(script.sent()[0].body_json(), json(r#"{"contents":[]}"#));
+}
+
+#[tokio::test]
 async fn selection_studio_none_contents() {
     let script = Script::replying(br#"{"totalTokens":9,"tokenizer_used":"google"}"#);
     let options = deployment("gemini/gemini-2.0-flash", params(None, None, None), None);
