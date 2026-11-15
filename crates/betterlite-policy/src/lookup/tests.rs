@@ -253,11 +253,13 @@ fn lookup_logs_and_returns_the_database_failure() {
     };
     let (result, messages) =
         capture_errors(|| runtime().block_on(get_policy_by_id_from_db("policy_1", &source)));
-    let error: PolicyLookupError = result.unwrap_err();
+    let error: PolicyLookupError<FakeFailure> = result.unwrap_err();
     assert_eq!(
         error.to_string(),
         "Error getting policy from DB: connection reset"
     );
+    let PolicyLookupError::Database { source: failure } = error;
+    assert_eq!(failure.to_string(), "connection reset");
     assert_eq!(messages, ["Error getting policy from DB: connection reset"]);
     assert_eq!(source.table.recorded(), [expected_filter()]);
 }

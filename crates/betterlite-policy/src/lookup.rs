@@ -4,14 +4,19 @@ use std::error::Error;
 
 use crate::pipeline::json_value::JsonValue;
 use crate::records::db::PolicyDBResponse;
-use crate::row_adapter::{PolicyClause, PolicyTable, PolicyTableSource, policy_db_response};
+use crate::row_adapter::{
+    PolicyClause, PolicyRow, PolicyTable, PolicyTableSource, policy_db_response,
+};
 
 #[derive(Debug, thiserror::Error)]
-pub enum PolicyLookupError {
+pub enum PolicyLookupError<Failure>
+where
+    Failure: Error + Send + Sync + 'static,
+{
     #[error("Error getting policy from DB: {source}")]
     Database {
         #[source]
-        source: Box<dyn Error + Send + Sync>,
+        source: Failure,
     },
 }
 
@@ -19,7 +24,10 @@ pub enum PolicyLookupError {
 pub async fn get_policy_by_id_from_db<Client>(
     policy_id: &str,
     client: &Client,
-) -> Result<Option<PolicyDBResponse>, PolicyLookupError>
+) -> Result<
+    Option<PolicyDBResponse>,
+    PolicyLookupError<<Client::Table as PolicyTable<PolicyRow>>::Failure>,
+>
 where
     Client: PolicyTableSource,
 {
@@ -30,11 +38,9 @@ where
     match client.policy_table().find_unique(filter).await {
         Ok(None) => Ok(None),
         Ok(Some(row)) => Ok(Some(policy_db_response(&row))),
-        Err(error) => {
-            tracing::error!("Error getting policy from DB: {error}");
-            Err(PolicyLookupError::Database {
-                source: Box::new(error),
-            })
+        Err(source) => {
+            tracing::error!("Error getting policy from DB: {source}");
+            Err(PolicyLookupError::Database { source })
         }
     }
 }
