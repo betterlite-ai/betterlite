@@ -48,8 +48,8 @@ fn url_part(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
         return Ok(None);
     }
     url.as_str()
-        .map_or(Err(ClassifierTextError::ImageUrlNotString), |url| {
-            Ok((!url.is_empty()).then(|| url.to_owned()))
+        .map_or(Err(ClassifierTextError::ImageUrlNotString), |text| {
+            Ok((!text.is_empty()).then(|| text.to_owned()))
         })
 }
 

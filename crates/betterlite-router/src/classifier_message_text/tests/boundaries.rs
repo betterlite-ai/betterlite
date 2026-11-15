@@ -3,8 +3,9 @@ use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 use rstest::rstest;
 
 use super::{
-    TAIL_SENTINEL, assert_strip, body, chat, default_markers, encrypted_item, kind_part,
-    last_ask_index, one_pair, resolved_ask, resolver, text, text_part,
+    TAIL_SENTINEL, assert_strip, chat, default_markers, encrypted_item, encrypted_part,
+    json_number, json_object, json_text, kind_part, last_ask_index, one_pair, plan_body_result,
+    resolved_ask, resolver, system_body, text, text_part, tools_body, typed_item,
 };
 use crate::classifier_message_text::asks::{
     current_ask_and_system_prompt, human_asks_newest_first, newest_turn_ask,
@@ -27,25 +28,24 @@ fn assert_plan_pattern(messages: &[ChatMessage], expected: &str) {
 }
 
 fn assert_encrypted_input(
-    input: Option<Json>,
+    input: Option<&Json>,
     resolved: Vec<Vec<Json>>,
-    expected: Result<Option<Json>, ClassifierTextError>,
+    expected: &Result<Option<Json>, ClassifierTextError>,
 ) {
-    let task =
-        encrypted_classifier_task(input.as_ref(), false, resolver(resolved), default_markers());
-    assert_eq!(task, expected);
+    let task = encrypted_classifier_task(input, false, resolver(resolved), default_markers());
+    assert_eq!(&task, expected);
 }
 
-fn assert_encrypted_absent(input: Json, resolved: Vec<Vec<Json>>) {
-    assert_encrypted_input(Some(input), resolved, Ok(None));
+fn assert_encrypted_absent(input: &Json, resolved: Vec<Vec<Json>>) {
+    assert_encrypted_input(Some(input), resolved, &Ok(None));
 }
 
-fn assert_encrypted_absent_with_ask(item: Json) {
+fn assert_encrypted_absent_with_ask(item: &Json) {
     assert_encrypted_absent(item, vec![resolved_ask()]);
 }
 
-fn assert_encrypted_input_error(item: Json, expected: ClassifierTextError) {
-    assert_encrypted_input(Some(item), vec![resolved_ask()], Err(expected));
+fn assert_encrypted_input_error(item: &Json, expected: ClassifierTextError) {
+    assert_encrypted_input(Some(item), vec![resolved_ask()], &Err(expected));
 }
 
 fn assert_empty_message_list() {
@@ -107,23 +107,27 @@ fn assert_overlapping_marker_pairs() {
 }
 
 fn assert_text_part_not_string_names_index() {
-    let part = kind_part("text", "text", serde_json::json!(7));
+    let part = kind_part("text", "text", json_number(7));
     let error =
         message_text(Some(&MessageContent::Parts(vec![text_part("ok"), part]))).unwrap_err();
     assert_eq!(error, ClassifierTextError::PartTextNotString { part: 1 });
 }
 
 fn assert_image_url_not_string_names_field() {
-    let part = kind_part("image_url", "image_url", serde_json::json!({"url": 7}));
+    let part = kind_part(
+        "image_url",
+        "image_url",
+        json_object(&[("url", json_number(7))]),
+    );
     let error = inline_image_part(&part).unwrap_err();
     assert_eq!(error, ClassifierTextError::ImageUrlNotString);
 }
 
 fn assert_json_text_part_null_names_index() {
-    let content = body(serde_json::json!([
-        {"type": "text", "text": "fine"},
-        {"type": "text", "text": null}
-    ]));
+    let content = Json::List(vec![
+        json_object(&[("type", json_text("text")), ("text", json_text("fine"))]),
+        json_object(&[("type", json_text("text")), ("text", Json::Null)]),
+    ]);
     let error = message_text(Some(&content)).unwrap_err();
     assert_eq!(error, ClassifierTextError::PartTextNotString { part: 1 });
 }
@@ -181,17 +185,18 @@ fn assert_codex_prefix_cases() {
 }
 
 fn assert_plan_tools_not_list() {
-    let body = body(serde_json::json!({"tools": "exit_plan_mode"}));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result, None);
+    let body = json_object(&[("tools", json_text(PLAN_MODE_TOOL_NAME))]);
+    assert_eq!(plan_body_result(&body), None);
 }
 
 fn assert_plan_function_name_mismatch_skips_top_level() {
-    let body = body(serde_json::json!({
-        "tools": [{"type": "function", "function": {"name": "other"}, "name": PLAN_MODE_TOOL_NAME}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result, None);
+    let function = json_object(&[("name", json_text("other"))]);
+    let tool = json_object(&[
+        ("type", json_text("function")),
+        ("function", function),
+        ("name", json_text(PLAN_MODE_TOOL_NAME)),
+    ]);
+    assert_eq!(plan_body_result(&tools_body(vec![tool])), None);
 }
 
 fn assert_plan_sentinel_at_newest_ask_only() {
@@ -220,7 +225,7 @@ fn assert_plan_empty_texts_skip_empty_pattern() {
 }
 
 fn assert_plan_empty_body_system_matches_empty_pattern() {
-    let body = body(serde_json::json!({"system": ""}));
+    let body = system_body(json_text(""));
     let patterns = vec![String::new()];
     let result =
         matched_plan_mode_sentinel(Some(&body), None, &patterns, default_markers()).unwrap();
@@ -228,7 +233,7 @@ fn assert_plan_empty_body_system_matches_empty_pattern() {
 }
 
 fn assert_plan_body_messages_non_list_falls_back() {
-    let body = body(serde_json::json!({"messages": "not a list"}));
+    let body = json_object(&[("messages", json_text("not a list"))]);
     let resolved = [text(Role::User, TAIL_SENTINEL)];
     let result =
         matched_plan_mode_sentinel(Some(&body), Some(&resolved), &[], default_markers()).unwrap();
@@ -244,77 +249,66 @@ fn assert_plan_newest_ask_before_assistant() {
 }
 
 fn assert_plan_function_type_without_object() {
-    let body = body(serde_json::json!({
-        "tools": [{"type": "function", "name": PLAN_MODE_TOOL_NAME}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
+    let tool = json_object(&[
+        ("type", json_text("function")),
+        ("name", json_text(PLAN_MODE_TOOL_NAME)),
+    ]);
+    let result = plan_body_result(&tools_body(vec![tool]));
     assert_eq!(result.as_deref(), Some(PLAN_MODE_TOOL_NAME));
 }
 
 fn assert_encrypted_input_not_list() {
-    assert_encrypted_absent(body(serde_json::json!("not a list")), Vec::new());
-    assert_encrypted_input(None, Vec::new(), Ok(None));
+    let plain = json_text("not a list");
+    assert_encrypted_absent(&plain, Vec::new());
+    assert_encrypted_input(None, Vec::new(), &Ok(None));
 }
 
 fn assert_encrypted_item_not_object() {
-    assert_encrypted_absent(
-        body(serde_json::json!([7, {"type": "agent_message"}])),
-        Vec::new(),
-    );
+    let input = Json::List(vec![
+        json_number(7),
+        json_object(&[("type", json_text("agent_message"))]),
+    ]);
+    assert_encrypted_absent(&input, Vec::new());
 }
 
 fn assert_encrypted_content_not_list() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!([
-        {"type": "agent_message", "content": "plain"}
-    ])));
+    let input = json_object(&[
+        ("type", json_text("agent_message")),
+        ("content", json_text("plain")),
+    ]);
+    assert_encrypted_absent_with_ask(&input);
 }
 
 fn assert_encrypted_part_not_object() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!([
-        {
-            "type": "agent_message",
-            "content": [7, {"type": "encrypted_content", "encrypted_content": "blob"}]
-        }
-    ])));
+    let input = typed_item(
+        "agent_message",
+        vec![json_number(7), encrypted_part(json_text("blob"))],
+    );
+    assert_encrypted_absent_with_ask(&input);
 }
 
 fn assert_encrypted_resolved_without_ask() {
-    assert_encrypted_absent(
-        Json::List(vec![encrypted_item()]),
-        vec![vec![body(
-            serde_json::json!({"role": "assistant", "content": "reply"}),
-        )]],
-    );
+    let reply = json_object(&[
+        ("role", json_text("assistant")),
+        ("content", json_text("reply")),
+    ]);
+    let input = Json::List(vec![encrypted_item()]);
+    assert_encrypted_absent(&input, vec![vec![reply]]);
 }
 
 fn assert_encrypted_non_agent_selected() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!([
-        {
-            "type": "message",
-            "content": [{"type": "encrypted_content", "encrypted_content": "blob"}]
-        }
-    ])));
+    let item = typed_item("message", vec![encrypted_part(json_text("blob"))]);
+    assert_encrypted_absent_with_ask(&item);
 }
 
 fn assert_encrypted_empty_string_absent() {
-    assert_encrypted_absent_with_ask(body(serde_json::json!([
-        {
-            "type": "agent_message",
-            "content": [{"type": "encrypted_content", "encrypted_content": ""}]
-        }
-    ])));
+    let item = typed_item("agent_message", vec![encrypted_part(json_text(""))]);
+    assert_encrypted_absent_with_ask(&item);
 }
 
 fn assert_encrypted_non_string_errors() {
-    assert_encrypted_input_error(
-        body(serde_json::json!([
-            {
-                "type": "agent_message",
-                "content": [{"type": "encrypted_content", "encrypted_content": 7}]
-            }
-        ])),
-        ClassifierTextError::EncryptedContentNotString,
-    );
+    let item = typed_item("agent_message", vec![encrypted_part(json_number(7))]);
+    assert_encrypted_input_error(&item, ClassifierTextError::EncryptedContentNotString);
 }
 
 #[rstest]

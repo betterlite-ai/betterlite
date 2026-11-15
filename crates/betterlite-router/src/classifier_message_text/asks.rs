@@ -74,9 +74,9 @@ where
 
 #[must_use]
 pub fn conversation_is_continuing(messages: Option<&[ChatMessage]>) -> bool {
-    messages.is_none_or(|messages| {
-        messages.is_empty()
-            || messages
+    messages.is_none_or(|history| {
+        history.is_empty()
+            || history
                 .iter()
                 .any(|message| message.role == Role::Assistant)
     })
@@ -151,23 +151,23 @@ pub fn newest_turn_is_human_ask(
     messages: Option<&[ChatMessage]>,
     markers: &[MarkerPair<'_>],
 ) -> Result<bool, ClassifierTextError> {
-    let Some(messages) = messages.filter(|messages| !messages.is_empty()) else {
+    let Some(history) = messages.filter(|candidate| !candidate.is_empty()) else {
         return Ok(false);
     };
     let mut newest_activity = None;
-    for (index, message) in messages.iter().enumerate().rev() {
+    for (index, message) in history.iter().enumerate().rev() {
         if message.role != Role::System && !is_reminder_only_turn(message, markers)? {
             newest_activity = Some(index);
             break;
         }
     }
-    let Some(newest_activity) = newest_activity else {
+    let Some(activity) = newest_activity else {
         return Ok(false);
     };
-    let newest_ask = human_asks_newest_first(messages, markers)?
+    let newest_ask = human_asks_newest_first(history, markers)?
         .first()
         .map(|ask| ask.message_index);
-    Ok(newest_ask == Some(newest_activity))
+    Ok(newest_ask == Some(activity))
 }
 
 #[must_use]

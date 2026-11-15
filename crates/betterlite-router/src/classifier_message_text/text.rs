@@ -47,10 +47,9 @@ fn typed_part(part: &ContentPart) -> PartText<'_> {
     if part.kind != "text" {
         return PartText::NotText;
     }
-    match part.fields.get("text") {
-        None => PartText::Missing,
-        Some(value) => value.as_str().map_or(PartText::NotString, PartText::Text),
-    }
+    part.fields.get("text").map_or(PartText::Missing, |value| {
+        value.as_str().map_or(PartText::NotString, PartText::Text)
+    })
 }
 
 fn json_part(part: &Json) -> PartText<'_> {
@@ -71,10 +70,10 @@ pub fn message_text<T>(content: Option<&T>) -> Result<String, ClassifierTextErro
 where
     T: ClassifierContent,
 {
-    let Some(content) = content else {
+    let Some(value) = content else {
         return Ok(String::new());
     };
-    match content.content_text() {
+    match value.content_text() {
         ContentText::Plain(text) => Ok(text.to_owned()),
         ContentText::Parts(parts) => joined_text(parts),
     }

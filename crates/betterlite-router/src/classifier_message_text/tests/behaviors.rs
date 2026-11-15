@@ -3,9 +3,10 @@ use betterlite_openai::chat::{ChatMessage, Role};
 use rstest::rstest;
 
 use super::{
-    STILL_ACTIVE, SYSTEM_SENTINEL, TAIL_SENTINEL, ask_texts, assert_strip, body, codex_markers,
-    default_markers, encrypted_item, kind_part, last_ask_index, one_pair, parts, resolved_ask,
-    resolver, text, text_part,
+    STILL_ACTIVE, SYSTEM_SENTINEL, TAIL_SENTINEL, ask_texts, assert_strip, codex_markers,
+    default_markers, encrypted_item, encrypted_part, json_number, json_object, json_text,
+    kind_part, last_ask_index, one_pair, parts, plan_body_result, resolved_ask, resolver,
+    system_body, text, text_part, tools_body, typed_item,
 };
 use crate::classifier_message_text::asks::{
     ExtractedAsk, conversation_is_continuing, current_ask_and_system_prompt,
@@ -21,11 +22,18 @@ use crate::classifier_message_text::text::{message_text, strip_reminder_blocks};
 #[test]
 fn json_human_asks_use_raw_message_roles() {
     let messages = vec![
-        body(
-            serde_json::json!({"role": "user", "content": "<system-reminder>x</system-reminder> ask"}),
-        ),
-        body(serde_json::json!({"role": "assistant", "content": "reply"})),
-        body(serde_json::json!({"role": "user", "content": 7})),
+        json_object(&[
+            ("role", json_text("user")),
+            (
+                "content",
+                json_text("<system-reminder>x</system-reminder> ask"),
+            ),
+        ]),
+        json_object(&[
+            ("role", json_text("assistant")),
+            ("content", json_text("reply")),
+        ]),
+        json_object(&[("role", json_text("user")), ("content", json_number(7))]),
     ];
     let asks = human_asks_newest_first(&messages, default_markers()).unwrap();
     assert_eq!(ask_texts(&asks), ["ask"]);
@@ -40,9 +48,9 @@ fn assert_asks(messages: &[ChatMessage], expected: &[&str]) -> Vec<ExtractedAsk>
 
 fn assert_extracted(messages: &[ChatMessage], expected_ask: &str, expected_system: &str) {
     let (ask, system) = current_ask_and_system_prompt(messages, default_markers()).unwrap();
-    assert_eq!(ask.map(|ask| ask.text).as_deref(), Some(expected_ask));
+    assert_eq!(ask.map(|found| found.text).as_deref(), Some(expected_ask));
     assert_eq!(
-        system.map(|system| system.text).as_deref(),
+        system.map(|found| found.text).as_deref(),
         Some(expected_system)
     );
 }
@@ -64,7 +72,7 @@ fn assert_message_text_joins_text_parts() {
         Role::User,
         vec![
             text_part("first"),
-            kind_part("image_url", "image_url", serde_json::json!("data:x")),
+            kind_part("image_url", "image_url", json_text("data:x")),
             text_part("second"),
         ],
     );
@@ -88,7 +96,7 @@ fn assert_message_text_drops_tool_results() {
         vec![kind_part(
             "tool_result",
             "content",
-            serde_json::json!("tool output"),
+            json_text("tool output"),
         )],
     );
     assert_eq!(message_text(message.content.as_ref()).unwrap(), "");
@@ -153,11 +161,7 @@ fn assert_newest_ask_skips_tool_turns() {
         text(Role::Assistant, "calling the tool"),
         parts(
             Role::User,
-            vec![kind_part(
-                "tool_result",
-                "content",
-                serde_json::json!("done"),
-            )],
+            vec![kind_part("tool_result", "content", json_text("done"))],
         ),
     ];
     let asks = assert_asks(&messages, &["first ask"]);
@@ -315,11 +319,7 @@ fn assert_newest_turn_plumbing_is_not_ask() {
         text(Role::User, "ask"),
         parts(
             Role::User,
-            vec![kind_part(
-                "tool_result",
-                "content",
-                serde_json::json!("done"),
-            )],
+            vec![kind_part("tool_result", "content", json_text("done"))],
         ),
     ];
     assert!(!newest_turn_is_human_ask(Some(&tool_turn), default_markers()).unwrap());
@@ -350,41 +350,44 @@ fn assert_markers_configured_wins() {
 }
 
 fn assert_plan_tool_shape_function() {
-    let body = body(serde_json::json!({
-        "tools": [{"type": "function", "function": {"name": PLAN_MODE_TOOL_NAME}}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
+    let function = json_object(&[("name", json_text(PLAN_MODE_TOOL_NAME))]);
+    let tool = json_object(&[("type", json_text("function")), ("function", function)]);
+    let result = plan_body_result(&tools_body(vec![tool]));
     assert_eq!(result.as_deref(), Some(PLAN_MODE_TOOL_NAME));
 }
 
 fn assert_plan_tool_shape_anthropic() {
-    let body = body(serde_json::json!({
-        "tools": [{"name": PLAN_MODE_TOOL_NAME, "input_schema": {}}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result.as_deref(), Some(PLAN_MODE_TOOL_NAME));
+    let tool = json_object(&[
+        ("name", json_text(PLAN_MODE_TOOL_NAME)),
+        ("input_schema", json_object(&[])),
+    ]);
+    assert_eq!(
+        plan_body_result(&tools_body(vec![tool])).as_deref(),
+        Some(PLAN_MODE_TOOL_NAME)
+    );
 }
 
 fn assert_plan_system_scope() {
-    let body = body(serde_json::json!({"system": SYSTEM_SENTINEL}));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
+    let body = system_body(json_text(SYSTEM_SENTINEL));
+    assert_eq!(plan_body_result(&body).as_deref(), Some(SYSTEM_SENTINEL));
 }
 
 fn assert_plan_anthropic_system_array() {
-    let body = body(serde_json::json!({
-        "system": [{"type": "text", "text": SYSTEM_SENTINEL}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result.as_deref(), Some(SYSTEM_SENTINEL));
+    let part = json_object(&[
+        ("type", json_text("text")),
+        ("text", json_text(SYSTEM_SENTINEL)),
+    ]);
+    let body = system_body(Json::List(vec![part]));
+    assert_eq!(plan_body_result(&body).as_deref(), Some(SYSTEM_SENTINEL));
 }
 
 fn assert_plan_system_array_skips_non_text() {
-    let body = body(serde_json::json!({
-        "system": [{"type": "image_url", "text": SYSTEM_SENTINEL, "image_url": {"url": "data:x"}}]
-    }));
-    let result = matched_plan_mode_sentinel(Some(&body), None, &[], default_markers()).unwrap();
-    assert_eq!(result, None);
+    let part = json_object(&[
+        ("type", json_text("image_url")),
+        ("text", json_text(SYSTEM_SENTINEL)),
+    ]);
+    let body = system_body(Json::List(vec![part]));
+    assert_eq!(plan_body_result(&body), None);
 }
 
 fn assert_plan_leading_system_message() {
@@ -429,7 +432,13 @@ fn assert_plan_extra_pattern() {
 }
 
 fn assert_plan_body_messages_win() {
-    let body = body(serde_json::json!({"messages": [{"role": "user", "content": STILL_ACTIVE}]}));
+    let body = json_object(&[(
+        "messages",
+        Json::List(vec![json_object(&[
+            ("role", json_text("user")),
+            ("content", json_text(STILL_ACTIVE)),
+        ])]),
+    )]);
     let resolved = [text(Role::User, "plain ask")];
     let result =
         matched_plan_mode_sentinel(Some(&body), Some(&resolved), &[], default_markers()).unwrap();
@@ -463,27 +472,31 @@ fn assert_inline_image_data_url() {
     let part = kind_part(
         "image_url",
         "image_url",
-        serde_json::json!("data:image/png;base64,AAAA"),
+        json_text("data:image/png;base64,AAAA"),
     );
     let image = inline_image_part(&part).unwrap().unwrap();
     assert_eq!(image.url, "data:image/png;base64,AAAA");
     let object = kind_part(
         "image_url",
         "image_url",
-        serde_json::json!({"url": "data:image/png;base64,BBBB"}),
+        json_object(&[("url", json_text("data:image/png;base64,BBBB"))]),
     );
-    let image = inline_image_part(&object).unwrap().unwrap();
-    assert_eq!(image.url, "data:image/png;base64,BBBB");
+    let second = inline_image_part(&object).unwrap().unwrap();
+    assert_eq!(second.url, "data:image/png;base64,BBBB");
 }
 
 fn assert_inline_image_remote_rejected() {
     let part = kind_part(
         "image_url",
         "image_url",
-        serde_json::json!("https://example.test/a.png"),
+        json_text("https://example.test/a.png"),
     );
     assert_eq!(inline_image_part(&part).unwrap(), None);
-    let missing = kind_part("image_url", "image_url", serde_json::json!({"url": ""}));
+    let missing = kind_part(
+        "image_url",
+        "image_url",
+        json_object(&[("url", json_text(""))]),
+    );
     assert_eq!(inline_image_part(&missing).unwrap(), None);
 }
 
@@ -491,14 +504,18 @@ fn assert_inline_image_anthropic_base64() {
     let part = kind_part(
         "image",
         "source",
-        serde_json::json!({"type": "base64", "media_type": "image/gif", "data": "CCCC"}),
+        json_object(&[
+            ("type", json_text("base64")),
+            ("media_type", json_text("image/gif")),
+            ("data", json_text("CCCC")),
+        ]),
     );
     let image = inline_image_part(&part).unwrap().unwrap();
     assert_eq!(image.url, "data:image/gif;base64,CCCC");
     let remote = kind_part(
         "image",
         "source",
-        serde_json::json!({"type": "url", "url": "data:x"}),
+        json_object(&[("type", json_text("url")), ("url", json_text("data:x"))]),
     );
     assert_eq!(inline_image_part(&remote).unwrap().unwrap().url, "data:x");
 }
@@ -507,7 +524,7 @@ fn assert_inline_image_input_image() {
     let part = kind_part(
         "input_image",
         "image_url",
-        serde_json::json!("data:image/png;base64,DDDD"),
+        json_text("data:image/png;base64,DDDD"),
     );
     let image = inline_image_part(&part).unwrap().unwrap();
     assert_eq!(image.url, "data:image/png;base64,DDDD");
@@ -534,17 +551,12 @@ fn assert_encrypted_task_kept_content() {
     assert_eq!(kept.len(), 2);
     assert_eq!(
         kept.first(),
-        Some(&body(
-            serde_json::json!({"type": "input_text", "text": "hello"})
-        ))
+        Some(&json_object(&[
+            ("type", json_text("input_text")),
+            ("text", json_text("hello")),
+        ]))
     );
-    assert_eq!(
-        kept.get(1),
-        Some(&body(serde_json::json!({
-            "type": "encrypted_content",
-            "encrypted_content": "blob"
-        })))
-    );
+    assert_eq!(kept.get(1), Some(&encrypted_part(json_text("blob"))));
 }
 
 fn assert_encrypted_task_skipped_for_messages() {
@@ -552,24 +564,30 @@ fn assert_encrypted_task_skipped_for_messages() {
 }
 
 fn assert_encrypted_task_skipped_for_younger_ask() {
+    let later_ask = json_object(&[
+        ("role", json_text("user")),
+        ("content", json_text("later ask")),
+    ]);
     let items = vec![
         encrypted_item(),
-        body(serde_json::json!({"type": "message", "role": "user", "content": "later ask"})),
+        json_object(&[
+            ("type", json_text("message")),
+            ("role", json_text("user")),
+            ("content", json_text("later ask")),
+        ]),
     ];
-    let resolved = vec![
-        resolved_ask(),
-        vec![body(
-            serde_json::json!({"role": "user", "content": "later ask"}),
-        )],
-    ];
+    let resolved = vec![resolved_ask(), vec![later_ask]];
     assert_encrypted_skip(items, false, resolved);
 }
 
 fn assert_encrypted_task_skipped_without_encrypted_part() {
-    let items = vec![body(serde_json::json!({
-        "type": "agent_message",
-        "content": [{"type": "input_text", "text": "hello"}]
-    }))];
+    let items = vec![typed_item(
+        "agent_message",
+        vec![json_object(&[
+            ("type", json_text("input_text")),
+            ("text", json_text("hello")),
+        ])],
+    )];
     assert_encrypted_skip(items, false, vec![resolved_ask()]);
 }
 
