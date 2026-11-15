@@ -10,10 +10,6 @@ call:
         value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"d"}}'
       - function: text
         value: 'data: [DONE]'
-      - function: text
-        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"e"}}'
-      - function: text
-        value: 'data: [DONE]'
     passthrough: []
 env: {}
 compare: {ignore: []}

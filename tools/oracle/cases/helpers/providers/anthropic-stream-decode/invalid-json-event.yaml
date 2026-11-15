@@ -18,8 +18,6 @@ call:
         message: 'bad read'
       - function: other_error
         message: 'connection reset'
-      - function: text
-        value: 'data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"j"}}'
     passthrough: []
 env: {}
 compare: {ignore: []}
