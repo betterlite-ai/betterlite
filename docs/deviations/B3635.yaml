@@ -1,0 +1,15 @@
+task: B3635
+deviations:
+  - what: Image and embedding cost helpers return zero with a warning when pricing fails, instead of raising.
+    why: LiteLLM catches the pricing exception in the passthrough logging handler and writes a zero cost so the spend log is kept; betterlite keeps that behavior for every failure.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L233-L235"
+  - what: A shared Azure Cognitive Services hostname only classifies as OpenAI when its path carries /openai/ or /v1/.
+    why: LiteLLM adds the path-marker requirement so Speech, Vision and Language services on the shared Azure domains are not misclassified as Azure OpenAI; betterlite keeps it.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L96-L97"
+  - what: URL classification uses the url crate, which rejects hosts and ports Python's urlparse reads anyway; such a route is classified as not OpenAI in betterlite.
+    why: Inputs like https://api.openai.com:99999/x or https://api.openai.com:abc/x have no fetchable host, so no working setup routes through them; for every fetchable URL the hostname and path agree with urlparse.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L93"
+  - what: The url crate normalizes a host before classification (percent-decoding and IDNA mapping), so https://api%2Eopenai.com/v1/models and an IDNA dot spelling of the same host classify as OpenAI; urlparse compares the raw netloc and would not.
+    why: Both spellings resolve to api.openai.com for the HTTP client that sends the relayed request, so pricing the reply is correct; no working setup loses cost tracking by this, and a look-alike host still does not normalize to the OpenAI host.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L90-L94"
+kept_bugs: []
