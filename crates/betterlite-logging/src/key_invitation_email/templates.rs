@@ -1,3 +1,6 @@
+use std::iter::Peekable;
+use std::str::Chars;
+
 use betterlite_models::decisions::Json;
 use serde_json::Number;
 
@@ -139,29 +142,35 @@ fn fill_template(template: &str, fields: &[(&str, &str)]) -> String {
                 characters.next();
                 filled.push(character);
             }
-            ('{', _) => {
-                let mut name = String::new();
-                let mut closed = false;
-                for next in characters.by_ref() {
-                    if next == '}' {
-                        closed = true;
-                        break;
-                    }
-                    name.push(next);
-                }
-                match fields.iter().find(|(field, _)| *field == name.as_str()) {
-                    Some((_, value)) => filled.push_str(value),
-                    None => {
-                        filled.push('{');
-                        filled.push_str(&name);
-                        if closed {
-                            filled.push('}');
-                        }
-                    }
-                }
-            }
+            ('{', _) => fill_placeholder(&mut filled, &mut characters, fields),
             (other, _) => filled.push(other),
         }
     }
     filled
+}
+
+fn fill_placeholder(
+    filled: &mut String,
+    characters: &mut Peekable<Chars<'_>>,
+    fields: &[(&str, &str)],
+) {
+    let mut name = String::new();
+    let mut closed = false;
+    for next in characters.by_ref() {
+        if next == '}' {
+            closed = true;
+            break;
+        }
+        name.push(next);
+    }
+    match fields.iter().find(|(field, _)| *field == name.as_str()) {
+        Some((_, value)) => filled.push_str(value),
+        None => {
+            filled.push('{');
+            filled.push_str(&name);
+            if closed {
+                filled.push('}');
+            }
+        }
+    }
 }
