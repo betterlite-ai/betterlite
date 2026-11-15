@@ -188,17 +188,13 @@ async def cursor_answer(case: CursorCase) -> JsonValue:
     return JSON.validate_python(payload)
 
 
-async def answers(cases: Mapping[str, Call]) -> dict[str, JsonValue]:
-    resolved: dict[str, JsonValue] = {}
-    for name, case in cases.items():
-        if case["function"] == "metadata_tags":
-            resolved[name] = await tags_answer(case)
-        elif case["function"] == "metadata_row":
-            resolved[name] = await row_answer(case)
-        else:
-            resolved[name] = await cursor_answer(case)
-    return resolved
-
-
 def run(input_value: Input) -> JsonValue:
-    return JSON.validate_python(asyncio.run(answers(input_value["cases"])))
+    resolved: dict[str, JsonValue] = {}
+    for name, case in input_value["cases"].items():
+        if case["function"] == "metadata_tags":
+            resolved[name] = asyncio.run(tags_answer(case))
+        elif case["function"] == "metadata_row":
+            resolved[name] = asyncio.run(row_answer(case))
+        else:
+            resolved[name] = asyncio.run(cursor_answer(case))
+    return JSON.validate_python(resolved)
