@@ -18,7 +18,7 @@ use super::{CreateCharacterRequest, EditRequest, ExtensionRequest, GetCharacterR
 use crate::helpers::HelperResult;
 
 pub(super) fn create_character_value(request: &CreateCharacterRequest) -> HelperResult {
-    let mut state = prepared(&request.fixture);
+    let mut state = prepared(&request.fixture)?;
     let kind = state.body_kind();
     let body = state.body();
     let video = state.media();
@@ -37,7 +37,10 @@ pub(super) fn get_character_value(request: &GetCharacterRequest) -> HelperResult
 }
 
 pub(super) fn edit_request_value(request: &EditRequest) -> HelperResult {
-    let mut state = request.fixture.as_ref().map(prepared);
+    let mut state = match &request.fixture {
+        Some(fixture) => Some(prepared(fixture)?),
+        None => None,
+    };
     let (kind, body, video_file) = match state.as_mut() {
         Some(current) => (current.body_kind(), current.body(), Some(current.media())),
         None => ("", Value::Null, None),

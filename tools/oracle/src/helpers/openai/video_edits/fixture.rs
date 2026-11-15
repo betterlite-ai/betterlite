@@ -7,6 +7,9 @@ use betterlite_openai::video_edits::character::{CharacterPart, CreateCharacter};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use super::support::helper_error;
+use crate::helpers::HelperError;
+
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Fixture {
@@ -63,23 +66,30 @@ impl Prepared {
     }
 }
 
-pub(super) fn prepared(fixture: &Fixture) -> Prepared {
+pub(super) fn prepared(fixture: &Fixture) -> Result<Prepared, Box<HelperError>> {
     match fixture {
-        Fixture::Bytes { data_base64 } => Prepared {
+        Fixture::Bytes { data_base64 } => Ok(Prepared {
             name: None,
-            kind: PreparedKind::Bytes(STANDARD.decode(data_base64).unwrap_or_default()),
-        },
-        Fixture::Text { value } => Prepared {
+            kind: PreparedKind::Bytes(decode(data_base64)?),
+        }),
+        Fixture::Text { value } => Ok(Prepared {
             name: None,
             kind: PreparedKind::Text(value.clone()),
-        },
-        Fixture::Stream { data_base64, name } => Prepared {
+        }),
+        Fixture::Stream { data_base64, name } => Ok(Prepared {
             name: name.clone(),
-            kind: PreparedKind::Reader(Cursor::new(
-                STANDARD.decode(data_base64).unwrap_or_default(),
-            )),
-        },
+            kind: PreparedKind::Reader(Cursor::new(decode(data_base64)?)),
+        }),
     }
+}
+
+fn decode(data_base64: &str) -> Result<Vec<u8>, Box<HelperError>> {
+    STANDARD.decode(data_base64).map_err(|error| {
+        helper_error(
+            "InvalidInput",
+            format!("the fixture data_base64 is not base64: {error}"),
+        )
+    })
 }
 
 pub(super) fn part_value(
