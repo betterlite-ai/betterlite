@@ -45,76 +45,91 @@ fn messages(json: &str) -> Vec<Message> {
 }
 
 fn pegasus_media_source() {
-    let media = |json: &str| build_media_source(&params(json)).unwrap();
+    direct_media_source();
+    inline_media_source();
+    s3_media_source();
+}
+
+fn media_source(json: &str) -> Option<Field> {
+    build_media_source(&params(json)).unwrap()
+}
+
+fn direct_media_source() {
     assert_eq!(
-        media(r#"{"mediaSource":{"s3Location":{"uri":"s3://b/k"}}}"#),
+        media_source(r#"{"mediaSource":{"s3Location":{"uri":"s3://b/k"}}}"#),
         Some(field(r#"{"s3Location":{"uri":"s3://b/k"}}"#))
     );
     assert_eq!(
-        media(r#"{"media_source":{"custom":1}}"#),
+        media_source(r#"{"media_source":{"custom":1}}"#),
         Some(field(r#"{"custom":1}"#))
     );
     assert_eq!(
-        media(r#"{"mediaSource":"","media_source":{}}"#),
+        media_source(r#"{"mediaSource":"","media_source":{}}"#),
         Some(field("{}"))
     );
     assert_eq!(
-        media(r#"{"mediaSource":"literal","media_source":{"a":"b"}}"#),
+        media_source(r#"{"mediaSource":"literal","media_source":{"a":"b"}}"#),
         None
     );
     assert_eq!(
-        media(r#"{"mediaSource":0,"media_source":{"a":"b"}}"#),
+        media_source(r#"{"mediaSource":0,"media_source":{"a":"b"}}"#),
         Some(field(r#"{"a":"b"}"#))
     );
+}
+
+fn inline_media_source() {
     assert_eq!(
-        media(r#"{"video_base64":"data:video/mp4;base64,QUJD"}"#),
+        media_source(r#"{"video_base64":"data:video/mp4;base64,QUJD"}"#),
         Some(field(r#"{"base64String":"QUJD"}"#))
     );
     assert_eq!(
-        media(r#"{"base64_string":"QUJD"}"#),
+        media_source(r#"{"base64_string":"QUJD"}"#),
         Some(field(r#"{"base64String":"QUJD"}"#))
     );
     assert_eq!(
-        media(r#"{"s3_uri":"s3://b"}"#),
+        media_source(r#"{"mediaSource":"literal","video_base64":"QUJD"}"#),
+        Some(field(r#"{"base64String":"QUJD"}"#))
+    );
+    assert_eq!(
+        media_source(r#"{"video_base64":"prefix,first,second"}"#),
+        Some(field(r#"{"base64String":"first"}"#))
+    );
+    assert_eq!(
+        media_source(r#"{"video_base64":"QVxB","base64_string":"QUJD"}"#),
+        Some(field(r#"{"base64String":"QVxB"}"#))
+    );
+}
+
+fn s3_media_source() {
+    assert_eq!(
+        media_source(r#"{"s3_uri":"s3://b"}"#),
         Some(field(r#"{"s3Location":{"uri":"s3://b"}}"#))
     );
     assert_eq!(
-        media(r#"{"video_s3_uri":"s3://a","video_s3_bucket_owner":"own-a"}"#),
+        media_source(r#"{"video_s3_uri":"s3://a","video_s3_bucket_owner":"own-a"}"#),
         Some(field(
             r#"{"s3Location":{"uri":"s3://a","bucketOwner":"own-a"}}"#
         ))
     );
     assert_eq!(
-        media(r#"{"mediaSource":"literal","video_base64":"QUJD"}"#),
-        Some(field(r#"{"base64String":"QUJD"}"#))
-    );
-    assert_eq!(
-        media(r#"{"mediaSource":"literal","video_s3_uri":"s3://a"}"#),
+        media_source(r#"{"mediaSource":"literal","video_s3_uri":"s3://a"}"#),
         Some(field(r#"{"s3Location":{"uri":"s3://a"}}"#))
     );
     assert_eq!(
-        media(r#"{"video_base64":"prefix,first,second"}"#),
-        Some(field(r#"{"base64String":"first"}"#))
-    );
-    assert_eq!(
-        media(r#"{"video_base64":"QVxB","base64_string":"QUJD"}"#),
-        Some(field(r#"{"base64String":"QVxB"}"#))
-    );
-    assert_eq!(
-        media(r#"{"video_s3_uri":"s3://a","s3_uri":"s3://b","s3_bucket_owner":"own-b"}"#),
+        media_source(r#"{"video_s3_uri":"s3://a","s3_uri":"s3://b","s3_bucket_owner":"own-b"}"#),
         Some(field(
             r#"{"s3Location":{"uri":"s3://a","bucketOwner":"own-b"}}"#
         ))
     );
     assert_eq!(
-        media(
+        media_source(
             r#"{"media_source_s3_uri":"s3://c","video_s3_bucket_owner":"","media_source_bucket_owner":"own-c"}"#
         ),
         Some(field(
             r#"{"s3Location":{"uri":"s3://c","bucketOwner":"own-c"}}"#
         ))
     );
-    assert_eq!(media("{}"), None);
+    assert_eq!(media_source("{}"), None);
 }
 
 fn text_video_prompt() {
@@ -208,6 +223,12 @@ fn segments_and_response() {
 }
 
 fn usage_and_finish_reason() {
+    header_counts_win();
+    counted_usage();
+    mixed_case_headers();
+}
+
+fn header_counts_win() {
     let given = messages(r#"[{"role":"user","content":"hi"}]"#);
     let fixture = FixtureCounter::counting(100, 200);
     let mut counted = single_choice();
@@ -224,6 +245,10 @@ fn usage_and_finish_reason() {
     assert_eq!(counted.created, 1_700_000_000);
     assert_eq!(counted.model, "twelvelabs.pegasus-1-2-v1:0");
     assert!(fixture.calls().is_empty());
+}
+
+fn counted_usage() {
+    let given = messages(r#"[{"role":"user","content":"hi"}]"#);
     let fallback = FixtureCounter::counting(11, 7);
     let mut counted_fallback = single_choice();
     block_on(decode_pegasus_reply(
@@ -250,6 +275,10 @@ fn usage_and_finish_reason() {
     ))
     .unwrap();
     assert_eq!(empty_headers.usage.total_tokens, 18);
+}
+
+fn mixed_case_headers() {
+    let given = messages(r#"[{"role":"user","content":"hi"}]"#);
     let mixed = vec![
         (
             "X-Amzn-Bedrock-Input-Token-Count".to_owned(),
@@ -279,6 +308,12 @@ fn usage_and_finish_reason() {
 }
 
 fn pegasus_options() {
+    supported_and_mapped();
+    request_keeps_options();
+    response_format_requests();
+}
+
+fn supported_and_mapped() {
     assert_eq!(
         SUPPORTED_OPENAI_PARAMS,
         [
@@ -306,6 +341,9 @@ fn pegasus_options() {
         nulls,
         params(r#"{"maxOutputTokens":null,"temperature":null}"#)
     );
+}
+
+fn request_keeps_options() {
     let optional = params(
         r#"{"mediaSource":{"base64String":"QUJD"},"temperature":null,"responseFormat":{},"top_p":0.9}"#,
     );
@@ -323,6 +361,9 @@ fn pegasus_options() {
             r#"{"mediaSource":{"base64String":"QUJD"},"temperature":null,"responseFormat":{},"top_p":0.9}"#
         )
     );
+}
+
+fn response_format_requests() {
     let truthy = transform_request(
         &prompt_messages("[]"),
         &params(r#"{"responseFormat":{"jsonSchema":{"type":"object"}}}"#),
@@ -344,6 +385,21 @@ fn pegasus_options() {
 }
 
 fn pegasus_reply_errors() {
+    parse_errors();
+    classified_errors();
+    content_assign_errors();
+    content_catch_error();
+    message_errors();
+    choice_errors();
+    count_errors();
+}
+
+fn parse_errors() {
+    parse_json_error();
+    parse_utf8_error();
+}
+
+fn parse_json_error() {
     let headers = header_counts("1", "2");
     let given = messages("[]");
     let counter = FixtureCounter::counting(0, 0);
@@ -354,14 +410,18 @@ fn pegasus_reply_errors() {
         &counter,
     ))
     .unwrap_err();
-    match failure {
-        PegasusError::Bedrock { status, error } => {
-            assert_eq!(status, 200);
-            assert!(matches!(error.cause.headers, Some(ErrorHeaders::Http(_))));
-            assert!(error.cause.error.message.contains("Error parsing response"));
-        }
-        other => panic!("expected a bedrock error, got {other:?}"),
-    }
+    let PegasusError::Bedrock { status, error } = failure else {
+        panic!("expected a bedrock error, got {failure:?}");
+    };
+    assert_eq!(status, 200);
+    assert!(matches!(&error.cause.headers, Some(ErrorHeaders::Http(_))));
+    assert!(error.cause.error.message.contains("Error parsing response"));
+}
+
+fn parse_utf8_error() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
     let not_utf8 = block_on(decode_pegasus_reply(
         &[0xff, 0xfe],
         &context(200, &headers, &given, 10.0),
@@ -369,19 +429,23 @@ fn pegasus_reply_errors() {
         &counter,
     ))
     .unwrap_err();
-    match not_utf8 {
-        PegasusError::Bedrock { status, error } => {
-            assert_eq!(status, 200);
-            assert!(
-                error
-                    .cause
-                    .error
-                    .message
-                    .contains("Error parsing response: the body is not UTF-8")
-            );
-        }
-        other => panic!("expected a bedrock error, got {other:?}"),
-    }
+    let PegasusError::Bedrock { status, error } = not_utf8 else {
+        panic!("expected a bedrock error, got {not_utf8:?}");
+    };
+    assert_eq!(status, 200);
+    assert!(
+        error
+            .cause
+            .error
+            .message
+            .contains("Error parsing response: the body is not UTF-8")
+    );
+}
+
+fn classified_errors() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
     assert!(matches!(
         block_on(decode_pegasus_reply(
             b"[1,2]",
@@ -400,6 +464,12 @@ fn pegasus_reply_errors() {
         )),
         Err(PegasusError::FinishReasonNotMappable)
     ));
+}
+
+fn content_assign_errors() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
     for body in [
         br#"{"message":""}"#.as_slice(),
         br#"{"finishReason":"stop"}"#.as_slice(),
@@ -415,30 +485,40 @@ fn pegasus_reply_errors() {
         assert!(matches!(failure, PegasusError::Bedrock { status: 200, .. }));
         assert_eq!(response.choices[0].message.content, None);
     }
-    let content_failure = block_on(decode_pegasus_reply(
+}
+
+fn content_catch_error() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
+    let failure = block_on(decode_pegasus_reply(
         br#"{"finishReason":"stop"}"#,
         &context(418, &headers, &given, 10.0),
         &mut single_choice(),
         &counter,
     ))
     .unwrap_err();
-    match content_failure {
-        PegasusError::Bedrock { status, error } => {
-            assert_eq!(status, 418);
-            assert_eq!(
-                error.cause.headers,
-                Some(ErrorHeaders::Http(headers.clone()))
-            );
-            assert!(
-                error
-                    .cause
-                    .error
-                    .message
-                    .contains("Error setting response content")
-            );
-        }
-        other => panic!("expected a content error, got {other:?}"),
-    }
+    let PegasusError::Bedrock { status, error } = failure else {
+        panic!("expected a content error, got {failure:?}");
+    };
+    assert_eq!(status, 418);
+    assert_eq!(
+        error.cause.headers,
+        Some(ErrorHeaders::Http(headers.clone()))
+    );
+    assert!(
+        error
+            .cause
+            .error
+            .message
+            .contains("Error setting response content")
+    );
+}
+
+fn message_errors() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":{"a":1},"finishReason":"stop"}"#,
@@ -457,6 +537,12 @@ fn pegasus_reply_errors() {
         )),
         Err(PegasusError::Bedrock { status: 200, .. })
     ));
+}
+
+fn choice_errors() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let counter = FixtureCounter::counting(0, 0);
     let mut without_choices = response(Vec::new());
     assert!(matches!(
         block_on(decode_pegasus_reply(
@@ -478,12 +564,16 @@ fn pegasus_reply_errors() {
         )),
         Err(PegasusError::Bedrock { status: 200, .. })
     ));
+}
+
+fn count_errors() {
+    let given = messages("[]");
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible"}"#,
             &context(200, &header_counts("abc", "2"), &given, 10.0),
             &mut single_choice(),
-            &counter,
+            &FixtureCounter::counting(0, 0),
         )),
         Err(PegasusError::TokenCountHeader { .. })
     ));

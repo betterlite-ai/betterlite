@@ -4,10 +4,11 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
+use tokio::runtime::Builder;
 
 use crate::pegasus::counter::TokenCounter;
 use crate::pegasus::reply::ReplyContext;
-use crate::pegasus::response::{PegasusChoice, PegasusMessage, PegasusResponse};
+use crate::pegasus::response::{PegasusChoice, PegasusMessage, PegasusResponse, PegasusUsage};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum CounterCall {
@@ -67,10 +68,10 @@ pub(super) fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
 {
-    match tokio::runtime::Builder::new_current_thread().build() {
-        Ok(runtime) => runtime.block_on(future),
-        Err(_failure) => panic!("the test runtime could not start"),
-    }
+    let runtime = Builder::new_current_thread()
+        .build()
+        .expect("the test runtime could not start");
+    runtime.block_on(future)
 }
 
 pub(super) fn header_counts(input: &str, output: &str) -> Vec<(String, String)> {
@@ -92,7 +93,7 @@ pub(super) fn response(choices: Vec<PegasusChoice>) -> PegasusResponse {
         choices,
         created: 0,
         model: String::new(),
-        usage: Default::default(),
+        usage: PegasusUsage::default(),
     }
 }
 

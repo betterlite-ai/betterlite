@@ -8,29 +8,38 @@ pub fn build_media_source(optional: &Params) -> Result<Option<Field>, PegasusErr
     if let Some(Field::Mapping(mapping)) = direct {
         return Ok(Some(Field::Mapping(mapping.clone())));
     }
+    if let Some(source) = inline_media_source(optional)? {
+        return Ok(Some(source));
+    }
+    Ok(s3_media_source(optional))
+}
+
+fn inline_media_source(optional: &Params) -> Result<Option<Field>, PegasusError> {
     let base64_input = choose(optional.get("video_base64"), optional.get("base64_string"))
         .filter(|value| value.truthy());
-    if let Some(value) = base64_input {
-        let Field::Text(text) = value else {
-            return Err(PegasusError::NotText {
-                field: "video_base64",
-            });
-        };
-        let mut source = Params::new();
-        source.insert(
-            "base64String".to_owned(),
-            Field::Text(get_base64_str(text).to_owned()),
-        );
-        return Ok(Some(Field::Mapping(source)));
-    }
+    let Some(value) = base64_input else {
+        return Ok(None);
+    };
+    let Field::Text(text) = value else {
+        return Err(PegasusError::NotText {
+            field: "video_base64",
+        });
+    };
+    let mut source = Params::new();
+    source.insert(
+        "base64String".to_owned(),
+        Field::Text(get_base64_str(text).to_owned()),
+    );
+    Ok(Some(Field::Mapping(source)))
+}
+
+fn s3_media_source(optional: &Params) -> Option<Field> {
     let s3_uri = choose(
         optional.get("video_s3_uri"),
         choose(optional.get("s3_uri"), optional.get("media_source_s3_uri")),
     )
     .filter(|value| value.truthy());
-    let Some(uri) = s3_uri else {
-        return Ok(None);
-    };
+    let uri = s3_uri?;
     let mut location = Params::new();
     location.insert("uri".to_owned(), uri.clone());
     let bucket_owner = choose(
@@ -46,7 +55,7 @@ pub fn build_media_source(optional: &Params) -> Result<Option<Field>, PegasusErr
     }
     let mut source = Params::new();
     source.insert("s3Location".to_owned(), Field::Mapping(location));
-    Ok(Some(Field::Mapping(source)))
+    Some(Field::Mapping(source))
 }
 
 fn choose<'field>(

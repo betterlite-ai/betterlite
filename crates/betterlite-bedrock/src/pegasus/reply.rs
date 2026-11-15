@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
@@ -30,7 +32,7 @@ pub async fn decode_pegasus_reply<C>(
 where
     C: TokenCounter + Sync,
 {
-    let raw = std::str::from_utf8(body).map_err(|_utf8| {
+    let raw = from_utf8(body).map_err(|_utf8| {
         bedrock_error(
             context,
             "Error parsing response: the body is not UTF-8".to_owned(),
@@ -60,7 +62,7 @@ where
         .checked_add(completion_tokens)
         .ok_or(PegasusError::TotalOverflow)?;
     response.created = cast::<f64, i64>(context.now).ok_or(PegasusError::CreatedOutOfRange)?;
-    response.model = context.model.to_owned();
+    context.model.clone_into(&mut response.model);
     response.usage = PegasusUsage {
         prompt_tokens,
         completion_tokens,
@@ -125,23 +127,28 @@ where
             .await
             .map_err(|source| PegasusError::TokenCount { source })?,
     };
-    let completion = match header_count(context, OUTPUT_TOKENS)? {
-        Some(count) => count,
-        None => {
-            let text = response
-                .choices
-                .first()
-                .and_then(|choice| choice.message.content.as_deref())
-                .ok_or(PegasusError::TokenCount {
-                    source: CountError::MissingInput,
-                })?;
-            counter
-                .count_text(text)
-                .await
-                .map_err(|source| PegasusError::TokenCount { source })?
-        }
-    };
+    if let Some(count) = header_count(context, OUTPUT_TOKENS)? {
+        return Ok((prompt, count));
+    }
+    let completion = completion_count(response, counter).await?;
     Ok((prompt, completion))
+}
+
+async fn completion_count<C>(response: &PegasusResponse, counter: &C) -> Result<i64, PegasusError>
+where
+    C: TokenCounter + Sync,
+{
+    let text = response
+        .choices
+        .first()
+        .and_then(|choice| choice.message.content.as_deref())
+        .ok_or(PegasusError::TokenCount {
+            source: CountError::MissingInput,
+        })?;
+    counter
+        .count_text(text)
+        .await
+        .map_err(|source| PegasusError::TokenCount { source })
 }
 
 fn header_count(

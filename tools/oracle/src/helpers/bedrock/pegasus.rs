@@ -70,22 +70,29 @@ impl TokenCounter for UnusedCounter {
     }
 }
 
-impl From<PegasusError> for Box<HelperError> {
-    fn from(error: PegasusError) -> Self {
-        let (class, status) = match &error {
-            PegasusError::Bedrock { status, .. } => ("BedrockError", Some(*status)),
-            PegasusError::Header(_) => ("HeaderError", None),
-            _ => ("ValueError", None),
-        };
-        Self::new(HelperError {
-            class: class.to_owned(),
-            status,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    }
+// HelperError lives in betterlite-oracle-helper-api, so the orphan rule forbids a From impl here.
+fn helper_error(error: PegasusError) -> Box<HelperError> {
+    let (class, status) = match &error {
+        PegasusError::Bedrock { status, .. } => ("BedrockError", Some(*status)),
+        PegasusError::Header(_) => ("HeaderError", None),
+        PegasusError::ReplyNotObject
+        | PegasusError::MessageNotString
+        | PegasusError::FinishReasonNotMappable
+        | PegasusError::TokenCountHeader { .. }
+        | PegasusError::TokenCount { .. }
+        | PegasusError::TotalOverflow
+        | PegasusError::CreatedOutOfRange
+        | PegasusError::UnsupportedResponseFormat
+        | PegasusError::NotText { .. } => ("ValueError", None),
+    };
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 impl Helper for Op {
@@ -94,10 +101,10 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::PegasusMediaSource(call) | Input::TextVideoPrompt(call) => Ok(json!({
-                "request": serde_json::to_value(transform_request(
-                    &call.messages,
-                    &call.optional_params,
-                )?)?,
+                "request": serde_json::to_value(
+                    transform_request(&call.messages, &call.optional_params)
+                        .map_err(helper_error)?
+                )?,
             })),
             Input::ResponseFormatJson(call) | Input::PegasusOptions(call) => mapping_case(call),
             Input::SegmentsAndResponse(call)
@@ -108,8 +115,9 @@ impl Helper for Op {
 }
 
 fn mapping_case(call: &MappingCall) -> HelperResult {
-    let mapped = map_openai_params(&call.non_default, call.optional_params.clone())?;
-    let request = transform_request(&call.messages, &mapped)?;
+    let mapped =
+        map_openai_params(&call.non_default, call.optional_params.clone()).map_err(helper_error)?;
+    let request = transform_request(&call.messages, &mapped).map_err(helper_error)?;
     Ok(json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": serde_json::to_value(&mapped)?,
@@ -127,12 +135,14 @@ fn reply_case(call: &ReplyCall) -> HelperResult {
         now: call.now,
     };
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
-    runtime.block_on(decode_pegasus_reply(
-        call.body.as_bytes(),
-        &context,
-        &mut response,
-        &UnusedCounter,
-    ))?;
+    runtime
+        .block_on(decode_pegasus_reply(
+            call.body.as_bytes(),
+            &context,
+            &mut response,
+            &UnusedCounter,
+        ))
+        .map_err(helper_error)?;
     Ok(response_json(&response))
 }
 

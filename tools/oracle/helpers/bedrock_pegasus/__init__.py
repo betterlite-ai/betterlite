@@ -8,6 +8,7 @@ from typing import (
     Protocol,
     TypeAlias,
     TypedDict,
+    Unpack,
     runtime_checkable,
 )
 
@@ -16,13 +17,28 @@ from litellm.types.utils import Choices, LlmProviders, Message, ModelResponse
 from litellm.utils import ProviderConfigManager
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
-# Pegasus ignores logging_obj and encoding, so the view passes None for both.
+
+class TransformResponseArgs(TypedDict):
+    model: str
+    raw_response: httpx.Response
+    model_response: ModelResponse
+    logging_obj: None  # Pegasus reads neither logging_obj nor encoding
+    request_data: dict[str, JsonValue]
+    messages: Sequence[JsonValue]
+    optional_params: dict[str, JsonValue]
+    litellm_params: dict[str, JsonValue]
+    encoding: None
+    api_key: NotRequired[str | None]
+    json_mode: NotRequired[bool | None]
+
+
 @runtime_checkable
 class Transform(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
     def map_openai_params(
         self,
+        *,
         non_default_params: dict[str, JsonValue],
         optional_params: dict[str, JsonValue],
         model: str,
@@ -39,18 +55,7 @@ class Transform(Protocol):
     ) -> dict[str, JsonValue]: ...
 
     def transform_response(
-        self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ModelResponse,
-        logging_obj: None,
-        request_data: dict[str, JsonValue],
-        messages: Sequence[JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-        api_key: str | None = None,
-        json_mode: bool | None = None,
+        self, **kwargs: Unpack[TransformResponseArgs]
     ) -> ModelResponse: ...
 
 
@@ -204,7 +209,7 @@ def reply_view(call: ReplyCall) -> JsonValue:
     raw_response = httpx.Response(
         call["status"],
         content=call["body"].encode(),
-        headers=[(name, value) for name, value in call["headers"]],
+        headers=[(pair[0], pair[1]) for pair in call["headers"]],
     )
     time.time = partial(float, call["now"])
     try:
