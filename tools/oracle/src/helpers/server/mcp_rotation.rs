@@ -4,7 +4,6 @@ use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_server::mcp_rotation::rotation::Rotation;
-use betterlite_server::mcp_rotation::store::{StoredUserCredentialRow, StoredUserEnvVarRow};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
