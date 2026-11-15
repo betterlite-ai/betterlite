@@ -143,3 +143,10 @@ path = "fuzz_targets/nvidia_nim_rerank_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "databricks_oauth_reply"
+path = "fuzz_targets/databricks_oauth_reply.rs"
+test = false
+doc = false
+bench = false
