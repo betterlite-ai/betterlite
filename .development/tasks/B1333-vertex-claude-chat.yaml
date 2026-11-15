@@ -16,11 +16,12 @@ description: >-
   the body, and write the resulting set into both anthropic_beta and the header. Compare beta
   sets independent of Python hash iteration, while preserving membership exactly. Accept
   vertex_ai and vertex_ai_beta in is_supported_model, using lowercase claude or catalog membership.
-  The remote-image policy calls B183's no-fetch rejection; inline bytes remain usable. Pure
-  helper vertex_claude_chat cases effort_haiku, effort_opus, native_schema_capability,
+  The remote-image policy overrides B577's predicate to inline every image_url part, http or
+  https, through B183's async_inline_remote_media; inline bytes remain usable. Pure helper
+  vertex_claude_chat cases effort_haiku, effort_opus, native_schema_capability,
   compact_and_other_edits, manual_beta_union, model_removed and response_model_restored cover
-  these overrides. Rust remote_image_rejected verifies the deviation's status/type/param/code
-  and zero credential/HTTP calls.
+  these overrides. Rust remote_image_fetch proves a map-backed fetcher rewrites a remote
+  image_url to its data URL and a refusing fetcher fails before any credential or HTTP call.
   Budget 270 implementation, 180 tests, 130 adapters and 70 dependency/wiring lines.
 scope:
   paths:
@@ -42,7 +43,7 @@ references:
 dod:
   - text: Vertex Claude chat applies capability-sensitive output policy and the exact beta membership.
     proof: [claude-overrides, claude-python, oracle]
-  - text: Remote image inputs requiring bytes fail before any fetch and inline images remain usable.
+  - text: Remote image_url inputs are inlined through the injected fetcher, and inline images remain usable.
     proof: [claude-media]
   - text: New Claude override fixtures select the production helper entry.
     proof: [claude-seeds]
@@ -53,8 +54,8 @@ checks:
       run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_claude_chat::tests::overrides/)'
       why: Tests must distinguish native structured output from the tool-based fallback.
     - id: claude-media
-      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_claude_chat::tests::remote_image_rejected$/)'
-      why: The Vertex inlining override must not re-enable request URL downloads.
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^vertex_claude_chat::tests::remote_image_fetch$/)'
+      why: The Vertex override selects image_url parts, including https URLs, for async inlining.
     - id: claude-python
       run: test -f tools/oracle/helpers/vertex_claude_chat.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Reference adapters compare parent-composed Vertex requests and stable beta sets.
@@ -69,10 +70,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/vertex-claude-chat/manual-beta-union.yaml
   - tools/oracle/cases/helpers/vertex-claude-chat/model-removed.yaml
   - tools/oracle/cases/helpers/vertex-claude-chat/response-model-restored.yaml
-deviations:
-  - what: Vertex Claude chat image URLs that require inlining return HTTP 400, type invalid_request_error, param image_url and code unsupported_remote_media; no request URL is fetched and supplied inline image bytes still work.
-    why: inlines_remote_media selects URL retrieval here; the download policy remains open for Max, so no downloader is added.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/anthropic/transformation.py#L55-L56
+deviations: []
 out_of_scope:
   - The local VertexAIError class at L20-L26 has no caller at the pin; shared Vertex errors are already B1300.
   - B1339 owns experimental_pass_through/transformation.py; this task exports its output sanitizer for that caller.

@@ -23,8 +23,11 @@ description: >-
   Drive native B649 retrieve/list/cancel and B651 transport, including status mapping, output file conversion, pagination
   and cancellation behavior. The operation enum must call the leaves, not return fixture tags. Keep public batch
   listing and runner choice with B1051/B1133/B1112. installed_service_families: Exercise B680 agents/Claude Platform
-  and B681 Responses/passthrough/search/vector/realtime through the same closed dispatcher. Existing model resolution
-  B174 and parameter mapping B175 run at the caller boundary; leaf crates do not call the upper dispatcher. native_s3_is_not_managed:
+  and B681 Responses/passthrough/search/vector/realtime through the same closed dispatcher. The dispatcher entry
+  takes the caller's RemoteMediaFetcher and passes it to the B681 Responses arm, which hands it to B657's sync and
+  async transforms; a map-backed fetcher inlines a remote image input in the captured request, and a refusing fetcher
+  fails before the leaf transport. Existing model resolution B174 and parameter mapping B175 run at the caller
+  boundary; leaf crates do not call the upper dispatcher. native_s3_is_not_managed:
   A configured native Bedrock S3 file/batch call uses only the installed open-source leaves and does not construct
   or register a managed_files hook. Preserve native operation availability even though enterprise-managed IDs/storage
   are unavailable. Proxy managed-hook errors are HTTP cases of B1031/B1032/B1033/B1034/B087 and B1050/B1051/B1133,
@@ -33,9 +36,8 @@ description: >-
 
   The current managed-batch source message is LiteLLM-executed batches need a database: set DATABASE_URL so LiteLLM
   can keep the batch and its files. Public route owners apply B184 message rewriting while matching status/type/param/code.
-  Request URL downloads remain disabled: local file/multipart bytes are accepted; a route requiring fetched bytes
-  fails through its existing media error owner, with zero outbound fetch. The decision to enable request URL downloads
-  and to add managed files/batches remains open for Max.
+  The installed Responses family fetches request image URLs through the injected RemoteMediaFetcher before dispatch,
+  while local file/multipart bytes stay local. The decision to add managed files and batches remains open for Max.
 
 
   Write standalone Rust test bedrock_services_dispatch_credential_identity_isolation in betterlite-provider: Distinct
@@ -152,8 +154,11 @@ dod:
   proof:
   - helper-case-corpus
 - text: 'installed_service_families: Exercise B680 agents/Claude Platform and B681 Responses/passthrough/search/vector/realtime
-    through the same closed dispatcher. Existing model resolution B174 and parameter mapping B175 run at the caller
-    boundary; leaf crates do not call the upper dispatcher.'
+    through the same closed dispatcher. The dispatcher entry takes the caller''s RemoteMediaFetcher and passes it
+    to the B681 Responses arm, which hands it to B657''s sync and async transforms; a map-backed fetcher inlines a
+    remote image input in the captured request, and a refusing fetcher fails before the leaf transport. Existing
+    model resolution B174 and parameter mapping B175 run at the caller boundary; leaf crates do not call the upper
+    dispatcher.'
   proof:
   - case-installed-service-families
   - oracle
@@ -211,8 +216,10 @@ checks:
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-installed-service-families
     why: Exercise B680 agents/Claude Platform and B681 Responses/passthrough/search/vector/realtime through the
-      same closed dispatcher. Existing model resolution B174 and parameter mapping B175 run at the caller boundary;
-      leaf crates do not call the upper dispatcher.
+      same closed dispatcher. The dispatcher entry takes the caller's RemoteMediaFetcher and passes it to the B681
+      Responses arm, which hands it to B657's sync and async transforms; a map-backed fetcher inlines a remote image
+      input in the captured request, and a refusing fetcher fails before the leaf transport. Existing model resolution
+      B174 and parameter mapping B175 run at the caller boundary; leaf crates do not call the upper dispatcher.
     run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/::bedrock_services_dispatch_cases::case_[0-9]+_installed_service_families$/)'
   - id: case-native-s3-is-not-managed
     why: A configured native Bedrock S3 file/batch call uses only the installed open-source leaves and does not
@@ -251,6 +258,8 @@ pitfalls:
 - 'The oracle helper for this task is pre-registered as bedrock_services_services in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/bedrock_services_services.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/bedrock_services_services.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - Native S3 file support does not create the enterprise managed_files hook.
 - A database alone cannot satisfy the managed batch runner guard.
+- The B681 Responses arm now takes the caller's RemoteMediaFetcher; building a Fetcher inside this dispatcher would
+  read the MAX_IMAGE_URL_DOWNLOAD_SIZE_MB setting that the composition does not own.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

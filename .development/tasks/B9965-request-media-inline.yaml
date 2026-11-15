@@ -1,0 +1,164 @@
+id: B9965
+title: Inline Vertex and AI Studio request media before conversion
+description: >-
+  Both Gemini entries refuse request media today. transform_request_body_async in
+  crates/betterlite-vertex/src/gemini_request/orchestration/async_media.rs calls reject_inlined_media,
+  and transform_request_body never fetches either, so an http:// reference, an https:// reference with
+  no explicit or inferable MIME, and a file_id URL all end in gemini_media::process::payload_for's
+  MediaError::RemoteMediaRequired, a 400 with code unsupported_remote_media. LiteLLM downloads them:
+  async_transform_request_body pre-inlines through async_inline_remote_media with _ai_studio_inlines
+  for gemini and _vertex_inlines otherwise (transformation.py L1371-L1373) and then converts, while the
+  synchronous path downloads inside _process_gemini_media through convert_to_anthropic_image_obj
+  (L574-L582). The decision (B1311's inlines_remote), the fetcher (B5083 through B183's
+  RemoteMediaFetcher) and the download policy already exist. Remove the refusal and add the missing
+  fetch.
+
+
+  Add crates/betterlite-vertex/src/gemini_request/media_prepare.rs (the skeleton creates the file and
+  declares `pub mod media_prepare;` in gemini_request.rs) with two public items. prepare(messages,
+  provider, fetcher, mode) returns the messages with remote media replaced by fetched data URLs, using
+  betterlite_prompts::media::inline::{inline_remote_media, async_inline_remote_media} with a predicate
+  built from gemini_media::policy::inlines_remote and the part's format, mime_type and content_type
+  fields, exactly as reject_inlined_media builds them today. FetchMode::Sequential uses the
+  one-at-a-time function and FetchMode::Concurrent the batch one. The error type is
+  betterlite_prompts::media::error::MediaError, already the Inline variant of RequestError, so a
+  refused URL fails the request before any body is built. Then walk every message's
+  provider_specific_fields.images list and inline an entry whose image_url object carries an http or
+  https url that inlines_remote accepts. LiteLLM routes assistant images through _process_gemini_media
+  for both providers, so this pass always uses GoogleProvider::Vertex: an https url with an image
+  extension stays a file_data reference even on Studio, while an http url or an extensionless https url
+  is fetched. Rewrite image_url.url with the data URL and keep its other keys. A bare-string image_url
+  is skipped because LiteLLM skips it too. Count distinct urls against
+  betterlite_prompts::media::limits::MAX_REMOTE_URLS and refuse more with
+  MediaError::TooManyRemoteUrls. Fetch with convert_url in Sequential mode and with convert_urls in
+  Concurrent mode.
+
+
+  Move the cache strip, check_and_create_cache, restore and body build into one pub(crate) async fn
+  transformed in orchestration.rs that takes a FetchMode, calls prepare on outcome.messages and passes
+  the prepared slice to body_from. transform_request_body calls it with Sequential and
+  transform_request_body_async with Concurrent; async_media.rs keeps its public signature and
+  delegates, and reject_inlined_media disappears with its imports. body_from takes the prepared
+  messages as a slice. In studio_chat.rs delete the input::reject_remote_media call, delete
+  studio_chat/input.rs and its mod line; Studio's fetch now happens in the shared prepare with
+  GoogleProvider::AiStudio, and a part that arrives unprepared still fails in process_media, so
+  conversion keeps a last-resort refusal instead of performing I/O. Write the tests first with a
+  map-backed fetcher and a refusing one; every one of them fails on main because main never calls the
+  fetcher. Put them in gemini_request/tests.rs under names starting media_: download, https with a MIME
+  passthrough, http with an extension downloaded, Studio https with an extension downloaded, Files API
+  URI not fetched, data URL not fetched, assistant image downloaded, Studio assistant image with an
+  extension not fetched, refused fetch fails once with RequestError::Inline and builds no body, and
+  sequential fetch order. Replace the two existing inline_policy tests with these.
+
+
+  Replace the fetch clause of docs/deviations/B1311.yaml row 1 so it lists only the extensionless
+  gs:// case and points at the GCS probe B9961 builds. Delete row 1 of docs/deviations/B1321.yaml and
+  row 1 of docs/deviations/B1325.yaml. Add docs/deviations/B9965.yaml with two rows. First: the
+  synchronous entry fetches every selected url before converting any part, and assistant images are
+  fetched after all content parts, where LiteLLM's synchronous path downloads each url while converting
+  its part and stops at the first conversion failure. Second: a Studio file part whose download fails
+  fails the request, where LiteLLM's synchronous Studio prepass swallows the failure and its walker can
+  still forward an https url with an image extension as file_data. Compare the whole body after prepare
+  through helper gemini_media_prepare: patch image_handling's convert functions and
+  factory.convert_url_to_base64 with a url map, run async_inline_remote_media or inline_remote_media
+  with _ai_studio_inlines or _vertex_inlines, then _transform_request_body with
+  _get_gcs_object_content_type patched to raise. The owned LiteLLM lines are about 90. The production
+  diff is about 300 lines, the adapters about 220 and the cases and seeds about 130.
+scope:
+  paths:
+    - crates/betterlite-vertex/src/gemini_request/media_prepare.rs
+    - crates/betterlite-vertex/src/gemini_request/orchestration.rs
+    - crates/betterlite-vertex/src/gemini_request/orchestration/async_media.rs
+    - crates/betterlite-vertex/src/gemini_request/tests.rs
+    - crates/betterlite-vertex/src/studio_chat.rs
+    - crates/betterlite-vertex/src/studio_chat/input.rs
+    - crates/betterlite-vertex/src/studio_chat/tests.rs
+    - crates/betterlite-vertex/src/studio_chat/tests/rejected_url.rs
+    - crates/betterlite-vertex/src/studio_chat/tests/input_cases.rs
+    - docs/deviations/B1311.yaml
+    - docs/deviations/B1321.yaml
+    - docs/deviations/B1325.yaml
+    - docs/deviations/B9965.yaml
+    - tools/oracle/src/helpers/vertex/gemini_media_prepare.rs
+    - tools/oracle/src/helpers/vertex/gemini_media_prepare/**
+    - tools/oracle/helpers/gemini_media_prepare.py
+    - tools/oracle/helpers/gemini_media_prepare/**
+    - tools/oracle/cases/helpers/gemini-media-prepare/**
+    - tools/oracle/fuzz/corpus/helper_case/gemini_media_prepare*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1313-L1328
+    why: The per-provider inline predicates the shared prepare pass calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1371-L1396
+    why: The async pre-inline step before the body transform.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L574-L582
+    why: The synchronous download branch inside per-part media processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L946-L971
+    why: Assistant images route through per-part processing for both providers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/image_handling.py#L306-L334
+    why: The seam's distinct-url traversal and its inline rewrites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L113-L173
+    why: Studio's own prepass that this task replaces with the shared fetch.
+dod:
+  - text: Vertex requests download http and extensionless https media into inline_data in both entries.
+    proof: [media-tests, oracle, media-python]
+  - text: Studio requests download remote media instead of refusing it.
+    proof: [media-tests, oracle, media-python]
+  - text: A refusing fetcher fails the request once with RequestError::Inline and builds no body.
+    proof: [media-tests]
+  - text: Assistant images without an image extension are fetched for both providers, and ones with an extension stay file_data.
+    proof: [media-tests, oracle]
+  - text: The three old deviation rows are gone and docs/deviations/B9965.yaml records the two remaining differences.
+    proof: [deviation-rows]
+  - text: The new helper seeds decode under call.gemini_media_prepare.
+    proof: [media-prepare-seed]
+checks:
+  optional: []
+  commands:
+    - id: media-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_request::tests::media_/)'
+      why: Both entries must fetch through the injected fetcher and keep passthrough references unfetched.
+    - id: studio-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^studio_chat::tests::/)'
+      why: Studio conversion must still refuse an unprepared remote part without performing I/O.
+    - id: media-python
+      run: test -f tools/oracle/helpers/gemini_media_prepare.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The comparison must call the pinned inline and transform functions with network access replaced by a map.
+    - id: media-prepare-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_media_prepare*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_media_prepare::/)'
+      why: New helper seeds must parse the production operation tag and input type.
+    - id: deviation-rows
+      run: test -f docs/deviations/B9965.yaml && test -z "$(grep -F 'L1373-L1396' docs/deviations/B1321.yaml)" && test -z "$(grep -F 'L113-L173' docs/deviations/B1325.yaml)" && grep -q -F 'gemini/chat/transformation.py#L154-L167' docs/deviations/B9965.yaml
+      why: The fixed no-fetch rows must be gone and the Studio fallback difference recorded with its pinned line.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-media-prepare/vertex-download.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/vertex-https-passthrough.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/vertex-http-download.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/studio-download.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/files-api-passthrough.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/assistant-image.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/studio-assistant-image.yaml
+  - tools/oracle/cases/helpers/gemini-media-prepare/refused-fetch.yaml
+deviations:
+  - what: The synchronous entry fetches every selected media url before converting any message part, and assistant images are fetched after all content parts; LiteLLM's synchronous path downloads each url while converting its part and stops at the first conversion failure.
+    why: betterlite prepares messages before the shared body build so the conversion code never performs I/O; the asynchronous entry fetches in the same order LiteLLM's async pre-inline does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1194
+  - what: A Studio file part whose remote download fails fails the request with 400, where LiteLLM's synchronous Studio prepass swallows the failed file fetch and its walker can still forward an https url with an image extension as file_data.
+    why: A failed fetch is treated as final so no request continues with a uri the caller asked the gateway to inline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/chat/transformation.py#L154-L167
+out_of_scope:
+  - The cache-prefix conversion in crates/betterlite-vertex/src/cache_prefix/transform.rs (B1317) also converts cached messages through the same fetcher and still refuses an http or extensionless https reference in an implicitly cached prefix.
+  - The Google token counter's history conversion in crates/betterlite-vertex/src/google_token_counter/vertex.rs does not run this pass; its media policy belongs to B197.
+  - Tool-result media stays with betterlite_prompts::gemini_tool_results (B1128) and already fetches through the same seam.
+  - Constructing B5083's Fetcher for the gateway route is B1316 and B1327 wiring, recorded in this task's notes for the architect.
+  - The extensionless gs:// reference is B9961.
+pitfalls:
+  - The predicate reads RemoteMedia.fields, which is the image_url object for an image part and the file object for a file part; reading format from the wrong object turns a passthrough into a download.
+  - Assistant images always follow the Vertex predicate, even for gemini, because LiteLLM handles them inside _process_gemini_media and not in the Studio prepass.
+  - The seam writes a bare-string image_url back as a data URL string; keep that shape and do not turn it into an object.
+  - Only http and https are remote; a data URL or Files API uri must never reach the fetcher.
+  - The sync entry must call inline_remote_media and the async entry async_inline_remote_media, so a refusing fetcher shows one convert_url call in the sync test and one convert_urls call in the async test.
+  - The test fetcher must record convert_urls as well as convert_url; the old CountingFetch only counted and errored.
+  - The two entries must not fetch twice. prepare runs once per request, after the cache stage, and body_from receives its result.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 1}
