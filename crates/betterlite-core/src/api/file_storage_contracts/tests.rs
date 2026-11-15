@@ -92,6 +92,7 @@ impl FileContentRepository for FakeRepository {
         let mut state = self.record(RepoCall::Store(content.to_vec()))?;
         let row_id = state.row_id.clone();
         state.contents.insert(row_id.clone(), content.to_vec());
+        drop(state);
         Ok(row_id)
     }
 
@@ -103,6 +104,7 @@ impl FileContentRepository for FakeRepository {
     async fn delete_content(&self, row_id: &str) -> Result<(), TableError> {
         let mut state = self.record(RepoCall::Delete(row_id.to_owned()))?;
         state.contents.remove(row_id);
+        drop(state);
         Ok(())
     }
 }
