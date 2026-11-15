@@ -1,0 +1,8 @@
+kind: helper
+name: core-lakera-v2
+call:
+  b6560:
+    model: lakera_v2
+env: {}
+compare:
+  ignore: []

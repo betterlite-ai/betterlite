@@ -1,0 +1,56 @@
+{
+  "advisory_system_message": {
+    "description": "Custom advisory message template used when on_flagged='inject_system_message'. Must contain a {reason} placeholder. Defaults to a generic advisory message if unset.",
+    "required": false,
+    "type": "string"
+  },
+  "api_base": {
+    "description": "Base URL for the Lakera AI API",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "API key for the Lakera AI service",
+    "required": false,
+    "type": "string"
+  },
+  "breakdown": {
+    "default_value": true,
+    "description": "Whether to include breakdown in the response",
+    "required": false,
+    "type": "boolean"
+  },
+  "dev_info": {
+    "default_value": true,
+    "description": "Whether to include developer information in the response",
+    "required": false,
+    "type": "boolean"
+  },
+  "metadata": {
+    "description": "Additional metadata to include in the request",
+    "required": false,
+    "type": "object"
+  },
+  "on_flagged": {
+    "default_value": "block",
+    "description": "Action to take when content is flagged: 'block' (raise exception), 'monitor' (log only), or 'inject_system_message' (append an advisory system message and let the LLM decide)",
+    "options": [
+      "block",
+      "monitor",
+      "inject_system_message"
+    ],
+    "required": false,
+    "type": "select"
+  },
+  "payload": {
+    "default_value": true,
+    "description": "Whether to include payload in the response",
+    "required": false,
+    "type": "boolean"
+  },
+  "project_id": {
+    "description": "Project ID for the Lakera AI project",
+    "required": false,
+    "type": "string"
+  }
+}
