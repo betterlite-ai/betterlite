@@ -1,0 +1,27 @@
+kind: helper
+name: vertex-agent-records-data-prefix-ignored
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          data: {"content":{"parts":[{"text":"sse"}]}}
+          [1,2]
+          not json
+          {"content":{"parts":[{"text":"real"}]}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 6
+        completion_tokens: 3
+        counter: fixed
+      - status: 200
+        body: |-
+          data: {"content":{"parts":[{"text":"only sse"}]}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 6
+        completion_tokens: 0
+        counter: fixed
+env: {}
+compare: {ignore: []}

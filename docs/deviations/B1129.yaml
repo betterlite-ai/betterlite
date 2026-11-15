@@ -1,0 +1,12 @@
+task: B1129
+deviations:
+  - what: A timeout that is NaN or infinite, whether it arrives as a number, a text or one phase of a structured timeout, is rejected with an error naming the timeout, before any provider call is prepared.
+    why: LiteLLM converts the text with float() and hands a non-finite value to the HTTP client, which cannot time out on it; betterlite keeps its timeout finite and says which input was wrong.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L780-L781
+  - what: A text timeout is parsed with Rust's float grammar, so Python's digit separators such as 1_0 are rejected with the rest of the invalid timeout text.
+    why: Python's float() spelling is a runtime habit betterlite does not port; every timeout text a config or caller writes in plain decimal parses the same on both sides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L780-L781
+kept_bugs:
+  - what: The Azure list call drops the caller's after cursor and limit page size, so the prepared Azure call record carries neither and its answer never shows them.
+    why: LiteLLM's Azure branch passes neither argument to AzureBatchesAPI.list_batches, and a working Azure setup pages through Azure's own API surface, so the signature is copied as it is.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/main.py#L839-L847
