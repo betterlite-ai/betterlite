@@ -113,6 +113,53 @@ fn chat_output_usage_counts_cached_tokens() {
 }
 
 #[test]
+fn counts_reasoning_tokens_in_the_aggregate() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "openai",
+        "model_name": "gpt-4o-batch",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [{
+            "custom_id": "r",
+            "response": {"status_code": 200, "body": {"usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+                "completion_tokens_details": {"reasoning_tokens": 7},
+            }}},
+        }]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.usage.reasoning_tokens, 7);
+    assert_eq!(result.usage.completion_tokens, 5);
+    assert_eq!(result.usage.total_tokens, 15);
+    assert_eq!(result.cost, Decimal::new(625, 2));
+}
+
+#[test]
+fn a_non_object_response_slot_counts_failed() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "openai",
+        "model_name": "gpt-4o-batch",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"custom_id": "bad", "response": "not an object"},
+            {"custom_id": "ok", "response": {"status_code": 200, "body": {"usage": {
+                "prompt_tokens": 4,
+                "completion_tokens": 0,
+                "total_tokens": 4,
+            }}}},
+        ]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.successful_requests, 1);
+    assert_eq!(result.failed_requests, 1);
+    assert_eq!(result.usage, totals(4, 0, 4));
+    assert_eq!(result.cost, Decimal::new(2, 0));
+}
+
+#[test]
 fn line_cost_prefers_the_response_model() {
     let lookup = ByModelLookup {
         response: serde_json::from_str(r#"{"input_cost_per_token_batches":0.5}"#)
@@ -248,6 +295,26 @@ fn a_parsed_anthropic_usage_is_not_flagged() {
         Level::WARN,
         "batch output line reported usage this parser does not understand"
     ));
+}
+
+#[test]
+fn an_anthropic_result_that_is_not_an_object_counts_failed() {
+    let decoded = input(json!({
+        "kind": "output_usage",
+        "provider": "anthropic",
+        "model_info": batch_model_info(),
+        "content": {"kind": "lines", "lines": [
+            {"custom_id": "bad", "result": "succeeded"},
+            {"custom_id": "ok", "result": {"type": "succeeded", "message": {
+                "usage": {"input_tokens": 4, "output_tokens": 0},
+            }}},
+        ]},
+    }));
+    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    assert_eq!(result.successful_requests, 1);
+    assert_eq!(result.failed_requests, 1);
+    assert_eq!(result.usage, totals(4, 0, 4));
+    assert_eq!(result.cost, Decimal::new(2, 0));
 }
 
 #[test]
@@ -421,6 +488,28 @@ fn decodes_bytes_with_python_byte_whitespace() {
     );
     assert_eq!(decoded[1], DecodedBatchLine::NonObject { kind: "int" });
     assert!(matches!(decoded[2], DecodedBatchLine::Malformed { .. }));
+}
+
+#[test]
+fn rejects_lines_that_are_not_strict_utf8_json() {
+    let invalid_utf8 = decode_batch_output_usage(b"\xff\xfe{\x00}\n", &ApiLimits::default())
+        .expect("the bytes decode");
+    assert!(matches!(
+        invalid_utf8.as_slice(),
+        [DecodedBatchLine::Malformed { .. }]
+    ));
+    let utf16 = decode_batch_output_usage(b"{\x00\"a\"\x00:\x001\x00}\x00", &ApiLimits::default())
+        .expect("the bytes decode");
+    assert!(matches!(
+        utf16.as_slice(),
+        [DecodedBatchLine::Malformed { .. }]
+    ));
+    let nan =
+        decode_batch_output_usage(b"{\"a\":NaN}", &ApiLimits::default()).expect("the bytes decode");
+    assert!(matches!(
+        nan.as_slice(),
+        [DecodedBatchLine::Malformed { .. }]
+    ));
 }
 
 #[test]
