@@ -1,0 +1,6 @@
+kind: helper
+name: render-tool-intent-name-and-args
+call:
+  compresr_transport: {"function": "render_tool_intent", "function_call": {"name": " search ", "arguments": {"q": "rust"}}}
+env: {}
+compare: {ignore: []}
