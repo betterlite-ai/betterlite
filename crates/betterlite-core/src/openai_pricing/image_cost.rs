@@ -84,18 +84,12 @@ fn calculated_cost(
             return Err(ImageCostFailure::NotText { field: "size" });
         }
     };
-    // LiteLLM rewrites an x separator to "-x-" before building catalog keys; the models calculator rewrites it only for the dimension parse, so the key lookup needs the rewritten spelling here
-    let price_size = if raw_size.contains("-x-") {
-        raw_size.to_owned()
-    } else {
-        raw_size.replace('x', "-x-")
-    };
     let calculation = DefaultImageCostRequest {
         model: request.model,
         custom_llm_provider: Some(OPENAI_PROVIDER),
         quality: quality_text,
         n_images: Some(image_count),
-        size: Some(price_size.as_str()),
+        size: Some(raw_size),
         model_info: None,
     };
     Ok(default_image_cost_calculator(&calculation, lookup)?)

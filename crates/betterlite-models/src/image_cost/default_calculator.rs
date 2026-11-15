@@ -23,16 +23,18 @@ pub fn default_image_cost_calculator(
     request: &DefaultImageCostRequest<'_>,
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, ImageCostError> {
-    let size = request
-        .size
-        .filter(|value| !value.is_empty())
-        .unwrap_or(DEFAULT_SIZE);
-    let (height, width) = parse_image_dimensions(size)?;
+    let size = normalize_size_separator(
+        request
+            .size
+            .filter(|value| !value.is_empty())
+            .unwrap_or(DEFAULT_SIZE),
+    );
+    let (height, width) = parse_image_dimensions(&size)?;
     let candidates = catalog_candidates(
         request.model,
         request.custom_llm_provider,
         request.quality,
-        size,
+        &size,
     );
     let matched = candidates
         .iter()
