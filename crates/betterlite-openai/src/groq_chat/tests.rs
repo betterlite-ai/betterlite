@@ -403,6 +403,35 @@ fn a_response_schema_key_wins_over_json_schema() {
     );
 }
 
+#[rstest]
+#[case::empty_envelope(r#"{"type":"json_schema","json_schema":{}}"#)]
+#[case::not_an_object(r#"{"type":"json_schema","json_schema":"text"}"#)]
+#[case::null_envelope(r#"{"type":"json_schema","json_schema":null}"#)]
+fn a_malformed_json_schema_is_a_400_naming_the_field(#[case] format: &str) {
+    let request = format!(r#"{{"response_format":{format}}}"#);
+    let error = mapped("llama-3.3-70b-versatile", &request, "{}", &Answers::NO)
+        .expect_err("the malformed json_schema");
+    assert_eq!(error.status_code(), 400);
+    assert!(error.to_string().contains("response_format.json_schema"));
+}
+
+#[test]
+fn a_null_schema_in_the_envelope_is_copied_without_a_tool() {
+    let mapped = mapped(
+        "llama-3.3-70b-versatile",
+        r#"{"response_format":{"type":"json_schema","json_schema":{"schema":null}}}"#,
+        "{}",
+        &Answers::NO,
+    )
+    .expect("the mapping");
+    assert_eq!(
+        mapped.optional_params["response_format"]["type"],
+        "json_schema"
+    );
+    assert!(mapped.optional_params.get("tools").is_none());
+    assert_eq!(mapped.optional_params["fake_stream"], true);
+}
+
 #[test]
 fn a_native_schema_model_keeps_the_response_format() {
     let answers = Answers {

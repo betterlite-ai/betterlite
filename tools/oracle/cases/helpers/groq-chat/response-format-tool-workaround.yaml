@@ -18,5 +18,14 @@ call:
                   answer: {type: string}
         optional_params:
           temperature: 0.2
+      - model: llama-3.3-70b-versatile
+        non_default:
+          response_format:
+            type: json_schema
+            json_schema: {}
+        optional_params: {}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/options/1/error/status
+      why: betterlite returns 400 for a json_schema without schema where LiteLLM's KeyError carries no status (docs/deviations/B5833.yaml)

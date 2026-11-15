@@ -126,6 +126,12 @@ fn user_tools_with_a_schema_fail_with_400() {
 }
 
 #[test]
+fn a_json_schema_without_a_schema_is_a_bad_request() {
+    let entries = &run_case("response-format-tool-workaround.yaml")["options"];
+    assert_eq!(entries[1]["error"]["status"], 400);
+}
+
+#[test]
 fn web_search_options_add_one_tool_without_duplicating_it() {
     let entries = &run_case("web-search-options-tool.yaml")["options"];
     assert_eq!(

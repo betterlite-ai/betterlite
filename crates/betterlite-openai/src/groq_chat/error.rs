@@ -20,7 +20,7 @@ pub enum GroqChatError {
     Provider(#[from] OpenAiError),
     #[error("{message}")]
     BadRequest { message: String },
-    #[error("response_format json_schema is not an object with a schema")]
+    #[error("response_format.json_schema must be an object with a schema")]
     SchemaShape,
 }
 
@@ -28,15 +28,11 @@ impl GroqChatError {
     #[must_use]
     pub fn status_code(&self) -> u16 {
         match self {
-            Self::BadRequest { .. } => 400,
+            Self::BadRequest { .. } | Self::SchemaShape => 400,
             Self::Content(error) => error.status_code(),
             Self::Provider(OpenAiError::Provider(error)) => error.status_code,
             Self::Stream(StreamError::Provider { status, .. }) => *status,
-            Self::Capability(_)
-            | Self::Reply(_)
-            | Self::Provider(_)
-            | Self::SchemaShape
-            | Self::Stream(_) => 500,
+            Self::Capability(_) | Self::Reply(_) | Self::Provider(_) | Self::Stream(_) => 500,
         }
     }
 }

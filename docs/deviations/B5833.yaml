@@ -12,3 +12,6 @@ deviations:
   - what: A reply whose JSON has no service_tier key maps to "auto" instead of raising.
     why: LiteLLM reads the attribute with getattr without a default, so a Groq reply that omits service_tier fails with an AttributeError, a 500 on a reply LiteLLM already parses. No working setup can rely on that, and null already maps to "auto".
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L308
+  - what: A response_format json_schema whose json_schema is missing a schema key, null, or not an object is a 400 error naming response_format.json_schema, where LiteLLM subscripts it and answers 500.
+    why: The value comes from the client request, so a 4xx belongs where LiteLLM produces an unhandled KeyError or TypeError, and no working setup can rely on the 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/groq/chat/transformation.py#L215

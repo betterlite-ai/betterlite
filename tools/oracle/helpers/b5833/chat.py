@@ -49,5 +49,7 @@ def options_value(call: Call) -> JsonValue:
         return {"error": {"status": error.status_code}}
     except LookupFailureError:
         return {"error": {"status": None}}
+    except (KeyError, TypeError):
+        return {"error": {"status": None}}
     value: Object = {"optional_params": mapped, "non_default": non_default}
     return value
