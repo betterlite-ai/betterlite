@@ -156,9 +156,9 @@ class StoredCache(DualCache):
 
 def build_probe(settings: Settings, keys: list[UserAPIKeyAuth]) -> Hooked:
     event_hook = TypeAdapter(EventHook).validate_python(settings["event_hook"])
-    probe_class = GUARDRAIL_CLASS.validate_python(
-        type("Probe", (ProbeBase, CustomGuardrail), {"keys": keys})
-    )
+    members = {"keys": keys}
+    bases = (type(ProbeBase()), type(CustomGuardrail(guardrail_name=None)))
+    probe_class = GUARDRAIL_CLASS.validate_python(type("Probe", bases, members))
     return probe_class(
         guardrail_name=settings["guardrail_name"],
         event_hook=event_hook,
