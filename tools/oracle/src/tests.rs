@@ -556,7 +556,7 @@ fn mixed_cases() -> Vec<LoadedCase> {
 }
 
 #[rstest::rstest]
-#[case::b4710("b4710", 17)]
+#[case::b4710("b4710", 18)]
 #[case::other_operation("url_path", 1)]
 fn k_keeps_only_the_helper_cases_calling_the_operation(
     #[case] operation: &str,
