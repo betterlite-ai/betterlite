@@ -58,6 +58,7 @@ pub fn retrieve_calls(response: &ToolCallResponse) -> Vec<RetrieveCall> {
         .collect()
 }
 
+#[must_use]
 pub fn holds_retrieve_tool<Tool>(tools: &[Tool]) -> bool
 where
     Tool: Serialize,

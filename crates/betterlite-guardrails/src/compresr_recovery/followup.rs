@@ -8,6 +8,7 @@ use super::response::{ModelResponse, ResponseFormat};
 use super::retrieval::Retrieved;
 use super::tools::{CallKind, RetrieveCall};
 
+// A second set of builders because headroom_retrieval's followup is private to that module; sharing it is out of this task's scope
 const ASSISTANT: &str = "assistant";
 const USER: &str = "user";
 const TOOL: &str = "tool";

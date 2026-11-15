@@ -16,6 +16,7 @@ pub(super) struct ResponseView {
     pub(super) output: JsonValue,
 }
 
+// A second response view because headroom_retrieval's is private to that module; sharing it is out of this task's scope
 pub(super) struct ModelResponse {
     pub(super) calls: ToolCallResponse,
     pub(super) view: ResponseView,
@@ -64,10 +65,6 @@ fn items(value: &JsonValue) -> &[JsonValue] {
     }
 }
 
-fn has_type(value: &JsonValue, kind: &str) -> bool {
-    matches!(value, JsonValue::Object(fields) if matches!(fields.get("type"), Some(JsonValue::String(found)) if found == kind))
-}
-
 // The text of a block of the given type, empty strings included
 fn typed_text<'block>(block: &'block JsonValue, kind: &str) -> Option<&'block str> {
     let JsonValue::Object(fields) = block else {
@@ -83,17 +80,13 @@ fn typed_text<'block>(block: &'block JsonValue, kind: &str) -> Option<&'block st
 }
 
 // None when nothing joins, so an empty text never wins over the next response shape
-fn joined_text<'text>(texts: impl Iterator<Item = &'text str>) -> Option<String> {
-    let kept: Vec<&str> = texts.filter(|text| !text.is_empty()).collect();
-    (!kept.is_empty()).then(|| kept.concat())
-}
-
 fn text_blocks(value: &JsonValue, kind: &str) -> Option<String> {
-    joined_text(
-        items(value)
-            .iter()
-            .filter_map(|block| typed_text(block, kind)),
-    )
+    let kept: Vec<&str> = items(value)
+        .iter()
+        .filter_map(|block| typed_text(block, kind))
+        .filter(|text| !text.is_empty())
+        .collect();
+    (!kept.is_empty()).then(|| kept.concat())
 }
 
 fn chat_text(choices: &JsonValue) -> Option<String> {
@@ -119,13 +112,13 @@ fn chat_text(choices: &JsonValue) -> Option<String> {
 
 fn responses_text(output: &JsonValue) -> Option<String> {
     let mut text = String::new();
-    for item in items(output)
-        .iter()
-        .filter(|item| has_type(item, "message"))
-    {
+    for item in items(output) {
         let JsonValue::Object(fields) = item else {
             continue;
         };
+        if !matches!(fields.get("type"), Some(JsonValue::String(found)) if found == "message") {
+            continue;
+        }
         let Some(content) = fields.get("content") else {
             continue;
         };
