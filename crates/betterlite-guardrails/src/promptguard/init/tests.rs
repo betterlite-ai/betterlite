@@ -32,7 +32,7 @@ fn promptguard_args_copy_every_setting() {
         "pg-key"
     );
     assert_eq!(built.block_on_error, Some(true));
-    assert_eq!(built.timeout, Some(3.5));
+    assert_eq!(built.timeout, Some(3.5_f64));
     assert!(built.default_on);
     assert_eq!(
         built.event_hook,
@@ -83,7 +83,7 @@ fn promptguard_nulls_stay_absent() {
 }
 
 #[rstest]
-#[case::text("true")]
+#[case::text(r#""true""#)]
 #[case::integer("1")]
 #[case::boolean_list("[]")]
 fn a_wrong_block_on_error_names_the_field(#[case] value: &str) {

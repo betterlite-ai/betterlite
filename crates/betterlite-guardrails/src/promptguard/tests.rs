@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
+use std::future::pending;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -19,7 +21,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::runtime::Builder;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::error::PromptGuardError;
 use super::init::PromptGuardArgs;
@@ -122,11 +126,15 @@ fn api_key_takes_the_argument_then_the_environment() {
 
 #[test]
 fn api_base_takes_the_argument_then_the_environment_then_the_default() {
-    let by_default =
-        PromptGuardGuardrail::new(args(Some("key"), None), &env(&[]), client()).expect("guardrail");
+    let by_default = PromptGuardGuardrail::new(
+        with_base(args(Some("key"), None), None),
+        &env(&[]),
+        client(),
+    )
+    .expect("guardrail");
     assert_eq!(by_default.api_base, DEFAULT_API_BASE);
     let from_environment = PromptGuardGuardrail::new(
-        args(Some("key"), None),
+        with_base(args(Some("key"), None), None),
         &env(&[("PROMPTGUARD_API_BASE", "https://env.test/")]),
         client(),
     )
@@ -147,7 +155,7 @@ fn api_base_takes_the_argument_then_the_environment_then_the_default() {
     .expect("guardrail");
     assert_eq!(empty_argument.api_base, "https://env.test");
     let empty_environment = PromptGuardGuardrail::new(
-        args(Some("key"), None),
+        with_base(args(Some("key"), None), None),
         &env(&[("PROMPTGUARD_API_BASE", "")]),
         client(),
     )
@@ -220,7 +228,7 @@ fn timeout_defaults_to_ten_seconds_and_takes_the_configured_value() {
         PromptGuardGuardrail::new(args(Some("key"), None), &env(&[]), client()).expect("guardrail");
     assert_eq!(by_default.timeout, Duration::from_secs(10));
     let mut request = args(Some("key"), None);
-    request.timeout = Some(2.5);
+    request.timeout = Some(2.5_f64);
     let configured = PromptGuardGuardrail::new(request, &env(&[]), client()).expect("guardrail");
     assert_eq!(configured.timeout, Duration::from_millis(2500));
 }
@@ -228,7 +236,7 @@ fn timeout_defaults_to_ten_seconds_and_takes_the_configured_value() {
 #[test]
 fn a_timeout_that_is_not_a_duration_is_refused() {
     let mut request = args(Some("key"), None);
-    request.timeout = Some(-1.0);
+    request.timeout = Some(-1.0_f64);
     let error = PromptGuardGuardrail::new(request, &env(&[]), client()).unwrap_err();
     assert!(matches!(
         error,
@@ -348,11 +356,11 @@ fn images_are_sent_only_when_they_are_not_empty() {
     inputs.images = Some(Vec::new());
     let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(request.images, None);
-    let mut inputs = text_inputs();
-    inputs.images = Some(vec!["https://img.test/a.png".to_owned()]);
-    let request = built(&inputs, GuardrailInputType::Request).expect("request");
+    let mut with_images = text_inputs();
+    with_images.images = Some(vec!["https://img.test/a.png".to_owned()]);
+    let request_with_images = built(&with_images, GuardrailInputType::Request).expect("request");
     assert_eq!(
-        request.images,
+        request_with_images.images,
         Some(vec!["https://img.test/a.png".to_owned()])
     );
 }
@@ -367,7 +375,7 @@ fn any_other_decision_allows_the_inputs(#[case] decision: Option<&str>) {
         decision: decision.map(ToOwned::to_owned),
         threat_type: Some("topic".to_owned()),
         event_id: Some("evt".to_owned()),
-        confidence: Some(0.5),
+        confidence: Some(0.5_f64),
         redacted_messages: None,
     };
     let updated = wire::apply_decision(inputs.clone(), response).expect("allowed");
@@ -380,7 +388,7 @@ fn a_block_decision_raises_the_documented_message() {
         decision: Some("block".to_owned()),
         threat_type: Some("prompt_injection".to_owned()),
         event_id: Some("evt-1".to_owned()),
-        confidence: Some(0.9),
+        confidence: Some(0.9_f64),
         redacted_messages: None,
     };
     let error = wire::apply_decision(text_inputs(), response).unwrap_err();
@@ -618,7 +626,7 @@ fn no_messages_passes_the_inputs_through_without_a_call() {
         client(),
     )
     .expect("guardrail");
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .expect("runtime");
@@ -681,7 +689,7 @@ fn header(headers: &HeaderMap, name: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
-async fn serve(router: Router) -> (String, JoinSet<std::io::Result<()>>) {
+async fn serve(router: Router) -> (String, JoinSet<io::Result<()>>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
     let mut server = JoinSet::new();
@@ -832,16 +840,16 @@ async fn the_configured_timeout_bounds_the_guard_call() {
     let router = Router::new().route(
         "/api/v1/guard",
         post(|| async {
-            std::future::pending::<()>().await;
+            pending::<()>().await;
             StatusCode::OK
         }),
     );
     let (base, mut server) = serve(router).await;
     let mut failing = with_base(args(Some("test-key"), Some(true)), Some(&base));
-    failing.timeout = Some(0.2);
+    failing.timeout = Some(0.2_f64);
     let failing_guardrail =
         PromptGuardGuardrail::new(failing, &env(&[]), client()).expect("guardrail");
-    let error = tokio::time::timeout(
+    let error = timeout(
         Duration::from_secs(5),
         failing_guardrail.apply_guardrail(text_inputs(), GuardrailInputType::Request),
     )
@@ -850,10 +858,10 @@ async fn the_configured_timeout_bounds_the_guard_call() {
     .unwrap_err();
     assert!(matches!(error, PromptGuardError::Request { .. }));
     let mut open = with_base(args(Some("test-key"), Some(false)), Some(&base));
-    open.timeout = Some(0.2);
+    open.timeout = Some(0.2_f64);
     let open_guardrail = PromptGuardGuardrail::new(open, &env(&[]), client()).expect("guardrail");
     let inputs = text_inputs();
-    let updated = tokio::time::timeout(
+    let updated = timeout(
         Duration::from_secs(5),
         open_guardrail.apply_guardrail(inputs.clone(), GuardrailInputType::Request),
     )
