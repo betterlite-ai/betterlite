@@ -120,7 +120,7 @@ where
     let mut flattened = optional.clone();
     flattened.extend(sanitized_tools_update(optional));
     let stripped = model.replace(O_SERIES_ROUTE, "");
-    // LiteLLM orders the instructions before the o-series position turns a system message into a user one
+    // LiteLLM orders instructions first, then the o-series rewrite turns system messages into user ones
     let ordered = if openai_system_messages_first {
         system_messages_first(messages)
     } else {
