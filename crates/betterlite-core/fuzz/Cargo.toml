@@ -270,6 +270,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "transcription_protocol"
+path = "fuzz_targets/transcription_protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "copilot_chat_reply"
 path = "fuzz_targets/copilot_chat_reply.rs"
 test = false
