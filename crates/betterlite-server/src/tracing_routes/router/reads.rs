@@ -46,14 +46,16 @@ pub(super) async fn get_trace(
     Path(trace_id): Path<String>,
     identity: Option<Extension<AuthContext>>,
     request_uri: Uri,
-) -> Result<Response, Response> {
-    let (receiver, scope) = reader(identity, &app).map_err(|response| *response)?;
-    Ok(found(
-        receiver
-            .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
-            .await,
-        format!("Trace {trace_id} not found"),
-    ))
+) -> Response {
+    match reader(identity, &app) {
+        Ok((receiver, scope)) => found(
+            receiver
+                .get_trace(&trace_id, &scope, &trace_ref(&request_uri))
+                .await,
+            format!("Trace {trace_id} not found"),
+        ),
+        Err(refusal) => *refusal,
+    }
 }
 
 pub(super) async fn get_span(
