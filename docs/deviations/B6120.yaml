@@ -9,3 +9,6 @@ deviations:
   - what: Only ASCII digits in a [n] marker name a citation. Python's \d also matches other Unicode digits such as Arabic-Indic ones.
     why: A working setup does not get markers written in non-ASCII digits from Perplexity, and the marker number is an index into the citations list.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L194-L196
+  - what: The post-processing is atomic, so a malformed reply shape leaves the reply exactly as it was. LiteLLM runs both halves in one try block and keeps whatever it wrote before the failing line, which is a zero usage block when the provider usage is not a map and the usage fields it already set when the annotation half fails.
+    why: A reply either gets the whole Perplexity enrichment or none of it, so a partly rewritten usage block never ships with annotations that disagree with it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/chat/transformation.py#L98-L103
