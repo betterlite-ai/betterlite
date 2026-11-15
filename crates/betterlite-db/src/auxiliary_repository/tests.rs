@@ -711,7 +711,6 @@ async fn postgres_latest_session_exact_key_partition() {
 #[tokio::test]
 async fn session_desc_null_and_tie_semantics() {
     let case = Case::new().await;
-    allow_null_turn_at(&case).await;
     insert_session(
         &case.writer,
         "tie-key",
@@ -732,23 +731,42 @@ async fn session_desc_null_and_tie_semantics() {
         Some(case.client()),
         recording_publisher(&Journal::default()),
     );
-    let tied = repository
-        .find_latest_for_key("tie-key", "session-1")
+    let tied = latest_model(&repository, "tie-key", "session-1")
         .await
-        .unwrap()
         .unwrap();
-    assert!(matches!(tied.last_model.as_str(), "tied-one" | "tied-two"));
+    assert!(matches!(tied.as_deref(), Some("tied-one" | "tied-two")));
+    case.close().await;
+}
+
+#[tokio::test]
+async fn session_desc_null_turn_sorts_first() {
+    let case = Case::new().await;
+    allow_null_turn_at(&case).await;
     insert_session(
         &case.writer,
-        "tie-key",
+        "null-key",
         "session-1",
-        ("router-3", "null-turn"),
+        ("router-1", "dated"),
+        Some("2026-01-02 00:00:00"),
+    )
+    .await;
+    insert_session(
+        &case.writer,
+        "null-key",
+        "session-1",
+        ("router-2", "null-turn"),
         None,
     )
     .await;
+    let repository = AutoRouterSessionRepository::new(
+        Some(case.client()),
+        recording_publisher(&Journal::default()),
+    );
     // DESC puts the null first, and B858's row conversion refuses a null timestamp
     assert!(matches!(
-        repository.find_latest_for_key("tie-key", "session-1").await,
+        repository
+            .find_latest_for_key("null-key", "session-1")
+            .await,
         Err(TableError::Row(_))
     ));
     case.close().await;
