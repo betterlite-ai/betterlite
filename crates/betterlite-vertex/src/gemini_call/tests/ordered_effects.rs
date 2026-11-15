@@ -11,6 +11,7 @@ use tempfile::NamedTempFile;
 use tracing::Level;
 use tracing::subscriber::with_default;
 
+use crate::cache_lookup::target::CacheProvider;
 use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_http::call::ClientKind;
@@ -281,6 +282,59 @@ fn ordered_effects_sync_cache_deadline_follows_the_call_timeout(
         timeout,
     };
     assert_eq!(fixture.cache_deadline(setup), expected);
+}
+
+#[rstest]
+#[case::vertex(VertexCapabilityProvider::VertexAi, CacheProvider::Vertex)]
+#[case::vertex_beta(VertexCapabilityProvider::VertexAiBeta, CacheProvider::VertexBeta)]
+#[case::gemini(VertexCapabilityProvider::Gemini, CacheProvider::Gemini)]
+fn ordered_effects_sync_cache_provider_follows_the_provider(
+    #[case] provider: VertexCapabilityProvider,
+    #[case] expected: CacheProvider,
+) {
+    let fixture = pooled_fixture(Vec::new(), Vec::new());
+    assert_eq!(fixture.cache_provider(provider), expected);
+}
+
+#[rstest]
+#[case::vertex_ai(VertexCapabilityProvider::VertexAi)]
+#[case::vertex_ai_beta(VertexCapabilityProvider::VertexAiBeta)]
+fn ordered_effects_sync_vertex_providers_share_the_target(
+    #[case] provider: VertexCapabilityProvider,
+) {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
+    let variation = Variation {
+        provider: Some(provider),
+        location: None,
+        api_base: None,
+        gemini_api_key: None,
+        extra_headers: BTreeMap::new(),
+        use_psc_endpoint_format: None,
+    };
+    let reply = fixture.run_with(
+        Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        },
+        &variation,
+    );
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    assert_eq!(fixture.recorder.posts()[0].url, VERTEX_URL);
+}
+
+#[test]
+fn ordered_effects_sync_completion_reports_a_bad_body_as_a_provider_error() {
+    let fixture = pooled_fixture(vec![complete_reply(200, "not json")], Vec::new());
+    let reply = fixture.run(Setup {
+        acompletion: false,
+        stream: None,
+        timeout: None,
+    });
+    assert!(matches!(
+        reply,
+        Err(GeminiCallError::Http(GeminiHttpError::Provider(_)))
+    ));
 }
 
 #[test]

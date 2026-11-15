@@ -49,6 +49,7 @@ use tokio::time::Instant;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
+use crate::cache_lookup::target::CacheProvider;
 use crate::credential_sources::sdk::CredentialClock;
 use crate::gemini_call::body::body_request;
 use crate::gemini_call::error::GeminiCallError;
@@ -675,6 +676,32 @@ impl Fixture {
         body_request(&call, &optional_params, &deps, &access)
             .cache
             .deadline
+    }
+
+    pub(super) fn cache_provider(&self, provider: VertexCapabilityProvider) -> CacheProvider {
+        let variation = Variation {
+            provider: Some(provider),
+            location: None,
+            api_base: None,
+            gemini_api_key: None,
+            extra_headers: BTreeMap::new(),
+            use_psc_endpoint_format: None,
+        };
+        let setup = Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        };
+        let optional_params = optional_params(setup, &variation);
+        let call = self.call(&optional_params, setup, &variation);
+        let deps = self.deps();
+        let access = AccessToken {
+            token: SecretString::from(TOKEN),
+            project: PROJECT.to_owned(),
+        };
+        body_request(&call, &optional_params, &deps, &access)
+            .cache
+            .provider
     }
 }
 
