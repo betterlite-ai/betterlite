@@ -1,0 +1,6 @@
+task: B1535
+deviations:
+  - what: A task output member that is an object with a value that is not a string is skipped instead of contributing an image entry.
+    why: B1534 decodes an output member into its field map only when every value is a string, so {url: null} or {width: 1} arrives as an unsupported member and is dropped. LiteLLM appends an ImageObject with url and b64_json unset for such a member, and the entry counts toward the charge. A Runway task that a working setup relies on publishes string urls, so the skipped shapes carry no image and no price.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L142-L149
+kept_bugs: []
