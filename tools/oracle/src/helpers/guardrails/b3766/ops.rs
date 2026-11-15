@@ -61,14 +61,15 @@ fn start_mock(args: &ApplyInput) -> Result<(Option<MockProvider>, String), Box<H
         ),
         None => None,
     };
-    let base = match &mock {
-        Some(provider) => provider.base_url.clone(),
-        None => args
-            .settings
-            .api_base
-            .clone()
-            .unwrap_or_else(|| "http://127.0.0.1:1".to_owned()),
-    };
+    let base = mock.as_ref().map_or_else(
+        || {
+            args.settings
+                .api_base
+                .clone()
+                .unwrap_or_else(|| "http://127.0.0.1:1".to_owned())
+        },
+        |provider| provider.base_url.clone(),
+    );
     Ok((mock, base))
 }
 
