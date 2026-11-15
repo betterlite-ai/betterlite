@@ -11,7 +11,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1342-L1346
   - what: The logo URL, the recipient, the key token, the team name, the invitation link and the support contact are HTML-escaped before they reach the key and invitation email bodies. The oracle cases use values with no `/`, `&`, `<`, `>` or quotes, since those are the characters the escaping changes.
     why: A team alias, a recipient address or a base URL holds data a caller chose, so leaving it raw would put its markup in the recipient's inbox and could break the message. betterlite escapes each value with minijinja's HtmlEscape, as B4022 does for its budget emails; LiteLLM's str.format writes them raw.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1310-L1345
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1316-L1341
 kept_bugs:
   - what: An event other than key_created or internal_user_created still sends an email with the body "Alert from LiteLLM Server" and returns true.
     why: A working setup relies on the two named events only, but the fallback is what the task asks for, so betterlite keeps it; only the log line differs.

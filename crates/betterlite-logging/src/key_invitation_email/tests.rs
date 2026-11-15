@@ -11,7 +11,6 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use minijinja::HtmlEscape;
 use rstest::rstest;
-use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -24,11 +23,13 @@ use super::templates::{
 };
 use crate::alert_dispatch::destination::AlertDestination;
 use crate::alert_settings::{LITELLM_LOGO_URL, LITELLM_SUPPORT_CONTACT};
-use crate::budget_email::event::{EntityType, WebhookEvent, WebhookEventType};
+use crate::budget_email::event::WebhookEventType;
 use crate::budget_email::sender::EmailSender;
 use crate::smtp_send::SendEmailError;
 
 mod fixtures;
+
+use fixtures::{budget_email, invited_email, invited_event, key_created_event};
 
 const EMAIL_ONLY: &[AlertDestination] = &[AlertDestination::Email];
 const SLACK_ONLY: &[AlertDestination] = &[AlertDestination::Slack];
@@ -206,62 +207,6 @@ fn emailer<'deps>(
         database,
         sender,
         invitation_creator,
-    }
-}
-
-fn key_created_event() -> WebhookEvent {
-    WebhookEvent {
-        event: WebhookEventType::KeyCreated,
-        event_message: "key_created".to_owned(),
-        event_group: EntityType::Key,
-        spend: Decimal::ZERO,
-        max_budget: Some(Decimal::from(10_i64)),
-        soft_budget: None,
-        token: Some(SecretString::from("sk-test-token")),
-        customer_id: None,
-        user_id: Some("user-1".to_owned()),
-        team_id: None,
-        team_alias: None,
-        organization_id: None,
-        user_email: Some("alice@example.com".to_owned()),
-        key_alias: None,
-        projected_exceeded_date: None,
-        projected_spend: None,
-        alert_emails: None,
-        max_budget_alert_emails: None,
-    }
-}
-
-fn invited_event() -> WebhookEvent {
-    let mut event = key_created_event();
-    event.event = WebhookEventType::InternalUserCreated;
-    event.event_message = "internal_user_created".to_owned();
-    event.event_group = EntityType::User;
-    event.max_budget = None;
-    event.token = None;
-    event.team_id = Some("team-1".to_owned());
-    event.user_email = Some("bob@example.com".to_owned());
-    event
-}
-
-fn budget_email(budget: Option<f64>) -> KeyCreatedEmail<'static> {
-    KeyCreatedEmail {
-        email_logo_url: "https://cdn.example/logo.png",
-        recipient_email: Some("alice@example.com"),
-        key_budget: budget,
-        key_token: Some("sk-test-token"),
-        base_url: "https://proxy.example",
-        email_support_contact: "help@example.com",
-    }
-}
-
-fn invited_email(base_url: &str) -> UserInvitedEmail<'_> {
-    UserInvitedEmail {
-        email_logo_url: "https://cdn.example/logo.png",
-        recipient_email: Some("bob@example.com"),
-        team_name: "Alpha",
-        base_url,
-        email_support_contact: "help@example.com",
     }
 }
 
@@ -587,6 +532,34 @@ async fn send_internal_user_created_uses_the_team_alias() {
         "href=\"http:&#x2f;&#x2f;0.0.0.0:4000&#x2f;ui&#x2f;onboarding?invitation_id=inv-created\""
     ));
     assert_eq!(creator.calls(), vec!["user-1"]);
+    close(&pool, fixture).await;
+}
+
+#[tokio::test]
+async fn send_internal_user_created_escapes_a_team_alias_with_markup() {
+    let (fixture, pool) = database().await;
+    seed(
+        &pool,
+        r#"INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias, admins, members, models) VALUES ('team-1', '<b>Evil</b>', '{}'::TEXT[], '{}'::TEXT[], '{}'::TEXT[]);"#,
+    )
+    .await;
+    let store = database_store(&pool);
+    let sender = recording_sender();
+    let creator = creating_creator();
+    let env = environment(&[]);
+    let mailer = emailer(Some(EMAIL_ONLY), &env, Some(&store), &sender, &creator);
+    assert!(
+        mailer
+            .send_key_created_or_user_invited_email(&invited_event())
+            .await
+    );
+    let delivered = sender.sent();
+    assert!(
+        delivered[0]
+            .html
+            .contains("for team &lt;b&gt;Evil&lt;&#x2f;b&gt;  <br /> <br />")
+    );
+    assert!(!delivered[0].html.contains("<b>Evil</b>"));
     close(&pool, fixture).await;
 }
 

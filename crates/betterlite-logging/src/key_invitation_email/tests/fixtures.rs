@@ -1,5 +1,11 @@
 #![cfg(test)]
 
+use rust_decimal::Decimal;
+use secrecy::SecretString;
+
+use crate::budget_email::event::{EntityType, WebhookEvent, WebhookEventType};
+use crate::key_invitation_email::templates::{KeyCreatedEmail, UserInvitedEmail};
+
 // Python's str.format output for LiteLLM's templates, kept as literals because the indented blank lines fail the trailing-whitespace check
 
 pub(super) const KEY_CREATED_HTML: &str = concat!(
@@ -104,3 +110,59 @@ pub(super) const USER_INVITED_HTML: &str = concat!(
     "                    Best, <br />\n",
     "                    The LiteLLM team <br />\n",
 );
+
+pub(super) fn key_created_event() -> WebhookEvent {
+    WebhookEvent {
+        event: WebhookEventType::KeyCreated,
+        event_message: "key_created".to_owned(),
+        event_group: EntityType::Key,
+        spend: Decimal::ZERO,
+        max_budget: Some(Decimal::from(10_i64)),
+        soft_budget: None,
+        token: Some(SecretString::from("sk-test-token")),
+        customer_id: None,
+        user_id: Some("user-1".to_owned()),
+        team_id: None,
+        team_alias: None,
+        organization_id: None,
+        user_email: Some("alice@example.com".to_owned()),
+        key_alias: None,
+        projected_exceeded_date: None,
+        projected_spend: None,
+        alert_emails: None,
+        max_budget_alert_emails: None,
+    }
+}
+
+pub(super) fn invited_event() -> WebhookEvent {
+    let mut event = key_created_event();
+    event.event = WebhookEventType::InternalUserCreated;
+    event.event_message = "internal_user_created".to_owned();
+    event.event_group = EntityType::User;
+    event.max_budget = None;
+    event.token = None;
+    event.team_id = Some("team-1".to_owned());
+    event.user_email = Some("bob@example.com".to_owned());
+    event
+}
+
+pub(super) fn budget_email(budget: Option<f64>) -> KeyCreatedEmail<'static> {
+    KeyCreatedEmail {
+        email_logo_url: "https://cdn.example/logo.png",
+        recipient_email: Some("alice@example.com"),
+        key_budget: budget,
+        key_token: Some("sk-test-token"),
+        base_url: "https://proxy.example",
+        email_support_contact: "help@example.com",
+    }
+}
+
+pub(super) fn invited_email(base_url: &str) -> UserInvitedEmail<'_> {
+    UserInvitedEmail {
+        email_logo_url: "https://cdn.example/logo.png",
+        recipient_email: Some("bob@example.com"),
+        team_name: "Alpha",
+        base_url,
+        email_support_contact: "help@example.com",
+    }
+}
