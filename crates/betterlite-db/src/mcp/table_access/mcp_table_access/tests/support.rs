@@ -67,17 +67,20 @@ impl McpServerAccess for FakeStore {
             .lock()
             .expect("the finds are not poisoned")
             .push(request.clone());
-        let rows = self.rows.lock().expect("the rows are not poisoned");
-        let mut selected = Vec::new();
-        for stored in &*rows {
-            if request
-                .filter
-                .as_ref()
-                .is_none_or(|filter| filter_matches(stored, filter))
-            {
-                selected.push(stored.clone());
+        let mut selected = {
+            let rows = self.rows.lock().expect("the rows are not poisoned");
+            let mut matched = Vec::new();
+            for stored in &*rows {
+                if request
+                    .filter
+                    .as_ref()
+                    .is_none_or(|filter| filter_matches(stored, filter))
+                {
+                    matched.push(stored.clone());
+                }
             }
-        }
+            matched
+        };
         if request.descending {
             selected.sort_by(|left, right| submitted_at(right).cmp(&submitted_at(left)));
         }
