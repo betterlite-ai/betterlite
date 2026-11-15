@@ -31,7 +31,7 @@ use tokio::net::TcpListener;
 use tokio::time::timeout;
 
 use super::{CometapiEmbedding, SharedEmbedding, shared_embedding};
-use crate::prepared::PreparedRequest;
+use crate::prepared::{PreparedChat, PreparedRequest};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"embedding","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const REPLY: &str = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.25]}],"model":"upstream","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
@@ -95,10 +95,6 @@ fn settings(environment: &[(&str, &str)]) -> Settings {
         .compatible_embedding_settings
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
-}
-
 #[test]
 fn the_handler_call_carries_the_shared_embedding_identity() {
     let input = Json::Text(String::from("a"));
@@ -121,10 +117,11 @@ fn the_handler_call_carries_the_shared_embedding_identity() {
     };
     let explicit = embedding.handler_call();
     assert_eq!(explicit.api_base.as_deref(), Some("https://explicit/v1"));
-    assert_eq!(
-        exposed(explicit.api_key.as_ref()).as_deref(),
-        Some("sk-explicit")
-    );
+    let explicit_key = explicit
+        .api_key
+        .as_ref()
+        .map(|secret| secret.expose_secret().to_owned());
+    assert_eq!(explicit_key.as_deref(), Some("sk-explicit"));
     let inherited = SharedEmbedding {
         api_base: None,
         api_key: None,
@@ -132,10 +129,11 @@ fn the_handler_call_carries_the_shared_embedding_identity() {
     }
     .handler_call();
     assert_eq!(inherited.api_base.as_deref(), Some("http://env.example/v1"));
-    assert_eq!(
-        exposed(inherited.api_key.as_ref()).as_deref(),
-        Some("sk-env")
-    );
+    let inherited_key = inherited
+        .api_key
+        .as_ref()
+        .map(|secret| secret.expose_secret().to_owned());
+    assert_eq!(inherited_key.as_deref(), Some("sk-env"));
 }
 
 #[rstest]
@@ -214,8 +212,7 @@ fn the_call_keeps_the_original_input_timeout_mode_and_endpoint_flag() {
     assert!(call.headers.is_none());
 }
 
-#[test]
-fn cometapi_prepared_request_uses_the_configuration_and_no_caller_headers() {
+fn prepared_cometapi_with_optional_params() -> Box<PreparedChat> {
     let input = PromptJson::List(vec![PromptJson::Text(String::from("a"))]);
     let options: Object = IndexMap::from([
         (
@@ -236,9 +233,16 @@ fn cometapi_prepared_request_uses_the_configuration_and_no_caller_headers() {
         globals: &globals,
         settings: &settings,
     };
-    let PreparedRequest::Embedding(chat) = embedding.prepared().unwrap() else {
+    let request = embedding.prepared().unwrap();
+    let PreparedRequest::Embedding(chat) = request else {
         panic!("the CometAPI embedding is a prepared embedding request");
     };
+    chat
+}
+
+#[test]
+fn cometapi_prepared_request_uses_the_configuration_and_no_caller_headers() {
+    let chat = prepared_cometapi_with_optional_params();
     assert_eq!(
         chat.http.url.as_str(),
         "https://comet.example/v1/embeddings"
@@ -270,6 +274,34 @@ fn cometapi_prepared_request_uses_the_configuration_and_no_caller_headers() {
     );
 }
 
+fn explicit_cometapi_request(text: &str, key: &SecretString) -> Box<PreparedChat> {
+    let input = PromptJson::Text(text.to_owned());
+    let options = Object::new();
+    let settings = settings(ENVIRONMENT);
+    let globals = Globals {
+        api_base: Some(String::from("https://global/v1")),
+        api_key: Some(SecretString::from(String::from("sk-api"))),
+        openai_like_key: None,
+        cometapi_key: Some(SecretString::from(String::from("sk-cometapi-global"))),
+    };
+    let request = CometapiEmbedding {
+        model: "m",
+        input: &input,
+        optional_params: &options,
+        api_base: Some("https://explicit/v1/"),
+        api_key: Some(key),
+        timeout: Duration::from_secs(5),
+        globals: &globals,
+        settings: &settings,
+    }
+    .prepared()
+    .unwrap();
+    let PreparedRequest::Embedding(chat) = request else {
+        panic!("the CometAPI embedding is a prepared embedding request");
+    };
+    chat
+}
+
 #[test]
 fn the_cometapi_request_falls_back_to_its_default_base_and_trims_a_caller_slash() {
     let input = PromptJson::Text(String::from("a"));
@@ -299,30 +331,8 @@ fn the_cometapi_request_falls_back_to_its_default_base_and_trims_a_caller_slash(
         bare_chat.http.headers.get("Authorization").unwrap(),
         "Bearer None"
     );
-
-    let aliased = settings(ENVIRONMENT);
     let supplied_key = SecretString::from(String::from("sk-explicit"));
-    let aliased_globals = Globals {
-        api_base: Some(String::from("https://global/v1")),
-        api_key: Some(SecretString::from(String::from("sk-api"))),
-        openai_like_key: None,
-        cometapi_key: Some(SecretString::from(String::from("sk-cometapi-global"))),
-    };
-    let request = CometapiEmbedding {
-        model: "m",
-        input: &input,
-        optional_params: &options,
-        api_base: Some("https://explicit/v1/"),
-        api_key: Some(&supplied_key),
-        timeout: Duration::from_secs(5),
-        globals: &aliased_globals,
-        settings: &aliased,
-    }
-    .prepared()
-    .unwrap();
-    let PreparedRequest::Embedding(explicit_chat) = request else {
-        panic!("the CometAPI embedding is a prepared embedding request");
-    };
+    let explicit_chat = explicit_cometapi_request("a", &supplied_key);
     assert_eq!(
         explicit_chat.http.url.as_str(),
         "https://explicit/v1/embeddings"
@@ -370,6 +380,35 @@ async fn cometapi_execute_sends_the_prepared_request_and_keeps_the_callers_model
     assert!(request.contains(r#""model":"m""#));
 }
 
+fn logging_fixture(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
+    let state = LoggingState::new(
+        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
+        CorrelationSetup {
+            context: &mut CorrelationContext::default(),
+            settings: CorrelationSettings::default(),
+        },
+        redactor,
+        || "trace".to_owned(),
+        Duration::default,
+    )
+    .unwrap();
+    let env = PrePostEnv {
+        debug: DebugSettings::default(),
+        globals: GlobalFlags::default(),
+        decision: Decision {
+            content: false,
+            key_info: false,
+        },
+        redactor,
+        log: &Discard,
+        input_callbacks: &[],
+        sentry: None,
+        logger_fn: None,
+        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
+    };
+    (state, env)
+}
+
 #[tokio::test]
 async fn the_shared_handler_plans_sends_and_finishes_the_original_call() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -393,31 +432,7 @@ async fn the_shared_handler_plans_sends_and_finishes_the_original_call() {
         settings: &settings,
     };
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let mut state = LoggingState::new(
-        serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-        CorrelationSetup {
-            context: &mut CorrelationContext::default(),
-            settings: CorrelationSettings::default(),
-        },
-        &redactor,
-        || "trace".to_owned(),
-        Duration::default,
-    )
-    .unwrap();
-    let env = PrePostEnv {
-        debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
-        decision: Decision {
-            content: false,
-            key_info: false,
-        },
-        redactor: &redactor,
-        log: &Discard,
-        input_callbacks: &[],
-        sentry: None,
-        logger_fn: None,
-        now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
-    };
+    let (mut state, env) = logging_fixture(&redactor);
     let client = client();
     let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
         tokio::join!(

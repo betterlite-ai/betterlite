@@ -25,10 +25,6 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn exposed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
-}
-
 const ENVIRONMENT: &[(&str, &str)] = &[
     ("OPENAI_LIKE_API_BASE", "http://openai-like/v1"),
     ("OPENAI_LIKE_API_KEY", "sk-openai-like"),
@@ -58,12 +54,22 @@ fn loads_every_environment_alias(
     let loaded = settings(environment);
     assert_eq!(loaded.openai_like.api_base.as_deref(), openai_like_base);
     assert_eq!(
-        exposed(loaded.openai_like.api_key.as_ref()).as_deref(),
+        loaded
+            .openai_like
+            .api_key
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned())
+            .as_deref(),
         openai_like_key
     );
     assert_eq!(loaded.cometapi_api_base.as_deref(), cometapi_base);
     assert_eq!(
-        exposed(loaded.cometapi_credentials.api_key.as_ref()).as_deref(),
+        loaded
+            .cometapi_credentials
+            .api_key
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned())
+            .as_deref(),
         cometapi_key
     );
 }
@@ -206,7 +212,14 @@ fn identity_follows_the_pinned_precedence(
     let identity =
         settings(environment).identity(family, &globals, explicit_base, supplied_key.as_ref());
     assert_eq!(identity.api_base.as_deref(), expected_base);
-    assert_eq!(exposed(identity.api_key.as_ref()).as_deref(), expected_key);
+    assert_eq!(
+        identity
+            .api_key
+            .as_ref()
+            .map(|secret| secret.expose_secret().to_owned())
+            .as_deref(),
+        expected_key
+    );
 }
 
 fn globals(

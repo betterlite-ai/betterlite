@@ -10,15 +10,14 @@ use super::{Family, Input, Op};
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
 
-fn answer(calls: Value) -> Value {
+fn answer(calls: &Value) -> Value {
     let input: Input = serde_json::from_value(json!({ "calls": calls })).unwrap();
     Op::run(&input).unwrap()
 }
 
-#[test]
-fn helper_seeds_select_compatible_api_selection() {
+fn seeds() -> Vec<(String, Input)> {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
-    let seeds: Vec<(String, Input)> = fs::read_dir(corpus)
+    fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
         .filter(|path| {
@@ -31,16 +30,25 @@ fn helper_seeds_select_compatible_api_selection() {
             let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
             assert_eq!(case.call.operation, "compatible_api_selection");
             validate_helper(Path::new("<helper>"), &case).unwrap();
-            let input: Input = serde_json::from_value(case.call.input.clone()).unwrap();
-            assert!(Op::run(&input).is_ok());
+            let input: Input = serde_json::from_value(case.call.input).unwrap();
+            Op::run(&input).unwrap();
             let name = path.file_name().unwrap().to_str().unwrap().to_owned();
             (name, input)
         })
-        .collect();
-    let collision = seeds
+        .collect()
+}
+
+fn seed<'seeds>(seeds: &'seeds [(String, Input)], marker: &str) -> &'seeds Input {
+    seeds
         .iter()
-        .find_map(|(name, input)| name.contains("native-collision").then_some(input))
-        .expect("a native-collision seed");
+        .find_map(|(name, input)| name.contains(marker).then_some(input))
+        .expect("a seed whose name carries the marker")
+}
+
+#[test]
+fn helper_seeds_select_compatible_api_selection() {
+    let seeds = seeds();
+    let collision = seed(&seeds, "native-collision");
     assert!(collision.calls.iter().any(|call| {
         matches!(call.family, Family::Responses)
             && call.native.is_some()
@@ -52,10 +60,7 @@ fn helper_seeds_select_compatible_api_selection() {
                         .any(|endpoint| endpoint == RESPONSES_ENDPOINT)
             })
     }));
-    let unsupported = seeds
-        .iter()
-        .find_map(|(name, input)| name.contains("unsupported-endpoint").then_some(input))
-        .expect("an unsupported-endpoint seed");
+    let unsupported = seed(&seeds, "unsupported-endpoint");
     assert!(!unsupported.calls.is_empty());
     assert!(
         unsupported
@@ -70,7 +75,7 @@ fn helper_seeds_select_compatible_api_selection() {
 
 #[test]
 fn a_native_answer_beats_a_registry_descriptor_that_lists_responses() {
-    let report = answer(json!([
+    let report = answer(&json!([
         {
             "family": "responses",
             "provider": "sail",
@@ -91,7 +96,7 @@ fn a_native_answer_beats_a_registry_descriptor_that_lists_responses() {
 
 #[test]
 fn a_responses_descriptor_without_a_native_answer_reports_the_json_slug() {
-    let report = answer(json!([{
+    let report = answer(&json!([{
         "family": "responses",
         "provider": "sail",
         "identity": "name",
@@ -103,7 +108,7 @@ fn a_responses_descriptor_without_a_native_answer_reports_the_json_slug() {
 
 #[test]
 fn an_unsupported_response_endpoint_selects_nothing() {
-    let report = answer(json!([{
+    let report = answer(&json!([{
         "family": "responses",
         "provider": "groq",
         "identity": "name",
@@ -126,7 +131,7 @@ fn an_unknown_enum_identity_is_invalid_input() {
 
 #[test]
 fn deepseek_and_the_json_messages_tail_report_their_config_classes() {
-    let report = answer(json!([
+    let report = answer(&json!([
         {
             "family": "messages",
             "provider": "deepseek",
@@ -158,7 +163,7 @@ fn deepseek_and_the_json_messages_tail_report_their_config_classes() {
 
 #[test]
 fn the_embedding_rerank_and_image_arms_report_their_config_classes() {
-    let report = answer(json!([
+    let report = answer(&json!([
         {"family": "embedding", "provider": "cometapi", "model": "m"},
         {"family": "embedding", "provider": "openai", "model": "m"},
         {"family": "rerank", "provider": "deepinfra", "model": "m"},
