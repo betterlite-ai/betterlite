@@ -31,7 +31,7 @@ pub fn add_code_execution_tool(
         name: CODE_EXECUTION.to_owned(),
         kind: CODE_EXECUTION_TYPE.to_owned(),
     };
-    tools.push(convert::encode_prompt(&tool)?);
+    tools.push(convert::encode::<_, Json>(&tool)?);
     Ok(())
 }
 

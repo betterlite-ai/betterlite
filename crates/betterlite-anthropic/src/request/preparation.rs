@@ -8,7 +8,7 @@ use betterlite_models::lemonade_model_metadata::ModelInfoClient;
 use betterlite_models::model_capability_predicates::{CapabilityEnvironment, NamedCapability};
 use betterlite_models::model_metadata_resolution::dynamic::DynamicMetadataSource;
 use betterlite_openai::base_helpers::{
-    HistoryMessage, assistant_has_thinking, has_tool_calls, last_tool_call_unthought,
+    DUMMY_TOOLS, HistoryMessage, assistant_has_thinking, has_tool_calls, last_tool_call_unthought,
 };
 use betterlite_prompts::anthropic::assembly::{PromptDeps, anthropic_messages_pt};
 use betterlite_prompts::anthropic_results::tool_result::FileBlocks;
@@ -73,7 +73,7 @@ where
         request: &AnthropicRequest<'request>,
         messages: Vec<Json>,
     ) -> Result<Self, RequestError<FileFailure>> {
-        let history = convert::to_history(&messages)?;
+        let history: Vec<HistoryMessage> = convert::convert_each(&messages)?;
         let call_drop = matches!(
             request.litellm_params.get("drop_params"),
             Some(Json::Bool(true))
@@ -110,10 +110,10 @@ where
     where
         Fetcher: RemoteMediaFetcher + Sync,
     {
-        let typed: Vec<Message> = convert::to_messages(&self.messages)?;
+        let typed: Vec<Message> = convert::convert_each(&self.messages)?;
         let inlined = async_inline_remote_media(&typed, &inlines_remote_media, fetcher).await?;
         if inlined != typed {
-            self.messages = convert::from_messages(&inlined)?;
+            self.messages = convert::convert_each(&inlined)?;
         }
         Ok(())
     }
@@ -140,7 +140,7 @@ where
         self.translate_messages(prompts).await?;
         self.apply_tool_steps()?;
         self.load_config_defaults()?;
-        self.apply_metadata()?;
+        apply_user_id(&mut self.optional_params, self.control_metadata.as_ref())?;
         self.drop_internal_options();
         self.apply_top_k(catalogs)?;
         Ok(())
@@ -150,7 +150,8 @@ where
         if self.optional_params.contains_key("tools") || !has_tool_calls(&self.history) {
             return Ok(());
         }
-        let mapping = map_tools(&convert::dummy_tools()?)?;
+        let dummy: Vec<PromptJson> = convert::convert_each(&DUMMY_TOOLS)?;
+        let mapping = map_tools(&dummy)?;
         self.optional_params
             .insert("tools".to_owned(), convert::encode(&mapping.tools)?);
         Ok(())
@@ -225,7 +226,7 @@ where
         Source: DynamicMetadataSource,
         Transport: ModelInfoClient,
     {
-        let typed: Vec<Message> = convert::to_messages(&self.messages)?;
+        let typed: Vec<Message> = convert::convert_each(&self.messages)?;
         let (leading, later) = split_leading_system_run(&typed);
         let mut leading = leading;
         let blocks = translate_system_message(&mut leading, self.strips_billing_metadata);
@@ -238,7 +239,7 @@ where
         let supported =
             supports_model_capability(self.model, key, provider, environment, catalogs).await;
         let placed = place_mid_conversation_system(&later, supported);
-        self.conversation = convert::to_prompts(&placed)?;
+        self.conversation = convert::convert_each(&placed)?;
         Ok(())
     }
 
@@ -252,24 +253,19 @@ where
         Ids: Fn() -> String + Sync,
     {
         let provider = self.provider.as_str();
-        let translated = anthropic_messages_pt(
+        self.anthropic_messages = anthropic_messages_pt(
             &self.conversation,
             self.model,
             provider,
             self.modify_params,
             prompts,
         )
-        .await;
-        match translated {
-            Ok(messages) => {
-                self.anthropic_messages = messages;
-                Ok(())
-            }
-            Err(source) => Err(RequestError::Prompt {
-                source,
-                received: serde_json::to_string(&self.messages).unwrap_or_default(),
-            }),
-        }
+        .await
+        .map_err(|source| RequestError::Prompt {
+            source,
+            received: serde_json::to_string(&self.messages).unwrap_or_default(),
+        })?;
+        Ok(())
     }
 
     fn load_config_defaults(&mut self) -> Result<(), RequestError<FileFailure>> {
@@ -282,15 +278,8 @@ where
             return Ok(());
         };
         for (key, value) in fields {
-            if !self.optional_params.contains_key(&key) {
-                self.optional_params.insert(key, value);
-            }
+            self.optional_params.entry(key).or_insert(value);
         }
-        Ok(())
-    }
-
-    fn apply_metadata(&mut self) -> Result<(), RequestError<FileFailure>> {
-        apply_user_id(&mut self.optional_params, self.control_metadata.as_ref())?;
         Ok(())
     }
 

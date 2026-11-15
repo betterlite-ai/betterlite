@@ -65,7 +65,7 @@ where
         let rewritten = rewrite_tool_names_in_messages(&records, forward);
         self.messages = rewritten
             .iter()
-            .map(convert::encode::<wire::Message>)
+            .map(convert::encode)
             .collect::<Result<_, _>>()?;
         Ok(())
     }

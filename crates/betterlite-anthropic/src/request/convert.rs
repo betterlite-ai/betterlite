@@ -1,7 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_openai::base_helpers::{DUMMY_TOOLS, HistoryMessage};
 use betterlite_prompts::arguments::json::Json as PromptJson;
-use betterlite_prompts::message_content::Message;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ConvertError {
@@ -37,23 +35,14 @@ where
     Ok(converted)
 }
 
-// a mapped record as the parameters map's JSON tree
-pub(super) fn encode<T>(value: &T) -> Result<Json, ConvertError>
+// a mapped record as either JSON tree, the one the caller's variable names
+pub(super) fn encode<T, Target>(value: &T) -> Result<Target, ConvertError>
 where
     T: serde::Serialize + ?Sized,
+    Target: serde::de::DeserializeOwned,
 {
     let encoded = write(value)?;
-    let decoded: Json = read(&encoded)?;
-    Ok(decoded)
-}
-
-// a mapped tool definition as a prompt-tree entry the tool list carries
-pub(super) fn encode_prompt<T>(value: &T) -> Result<PromptJson, ConvertError>
-where
-    T: serde::Serialize + ?Sized,
-{
-    let encoded = write(value)?;
-    let decoded: PromptJson = read(&encoded)?;
+    let decoded: Target = read(&encoded)?;
     Ok(decoded)
 }
 
@@ -65,15 +54,6 @@ where
     let encoded = write(value)?;
     let decoded: T = read(&encoded)?;
     Ok(decoded)
-}
-
-pub(super) fn dummy_tools() -> Result<Vec<PromptJson>, ConvertError> {
-    let mut tools = Vec::with_capacity(DUMMY_TOOLS.len());
-    for tool in &DUMMY_TOOLS {
-        let encoded = write(tool)?;
-        tools.push(read(&encoded)?);
-    }
-    Ok(tools)
 }
 
 // The parameters map's JSON tree as the prompt tree the prompt primitives read
@@ -108,21 +88,4 @@ pub(super) fn params_json(value: &PromptJson) -> Json {
                 .collect(),
         ),
     }
-}
-
-pub(super) fn to_messages(items: &[Json]) -> Result<Vec<Message>, ConvertError> {
-    convert_each(items)
-}
-
-pub(super) fn from_messages(items: &[Message]) -> Result<Vec<Json>, ConvertError> {
-    convert_each(items)
-}
-
-pub(super) fn to_prompts(items: &[Message]) -> Result<Vec<PromptJson>, ConvertError> {
-    convert_each(items)
-}
-
-// B2202's history predicates read the same message fields, so one pass feeds all of them
-pub(super) fn to_history(items: &[Json]) -> Result<Vec<HistoryMessage>, ConvertError> {
-    convert_each(items)
 }
