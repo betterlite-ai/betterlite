@@ -3,39 +3,20 @@ use betterlite_openai::chat_choices::wire::{StreamChoice, StreamDelta, StreamRep
 
 const PROVIDER_SPECIFIC_FIELDS: &str = "provider_specific_fields";
 
-// Vertex Llama may leave the role off the first chunk, and may send a single chunk that is both
-// the first and the last; the handler remembers the role it has already sent.
+// Llama may leave the role off the first chunk, so the handler remembers the role it has sent.
 #[derive(Debug, Default)]
 pub struct LlamaStreamState {
     sent_role: bool,
 }
 
 impl LlamaStreamState {
-    // The chunks to emit, in order, for one decoded source chunk. A terminal first chunk yields the
-    // repaired first chunk and then the queued terminal one.
+    // A terminal first chunk yields the repaired first chunk, then the queued terminal chunk.
     pub fn push(&mut self, mut chunk: StreamReply) -> Vec<StreamReply> {
         if self.sent_role || chunk.choices.is_empty() {
             return vec![chunk];
         }
         self.sent_role = true;
-        let mut terminal = None;
-        if let Some(choice) = chunk.choices.first_mut() {
-            if let Some(reason) = choice.finish_reason.take() {
-                choice.delta.role = Some(String::from("assistant"));
-                if choice.delta.content.is_none() {
-                    choice.delta.content = Some(String::new());
-                }
-                ensure_provider_fields(&mut choice.delta);
-                terminal = Some(reason);
-            } else {
-                if choice.delta.role.is_none() {
-                    choice.delta.role = Some(String::from("assistant"));
-                }
-                if choice.delta.content.as_deref().is_none_or(str::is_empty) {
-                    ensure_provider_fields(&mut choice.delta);
-                }
-            }
-        }
+        let terminal = chunk.choices.first_mut().and_then(repair_first_choice);
         let Some(finish_reason) = terminal else {
             return vec![chunk];
         };
@@ -57,8 +38,27 @@ impl LlamaStreamState {
     }
 }
 
-// An empty-content chunk is dropped downstream unless provider_specific_fields is a map, so the
-// repair gives it one when the provider sent none.
+// A chunk that is first and final moves its finish reason out, keeping the role and provider fields.
+fn repair_first_choice(choice: &mut StreamChoice) -> Option<String> {
+    let finish_reason = choice.finish_reason.take();
+    if finish_reason.is_some() {
+        choice.delta.role = Some(String::from("assistant"));
+        if choice.delta.content.is_none() {
+            choice.delta.content = Some(String::new());
+        }
+        ensure_provider_fields(&mut choice.delta);
+        return finish_reason;
+    }
+    if choice.delta.role.is_none() {
+        choice.delta.role = Some(String::from("assistant"));
+    }
+    if choice.delta.content.as_deref().is_none_or(str::is_empty) {
+        ensure_provider_fields(&mut choice.delta);
+    }
+    None
+}
+
+// An empty-content chunk is dropped downstream unless provider_specific_fields is a map.
 fn ensure_provider_fields(delta: &mut StreamDelta) {
     let present = delta
         .passthrough
