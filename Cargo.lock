@@ -1598,6 +1598,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
@@ -1684,6 +1685,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -2383,6 +2385,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",

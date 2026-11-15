@@ -1,0 +1,264 @@
+use rust_decimal::Decimal;
+use rust_decimal::prelude::ToPrimitive as _;
+use uuid::Uuid;
+
+use crate::api::transcription_protocol::events::{
+    EventIdSource, SpeechEventType, completed_event, delta_event, speech_event,
+};
+use crate::api::transcription_protocol::usage::{TranscriptionUsage, duration_usage};
+
+use super::events::{
+    ChirpBackendEvent, ChirpEvent, ChirpSpeechEvent, ChirpStreamingResponse, ChirpStreamingResult,
+};
+use super::words::{join_transcript, new_words};
+use super::{ChirpProtocolError, ChirpSessionConfig, created_event};
+
+pub trait ItemIdSource {
+    fn next_item_id(&mut self) -> String;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UuidItemIds;
+
+impl ItemIdSource for UuidItemIds {
+    fn next_item_id(&mut self) -> String {
+        format!("item_{}", Uuid::new_v4().simple())
+    }
+}
+
+struct Configured {
+    config: ChirpSessionConfig,
+    session_id: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Turn {
+    item_id: String,
+    committed: String,
+    preview: String,
+    started_emitted: bool,
+    stopped_emitted: bool,
+}
+
+pub struct ChirpEventTransformer<EventIds, ItemIds> {
+    event_ids: EventIds,
+    item_ids: ItemIds,
+    configured: Option<Configured>,
+    turn: Option<Turn>,
+    billed_seconds: Decimal,
+    reported_seconds: Decimal,
+}
+
+impl<EventIds, ItemIds> ChirpEventTransformer<EventIds, ItemIds>
+where
+    EventIds: EventIdSource,
+    ItemIds: ItemIdSource,
+{
+    #[must_use]
+    pub const fn new(event_ids: EventIds, item_ids: ItemIds) -> Self {
+        Self {
+            event_ids,
+            item_ids,
+            configured: None,
+            turn: None,
+            billed_seconds: Decimal::ZERO,
+            reported_seconds: Decimal::ZERO,
+        }
+    }
+
+    pub fn configure(&mut self, config: ChirpSessionConfig, session_id: &str) {
+        self.configured = Some(Configured {
+            config,
+            session_id: session_id.to_owned(),
+        });
+    }
+
+    pub fn take_unbilled_usage(
+        &mut self,
+    ) -> Result<Option<TranscriptionUsage>, ChirpProtocolError> {
+        let Some(unreported) = self.billed_seconds.checked_sub(self.reported_seconds) else {
+            return Err(ChirpProtocolError::Billing);
+        };
+        if unreported <= Decimal::ZERO {
+            return Ok(None);
+        }
+        self.reported_seconds = self.billed_seconds;
+        let Some(seconds) = unreported.to_f64() else {
+            return Err(ChirpProtocolError::Billing);
+        };
+        Ok(Some(duration_usage(seconds)))
+    }
+
+    pub fn transform(
+        &mut self,
+        event: ChirpBackendEvent,
+    ) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        match event {
+            ChirpBackendEvent::Configured => Ok(vec![self.session_created()?]),
+            ChirpBackendEvent::Response(response) => self.response(&response),
+            ChirpBackendEvent::TurnFinished => self.finish_turn(),
+            ChirpBackendEvent::TurnDiscarded(discarded) => {
+                self.billed_seconds = self.billed_seconds.max(discarded.billed_seconds);
+                self.turn = None;
+                Ok(Vec::new())
+            }
+        }
+    }
+
+    fn session_created(&mut self) -> Result<ChirpEvent, ChirpProtocolError> {
+        let configured = self
+            .configured
+            .as_ref()
+            .ok_or(ChirpProtocolError::Unconfigured)?;
+        let event_id = self.event_ids.next_event_id();
+        let session = configured.config.openai_session(&configured.session_id);
+        let created = created_event(event_id, &session);
+        Ok(ChirpEvent::SessionCreated(created))
+    }
+
+    fn response(
+        &mut self,
+        frame: &ChirpStreamingResponse,
+    ) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        self.billed_seconds = self.billed_seconds.max(frame.billed_seconds);
+        let interim = interim_text(&frame.results);
+        let finals = final_texts(&frame.results);
+        let mut events = Vec::new();
+        if frame.speech_event == ChirpSpeechEvent::Begin {
+            events.extend(self.speech_marker(SpeechEventType::Started)?);
+        }
+        for text in finals {
+            events.extend(self.final_result(text)?);
+        }
+        if !interim.is_empty() {
+            events.extend(self.preview_events(&interim)?);
+        }
+        if frame.speech_event == ChirpSpeechEvent::End {
+            events.extend(self.speech_marker(SpeechEventType::Stopped)?);
+        }
+        Ok(events)
+    }
+
+    fn speech_marker(
+        &mut self,
+        event_type: SpeechEventType,
+    ) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        if event_type == SpeechEventType::Stopped && self.turn.is_none() {
+            return Ok(Vec::new());
+        }
+        let server_vad = self
+            .configured
+            .as_ref()
+            .ok_or(ChirpProtocolError::Unconfigured)?
+            .config
+            .server_vad;
+        let turn = self.require_turn();
+        let emitted = match event_type {
+            SpeechEventType::Started => &mut turn.started_emitted,
+            SpeechEventType::Stopped => &mut turn.stopped_emitted,
+        };
+        if *emitted || !server_vad {
+            return Ok(Vec::new());
+        }
+        *emitted = true;
+        let item_id = turn.item_id.clone();
+        Ok(vec![ChirpEvent::Speech(speech_event(
+            self.event_ids.next_event_id(),
+            event_type,
+            &item_id,
+        ))])
+    }
+
+    fn preview_events(&mut self, text: &str) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        let mut events = self.speech_marker(SpeechEventType::Started)?;
+        let turn = self.require_turn();
+        let joined = join_transcript(&turn.committed, text);
+        let delta = new_words(&turn.preview, &joined);
+        turn.preview = joined;
+        let item_id = turn.item_id.clone();
+        if !delta.is_empty() {
+            events.push(ChirpEvent::Delta(delta_event(
+                self.event_ids.next_event_id(),
+                &item_id,
+                &delta,
+            )));
+        }
+        Ok(events)
+    }
+
+    fn final_result(&mut self, text: &str) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        let mut events = self.preview_events(text)?;
+        let turn = self.require_turn();
+        turn.committed.clone_from(&turn.preview);
+        let server_vad = self
+            .configured
+            .as_ref()
+            .ok_or(ChirpProtocolError::Unconfigured)?
+            .config
+            .server_vad;
+        if !server_vad {
+            return Ok(events);
+        }
+        events.extend(self.complete()?);
+        Ok(events)
+    }
+
+    fn complete(&mut self) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        let (item_id, transcript) = {
+            let turn = self.require_turn();
+            let transcript = if turn.committed.is_empty() {
+                turn.preview.clone()
+            } else {
+                turn.committed.clone()
+            };
+            (turn.item_id.clone(), transcript)
+        };
+        let mut events = self.speech_marker(SpeechEventType::Stopped)?;
+        self.turn = None;
+        let usage = self.take_unbilled_usage()?;
+        events.push(ChirpEvent::Completed(completed_event(
+            self.event_ids.next_event_id(),
+            &item_id,
+            &transcript,
+            usage,
+        )));
+        Ok(events)
+    }
+
+    fn finish_turn(&mut self) -> Result<Vec<ChirpEvent>, ChirpProtocolError> {
+        if self.turn.is_none() {
+            return Ok(Vec::new());
+        }
+        self.complete()
+    }
+
+    fn require_turn(&mut self) -> &mut Turn {
+        let item_ids = &mut self.item_ids;
+        self.turn.get_or_insert_with(|| Turn {
+            item_id: item_ids.next_item_id(),
+            committed: String::new(),
+            preview: String::new(),
+            started_emitted: false,
+            stopped_emitted: false,
+        })
+    }
+}
+
+fn interim_text(results: &[ChirpStreamingResult]) -> String {
+    results
+        .iter()
+        .filter(|result| !result.is_final)
+        .map(|result| result.transcript.trim())
+        .filter(|transcript| !transcript.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn final_texts(results: &[ChirpStreamingResult]) -> Vec<&str> {
+    results
+        .iter()
+        .filter(|result| result.is_final)
+        .map(|result| result.transcript.trim())
+        .filter(|transcript| !transcript.is_empty())
+        .collect()
+}
