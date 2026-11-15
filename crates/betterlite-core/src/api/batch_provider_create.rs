@@ -10,6 +10,7 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
+use self::timeout::RequestTimeout;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::batch_provider_create::body::create_request;
 use crate::api::batch_provider_create::error::BatchProviderCreateError;
