@@ -1,0 +1,43 @@
+kind: helper
+name: singulr-mcp-response
+call:
+  b8215:
+    scenarios:
+      - name: mcp-response-by-model-prefix
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["file contents", "second chunk"]
+        request_data:
+          model: "MCP: files"
+          metadata:
+            user_api_key_org_id: org-1
+        input_type: response
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: false}
+      - name: mcp-response-without-texts
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: true
+          timeout: null
+        inputs:
+          texts: []
+        request_data:
+          model: "MCP: files"
+        input_type: response
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: true}
+env: {}
+compare: {ignore: []}

@@ -164,3 +164,10 @@ path = "fuzz_targets/compresr_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "singulr_response"
+path = "fuzz_targets/singulr_response.rs"
+test = false
+doc = false
+bench = false
