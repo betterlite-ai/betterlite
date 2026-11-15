@@ -12,23 +12,34 @@ type Cell = Option<Option<Scalar>>;
 
 fn rate(cell: Cell) -> Rate {
     match cell {
-        None => Rate::Absent,
         Some(None) => Rate::Null,
         Some(Some(Scalar::Number(number))) => {
             parse_decimal_lexeme(&number.to_string()).map_or(Rate::Absent, Rate::Value)
         }
-        Some(Some(_)) => Rate::Absent,
+        None | Some(Some(_)) => Rate::Absent,
     }
 }
 
 #[derive(Deserialize, Default)]
 struct ContextRates {
-    #[serde(default, with = "serde_with::rust::double_option")]
-    search_context_size_low: Cell,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    search_context_size_medium: Cell,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    search_context_size_high: Cell,
+    #[serde(
+        default,
+        rename = "search_context_size_low",
+        with = "serde_with::rust::double_option"
+    )]
+    low: Cell,
+    #[serde(
+        default,
+        rename = "search_context_size_medium",
+        with = "serde_with::rust::double_option"
+    )]
+    medium: Cell,
+    #[serde(
+        default,
+        rename = "search_context_size_high",
+        with = "serde_with::rust::double_option"
+    )]
+    high: Cell,
 }
 
 #[derive(Deserialize)]
@@ -80,14 +91,14 @@ impl ToolPriceSource for CatalogLookup {
         let raw = self
             .resolved(model, custom_llm_provider)
             .ok_or(LookupFailed)?;
-        let entry: Entry = serde_json::from_str(raw.get()).map_err(|_| LookupFailed)?;
+        let entry: Entry = serde_json::from_str(raw.get()).map_err(|_source| LookupFailed)?;
         let context = entry.search_context_cost_per_query.unwrap_or_default();
         Ok(ToolModelInfo {
             litellm_provider: entry.litellm_provider,
             search_context: SearchContextRates {
-                low: rate(context.search_context_size_low),
-                medium: rate(context.search_context_size_medium),
-                high: rate(context.search_context_size_high),
+                low: rate(context.low),
+                medium: rate(context.medium),
+                high: rate(context.high),
             },
             file_search_per_gb_per_day: rate(entry.file_search_gb_day),
             file_search_per_1k_calls: rate(entry.file_search_cost_per_1k_calls),

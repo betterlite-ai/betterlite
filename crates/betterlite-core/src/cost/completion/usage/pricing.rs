@@ -1,26 +1,34 @@
 use std::collections::BTreeMap;
 
 use betterlite_logging::fields::usage::Usage;
+use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::{Usage as PricingUsage, UsageNumber};
+use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Map, Value};
+use serde_json::Number;
 
 use crate::api::responses_usage::{Usage as NormalizedUsage, UsageInput, normalize_usage};
 
 use super::UsageConversionError;
 
 // The logging usage as the JSON mapping the Responses normalizer reads back as typed counters.
-fn usage_fields(usage: &Usage) -> Result<Value, UsageConversionError> {
-    let mut fields = Map::new();
+fn usage_fields(usage: &Usage) -> Result<IndexMap<String, Json>, UsageConversionError> {
+    let mut fields = IndexMap::new();
     for (name, value) in &usage.extras {
-        fields.insert(name.clone(), serde_json::to_value(value)?);
+        fields.insert(name.clone(), value.clone());
     }
-    fields.insert("prompt_tokens".to_owned(), Value::from(usage.prompt_tokens));
+    fields.insert(
+        "prompt_tokens".to_owned(),
+        Json::Number(Number::from(usage.prompt_tokens)),
+    );
     fields.insert(
         "completion_tokens".to_owned(),
-        Value::from(usage.completion_tokens),
+        Json::Number(Number::from(usage.completion_tokens)),
     );
-    fields.insert("total_tokens".to_owned(), Value::from(usage.total_tokens));
+    fields.insert(
+        "total_tokens".to_owned(),
+        Json::Number(Number::from(usage.total_tokens)),
+    );
     for (name, details) in [
         ("prompt_tokens_details", &usage.prompt_tokens_details),
         (
@@ -30,36 +38,19 @@ fn usage_fields(usage: &Usage) -> Result<Value, UsageConversionError> {
         ("server_tool_use", &usage.server_tool_use),
     ] {
         if let Some(record) = details {
-            fields.insert(name.to_owned(), serde_json::to_value(record)?);
+            fields.insert(name.to_owned(), Json::Object(record.clone()));
         }
     }
     if let Some(cost) = usage.cost {
-        fields.insert("cost".to_owned(), serde_json::from_str(&cost.to_string())?);
+        fields.insert(
+            "cost".to_owned(),
+            Json::Number(serde_json::from_str(&cost.to_string())?),
+        );
     }
-    Ok(Value::Object(fields))
+    Ok(fields)
 }
 
-// One extension keeps the kind of its JSON value; a float that no decimal holds is an error naming the extension.
-fn extension_number(
-    name: &str,
-    extension: &Value,
-) -> Result<Option<UsageNumber>, UsageConversionError> {
-    if let Some(integer) = extension.as_i64() {
-        return Ok(Some(UsageNumber::Integer(integer)));
-    }
-    if let Some(flag) = extension.as_bool() {
-        return Ok(Some(UsageNumber::Boolean(flag)));
-    }
-    let Some(float) = extension.as_f64() else {
-        return Ok(None);
-    };
-    let number = Decimal::try_from(float).map_err(|source| UsageConversionError::Decimal {
-        name: name.to_owned(),
-        source,
-    })?;
-    Ok(Some(UsageNumber::Decimal(number)))
-}
-
+// A float that no decimal holds is an error naming the extension; every other kind is skipped.
 fn numeric_extras(
     converted: &NormalizedUsage,
 ) -> Result<BTreeMap<String, UsageNumber>, UsageConversionError> {
@@ -71,9 +62,22 @@ fn numeric_extras(
         if name.starts_with('_') {
             continue;
         }
-        if let Some(number) = extension_number(name, extension)? {
-            numeric_extras.insert(name.clone(), number);
+        if let Some(integer) = extension.as_i64() {
+            numeric_extras.insert(name.clone(), UsageNumber::Integer(integer));
+            continue;
         }
+        if let Some(flag) = extension.as_bool() {
+            numeric_extras.insert(name.clone(), UsageNumber::Boolean(flag));
+            continue;
+        }
+        let Some(float) = extension.as_f64() else {
+            continue;
+        };
+        let number = Decimal::try_from(float).map_err(|source| UsageConversionError::Decimal {
+            name: name.clone(),
+            source,
+        })?;
+        numeric_extras.insert(name.clone(), UsageNumber::Decimal(number));
     }
     Ok(numeric_extras)
 }
@@ -81,7 +85,8 @@ fn numeric_extras(
 // The logging usage the response carries, read as the typed block cost_per_token prices: details and extensions become typed counters.
 pub fn pricing_usage(usage: &Usage) -> Result<PricingUsage, UsageConversionError> {
     let fields = usage_fields(usage)?;
-    let converted = normalize_usage(UsageInput::Mapping(&fields))?;
+    let mapping = serde_json::to_value(fields)?;
+    let converted = normalize_usage(UsageInput::Mapping(&mapping))?;
     let extras = numeric_extras(&converted)?;
     Ok(PricingUsage {
         prompt_tokens: converted.prompt_tokens,

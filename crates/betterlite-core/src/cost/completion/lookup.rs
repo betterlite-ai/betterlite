@@ -136,16 +136,24 @@ impl CatalogLookup {
 }
 
 impl PriceLookup for CatalogLookup {
-    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
-        serde_json::from_str(self.resolved(model, provider)?.get()).ok()
+    fn effective_model_info(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        serde_json::from_str(self.resolved(model, custom_llm_provider)?.get()).ok()
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
         serde_json::from_str(self.map.entries.get(key)?.get()).ok()
     }
 
-    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
-        let raw = self.resolved(model, provider)?;
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        let raw = self.resolved(model, custom_llm_provider)?;
         let record = serde_json::from_str(raw.get()).ok()?;
         let tables: Tables<'_> = serde_json::from_str(raw.get()).ok()?;
         let tiered_pricing = tables
