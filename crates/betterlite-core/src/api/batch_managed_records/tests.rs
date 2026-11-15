@@ -259,6 +259,26 @@ async fn missing_row_keeps_raw_id() {
 }
 
 #[tokio::test]
+async fn absent_client_keeps_raw_ids() {
+    let records = service(None::<RecordingFiles>, Some(NoJobs), true);
+    let input = BatchManagedRecordsInput::ResolveOutput {
+        files: ids(
+            Some("file-raw-in"),
+            Some("file-raw-out"),
+            Some("file-raw-err"),
+        ),
+    };
+    assert_eq!(
+        records.run(&input).await,
+        BatchManagedRecordsResult::Resolved(ids(
+            Some("file-raw-in"),
+            Some("file-raw-out"),
+            Some("file-raw-err")
+        ))
+    );
+}
+
+#[tokio::test]
 async fn empty_and_unified_ids_are_not_looked_up() {
     let unified = URL_SAFE_NO_PAD.encode("litellm_proxy:file:unified-in");
     let files = RecordingFiles::recording(&[]);
