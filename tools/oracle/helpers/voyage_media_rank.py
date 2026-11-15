@@ -19,6 +19,7 @@ from typing_extensions import override
 
 JsonObject: TypeAlias = dict[str, JsonValue]
 EMPTY: Final[JsonObject] = {}
+DROP_PARAMS: Final[bool] = False
 
 
 class MultimodalConfig(Protocol):
@@ -193,7 +194,7 @@ def multimodal_result(call: MultimodalCall) -> JsonValue:
         options = {
             name: value for name, value in call["options"].items() if name != "dimensions"
         }
-        mapped = MULTIMODAL.map_openai_params(call["options"], options, model, False)
+        mapped = MULTIMODAL.map_openai_params(call["options"], options, model, DROP_PARAMS)
         request: JsonValue = {
             "ok": True,
             "value": MULTIMODAL.transform_embedding_request(model, call["input"], mapped, EMPTY),
@@ -270,7 +271,7 @@ def rerank_result(call: RerankCall) -> JsonValue:
         "value": RERANK.transform_rerank_request(
             model,
             RERANK.map_cohere_rerank_params(
-                EMPTY, model, False, call["query"], call["documents"],
+                EMPTY, model, DROP_PARAMS, call["query"], call["documents"],
                 None, call["top_n"], call["rank_fields"], call["return_documents"],
                 call["max_chunks_per_doc"], call["max_tokens_per_doc"], call["instruction"],
             ),
