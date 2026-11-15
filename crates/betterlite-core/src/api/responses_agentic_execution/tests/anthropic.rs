@@ -172,10 +172,8 @@ async fn converted_dispatch(
     joined
 }
 
-pub(super) async fn converted_wrap_sites() {
-    let (log, _guard) = capture();
-    let order = Arc::new(Mutex::new(Vec::new()));
-    let quiet = quiet_callback(&order);
+async fn streamed_and_overridden_wrap_sites(order: &Arc<Mutex<Vec<String>>>) {
+    let quiet = quiet_callback(order);
     let mut streamed = anthropic_fixture();
     streamed.converted = true;
     let stream_frames = converted_dispatch(
@@ -186,7 +184,7 @@ pub(super) async fn converted_wrap_sites() {
     .await;
     assert!(stream_frames.contains("event: message_stop\ndata: "));
     assert!(stream_frames.contains("hello"));
-    let legacy = recording("l", legacy_script(ANTHROPIC_BODY), &order);
+    let legacy = recording("l", legacy_script(ANTHROPIC_BODY), order);
     let legacy_frames = converted_dispatch(
         &converted_fixture(),
         &[&legacy],
@@ -199,9 +197,9 @@ pub(super) async fn converted_wrap_sites() {
         "o",
         Script::default()
             .with_overrides(overrides(true, true, false))
-            .with_gate(gate(true, tools.clone()))
+            .with_gate(gate(true, tools))
             .with_plan(plan(None, Some(raw(ANTHROPIC_BODY)), false, false)),
-        &order,
+        order,
     );
     let override_frames = converted_dispatch(
         &converted_fixture(),
@@ -210,6 +208,10 @@ pub(super) async fn converted_wrap_sites() {
     )
     .await;
     assert!(override_frames.contains("hello"));
+}
+
+async fn terminated_refused_and_planned_wrap_sites(order: &Arc<Mutex<Vec<String>>>) {
+    let tools = refused_tools("web_search", "call-ws");
     let mut terminate = plan(None, None, true, false);
     terminate.stop_reason = Some("done".to_owned());
     let terminated = recording(
@@ -219,7 +221,7 @@ pub(super) async fn converted_wrap_sites() {
             .with_gate(gate(true, tools.clone()))
             .with_plan(terminate)
             .with_post(raw(ANTHROPIC_BODY)),
-        &order,
+        order,
     );
     let terminate_frames = converted_dispatch(
         &converted_fixture(),
@@ -231,7 +233,7 @@ pub(super) async fn converted_wrap_sites() {
     let mut refused = converted_fixture();
     refused.response = raw(REFUSED_BODY);
     refused.kwargs = typed_kwargs(&[("_agentic_loop_depth", "1"), ("max_agentic_loops", "1")]);
-    let gated = recording("s", gated_script(&tools), &order);
+    let gated = recording("s", gated_script(&tools), order);
     let refusal_frames = converted_dispatch(
         &refused,
         &[&gated],
@@ -240,7 +242,7 @@ pub(super) async fn converted_wrap_sites() {
     .await;
     assert!(refusal_frames.contains("after"));
     assert!(refusal_frames.contains("end_turn"));
-    let planned = recording("x", plan_script(&tools, patched()), &order);
+    let planned = recording("x", plan_script(&tools, patched()), order);
     let execution_frames = converted_dispatch(
         &converted_fixture(),
         &[&planned],
@@ -248,6 +250,13 @@ pub(super) async fn converted_wrap_sites() {
     )
     .await;
     assert!(execution_frames.contains("hello"));
+}
+
+pub(super) async fn converted_wrap_sites() {
+    let (log, _guard) = capture();
+    let order = Arc::new(Mutex::new(Vec::new()));
+    streamed_and_overridden_wrap_sites(&order).await;
+    terminated_refused_and_planned_wrap_sites(&order).await;
     assert_log(
         &log,
         "WebSearchInterception: Agentic loop completed, converting non-streaming response to fake stream",
