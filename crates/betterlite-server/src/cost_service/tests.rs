@@ -18,9 +18,11 @@ use betterlite_core::cost::prepare::{
 use betterlite_core::cost::special::replicate::ReplicateStamps;
 use betterlite_core::cost::special::request::{ImageParts, LoggingView, TranscriptionDuration};
 use betterlite_core::cost::usage::{BillingUsage, ResponseKind};
+use betterlite_core::routes::CallType;
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_logging::fields::usage::Usage;
 use betterlite_models::decisions::Json;
+use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
@@ -41,6 +43,13 @@ const CATALOG: &str = r#"{
         "mode": "chat",
         "input_cost_per_token": 0.001,
         "output_cost_per_token": 0.002
+    },
+    "dall-e-3": {
+        "litellm_provider": "openai",
+        "mode": "image_generation",
+        "input_cost_per_token": 0,
+        "output_cost_per_token": 0,
+        "input_cost_per_image": 0.04
     }
 }"#;
 
@@ -101,7 +110,7 @@ fn usage(prompt: i64, completion: i64) -> Usage {
     Usage {
         prompt_tokens: prompt,
         completion_tokens: completion,
-        total_tokens: prompt + completion,
+        total_tokens: prompt.saturating_add(completion),
         prompt_tokens_details: None,
         completion_tokens_details: None,
         server_tool_use: None,
@@ -123,6 +132,46 @@ fn view<'view>(
     })
 }
 
+fn charge_inputs<'inputs>() -> ChargeInputs<'inputs> {
+    ChargeInputs {
+        passthrough_image: false,
+        total_time: None,
+        data_residency: None,
+        vertex_location: None,
+        custom_cost_per_token: None,
+        custom_cost_per_second: None,
+        logging: LoggingView {
+            model: None,
+            params: None,
+            timing: None,
+        },
+        response: ResponseParts {
+            cost_response: None,
+            image: ImageParts {
+                response: ImageResponseView::Other,
+                quality: None,
+                image_count: None,
+                size: None,
+            },
+            video_usage: None,
+            transcription: TranscriptionDuration::default(),
+            rerank: None,
+            protocol: None,
+            replicate: ReplicateStamps::default(),
+            model_response: None,
+        },
+        ocr_billing: None,
+        vector_response: None,
+        search_hidden_params: None,
+        server_tool_projection: None,
+        tools: ToolInputs {
+            response: ToolBillingResponse::Other(OtherView { usage: None }),
+            params: BuiltInToolParams::default(),
+            google_maps_requests: None,
+        },
+    }
+}
+
 fn args<'args>(response: &'args ResponseView<'args>) -> CompletionArgs<'args> {
     CompletionArgs {
         billing: CompletionBillingInput {
@@ -140,43 +189,7 @@ fn args<'args>(response: &'args ResponseView<'args>) -> CompletionArgs<'args> {
             service_tier: None,
             response: Some(response),
         },
-        charge: ChargeInputs {
-            passthrough_image: false,
-            total_time: None,
-            data_residency: None,
-            vertex_location: None,
-            custom_cost_per_token: None,
-            custom_cost_per_second: None,
-            logging: LoggingView {
-                model: None,
-                params: None,
-                timing: None,
-            },
-            response: ResponseParts {
-                cost_response: None,
-                image: ImageParts {
-                    response: ImageResponseView::Other,
-                    quality: None,
-                    image_count: None,
-                    size: None,
-                },
-                video_usage: None,
-                transcription: TranscriptionDuration::default(),
-                rerank: None,
-                protocol: None,
-                replicate: ReplicateStamps::default(),
-                model_response: None,
-            },
-            ocr_billing: None,
-            vector_response: None,
-            search_hidden_params: None,
-            server_tool_projection: None,
-            tools: ToolInputs {
-                response: ToolBillingResponse::Other(OtherView { usage: None }),
-                params: BuiltInToolParams::default(),
-                google_maps_requests: None,
-            },
-        },
+        charge: charge_inputs(),
     }
 }
 
@@ -262,4 +275,35 @@ async fn the_provider_header_wins_over_the_token_prices() {
         .await
         .unwrap();
     assert_eq!(charge, dec("0.5"));
+}
+
+#[tokio::test]
+async fn an_image_call_is_priced_by_the_provider_image_policy() {
+    let service = service(&AdjustmentSettings::default());
+    let image = ImageBilling {
+        image_count: 1,
+        size: None,
+        quality: None,
+        usage: None,
+    };
+    let response = ResponseView::Typed(TypedResponse {
+        kind: ResponseKind::Image,
+        model: Some("dall-e-3"),
+        usage: BillingUsage::Absent,
+        service_tier: None,
+        hidden_params: None,
+    });
+    let mut args = args(&response);
+    args.billing.model = Some("dall-e-3");
+    args.billing.call_type = Some(CallType::ImageGeneration);
+    args.charge.response.image.response = ImageResponseView::Image(&image);
+    let call = Call {
+        args: &args,
+        counter: &Counter,
+    };
+    let charge = service
+        .completion_cost::<Stored, _>(&call, &mut clock, None)
+        .await
+        .unwrap();
+    assert_eq!(charge, dec("0.04"));
 }
