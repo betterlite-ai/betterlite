@@ -12,9 +12,9 @@ deviations:
   - what: An error value that is not a string gives its JSON text as the message, where LiteLLM gives Python's str() of the decoded value.
     why: The Python repr of a dict or None is a Python runtime detail (single quotes, None) that docs/compatibility.md leaves out.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L194-L198
-  - what: A reply body that is not valid UTF-8, whose JSON root is not an object, or whose completion or stop_reason is missing or of the wrong type gives a typed error, where LiteLLM raises a Python TypeError or KeyError or decodes with replacement characters.
+  - what: A reply body that is not valid UTF-8, whose JSON root is not an object, or whose completion or stop_reason is missing or of the wrong type gives a typed error, and so does an empty choices list, where LiteLLM raises a Python TypeError, KeyError or IndexError or decodes with replacement characters.
     why: A wrongly typed body or field is an error that names it, as docs/compatibility.md says.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L190-L205
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L190-L208
   - what: A stream chunk's index that is not an integer (a string, a fraction or a bool, which int() converts in Python) and a stop_reason that is not text give a typed error, where LiteLLM passes the value on.
     why: A value of the wrong type is an error that names the field, as docs/compatibility.md says.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/completion/transformation.py#L264-L290
