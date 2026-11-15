@@ -16,6 +16,8 @@ use super::records::{
 };
 use crate::agent_policy::AgentResponse;
 
+mod tests;
+
 // Prisma's find_unique with the identity and object_permission includes, decoded as AgentResponse
 const AGENT_SQL: &str = r#"SELECT jsonb_build_object(
     'agent_id', a.agent_id,
