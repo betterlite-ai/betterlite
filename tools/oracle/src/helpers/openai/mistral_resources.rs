@@ -85,42 +85,28 @@ fn file_failure(error: &MistralFilesError) -> Box<HelperError> {
         message: error.to_string(),
     })
 }
-fn upload_outcome(
-    upload: &Upload,
-    section: &FilesSection,
-    settings: &Settings,
-) -> Result<Value, Box<HelperError>> {
-    let request = FileUploadRequest {
-        file: FileData::Tuple3 {
-            filename: upload.filename.clone(),
-            content: FileBody::Bytes(upload.content.clone()),
-            content_type: upload.content_type.clone(),
-        },
-        purpose: Some(upload.purpose.clone()),
-    };
-    let created = create_upload(&request, section.now, section.api_base.as_deref(), settings)
-        .map_err(|error| file_failure(&error))?;
-    Ok(
-        json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()}),
-    )
-}
-fn list_outcome(
-    purpose: Option<&str>,
-    section: &FilesSection,
-    settings: &Settings,
-) -> Result<Value, Box<HelperError>> {
-    let (url, query) = list_request(purpose, section.api_base.as_deref(), settings)
-        .map_err(|error| file_failure(&error))?;
-    Ok(json!({"ok": true, "url": url, "query": query}))
-}
 fn files_outcome(section: &FilesSection, settings: &Settings) -> Result<Value, Box<HelperError>> {
     let mut uploads = Vec::with_capacity(section.uploads.len());
     for upload in &section.uploads {
-        uploads.push(upload_outcome(upload, section, settings)?);
+        let request = FileUploadRequest {
+            file: FileData::Tuple3 {
+                filename: upload.filename.clone(),
+                content: FileBody::Bytes(upload.content.clone()),
+                content_type: upload.content_type.clone(),
+            },
+            purpose: Some(upload.purpose.clone()),
+        };
+        let created = create_upload(&request, section.now, section.api_base.as_deref(), settings)
+            .map_err(|error| file_failure(&error))?;
+        uploads.push(
+            json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()}),
+        );
     }
     let mut listed = Vec::with_capacity(section.list_purposes.len());
     for purpose in &section.list_purposes {
-        listed.push(list_outcome(purpose.as_deref(), section, settings)?);
+        let (url, query) = list_request(purpose.as_deref(), section.api_base.as_deref(), settings)
+            .map_err(|error| file_failure(&error))?;
+        listed.push(json!({"ok": true, "url": url, "query": query}));
     }
     let mut bodies = Vec::with_capacity(section.bodies.len());
     for body in &section.bodies {
