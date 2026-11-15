@@ -107,16 +107,8 @@ fn number(value: f64) -> Json {
     Json::Number(serde_json::Number::from_f64(value).unwrap())
 }
 
-fn empty_body() -> Bytes {
-    futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed()
-}
-
 fn fixed_id() -> Uuid {
     Uuid::from_u128(7)
-}
-
-fn fixed_clock() -> i64 {
-    1_700_000_000
 }
 
 fn empty_chunk() -> GenericChunk {
@@ -182,7 +174,7 @@ impl Call {
             transform_messages: transform,
             streaming_decoder: decoder,
             identifier: fixed_id,
-            clock: fixed_clock,
+            clock: || 1_700_000_000,
         }
     }
 }
@@ -393,7 +385,7 @@ fn async_stream_writes_the_stream_flag_after_the_pre_call_log() {
     };
     assert_eq!(logged.get("stream"), Some(&Json::Bool(false)));
     let answer = ChatAnswer::Stream {
-        body: empty_body(),
+        body: futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed(),
         limit: 4096,
     };
     let outcome = finish_chat(&plan, answer, &mut state, &env).unwrap();
