@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeSet;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -10,7 +10,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_models::identity::provider_id::ProviderId;
 use http::HeaderMap;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value;
 use tokio::runtime::Builder;
 use url::Url;
@@ -57,10 +57,6 @@ fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
-fn revealed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|key| key.expose_secret().to_owned())
-}
-
 fn block_on<F>(future: F) -> F::Output
 where
     F: Future,
@@ -71,60 +67,59 @@ where
         .block_on(future)
 }
 
+const COMPLETION_PARAMS: &[&str] = &[
+    "frequency_penalty",
+    "logit_bias",
+    "logprobs",
+    "top_logprobs",
+    "max_tokens",
+    "max_completion_tokens",
+    "modalities",
+    "prediction",
+    "n",
+    "presence_penalty",
+    "seed",
+    "stop",
+    "stream",
+    "stream_options",
+    "temperature",
+    "top_p",
+    "tools",
+    "tool_choice",
+    "function_call",
+    "functions",
+    "max_retries",
+    "extra_headers",
+    "parallel_tool_calls",
+    "audio",
+    "web_search_options",
+    "service_tier",
+    "safety_identifier",
+    "prompt_cache_key",
+    "prompt_cache_retention",
+    "store",
+    "response_format",
+    "user",
+    "request_timeout",
+    "api_base",
+    "api_version",
+    "api_key",
+    "deployment_id",
+    "organization",
+    "base_url",
+    "default_headers",
+    "timeout",
+    "response_format",
+    "reasoning_effort",
+    "thinking",
+    "include_server_side_tool_invocations",
+    "verbosity",
+];
+
 #[test]
 fn supported_params_append_every_completion_name() {
     let params = supported_params(&config(), "gpt-4o-mini", &catalog(&[]));
-    assert_eq!(
-        params,
-        [
-            "frequency_penalty",
-            "logit_bias",
-            "logprobs",
-            "top_logprobs",
-            "max_tokens",
-            "max_completion_tokens",
-            "modalities",
-            "prediction",
-            "n",
-            "presence_penalty",
-            "seed",
-            "stop",
-            "stream",
-            "stream_options",
-            "temperature",
-            "top_p",
-            "tools",
-            "tool_choice",
-            "function_call",
-            "functions",
-            "max_retries",
-            "extra_headers",
-            "parallel_tool_calls",
-            "audio",
-            "web_search_options",
-            "service_tier",
-            "safety_identifier",
-            "prompt_cache_key",
-            "prompt_cache_retention",
-            "store",
-            "response_format",
-            "user",
-            "request_timeout",
-            "api_base",
-            "api_version",
-            "api_key",
-            "deployment_id",
-            "organization",
-            "base_url",
-            "default_headers",
-            "timeout",
-            "response_format",
-            "reasoning_effort",
-            "thinking",
-            "include_server_side_tool_invocations",
-            "verbosity",
-        ]
-    );
+    assert_eq!(params.as_slice(), COMPLETION_PARAMS);
 }
 
 #[rstest]
@@ -288,9 +283,12 @@ fn a_non_object_extra_body_rejects_thinking(#[case] extra_body: &str) {
 }
 
 #[rstest]
-#[case::strips_the_prefix(LITELLM_PROXY_PREFIX.to_owned() + "gpt-4", "gpt-4")]
+#[case::strips_the_prefix(format!("{LITELLM_PROXY_PREFIX}gpt-4"), "gpt-4")]
 #[case::keeps_a_nested_prefix("gemini/gemini-1.5-pro", "gemini/gemini-1.5-pro")]
-#[case::strips_only_the_leading_prefix(LITELLM_PROXY_PREFIX.to_owned() + "gemini/gemini-1.5-pro", "gemini/gemini-1.5-pro")]
+#[case::strips_only_the_leading_prefix(
+    format!("{LITELLM_PROXY_PREFIX}gemini/gemini-1.5-pro"),
+    "gemini/gemini-1.5-pro"
+)]
 #[case::leaves_the_bare_prefix_empty(LITELLM_PROXY_PREFIX.to_owned(), "")]
 #[case::leaves_a_bare_model("gpt-4", "gpt-4")]
 fn route_strips_only_the_leading_proxy_prefix(#[case] model: String, #[case] expected: &str) {
@@ -308,7 +306,7 @@ fn route_prefers_explicit_credentials() {
     );
     assert_eq!(route.api_base.as_deref(), Some("https://explicit"));
     assert_eq!(
-        revealed(route.api_key.as_ref()).as_deref(),
+        route.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("explicit-key")
     );
 }
@@ -319,7 +317,7 @@ fn route_falls_back_to_configured_credentials() {
         .route("gpt-4", None, None);
     assert_eq!(route.api_base.as_deref(), Some("https://configured"));
     assert_eq!(
-        revealed(route.api_key.as_ref()).as_deref(),
+        route.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("configured-key")
     );
 }
@@ -333,7 +331,7 @@ fn route_skips_an_empty_explicit_credential() {
     );
     assert_eq!(route.api_base.as_deref(), Some("https://configured"));
     assert_eq!(
-        revealed(route.api_key.as_ref()).as_deref(),
+        route.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("configured-key")
     );
 }
@@ -525,12 +523,12 @@ impl Script {
 }
 
 impl ModelListTransport for Script {
-    async fn get(
+    fn get(
         &self,
         url: &Url,
         headers: &HeaderMap,
         _deadline: Duration,
-    ) -> Result<UpstreamResponse, TransportError> {
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let authorization = headers
             .get("authorization")
             .and_then(|value| value.to_str().ok())
@@ -539,11 +537,11 @@ impl ModelListTransport for Script {
             .lock()
             .unwrap()
             .push((url.to_string(), authorization));
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status: self.status,
             headers: HeaderMap::new(),
             body: self.body.clone().into_bytes(),
-        })
+        }))
     }
 }
 

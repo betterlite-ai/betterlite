@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::Settings;
 use crate::loader::ConfigLoader;
@@ -36,7 +36,7 @@ fn the_environment_supplies_the_base_and_key() {
         Some("https://proxy.example/v1")
     );
     assert_eq!(
-        settings.api_key.as_ref().map(|key| key.expose_secret()),
+        settings.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-proxy")
     );
 }
@@ -57,7 +57,7 @@ fn a_boolean_spelling_stays_text_in_the_base_and_key() {
     ];
     let settings = loaded("model_list: []", &spellings);
     let base = settings.api_base.as_deref();
-    let key = settings.api_key.as_ref().map(|key| key.expose_secret());
+    let key = settings.api_key.as_ref().map(ExposeSecret::expose_secret);
     assert_eq!((base, key), (Some("true"), Some("false")));
 }
 
