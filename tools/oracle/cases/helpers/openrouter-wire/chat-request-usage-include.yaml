@@ -1,0 +1,53 @@
+kind: helper
+name: openrouter-wire-chat-request-usage-include
+call:
+  b6080:
+    op: request
+    cases:
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params: {}
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params:
+          temperature: 0.2
+          extra_body: {}
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params:
+          extra_body:
+            transforms: [middle-out]
+            models: [anthropic/claude-3.5-sonnet]
+            route: fallback
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params:
+          extra_body:
+            usage: {include: false}
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params:
+          temperature: 0.2
+          extra_body:
+            temperature: 0.9
+            model: other/model
+      - model: openai/gpt-4o
+        messages:
+          - role: user
+            content: hi
+        optional_params:
+          extra_body:
+            messages: []
+env: {}
+compare:
+  ignore: []
