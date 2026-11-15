@@ -5,7 +5,7 @@ use super::error::{ImageVariationResult, ImageVariationSource, OpenAiImageVariat
 use super::{ImageVariationData, ImageVariationRequest, OpenAiImageVariationConfig, PROVIDER};
 use crate::api::image_contracts::records::ImageHeaders;
 
-// the OpenAI SDK's own default read timeout, since LiteLLM passes a missing timeout through as None
+// LiteLLM's None leaves a call unbounded; bounded-inputs caps it at the SDK default of 600 seconds
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug)]
@@ -39,13 +39,12 @@ pub fn prepare_image_variation(
             ImageVariationSource::MissingData,
         ));
     };
-    let kind = if request.params.async_call {
-        ClientKind::Async
-    } else {
-        ClientKind::Sync
-    };
     let settings = ClientSettings {
-        kind,
+        kind: if request.params.async_call {
+            ClientKind::Async
+        } else {
+            ClientKind::Sync
+        },
         api_key: request.api_key.as_ref(),
         api_base: request.api_base.as_deref(),
         organization: request.organization.as_deref(),
