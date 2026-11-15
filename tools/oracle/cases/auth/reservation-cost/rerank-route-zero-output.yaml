@@ -1,0 +1,18 @@
+kind: helper
+name: reservation-cost-rerank-route-zero-output
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: rerank-model
+    route: /v1/rerank
+    model_cost:
+      rerank-model:
+        mode: rerank
+        max_input_tokens: 8192
+        input_cost_per_token: 0.00006
+    input_token_counts:
+      rerank-model: 1000
+    model_list: []
+env: {}
+compare: {ignore: []}
