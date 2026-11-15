@@ -246,15 +246,10 @@ fn merged_with_pending(pending: &SharedPendingRollups, fresh: FreshRollups) -> F
     let mut state = pending.lock().unwrap_or_else(PoisonError::into_inner);
     let queued_metrics = mem::take(&mut state.metrics);
     let queued_units = mem::take(&mut state.units);
-    let metrics = rollups::capped(
+    (
         rollups::merged_rows(queued_metrics, fresh.0, rollups::summed_counts),
-        METRICS_LABEL,
-    );
-    let units = rollups::capped(
         rollups::merged_rows(queued_units, fresh.1, rollups::summed_units),
-        UNITS_LABEL,
-    );
-    (metrics, units)
+    )
 }
 
 // Keeps only the rows whose retries ran out, merged with whatever a concurrent flush queued meanwhile

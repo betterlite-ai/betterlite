@@ -183,6 +183,26 @@ async fn writes_only_the_index_row_of_a_not_run_entry() {
 }
 
 #[tokio::test]
+async fn flushes_every_merged_row_past_the_pending_cap() {
+    let sink = FakeSink::default();
+    let pending = shared();
+    lock(&pending).metrics = (0_u32..10_000)
+        .map(|index| {
+            (
+                MetricsKey {
+                    guardrail_id: format!("q{index}"),
+                    date: String::from("2026-01-02"),
+                },
+                counts(1, 1),
+            )
+        })
+        .collect();
+    process(&[from_json(METRICS_ONLY)], &sink).await;
+    assert_eq!(sink.metric_calls().len(), 10_001);
+    assert!(lock(&pending).metrics.is_empty());
+}
+
+#[tokio::test]
 async fn writes_nothing_when_no_payload_has_guardrail_information() {
     let sink = FakeSink::default();
     let payload = from_json(r#"{"request_id": "req-1", "startTime": "2026-01-02T03:04:05Z"}"#);
