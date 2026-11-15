@@ -1,0 +1,24 @@
+kind: helper
+name: openrouter-wire-responses-key-url-websocket
+call:
+  b6080:
+    op: responses
+    cases:
+      - headers:
+          x-extra: "1"
+        api_key: sk-explicit
+        global_api_key: sk-global
+        environment:
+          OPENROUTER_API_BASE: https://env.example
+        api_base: null
+        global_api_base: null
+      - headers: {}
+        api_key: null
+        global_api_key: null
+        environment:
+          OPENROUTER_API_KEY: sk-env
+        api_base: null
+        global_api_base: null
+env: {}
+compare:
+  ignore: []
