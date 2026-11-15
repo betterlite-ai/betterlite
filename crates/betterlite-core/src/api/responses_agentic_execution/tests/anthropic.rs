@@ -210,6 +210,19 @@ async fn streamed_and_overridden_wrap_sites(order: &Arc<Mutex<Vec<String>>>) {
     assert!(override_frames.contains("hello"));
 }
 
+async fn refused_wrap_site(order: &Arc<Mutex<Vec<String>>>, tools: &JsonMap) -> String {
+    let mut refused = converted_fixture();
+    refused.response = raw(REFUSED_BODY);
+    refused.kwargs = typed_kwargs(&[("_agentic_loop_depth", "1"), ("max_agentic_loops", "1")]);
+    let gated = recording("s", gated_script(tools), order);
+    converted_dispatch(
+        &refused,
+        &[&gated],
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await
+}
+
 async fn terminated_refused_and_planned_wrap_sites(order: &Arc<Mutex<Vec<String>>>) {
     let tools = refused_tools("web_search", "call-ws");
     let mut terminate = plan(None, None, true, false);
@@ -230,16 +243,7 @@ async fn terminated_refused_and_planned_wrap_sites(order: &Arc<Mutex<Vec<String>
     )
     .await;
     assert!(terminate_frames.contains("hello"));
-    let mut refused = converted_fixture();
-    refused.response = raw(REFUSED_BODY);
-    refused.kwargs = typed_kwargs(&[("_agentic_loop_depth", "1"), ("max_agentic_loops", "1")]);
-    let gated = recording("s", gated_script(&tools), order);
-    let refusal_frames = converted_dispatch(
-        &refused,
-        &[&gated],
-        &ScriptedExecutor::responding(NEXT_BODY),
-    )
-    .await;
+    let refusal_frames = refused_wrap_site(order, &tools).await;
     assert!(refusal_frames.contains("after"));
     assert!(refusal_frames.contains("end_turn"));
     let planned = recording("x", plan_script(&tools, patched()), order);
