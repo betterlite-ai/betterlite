@@ -27,6 +27,13 @@ deviations:
     why: the task and the project's money rule require Decimal from ingestion, never floating point. Oracle cases
       use values every float represents exactly, so both sides agree there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L119-L129
+  - what: >-
+      A catalog, resolution or deployment price that Decimal cannot hold, such as the JSON number 1e30, produces a
+      typed pricing error instead of a float cost, where LiteLLM's float() conversion returns that magnitude as the
+      price.
+    why: the task and the project's money rule require exact Decimal arithmetic, so a price outside the Decimal range
+      fails as a typed error rather than turning into an inexact float or infinity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/cost_calculator.py#L89-L163
 kept_bugs:
   - what: >-
       A catalog price of true counts as a numeric one, so it prices an image at 1, because the source's

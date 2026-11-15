@@ -196,7 +196,11 @@ fn parse_keyed_dimensions_reads_two_positive_integers(
 #[case::explicit_null(Some(Json::Null), Some(FAL_TEXT_TO_IMAGE_DEFAULT_SIZE))]
 #[case::auto(Some(text("auto")), Some(FAL_TEXT_TO_IMAGE_DEFAULT_SIZE))]
 #[case::preset(Some(text("square_hd")), Some("1024-x-1024"))]
+#[case::square(Some(text("square")), Some("512-x-512"))]
+#[case::portrait_4_3(Some(text("portrait_4_3")), Some("768-x-1024"))]
 #[case::portrait(Some(text("portrait_16_9")), Some("576-x-1024"))]
+#[case::landscape_4_3(Some(text("landscape_4_3")), Some("1024-x-768"))]
+#[case::landscape_16_9(Some(text("landscape_16_9")), Some("1024-x-576"))]
 #[case::unknown_name(Some(text("huge")), None)]
 #[case::padded_name(Some(text(" square")), None)]
 #[case::number_value(Some(integer(1024)), None)]
@@ -444,6 +448,56 @@ fn the_closest_area_wins_and_a_tie_goes_to_the_smaller_area() {
     )
     .expect("the closer area prices the image");
     assert_eq!(closer_cost, decimal("0.2"));
+}
+
+const SKIP_FLAT: &str = r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.75}"#;
+
+#[test]
+fn a_keyed_row_without_a_price_or_a_parsable_size_is_skipped() {
+    let fixture = fixture(&[
+        ("fal_ai/fal-ai/skip", SKIP_FLAT),
+        (
+            "fal_ai/high/1024-x-768/fal-ai/skip",
+            r#"{"litellm_provider": "fal_ai"}"#,
+        ),
+        (
+            "fal_ai/high/wide-x-768/fal-ai/skip",
+            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.01}"#,
+        ),
+    ]);
+    let image = object(&[("width", integer(1024)), ("height", integer(768))]);
+    let images = [Some(&image)];
+    let cost = cost_calculator(
+        &request("fal_ai/fal-ai/skip", &images, None, None),
+        &fixture.catalog,
+        &fixture.lookup,
+    )
+    .expect("the flat price prices the image");
+    assert_eq!(cost, decimal("0.75"));
+}
+
+#[test]
+fn a_keyed_row_the_lookup_does_not_know_is_skipped() {
+    let fixture = Fixture {
+        lookup: lookup_from(&[("fal_ai/fal-ai/skip", SKIP_FLAT)]),
+        catalog: fixture(&[
+            ("fal_ai/fal-ai/skip", SKIP_FLAT),
+            (
+                "fal_ai/high/1024-x-768/fal-ai/skip",
+                r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.01}"#,
+            ),
+        ])
+        .catalog,
+    };
+    let image = object(&[("width", integer(1024)), ("height", integer(768))]);
+    let images = [Some(&image)];
+    let cost = cost_calculator(
+        &request("fal_ai/fal-ai/skip", &images, None, None),
+        &fixture.catalog,
+        &fixture.lookup,
+    )
+    .expect("the flat price prices the image");
+    assert_eq!(cost, decimal("0.75"));
 }
 
 #[test]
@@ -749,6 +803,24 @@ fn a_boolean_resolution_price_reads_as_one() {
     )
     .expect("the boolean resolution price prices the images");
     assert_eq!(cost, decimal("2"));
+}
+
+#[test]
+fn a_price_decimal_cannot_hold_is_a_typed_error() {
+    let fixture = fixture(&[]);
+    let lookup = lookup_from(&[(
+        FLUX_DEV,
+        r#"{"litellm_provider": "fal_ai", "output_cost_per_image_1024": 1e30}"#,
+    )]);
+    let image = object(&[("width", integer(1024)), ("height", integer(768))]);
+    let images = [Some(&image)];
+    let params = object(&[("resolution", integer(1024))]);
+    let result = cost_calculator(
+        &request(FLUX_DEV, &images, Some(&params), None),
+        &fixture.catalog,
+        &lookup,
+    );
+    assert!(matches!(result, Err(FalPricingError::ImageCost(_))));
 }
 
 #[test]
