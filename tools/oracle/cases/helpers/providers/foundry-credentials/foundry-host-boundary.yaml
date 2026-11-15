@@ -1,0 +1,21 @@
+kind: helper
+name: foundry-host-boundary
+call:
+  foundry_credentials:
+    host_boundary:
+      - api_base: https://res.services.ai.azure.com/openai/v1
+      - api_base: https://res.services.ai.azure.com/openai/deployments/x
+      - api_base: http://res.services.ai.azure.com
+      - api_base: https://res.services.ai.azure.com:8443/openai/v1
+      - api_base: https://user@res.services.ai.azure.com/path
+      - api_base: https://services.ai.azure.com
+      - api_base: https://xservices.ai.azure.com
+      - api_base: https://res.services.ai.azure.com.evil.com
+      - api_base: https://res.openai.azure.com
+      - api_base: /openai/deployments/x
+      - api_base: not a url
+      - api_base: HTTPS://RES.SERVICES.AI.AZURE.COM/OPENAI/DEPLOYMENTS/x
+      - api_base: https://res.services.ai.azure.com/v1/openai/deployments
+      - api_base: https://res.openai.azure.com/openai/deployments/x
+env: {}
+compare: {ignore: []}
