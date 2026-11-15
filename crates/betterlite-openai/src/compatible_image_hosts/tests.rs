@@ -43,12 +43,7 @@ fn secret(text: &str) -> SecretString {
 fn params(entries: &[(&str, &str)]) -> ImageParams {
     entries
         .iter()
-        .map(|(name, value)| {
-            (
-                (*name).to_owned(),
-                serde_json::from_str::<Json>(value).expect("a JSON fixture"),
-            )
-        })
+        .map(|(name, value)| ((*name).to_owned(), json(value)))
         .collect()
 }
 
@@ -840,21 +835,10 @@ fn check_seed(name: &str, bytes: &[u8], host: Host) {
     assert!(!must_decode || decoded.is_ok(), "{name}: {decoded:?}");
 }
 
-#[test]
-fn replays_compatible_image_corpus() {
-    let corpus =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/compatible_image_reply");
-    let mut paths = fs::read_dir(corpus)
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect::<Vec<_>>();
-    paths.sort();
-    assert!(!paths.is_empty(), "no compatible image reply corpus seeds");
-    for path in paths {
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        for host in [Host::Aiml, Host::CometApi] {
-            check_seed(&name, &bytes, host);
-        }
-    }
+#[rstest]
+fn replays_compatible_image_corpus(#[files("fuzz/corpus/compatible_image_reply/*")] path: PathBuf) {
+    let bytes = fs::read(&path).unwrap();
+    let name = path.file_name().unwrap().to_str().unwrap().to_owned();
+    check_seed(&name, &bytes, Host::Aiml);
+    check_seed(&name, &bytes, Host::CometApi);
 }

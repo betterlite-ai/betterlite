@@ -189,20 +189,23 @@ fn price_value(call: &PriceCall) -> Value {
     let lookup = FixtureLookup {
         entries: &call.prices,
     };
-    match compatible_image_cost(
+    compatible_image_cost(
         call.host,
         &call.model,
         ImageBilling::Response(&response),
         None,
         &lookup,
-    ) {
-        Ok(cost) => json!({
-            "ok": true,
-            "status": null,
-            "value": {"cost": cost.normalize().to_string()},
-        }),
-        Err(_) => json!({"ok": false, "status": null, "value": null}),
-    }
+    )
+    .map_or_else(
+        |_| json!({"ok": false, "status": null, "value": null}),
+        |cost| {
+            json!({
+                "ok": true,
+                "status": null,
+                "value": {"cost": cost.normalize().to_string()},
+            })
+        },
+    )
 }
 
 struct FixtureLookup<'prices> {
