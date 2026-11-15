@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-batch-target-seed
+call:
+  vertex_batch_target:
+    api_base: "https://proxy.example.com/v1beta1"
+    project: proj
+    location: us
+    model: projects/proj/locations/us/endpoints/7
+env: {}
+compare: {ignore: []}

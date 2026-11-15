@@ -1,0 +1,8 @@
+task: B3775
+deviations:
+  - what: A refreshed HiddenLayer token that is empty is stored, and the retried request omits the Authorization header; LiteLLM sets the header to the string "Bearer " on that retry.
+    why: A token endpoint that answers an empty access_token is broken, and "Bearer " can only be rejected. betterlite omits a header it cannot fill, and the first request already omits an empty token exactly as LiteLLM does. The test proves the retry carries no header while the refresh still happens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L405-L406
+  - what: The HiddenLayer token response body is read through a capped reader and answers larger than 16 MiB are an error; LiteLLM reads the whole response with requests and has no cap.
+    why: The project bounds every response body it reads so a broken or hostile auth service cannot make betterlite allocate without limit; the cap matches the one the detection call already uses. A working HiddenLayer token endpoint answers a small JSON object, so the cap only changes broken setups.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L195-L210
