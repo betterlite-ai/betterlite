@@ -1,11 +1,8 @@
+mod credentials;
+
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use betterlite_config::sections::Section as _;
-use betterlite_config::sections::openai_credentials;
 use betterlite_openai::api::image_contracts::records::ImageFiles;
-use betterlite_openai::credentials::{
-    ExplicitCredentials, LiteLlmGlobals, OpenAiCredentials, get_openai_credentials,
-};
 use betterlite_openai::image_edits::environment::{complete_url, validate_environment};
 use betterlite_openai::image_edits::error::ImageEditError;
 use betterlite_openai::image_edits::family::{SUPPORTED_OPENAI_PARAMS, select_image_edit_family};
@@ -14,7 +11,6 @@ use betterlite_openai::image_edits::request::{ImageEditRequest, transform_image_
 use betterlite_openai::image_edits::response::transform_image_edit_response;
 use betterlite_openai::openai_base_config::Headers;
 use http::HeaderMap;
-use secrecy::SecretString;
 use serde_json::{Map, Value, json};
 
 use super::Input;
@@ -77,35 +73,6 @@ fn image_files(
     Ok(Some(files))
 }
 
-fn credentials(probe: &Probe) -> Result<OpenAiCredentials, Box<HelperError>> {
-    let settings = openai_credentials::Raw::default()
-        .convert(&probe.environment)
-        .map_err(|error| invalid(error.to_string()))?;
-    let explicit = ExplicitCredentials {
-        api_base: probe.params.api_base.clone(),
-        api_key: probe.params.api_key.clone().map(SecretString::from),
-        organization: probe.params.organization.clone(),
-    };
-    let globals = LiteLlmGlobals {
-        api_base: probe.globals.api_base.clone(),
-        api_key: probe.globals.api_key.clone().map(SecretString::from),
-        openai_key: probe.globals.openai_key.clone().map(SecretString::from),
-        organization: None,
-    };
-    let environment_key = probe
-        .environment
-        .get("OPENAI_API_KEY")
-        .filter(|text| !text.is_empty())
-        .cloned()
-        .map(SecretString::from);
-    Ok(get_openai_credentials(
-        explicit,
-        globals,
-        &settings,
-        environment_key,
-    ))
-}
-
 fn header_values(headers: &HeaderMap) -> Value {
     let mut fields = Map::new();
     for (name, value) in headers {
@@ -147,11 +114,13 @@ fn error_value(error: &ImageEditError) -> Value {
 }
 
 fn request_of(probe: &Probe) -> Result<ImageEditRequest, Box<HelperError>> {
+    let image = image_files(probe.image.as_ref())?;
+    let mask = image_files(probe.mask.as_ref())?;
     Ok(ImageEditRequest {
         model: probe.model.clone(),
         prompt: probe.prompt.clone(),
-        image: image_files(probe.image.as_ref())?,
-        mask: image_files(probe.mask.as_ref())?,
+        image,
+        mask,
         options: probe.options.clone(),
     })
 }
@@ -171,7 +140,7 @@ pub(crate) fn values(input: &Input) -> HelperResult {
 }
 
 fn transform_value(probe: &Probe) -> Result<Value, Box<HelperError>> {
-    let resolved = credentials(probe)?;
+    let resolved = credentials::resolve(probe)?;
     let call_url = complete_url(&resolved.api_base).map_err(|error| failure(&error))?;
     let call_headers =
         validate_environment(&Headers::new(), &resolved).map_err(|error| failure(&error))?;
