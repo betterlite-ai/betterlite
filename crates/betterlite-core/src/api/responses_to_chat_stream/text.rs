@@ -27,12 +27,6 @@ pub(super) fn repr_value(value: &Value) -> String {
     }
 }
 
-// json.loads raises JSONDecodeError, whose text names the line, the column and the character
-#[must_use]
-pub(super) fn json_error_message(text: &str, source: &serde_json::Error) -> String {
-    scanned_error(text).unwrap_or_else(|| source.to_string())
-}
-
 fn repr_text(text: &str) -> String {
     let mut rendered = String::with_capacity(text.len().saturating_add(2));
     rendered.push('\'');
@@ -50,7 +44,8 @@ fn repr_text(text: &str) -> String {
     rendered
 }
 
-fn scanned_error(text: &str) -> Option<String> {
+// json.loads raises JSONDecodeError, whose text names the line, the column and the character
+pub(super) fn scanned_error(text: &str) -> Option<String> {
     let start = first_visible(text, 0);
     let after = first_visible(text, start.saturating_add(1));
     match text.chars().nth(start) {

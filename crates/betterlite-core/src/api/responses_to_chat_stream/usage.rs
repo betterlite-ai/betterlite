@@ -25,9 +25,17 @@ fn with_cache_tokens(value: &Value) -> Value {
     } else {
         ("prompt_tokens_details", None)
     };
-    let cached = integer_field(fields, "cache_read_input_tokens")
-        .or_else(|| integer_field(fields, "prompt_cache_hit_tokens"));
-    let created = integer_field(fields, "cache_creation_input_tokens");
+    let cached = fields
+        .get("cache_read_input_tokens")
+        .and_then(Value::as_i64)
+        .or_else(|| {
+            fields
+                .get("prompt_cache_hit_tokens")
+                .and_then(Value::as_i64)
+        });
+    let created = fields
+        .get("cache_creation_input_tokens")
+        .and_then(Value::as_i64);
     if cached.is_none() && created.is_none() {
         return value.clone();
     }
@@ -49,8 +57,4 @@ fn with_cache_tokens(value: &Value) -> Value {
     let mut mapped = fields.clone();
     mapped.insert(block.to_owned(), Value::Object(details));
     Value::Object(mapped)
-}
-
-fn integer_field(fields: &Map<String, Value>, name: &str) -> Option<i64> {
-    fields.get(name)?.as_i64()
 }
