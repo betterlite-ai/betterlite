@@ -1,6 +1,15 @@
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypedDict, TypeVar, runtime_checkable
+from typing import (
+    Final,
+    Literal,
+    NotRequired,
+    Protocol,
+    TypeAlias,
+    TypedDict,
+    TypeVar,
+    runtime_checkable,
+)
 
 import httpx
 from litellm.exceptions import UnsupportedParamsError
@@ -13,6 +22,20 @@ from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 Call = TypeVar("Call")
+TransformReply: TypeAlias = Callable[
+    [
+        str,
+        httpx.Response,
+        ImageResponse,
+        Logging,
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        dict[str, JsonValue],
+        None,
+        str | None,
+    ],
+    ImageResponse,
+]
 UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError
 OPENAI_ERROR: Final[type[Exception]] = OpenAIError
 
@@ -48,7 +71,9 @@ class Input(TypedDict):
 
 @runtime_checkable
 class Config(Protocol):
-    def get_mai_image_generation_url(self, api_base: str | None, api_version: str | None) -> str: ...
+    def get_mai_image_generation_url(
+        self, api_base: str | None, api_version: str | None
+    ) -> str: ...
 
     def get_mai_image_edit_url(self, api_base: str | None, api_version: str | None) -> str: ...
 
@@ -67,18 +92,10 @@ class Config(Protocol):
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    def transform_image_generation_response(
+    @property
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
-        model: str,
-        raw_response: httpx.Response,
-        model_response: ImageResponse,
-        logging_obj: Logging,
-        request_data: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        encoding: None,
-        api_key: str | None = None,
-    ) -> ImageResponse: ...
+    ) -> TransformReply: ...
 
 
 class ConfigBoundary(BaseModel):
@@ -160,15 +177,15 @@ def reply_value(call: ReplyCall) -> JsonValue:
         function_id="fn-1",
     )
     response = CONFIG.transform_image_generation_response(
-        model="MAI-Image-2.5",
-        raw_response=httpx.Response(call["status_code"], content=call["body"].encode()),
-        model_response=ImageResponse(),
-        logging_obj=logging_obj,
-        request_data=call["request_data"],
-        optional_params=call["optional_params"],
-        litellm_params={},
-        encoding=None,
-        api_key=call["api_key"],
+        "MAI-Image-2.5",
+        httpx.Response(call["status_code"], content=call["body"].encode()),
+        ImageResponse(),
+        logging_obj,
+        call["request_data"],
+        call["optional_params"],
+        {},
+        None,
+        call["api_key"],
     )
     details = RecordedLogging.model_validate(logging_obj).model_call_details
     logged: JsonValue = None

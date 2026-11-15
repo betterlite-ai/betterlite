@@ -93,7 +93,10 @@ const fn error_kind(error: &MaiImageError) -> &'static str {
     }
 }
 
-fn outcome<Success: Serialize>(result: Result<Success, MaiImageError>) -> Value {
+fn outcome<Success>(result: Result<Success, MaiImageError>) -> Value
+where
+    Success: Serialize,
+{
     match result {
         Ok(value) => json!({ "value": value }),
         Err(error) => json!({
