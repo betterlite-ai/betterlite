@@ -1,17 +1,13 @@
-kind: helper
-name: auth-model-patterns-http-key-alias
-call:
-  auth_model_patterns:
-    steps:
-      - {object_kind: key, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "gpt-4o", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o-mini"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "team-fast", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"team-fast": "fast"}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {"gpt-4o": "gpt-4o-mini"}}
-      - {object_kind: key, model: "slow", models: ["gpt-4o-mini"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o", "slow": "gpt-4o-mini"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "fast", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: org, model: "fast", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: {"fast": "gpt-4o"}, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+name: auth-model-patterns-key-alias
+config: |
+  model_list:
+    - {model_name: team-fast, litellm_params: {model: openai/team-fast-upstream}}
+    - {model_name: team-claude, litellm_params: {model: azure/team-claude-upstream}}
 env: {}
-compare: {ignore: []}
+request:
+  method: GET
+  path: /v1/models/team-fast
+  headers: {authorization: Bearer oracle-master}
+  body: null
+upstream: []
+compare: {headers: [content-type], headers_present: [], upstream_headers: [], ignore: []}

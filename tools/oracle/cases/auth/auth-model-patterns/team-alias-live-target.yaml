@@ -1,18 +1,28 @@
-kind: helper
-name: auth-model-patterns-http-team-alias-live-target
-call:
-  auth_model_patterns:
-    steps:
-      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "team-alias", models: ["gpt-4o-mini"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-2", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "team-alias", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"team-alias": "gpt-4o"}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-2", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "team-public", models: ["gpt-4o", "team-group"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: key, model: "model_name_team-1_abc", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: ["team-group"], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "stale", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {"stale": "model_name_team-1_missing"}, key_aliases: null, access_group_ids: [], deployments: [{model_name: "model_name_team-1_abc", access_groups: [], team_id: "team-1", team_public_model_name: "team-public"}], model_group_alias: {}, global_aliases: {}}
-      - {object_kind: team, model: "gpt-4o-mini", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+name: auth-model-patterns-team-alias-live-target
+config: |
+  model_list:
+    - model_name: live-target
+      litellm_params: {model: openai/live-target-upstream, api_base: "{{upstream}}", api_key: oracle-key}
+    - model_name: live-target
+      litellm_params: {model: openai/live-target-upstream, api_base: "{{upstream}}", api_key: oracle-key}
 env: {}
-compare: {ignore: []}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: oracle-call-live}
+  body: {model: live-target, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chatcmpl-live
+      object: chat.completion
+      created: 1700000012
+      model: live-target-upstream
+      choices: [{index: 0, message: {role: assistant, content: Hello!}, finish_reason: stop}]
+      usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+compare:
+  headers: [content-type, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []
