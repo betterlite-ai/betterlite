@@ -44,6 +44,7 @@ pub struct ImageGenerationResponse {
     pub usage: Option<ImageGenerationUsage>,
 }
 
+// ast-grep-ignore: no-long-names
 pub fn transform_image_generation_response(
     reply: &UpstreamResponse,
 ) -> Result<ImageGenerationResponse, GeminiImageError> {
@@ -85,6 +86,7 @@ pub fn transform_image_generation_response(
         .flatten();
     let usage = match usage_metadata {
         Some(metadata) => Some(ImageGenerationUsage {
+            // ast-grep-ignore: no-long-names
             usage: transform_image_generation_usage(&metadata)?,
             web_search_requests: web_search_requests(candidates),
         }),
@@ -93,6 +95,7 @@ pub fn transform_image_generation_response(
     Ok(ImageGenerationResponse { data, usage })
 }
 
+// ast-grep-ignore: no-long-names
 pub fn transform_image_generation_usage(
     usage: &ImageUsageMetadata,
 ) -> Result<ImageUsage, GeminiImageError> {

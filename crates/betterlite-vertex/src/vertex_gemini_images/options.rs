@@ -64,7 +64,7 @@ pub fn map_openai_params(
                     warnings = warnings.saturating_add(1);
                     tracing::warn!(
                         "imageConfig must be a dict, got {} — ignoring.",
-                        python_type(value)
+                        value_type_name(value)
                     );
                 }
             },
@@ -78,7 +78,7 @@ pub fn map_openai_params(
 }
 
 // %s in LiteLLM's warning is type(v).__name__
-fn python_type(value: &Json) -> &'static str {
+fn value_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "NoneType",
         Json::Bool(_) => "bool",

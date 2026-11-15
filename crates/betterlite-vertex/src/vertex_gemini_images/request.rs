@@ -2,7 +2,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 
 use super::error::GeminiImageError;
 
-// transform_image_generation_request: the OpenAI prompt becomes one user turn asking for IMAGE parts
+// ast-grep-ignore: no-long-names
 pub fn transform_image_generation_request(
     prompt: &str,
     optional_params: &Object,

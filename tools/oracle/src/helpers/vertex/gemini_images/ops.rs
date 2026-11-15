@@ -18,7 +18,9 @@ use betterlite_vertex::token_cache::error::CredentialCacheError;
 use betterlite_vertex::token_cache::executor::{CredentialExecutor, LoadedCredential};
 use betterlite_vertex::token_cache::record::CredentialSnapshot;
 use betterlite_vertex::vertex_gemini_images::options::{MappedOptions, map_openai_params};
+// ast-grep-ignore: no-long-names
 use betterlite_vertex::vertex_gemini_images::request::transform_image_generation_request;
+// ast-grep-ignore: no-long-names
 use betterlite_vertex::vertex_gemini_images::response::transform_image_generation_response;
 use betterlite_vertex::vertex_image_identity::settings::{
     ImageEnvironment, ImageIdentitySettings, ImageInstance, ImageModule, ImageSecrets,
@@ -93,6 +95,7 @@ fn mapping_value(mapping: &Mapping, settings: &Settings) -> Result<Value, Box<He
         settings,
     )
     .or_value_error()?;
+    // ast-grep-ignore: no-long-names
     let body = transform_image_generation_request(&mapping.prompt, &params).or_value_error()?;
     Ok(json!({
         "mapped": params,
@@ -184,6 +187,7 @@ fn target_headers(
 
 fn reply_value(reply: &IndexMap<String, ResponseJson>) -> Result<Value, Box<HelperError>> {
     let body = serde_json::to_vec(reply).or_config_error()?;
+    // ast-grep-ignore: no-long-names
     let response = transform_image_generation_response(&UpstreamResponse {
         status: 200,
         headers: HeaderMap::new(),

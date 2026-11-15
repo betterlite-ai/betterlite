@@ -127,15 +127,18 @@ fn both_flat_spellings_land_on_the_native_keys() {
     );
 }
 
-#[test]
-fn a_non_object_image_config_is_dropped_with_a_warning() {
-    for value in ["null", r#""1K""#, "3", "[]", "true"] {
-        let source = format!(r#"{{"imageConfig":{value}}}"#);
-        let mapped = map_openai_params(&object(&source), &object("{}"), &settings())
-            .expect("a non-object imageConfig is ignored");
-        assert_eq!(wrapped(&mapped.params), json_value("{}"), "{value}");
-        assert_eq!(mapped.warnings, 1, "{value}");
-    }
+#[rstest]
+#[case("null")]
+#[case(r#""1K""#)]
+#[case("3")]
+#[case("[]")]
+#[case("true")]
+fn a_non_object_image_config_is_dropped_with_a_warning(#[case] value: &str) {
+    let source = format!(r#"{{"imageConfig":{value}}}"#);
+    let mapped = map_openai_params(&object(&source), &object("{}"), &settings())
+        .expect("a non-object imageConfig is ignored");
+    assert_eq!(wrapped(&mapped.params), json_value("{}"), "{value}");
+    assert_eq!(mapped.warnings, 1, "{value}");
 }
 
 // the warning goes through LiteLLM's logger, so the captured fmt line carries its exact text
@@ -155,23 +158,23 @@ fn warning_text(value: &str) -> String {
     })
 }
 
-#[test]
-fn a_non_object_image_config_names_the_python_type_it_dropped() {
-    for (value, name) in [
-        ("null", "NoneType"),
-        ("true", "bool"),
-        ("3", "int"),
-        ("-3", "int"),
-        ("1.5", "float"),
-        (r#""1K""#, "str"),
-        ("[]", "list"),
-    ] {
-        let log = warning_text(value);
-        assert!(
-            log.contains(&format!("got {name} — ignoring.")),
-            "{value} should warn with {name}: {log}"
-        );
-    }
+#[rstest]
+#[case("null", "NoneType")]
+#[case("true", "bool")]
+#[case("3", "int")]
+#[case("-3", "int")]
+#[case("1.5", "float")]
+#[case(r#""1K""#, "str")]
+#[case("[]", "list")]
+fn a_non_object_image_config_names_the_python_type_it_dropped(
+    #[case] value: &str,
+    #[case] name: &str,
+) {
+    let log = warning_text(value);
+    assert!(
+        log.contains(&format!("got {name} — ignoring.")),
+        "{value} should warn with {name}: {log}"
+    );
 }
 
 #[test]
