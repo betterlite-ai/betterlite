@@ -4,9 +4,10 @@ use super::support::{
     AUDIO_CONTENT, CONTENT, INSTRUCTION, PROMPT, apply, instruction_content, output_audio,
     prompt_start, session, session_start,
 };
+use crate::realtime_session::RealtimeSession;
 use crate::realtime_session::records::{
     ContentRole, ContentType, ExactDecimal, InferenceConfiguration, Infinite, MaxResponseTokens,
-    Setting, UpdateFrame, UsageEvent,
+    Setting, UpdateFrame,
 };
 
 pub(super) fn session_update_options() {
@@ -125,6 +126,13 @@ fn updates_accept_null_and_inf() {
 
 fn instructions_add_content_frames() {
     let mut state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    state.client_audio_streamed = true;
+    state.transcript.active = true;
+    state.transcript.generation_stage = Some("TEXT".to_owned());
+    state.transcript.item_id = Some("item-1".to_owned());
+    state.transcript.buffer = "partial".to_owned();
+    state.cumulative_usage.total_input_tokens = 5;
+    state.reported_usage.total_input_tokens = 7;
     let prompt_name = state.names.prompt.clone();
     let frames = apply(
         &mut state,
@@ -136,17 +144,34 @@ fn instructions_add_content_frames() {
     assert_eq!(state.names.content, CONTENT);
     assert_eq!(state.names.audio_content, AUDIO_CONTENT);
     assert!(state.prompt_started);
-    assert!(!state.transcript.active);
-    assert_eq!(state.transcript.buffer, "");
-    assert_eq!(state.cumulative_usage, UsageEvent::default());
-    assert_eq!(state.reported_usage, UsageEvent::default());
     assert_instruction_frames(&frames, "be helpful");
+    assert_activity_kept(&state);
+    let repeated = apply(
+        &mut state,
+        r#"{"session":{"instructions":"be helpful"}}"#,
+        &[INSTRUCTION],
+    );
+    assert_eq!(repeated.len(), 5);
+    assert_activity_kept(&state);
     let empty = apply(&mut state, r#"{"session":{"instructions":""}}"#, &[]);
     assert_eq!(empty.len(), 2);
+    assert_activity_kept(&state);
     let null = apply(&mut state, r#"{"session":{"instructions":null}}"#, &[]);
     assert_eq!(null.len(), 2);
+    assert_activity_kept(&state);
     let absent = apply(&mut state, r#"{"session":{}}"#, &[]);
     assert_eq!(absent.len(), 2);
+    assert_activity_kept(&state);
+}
+
+fn assert_activity_kept(state: &RealtimeSession) {
+    assert!(state.client_audio_streamed);
+    assert!(state.transcript.active);
+    assert_eq!(state.transcript.generation_stage.as_deref(), Some("TEXT"));
+    assert_eq!(state.transcript.item_id.as_deref(), Some("item-1"));
+    assert_eq!(state.transcript.buffer, "partial");
+    assert_eq!(state.cumulative_usage.total_input_tokens, 5);
+    assert_eq!(state.reported_usage.total_input_tokens, 7);
 }
 
 fn inference(frames: &[UpdateFrame]) -> &InferenceConfiguration {
