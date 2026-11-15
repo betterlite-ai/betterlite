@@ -33,7 +33,7 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
-struct EmbeddingParamsAndUrlInput {
+pub(crate) struct EmbeddingParamsAndUrlInput {
     non_default_params: IndexMap<String, Json>,
     optional_params: IndexMap<String, Json>,
     api_base: Option<String>,
@@ -45,21 +45,21 @@ struct EmbeddingParamsAndUrlInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct EmbeddingReplyInput {
+pub(crate) struct EmbeddingReplyInput {
     body: String,
     status: u16,
     request_model: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankBaseInput {
+pub(crate) struct RerankBaseInput {
     api_base: Option<String>,
     env_value: String,
     default_rerank_base: String,
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankUrlAndHeadersInput {
+pub(crate) struct RerankUrlAndHeadersInput {
     api_base: Option<String>,
     env_value: String,
     default_rerank_url: String,
@@ -70,7 +70,7 @@ struct RerankUrlAndHeadersInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankRequestInput {
+pub(crate) struct RerankRequestInput {
     model: String,
     query: String,
     documents: Vec<RerankDocument>,
@@ -80,7 +80,7 @@ struct RerankRequestInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct RerankReplyInput {
+pub(crate) struct RerankReplyInput {
     body: String,
     status: u16,
 }
