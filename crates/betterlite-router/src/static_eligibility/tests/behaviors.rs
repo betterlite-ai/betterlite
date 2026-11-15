@@ -11,8 +11,7 @@ use crate::static_eligibility::filter::{
     Cause, EligibilityInput, EligibilityResult, EligibilityServices, eligible,
 };
 use crate::static_eligibility::optional::{
-    DeploymentPreCallCheck, EnabledChecks, OptionalPreCallCheck, PreCallError,
-    async_routing_strategy_checks, routing_strategy_checks,
+    DeploymentPreCallCheck, EnabledChecks, OptionalPreCallCheck, PreCallChecks, PreCallError,
 };
 use crate::static_eligibility::request::RequestFacts;
 
@@ -647,7 +646,13 @@ fn pre_call_checks_propagate_the_failure() {
         }),
     };
     let view: &dyn DeploymentPreCallCheck = &check;
-    let result = routing_strategy_checks(&spec("gpt", "d1", "openai/gpt-4o", ""), &[view]);
+    let deployment = spec("gpt", "d1", "openai/gpt-4o", "");
+    let checks = [view];
+    let result = PreCallChecks {
+        deployment: &deployment,
+        checks: &checks,
+    }
+    .run();
     assert_eq!(
         result,
         Err(PreCallError::Failed {
@@ -666,9 +671,14 @@ async fn async_pre_call_checks_record_the_cooldown_then_fail() {
     };
     let view: &dyn DeploymentPreCallCheck = &check;
     let cooldown = Cooldown::default();
-    let result =
-        async_routing_strategy_checks(&spec("gpt", "d1", "openai/gpt-4o", ""), &[view], &cooldown)
-            .await;
+    let deployment = spec("gpt", "d1", "openai/gpt-4o", "");
+    let checks = [view];
+    let result = PreCallChecks {
+        deployment: &deployment,
+        checks: &checks,
+    }
+    .run_async(&cooldown)
+    .await;
     assert!(matches!(result, Err(PreCallError::RateLimited { .. })));
     let recorded = cooldown
         .recorded
@@ -688,8 +698,14 @@ async fn async_pre_call_checks_do_not_record_a_plain_failure() {
     let view: &dyn DeploymentPreCallCheck = &check;
     let cooldown = Cooldown::default();
     let deployment = spec("gpt", "d1", "openai/gpt-4o", "");
+    let checks = [view];
     assert_eq!(
-        async_routing_strategy_checks(&deployment, &[view], &cooldown).await,
+        PreCallChecks {
+            deployment: &deployment,
+            checks: &checks,
+        }
+        .run_async(&cooldown)
+        .await,
         Err(PreCallError::Failed {
             message: "over budget".to_owned(),
         })

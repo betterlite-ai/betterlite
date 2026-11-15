@@ -87,15 +87,32 @@ pub trait CooldownRecorder: Send + Sync {
     fn record_rate_limit(&self, deployment_id: &str, status: u16);
 }
 
-// routing_strategy_checks: every registered check runs in order and the first failure stops the request.
-pub fn routing_strategy_checks(
-    deployment: &DeploymentSpec,
-    checks: &[&dyn DeploymentPreCallCheck],
-) -> Result<(), PreCallError> {
-    for check in checks {
-        check.check(deployment)?;
+// The deployment under pre-call checks and the checks its router registered, in registration order.
+pub struct PreCallChecks<'check> {
+    pub deployment: &'check DeploymentSpec,
+    pub checks: &'check [&'check dyn DeploymentPreCallCheck],
+}
+
+impl PreCallChecks<'_> {
+    // routing_strategy_checks: every registered check runs in order and the first failure stops the request.
+    pub fn run(&self) -> Result<(), PreCallError> {
+        self.checks
+            .iter()
+            .try_for_each(|check| check.check(self.deployment))
     }
-    Ok(())
+
+    // async_routing_strategy_checks: a rate limit records the cooldown before the same error goes up.
+    pub async fn run_async(&self, cooldown: &dyn CooldownRecorder) -> Result<(), PreCallError> {
+        for check in self.checks {
+            if let Err(failure) = check.async_check(self.deployment).await {
+                if let Some((deployment_id, status)) = rate_limit(&failure) {
+                    cooldown.record_rate_limit(deployment_id, status);
+                }
+                return Err(failure);
+            }
+        }
+        Ok(())
+    }
 }
 
 const fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
@@ -106,21 +123,4 @@ const fn rate_limit(failure: &PreCallError) -> Option<(&str, u16)> {
         } => Some((deployment_id.as_str(), *status)),
         PreCallError::Failed { .. } => None,
     }
-}
-
-// async_routing_strategy_checks: a rate limit records the cooldown before the same error goes up.
-pub async fn async_routing_strategy_checks(
-    deployment: &DeploymentSpec,
-    checks: &[&dyn DeploymentPreCallCheck],
-    cooldown: &dyn CooldownRecorder,
-) -> Result<(), PreCallError> {
-    for check in checks {
-        if let Err(failure) = check.async_check(deployment).await {
-            if let Some((deployment_id, status)) = rate_limit(&failure) {
-                cooldown.record_rate_limit(deployment_id, status);
-            }
-            return Err(failure);
-        }
-    }
-    Ok(())
 }
