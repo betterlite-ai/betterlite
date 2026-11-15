@@ -52,9 +52,9 @@ pub(crate) fn plan(
     validate_safety(options.shift_remove("safety_settings"))?;
     let stream = matches!(options.get("stream"), Some(Json::Bool(true)));
     let prompt = prompt_of(messages);
-    let (model, route) = route_of(model, &mut options, &prompt, deps)?;
+    let (selected_model, route) = route_of(model, &mut options, &prompt, deps)?;
     Ok(LegacyPlan {
-        model,
+        model: selected_model,
         prompt,
         route,
         stream,
@@ -123,7 +123,7 @@ fn private_route(
 
 fn custom_route(
     model: &str,
-    options: &mut Object,
+    options: &Object,
     prompt: &str,
     deps: &LegacyDeps<'_, '_>,
 ) -> Result<(String, LegacyRoute), LegacyVertexError> {
@@ -147,10 +147,10 @@ fn instance(options: &Object, prompt: &str) -> Vec<DecisionJson> {
 
 // LiteLLM checks the first item, then builds a protobuf setting from every item, which fails on a non-mapping
 fn validate_safety(safety: Option<Json>) -> Result<(), LegacyVertexError> {
-    let Some(safety) = safety else {
+    let Some(value) = safety else {
         return Ok(());
     };
-    let Json::List(items) = safety else {
+    let Json::List(items) = value else {
         return Err(LegacyVertexError::SafetyNotList);
     };
     if items.iter().any(|item| !matches!(item, Json::Object(_))) {

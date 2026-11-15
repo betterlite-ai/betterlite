@@ -65,9 +65,9 @@ pub async fn complete<Cache, Client, Make, Lookup>(
     make_lookup: Make,
 ) -> Result<LegacyCompletion, LegacyVertexError>
 where
-    Cache: ClientCache<Client = Client>,
+    Cache: ClientCache<Client = Client> + Sync,
     Client: PredictionClient,
-    Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup,
+    Make: FnOnce(Option<&ConfiguredCredentials>, Option<&str>) -> Lookup + Send,
     Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
 {
     let key = cache::cache_key(request.model, deps.project, deps.location);

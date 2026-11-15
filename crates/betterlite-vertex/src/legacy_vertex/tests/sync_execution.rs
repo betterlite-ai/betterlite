@@ -10,7 +10,7 @@ use futures_util::StreamExt as _;
 use crate::legacy_prediction::error::PredictionError;
 use crate::legacy_prediction::projection::LegacyMessage;
 use crate::legacy_vertex::LegacyCompletion;
-use crate::legacy_vertex::cache::ClientCache;
+use crate::legacy_vertex::cache::ClientCache as _;
 use crate::legacy_vertex::complete;
 use crate::legacy_vertex::error::LegacyVertexError;
 use crate::token_cache::error::CredentialCacheError;
@@ -48,7 +48,7 @@ async fn cache_read_without_write() {
 
 #[test]
 fn cache_adapter_reads_the_entry() {
-    let clock: Clock = Arc::new(|| 1_000.0);
+    let clock: Clock = Arc::new(|| 1_000.0_f64);
     let closer = Arc::new(EvictedClientCloser::new(Arc::clone(&clock)));
     let cache = LlmClientCache::<FixtureClient>::new(10, 60.0, clock, closer).expect("a cache");
     cache
@@ -713,9 +713,9 @@ async fn project_reaches_credentials() {
     let shared = Arc::clone(&seen);
     let make = move |_credentials: Option<&ConfiguredCredentials>, project: Option<&str>| {
         let record = Arc::clone(&shared);
-        let project = project.map(str::to_owned);
+        let recorded_project = project.map(str::to_owned);
         async move {
-            *record.lock().expect("the recorded project") = project;
+            *record.lock().expect("the recorded project") = recorded_project;
             Ok::<_, CredentialCacheError>(access())
         }
     };
@@ -751,7 +751,11 @@ async fn text_uses_predict() {
     };
     assert_eq!(content(&result.message), "answer");
     let calls = client.calls();
-    assert!(matches!(&calls[0], Call::Text(_)));
+    let Call::Text(request) = &calls[0] else {
+        panic!("a text call");
+    };
+    assert_eq!(request.model, "text-bison");
+    assert_eq!(request.prompt, "hello");
 }
 
 #[tokio::test]

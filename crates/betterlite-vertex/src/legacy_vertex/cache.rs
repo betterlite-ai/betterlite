@@ -9,9 +9,9 @@ const NONE: &str = "None";
 // LiteLLM's _get_client_cache_key: one unescaped hyphen concatenation over the three values
 #[must_use]
 pub fn cache_key(model: &str, project: Option<&str>, location: Option<&str>) -> String {
-    let project = project.unwrap_or(NONE);
-    let location = location.unwrap_or(NONE);
-    format!("{model}-{project}-{location}")
+    let project_part = project.unwrap_or(NONE);
+    let location_part = location.unwrap_or(NONE);
+    format!("{model}-{project_part}-{location_part}")
 }
 
 // The cache read is all the source's completion does; _set_client_in_cache has no caller at the pin

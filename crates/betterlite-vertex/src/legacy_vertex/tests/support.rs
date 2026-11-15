@@ -1,5 +1,5 @@
 use std::future::{Future, Ready, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_cache::evicted_client_closer::{CloseMethod, EvictableClient};
 use betterlite_cache::llm_client_cache::LlmClientCacheError;
@@ -204,7 +204,7 @@ fn replied<T>(
 where
     T: Send,
 {
-    async move { reply.expect("a fixture reply") }
+    ready(reply.unwrap_or(Err(PredictionError::MissingPrediction)))
 }
 
 impl EvictableClient for FixtureClient {
@@ -279,7 +279,10 @@ impl ClientCache for FixtureCache {
     type Client = FixtureClient;
 
     fn cached(&self, key: &str) -> Result<Option<Arc<FixtureClient>>, LlmClientCacheError> {
-        self.keys.lock().expect("cache keys").push(key.to_owned());
+        self.keys
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(key.to_owned());
         Ok(self.client.as_ref().map(Arc::clone))
     }
 }

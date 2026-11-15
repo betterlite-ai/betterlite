@@ -88,9 +88,9 @@ fn defaults_only_missing() {
     let projection = services(&encoder);
     let mut fixture = PlanFixture::new(&[(ProviderModelSet::VertexText, "text-bison")]);
     fixture.defaults = GenerationDefaults {
-        temperature: Some(0.25),
+        temperature: Some(0.25_f64),
         max_output_tokens: Some(64),
-        top_p: Some(0.5),
+        top_p: Some(0.5_f64),
         top_k: None,
         response_mime_type: None,
         candidate_count: None,

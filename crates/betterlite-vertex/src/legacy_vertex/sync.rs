@@ -45,17 +45,6 @@ enum PublisherCall {
     Text { fake_stream: bool },
 }
 
-enum SyncWork {
-    Publisher {
-        options: Extra,
-        kind: PublisherCall,
-    },
-    Endpoint {
-        endpoint: String,
-        instances: Vec<Json>,
-    },
-}
-
 pub(crate) async fn execute<C>(
     client: &C,
     cached: Option<&C>,
@@ -70,51 +59,35 @@ where
         access,
         identifier,
     } = deps;
-    let cached_client = cached.unwrap_or(client);
-    let LegacyPlan {
-        model,
-        prompt,
-        route,
-        stream,
-        ..
-    } = plan;
     let call = SyncCall {
-        model: &model,
-        prompt: &prompt,
-        stream,
+        model: &plan.model,
+        prompt: &plan.prompt,
+        stream: plan.stream,
         context,
         identifier,
     };
-    match route {
+    match plan.route {
         // The source's vision branch calls no model, so it needs neither a project nor a location
         LegacyRoute::Vision => Ok(LegacyCompletion::Response(Box::new(result_of(
             &call, None,
         )?))),
         LegacyRoute::Chat { options } => {
+            let target = cached.unwrap_or(client);
             let scope = scope_of(context, access);
-            let work = SyncWork::Publisher {
-                options,
-                kind: PublisherCall::Chat,
-            };
-            invoke(cached_client, &call, scope, work).await
+            publish(target, &call, scope, options, PublisherCall::Chat).await
         }
         LegacyRoute::Text {
             options,
             fake_stream,
         } => {
+            let target = cached.unwrap_or(client);
             let scope = scope_of(context, access);
             let kind = PublisherCall::Text { fake_stream };
-            let work = SyncWork::Publisher { options, kind };
-            invoke(cached_client, &call, scope, work).await
+            publish(target, &call, scope, options, kind).await
         }
         LegacyRoute::Custom { instances, .. } | LegacyRoute::Private { instances, .. } => {
-            let scope = scope_of(context, access);
-            let endpoint = endpoint_path(&scope.project, &scope.location, &model);
-            let work = SyncWork::Endpoint {
-                endpoint,
-                instances,
-            };
-            invoke(client, &call, scope, work).await
+            let request = endpoint_request(scope_of(context, access), call.model, instances);
+            endpoint_reply(client, &call, request).await
         }
     }
 }
@@ -129,76 +102,78 @@ fn scope_of(context: &LegacyContext<'_, '_>, access: AccessToken) -> Scope {
     }
 }
 
-async fn invoke<C>(
+async fn publish<C>(
     client: &C,
     call: &SyncCall<'_, '_, '_>,
     scope: Scope,
-    work: SyncWork,
+    options: Extra,
+    kind: PublisherCall,
 ) -> Result<LegacyCompletion, LegacyVertexError>
 where
     C: PredictionClient,
 {
-    match work {
-        SyncWork::Publisher { options, kind } => {
-            let request = publisher_request(scope, call, options);
-            let reply = match kind {
-                PublisherCall::Chat if call.stream => {
-                    let stream = client.send_message_streaming_async(&request).await?;
-                    return Ok(LegacyCompletion::Prediction(stream));
-                }
-                PublisherCall::Chat => client.send_message_async(&request).await?,
-                PublisherCall::Text { fake_stream: false } if call.stream => {
-                    let stream = client.predict_streaming_async(&request).await?;
-                    return Ok(LegacyCompletion::Prediction(stream));
-                }
-                PublisherCall::Text { .. } => client.predict_async(&request).await?,
-            };
-            let text = reply.text;
-            let prediction = Prediction::Value(Json::Text(text.clone()));
-            if call.stream && matches!(kind, PublisherCall::Text { fake_stream: true }) {
-                let result = result_of(call, Some(&prediction))?;
-                let content = (!text.is_empty()).then_some(text.as_str());
-                // The source's fake stream is that whole response, yielded once by B596's iterator
-                let response = fake_response::model_response(&result, content, call.identifier);
-                let iterator = ModelResponseIterator::new(response, None)?;
-                return Ok(LegacyCompletion::FakeStream(iterator));
-            }
-            let result = result_of(call, Some(&prediction))?;
-            Ok(LegacyCompletion::Response(Box::new(result)))
+    let request = publisher_request(scope, call, options);
+    let reply = match kind {
+        PublisherCall::Chat if call.stream => {
+            let stream = client.send_message_streaming_async(&request).await?;
+            return Ok(LegacyCompletion::Prediction(stream));
         }
-        SyncWork::Endpoint {
-            endpoint,
-            instances,
-        } => {
-            let request = EndpointPredictRequest {
-                token: scope.token,
-                project: scope.project,
-                location: scope.location,
-                endpoint,
-                instances,
-            };
-            let reply = client.predict_endpoint(&request).await?;
-            let Some(prediction) = reply.predictions.first() else {
-                return Err(LegacyVertexError::Prediction(
-                    PredictionError::MissingPrediction,
-                ));
-            };
-            let stripped = strip_output_separator(prediction);
-            if call.stream {
-                let Prediction::Value(Json::Text(text)) = &stripped else {
-                    return Err(LegacyVertexError::Prediction(
-                        PredictionError::WrongFieldType {
-                            field: "predictions",
-                        },
-                    ));
-                };
-                return Ok(LegacyCompletion::Words(TextStreamer::new(text)));
-            }
-            Ok(LegacyCompletion::Response(Box::new(result_of(
-                call,
-                Some(&stripped),
-            )?)))
+        PublisherCall::Chat => client.send_message_async(&request).await?,
+        PublisherCall::Text { fake_stream: false } if call.stream => {
+            let stream = client.predict_streaming_async(&request).await?;
+            return Ok(LegacyCompletion::Prediction(stream));
         }
+        PublisherCall::Text { .. } => client.predict_async(&request).await?,
+    };
+    let text = reply.text;
+    if call.stream && matches!(kind, PublisherCall::Text { fake_stream: true }) {
+        return fake_stream(call, text);
+    }
+    let prediction = Prediction::Value(Json::Text(text));
+    Ok(LegacyCompletion::Response(Box::new(result_of(
+        call,
+        Some(&prediction),
+    )?)))
+}
+
+async fn endpoint_reply<C>(
+    client: &C,
+    call: &SyncCall<'_, '_, '_>,
+    request: EndpointPredictRequest,
+) -> Result<LegacyCompletion, LegacyVertexError>
+where
+    C: PredictionClient,
+{
+    let reply = client.predict_endpoint(&request).await?;
+    let Some(prediction) = reply.predictions.first() else {
+        return Err(LegacyVertexError::Prediction(
+            PredictionError::MissingPrediction,
+        ));
+    };
+    let stripped = strip_output_separator(prediction);
+    if !call.stream {
+        return Ok(LegacyCompletion::Response(Box::new(result_of(
+            call,
+            Some(&stripped),
+        )?)));
+    }
+    let Prediction::Value(Json::Text(text)) = &stripped else {
+        return Err(LegacyVertexError::Prediction(
+            PredictionError::WrongFieldType {
+                field: "predictions",
+            },
+        ));
+    };
+    Ok(LegacyCompletion::Words(TextStreamer::new(text)))
+}
+
+fn endpoint_request(scope: Scope, model: &str, instances: Vec<Json>) -> EndpointPredictRequest {
+    EndpointPredictRequest {
+        endpoint: endpoint_path(&scope.project, &scope.location, model),
+        token: scope.token,
+        project: scope.project,
+        location: scope.location,
+        instances,
     }
 }
 
@@ -217,6 +192,19 @@ fn publisher_request(
         prompt: call.prompt.to_owned(),
         options,
     }
+}
+
+fn fake_stream(
+    call: &SyncCall<'_, '_, '_>,
+    text: String,
+) -> Result<LegacyCompletion, LegacyVertexError> {
+    let prediction = Prediction::Value(Json::Text(text.clone()));
+    let result = result_of(call, Some(&prediction))?;
+    // The source's fake stream is that whole response, yielded once by B596's iterator
+    let content = (!text.is_empty()).then_some(text.as_str());
+    let response = fake_response::model_response(&result, content, call.identifier);
+    let iterator = ModelResponseIterator::new(response, None)?;
+    Ok(LegacyCompletion::FakeStream(iterator))
 }
 
 fn result_of(
