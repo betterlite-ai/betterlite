@@ -1,1 +1,63 @@
+mod construction;
+mod contract;
+pub mod error;
+mod logging;
+mod tests;
 
+use std::time::SystemTime;
+
+use betterlite_config::sections::xecguard_runtime::Settings as RuntimeSettings;
+use reqwest::Client;
+
+use self::error::XecGuardRuntimeError;
+use crate::guardrail_base::GuardrailBase;
+use crate::presidio_actions::request_data::RequestData;
+use crate::presidio_response::wire::ResponseBody;
+use crate::third_party_init_b::xecguard::XecGuardArgs;
+use crate::xecguard_primitives::settings::XecGuardSettings;
+
+#[derive(Debug)]
+pub struct XecGuardGuard {
+    base: GuardrailBase,
+    settings: XecGuardSettings,
+    client: Client,
+    clock: fn() -> SystemTime,
+}
+
+impl XecGuardGuard {
+    pub fn new(
+        args: &XecGuardArgs,
+        settings: &RuntimeSettings,
+        base: GuardrailBase,
+        client: Client,
+    ) -> Result<Self, XecGuardRuntimeError> {
+        Ok(Self {
+            settings: construction::resolve(args, settings, &base)?,
+            base,
+            client,
+            clock: SystemTime::now,
+        })
+    }
+
+    pub async fn async_logging_hook(&self, kwargs: &mut RequestData, result: &ResponseBody) {
+        if let Err(error) = logging::scan_for_logging(self, kwargs, result).await {
+            tracing::debug!("XecGuard logging_only swallowed exception: {error}");
+        }
+    }
+
+    #[must_use]
+    pub fn logging_hook(
+        &self,
+        kwargs: RequestData,
+        result: ResponseBody,
+    ) -> (RequestData, ResponseBody) {
+        crate::xecguard_primitives::logging_hook::logging_hook(
+            kwargs,
+            result,
+            async |kwargs: &mut RequestData, result: &mut ResponseBody| {
+                self.async_logging_hook(kwargs, result).await;
+                Ok::<(), XecGuardRuntimeError>(())
+            },
+        )
+    }
+}
