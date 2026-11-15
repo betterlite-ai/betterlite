@@ -12,94 +12,51 @@ use crate::api::responses_usage::ResponsesUsageError;
 use crate::cost::batch::error::BatchCostError;
 use crate::cost::completion::usage::UsageConversionError;
 
+pub type BatchResult<T> = Result<T, BatchOutputUsageError>;
+
+// One bad line is billed at $0 by the aggregate; only the file-level variants abort the batch.
 #[derive(Debug, Error)]
 pub enum BatchOutputUsageError {
-    #[error("the batch output is {observed} bytes; the maximum is {limit}")]
-    JsonTooLarge { observed: usize, limit: usize },
-    #[error("a batch output line is {observed} bytes; the maximum is {limit}")]
-    LineTooLarge { observed: usize, limit: usize },
-    #[error("the batch output has more than {limit} lines")]
-    TooManyLines { limit: usize },
-    #[error("the batch output totals overflowed at {field}")]
+    #[error("the batch output is {0} bytes; the maximum is {1}")]
+    JsonTooLarge(usize, usize),
+    #[error("a batch output line is {0} bytes; the maximum is {1}")]
+    LineTooLarge(usize, usize),
+    #[error("the batch output has more than {0} lines")]
+    TooManyLines(usize),
+    #[error("the batch output overflowed at {field}")]
     Overflow { field: &'static str },
-    #[error("the batch output usage totals could not be summed: {source}")]
-    UsageSum {
-        #[from]
-        source: UsageSumError,
-    },
-}
-
-// One output line that cannot be read or priced; the batch still bills its other lines.
-#[derive(Debug, Error)]
-pub enum BatchLineError {
+    #[error("the batch output usage totals could not be summed: {0}")]
+    UsageSum(#[from] UsageSumError),
     #[error("the {field} field must be an object")]
     NotAnObject { field: &'static str },
     #[error("the {field} field must be an integer")]
     NotAnInteger { field: &'static str },
     #[error("the {field} field must be a number")]
     NotANumber { field: &'static str },
-    #[error("the provider usage object could not be read: {source}")]
-    AnthropicUsage {
-        #[from]
-        source: AnthropicUsageError<Infallible>,
-    },
-    #[error("the provider usage object could not be converted: {source}")]
-    LoggingUsage {
-        #[from]
-        source: LoggingUsageError,
-    },
-    #[error("the provider usage object could not be priced: {source}")]
-    Pricing {
-        #[from]
-        source: UsageConversionError,
-    },
-    #[error("the responses usage object could not be read: {source}")]
-    ResponsesUsage {
-        #[from]
-        source: ResponsesUsageError,
-    },
-    #[error("the batch cost could not be computed: {source}")]
-    BatchCost {
-        #[from]
-        source: BatchCostError,
-    },
-    #[error("the prompt token detail could not be computed: {source}")]
-    TokenCost {
-        #[from]
-        source: TokenCostError,
-    },
-    #[error("the OCR batch cost could not be computed: {source}")]
-    OcrCost {
-        #[from]
-        source: OcrCostError,
-    },
-    #[error("the provider payload could not be read as JSON: {source}")]
-    Json {
-        #[from]
-        source: serde_json::Error,
-    },
-    #[error("the converse usage object matches the converse shape but cannot be read")]
-    ConverseUsage,
-}
-
-#[derive(Debug, Error)]
-pub enum BatchEntryTokenError {
-    #[error("the batch input entry must be an object")]
-    NotAnEntry,
-    #[error("the {field} field must be an object")]
-    NotAnObject { field: &'static str },
     #[error("the {field} field must be a string")]
     NotAString { field: &'static str },
+    #[error("the batch input entry must be an object")]
+    NotAnEntry,
+    #[error("the provider usage object could not be read: {0}")]
+    AnthropicUsage(#[from] AnthropicUsageError<Infallible>),
+    #[error("the provider usage object could not be converted: {0}")]
+    LoggingUsage(#[from] LoggingUsageError),
+    #[error("the provider usage object could not be priced: {0}")]
+    Pricing(#[from] UsageConversionError),
+    #[error("the responses usage object could not be read: {0}")]
+    ResponsesUsage(#[from] ResponsesUsageError),
+    #[error("the batch cost could not be computed: {0}")]
+    BatchCost(#[from] BatchCostError),
+    #[error("the prompt token detail could not be computed: {0}")]
+    TokenCost(#[from] TokenCostError),
+    #[error("the OCR batch cost could not be computed: {0}")]
+    OcrCost(#[from] OcrCostError),
+    #[error("the provider payload could not be read as JSON: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("the messages field could not be read as chat messages: {source}")]
-    Messages {
-        #[from]
-        source: serde_json::Error,
-    },
-    #[error("the token count failed: {source}")]
-    Count {
-        #[from]
-        source: CountError,
-    },
-    #[error("the token count overflowed at {field}")]
-    Overflow { field: &'static str },
+    Messages { source: serde_json::Error },
+    #[error("the token count failed: {0}")]
+    Count(#[from] CountError),
+    #[error("the converse usage object matches the converse shape but cannot be read")]
+    ConverseUsage,
 }

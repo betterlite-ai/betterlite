@@ -7,7 +7,7 @@ from litellm.batches.batch_utils import (
     calculate_batch_cost_and_usage,
     calculate_vertex_ai_batch_cost_and_usage,
 )
-from litellm.types.utils import ModelInfo, Usage
+from litellm.types.utils import ModelInfo
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
@@ -72,18 +72,6 @@ def _parse_bytes(raw: bytes) -> tuple[list[dict[str, JsonValue]], list[JsonValue
     return entries, diagnostics
 
 
-def _line_entries(lines: list[JsonValue]) -> tuple[list[dict[str, JsonValue]], list[JsonValue]]:
-    entries: list[dict[str, JsonValue]] = []
-    diagnostics: list[JsonValue] = []
-    for line in lines:
-        match line:
-            case dict():
-                entries.append(line)
-            case None | bool() | int() | float() | str() | list():
-                diagnostics.append({"kind": "non_object_line", "type": type(line).__name__})
-    return entries, diagnostics
-
-
 def _result_value(result: BatchCostUsageResult, diagnostics: list[JsonValue]) -> JsonValue:
     prompt_details = result.usage.prompt_tokens_details
     completion_details = result.usage.completion_tokens_details
@@ -122,7 +110,7 @@ def run(input_value: Input) -> JsonValue:
     if content["kind"] == "bytes":
         entries, diagnostics = _parse_bytes(bytes(content["bytes"]))
     else:
-        entries, diagnostics = _line_entries(content["lines"])
+        entries, diagnostics = _parse_bytes(b"\n".join(JSON.dump_json(line) for line in content["lines"]))
     if input_value["kind"] == "vertex_usage":
         result = calculate_vertex_ai_batch_cost_and_usage(
             entries, input_value["model_name"], model_info=input_value["model_info"]

@@ -26,13 +26,14 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use super::error::BatchEntryTokenError;
+use super::decode::DecodedBatchLine;
+use super::error::BatchOutputUsageError;
 use super::pricing::BatchRowPricer;
 use super::tokens::{BatchTokenCounter, count_batch_entry_tokens, estimate_batch_entry_tokens};
 use super::{
-    BatchOutputDiagnostic, BatchOutputProviders, BatchOutputUsage, BatchOutputUsageError,
-    BatchOutputUsageInput, BatchOutputUsageResult, BatchUsageTotals, ConverseUsageOutcome,
-    DecodedBatchLine, VertexRowStats, decode_batch_output_usage,
+    BatchOutputDiagnostic, BatchOutputProviders, BatchOutputUsage, BatchOutputUsageInput,
+    BatchOutputUsageResult, BatchUsageTotals, ConverseUsageOutcome, VertexRowStats,
+    decode_batch_output_usage,
 };
 use crate::api::api_boundaries::ApiLimits;
 
@@ -130,7 +131,7 @@ fn ocr_model_info() -> ModelInfo {
     serde_json::from_str(r#"{"ocr_cost_per_page_batches":0.5}"#).expect("the OCR rates decode")
 }
 
-fn totals(prompt_tokens: i64, completion_tokens: i64, total_tokens: i64) -> BatchUsageTotals {
+const fn totals(prompt_tokens: i64, completion_tokens: i64, total_tokens: i64) -> BatchUsageTotals {
     BatchUsageTotals {
         prompt_tokens,
         completion_tokens,
@@ -242,7 +243,8 @@ fn anthropic_result_usage() {
             }}},
         ]},
     }));
-    let result = run(&decoded, &NoProviders).expect("the batch is costed");
+    let (outcome, logs) = run_captured(&decoded, &NoProviders);
+    let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(100, 20, 120));
     assert_eq!(result.prompt_cost, Decimal::new(50, 0));
     assert_eq!(result.completion_cost, Decimal::new(5, 0));
@@ -251,13 +253,12 @@ fn anthropic_result_usage() {
         result.models,
         vec!["claude-batch".to_owned(), "claude-batch".to_owned()]
     );
-    assert_eq!(
-        result.diagnostics,
-        vec![BatchOutputDiagnostic::UnparsedUsage {
-            provider: "anthropic",
-            usage_keys: vec!["mystery".to_owned()],
-        }]
-    );
+    assert!(result.diagnostics.is_empty());
+    assert!(logged(
+        &logs,
+        Level::WARN,
+        "batch output line reported usage this parser does not understand"
+    ));
 }
 
 #[test]
@@ -283,12 +284,7 @@ fn ocr_line_cost() {
     assert_eq!(result.usage, totals(0, 0, 0));
     assert_eq!(result.successful_requests, 2);
     assert_eq!(result.failed_requests, 0);
-    assert_eq!(
-        result.diagnostics,
-        vec![BatchOutputDiagnostic::UncostableLine {
-            custom_id: Some(Json::Text("bad".to_owned())),
-        }]
-    );
+    assert!(result.diagnostics.is_empty());
 }
 
 fn row_stats(
@@ -303,34 +299,43 @@ fn row_stats(
     let Some(Json::Object(response)) = fields.get("response") else {
         return None;
     };
-    let Some(Json::Object(usage)) = response.get("usage") else {
+    let Some(Json::Object(usage_fields)) = response.get("usage") else {
         return None;
     };
-    let prompt_tokens = count_of(usage.get("prompt_tokens"));
-    let completion_tokens = count_of(usage.get("completion_tokens"));
-    let model = match model_name {
-        Some(name) => Some(name.to_owned()),
-        None => super::usage::response_model(Some(response)),
-    };
-    let total_tokens = prompt_tokens.saturating_add(completion_tokens);
+    let prompt_tokens = count_of(usage_fields.get("prompt_tokens"));
+    let completion_tokens = count_of(usage_fields.get("completion_tokens"));
+    let model = model_name.map_or_else(
+        || super::usage::response_model(Some(response)),
+        |name| Some(name.to_owned()),
+    );
     let usage = SummedUsage {
         prompt_tokens,
         completion_tokens,
-        total_tokens,
+        total_tokens: prompt_tokens.saturating_add(completion_tokens),
         prompt_tokens_details: None,
         completion_tokens_details: None,
         numeric_extras: BTreeMap::new(),
     };
-    let priced = model
+    Some(priced_row(usage, model, model_info, pricer))
+}
+
+fn priced_row(
+    usage: SummedUsage,
+    model: Option<String>,
+    model_info: Option<&ModelInfo>,
+    pricer: &dyn BatchRowPricer,
+) -> VertexRowStats {
+    let cost = model
         .as_deref()
         .and_then(|name| pricer.price(&usage, name, "vertex_ai", model_info).ok());
-    Some(VertexRowStats {
+    let total_tokens = usage.total_tokens;
+    VertexRowStats {
         usage,
         total_tokens,
         model,
-        prompt_cost: priced.map_or(Decimal::ZERO, |cost| cost.prompt_cost),
-        completion_cost: priced.map_or(Decimal::ZERO, |cost| cost.completion_cost),
-    })
+        prompt_cost: cost.map_or(Decimal::ZERO, |cost| cost.prompt_cost),
+        completion_cost: cost.map_or(Decimal::ZERO, |cost| cost.completion_cost),
+    }
 }
 
 fn count_of(value: Option<&Json>) -> i64 {
@@ -513,13 +518,7 @@ fn rejects_a_batch_output_over_the_json_limit() {
         max_items: 16,
     };
     let error = decode_batch_output_usage(b"1234", &limits).expect_err("the batch is too large");
-    assert!(matches!(
-        error,
-        BatchOutputUsageError::JsonTooLarge {
-            observed: 4,
-            limit: 3
-        }
-    ));
+    assert!(matches!(error, BatchOutputUsageError::JsonTooLarge(4, 3)));
 }
 
 #[test]
@@ -530,13 +529,7 @@ fn rejects_a_line_over_the_event_limit() {
         max_items: 16,
     };
     let error = decode_batch_output_usage(b"12345", &limits).expect_err("the line is too large");
-    assert!(matches!(
-        error,
-        BatchOutputUsageError::LineTooLarge {
-            observed: 5,
-            limit: 4
-        }
-    ));
+    assert!(matches!(error, BatchOutputUsageError::LineTooLarge(5, 4)));
 }
 
 #[test]
@@ -547,10 +540,7 @@ fn rejects_more_lines_than_the_item_limit() {
         max_items: 1,
     };
     let error = decode_batch_output_usage(b"1\n2", &limits).expect_err("there are too many lines");
-    assert!(matches!(
-        error,
-        BatchOutputUsageError::TooManyLines { limit: 1 }
-    ));
+    assert!(matches!(error, BatchOutputUsageError::TooManyLines(1)));
 }
 
 #[test]
@@ -595,7 +585,7 @@ struct ScriptedCounter {
 }
 
 impl ScriptedCounter {
-    fn with_answer(answer: usize) -> Self {
+    const fn with_answer(answer: usize) -> Self {
         Self {
             answer,
             calls: Mutex::new(Vec::new()),
@@ -702,12 +692,12 @@ async fn rejects_a_body_that_is_not_an_object() {
         .expect_err("the body is not an object");
     assert!(matches!(
         body_error,
-        BatchEntryTokenError::NotAnObject { field: "body" }
+        BatchOutputUsageError::NotAnObject { field: "body" }
     ));
     let entry_error = count_batch_entry_tokens(&Json::List(Vec::new()), None, &counter)
         .await
         .expect_err("the entry is not an object");
-    assert!(matches!(entry_error, BatchEntryTokenError::NotAnEntry));
+    assert!(matches!(entry_error, BatchOutputUsageError::NotAnEntry));
 }
 
 struct EmbeddingProviders {
@@ -724,7 +714,7 @@ impl BatchOutputProviders for EmbeddingProviders {
     }
 
     fn bedrock_converse_usage(&self, _usage: &Json) -> ConverseUsageOutcome {
-        self.converse
+        self.converse.clone()
     }
 
     fn vertex_row_stats(
@@ -751,7 +741,7 @@ fn bedrock_input(usage: Value) -> BatchOutputUsageInput {
     }))
 }
 
-fn prompt_only_usage(prompt_tokens: i64) -> SummedUsage {
+const fn prompt_only_usage(prompt_tokens: i64) -> SummedUsage {
     SummedUsage {
         prompt_tokens,
         completion_tokens: 0,
@@ -766,7 +756,7 @@ fn prompt_only_usage(prompt_tokens: i64) -> SummedUsage {
 fn bedrock_prefers_embedding_usage_over_the_usage_object() {
     let providers = EmbeddingProviders {
         embedding: Some(prompt_only_usage(7)),
-        converse: ConverseUsageOutcome::Usage(prompt_only_usage(99)),
+        converse: ConverseUsageOutcome::Usage(Box::new(prompt_only_usage(99))),
     };
     let result = run(
         &bedrock_input(json!({"inputTextTokenCount": 5})),
@@ -781,14 +771,14 @@ fn bedrock_prefers_embedding_usage_over_the_usage_object() {
 fn bedrock_uses_converse_usage_before_the_anthropic_shape() {
     let providers = EmbeddingProviders {
         embedding: None,
-        converse: ConverseUsageOutcome::Usage(SummedUsage {
+        converse: ConverseUsageOutcome::Usage(Box::new(SummedUsage {
             prompt_tokens: 3,
             completion_tokens: 2,
             total_tokens: 5,
             prompt_tokens_details: None,
             completion_tokens_details: None,
             numeric_extras: BTreeMap::new(),
-        }),
+        })),
     };
     let result = run(
         &bedrock_input(json!({"inputTokens": 3, "outputTokens": 2})),
@@ -822,12 +812,7 @@ fn an_unreadable_converse_usage_is_uncostable() {
         run(&bedrock_input(json!({"inputTokens": "x"})), &providers).expect("the batch is costed");
     assert_eq!(result.cost, Decimal::ZERO);
     assert_eq!(result.successful_requests, 1);
-    assert_eq!(
-        result.diagnostics,
-        vec![BatchOutputDiagnostic::UncostableLine {
-            custom_id: Some(Json::Text("b".to_owned())),
-        }]
-    );
+    assert!(result.diagnostics.is_empty());
 }
 
 #[derive(Clone, Default)]
@@ -843,9 +828,9 @@ impl CapturedLogs {
 }
 
 #[derive(Default)]
-struct Message(String);
+struct CapturedMessage(String);
 
-impl Visit for Message {
+impl Visit for CapturedMessage {
     fn record_str(&mut self, field: &Field, value: &str) {
         if field.name() == "message" {
             value.clone_into(&mut self.0);
@@ -861,7 +846,7 @@ impl Visit for Message {
 
 impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
-        let mut message = Message::default();
+        let mut message = CapturedMessage::default();
         event.record(&mut message);
         self.0
             .lock()

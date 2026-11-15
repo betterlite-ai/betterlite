@@ -11,8 +11,8 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use super::BatchOutputProvider;
-use super::decode::{integer_field, number_field};
-use super::error::BatchLineError;
+use super::decode::integer_field;
+use super::error::{BatchOutputUsageError, BatchResult};
 use crate::cost::batch::error::BatchCostError;
 use crate::cost::batch::{BatchCostRequest, batch_cost_per_token};
 
@@ -77,10 +77,15 @@ pub(super) fn line_cost(
     input: &LineCostInput<'_>,
     lookup: &dyn PriceLookup,
     resolution: &ResolutionContext<'_>,
-) -> Result<BatchRowCost, BatchLineError> {
-    let cost_model = cost_model(input);
+) -> BatchResult<BatchRowCost> {
+    let name = if input.provider == BatchOutputProvider::Bedrock && input.model_name.is_some() {
+        input.model_name
+    } else {
+        input.response_model.or(input.model_name)
+    };
+    let cost_model = name.unwrap_or_default();
     if let Some(ocr_usage) = ocr_usage(input.body)? {
-        let cost = ocr_batch_cost(
+        let prompt_cost = ocr_batch_cost(
             cost_model,
             Some(input.provider.slug()),
             &ocr_usage,
@@ -88,60 +93,36 @@ pub(super) fn line_cost(
             lookup,
         )?;
         return Ok(BatchRowCost {
-            prompt_cost: cost,
+            prompt_cost,
             completion_cost: Decimal::ZERO,
         });
     }
-    let cost_usage = CostUsage::from(input.usage);
-    let extras = usage_prompt_extras(input.usage);
-    let request = BatchCostRequest {
-        model: cost_model,
-        custom_llm_provider: Some(input.provider.slug()),
-        usage: &cost_usage,
-        prompt_extras: &extras,
-        supplied_model_info: input.model_info,
-        data_residency: None,
-    };
-    let priced = batch_cost_per_token(&request, lookup, resolution)?;
-    Ok(BatchRowCost {
-        prompt_cost: priced.prompt_cost,
-        completion_cost: priced.completion_cost,
-    })
+    let pricer = BatchCostPricer { lookup, resolution };
+    Ok(pricer.price(
+        input.usage,
+        cost_model,
+        input.provider.slug(),
+        input.model_info,
+    )?)
 }
 
-pub(super) fn cache_counters(usage: &SummedUsage) -> Result<(i64, i64), BatchLineError> {
-    let cost_usage = CostUsage::from(usage);
-    let extras = usage_prompt_extras(usage);
-    let details = prompt_tokens_details(&cost_usage, &extras)?;
+pub(super) fn cache_counters(usage: &SummedUsage) -> BatchResult<(i64, i64)> {
+    let details = prompt_tokens_details(&CostUsage::from(usage), &usage_prompt_extras(usage))?;
     Ok((details.cache_hit_tokens, details.cache_creation_tokens))
 }
 
-fn cost_model<'line>(input: &LineCostInput<'line>) -> &'line str {
-    if input.provider == BatchOutputProvider::Bedrock
-        && let Some(model_name) = input.model_name
-    {
-        return model_name;
-    }
-    input
-        .response_model
-        .or(input.model_name)
-        .unwrap_or_default()
-}
-
-fn ocr_usage(
-    body: Option<&IndexMap<String, Json>>,
-) -> Result<Option<OcrBatchUsage>, BatchLineError> {
-    let Some(body) = body else {
-        return Ok(None);
-    };
-    let Some(Json::Object(fields)) = body.get("usage_info") else {
+fn ocr_usage(body: Option<&IndexMap<String, Json>>) -> BatchResult<Option<OcrBatchUsage>> {
+    let Some(Json::Object(fields)) = body.and_then(|map| map.get("usage_info")) else {
         return Ok(None);
     };
     let pages_processed = integer_field(fields, "pages_processed")?.unwrap_or(0);
     let pages_processed_annotation =
         integer_field(fields, "pages_processed_annotation")?.unwrap_or(0);
-    number_field(fields, "credits")?;
-    integer_field(fields, "doc_size_bytes")?;
+    match fields.get("credits") {
+        None | Some(Json::Null | Json::Number(_)) => {}
+        Some(_) => return Err(BatchOutputUsageError::NotANumber { field: "credits" }),
+    }
+    let _doc_size_bytes = integer_field(fields, "doc_size_bytes")?;
     Ok(Some(OcrBatchUsage {
         pages_processed,
         pages_processed_annotation,

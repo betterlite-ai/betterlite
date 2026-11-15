@@ -2,29 +2,19 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 use betterlite_anthropic::usage::{
-    AnthropicUsage, ReasoningTokenCounter, calculate_usage as calculate_anthropic_usage,
+    ReasoningTokenCounter, calculate_usage as calculate_anthropic_usage,
 };
 use betterlite_logging::fields::usage::parse::usage_from_mapping;
 use betterlite_models::decisions::Json;
-use betterlite_models::usage_sum::{
-    CompletionTokensDetails, PromptTokensDetails, Usage as SummedUsage,
-};
+use betterlite_models::usage_sum::Usage as SummedUsage;
 use indexmap::IndexMap;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use super::BatchOutputDiagnostic;
-use super::BatchOutputProvider;
-use super::decode::{empty_object, object_value, serde_object};
-use super::error::BatchLineError;
-use crate::api::responses_usage::{
-    Usage as ResponsesUsage, is_response_api_usage, transform_response_api_usage,
-};
+use super::decode::object_field;
+use super::error::{BatchOutputUsageError, BatchResult};
+use super::{BatchOutputProvider, BatchOutputProviders, ConverseUsageOutcome};
+use crate::api::responses_usage::{is_response_api_usage, transform_response_api_usage};
 use crate::cost::completion::usage::pricing::pricing_usage;
-
-pub(super) struct LineUsage {
-    pub usage: SummedUsage,
-    pub unparsed: Option<BatchOutputDiagnostic>,
-}
 
 struct NoReasoningCounter;
 
@@ -36,15 +26,33 @@ impl ReasoningTokenCounter for NoReasoningCounter {
     }
 }
 
+fn succeeded(kind: Option<&Json>) -> bool {
+    let Some(Json::Text(found)) = kind else {
+        return false;
+    };
+    found.as_str() == "succeeded"
+}
+
+// LiteLLM compares the line's status code with 200; comparing the bits keeps that exact.
+const OK_STATUS: f64 = 200.0;
+
+fn is_ok_status(status: Option<&Json>) -> bool {
+    let Some(Json::Number(number)) = status else {
+        return false;
+    };
+    number
+        .as_f64()
+        .is_some_and(|value| value.to_bits() == OK_STATUS.to_bits())
+}
+
 pub(super) fn response_was_successful(entry: &Json, provider: BatchOutputProvider) -> bool {
     let Json::Object(fields) = entry else {
         return false;
     };
     match provider {
-        BatchOutputProvider::Anthropic => match fields.get("result") {
-            Some(Json::Object(result)) => succeeded_type(result.get("type")),
-            _ => false,
-        },
+        BatchOutputProvider::Anthropic => {
+            matches!(fields.get("result"), Some(Json::Object(result)) if succeeded(result.get("type")))
+        }
         BatchOutputProvider::Bedrock => {
             !matches!(fields.get("modelOutput"), None | Some(Json::Null))
                 && matches!(fields.get("error"), None | Some(Json::Null))
@@ -59,214 +67,103 @@ pub(super) fn response_was_successful(entry: &Json, provider: BatchOutputProvide
     }
 }
 
-fn is_ok_status(status: Option<&Json>) -> bool {
-    match status {
-        Some(Json::Number(number)) => number.as_f64() == Some(200.0),
-        _ => false,
-    }
-}
-
-fn succeeded_type(kind: Option<&Json>) -> bool {
-    match kind {
-        Some(Json::Text(kind)) => kind == "succeeded",
-        _ => false,
-    }
-}
-
-pub(super) fn response_body<'line>(
-    entry: &'line Json,
+pub(super) fn response_body(
+    entry: &Json,
     provider: BatchOutputProvider,
-) -> Result<Option<&'line IndexMap<String, Json>>, BatchLineError> {
+) -> BatchResult<Option<&IndexMap<String, Json>>> {
     let Json::Object(fields) = entry else {
         return Ok(None);
     };
-    match provider {
-        BatchOutputProvider::Anthropic => {
-            let Some(result) = super::decode::object_field(fields, "result")? else {
-                return Ok(None);
-            };
-            super::decode::object_field(result, "message")
-        }
-        BatchOutputProvider::Bedrock => super::decode::object_field(fields, "modelOutput"),
-        BatchOutputProvider::Openai
-        | BatchOutputProvider::Azure
-        | BatchOutputProvider::VertexAi
-        | BatchOutputProvider::HostedVllm
-        | BatchOutputProvider::Mistral => {
-            let Some(response) = super::decode::object_field(fields, "response")? else {
-                return Ok(None);
-            };
-            super::decode::object_field(response, "body")
-        }
+    if provider == BatchOutputProvider::Bedrock {
+        return object_field(fields, "modelOutput");
     }
+    let (outer, inner) = if provider == BatchOutputProvider::Anthropic {
+        ("result", "message")
+    } else {
+        ("response", "body")
+    };
+    let Some(found) = object_field(fields, outer)? else {
+        return Ok(None);
+    };
+    object_field(found, inner)
 }
 
 pub(super) fn response_model(body: Option<&IndexMap<String, Json>>) -> Option<String> {
-    match body?.get("model") {
-        Some(Json::Text(model)) if !model.is_empty() => Some(model.clone()),
-        _ => None,
+    let Some(Json::Text(model)) = body?.get("model") else {
+        return None;
+    };
+    if model.is_empty() {
+        return None;
     }
+    Some(model.clone())
 }
 
 pub(super) fn usage_for_line(
     body: Option<&IndexMap<String, Json>>,
     provider: BatchOutputProvider,
-    providers: &dyn super::BatchOutputProviders,
-) -> Result<LineUsage, BatchLineError> {
-    let Some(body) = body else {
-        return Ok(empty_line_usage());
+    providers: &dyn BatchOutputProviders,
+) -> BatchResult<SummedUsage> {
+    let Some(body_fields) = body else {
+        return Ok(SummedUsage::default());
     };
-    if provider.is_anthropic_family() {
-        return anthropic_family_usage(body, provider, providers);
-    }
-    let Some(usage_value) = object_value(body, "usage")? else {
-        return Ok(empty_line_usage());
-    };
-    if empty_object(usage_value) {
-        return Ok(empty_line_usage());
-    }
-    Ok(LineUsage {
-        usage: generic_usage(usage_value)?,
-        unparsed: None,
-    })
-}
-
-fn empty_line_usage() -> LineUsage {
-    LineUsage {
-        usage: SummedUsage::default(),
-        unparsed: None,
-    }
-}
-
-fn anthropic_family_usage(
-    body: &IndexMap<String, Json>,
-    provider: BatchOutputProvider,
-    providers: &dyn super::BatchOutputProviders,
-) -> Result<LineUsage, BatchLineError> {
     if provider == BatchOutputProvider::Bedrock
-        && let Some(usage) = providers.bedrock_embedding_usage(body)
+        && let Some(usage) = providers.bedrock_embedding_usage(body_fields)
     {
-        return Ok(LineUsage {
-            usage,
-            unparsed: None,
-        });
+        return Ok(usage);
     }
-    let Some(usage_value) = object_value(body, "usage")? else {
-        return Ok(empty_line_usage());
+    let Some(usage_fields) = object_field(body_fields, "usage")? else {
+        return Ok(SummedUsage::default());
     };
-    if empty_object(usage_value) {
-        return Ok(empty_line_usage());
+    if usage_fields.is_empty() {
+        return Ok(SummedUsage::default());
     }
+    let usage_document = Json::Object(usage_fields.clone());
     if provider == BatchOutputProvider::Bedrock {
-        match providers.bedrock_converse_usage(usage_value) {
-            super::ConverseUsageOutcome::Usage(usage) => {
-                return Ok(LineUsage {
-                    usage,
-                    unparsed: None,
-                });
-            }
-            super::ConverseUsageOutcome::Invalid => {
-                return Err(BatchLineError::ConverseUsage);
-            }
-            super::ConverseUsageOutcome::NotConverse => {}
-        }
+        return match providers.bedrock_converse_usage(&usage_document) {
+            ConverseUsageOutcome::Usage(usage) => Ok(*usage),
+            ConverseUsageOutcome::Invalid => Err(BatchOutputUsageError::ConverseUsage),
+            ConverseUsageOutcome::NotConverse => anthropic_usage(&usage_document, provider),
+        };
     }
-    anthropic_shape_usage(usage_value, provider)
+    if provider == BatchOutputProvider::Anthropic {
+        return anthropic_usage(&usage_document, provider);
+    }
+    generic_usage(usage_fields)
 }
 
-fn anthropic_shape_usage(
-    usage_value: &Json,
-    provider: BatchOutputProvider,
-) -> Result<LineUsage, BatchLineError> {
-    let converted = calculate_anthropic_usage(usage_value, None, None, None, &NoReasoningCounter)?;
-    let usage = from_anthropic_usage(&converted);
-    if usage.total_tokens != 0 {
-        return Ok(LineUsage {
-            usage,
-            unparsed: None,
+// The cost path prices a usage mapping, so the converted Anthropic usage rejoins that parser.
+fn anthropic_usage(value: &Json, provider: BatchOutputProvider) -> BatchResult<SummedUsage> {
+    let converted = calculate_anthropic_usage(value, None, None, None, &NoReasoningCounter)?;
+    let text = serde_json::to_string(&converted)?;
+    let fields: IndexMap<String, Json> = serde_json::from_str(&text)?;
+    let usage = pricing_usage(&usage_from_mapping(&fields)?)?;
+    if usage.total_tokens == 0 {
+        tracing::warn!(
+            provider = provider.slug(),
+            "batch output line reported usage this parser does not understand, so it will be billed at $0"
+        );
+    }
+    Ok(usage)
+}
+
+fn generic_usage(fields: &IndexMap<String, Json>) -> BatchResult<SummedUsage> {
+    let mut object = Map::new();
+    for (key, value) in fields {
+        let wire =
+            serde_json::to_value(value).map_err(|source| BatchOutputUsageError::Json { source })?;
+        object.insert(key.clone(), wire);
+    }
+    if is_response_api_usage(&object) {
+        let document = Value::Object(object);
+        let converted = transform_response_api_usage(Some(&document))?;
+        return Ok(SummedUsage {
+            prompt_tokens: converted.prompt_tokens,
+            completion_tokens: converted.completion_tokens,
+            total_tokens: converted.total_tokens,
+            prompt_tokens_details: converted.prompt_tokens_details,
+            completion_tokens_details: converted.completion_tokens_details,
+            numeric_extras: BTreeMap::new(),
         });
     }
-    let usage_keys = sorted_keys(usage_value);
-    tracing::warn!(
-        provider = provider.slug(),
-        usage_keys = ?usage_keys,
-        "batch output line reported usage this parser does not understand, so it will be billed at $0"
-    );
-    Ok(LineUsage {
-        usage,
-        unparsed: Some(BatchOutputDiagnostic::UnparsedUsage {
-            provider: provider.slug(),
-            usage_keys,
-        }),
-    })
-}
-
-fn sorted_keys(value: &Json) -> Vec<String> {
-    let Json::Object(fields) = value else {
-        return Vec::new();
-    };
-    let mut keys: Vec<String> = fields.keys().cloned().collect();
-    keys.sort();
-    keys
-}
-
-fn generic_usage(value: &Json) -> Result<SummedUsage, BatchLineError> {
-    let Json::Object(fields) = value else {
-        return Err(BatchLineError::NotAnObject { field: "usage" });
-    };
-    let object = serde_object(fields)?;
-    if is_response_api_usage(&object) {
-        let value = Value::Object(object);
-        let converted = transform_response_api_usage(Some(&value))?;
-        return Ok(from_responses_usage(&converted));
-    }
-    let logging = usage_from_mapping(fields)?;
-    Ok(pricing_usage(&logging)?)
-}
-
-fn from_responses_usage(usage: &ResponsesUsage) -> SummedUsage {
-    SummedUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        prompt_tokens_details: usage.prompt_tokens_details.clone(),
-        completion_tokens_details: usage.completion_tokens_details.clone(),
-        numeric_extras: BTreeMap::new(),
-    }
-}
-
-fn from_anthropic_usage(usage: &AnthropicUsage) -> SummedUsage {
-    SummedUsage {
-        prompt_tokens: usage.prompt_tokens,
-        completion_tokens: usage.completion_tokens,
-        total_tokens: usage.total_tokens,
-        prompt_tokens_details: Some(PromptTokensDetails {
-            text_tokens: Some(usage.prompt_tokens_details.text),
-            audio_tokens: usage.prompt_tokens_details.audio,
-            image_tokens: usage.prompt_tokens_details.image,
-            video_tokens: usage.prompt_tokens_details.video,
-            web_search_requests: None,
-            google_maps_grounding_requests: None,
-            tool_use_tokens: None,
-            character_count: None,
-            image_count: None,
-            video_length_seconds: None,
-            audio_length_seconds: None,
-            query_count: None,
-            cache_write_tokens: Some(usage.prompt_tokens_details.cache_write),
-            cache_creation_tokens: Some(usage.prompt_tokens_details.cache_creation),
-            cached_tokens: Some(usage.prompt_tokens_details.cached),
-            cached_tokens_details: None,
-        }),
-        completion_tokens_details: Some(CompletionTokensDetails {
-            text_tokens: usage.completion_tokens_details.text,
-            audio_tokens: usage.completion_tokens_details.audio,
-            image_tokens: usage.completion_tokens_details.image,
-            video_tokens: usage.completion_tokens_details.video,
-            reasoning_tokens: usage.completion_tokens_details.reasoning,
-            accepted_prediction_tokens: usage.completion_tokens_details.accepted_prediction,
-            rejected_prediction_tokens: usage.completion_tokens_details.rejected_prediction,
-        }),
-        numeric_extras: BTreeMap::new(),
-    }
+    Ok(pricing_usage(&usage_from_mapping(fields)?)?)
 }

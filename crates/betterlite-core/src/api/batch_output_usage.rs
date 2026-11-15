@@ -7,6 +7,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+use self::aggregate::vertex::aggregate_vertex;
+use self::decode::DecodedBatchLine;
+use self::error::{BatchOutputUsageError, BatchResult};
 use crate::api::api_boundaries::ApiLimits;
 
 pub mod aggregate;
@@ -16,11 +19,6 @@ pub mod pricing;
 mod tests;
 pub mod tokens;
 pub mod usage;
-
-pub use decode::DecodedBatchLine;
-pub use error::{BatchEntryTokenError, BatchOutputUsageError};
-pub use pricing::{BatchCostPricer, BatchRowCost, BatchRowPricer};
-pub use tokens::{BatchTokenCounter, count_batch_entry_tokens, estimate_batch_entry_tokens};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,10 +45,6 @@ impl BatchOutputProvider {
             Self::Mistral => "mistral",
         }
     }
-
-    const fn is_anthropic_family(self) -> bool {
-        matches!(self, Self::Anthropic | Self::Bedrock)
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,7 +54,6 @@ pub enum BatchOutputUsageInput {
     VertexUsage(BatchVertexUsageRequest),
 }
 
-// An internally tagged variant keeps the tag in its content map, so the request structs deny nothing.
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchOutputUsageRequest {
     pub provider: BatchOutputProvider,
@@ -87,12 +80,12 @@ pub enum BatchOutputContent {
 pub fn decode_batch_output_usage(
     bytes: &[u8],
     limits: &ApiLimits,
-) -> Result<Vec<DecodedBatchLine>, BatchOutputUsageError> {
+) -> BatchResult<Vec<DecodedBatchLine>> {
     if bytes.len() > limits.max_json_bytes {
-        return Err(BatchOutputUsageError::JsonTooLarge {
-            observed: bytes.len(),
-            limit: limits.max_json_bytes,
-        });
+        return Err(BatchOutputUsageError::JsonTooLarge(
+            bytes.len(),
+            limits.max_json_bytes,
+        ));
     }
     let mut lines = Vec::new();
     for raw in bytes.split(|byte| *byte == b'\n') {
@@ -101,15 +94,13 @@ pub fn decode_batch_output_usage(
             continue;
         }
         if line.len() > limits.max_event_bytes {
-            return Err(BatchOutputUsageError::LineTooLarge {
-                observed: line.len(),
-                limit: limits.max_event_bytes,
-            });
+            return Err(BatchOutputUsageError::LineTooLarge(
+                line.len(),
+                limits.max_event_bytes,
+            ));
         }
         if lines.len() >= limits.max_items {
-            return Err(BatchOutputUsageError::TooManyLines {
-                limit: limits.max_items,
-            });
+            return Err(BatchOutputUsageError::TooManyLines(limits.max_items));
         }
         lines.push(decode::decode_line(line));
     }
@@ -118,7 +109,7 @@ pub fn decode_batch_output_usage(
 
 #[expect(
     clippy::struct_field_names,
-    reason = "the counters keep LiteLLM's Usage names the batch report and oracle cases use"
+    reason = "the counters keep LiteLLM's Usage names"
 )]
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct BatchUsageTotals {
@@ -150,13 +141,6 @@ pub enum BatchOutputDiagnostic {
         #[serde(rename = "type")]
         kind: &'static str,
     },
-    UncostableLine {
-        custom_id: Option<Json>,
-    },
-    UnparsedUsage {
-        provider: &'static str,
-        usage_keys: Vec<String>,
-    },
 }
 
 // The provider-owned piece of one native Vertex row: its usage, the model that prices it, and its costs.
@@ -169,10 +153,10 @@ pub struct VertexRowStats {
     pub completion_cost: Decimal,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConverseUsageOutcome {
     NotConverse,
-    Usage(SummedUsage),
+    Usage(Box<SummedUsage>),
     Invalid,
 }
 
@@ -200,17 +184,12 @@ pub struct BatchOutputUsage<'service> {
 }
 
 impl BatchOutputUsage<'_> {
-    pub fn run(
-        &self,
-        input: &BatchOutputUsageInput,
-    ) -> Result<BatchOutputUsageResult, BatchOutputUsageError> {
+    pub fn run(&self, input: &BatchOutputUsageInput) -> BatchResult<BatchOutputUsageResult> {
         match input {
             BatchOutputUsageInput::OutputUsage(request) => {
                 aggregate::aggregate_output(self, request)
             }
-            BatchOutputUsageInput::VertexUsage(request) => {
-                aggregate::vertex::aggregate_vertex(self, request)
-            }
+            BatchOutputUsageInput::VertexUsage(request) => aggregate_vertex(self, request),
         }
     }
 }
