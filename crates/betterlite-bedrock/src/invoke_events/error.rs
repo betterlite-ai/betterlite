@@ -39,6 +39,8 @@ impl InvokeStreamError {
         match self {
             Self::Frame(EventFrameError::Bedrock { status, .. })
             | Self::OpenAi(StreamError::Provider { status, .. }) => Some(*status),
+            // LiteLLM raises AnthropicError(status_code=500) for a native stream error event.
+            Self::Anthropic(StreamEventError::Anthropic(error)) => Some(error.status_code),
             Self::Frame(
                 EventFrameError::PreludeChecksum { .. }
                 | EventFrameError::Frame(_)
@@ -51,10 +53,10 @@ impl InvokeStreamError {
                 | EventFrameError::Header(_),
             )
             | Self::OpenAi(StreamError::Chunk(_) | StreamError::ToolCallPayload)
+            | Self::Anthropic(StreamEventError::Shape(_) | StreamEventError::State { .. })
             | Self::Json { .. }
             | Self::Chunk { .. }
             | Self::Encode { .. }
-            | Self::Anthropic(_)
             | Self::Converse(_)
             | Self::Buffered { .. } => None,
         }

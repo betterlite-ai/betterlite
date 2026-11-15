@@ -78,6 +78,7 @@ def stream_view(stream: ModelResponseStream) -> StreamView:
     return {
         "kind": "stream",
         "content": delta.get("content"),
+        "role": delta.get("role"),
         "reasoning_content": delta.get("reasoning_content"),
         "finish_reason": choice.get("finish_reason"),
         "tool_calls": tool_views(delta.get("tool_calls")),

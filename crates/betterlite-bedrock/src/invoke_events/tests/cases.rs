@@ -89,6 +89,7 @@ pub(super) fn claude3_invoke_stream() {
     tool_use_start(&mut decoder);
     text_and_thinking_deltas(&mut decoder);
     usage_and_stop(&mut decoder);
+    native_error_status(&mut decoder);
     json_mode_suppression();
 }
 
@@ -140,6 +141,15 @@ fn usage_and_stop(decoder: &mut InvokeStreamDecoder) {
     // the deviation in docs/deviations/B609.yaml: the streamed thinking text is not tokenized
     let details = finished.usage.unwrap().completion_tokens_details;
     assert_eq!(details.reasoning, Some(0));
+}
+
+// LiteLLM raises AnthropicError(status_code=500, message=...) for a native stream error event.
+fn native_error_status(decoder: &mut InvokeStreamDecoder) {
+    let failure =
+        error(decoder.chunk_parser(&json(r#"{"type":"error","error":{"message":"boom"}}"#)));
+    assert_eq!(failure.status(), Some(500));
+    let malformed = error(decoder.chunk_parser(&json(r#"{"type":"content_block_start"}"#)));
+    assert_eq!(malformed.status(), None);
 }
 
 fn json_mode_suppression() {
@@ -411,6 +421,7 @@ fn thinking_chunk(decoder: &mut InvokeStreamDecoder) {
     let delta = &thinking.choices[0].delta;
     assert_eq!(delta.reasoning_content.as_deref(), Some("thinking"));
     assert_eq!(delta.content, None);
+    assert_eq!(delta.role, None);
     assert_eq!(thinking.choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(
         thinking.usage,

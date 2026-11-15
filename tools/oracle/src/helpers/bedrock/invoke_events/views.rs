@@ -55,6 +55,7 @@ pub(super) fn chunk_view(chunk: InvokeChunk) -> Result<Value, serde_json::Error>
     Ok(json!({
         "kind": "stream",
         "content": delta["content"],
+        "role": delta["role"],
         "reasoning_content": delta["reasoning_content"],
         "finish_reason": choice["finish_reason"],
         "tool_calls": delta["tool_calls"]

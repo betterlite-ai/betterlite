@@ -56,6 +56,7 @@ class GenericView(TypedDict):
 class StreamView(TypedDict):
     kind: Literal["stream"]
     content: str | None
+    role: str | None
     reasoning_content: str | None
     finish_reason: str | None
     tool_calls: list[JsonValue] | None
@@ -110,6 +111,7 @@ class ToolCallView(TypedDict):
 
 class DeltaView(TypedDict):
     content: NotRequired[str | None]
+    role: NotRequired[str | None]
     reasoning_content: NotRequired[str | None]
     tool_calls: NotRequired[list[JsonValue] | None]
 
