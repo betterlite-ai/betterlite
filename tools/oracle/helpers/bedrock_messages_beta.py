@@ -5,6 +5,7 @@ from copy import deepcopy
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
 
 import litellm
+from litellm.llms.bedrock.base_aws_llm import BaseAWSLLM
 from litellm.llms.bedrock.common_utils import bedrock_supports_tool_search
 from litellm.llms.bedrock.messages.invoke_transformations.anthropic_claude3_transformation import (
     AmazonAnthropicClaudeMessagesConfig as MessagesConfig,
@@ -23,7 +24,6 @@ USER: Final[list[JsonValue]] = [{"role": "user", "content": "hi"}]
 DROPPED: Final = "Bedrock Invoke: dropping unsupported anthropic-beta values from client headers"
 STRIPPED: Final = "Bedrock Invoke: stripping unsupported top-level request fields: "
 TEXTS = TypeAdapter(list[str])
-JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 FIXED_MODEL_COST: Final[Object] = {
     "bedrock/claude-opus-4-5": {"litellm_provider": "bedrock"},
     "bedrock/fixture-no-flag": {"litellm_provider": "bedrock", "mode": "chat"},
@@ -121,7 +121,7 @@ def watching() -> Generator[Watch]:
 
 @runtime_checkable
 class MessagesView(Protocol):
-    def transform_anthropic_messages_request(
+    def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
         self,
         model: str,
         messages: list[JsonValue],
@@ -135,11 +135,17 @@ VIEW: Final[TypeAdapter[MessagesView]] = TypeAdapter(MessagesView, config=ARBITR
 
 
 class Probe(MessagesConfig):
-    requested_provider: str | None = None
+    requested_provider: str | None
+
+    def __init__(self, provider: str | None) -> None:
+        BaseAWSLLM.__init__(self)
+        self.requested_provider = provider
 
     @property
     @override
     def custom_llm_provider(self) -> str | None:
+        if self.requested_provider is None:
+            return super().custom_llm_provider
         return self.requested_provider
 
     def invoke(
@@ -149,12 +155,6 @@ class Probe(MessagesConfig):
         return view.transform_anthropic_messages_request(
             model, messages, options, GenericLiteLLMParams(), headers
         )
-
-
-def probe(provider: str | None) -> Probe:
-    created: Probe = object.__new__(Probe)
-    created.requested_provider = provider
-    return created
 
 
 def effective_provider(given: str | None) -> str:
@@ -193,7 +193,7 @@ def beta_call(call: BetaCall) -> JsonValue:
     if headers is None:
         headers = {}
     with watching() as watch:
-        body = probe(effective_provider(given)).invoke(
+        body = Probe(effective_provider(given)).invoke(
             call["model"], deepcopy(messages), beta_options(call), headers
         )
     raw = body.get("anthropic_beta")
@@ -222,8 +222,8 @@ def context_case(case: ContextCase) -> JsonValue:
     without = dict(options)
     without.pop("context_management", None)
     model = "fixture-tool-search"
-    with_body = probe("bedrock").invoke(model, deepcopy(USER), options, {})
-    without_body = probe("bedrock").invoke(model, deepcopy(USER), without, {})
+    with_body = Probe("bedrock").invoke(model, deepcopy(USER), options, {})
+    without_body = Probe("bedrock").invoke(model, deepcopy(USER), without, {})
     kept = dict(case["request"])
     if "context_management" in with_body:
         kept["context_management"] = with_body["context_management"]
@@ -233,7 +233,7 @@ def context_case(case: ContextCase) -> JsonValue:
     if given is None:
         given = []
     added = betas_of(with_body) - betas_of(without_body)
-    return JSON.validate_python({"request": kept, "betas": sorted(set(given) | added)})
+    return {"request": kept, "betas": [*sorted(set(given) | added)]}
 
 
 def context_filter(call: ContextFilter) -> JsonValue:
@@ -247,7 +247,7 @@ def web_search(call: WebSearch) -> JsonValue:
     options: Object = {"max_tokens": MAX_TOKENS}
     if "tools" in request:
         options["tools"] = request["tools"]
-    probe("bedrock").invoke(call["model"], deepcopy(USER), options, {})
+    Probe("bedrock").invoke(call["model"], deepcopy(USER), options, {})
     return {"accepted": True}
 
 
@@ -257,7 +257,7 @@ def fields_case(case: FieldsCase) -> JsonValue:
     if "max_tokens" not in options:
         options["max_tokens"] = MAX_TOKENS
     with watching() as watch:
-        body = probe("bedrock").invoke("fixture-no-flag", deepcopy(USER), options, {})
+        body = Probe("bedrock").invoke("fixture-no-flag", deepcopy(USER), options, {})
     return {
         "request": {name: body[name] for name in request if name in body},
         "logs": [message for message in watch.debugs if message.startswith(STRIPPED)],
@@ -271,14 +271,14 @@ def unsupported_fields(call: UnsupportedFields) -> JsonValue:
 
 def provider_identity(call: ProviderIdentity) -> JsonValue:
     litellm.model_cost = call["model_cost"]
-    config: MessagesConfig = object.__new__(MessagesConfig)
+    base = Probe(None)
     answers: list[JsonValue] = []
     for entry in call["cases"]:
         given = entry.get("subclass_provider")
         answers.append(
             {
-                "custom_llm_provider": config.custom_llm_provider,
-                "beta_headers_provider": probe(given).beta_headers_provider,
+                "custom_llm_provider": base.custom_llm_provider,
+                "beta_headers_provider": Probe(given).beta_headers_provider,
                 "supports_tool_search": bedrock_supports_tool_search(entry["model"]),
             }
         )
