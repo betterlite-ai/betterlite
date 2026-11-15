@@ -137,14 +137,6 @@ fn validate(
     }
 }
 
-pub(super) fn headers_of(upstream: &ResponsesUpstream) -> IndexMap<String, String> {
-    upstream
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), value.clone()))
-        .collect()
-}
-
 fn finish(
     config: &ManusResponsesConfig,
     upstream: &ResponsesUpstream,
@@ -152,7 +144,7 @@ fn finish(
     fields: &Params,
 ) -> Result<ResponsesApiResponse, ManusResponsesError> {
     let response = validate(config, fields)?;
-    let headers = headers_of(upstream);
+    let headers: IndexMap<String, String> = upstream.headers.clone().into_iter().collect();
     let additional_headers = process_response_headers(HeaderSource::Upstream(&headers));
     logging.model_call_details.insert(
         String::from(HEADERS_KEY),
