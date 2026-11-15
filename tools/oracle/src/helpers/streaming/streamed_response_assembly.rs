@@ -3,7 +3,9 @@ use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue}
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::cost::StreamLogging;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
-use betterlite_streaming::streamed_response_assembly::response::{ChatChoice, Response, TextUsage};
+use betterlite_streaming::streamed_response_assembly::response::{
+    ChatChoice, ChatResponse, Response, TextResponse, TextUsage,
+};
 use betterlite_streaming::streamed_response_assembly::{
     AssemblyError, Request, stream_chunk_builder,
 };
@@ -140,48 +142,51 @@ fn assembly_error(error: &AssemblyError) -> Box<crate::helpers::HelperError> {
 }
 
 fn response_view(response: &Response) -> Value {
-    let view = match response {
-        Response::Chat(chat) => {
-            let choices: Vec<Value> = chat.choices.iter().map(chat_choice_view).collect();
+    match response {
+        Response::Chat(chat) => prune(chat_view(chat)),
+        Response::Text(text) => prune(text_view(text)),
+    }
+}
+
+fn chat_view(chat: &ChatResponse) -> Value {
+    let choices: Vec<Value> = chat.choices.iter().map(chat_choice_view).collect();
+    json!({
+        "kind": "chat",
+        "id": chat.id,
+        "object": chat.object,
+        "created": chat.created,
+        "model": chat.model,
+        "system_fingerprint": chat.system_fingerprint,
+        "service_tier": chat.service_tier,
+        "choices": choices,
+        "usage": usage_view(&chat.usage),
+        "hidden_params": hidden_view(&chat.hidden_params),
+    })
+}
+
+fn text_view(text: &TextResponse) -> Value {
+    let choices: Vec<Value> = text
+        .choices
+        .iter()
+        .map(|choice| {
             json!({
-                "kind": "chat",
-                "id": chat.id,
-                "object": chat.object,
-                "created": chat.created,
-                "model": chat.model,
-                "system_fingerprint": chat.system_fingerprint,
-                "service_tier": chat.service_tier,
-                "choices": choices,
-                "usage": usage_view(&chat.usage),
-                "hidden_params": hidden_view(&chat.hidden_params),
+                "index": choice.index,
+                "finish_reason": choice.finish_reason,
+                "text": choice.text,
+                "logprobs": choice.logprobs,
             })
-        }
-        Response::Text(text) => {
-            let choices: Vec<Value> = text
-                .choices
-                .iter()
-                .map(|choice| {
-                    json!({
-                        "index": choice.index,
-                        "finish_reason": choice.finish_reason,
-                        "text": choice.text,
-                        "logprobs": choice.logprobs,
-                    })
-                })
-                .collect();
-            json!({
-                "kind": "text",
-                "id": text.id,
-                "object": text.object,
-                "created": text.created,
-                "model": text.model,
-                "system_fingerprint": text.system_fingerprint,
-                "choices": choices,
-                "usage": text_usage_view(&text.usage),
-            })
-        }
-    };
-    prune(view)
+        })
+        .collect();
+    json!({
+        "kind": "text",
+        "id": text.id,
+        "object": text.object,
+        "created": text.created,
+        "model": text.model,
+        "system_fingerprint": text.system_fingerprint,
+        "choices": choices,
+        "usage": text_usage_view(&text.usage),
+    })
 }
 
 fn chat_choice_view(choice: &ChatChoice) -> Value {

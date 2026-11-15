@@ -6,6 +6,7 @@ use super::{FIXED_NOW, Harness, chat_of, failed, ok, text, value};
 
 pub(super) async fn text_completion_assembly() {
     text_completion_join().await;
+    text_completion_usage().await;
     text_defaults().await;
     text_completion_failure().await;
     text_total_overflow().await;
@@ -65,6 +66,12 @@ pub(super) async fn text_completion_join() {
         ("Hey you!", 0, Some("stop"))
     );
     assert_eq!(choice.logprobs, Some(logprobs));
+    assert!(logs.is_empty());
+}
+
+// The prompt count comes from the message counter, since the text builder never sees the callback.
+pub(super) async fn text_completion_usage() {
+    let (response, _logs) = join_run().await;
     let usage = &response.usage;
     assert_eq!(
         (
@@ -74,7 +81,6 @@ pub(super) async fn text_completion_join() {
         ),
         (3, 2, 5)
     );
-    assert!(logs.is_empty());
 }
 
 pub(super) async fn text_defaults() {

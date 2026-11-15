@@ -139,7 +139,7 @@ calls:
     - choices:
       - index: 0
         delta:
-          content: y
+          content: 'y'
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
@@ -164,7 +164,7 @@ calls:
     - choices:
       - index: 0
         delta:
-          content: y
+          content: 'y'
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
@@ -237,7 +237,7 @@ calls:
         delta:
           role: assistant
           content: B
-          reasoning_content: y
+          reasoning_content: 'y'
         finish_reason: stop
     - model: gpt-4o
       _hidden_params:
