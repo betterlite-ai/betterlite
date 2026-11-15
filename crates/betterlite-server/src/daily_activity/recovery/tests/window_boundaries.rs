@@ -106,7 +106,7 @@ async fn window_boundaries_cover_the_day_after_the_latest_date() {
 }
 
 #[tokio::test]
-async fn window_boundaries_skip_spend_logs_for_an_empty_or_unparseable_date_set() {
+async fn window_boundaries_skip_spend_logs_for_an_empty_or_unparsable_date_set() {
     let database = database().await;
     insert_spend_log(
         &database.store,
@@ -117,9 +117,9 @@ async fn window_boundaries_skip_spend_logs_for_an_empty_or_unparseable_date_set(
     )
     .await;
     let empty = spend_logs_window(&dates(&[]));
-    let unparseable = spend_logs_window(&dates(&["not-a-date"]));
+    let unparsable = spend_logs_window(&dates(&["not-a-date"]));
     assert!(empty.is_none());
-    assert!(unparseable.is_none());
+    assert!(unparsable.is_none());
     let from_empty = recover(
         &reads(&database.store),
         BTreeMap::new(),
@@ -127,15 +127,15 @@ async fn window_boundaries_skip_spend_logs_for_an_empty_or_unparseable_date_set(
         empty,
     )
     .await;
-    let from_unparseable = recover(
+    let from_unparsable = recover(
         &reads(&database.store),
         BTreeMap::new(),
         &keys(&[DIGEST]),
-        unparseable,
+        unparsable,
     )
     .await;
     assert!(from_empty.is_empty());
-    assert!(from_unparseable.is_empty());
+    assert!(from_unparsable.is_empty());
     close(database).await;
 }
 

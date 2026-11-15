@@ -381,6 +381,29 @@ async fn recover_key_metadata_returns_resolved_keys_outside_the_key_set() {
 }
 
 #[tokio::test]
+async fn recover_key_metadata_looks_up_no_owner_for_an_ownerless_key_outside_the_key_set() {
+    let store = PostgresStore { pool: None };
+    let resolved = BTreeMap::from([(
+        "sk-orphan".to_owned(),
+        KeyMetadataRow {
+            api_key: "sk-orphan".to_owned(),
+            key_alias: Some("orphan-alias".to_owned()),
+            team_id: None,
+            user_id: None,
+            user_email: None,
+            key_exists: false,
+            tags: Vec::new(),
+        },
+    )]);
+    let (logs, subscriber) = capture_logs();
+    let guard = set_default(subscriber);
+    let recovered = recover(&reads(&store), resolved.clone(), &keys(&[]), None).await;
+    drop(guard);
+    assert_eq!(recovered, resolved);
+    assert!(logs.contents().is_empty());
+}
+
+#[tokio::test]
 async fn recover_key_metadata_repository_factory_attaches_user_details() {
     let database = database().await;
     insert_user(

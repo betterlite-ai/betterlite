@@ -12,7 +12,6 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
-use std::future::Future;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -24,69 +23,77 @@ pub struct ProxyDailyActivityReads {
 }
 
 impl DailyActivityProxyReads for ProxyDailyActivityReads {
-    fn recover_key_metadata(
+    async fn recover_key_metadata(
         &self,
         resolved: BTreeMap<String, KeyMetadataRow>,
         api_keys: &BTreeSet<String>,
         window: Option<SpendLogsWindow>,
-    ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
-        async move {
-            let mut combined: BTreeMap<String, KeyMetadata> = resolved
-                .iter()
-                .map(|(key, row)| {
-                    let metadata = KeyMetadata {
-                        key_alias: row.key_alias.clone(),
-                        team_id: row.team_id.clone(),
-                        user_id: row.user_id.clone(),
-                        user_email: row.user_email.clone(),
-                        key_exists: Some(row.key_exists),
-                    };
-                    (key.clone(), metadata)
-                })
-                .collect();
-            let missing = unresolved(api_keys, &combined);
-            let session = recover_or_default(
-                "cli_session",
-                recover_cli_session_keys(&self.store, &missing).await,
-            );
-            combined.extend(session);
-            let missing = unresolved(api_keys, &combined);
-            if !missing.is_empty() {
-                let reverse_hash = recover_or_default(
-                    "double_hash",
-                    recover_double_hashed_keys(&self.store, &missing).await,
+    ) -> BTreeMap<String, KeyMetadataRow> {
+        let mut combined: BTreeMap<String, KeyMetadata> = resolved
+            .iter()
+            .map(|(key, row)| {
+                let metadata = KeyMetadata {
+                    key_alias: row.key_alias.clone(),
+                    team_id: row.team_id.clone(),
+                    user_id: row.user_id.clone(),
+                    user_email: row.user_email.clone(),
+                    key_exists: Some(row.key_exists),
+                };
+                (key.clone(), metadata)
+            })
+            .collect();
+        self.recover_identities(&mut combined, api_keys, window)
+            .await;
+        let ownerless = ownerless_keys(api_keys, &combined);
+        let owners = recover_or_default(
+            "daily_spend_owner",
+            recover_daily_spend_owners(&self.store, &ownerless).await,
+        );
+        apply_owners(&mut combined, owners);
+        let attached = match attach_user_details(&self.store, combined.clone()).await {
+            Ok(attached) => attached,
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "user detail attachment failed; continuing without attached details"
                 );
-                combined.extend(reverse_hash);
+                combined
             }
-            let missing = unresolved(api_keys, &combined);
-            if !missing.is_empty()
-                && let Some(window) = window
-            {
-                let spend_logs = self.spend_log_metadata(&missing, window).await;
-                combined.extend(spend_logs);
-            }
-            let ownerless = ownerless_keys(api_keys, &combined);
-            let owners = recover_or_default(
-                "daily_spend_owner",
-                recover_daily_spend_owners(&self.store, &ownerless).await,
-            );
-            apply_owners(&mut combined, owners);
-            let attached = match attach_user_details(&self.store, combined.clone()).await {
-                Ok(attached) => attached,
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "user detail attachment failed; continuing without attached details"
-                    );
-                    combined
-                }
-            };
-            rows_from(&resolved, attached)
-        }
+        };
+        rows_from(&resolved, attached)
     }
 }
 
 impl ProxyDailyActivityReads {
+    async fn recover_identities(
+        &self,
+        combined: &mut BTreeMap<String, KeyMetadata>,
+        api_keys: &BTreeSet<String>,
+        window: Option<SpendLogsWindow>,
+    ) {
+        let for_session = unresolved(api_keys, combined);
+        let session = recover_or_default(
+            "cli_session",
+            recover_cli_session_keys(&self.store, &for_session).await,
+        );
+        combined.extend(session);
+        let for_hash = unresolved(api_keys, combined);
+        if !for_hash.is_empty() {
+            let reverse_hash = recover_or_default(
+                "double_hash",
+                recover_double_hashed_keys(&self.store, &for_hash).await,
+            );
+            combined.extend(reverse_hash);
+        }
+        let for_logs = unresolved(api_keys, combined);
+        if !for_logs.is_empty()
+            && let Some(span) = window
+        {
+            let spend_logs = self.spend_log_metadata(&for_logs, span).await;
+            combined.extend(spend_logs);
+        }
+    }
+
     async fn spend_log_metadata(
         &self,
         missing: &BTreeSet<String>,
@@ -128,13 +135,9 @@ where
     }
 }
 
-fn unresolved(
-    api_keys: &BTreeSet<String>,
-    resolved: &BTreeMap<String, KeyMetadata>,
-) -> BTreeSet<String> {
-    api_keys
-        .iter()
-        .filter(|key| !resolved.contains_key(*key))
+fn unresolved(keys: &BTreeSet<String>, known: &BTreeMap<String, KeyMetadata>) -> BTreeSet<String> {
+    keys.iter()
+        .filter(|key| !known.contains_key(*key))
         .cloned()
         .collect()
 }
@@ -143,16 +146,14 @@ fn ownerless_keys(
     api_keys: &BTreeSet<String>,
     resolved: &BTreeMap<String, KeyMetadata>,
 ) -> BTreeSet<String> {
-    api_keys
-        .iter()
-        .filter(|key| {
-            resolved.get(*key).is_none_or(|metadata| {
-                let ownerless = metadata.user_id.as_deref().is_none_or(str::is_empty);
-                ownerless && !metadata.key_exists.unwrap_or(false)
-            })
-        })
-        .cloned()
-        .collect()
+    let mut ownerless = unresolved(api_keys, resolved);
+    for (key, metadata) in resolved {
+        let without_user = metadata.user_id.as_deref().is_none_or(str::is_empty);
+        if api_keys.contains(key) && without_user && !metadata.key_exists.unwrap_or(false) {
+            ownerless.insert(key.clone());
+        }
+    }
+    ownerless
 }
 
 fn apply_owners(combined: &mut BTreeMap<String, KeyMetadata>, owners: BTreeMap<String, String>) {

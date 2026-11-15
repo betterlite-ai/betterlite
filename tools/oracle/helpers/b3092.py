@@ -69,7 +69,7 @@ def scope_value(call: ScopeCall) -> dict[str, JsonValue]:
             "table": scope.table.value,
             "entity_id_field": scope.entity_id_field,
             "entity_ids": optional_texts(scope.entity_ids),
-            "exclude_entity_ids": texts(scope.exclude_entity_ids),
+            "exclude_entity_ids": [*scope.exclude_entity_ids],
             "api_keys": optional_texts(scope.api_keys),
             "start_date": scope.start_date,
             "end_date": scope.end_date,
@@ -80,14 +80,7 @@ def scope_value(call: ScopeCall) -> dict[str, JsonValue]:
     }
 
 
-def texts(values: tuple[str, ...]) -> list[JsonValue]:
-    result: list[JsonValue] = []
-    for value in values:
-        result.append(value)
-    return result
-
-
 def optional_texts(values: tuple[str, ...] | None) -> list[JsonValue] | None:
     if values is None:
         return None
-    return texts(values)
+    return [*values]

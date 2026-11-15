@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::io::{self, Write as _};
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
@@ -9,7 +9,7 @@ use betterlite_db::daily_activity_contracts::{
     DailyActivityProxyReads, KeyMetadataRow, SpendLogsWindow,
 };
 use betterlite_db::key_attribution::history::recovery::SpendLogHistory;
-use betterlite_db::postgres_store::session::PostgresStore;
+use betterlite_db::postgres_store::session::PostgresStore as Store;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, NaiveDate, NaiveDateTime, Utc};
 use clap::Parser;
@@ -17,6 +17,7 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::daily_activity::recovery::reads::ProxyDailyActivityReads;
@@ -44,7 +45,7 @@ struct Environment {
 
 pub(crate) struct Database {
     fixture: PostgresFixture,
-    pub(crate) store: PostgresStore,
+    pub(crate) store: Store,
 }
 
 pub(crate) fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -78,7 +79,7 @@ pub(crate) fn digest_of(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
-pub(crate) fn reads(store: &PostgresStore) -> ProxyDailyActivityReads {
+pub(crate) fn reads(store: &Store) -> ProxyDailyActivityReads {
     ProxyDailyActivityReads {
         store: store.clone(),
         history: Arc::new(SpendLogHistory::default()),
@@ -109,7 +110,7 @@ pub(crate) async fn database() -> Database {
     drop(client);
     Database {
         fixture,
-        store: PostgresStore { pool: Some(pool) },
+        store: Store { pool: Some(pool) },
     }
 }
 
@@ -120,73 +121,54 @@ pub(crate) async fn close(database: Database) {
     database.fixture.close_async().await.unwrap();
 }
 
-pub(crate) async fn client(store: &PostgresStore) -> Client {
+pub(crate) async fn client(store: &Store) -> Client {
     store.pool.as_ref().unwrap().get().await.unwrap()
 }
 
-pub(crate) async fn insert_user(
-    store: &PostgresStore,
-    user_id: &str,
-    email: Option<&str>,
-    teams: &[&str],
-) {
+const INSERT_USER: &str =
+    r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#;
+const INSERT_BROKEN_USER: &str = r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, metadata) VALUES ($1, $2, '"not-json"'::jsonb)"#;
+const INSERT_TOKEN: &str =
+    r#"INSERT INTO "LiteLLM_VerificationToken" (token, key_alias, user_id) VALUES ($1, $2, $3)"#;
+const INSERT_TOMBSTONE: &str = r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token, key_alias, deleted_at) VALUES ($1, $2, $3, $4)"#;
+const INSERT_SPEND_LOG: &str = r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime", "user", metadata) VALUES ($1, 'completion', $2, $3, $3, $4, $5::text::jsonb)"#;
+const INSERT_DAILY_SPEND: &str = r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, date, api_key, model, updated_at) VALUES ($1, $2, $3, $4, '', NOW())"#;
+
+async fn insert_one(store: &Store, statement: &str, params: &[&(dyn ToSql + Sync)]) {
+    let inserted = client(store)
+        .await
+        .execute(statement, params)
+        .await
+        .unwrap();
+    assert_eq!(inserted, 1);
+}
+
+pub(crate) async fn insert_user(store: &Store, user_id: &str, email: Option<&str>, teams: &[&str]) {
     let teams: Vec<String> = teams.iter().map(|team| (*team).to_owned()).collect();
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, teams) VALUES ($1, $2, $3)"#,
-            &[&user_id, &email, &teams],
-        )
-        .await
-        .unwrap();
+    insert_one(store, INSERT_USER, &[&user_id, &email, &teams]).await;
 }
 
-pub(crate) async fn insert_broken_user(store: &PostgresStore, user_id: &str) {
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_UserTable" (user_id, user_email, metadata) VALUES ($1, $2, '"not-json"'::jsonb)"#,
-            &[&user_id, &format!("{user_id}@example.com")],
-        )
-        .await
-        .unwrap();
+pub(crate) async fn insert_broken_user(store: &Store, user_id: &str) {
+    let email = format!("{user_id}@example.com");
+    insert_one(store, INSERT_BROKEN_USER, &[&user_id, &email]).await;
 }
 
-pub(crate) async fn insert_token(
-    store: &PostgresStore,
-    token: &str,
-    alias: &str,
-    user_id: Option<&str>,
-) {
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_VerificationToken" (token, key_alias, user_id) VALUES ($1, $2, $3)"#,
-            &[&token, &alias, &user_id],
-        )
-        .await
-        .unwrap();
+pub(crate) async fn insert_token(store: &Store, token: &str, alias: &str, user_id: Option<&str>) {
+    insert_one(store, INSERT_TOKEN, &[&token, &alias, &user_id]).await;
 }
 
 pub(crate) async fn insert_tombstone(
-    store: &PostgresStore,
+    store: &Store,
     id: &str,
     token: &str,
     alias: &str,
     deleted_at: NaiveDateTime,
 ) {
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_DeletedVerificationToken" (id, token, key_alias, deleted_at) VALUES ($1, $2, $3, $4)"#,
-            &[&id, &token, &alias, &deleted_at],
-        )
-        .await
-        .unwrap();
+    insert_one(store, INSERT_TOMBSTONE, &[&id, &token, &alias, &deleted_at]).await;
 }
 
 pub(crate) async fn insert_spend_log(
-    store: &PostgresStore,
+    store: &Store,
     api_key: &str,
     started: NaiveDateTime,
     alias: &str,
@@ -194,31 +176,13 @@ pub(crate) async fn insert_spend_log(
 ) {
     let metadata = format!(r#"{{"user_api_key_alias":"{alias}"}}"#);
     let request_id = uuid::Uuid::new_v4().to_string();
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, "startTime", "endTime", "user", metadata) VALUES ($1, 'completion', $2, $3, $3, $4, $5::text::jsonb)"#,
-            &[&request_id, &api_key, &started, &user_id, &metadata],
-        )
-        .await
-        .unwrap();
+    let params: [&(dyn ToSql + Sync); 5] = [&request_id, &api_key, &started, &user_id, &metadata];
+    insert_one(store, INSERT_SPEND_LOG, &params).await;
 }
 
-pub(crate) async fn insert_daily_spend(
-    store: &PostgresStore,
-    api_key: &str,
-    user_id: &str,
-    date: &str,
-) {
+pub(crate) async fn insert_daily_spend(store: &Store, api_key: &str, user_id: &str, date: &str) {
     let id = uuid::Uuid::new_v4().to_string();
-    client(store)
-        .await
-        .execute(
-            r#"INSERT INTO "LiteLLM_DailyUserSpend" (id, user_id, date, api_key, model, updated_at) VALUES ($1, $2, $3, $4, '', NOW())"#,
-            &[&id, &user_id, &date, &api_key],
-        )
-        .await
-        .unwrap();
+    insert_one(store, INSERT_DAILY_SPEND, &[&id, &user_id, &date, &api_key]).await;
 }
 
 #[derive(Clone, Default)]
