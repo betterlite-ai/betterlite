@@ -5,7 +5,7 @@ use betterlite_openai::video_edits::character::{
     transform_video_get_character_request,
 };
 use betterlite_openai::video_edits::edit::{VideoEditRequest, transform_video_edit_request};
-use serde_json::{Value, json};
+use serde_json::json;
 
 use super::fixture::{Prepared, character_files, file_part_value, prepared};
 use super::support::helper_error;
