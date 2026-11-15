@@ -42,6 +42,7 @@ url = "2.5.8"
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-vertex = { path = "../betterlite-vertex" }
