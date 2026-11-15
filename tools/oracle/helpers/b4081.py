@@ -8,7 +8,7 @@ from pydantic import JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-JSON: Final = TypeAdapter(JsonValue)
+DECISION: Final = TypeAdapter(dict[str, JsonValue])
 chat_text, finish_reason, empty_error, responses_text, call_cost, judge_shape, routing_decision, routed_tier, classifier_cost = (shadow_eval_logger._chat_final_text, shadow_eval_logger._chat_finish_reason, shadow_eval_logger._shadow_empty_reply_error, shadow_eval_logger._responses_final_text, shadow_eval_logger._call_cost, shadow_eval_logger._judge_reply_shape, shadow_eval_logger._routing_decision, shadow_eval_logger._routed_tier, shadow_eval_logger._decision_classifier_cost)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L171-L731
 
 
@@ -45,7 +45,7 @@ def run(input_value: Input) -> JsonValue:
         judge_reply = input_value["response"]
         return {"shape": judge_shape(judge_reply)}
     metadata = input_value["metadata"]
-    decision = JSON.validate_python({**routing_decision(metadata)})
+    decision = DECISION.validate_python(routing_decision(metadata))
     classifier = classifier_cost(metadata)
     return {
         "decision": decision,
