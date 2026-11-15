@@ -632,15 +632,15 @@ fn prepare_create_encrypts_credentials_and_drops_null_values() {
     assert!(!decoded.contains_key("client_secret"));
 }
 
-// LiteLLM's pydantic model drops this key; docs/deviations/B4710.yaml records the difference.
+// LiteLLM's pydantic model drops a key outside MCPCredentials, and serde drops it the same way.
 #[test]
-fn prepare_create_keeps_a_credential_field_outside_the_typed_model() {
+fn prepare_create_drops_a_credential_field_outside_the_typed_model() {
     let prepared = create(&request(
         r#"{"server_name":"srv","credentials":{"client_id":"abc","future_field":5}}"#,
     ));
     let decoded = decrypted_blob(&prepared);
     assert_eq!(decoded.get("client_id"), Some(&s("abc")));
-    assert_eq!(decoded.get("future_field"), Some(&json("5")));
+    assert!(!decoded.contains_key("future_field"));
 }
 
 #[test]

@@ -6,9 +6,8 @@ use serde_with::rust::double_option;
 
 use crate::budget_permission_rows::Timestamp;
 use crate::managed_resource_rows::mcp::{McpEnvVarScope, McpOAuth2Flow};
-use crate::mcp_server_encoding::credentials::CredentialBlob;
 use crate::mcp_stored_contracts::pinned::MCPInfo;
-use crate::mcp_stored_contracts::{JsonValue, MCPAuth, MCPTransport};
+use crate::mcp_stored_contracts::{JsonValue, MCPAuth, MCPCredentials, MCPTransport};
 
 pub type FieldsSet = BTreeSet<String>;
 pub type PreparedServerData = BTreeMap<String, JsonValue>;
@@ -37,7 +36,7 @@ pub struct McpServerRequest {
     #[serde(default = "default_transport")]
     pub transport: MCPTransport,
     pub auth_type: Option<MCPAuth>,
-    pub credentials: Option<CredentialBlob>,
+    pub credentials: Option<MCPCredentials>,
     pub url: Option<String>,
     pub spec_path: Option<String>,
     pub mcp_info: Option<MCPInfo>,
