@@ -1,0 +1,15 @@
+task: B3243
+deviations:
+  - what: Every operation takes a store that carries the table source, the shared registry behind a mutex and a clock function, instead of a Prisma client argument and the registry singleton.
+    why: Dependencies come in through constructors, so tests run against an in-memory table and a fixed clock, and the registry lock is taken only between awaits, never across one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L381-L386
+  - what: Failures come back as the typed PersistenceError, whose message is the same "Error <operation>: <cause>" text LiteLLM's re-raised Exception carries, with one "Error <operation>" step per caller it crossed.
+    why: A caller can branch on the failure kind and keeps the table error as the source; the route handlers of B3248 map it to the status LiteLLM returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L446-L448
+  - what: The condition and pipeline columns are written as JSON objects, not as json.dumps text.
+    why: Prisma stores the text as the same Json value and LiteLLM's reads hand back the decoded mapping, so the stored row is identical and the table never has to parse a string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L421-L425
+kept_bugs:
+  - what: sync_policies_from_db publishes the production map and empties the by-ID map before it reads the draft and published rows, so a failure in that second read leaves the registry with the new production policies, a partly filled by-ID map and initialized unchanged.
+    why: The task asks to keep LiteLLM's partial-write behavior; a working setup sees the same registry state after the same failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L670-L691
