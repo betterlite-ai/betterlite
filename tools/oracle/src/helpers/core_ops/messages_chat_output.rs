@@ -20,11 +20,11 @@ pub(crate) struct Op;
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Response {
-        response: ResponseRecord,
+        response: Box<ResponseRecord>,
         #[serde(default)]
-        tool_name_mapping: Option<IndexMap<String, String>>,
+        tool_name_mapping: Option<Box<IndexMap<String, String>>>,
         #[serde(default)]
-        polyfill_result: Option<PolyfillInput>,
+        polyfill_result: Option<Box<PolyfillInput>>,
     },
     Block {
         choices: Vec<ChoiceRecord>,
@@ -36,9 +36,9 @@ pub(crate) enum Input {
         #[serde(default)]
         choices: Vec<ChoiceRecord>,
         #[serde(default)]
-        usage: Option<UsageRecord>,
+        usage: Option<Box<UsageRecord>>,
         #[serde(default)]
-        hidden_usage: Option<UsageRecord>,
+        hidden_usage: Option<Box<UsageRecord>>,
         #[serde(default)]
         applied_edits: Vec<AppliedEdit>,
         #[serde(default)]
@@ -115,9 +115,9 @@ impl crate::helpers::Helper for Op {
                 tool_name_mapping,
                 polyfill_result,
             } => {
-                let polyfill = polyfill_result.as_ref().map(PolyfillInput::to_result);
+                let polyfill = polyfill_result.as_deref().map(PolyfillInput::to_result);
                 let answer =
-                    response_message(response, tool_name_mapping.as_ref(), polyfill.as_ref())
+                    response_message(response, tool_name_mapping.as_deref(), polyfill.as_ref())
                         .map_err(|error| failure(&error))?;
                 Ok(serde_json::to_value(answer)?)
             }
@@ -138,8 +138,8 @@ impl crate::helpers::Helper for Op {
             } => {
                 let record = TerminalRecord {
                     choices: choices.clone(),
-                    usage: usage.clone(),
-                    hidden_usage: hidden_usage.clone(),
+                    usage: usage.as_deref().cloned(),
+                    hidden_usage: hidden_usage.as_deref().cloned(),
                     index: *index,
                     applied_edits: applied_edits.clone(),
                 };
