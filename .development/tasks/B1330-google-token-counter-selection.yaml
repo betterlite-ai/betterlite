@@ -26,6 +26,9 @@ description: >-
   facade code, 170 tests and 120 adapter lines, capped at 550.
 scope:
   paths:
+    - "tools/oracle/src/helpers/vertex/google_count/tests.rs"
+    - "tools/oracle/src/helpers/mod.rs"
+    - "tools/oracle/src/helpers/context/bedrock_model/tests.rs"
     - crates/betterlite-vertex/src/google_token_counter.rs
     - crates/betterlite-vertex/src/google_token_counter/**
     - tools/oracle/src/helpers/vertex/google_counter_selection.rs

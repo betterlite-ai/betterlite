@@ -1,0 +1,23 @@
+kind: helper
+name: audio-progress-usage
+call:
+  b6414:
+    function: events
+    mode: ENDPOINTING
+    frames:
+      - {"type": "audioProgress", "audioProcessedMs": 0}
+      - {"type": "audioProgress", "audioProcessedMs": 500}
+      - {"type": "audioProgress", "audioProcessedMs": 500}
+      - {"type": "audioProgress", "audioProcessedMs": 1250.5}
+      - {"type": "audioProgress", "audioProcessedMs": -1}
+      - {"type": "audioProgress", "audioProcessedMs": "fast"}
+      - {"type": "audioProgress"}
+      - {"type": "audioProgress", "audioProcessedMs": true}
+      - {"type": "speechStart", "turnId": "u1"}
+      - {"type": "transcript", "turnId": "u1", "transcript": "hi", "final": true}
+      - {"type": "speechEnd", "turnId": "u1"}
+      - {"type": "speechComplete", "turnId": "u1", "transcript": "hi"}
+      - {"type": "audioProgress", "audioProcessedMs": 1250.5}
+      - {"type": "audioProgress", "audioProcessedMs": 2250.5}
+env: {}
+compare: {ignore: []}
