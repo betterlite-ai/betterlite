@@ -180,6 +180,21 @@ fn a_complete_reply_keeps_model_data_object_and_usage() {
 }
 
 #[test]
+fn a_data_record_keeps_only_the_fields_it_models() {
+    let reply = decode_sambanova_embedding(
+        br#"{"data": [{"object": "embedding", "embedding": [0.5], "index": 0, "extra": 1}]}"#,
+        200,
+        &Headers::new(),
+    )
+    .unwrap();
+    let data = reply.data.expect("data");
+    assert_eq!(
+        serde_json::to_value(&data[0]).unwrap(),
+        json!({"object": "embedding", "embedding": [0.5], "index": 0})
+    );
+}
+
+#[test]
 fn absent_reply_fields_are_null_and_the_usage_counters_default_to_zero() {
     let reply = decode_sambanova_embedding(b"{}", 200, &Headers::new()).unwrap();
     assert_eq!(reply.model, None);
@@ -221,11 +236,24 @@ fn a_body_that_is_not_json_carries_the_status_text_and_headers(
     assert_eq!(error.headers, supplied);
 }
 
+#[test]
+fn a_body_that_is_not_utf8_is_a_reply_error_with_the_status_and_headers() {
+    let supplied = headers(&[("retry-after", "3")]);
+    let error = decode_sambanova_embedding(b"\xff\xfe", 502, &supplied).unwrap_err();
+    let SambaNovaEmbeddingError::Reply(error) = error else {
+        panic!("a body that is not UTF-8 is a SambaNovaError");
+    };
+    assert_eq!(error.status_code, 502);
+    assert_eq!(error.headers, supplied);
+    assert!(!error.message.is_empty());
+}
+
 #[rstest]
 #[case::array(b"[]")]
 #[case::null(b"null")]
 #[case::text(b"\"reply\"")]
 #[case::wrong_usage(b"{\"usage\": 3}")]
+#[case::negative_usage(b"{\"usage\": {\"prompt_tokens\": -1}}")]
 fn json_of_the_wrong_shape_is_a_typed_error(#[case] body: &[u8]) {
     assert!(matches!(
         decode_sambanova_embedding(body, 200, &Headers::new()).unwrap_err(),
