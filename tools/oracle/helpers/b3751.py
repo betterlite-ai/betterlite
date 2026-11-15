@@ -1,10 +1,9 @@
 import asyncio
 import os
-from typing import Literal, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 
 import httpx
 from litellm.proxy.guardrails.guardrail_hooks.akto.akto import AktoGuardrail
-from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 from typing_extensions import override
@@ -38,6 +37,20 @@ class AktoCall(TypedDict, total=False):
     ingest_data: bool
 
 
+# LiteLLM's methods take the Any-carrying GenericGuardrailAPIInputs and bare dicts, so the instance is cast to this
+class Akto(Protocol):
+    akto_base_url: str
+    akto_account_id: str
+    akto_vxlan_id: str
+    unreachable_fallback: Literal["fail_closed", "fail_open"]
+    guardrail_timeout: int
+    def build_akto_payload(self, data: Json, request: Json, *, status_code: int, include_response: bool) -> Json: ...
+    async def send_request(self, *, guardrails: bool, ingest_data: bool, payload: Json) -> httpx.Response: ...
+    async def fire_and_forget_request(self, *, guardrails: bool, ingest_data: bool, payload: Json) -> None: ...
+    def handle_guardrail_response(self, response: httpx.Response) -> tuple[bool, str]: ...
+    def handle_unreachable(self, inputs: Json, error: Exception) -> Json: ...
+
+
 class ScriptedTransport(httpx.AsyncBaseTransport):
     def __init__(self, answer: AktoAnswer) -> None:
         self.answer = answer
@@ -55,18 +68,17 @@ class ScriptedTransport(httpx.AsyncBaseTransport):
         return httpx.Response(status, text=raw, request=request)
 
 
-def build_guardrail(call: AktoCall) -> AktoGuardrail:
+def build_guardrail(call: AktoCall, transport: ScriptedTransport | None = None) -> Akto:
     settings = call.get("settings")
     if settings is None:
-        settings = {}
+        settings = AktoSettings()
     env = call.get("env")
-    if env is None:
-        env = {}
-    os.environ.update(env)
+    if env is not None:
+        os.environ.update(env)
     fallback = settings.get("unreachable_fallback")
     if fallback is None:
         fallback = "fail_closed"
-    return AktoGuardrail(
+    instance = AktoGuardrail(
         akto_base_url=settings.get("akto_base_url"),
         akto_api_key=settings.get("akto_api_key"),
         akto_account_id=settings.get("akto_account_id"),
@@ -74,17 +86,19 @@ def build_guardrail(call: AktoCall) -> AktoGuardrail:
         unreachable_fallback=fallback,
         guardrail_timeout=settings.get("guardrail_timeout"),
     )
+    if transport is not None:
+        instance.async_handler.client = httpx.AsyncClient(transport=transport)
+    return cast(Akto, instance)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L246-L254
 
 
-def inputs_of(call: AktoCall) -> GenericGuardrailAPIInputs:
+def inputs_of(call: AktoCall) -> dict[str, Json]:
     raw = call.get("inputs")
     if raw is None:
         return {"texts": ["hello"]}
-    inputs: GenericGuardrailAPIInputs = {}
-    if "texts" in raw:
-        inputs["texts"] = TypeAdapter(list[str]).validate_python(raw["texts"])
-    if "model" in raw:
-        inputs["model"] = TypeAdapter(str).validate_python(raw["model"])
+    inputs: dict[str, Json] = {}
+    for field in ("texts", "model"):
+        if field in raw:
+            inputs[field] = TypeAdapter(Json).validate_python(raw[field])
     return inputs
 
 
@@ -98,49 +112,35 @@ def decode_encoded(encoded: str, *, response_payload: bool) -> Json:
 
 def normalize_payload(payload: dict[str, Json]) -> dict[str, Json]:
     normalized = TypeAdapter(dict[str, Json]).validate_python(payload)
-    request_headers = TypeAdapter(str).validate_python(payload["requestHeaders"])
-    normalized["requestHeaders"] = TypeAdapter(Json).validate_json(request_headers)
-    response_headers = TypeAdapter(str).validate_python(payload["responseHeaders"])
-    normalized["responseHeaders"] = TypeAdapter(Json).validate_json(response_headers)
+    for field in ("requestHeaders", "responseHeaders", "tag", "metadata"):
+        text = TypeAdapter(str).validate_python(payload[field])
+        normalized[field] = TypeAdapter(Json).validate_json(text)
     request_payload = TypeAdapter(str).validate_python(payload["requestPayload"])
     normalized["requestPayload"] = decode_encoded(request_payload, response_payload=False)
     response_payload = TypeAdapter(str).validate_python(payload["responsePayload"])
     normalized["responsePayload"] = decode_encoded(response_payload, response_payload=True)
-    tag = TypeAdapter(str).validate_python(payload["tag"])
-    normalized["tag"] = TypeAdapter(Json).validate_json(tag)
-    metadata = TypeAdapter(str).validate_python(payload["metadata"])
-    normalized["metadata"] = TypeAdapter(Json).validate_json(metadata)
     time = TypeAdapter(str).validate_python(payload["time"])
     normalized["time"] = "<millis>" if time.isdigit() else time
     return normalized
 
 
 def capture_request(request: httpx.Request) -> Json:
-    query = TypeAdapter(dict[str, Json]).validate_python(dict(request.url.params))
+    query = TypeAdapter(dict[str, Json]).validate_python(dict(request.url.params.multi_items()))
     decoded = TypeAdapter(Json).validate_json(request.content)
     body = TypeAdapter(dict[str, Json]).validate_python(decoded)
     return {
         "path": request.url.path,
         "query": query,
-        "content_type": request.headers.get("content-type"),
+        "content_type": dict(request.headers.items()).get("content-type"),
         "body": normalize_payload(body),
     }
 
 
 async def deliver(
-    instance: AktoGuardrail,
-    transport: ScriptedTransport,
-    payload: dict[str, Json],
-    call: AktoCall,
-    *,
-    fire_and_forget: bool,
+    instance: Akto, transport: ScriptedTransport, payload: dict[str, Json], call: AktoCall, *, fire_and_forget: bool
 ) -> Json:
-    guardrails = call.get("guardrails")
-    if guardrails is None:
-        guardrails = False
-    ingest_data = call.get("ingest_data")
-    if ingest_data is None:
-        ingest_data = False
+    guardrails = call.get("guardrails") is True
+    ingest_data = call.get("ingest_data") is True
     if fire_and_forget:
         await instance.fire_and_forget_request(
             guardrails=guardrails, ingest_data=ingest_data, payload=payload
@@ -154,10 +154,8 @@ async def deliver(
     return {"request": captured, "allowed": allowed, "reason": reason}
 
 
-def payload_of(call: AktoCall, instance: AktoGuardrail) -> dict[str, Json]:
-    include_response = call.get("include_response")
-    if include_response is None:
-        include_response = False
+def payload_of(call: AktoCall, instance: Akto) -> dict[str, Json]:
+    include_response = call.get("include_response") is True
     status = call.get("status_code")
     if status is None:
         status = 200
@@ -193,7 +191,7 @@ def akto_response(call: AktoCall) -> Json:
     instance = build_guardrail(call)
     answer = call.get("answer")
     if answer is None:
-        answer = {}
+        answer = AktoAnswer()
     status = answer.get("status")
     if status is None:
         status = 200
@@ -215,12 +213,11 @@ def akto_unreachable(call: AktoCall) -> Json:
 
 
 def akto_send(call: AktoCall) -> Json:
-    instance = build_guardrail(call)
     answer = call.get("answer")
     if answer is None:
-        answer = {}
+        answer = AktoAnswer()
     transport = ScriptedTransport(answer)
-    instance.async_handler.client = httpx.AsyncClient(transport=transport)
+    instance = build_guardrail(call, transport)
     payload = payload_of(call, instance)
     fire_and_forget = call.get("op") == "fire_and_forget"
     return asyncio.run(
