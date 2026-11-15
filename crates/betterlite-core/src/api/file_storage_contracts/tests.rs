@@ -22,7 +22,7 @@ use crate::responses_bridge::{BridgeRequest, ModelInfoError};
 
 use super::batch::{BatchBodyError, responses_batch_to_chat_body};
 use super::storage::{
-    FileContentRepository, FileNamingStrategy, FileStorageBackend, LITELLM_DB_STORAGE_BACKEND_NAME,
+    FileContentRepository, FileNamingStrategy, FileStorageBackend, LITELLM_DB_BACKEND_NAME,
     LITELLM_DB_STORAGE_URL_PREFIX, LiteLlmDbStorageBackend, StorageError, UploadOptions,
     storage_url_to_row_id,
 };
@@ -320,7 +320,7 @@ async fn managed_repository_port_delegates() {
 #[test]
 fn storage_uri_validation() {
     assert_eq!(
-        format!("{LITELLM_DB_STORAGE_BACKEND_NAME}://"),
+        format!("{LITELLM_DB_BACKEND_NAME}://"),
         LITELLM_DB_STORAGE_URL_PREFIX
     );
     assert_eq!(storage_url_to_row_id("litellm_db://r").unwrap(), "r");

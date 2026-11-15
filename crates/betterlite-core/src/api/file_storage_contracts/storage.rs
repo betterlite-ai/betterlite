@@ -5,7 +5,7 @@ use betterlite_db::auxiliary_repository::file_content::ManagedFileContentReposit
 use betterlite_db::auxiliary_repository::repository::TableError;
 use thiserror::Error;
 
-pub const LITELLM_DB_STORAGE_BACKEND_NAME: &str = "litellm_db";
+pub const LITELLM_DB_BACKEND_NAME: &str = "litellm_db";
 pub const LITELLM_DB_STORAGE_URL_PREFIX: &str = "litellm_db://";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
