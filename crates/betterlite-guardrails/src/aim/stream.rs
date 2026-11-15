@@ -98,7 +98,7 @@ impl AimGuardrail {
             input::text_field(request_data, "litellm_call_id"),
         )?;
         let url = format!("{}/fw/v1/analyze/stream", self.ws_api_base);
-        let socket = self
+        let AimSocket { reader, mut writer } = self
             .connector
             .connect(
                 &url,
@@ -107,28 +107,17 @@ impl AimGuardrail {
                 self.timeout.unwrap_or(DEFAULT_TIMEOUT),
             )
             .await?;
-        Ok(open_socket(socket, chunks))
+        let mut sender = JoinSet::new();
+        sender.spawn(async move { forward_chunks(writer.as_mut(), chunks).await });
+        Ok(stream::unfold(
+            StreamState {
+                reader,
+                sender: Some(sender),
+                finished: false,
+            },
+            |mut state| async move { state.next_item().await.map(|item| (item, state)) },
+        ))
     }
-}
-
-fn open_socket<S>(
-    socket: AimSocket,
-    chunks: S,
-) -> impl Stream<Item = Result<VerifiedChunk, AimError>>
-where
-    S: Stream<Item = AimStreamChunk> + Send + 'static,
-{
-    let AimSocket { reader, mut writer } = socket;
-    let mut sender = JoinSet::new();
-    sender.spawn(async move { forward_chunks(writer.as_mut(), chunks).await });
-    stream::unfold(
-        StreamState {
-            reader,
-            sender: Some(sender),
-            finished: false,
-        },
-        |mut state| async move { state.next_item().await.map(|item| (item, state)) },
-    )
 }
 
 async fn forward_chunks<S>(writer: &mut dyn AimFrameWriter, chunks: S)

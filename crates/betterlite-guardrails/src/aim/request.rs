@@ -10,13 +10,6 @@ use crate::content_inspection::{
     InspectionMessage, apply_redacted_messages_back, has_non_string_content, is_string_batch_input,
 };
 
-pub struct AimCall<'context> {
-    pub hook: AimHook,
-    pub key_alias: Option<&'context str>,
-    pub user_email: Option<&'context str>,
-    pub call_id: Option<&'context str>,
-}
-
 impl AimGuardrail {
     pub async fn call_aim_guardrail(
         &self,
@@ -25,15 +18,11 @@ impl AimGuardrail {
         key_alias: Option<&str>,
     ) -> Result<(), AimError> {
         let messages = input::projected_inspection_messages(data);
-        let user_email = input::user_email(data).map(str::to_owned);
-        let call_id = input::text_field(data, "litellm_call_id").map(str::to_owned);
-        let call = AimCall {
-            hook,
-            key_alias,
-            user_email: user_email.as_deref(),
-            call_id: call_id.as_deref(),
-        };
-        let response = self.analyze(&messages, &call).await?;
+        let user_email = input::user_email(data);
+        let call_id = input::text_field(data, "litellm_call_id");
+        let response = self
+            .analyze(&messages, hook, key_alias, user_email, call_id)
+            .await?;
         match wire::action_of(&response) {
             AimAction::None | AimAction::Monitor => Ok(()),
             AimAction::Block => Err(AimError::Rejected {
@@ -63,10 +52,12 @@ impl AimGuardrail {
     pub(crate) async fn analyze(
         &self,
         messages: &[InspectionMessage],
-        call: &AimCall<'_>,
+        hook: AimHook,
+        key_alias: Option<&str>,
+        user_email: Option<&str>,
+        call_id: Option<&str>,
     ) -> Result<AnalyzeResponse, AimError> {
-        let headers =
-            self.build_headers(call.hook, call.key_alias, call.user_email, call.call_id)?;
+        let headers = self.build_headers(hook, key_alias, user_email, call_id)?;
         let body = serde_json::to_vec(&AnalyzeRequest { messages })
             .map_err(|source| AimError::RequestJson(source))?;
         let url = format!("{}/fw/v1/analyze", self.api_base);

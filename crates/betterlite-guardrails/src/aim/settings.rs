@@ -69,22 +69,17 @@ impl AimGuardrail {
     where
         L: EnvironmentLookup,
     {
-        let api_key = match params.api_key.filter(|key| !key.expose_secret().is_empty()) {
-            Some(key) => key,
-            None => environment
-                .lookup("AIM_API_KEY")
-                .filter(|key| !key.is_empty())
-                .map(SecretString::from)
-                .ok_or(AimError::MissingSecrets)?,
-        };
+        let api_key = params
+            .api_key
+            .filter(|key| !key.expose_secret().is_empty())
+            .or_else(|| environment.lookup("AIM_API_KEY").map(SecretString::from))
+            .filter(|key| !key.expose_secret().is_empty())
+            .ok_or(AimError::MissingSecrets)?;
         let api_base = params
             .api_base
             .filter(|base| !base.is_empty())
-            .or_else(|| {
-                environment
-                    .lookup("AIM_API_BASE")
-                    .filter(|base| !base.is_empty())
-            })
+            .or_else(|| environment.lookup("AIM_API_BASE"))
+            .filter(|base| !base.is_empty())
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let ws_api_base = api_base
             .replace("http://", "ws://")

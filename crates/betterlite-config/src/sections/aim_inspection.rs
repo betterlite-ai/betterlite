@@ -78,21 +78,18 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = match configured_value(
+        let Some(key) = configured_value(
             parameters.api_key.map(|key| key.expose_secret().to_owned()),
             "AIM_API_KEY",
             lookup,
-        ) {
-            Some(key) => {
-                SecretString::from(resolve_string(key, &format!("{prefix}.api_key"), lookup)?)
-            }
-            None => {
-                return Err(ConfigError::MissingEnvironment {
-                    variable: "AIM_API_KEY".to_owned(),
-                    path: format!("{prefix}.api_key"),
-                });
-            }
+        ) else {
+            return Err(ConfigError::MissingEnvironment {
+                variable: "AIM_API_KEY".to_owned(),
+                path: format!("{prefix}.api_key"),
+            });
         };
+        let api_key =
+            SecretString::from(resolve_string(key, &format!("{prefix}.api_key"), lookup)?);
         let api_base = match configured_value(parameters.api_base, "AIM_API_BASE", lookup) {
             Some(value) => resolve_string(value, &format!("{prefix}.api_base"), lookup)?,
             None => DEFAULT_API_BASE.to_owned(),

@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::error::AimError;
 use super::input;
-use super::request::AimCall;
 use super::settings::{AimGuardrail, AimHook};
 use super::wire::{self, AimAction};
 use crate::content_inspection::InspectionMessage;
@@ -29,15 +28,11 @@ impl AimGuardrail {
             role: "assistant".to_owned(),
             content: output.to_owned(),
         });
-        let user_email = input::user_email(request_data).map(str::to_owned);
-        let call_id = input::text_field(request_data, "litellm_call_id").map(str::to_owned);
-        let call = AimCall {
-            hook: AimHook::Output,
-            key_alias,
-            user_email: user_email.as_deref(),
-            call_id: call_id.as_deref(),
-        };
-        let response = self.analyze(&messages, &call).await?;
+        let user_email = input::user_email(request_data);
+        let call_id = input::text_field(request_data, "litellm_call_id");
+        let response = self
+            .analyze(&messages, AimHook::Output, key_alias, user_email, call_id)
+            .await?;
         let required = response.required_action.as_ref();
         match wire::action_of(&response) {
             AimAction::Block => Ok(AimOutput::Blocked {
