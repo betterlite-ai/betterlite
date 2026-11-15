@@ -1,0 +1,18 @@
+kind: helper
+name: get-span-error-not-found-404
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces/trace-1/spans/span-1/error
+      query:
+        cursor: abc
+        trace_ref: env-a
+    auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
+    tracing: true
+    master_key: "sk-master"
+    script:
+      get_span_error:
+        value: null
+env: {}
+compare: {ignore: []}

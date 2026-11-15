@@ -1,0 +1,17 @@
+task: B3867
+deviations:
+  - what: Route error details keep LiteLLM's own strings, such as "Not allowed to ingest agent traces" and "Trace SQL queries require a configured proxy master key", instead of wording of betterlite's own.
+    why: The task's definition of done requires these exact detail messages for the ingest and list 403 cases, the missing-receiver 501 and the missing-master-key 503, and none of them names a library betterlite is not. Oracle helper cases compare neither the error class nor the message, so no case lists either.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L41-L74
+  - what: OTLP_MAX_CONCURRENT_INGESTS, OTLP_RETRY_AFTER_SECONDS and the 30 second body read timeout are fixed at LiteLLM's defaults; betterlite does not read their environment overrides.
+    why: Repository rules restrict environment access to the config crate, and B8911's agent_tracing section resolves only the CLICKHOUSE_* variables. A deployment that overrides these variables keeps the defaults until the config section carries them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L55-L58
+  - what: GET /v1/traces answers 400 with a plain detail when start_ms or end_ms is not an integer, where FastAPI answers 422. The 422 bodies betterlite builds (the overlong cursor on the span error route, the malformed trace query body) carry a single issue and no pydantic input and ctx fields. POST /v1/traces/query parses its body as JSON whatever the content type, where FastAPI answers 422 when the type is not JSON.
+    why: The window parameters go through the shared axum query extractor, whose rejection is a fixed 400, and the query body through serde_json with no content type check. Pydantic's per-field issue list, input and ctx belong to FastAPI's validation envelope rather than to this route's behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/tracing_endpoints.py#L124-L143
+  - what: A client that disconnects during POST /v1/traces cancels the in-flight ingest instead of letting it finish in a shielded task.
+    why: LiteLLM spawns the ingest in a task and shields it from request cancellation; betterlite's async rules forbid detached tasks, and the receiver lifecycle has no server-owned task set to drain, so the parse and insert run on the request future.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/tracing/receiver.py#L126-L139
+  - what: An unexpected storage failure on a read route answers betterlite's shared error envelope with param null and code "500", where LiteLLM's unhandled exception handler returns only message and type with the same status and type.
+    why: The routes hand every non-cursor storage error to the server's shared error body, and those two fields belong to that envelope across betterlite rather than to this route's choice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2073-L2083

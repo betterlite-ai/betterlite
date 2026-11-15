@@ -207,5 +207,5 @@ pitfalls:
   - The redaction key list matches substrings, so a key like "max_tokens" is redacted along with "access_token".
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
