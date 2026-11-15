@@ -118,27 +118,31 @@ pub(super) fn cache(input: &CacheInput) -> HelperResult {
 #[derive(Default)]
 struct FakeLock {
     held: AtomicBool,
-    acquisitions: Mutex<Vec<&'static str>>,
+    record: Mutex<LockRecord>,
     releases: AtomicUsize,
     extends: AtomicUsize,
-    key: Mutex<String>,
-    token: Mutex<String>,
+}
+
+#[derive(Clone, Default)]
+struct LockRecord {
+    acquisitions: Vec<&'static str>,
+    key: String,
+    token: String,
 }
 
 #[async_trait]
 impl DistributedLock for FakeLock {
     async fn acquire(&self, key: &str, token: &str, _ttl: Duration) -> LockAcquisition {
-        *self.key.lock().unwrap_or_else(PoisonError::into_inner) = key.to_owned();
-        *self.token.lock().unwrap_or_else(PoisonError::into_inner) = token.to_owned();
         let (label, outcome) = if self.held.swap(true, Ordering::SeqCst) {
             ("held", LockAcquisition::Held)
         } else {
             ("acquired", LockAcquisition::Acquired)
         };
-        self.acquisitions
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(label);
+        let mut record = self.record.lock().unwrap_or_else(PoisonError::into_inner);
+        key.clone_into(&mut record.key);
+        token.clone_into(&mut record.token);
+        record.acquisitions.push(label);
+        drop(record);
         outcome
     }
 
@@ -193,32 +197,20 @@ async fn run_pair(
     let (Ok(winner), Ok(loser)) = (first_result, second_result) else {
         return serde_json::json!({"error": "coordinator returned an error"});
     };
-    let acquisitions = coordinator
+    let record = coordinator
         .lock
-        .acquisitions
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let lock_key = coordinator
-        .lock
-        .key
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    let lock_token = coordinator
-        .lock
-        .token
+        .record
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
     serde_json::json!({
-        "acquisitions": acquisitions,
+        "acquisitions": record.acquisitions,
         "refresh_calls": refreshes.load(Ordering::SeqCst),
         "reread_calls": rereads.load(Ordering::SeqCst),
         "release_calls": coordinator.lock.releases.load(Ordering::SeqCst),
         "extend_calls": coordinator.lock.extends.load(Ordering::SeqCst),
-        "key": lock_key,
-        "token_is_hex_32": is_hex_32(&lock_token),
+        "key": record.key,
+        "token_is_hex_32": is_hex_32(&record.token),
         "winner": winner,
         "loser": loser,
     })

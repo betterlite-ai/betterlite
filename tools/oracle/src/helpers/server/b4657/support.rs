@@ -18,7 +18,7 @@ pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
         })
 }
 
-pub(super) fn cred_tag(error: &CredError) -> &'static str {
+pub(super) const fn cred_tag(error: &CredError) -> &'static str {
     match error {
         CredError::Unauthorized(_) => "unauthorized",
         CredError::Misconfigured(_) => "misconfigured",
