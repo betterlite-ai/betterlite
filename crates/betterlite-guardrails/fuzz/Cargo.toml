@@ -61,6 +61,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "crowdstrike_aidr_response"
+path = "fuzz_targets/crowdstrike_aidr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "prisma_content"
 path = "fuzz_targets/prisma_content.rs"
 test = false
@@ -133,6 +140,20 @@ bench = false
 [[bin]]
 name = "qualifire_wire"
 path = "fuzz_targets/qualifire_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "zscaler_policy_response"
+path = "fuzz_targets/zscaler_policy_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "akto_response"
+path = "fuzz_targets/akto_response.rs"
 test = false
 doc = false
 bench = false

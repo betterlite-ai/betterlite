@@ -1,0 +1,43 @@
+kind: helper
+name: openai-image-edits-edit-reply-error
+call:
+  openai_image_edits:
+    reply:
+      - model: gpt-image-1
+        prompt: change
+        image: null
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: change
+        image: null
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {}
+        reply: {"status": 200, "body": 'not json'}
+      - model: gpt-image-1
+        prompt: change
+        image: null
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {}
+        reply: {"status": 200, "body": '{"created":"nope"}'}
+      - model: gpt-image-1
+        prompt: change
+        image: null
+        mask: null
+        options: {}
+        params: {}
+        globals: {}
+        environment: {}
+        reply: {"status": 200, "body": '[1]'}
+env: {}
+compare: {ignore: []}

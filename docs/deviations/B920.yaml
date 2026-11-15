@@ -1,0 +1,36 @@
+task: B920
+deviations:
+  - what: >-
+      An output_item.added whose item carries provider_specific_fields keeps those fields on the tool
+      call, instead of the AttributeError LiteLLM raises from assigning a key on the TypedDict.
+    why: >-
+      LiteLLM answers this input with a 500 from an unhandled AttributeError, so no working setup can
+      depend on it; betterlite carries the provider fields the event declares.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1461-L1466
+  - what: >-
+      An event whose response member is null completes with no output and no usage, instead of the
+      AttributeError LiteLLM raises when it reads usage from the null payload.
+    why: >-
+      docs/compatibility.md takes the default for a declared field that is absent or null, and
+      LiteLLM's crash is Python duck typing no working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/completion_extras/litellm_responses_transformation/transformation.py#L1591-L1592
+  - what: >-
+      A logprobs content entry that is not an object, or whose token, logprob or top_logprobs
+      fields are missing or wrong-typed, is passed through as given instead of the pydantic
+      ValidationError LiteLLM raises when it builds ChoiceLogprobs.
+    why: >-
+      docs/compatibility.md sends input of the declared type; for a token outside that type a client
+      can still read the chunk, and LiteLLM's pydantic ValidationError here is not a behavior a
+      working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1105-L1146
+  - what: >-
+      The terminal and passthrough chunks' usage is B906's shared Responses-to-chat projection, so a
+      token detail block omits the null-valued counters LiteLLM's dump lists and always lists
+      cached_tokens_details, while LiteLLM dumps the pydantic PromptTokensDetails and
+      CompletionTokensDetails wrappers as their constructors left them.
+    why: >-
+      The task routes usage through B906; one projection serves the streaming and non-streaming
+      bridges, and the counters a client reads (prompt, completion, total, cached, cache-write and
+      reasoning tokens) stay identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1193-L1239
+kept_bugs: []

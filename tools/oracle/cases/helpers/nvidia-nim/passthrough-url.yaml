@@ -1,0 +1,14 @@
+kind: helper
+name: nvidia-nim-passthrough-url
+call:
+  b5837:
+    kind: passthrough_url
+    cases:
+      - {api_base: "https://h/v1", env_base: null, model: meta/llama, endpoint: chat/completions, model_group: null}
+      - {api_base: null, env_base: "https://env/v1", model: meta/llama, endpoint: chat/completions, model_group: null}
+      - {api_base: null, env_base: null, model: meta/llama, endpoint: chat/completions, model_group: null}
+      - {api_base: "https://h/v1", env_base: null, model: group/model, endpoint: group/model/v1/chat/completions, model_group: null}
+      - {api_base: "https://h/v1", env_base: null, model: meta/llama, endpoint: group/model/v1/chat/completions, model_group: group/model}
+      - {api_base: "https://h/v1", env_base: null, model: meta/llama, endpoint: v2/chat/completions, model_group: null}
+env: {}
+compare: {ignore: []}
