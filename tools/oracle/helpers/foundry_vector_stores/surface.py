@@ -59,7 +59,9 @@ class Fixture(VectorStoreEmbeddingExecutor):
         self.calls: list[JsonValue] = []
 
     def record(self, model: str, query: str, configuration: Fields) -> EmbeddingResponse:
-        recorded = DETAILS.validate_python(dict(configuration))
+        recorded: dict[str, JsonValue] = {
+            key: JSON.validate_python(value) for key, value in configuration.items()
+        }
         call: dict[str, JsonValue] = {
             "model": model,
             "query": query,

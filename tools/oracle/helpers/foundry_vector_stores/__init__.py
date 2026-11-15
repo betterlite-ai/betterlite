@@ -64,17 +64,19 @@ def endpoint_report(input_value: AzureSearchEndpointInput) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if "store_type_endpoints" in input_value:
-        return endpoints_report()
-    if "auth_credentials" in input_value:
-        return credentials_report(input_value["auth_credentials"])
-    if "search_query_fields" in input_value:
-        return search_report(input_value["search_query_fields"])
-    if "vector_query_with_embedding" in input_value:
-        return embedded_report(input_value["vector_query_with_embedding"])
-    if "document_score_citation" in input_value:
-        return citation_report(input_value["document_score_citation"])
-    if "unsupported_store_create" in input_value:
-        return create_report()
-    if "azure_search_endpoint" in input_value:
-        return endpoint_report(input_value["azure_search_endpoint"])
-    raise ValueError("expected one foundry_vector_stores variant")
+        report = endpoints_report()
+    elif "auth_credentials" in input_value:
+        report = credentials_report(input_value["auth_credentials"])
+    elif "search_query_fields" in input_value:
+        report = search_report(input_value["search_query_fields"])
+    elif "vector_query_with_embedding" in input_value:
+        report = embedded_report(input_value["vector_query_with_embedding"])
+    elif "document_score_citation" in input_value:
+        report = citation_report(input_value["document_score_citation"])
+    elif "unsupported_store_create" in input_value:
+        report = create_report()
+    elif "azure_search_endpoint" in input_value:
+        report = endpoint_report(input_value["azure_search_endpoint"])
+    else:
+        raise ValueError("expected one foundry_vector_stores variant")
+    return report
