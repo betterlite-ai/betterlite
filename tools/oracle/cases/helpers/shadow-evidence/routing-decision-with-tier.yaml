@@ -1,0 +1,39 @@
+kind: helper
+name: shadow-routing-decision-with-tier
+call:
+  b4081:
+    operation: routing
+    response: {}
+    metadata:
+      routing_decision:
+        tier_label: high
+        tier: low
+        classifier_cost: 0.0012
+        routed_model: m
+    routed_model: ""
+calls:
+  - b4081:
+      operation: routing
+      response: {}
+      metadata:
+        routing_decision:
+          tier_label: ""
+          tier: low
+          classifier_cost: 0
+      routed_model: ""
+  - b4081:
+      operation: routing
+      response: {}
+      metadata:
+        routing_decision:
+          classifier_cost: 3
+      routed_model: ""
+  - b4081:
+      operation: routing
+      response: {}
+      metadata:
+        routing_decision:
+          classifier_cost: "0.5"
+      routed_model: ""
+env: {}
+compare: {ignore: []}
