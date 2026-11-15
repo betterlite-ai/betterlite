@@ -75,6 +75,9 @@ fn legacy_model_selection() {
 fn legacy_auth() {
     let mut start = HeaderMap::new();
     start.insert("accept", HeaderValue::from_static("text/plain"));
+    // a header name folds case, so a capitalized spelling is the same header as the fixed one
+    start.insert("Accept", HeaderValue::from_static("text/html"));
+    start.insert("X-Api-Key", HeaderValue::from_static("caller"));
     start.insert("x-custom", HeaderValue::from_static("kept"));
     let key = SecretString::from("sk-legacy");
     let headers = validate_environment(start, Some(&key)).unwrap();
