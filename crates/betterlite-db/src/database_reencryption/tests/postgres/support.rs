@@ -79,7 +79,7 @@ impl Database {
     }
 
     pub(crate) async fn insert(&self, column: &SecretColumn, key: &str, value: &str) {
-        let cast = if column.is_json { "::jsonb" } else { "" };
+        let cast = if column.is_json { "::text::jsonb" } else { "" };
         let sql = format!(
             "INSERT INTO \"{}\" (\"{}\", \"{}\") VALUES ($1, $2{cast})",
             column.table, column.primary_key, column.column

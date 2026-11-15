@@ -165,7 +165,7 @@ pub fn rows_sql(column: &SecretColumn) -> String {
 
 #[must_use]
 pub fn update_sql(column: &SecretColumn) -> String {
-    let cast = if column.is_json { "::jsonb" } else { "" };
+    let cast = if column.is_json { "::text::jsonb" } else { "" };
     let (table, name, key) = (column.table, column.column, column.primary_key);
     format!(
         "UPDATE \"{table}\" SET \"{name}\" = $1{cast} WHERE \"{key}\" = $2 AND \"{name}\" = $3{cast}"
