@@ -10,9 +10,6 @@ use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use crate::third_party_init_b::vigil_guard::VigilGuardArgs;
 use crate::vigil_guard::handler_protocol::{HttpResponse, RequestTimeout};
-use crate::vigil_guard::transient::TransportError;
-
-pub(crate) type ScanResponse = Result<HttpResponse, TransportError>;
 
 pub(crate) enum Case {
     Build(Box<BuildCase>),
@@ -69,7 +66,7 @@ pub(crate) struct Scenario {
     pub(crate) input_type: GuardrailInputType,
     pub(crate) request_data: BTreeMap<String, GuardrailValue>,
     pub(crate) logging: Option<GuardrailLogTarget>,
-    pub(crate) responses: Vec<ScanResponse>,
+    pub(crate) responses: Vec<HttpResponse>,
     pub(crate) analyzed: Vec<&'static str>,
     pub(crate) metadata: Vec<(&'static str, &'static str)>,
     pub(crate) expected: Expected,

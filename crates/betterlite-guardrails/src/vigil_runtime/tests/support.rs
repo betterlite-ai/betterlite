@@ -13,7 +13,7 @@ use reqwest::header::HeaderMap;
 use secrecy::ExposeSecret as _;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::third_party_init_b::vigil_guard::VigilGuardArgs;
@@ -35,11 +35,11 @@ pub(crate) struct Call {
 
 pub(crate) struct FakeHandler {
     calls: Mutex<Vec<Call>>,
-    responses: Mutex<VecDeque<Result<HttpResponse, TransportError>>>,
+    responses: Mutex<VecDeque<HttpResponse>>,
 }
 
 impl FakeHandler {
-    pub(crate) fn new(responses: Vec<Result<HttpResponse, TransportError>>) -> Self {
+    pub(crate) fn new(responses: Vec<HttpResponse>) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
             responses: Mutex::new(VecDeque::from(responses)),
@@ -74,12 +74,12 @@ impl AsyncPostHandler for FakeHandler {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .unwrap_or_else(|| Ok(json_body("{}")));
-        Box::pin(async move { response })
+            .unwrap_or_else(|| json_body("{}"));
+        Box::pin(async move { Ok(response) })
     }
 }
 
-fn json_body(body: &str) -> HttpResponse {
+pub(crate) fn json_body(body: &str) -> HttpResponse {
     HttpResponse {
         status: StatusCode::OK,
         body: body.as_bytes().to_vec(),
@@ -174,17 +174,17 @@ fn check_built(guardrail: &VigilGuard, built: &BuiltSettings, observed: &BaseVal
 }
 
 fn check_error(error: Option<VigilRuntimeError>, fragment: &str, secret: Option<&str>) {
-    let Some(error) = error else {
+    let Some(failure) = error else {
         panic!("the build case should fail");
     };
-    let message = error.to_string();
+    let message = failure.to_string();
     assert!(
         message.contains(fragment),
         "the error should name {fragment}: {message}"
     );
-    if let Some(secret) = secret {
+    if let Some(key) = secret {
         assert!(
-            !message.contains(secret),
+            !message.contains(key),
             "the error should not expose the key: {message}"
         );
     }

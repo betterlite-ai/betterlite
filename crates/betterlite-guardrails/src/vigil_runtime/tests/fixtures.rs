@@ -16,7 +16,8 @@ use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::third_party_init_b::vigil_guard::VigilGuardArgs;
 use crate::vigil_guard::handler_protocol::HttpResponse;
 
-use super::cases::{Expected, ScanResponse, Scenario};
+use super::cases::{Expected, Scenario};
+use super::support::json_body;
 
 pub(crate) const HARMFUL: &str = "Harmful content";
 pub(crate) const BACKEND_CLOSED: &str =
@@ -63,7 +64,7 @@ pub(crate) fn header_args(api_key: &str, fallback: &str) -> VigilGuardArgs {
     args(Some("https://vigil.example"), Some(api_key), fallback, None)
 }
 
-pub(crate) fn request(texts: Option<Vec<&str>>, responses: Vec<ScanResponse>) -> Scenario {
+pub(crate) fn request(texts: Option<Vec<&str>>, responses: Vec<HttpResponse>) -> Scenario {
     Scenario {
         args: args(
             Some("https://vigil.example"),
@@ -93,7 +94,7 @@ pub(crate) fn request(texts: Option<Vec<&str>>, responses: Vec<ScanResponse>) ->
 pub(crate) fn response(
     texts: Option<Vec<&str>>,
     calls: &[(&str, &str)],
-    responses: Vec<ScanResponse>,
+    responses: Vec<HttpResponse>,
 ) -> Scenario {
     let mut scenario = request(texts, responses);
     scenario.input_type = GuardrailInputType::Response;
@@ -161,44 +162,37 @@ pub(crate) fn message() -> GuardrailMessage {
     }
 }
 
-pub(crate) fn allowed() -> ScanResponse {
-    Ok(json_body(r#"{"decision": "ALLOWED"}"#))
+pub(crate) fn allowed() -> HttpResponse {
+    json_body(r#"{"decision": "ALLOWED"}"#)
 }
 
-pub(crate) fn sanitized(text: &str) -> ScanResponse {
-    Ok(json_body(&format!(
+pub(crate) fn sanitized(text: &str) -> HttpResponse {
+    json_body(&format!(
         r#"{{"decision": "SANITIZED", "sanitizedText": "{text}"}}"#
-    )))
+    ))
 }
 
-pub(crate) fn blocked(reason: &str) -> ScanResponse {
-    Ok(json_body(&format!(
+pub(crate) fn blocked(reason: &str) -> HttpResponse {
+    json_body(&format!(
         r#"{{"decision": "BLOCKED", "blockMessage": "{reason}"}}"#
-    )))
+    ))
 }
 
-pub(crate) fn missing_decision() -> ScanResponse {
-    Ok(json_body("{}"))
+pub(crate) fn missing_decision() -> HttpResponse {
+    json_body("{}")
 }
 
-pub(crate) fn non_object_answer() -> ScanResponse {
-    Ok(json_body("null"))
+pub(crate) fn non_object_answer() -> HttpResponse {
+    json_body("null")
 }
 
-pub(crate) fn unknown_decision() -> ScanResponse {
-    Ok(json_body(r#"{"decision": "UNKNOWN"}"#))
+pub(crate) fn unknown_decision() -> HttpResponse {
+    json_body(r#"{"decision": "UNKNOWN"}"#)
 }
 
-pub(crate) fn unavailable() -> ScanResponse {
-    Ok(HttpResponse {
+pub(crate) fn unavailable() -> HttpResponse {
+    HttpResponse {
         status: StatusCode::BAD_REQUEST,
         body: Vec::new(),
-    })
-}
-
-fn json_body(body: &str) -> HttpResponse {
-    HttpResponse {
-        status: StatusCode::OK,
-        body: body.as_bytes().to_vec(),
     }
 }

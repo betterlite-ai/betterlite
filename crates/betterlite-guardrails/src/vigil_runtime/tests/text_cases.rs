@@ -177,14 +177,14 @@ pub(crate) fn an_invalid_header_fails_open() -> Scenario {
 
 pub(crate) fn a_non_ascii_api_key_is_not_swallowed_by_fail_open() -> Scenario {
     let mut case = request(Some(vec!["hello"]), Vec::new());
-    case.args = header_args("sk-vigil-é", "fail_open");
+    case.args = header_args("sk-vigil-\u{e9}", "fail_open");
     case.expected = other("non-ASCII");
     case
 }
 
 pub(crate) fn a_non_ascii_api_key_is_not_a_backend_failure_when_closed() -> Scenario {
     let mut case = request(Some(vec!["hello"]), Vec::new());
-    case.args = header_args("sk-vigil-é", "fail_closed");
+    case.args = header_args("sk-vigil-\u{e9}", "fail_closed");
     case.expected = other("non-ASCII");
     case
 }

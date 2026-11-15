@@ -12,13 +12,16 @@ use crate::vigil_guard::block_reason::build_block_reason;
 use crate::vigil_guard::error::VigilGuardError;
 use crate::vigil_guard::failure::{FailureContext, handle_backend_failure};
 use crate::vigil_guard::metadata::{MetadataValue, collect_metadata};
-use crate::vigil_guard::output::{Inputs, ToolCall, build_output};
+use crate::vigil_guard::output::{Inputs, build_output};
 use crate::vigil_guard::sanitize::resolve_sanitized_text;
 use crate::vigil_guard::tool_calls::{set_tool_call_arguments, tool_call_arguments};
 
 use super::VigilGuard;
 use super::bridge::{self, CallIds};
 use super::error::VigilRuntimeError;
+use stops::{FailureKind, Partial, ScanStop, TextStop, failure_kind, partial_texts};
+
+mod stops;
 
 const UNRECOGNIZED_DECISION_MESSAGE: &str = "Vigil Guard returned an unrecognized decision.";
 const RAISED_STATUS_CODE: u16 = 400;
@@ -67,30 +70,6 @@ struct Run<'run> {
     bridged: &'run Inputs,
     source: Source,
     metadata: IndexMap<String, MetadataValue>,
-}
-
-enum ScanStop {
-    Failed(VigilGuardError),
-    Blocked(GuardrailFailure),
-    Unrecognized,
-}
-
-// A text-stage stop carries the partial result its fail_open answer needs
-enum TextStop {
-    Blocked(GuardrailFailure),
-    Interrupted {
-        error: VigilGuardError,
-        partial: Vec<String>,
-    },
-    Unrecognized {
-        partial: Vec<String>,
-    },
-}
-
-// Every analyze failure is either a backend failure the fallback policy handles or a local error it must not swallow
-enum FailureKind {
-    Backend,
-    Local,
 }
 
 impl Run<'_> {
@@ -269,25 +248,6 @@ impl Run<'_> {
     }
 }
 
-fn failure_kind(error: &VigilGuardError) -> FailureKind {
-    match error {
-        VigilGuardError::InvalidHeader { .. }
-        | VigilGuardError::Transport { .. }
-        | VigilGuardError::ResponseJson { .. } => FailureKind::Backend,
-        VigilGuardError::MissingConfig { .. }
-        | VigilGuardError::ToolCallIndex { .. }
-        | VigilGuardError::InvalidToolFunction { .. }
-        | VigilGuardError::Blocked { .. }
-        | VigilGuardError::BackendUnavailable => FailureKind::Local,
-    }
-}
-
-#[derive(Clone, Copy)]
-struct Partial<'partial> {
-    texts: &'partial [String],
-    tool_calls: Option<&'partial [ToolCall]>,
-}
-
 // Python's str.strip also strips the four separators U+001C to U+001F
 fn is_blank(text: &str) -> bool {
     for character in text.chars() {
@@ -296,12 +256,4 @@ fn is_blank(text: &str) -> bool {
         }
     }
     true
-}
-
-fn partial_texts(processed: &[String], texts: &[String], index: usize) -> Vec<String> {
-    let mut partial = processed.to_vec();
-    if let Some(remaining) = texts.get(index..) {
-        partial.extend_from_slice(remaining);
-    }
-    partial
 }
