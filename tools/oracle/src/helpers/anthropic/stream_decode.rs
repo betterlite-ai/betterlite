@@ -114,12 +114,11 @@ fn source_item(step: &Step) -> SourceItem {
 }
 
 fn sources(input: &Input) -> SyncSources {
-    input
-        .steps
-        .iter()
-        .map(source_item)
-        .collect::<Vec<SourceItem>>()
-        .into_iter()
+    let mut items = Vec::with_capacity(input.steps.len());
+    for step in &input.steps {
+        items.push(source_item(step));
+    }
+    items.into_iter()
 }
 
 fn sync_outcomes(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
