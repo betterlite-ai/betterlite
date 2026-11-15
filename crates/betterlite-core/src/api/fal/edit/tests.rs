@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::io::Cursor;
+use std::fs;
+use std::io::{Cursor, ErrorKind};
+use std::net::TcpListener;
 use std::path::Path;
 
 use base64::Engine as _;
@@ -10,8 +12,10 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use betterlite_openai::image_edits::request::ImageEditForm;
+use betterlite_openai::image_generation::reply::ImageUsage;
 use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Number;
 use tempfile::NamedTempFile;
 
 use super::error::FalEditError;
@@ -41,7 +45,7 @@ fn text(value: &str) -> Json {
 }
 
 fn number(value: i64) -> Json {
-    Json::Number(serde_json::Number::from(value))
+    Json::Number(Number::from(value))
 }
 
 fn size(width: i64, height: i64) -> Json {
@@ -68,12 +72,14 @@ fn catalog() -> ModelCatalog {
 
 fn request<'value>(
     prompt: Option<&'value str>,
-    images: &'value [Option<EditImage<'value>>],
+    images: &'value mut [Option<EditImage<'value>>],
+    mask: &'value mut [Option<EditImage<'value>>],
     options: &'value ImageParams,
 ) -> EditRequest<'value> {
     EditRequest {
         prompt,
         images,
+        mask,
         options,
     }
 }
@@ -90,25 +96,46 @@ fn mask_url(form: &ImageEditForm) -> Option<&str> {
 fn to_data_url_forwards_strings_without_reading_anything() {
     let remote = "https://example.test/images/in.png?x=1";
     assert_eq!(
-        to_data_url(&EditImage::Text(remote)).expect("a data url"),
+        to_data_url(&mut EditImage::Text(remote)).expect("a data url"),
         remote
     );
     let local = "/definitely/missing/fal-edit-input.png";
     assert_eq!(
-        to_data_url(&EditImage::Text(local)).expect("a data url"),
+        to_data_url(&mut EditImage::Text(local)).expect("a data url"),
         local
     );
-    assert_eq!(to_data_url(&EditImage::Text("")).expect("a data url"), "");
+    assert_eq!(
+        to_data_url(&mut EditImage::Text("")).expect("a data url"),
+        ""
+    );
+}
+
+#[test]
+fn to_data_url_never_opens_a_connection_for_a_remote_string() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("a listener");
+    listener
+        .set_nonblocking(true)
+        .expect("a nonblocking listener");
+    let address = listener.local_addr().expect("the listener address");
+    let remote = format!("http://{address}/images/in.png");
+    assert_eq!(
+        to_data_url(&mut EditImage::Text(remote.as_str())).expect("a data url"),
+        remote
+    );
+    match listener.accept() {
+        Err(error) if error.kind() == ErrorKind::WouldBlock => {}
+        other => panic!("to_data_url reached the network: {other:?}"),
+    }
 }
 
 #[test]
 fn to_data_url_encodes_bytes_with_exact_prefixes() {
     assert_eq!(
-        to_data_url(&EditImage::Bytes(PNG)).expect("a data url"),
+        to_data_url(&mut EditImage::Bytes(PNG)).expect("a data url"),
         "data:image/png;base64,iVBORw0KGgo="
     );
     assert_eq!(
-        to_data_url(&EditImage::Bytes(JPEG)).expect("a data url"),
+        to_data_url(&mut EditImage::Bytes(JPEG)).expect("a data url"),
         "data:image/jpeg;base64,/9j/"
     );
 }
@@ -120,7 +147,7 @@ fn to_data_url_encodes_bytes_with_exact_prefixes() {
 #[case::unknown(b"not an image", "image/png")]
 #[case::empty(b"", "image/png")]
 fn to_data_url_picks_the_mime_from_the_leading_bytes(#[case] bytes: &[u8], #[case] mime: &str) {
-    let encoded = to_data_url(&EditImage::Bytes(bytes)).expect("a data url");
+    let encoded = to_data_url(&mut EditImage::Bytes(bytes)).expect("a data url");
     assert!(
         encoded.starts_with(&format!("data:{mime};base64,")),
         "{encoded}"
@@ -131,16 +158,18 @@ fn to_data_url_picks_the_mime_from_the_leading_bytes(#[case] bytes: &[u8], #[cas
 #[test]
 fn read_image_bytes_reads_a_local_path() {
     let file = NamedTempFile::new().expect("a temp file");
-    std::fs::write(file.path(), JPEG).expect("the fixture");
-    let bytes = read_image_bytes(&EditImage::Path(file.path())).expect("the file bytes");
+    fs::write(file.path(), JPEG).expect("the fixture");
+    let mut image = EditImage::Path(file.path());
+    let bytes = read_image_bytes(&mut image).expect("the file bytes");
     assert_eq!(bytes.as_ref(), JPEG);
 }
 
 #[test]
 fn read_image_bytes_reports_an_unreadable_path() {
     let path = Path::new("/definitely/missing/fal-edit-input.png");
-    match read_image_bytes(&EditImage::Path(path)) {
-        Err(FalEditError::ReadPath { path: carried, .. }) => assert_eq!(carried, path),
+    let mut image = EditImage::Path(path);
+    match read_image_bytes(&mut image) {
+        Err(FalEditError::ReadPath { path: carried, .. }) => assert_eq!(carried.as_path(), path),
         other => panic!("{other:?}"),
     }
 }
@@ -149,24 +178,29 @@ fn read_image_bytes_reports_an_unreadable_path() {
 fn read_image_bytes_restores_the_reader_cursor() {
     let mut cursor = Cursor::new(JPEG.to_vec());
     cursor.set_position(2);
-    let bytes = read_image_bytes(&EditImage::Reader(&mut cursor)).expect("the reader bytes");
-    assert_eq!(bytes.as_ref(), JPEG);
+    let bytes = {
+        let mut image = EditImage::Reader(&mut cursor);
+        read_image_bytes(&mut image)
+            .expect("the reader bytes")
+            .into_owned()
+    };
+    assert_eq!(bytes.as_slice(), JPEG);
     assert_eq!(cursor.position(), 2);
 }
 
 #[test]
 fn tuple_conversion_reads_the_second_element_recursively() {
-    let inner = EditImage::Bytes(JPEG);
-    let tuple = EditImage::Tuple(&inner);
+    let mut inner = EditImage::Bytes(JPEG);
+    let mut tuple = EditImage::Tuple(&mut inner);
     assert_eq!(
-        to_data_url(&tuple).expect("a data url"),
+        to_data_url(&mut tuple).expect("a data url"),
         "data:image/jpeg;base64,/9j/"
     );
-    let outer = EditImage::Tuple(&tuple);
-    assert_eq!(read_image_bytes(&outer).expect("bytes").as_ref(), JPEG);
-    let text_image = EditImage::Text("https://example.test/in.png");
-    let text_tuple = EditImage::Tuple(&text_image);
-    match read_image_bytes(&text_tuple) {
+    let mut outer = EditImage::Tuple(&mut tuple);
+    assert_eq!(read_image_bytes(&mut outer).expect("bytes").as_ref(), JPEG);
+    let mut text_image = EditImage::Text("https://example.test/in.png");
+    let mut text_tuple = EditImage::Tuple(&mut text_image);
+    match read_image_bytes(&mut text_tuple) {
         Err(FalEditError::UnsupportedImage { kind }) => assert_eq!(kind, "str"),
         other => panic!("{other:?}"),
     }
@@ -178,9 +212,10 @@ fn tuple_conversion_reads_the_second_element_recursively() {
 #[case::null(Json::Null, "NoneType")]
 #[case::boolean(Json::Bool(true), "bool")]
 #[case::integer(number(7), "int")]
-#[case::float(Json::Number(serde_json::Number::from_f64(1.5).expect("a number")), "float")]
+#[case::float(Json::Number(Number::from_f64(1.5).expect("a number")), "float")]
 fn read_image_bytes_refuses_other_shapes(#[case] value: Json, #[case] kind: &str) {
-    match read_image_bytes(&EditImage::Other(&value)) {
+    let mut image = EditImage::Other(&value);
+    match read_image_bytes(&mut image) {
         Err(FalEditError::UnsupportedImage { kind: carried }) => assert_eq!(carried, kind),
         other => panic!("{other:?}"),
     }
@@ -337,13 +372,39 @@ fn depth_supported_params_are_advertised() {
     assert_eq!(flux_lora_depth::OPENAI_PARAMS, ["n", "size"]);
 }
 
-#[test]
-fn depth_endpoint_is_fixed_without_the_edit_suffix() {
+#[rstest]
+#[case::exact("fal-ai/flux-lora-depth")]
+#[case::edit_suffix("fal-ai/flux-lora-depth/edit")]
+#[case::mixed_case("fal-ai/Flux-Lora-Depth/edit")]
+#[case::embedded("vendor/flux-lora-depth-v2")]
+fn depth_url_ignores_the_model_and_appends_the_depth_endpoint(#[case] model: &str) {
+    let settings = FalImageSettings::default();
     assert_eq!(
-        FalImageSettings::default().complete_url(None, DEPTH_ENDPOINT),
+        for_model(model).complete_url(&settings, None, model),
         "https://fal.run/fal-ai/flux-lora-depth"
     );
-    assert_eq!(DEPTH_ENDPOINT, "fal-ai/flux-lora-depth");
+}
+
+#[test]
+fn depth_url_keeps_an_explicit_base_ending_in_a_slash() {
+    let model = "fal-ai/Flux-Lora-Depth/edit";
+    assert_eq!(
+        for_model(model).complete_url(
+            &FalImageSettings::default(),
+            Some("https://explicit.test/"),
+            model
+        ),
+        "https://explicit.test/fal-ai/flux-lora-depth"
+    );
+}
+
+#[test]
+fn generic_url_through_the_selector_appends_the_edit_suffix() {
+    let model = "fal-ai/flux/schnell";
+    assert_eq!(
+        for_model(model).complete_url(&FalImageSettings::default(), None, model),
+        "https://fal.run/fal-ai/flux/schnell/edit"
+    );
 }
 
 #[test]
@@ -373,10 +434,11 @@ fn generic_body_lists_every_non_null_image() {
     let remote = "https://example.test/in.png";
     let local = EditImage::Bytes(PNG);
     let linked = EditImage::Text(remote);
-    let images = [None, Some(local), Some(linked)];
+    let mut images = [None, Some(local), Some(linked)];
     let options = options(&[]);
     let form =
-        transform_image_edit_request(&request(Some("paint"), &images, &options)).expect("a form");
+        transform_image_edit_request(&mut request(Some("paint"), &mut images, &mut [], &options))
+            .expect("a form");
     assert_eq!(form.data.get("prompt"), Some(&text("paint")));
     assert_eq!(
         form.data.get("image_urls"),
@@ -391,23 +453,24 @@ fn generic_body_lists_every_non_null_image() {
 #[test]
 fn generic_body_uses_a_null_prompt_when_none_is_given() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let options = options(&[]);
-    let form = transform_image_edit_request(&request(None, &images, &options)).expect("a form");
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut [], &options))
+        .expect("a form");
     assert_eq!(form.data.get("prompt"), Some(&Json::Null));
 }
 
 #[test]
 fn generic_edit_requires_at_least_one_image() {
-    let none_images: [Option<EditImage<'_>>; 0] = [];
+    let mut none_images: [Option<EditImage<'_>>; 0] = [];
     let options = ImageParams::new();
     assert!(matches!(
-        transform_image_edit_request(&request(None, &none_images, &options)),
+        transform_image_edit_request(&mut request(None, &mut none_images, &mut [], &options)),
         Err(FalEditError::MissingImages)
     ));
-    let skipped = [None];
+    let mut skipped = [None];
     assert!(matches!(
-        transform_image_edit_request(&request(None, &skipped, &options)),
+        transform_image_edit_request(&mut request(None, &mut skipped, &mut [], &options)),
         Err(FalEditError::MissingImages)
     ));
 }
@@ -436,23 +499,24 @@ fn generic_edit_requires_at_least_one_image() {
     )],
     None
 )]
-fn generic_mask_uses_the_first_nonempty_list_entry(
+fn generic_mask_takes_the_first_list_element_or_the_value(
     #[case] entries: Vec<(&str, Json)>,
     #[case] expected: Option<&str>,
 ) {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let options = options(&entries);
-    let form = transform_image_edit_request(&request(None, &images, &options)).expect("a form");
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut [], &options))
+        .expect("a form");
     assert_eq!(mask_url(&form), expected);
 }
 
 #[test]
 fn generic_mask_refuses_an_empty_list() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let options = options(&[("mask", Json::List(Vec::new()))]);
-    match transform_image_edit_request(&request(None, &images, &options)) {
+    match transform_image_edit_request(&mut request(None, &mut images, &mut [], &options)) {
         Err(FalEditError::UnsupportedImage { kind }) => assert_eq!(kind, "list"),
         other => panic!("{other:?}"),
     }
@@ -461,18 +525,67 @@ fn generic_mask_refuses_an_empty_list() {
 #[test]
 fn generic_mask_refuses_a_nested_list() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let options = options(&[("mask", Json::List(vec![Json::List(vec![text("x")])]))]);
-    match transform_image_edit_request(&request(None, &images, &options)) {
+    match transform_image_edit_request(&mut request(None, &mut images, &mut [], &options)) {
         Err(FalEditError::UnsupportedImage { kind }) => assert_eq!(kind, "list"),
         other => panic!("{other:?}"),
     }
 }
 
 #[test]
+fn uploaded_mask_entries_become_a_data_url() {
+    let image = EditImage::Bytes(PNG);
+    let mut images = [Some(image)];
+    let mask_image = EditImage::Bytes(JPEG);
+    let mut mask = [Some(mask_image)];
+    let options = options(&[]);
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut mask, &options))
+        .expect("a form");
+    assert_eq!(mask_url(&form), Some("data:image/jpeg;base64,/9j/"));
+}
+
+#[test]
+fn uploaded_mask_readers_become_a_data_url_and_keep_their_cursor() {
+    let image = EditImage::Bytes(PNG);
+    let mut images = [Some(image)];
+    let mut cursor = Cursor::new(JPEG.to_vec());
+    cursor.set_position(2);
+    let mut mask = [Some(EditImage::Reader(&mut cursor))];
+    let options = options(&[]);
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut mask, &options))
+        .expect("a form");
+    assert_eq!(mask_url(&form), Some("data:image/jpeg;base64,/9j/"));
+    assert_eq!(cursor.position(), 2);
+}
+
+#[test]
+fn uploaded_mask_entries_win_over_the_json_mask() {
+    let image = EditImage::Bytes(PNG);
+    let mut images = [Some(image)];
+    let mask_image = EditImage::Bytes(JPEG);
+    let mut mask = [Some(mask_image)];
+    let options = options(&[("mask", text("https://mask.test/from-option.png"))]);
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut mask, &options))
+        .expect("a form");
+    assert_eq!(mask_url(&form), Some("data:image/jpeg;base64,/9j/"));
+}
+
+#[test]
+fn a_null_first_uploaded_mask_entry_skips_the_json_mask() {
+    let image = EditImage::Bytes(PNG);
+    let mut images = [Some(image)];
+    let mut mask = [None];
+    let options = options(&[("mask", text("https://mask.test/from-option.png"))]);
+    let form = transform_image_edit_request(&mut request(None, &mut images, &mut mask, &options))
+        .expect("a form");
+    assert_eq!(mask_url(&form), None);
+}
+
+#[test]
 fn provider_options_overlay_the_generated_fields() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let overrides = options(&[
         ("prompt", text("replacement")),
         (
@@ -483,8 +596,13 @@ fn provider_options_overlay_the_generated_fields() {
         ("mask", text("https://mask.test/from-option.png")),
         ("seed", number(4)),
     ]);
-    let form = transform_image_edit_request(&request(Some("original"), &images, &overrides))
-        .expect("a form");
+    let form = transform_image_edit_request(&mut request(
+        Some("original"),
+        &mut images,
+        &mut [],
+        &overrides,
+    ))
+    .expect("a form");
     assert_eq!(form.data.get("prompt"), Some(&text("replacement")));
     assert_eq!(
         form.data.get("image_urls"),
@@ -498,15 +616,16 @@ fn provider_options_overlay_the_generated_fields() {
 #[test]
 fn depth_body_uses_a_singular_image_url_and_drops_the_mask() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let depth_options = options(&[
         ("num_images", number(1)),
         ("mask", text("https://mask.test/m.png")),
         ("seed", number(9)),
     ]);
-    let form = flux_lora_depth::transform_image_edit_request(&request(
+    let form = flux_lora_depth::transform_image_edit_request(&mut request(
         Some("paint"),
-        &images,
+        &mut images,
+        &mut [],
         &depth_options,
     ))
     .expect("a form");
@@ -523,14 +642,15 @@ fn depth_body_uses_a_singular_image_url_and_drops_the_mask() {
 #[test]
 fn depth_provider_options_overlay_the_body() {
     let image = EditImage::Bytes(PNG);
-    let images = [Some(image)];
+    let mut images = [Some(image)];
     let depth_options = options(&[
         ("prompt", text("replacement")),
         ("image_url", text("https://override.test/control.png")),
     ]);
-    let form = flux_lora_depth::transform_image_edit_request(&request(
+    let form = flux_lora_depth::transform_image_edit_request(&mut request(
         Some("original"),
-        &images,
+        &mut images,
+        &mut [],
         &depth_options,
     ))
     .expect("a form");
@@ -544,15 +664,25 @@ fn depth_provider_options_overlay_the_body() {
 
 #[test]
 fn depth_requires_a_control_image() {
-    let none_images: [Option<EditImage<'_>>; 0] = [];
+    let mut none_images: [Option<EditImage<'_>>; 0] = [];
     let options = ImageParams::new();
     assert!(matches!(
-        flux_lora_depth::transform_image_edit_request(&request(None, &none_images, &options)),
+        flux_lora_depth::transform_image_edit_request(&mut request(
+            None,
+            &mut none_images,
+            &mut [],
+            &options
+        )),
         Err(FalEditError::MissingImages)
     ));
-    let skipped = [None];
+    let mut skipped = [None];
     assert!(matches!(
-        flux_lora_depth::transform_image_edit_request(&request(None, &skipped, &options)),
+        flux_lora_depth::transform_image_edit_request(&mut request(
+            None,
+            &mut skipped,
+            &mut [],
+            &options
+        )),
         Err(FalEditError::MissingImages)
     ));
 }
@@ -561,10 +691,11 @@ fn depth_requires_a_control_image() {
 fn depth_rejects_more_than_one_control_image() {
     let first = EditImage::Bytes(PNG);
     let second = EditImage::Bytes(JPEG);
-    let images = [Some(first), Some(second)];
-    match flux_lora_depth::transform_image_edit_request(&request(
+    let mut images = [Some(first), Some(second)];
+    match flux_lora_depth::transform_image_edit_request(&mut request(
         None,
-        &images,
+        &mut images,
+        &mut [],
         &ImageParams::new(),
     )) {
         Err(FalEditError::ControlImages { endpoint }) => assert_eq!(endpoint, DEPTH_ENDPOINT),
@@ -575,16 +706,26 @@ fn depth_rejects_more_than_one_control_image() {
 #[test]
 fn depth_counts_only_non_null_images() {
     let kept = EditImage::Bytes(PNG);
-    let one = [None, Some(kept)];
+    let mut one = [None, Some(kept)];
     assert!(
-        flux_lora_depth::transform_image_edit_request(&request(None, &one, &ImageParams::new()))
-            .is_ok()
+        flux_lora_depth::transform_image_edit_request(&mut request(
+            None,
+            &mut one,
+            &mut [],
+            &ImageParams::new()
+        ))
+        .is_ok()
     );
     let first = EditImage::Bytes(PNG);
     let second = EditImage::Bytes(JPEG);
-    let two = [Some(first), None, Some(second)];
+    let mut two = [Some(first), None, Some(second)];
     assert!(matches!(
-        flux_lora_depth::transform_image_edit_request(&request(None, &two, &ImageParams::new())),
+        flux_lora_depth::transform_image_edit_request(&mut request(
+            None,
+            &mut two,
+            &mut [],
+            &ImageParams::new()
+        )),
         Err(FalEditError::ControlImages { .. })
     ));
 }
@@ -595,6 +736,11 @@ fn response_projects_images_and_the_injected_created_time() {
     let response =
         transform_image_edit_response(200, &headers(), body, 1_700_000_000).expect("a response");
     assert_eq!(response.created, 1_700_000_000);
+    assert_eq!(response.usage, ImageUsage::default());
+    assert_eq!(response.background, None);
+    assert_eq!(response.quality, None);
+    assert_eq!(response.output_format, None);
+    assert_eq!(response.size, None);
     assert_eq!(response.data.len(), 3);
     assert_eq!(
         response.data[0].url.as_deref(),
