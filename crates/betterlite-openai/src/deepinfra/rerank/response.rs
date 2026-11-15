@@ -1,9 +1,11 @@
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use indexmap::IndexMap;
 use serde::Deserialize;
+use serde::de::Deserializer;
 use serde_json::Number;
 use thiserror::Error;
 use uuid::Uuid;
@@ -56,17 +58,36 @@ pub struct ResponseRequest<'request> {
     pub limits: RerankLimits,
 }
 
-// missing keys stay None, explicit nulls become Some(None), and any value becomes Some(Some(value))
+// a missing key, an explicit null and a value stay distinct, since LiteLLM's .get(default) tells them apart
 #[derive(Debug, Deserialize)]
 struct Body {
-    #[serde(default, with = "serde_with::rust::double_option")]
-    scores: Option<Option<Json>>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    input_tokens: Option<Option<Json>>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    request_id: Option<Option<Json>>,
-    #[serde(default, with = "serde_with::rust::double_option")]
-    inference_status: Option<Option<Json>>,
+    #[serde(default)]
+    scores: Presence,
+    #[serde(default)]
+    input_tokens: Presence,
+    #[serde(default)]
+    request_id: Presence,
+    #[serde(default)]
+    inference_status: Presence,
+}
+
+#[derive(Debug, Default)]
+enum Presence {
+    #[default]
+    Absent,
+    Null,
+    Value(Json),
+}
+
+// ast-grep-ignore: no-custom-serde
+impl<'de> Deserialize<'de> for Presence {
+    // ast-grep-ignore: no-custom-serde
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Ok(match Json::deserialize(deserializer)? {
+            Json::Null => Self::Null,
+            present => Self::Value(present),
+        })
+    }
 }
 
 // LiteLLM converts the whole body inside one try, so any failure there returns the supplied response unchanged
@@ -83,7 +104,7 @@ pub fn transform_rerank_response(
         limits,
     } = request;
     let mut response = decoded(body, logging, limits)
-        .and_then(|body| build(body, generated))
+        .and_then(|parsed_body| build(&parsed_body, generated))
         .unwrap_or(model_response);
     response
         .hidden_params
@@ -98,7 +119,7 @@ pub fn decode_deepinfra_rerank(
     if bytes.len() > limits.max_body_bytes {
         return Err(RerankDecodeError::BodyTooLarge);
     }
-    let text = std::str::from_utf8(bytes).map_err(|_source| RerankDecodeError::NotUtf8)?;
+    let text = from_utf8(bytes).map_err(|_source| RerankDecodeError::NotUtf8)?;
     serde_json::from_str(text).map_err(|source| RerankDecodeError::Json { source })
 }
 
@@ -107,7 +128,7 @@ fn decoded(
     logging: &mut dyn RerankLogging,
     limits: RerankLimits,
 ) -> Result<Body, ResponseFailure> {
-    let text = std::str::from_utf8(bytes).map_err(|_source| ResponseFailure)?;
+    let text = from_utf8(bytes).map_err(|_source| ResponseFailure)?;
     let parsed = decode_deepinfra_rerank(bytes, limits).map_err(|_error| ResponseFailure)?;
     // LiteLLM logs as soon as the body parses as JSON, before it reads any field off the value
     logging
@@ -121,20 +142,20 @@ fn decoded(
     serde_json::from_value(plain).map_err(|_error| ResponseFailure)
 }
 
-fn build(body: Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure> {
+fn build(body: &Body, generated: Uuid) -> Result<RerankResponse, ResponseFailure> {
     Ok(RerankResponse {
-        id: Some(response_id(&body, generated)?),
-        results: Some(results(&body)?),
-        meta: Some(response_meta(input_tokens(&body)?)),
-        hidden_params: hidden_params(&inference_status(&body)?),
+        id: Some(response_id(body, generated)?),
+        results: Some(results(body)?),
+        meta: Some(response_meta(input_tokens(body)?)),
+        hidden_params: hidden_params(&inference_status(body)?),
     })
 }
 
 fn results(body: &Body) -> Result<Vec<RerankResponseResult>, ResponseFailure> {
     let values = match &body.scores {
-        None => return Ok(Vec::new()),
-        Some(Some(Json::List(values))) => values,
-        Some(_) => return Err(ResponseFailure),
+        Presence::Absent => return Ok(Vec::new()),
+        Presence::Value(Json::List(values)) => values,
+        Presence::Null | Presence::Value(_) => return Err(ResponseFailure),
     };
     values
         .iter()
@@ -158,43 +179,47 @@ fn results(body: &Body) -> Result<Vec<RerankResponseResult>, ResponseFailure> {
 // response_json.get("input_tokens", 0): absent is zero, an explicit null stays None
 fn input_tokens(body: &Body) -> Result<Option<i64>, ResponseFailure> {
     match &body.input_tokens {
-        None => Ok(Some(0)),
-        Some(None) => Ok(None),
-        Some(Some(Json::Number(number))) => number.as_i64().map(Some).ok_or(ResponseFailure),
-        Some(_) => Err(ResponseFailure),
+        Presence::Absent => Ok(Some(0)),
+        Presence::Null => Ok(None),
+        Presence::Value(Json::Number(number)) => number.as_i64().map(Some).ok_or(ResponseFailure),
+        Presence::Value(_) => Err(ResponseFailure),
     }
 }
 
 // response_json.get("inference_status", {}) then .get(...) on that value, so null or a non-object fails the block
 fn inference_status(body: &Body) -> Result<IndexMap<String, Json>, ResponseFailure> {
     match &body.inference_status {
-        None => Ok(IndexMap::new()),
-        Some(Some(Json::Object(status))) => Ok(status.clone()),
-        Some(_) => Err(ResponseFailure),
+        Presence::Absent => Ok(IndexMap::new()),
+        Presence::Value(Json::Object(status)) => Ok(status.clone()),
+        Presence::Null | Presence::Value(_) => Err(ResponseFailure),
     }
 }
 
 // request_id or str(uuid.uuid4()): a falsey value generates the UUID, and pydantic rejects any truthy non-string
 fn response_id(body: &Body, generated: Uuid) -> Result<String, ResponseFailure> {
     match &body.request_id {
-        None | Some(None) => Ok(generated.to_string()),
-        Some(Some(Json::Text(text))) if text.is_empty() => Ok(generated.to_string()),
-        Some(Some(Json::Text(text))) => Ok(text.clone()),
-        Some(Some(Json::Null | Json::Bool(false))) => Ok(generated.to_string()),
-        Some(Some(Json::Number(number)))
-            if number
-                .as_f64()
-                .is_some_and(|parsed| parsed.to_bits() & 0x7fff_ffff_ffff_ffff == 0) =>
-        {
-            Ok(generated.to_string())
-        }
-        Some(Some(Json::List(values))) if values.is_empty() => Ok(generated.to_string()),
-        Some(Some(Json::Object(fields))) if fields.is_empty() => Ok(generated.to_string()),
-        Some(Some(_)) => Err(ResponseFailure),
+        Presence::Absent | Presence::Null => Ok(generated.to_string()),
+        Presence::Value(Json::Text(text)) if !text.is_empty() => Ok(text.clone()),
+        Presence::Value(value) if falsey(value) => Ok(generated.to_string()),
+        Presence::Value(_) => Err(ResponseFailure),
     }
 }
 
-fn response_meta(input_tokens: Option<i64>) -> RerankResponseMeta {
+// Python truthiness over the JSON values a request id can hold: zero in either sign, "", false, [] and {}
+fn falsey(value: &Json) -> bool {
+    match value {
+        Json::Null => true,
+        Json::Bool(flag) => !flag,
+        Json::Number(number) => number
+            .as_f64()
+            .is_some_and(|parsed| parsed.to_bits().trailing_zeros() >= 63),
+        Json::Text(text) => text.is_empty(),
+        Json::List(values) => values.is_empty(),
+        Json::Object(fields) => fields.is_empty(),
+    }
+}
+
+const fn response_meta(input_tokens: Option<i64>) -> RerankResponseMeta {
     RerankResponseMeta {
         api_version: None,
         billed_units: Some(Some(RerankBilledUnits {
@@ -217,10 +242,7 @@ fn finite_float(value: &Json) -> Option<f64> {
 }
 
 fn hidden_params(inference: &IndexMap<String, Json>) -> BTreeMap<String, Json> {
-    let value = |name: &str, fallback: Json| match inference.get(name) {
-        Some(value) => value.clone(),
-        None => fallback,
-    };
+    let value = |name: &str, fallback: Json| inference.get(name).map_or(fallback, Json::clone);
     BTreeMap::from([
         (
             String::from("status"),
@@ -234,7 +256,7 @@ fn hidden_params(inference: &IndexMap<String, Json>) -> BTreeMap<String, Json> {
             String::from("cost"),
             value(
                 "cost",
-                Json::Number(Number::from_f64(0.0).unwrap_or(Number::from(0))),
+                Json::Number(Number::from_f64(0.0).unwrap_or_else(|| Number::from(0))),
             ),
         ),
         (
