@@ -1,13 +1,9 @@
 #![cfg(test)]
 
-use std::env;
-use std::fs;
 use std::pin::Pin;
-use std::process;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
-use std::thread;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -15,12 +11,14 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_openai::aleph_alpha::error::AlephAlphaError;
 use betterlite_openai::assistants::client::ClientKind;
 use betterlite_openai::chat::response::ChatUsage;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_vertex::vertex_agent_engine::error::AgentEngineError;
 use betterlite_vertex::vertex_agent_engine::records::{AgentQueryInput, AgentQueryPayload};
+use betterlite_vertex::vertex_agent_stream::AgentEngineStreamError;
 use futures_util::Stream;
 use futures_util::StreamExt as _;
 use futures_util::stream;
@@ -28,8 +26,6 @@ use futures_util::stream::BoxStream;
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
 use tokio::runtime::{Builder, Runtime};
-use tracing::Level;
-use tracing::subscriber::with_default;
 use uuid::Uuid;
 
 use super::transport::{Chunks, StreamHead, StreamTransport};
@@ -275,15 +271,15 @@ async fn stream_of(source: &str) -> VertexAgentStream {
     stream_from(vec![Ok(source.as_bytes().to_vec())]).await
 }
 
-async fn collect(mut stream: VertexAgentStream) -> Vec<Chunk> {
+async fn collect(mut stream: VertexAgentStream) -> Result<Vec<Chunk>, VertexAgentStreamError> {
     let mut chunks = Vec::new();
-    while let Some(chunk) = stream.next_chunk().await {
+    while let Some(chunk) = stream.next_chunk().await? {
         chunks.push(chunk);
     }
-    chunks
+    Ok(chunks)
 }
 
-async fn chunk_list(source: &str) -> Vec<Chunk> {
+async fn chunk_list(source: &str) -> Result<Vec<Chunk>, VertexAgentStreamError> {
     collect(stream_of(source).await).await
 }
 
@@ -293,27 +289,6 @@ fn content_line(text: &str) -> String {
 
 fn runtime() -> Runtime {
     Builder::new_current_thread().enable_all().build().unwrap()
-}
-
-fn capture<T, F>(level: Level, run: F) -> (T, String)
-where
-    F: FnOnce() -> T,
-{
-    let path = env::temp_dir().join(format!(
-        "betterlite-vertex-agent-stream-{}-{}.log",
-        process::id(),
-        thread::current().name().unwrap_or("test")
-    ));
-    let log = fs::File::create(&path).unwrap();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_max_level(level)
-        .with_writer(Arc::new(log))
-        .finish();
-    let result = with_default(subscriber, run);
-    let text = fs::read_to_string(&path).unwrap();
-    fs::remove_file(&path).unwrap();
-    (result, text)
 }
 
 #[test]
@@ -550,7 +525,7 @@ async fn no_post_call_is_logged_when_the_status_is_not_200() {
 
 #[tokio::test]
 async fn a_content_line_carries_the_litellm_envelope() {
-    let chunks = chunk_list(&content_line("hello")).await;
+    let chunks = chunk_list(&content_line("hello")).await.unwrap();
     assert_eq!(chunks.len(), 1);
     let chunk = &chunks[0];
     assert_eq!(chunk.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
@@ -568,7 +543,7 @@ async fn a_content_line_carries_the_litellm_envelope() {
 #[tokio::test]
 async fn every_chunk_gets_a_fresh_chatcmpl_id() {
     let source = format!("{}{}", content_line("a"), content_line("b"));
-    let chunks = chunk_list(&source).await;
+    let chunks = chunk_list(&source).await.unwrap();
     assert_eq!(chunks.len(), 2);
     assert_eq!(
         chunks[0].id,
@@ -583,7 +558,7 @@ async fn every_chunk_gets_a_fresh_chatcmpl_id() {
 #[tokio::test]
 async fn a_finished_chunk_carries_the_mapped_reason_and_the_usage() {
     let source = "data: {\"content\": {\"parts\": [{\"text\": \"end\"}]}, \"finish_reason\": \"MAX_TOKENS\", \"usage_metadata\": {\"prompt_token_count\": 2, \"candidates_token_count\": 1, \"total_token_count\": 3}}\n";
-    let chunks = chunk_list(source).await;
+    let chunks = chunk_list(source).await.unwrap();
     assert_eq!(chunks.len(), 1);
     let choice = &chunks[0].choices[0];
     assert_eq!(choice.finish_reason.as_deref(), Some("length"));
@@ -601,7 +576,7 @@ async fn a_finished_chunk_carries_the_mapped_reason_and_the_usage() {
 
 #[tokio::test]
 async fn generic_done_marker() {
-    let chunks = chunk_list("data: [DONE]\n\n").await;
+    let chunks = chunk_list("data: [DONE]\n\n").await.unwrap();
     assert_eq!(chunks.len(), 1);
     let choice = &chunks[0].choices[0];
     assert_eq!(choice.finish_reason.as_deref(), Some("stop"));
@@ -612,7 +587,9 @@ async fn generic_done_marker() {
 
 #[tokio::test]
 async fn the_done_marker_wins_over_the_rest_of_the_line() {
-    let chunks = chunk_list("data: {\"content\": {\"parts\": [{\"text\": \"[DONE]\"}]}}\n").await;
+    let chunks = chunk_list("data: {\"content\": {\"parts\": [{\"text\": \"[DONE]\"}]}}\n")
+        .await
+        .unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].finish_reason.as_deref(), Some("stop"));
     assert_eq!(chunks[0].choices[0].delta.content, None);
@@ -628,7 +605,7 @@ async fn the_done_marker_wins_over_the_rest_of_the_line() {
 #[tokio::test]
 async fn a_falsy_line_is_skipped_without_ending_the_stream(#[case] value: &str) {
     let source = format!("data: {value}\n{}", content_line("after"));
-    let chunks = collect(stream_of(&source).await).await;
+    let chunks = collect(stream_of(&source).await).await.unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("after"));
 }
@@ -641,7 +618,7 @@ async fn a_falsy_line_is_skipped_without_ending_the_stream(#[case] value: &str) 
 #[tokio::test]
 async fn a_line_that_carries_no_chunk_is_skipped(#[case] line: &str) {
     let source = format!("{line}\n{}", content_line("after"));
-    let chunks = collect(stream_of(&source).await).await;
+    let chunks = collect(stream_of(&source).await).await.unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("after"));
 }
@@ -653,19 +630,20 @@ async fn a_line_that_carries_no_chunk_is_skipped(#[case] line: &str) {
 #[case::text("\"x\"")]
 fn a_json_value_that_is_not_an_object_ends_the_stream(#[case] value: &str) {
     let source = format!("data: {value}\n{}", content_line("never"));
-    let (chunks, log) = capture(Level::ERROR, || {
-        runtime().block_on(async { collect(stream_of(&source).await).await })
+    let error = runtime().block_on(async {
+        expect_error(
+            stream_of(&source).await.next_chunk().await,
+            "the non-object line was accepted",
+        )
     });
-    assert!(chunks.is_empty());
-    assert!(
-        log.contains("Error in Vertex Agent Engine SSE stream: a Vertex Agent Engine stream line is not a JSON object"),
-        "{log}"
-    );
+    assert!(matches!(error, VertexAgentStreamError::ChunkNotObject));
 }
 
 #[tokio::test]
 async fn the_line_prefix_is_optional() {
-    let chunks = chunk_list("{\"content\": {\"parts\": [{\"text\": \"bare\"}]}}\n").await;
+    let chunks = chunk_list("{\"content\": {\"parts\": [{\"text\": \"bare\"}]}}\n")
+        .await
+        .unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("bare"));
 }
@@ -679,7 +657,8 @@ async fn a_line_split_across_two_reads_is_parsed_as_one() {
         ])
         .await,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("split"));
 }
@@ -693,7 +672,8 @@ async fn a_character_split_across_two_reads_is_decoded() {
         ])
         .await,
     )
-    .await;
+    .await
+    .unwrap();
     assert_eq!(
         chunks[0].choices[0].delta.content.as_deref(),
         Some("h\u{e9}llo")
@@ -702,91 +682,132 @@ async fn a_character_split_across_two_reads_is_decoded() {
 
 #[tokio::test]
 async fn a_last_line_without_a_newline_is_read() {
-    let chunks = chunk_list("data: {\"content\": {\"parts\": [{\"text\": \"tail\"}]}}").await;
+    let chunks = chunk_list("data: {\"content\": {\"parts\": [{\"text\": \"tail\"}]}}")
+        .await
+        .unwrap();
     assert_eq!(chunks.len(), 1);
     assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("tail"));
 }
 
 #[tokio::test]
 async fn an_empty_body_ends_without_a_chunk() {
-    assert!(collect(stream_from(Vec::new()).await).await.is_empty());
+    assert!(
+        collect(stream_from(Vec::new()).await)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
 
 #[test]
 fn a_chunk_field_of_the_wrong_type_ends_the_stream() {
-    let (chunks, log) = capture(Level::ERROR, || {
-        runtime().block_on(async {
-            collect(stream_of("data: {\"content\": {\"parts\": [{\"text\": 5}]}}\n").await).await
-        })
+    let error = runtime().block_on(async {
+        expect_error(
+            stream_of("data: {\"content\": {\"parts\": [{\"text\": 5}]}}\n")
+                .await
+                .next_chunk()
+                .await,
+            "the wrongly typed chunk was accepted",
+        )
     });
-    assert!(chunks.is_empty());
-    assert!(
-        log.contains("Error in Vertex Agent Engine SSE stream: the Vertex Agent Engine chunk field text has the wrong type"),
-        "{log}"
-    );
+    assert!(matches!(
+        error,
+        VertexAgentStreamError::Chunk(AgentEngineStreamError::FieldType { field: "text" })
+    ));
 }
 
 #[test]
 fn a_transport_error_ends_the_stream() {
-    let (chunks, log) = capture(Level::ERROR, || {
-        runtime().block_on(async {
-            collect(
-                stream_from(vec![
-                    Ok(content_line("one").into_bytes()),
-                    Err(HttpError::Timeout),
-                ])
-                .await,
-            )
-            .await
-        })
+    let (chunk, error) = runtime().block_on(async {
+        let mut stream = stream_from(vec![
+            Ok(content_line("one").into_bytes()),
+            Err(HttpError::Timeout),
+        ])
+        .await;
+        let chunk = stream.next_chunk().await.unwrap().unwrap();
+        let error = expect_error(stream.next_chunk().await, "the read failure was swallowed");
+        (chunk, error)
     });
-    assert_eq!(chunks.len(), 1);
-    assert_eq!(chunks[0].choices[0].delta.content.as_deref(), Some("one"));
-    assert!(
-        log.contains("Error in Vertex Agent Engine SSE stream: the Vertex Agent Engine stream body could not be read"),
-        "{log}"
-    );
+    assert_eq!(chunk.choices[0].delta.content.as_deref(), Some("one"));
+    assert!(matches!(
+        error,
+        VertexAgentStreamError::Body {
+            source: HttpError::Timeout
+        }
+    ));
 }
 
 #[test]
 fn an_error_ends_the_stream_even_with_a_partial_line_buffered() {
-    let (first, mut stream) = runtime().block_on(async {
+    let (error, after) = runtime().block_on(async {
         let mut stream = stream_from(vec![
             Ok(b"data: {\"content\": {\"parts\": [{\"text\": \"buffered\"}]}}".to_vec()),
             Err(HttpError::Timeout),
         ])
         .await;
-        let first = stream.next_chunk().await;
-        (first, stream)
+        let error = expect_error(
+            stream.next_chunk().await,
+            "the buffered line hid the read failure",
+        );
+        let after = stream.next_chunk().await;
+        (error, after)
     });
-    assert!(first.is_none());
-    assert!(runtime().block_on(stream.next_chunk()).is_none());
+    assert!(matches!(
+        error,
+        VertexAgentStreamError::Body {
+            source: HttpError::Timeout
+        }
+    ));
+    assert!(after.unwrap().is_none());
 }
 
 #[test]
 fn an_overlong_line_ends_the_stream() {
-    let (chunks, log) = capture(Level::ERROR, || {
-        runtime().block_on(async {
-            collect(stream_from(vec![Ok(vec![b'x'; MAX_LINE_BYTES + 1])]).await).await
-        })
+    let error = runtime().block_on(async {
+        expect_error(
+            stream_from(vec![Ok(vec![b'x'; MAX_LINE_BYTES + 1])])
+                .await
+                .next_chunk()
+                .await,
+            "the overlong line was accepted",
+        )
     });
-    assert!(chunks.is_empty());
-    assert!(log.contains("a streamed line is longer than"), "{log}");
+    assert!(matches!(
+        error,
+        VertexAgentStreamError::Line(AlephAlphaError::LineTooLong { limit })
+            if limit == MAX_LINE_BYTES
+    ));
+}
+
+#[test]
+fn a_read_error_after_a_finish_reason_ends_the_stream() {
+    let (chunk, after) = runtime().block_on(async {
+        let mut stream = stream_from(vec![
+            Ok(b"data: {\"finish_reason\": \"STOP\"}\n".to_vec()),
+            Err(HttpError::Timeout),
+        ])
+        .await;
+        let chunk = stream.next_chunk().await.unwrap().unwrap();
+        (chunk, stream.next_chunk().await)
+    });
+    assert_eq!(chunk.choices[0].finish_reason.as_deref(), Some("stop"));
+    assert!(after.unwrap().is_none());
 }
 
 #[tokio::test(start_paused = true)]
 async fn a_silent_stream_times_out() {
     let dropped = Arc::new(AtomicUsize::new(0));
     let mut stream = opened(held(&dropped, None)).await;
-    assert!(stream.next_chunk().await.is_none());
-    assert!(stream.next_chunk().await.is_none());
+    let error = expect_error(stream.next_chunk().await, "the silent stream ended cleanly");
+    assert!(matches!(error, VertexAgentStreamError::Timeout));
+    assert!(stream.next_chunk().await.unwrap().is_none());
 }
 
 #[tokio::test]
 async fn cancelled_stream_close() {
     let dropped = Arc::new(AtomicUsize::new(0));
     let mut stream = opened(held(&dropped, Some(content_line("one").into_bytes()))).await;
-    let first = stream.next_chunk().await.unwrap();
+    let first = stream.next_chunk().await.unwrap().unwrap();
     assert_eq!(first.choices[0].delta.content.as_deref(), Some("one"));
     assert_eq!(dropped.load(Ordering::SeqCst), 0);
     drop(stream);

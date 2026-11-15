@@ -15,6 +15,9 @@ deviations:
   - what: A read that waits more than ten minutes for the next body frame ends the stream with a timeout, where LiteLLM's iterator waits on the response for as long as the client does.
     why: A stalled provider connection would otherwise hold the call and its task forever; betterlite bounds each read and ends the stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L135-L143
+  - what: A 3xx, 4xx or 5xx reply at stream open becomes a VertexAgentEngineError carrying the provider's status, where LiteLLM's HTTP handler raises MaskedHTTPStatusError from raise_for_status first, so the wrapper's own status check at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L394-L395 only ever sees other 2xx statuses such as 201 and 204.
+    why: A caller that should get the provider's 401 or 400 must not get a status-less error, so betterlite maps the status its transport reports instead of losing it; docs/compatibility.md keeps the status and message a caller acts on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514
 kept_bugs:
   - what: chunk_parser lowercases finish_reason before StreamingChoices maps it, so an uppercase provider reason such as SAFETY reaches the map as "safety" and becomes "stop" instead of "content_filter".
     why: A working Agent Engine setup sees "stop" for those reasons, so changing it would change what clients receive; rule owned-behavior-is-built keeps the observed answer.

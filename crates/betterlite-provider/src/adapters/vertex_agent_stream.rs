@@ -36,8 +36,6 @@ pub const MAX_LINE_BYTES: usize = TransportLimits::DEFAULT.body_bytes;
 pub const OK_STATUS: u16 = 200;
 pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(600);
 
-const ERROR_LOG: &str = "Error in Vertex Agent Engine SSE stream";
-
 pub trait IdSource: Send + Sync {
     fn next_id(&self) -> Uuid;
 }
@@ -123,44 +121,57 @@ pub struct VertexAgentStream {
     decoder: LineDecoder,
     pending: VecDeque<String>,
     done: bool,
+    // a finished chunk ends the stream for LiteLLM's wrapper, so a later read failure is not seen
+    finished: bool,
 }
 
 impl VertexAgentStream {
-    pub async fn next_chunk(&mut self) -> Option<Chunk> {
+    pub async fn next_chunk(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
         loop {
             if let Some(line) = self.pending.pop_front() {
                 match parse_line(&line, &self.model, self.ids.as_ref()) {
-                    Ok(Some(chunk)) => return Some(chunk),
+                    Ok(Some(chunk)) => {
+                        self.finished |= chunk
+                            .choices
+                            .first()
+                            .is_some_and(|choice| choice.finish_reason.is_some());
+                        return Ok(Some(chunk));
+                    }
                     Ok(None) => {}
-                    Err(error) => return self.fail(&error),
+                    Err(error) => {
+                        self.end();
+                        return Err(error);
+                    }
                 }
                 continue;
             }
             if self.done {
-                return None;
+                return Ok(None);
             }
             match next_frame(&mut self.chunks).await {
                 Ok(Some(bytes)) => {
                     if let Err(source) = self.decoder.push(&bytes, &mut self.pending) {
-                        return self.fail(&VertexAgentStreamError::Line(source));
+                        self.end();
+                        return Err(VertexAgentStreamError::Line(source));
                     }
                 }
                 Ok(None) => {
                     self.decoder.flush(&mut self.pending);
                     self.done = true;
                 }
-                Err(error) => return self.fail(&error),
+                Err(error) => {
+                    self.end();
+                    return if self.finished { Ok(None) } else { Err(error) };
+                }
             }
         }
     }
 
-    // LiteLLM reports a broken stream by raising out of its iterator; here the read ends instead
-    fn fail(&mut self, error: &VertexAgentStreamError) -> Option<Chunk> {
-        tracing::error!("{ERROR_LOG}: {error}");
+    // LiteLLM raises a broken stream out of its iterator, so the error reaches the caller once
+    fn end(&mut self) {
         self.chunks = stream::empty().boxed();
         self.pending.clear();
         self.done = true;
-        None
     }
 }
 
@@ -180,6 +191,7 @@ pub async fn open(
         decoder: LineDecoder::new(MAX_LINE_BYTES),
         pending: VecDeque::new(),
         done: false,
+        finished: false,
     };
     deps.logger.post_call(StreamPostCall {
         input: request.messages,
