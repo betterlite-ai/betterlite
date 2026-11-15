@@ -1,0 +1,10 @@
+kind: helper
+name: google-counter-selection-studio-selected
+call:
+  google_counter_selection:
+    providers:
+      - gemini
+      - gemini/
+      - null
+env: {}
+compare: {ignore: []}
