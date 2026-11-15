@@ -136,6 +136,35 @@ fn content_part_added_backfills_a_missing_part() {
 }
 
 #[test]
+fn content_part_done_caches_its_part_for_later_events() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i1","part":{"type":"text","text":"declared-by-done"}}"#,
+    );
+    let added = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":"r1","item_id":"i1"}"#,
+    );
+    assert_eq!(
+        part_of(&added),
+        json(r#"{"type":"text","text":"declared-by-done"}"#)
+    );
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i2","part":{"type":"audio","transcript":"done-only"}}"#,
+    );
+    let done = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i2"}"#,
+    );
+    assert_eq!(
+        part_of(&done),
+        json(r#"{"type":"audio","transcript":"done-only"}"#)
+    );
+}
+
+#[test]
 fn missing_parts_default_to_audio_with_an_empty_transcript() {
     let mut normalizer = XaiRealtimeNormalizer::default();
     let done = normalized(
@@ -296,6 +325,35 @@ fn reusing_a_key_replaces_its_cached_part() {
         r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i1"}"#,
     );
     assert_eq!(part_of(&done), json(r#"{"type":"text","text":"second"}"#));
+}
+
+#[test]
+fn parts_of_two_responses_do_not_share_a_key() {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":"r1","item_id":"i1","content_index":0,"part":{"type":"text","text":"first-response"}}"#,
+    );
+    normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.added","response_id":"r2","item_id":"i1","content_index":0,"part":{"type":"audio","transcript":"second-response"}}"#,
+    );
+    let first = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i1","content_index":0}"#,
+    );
+    assert_eq!(
+        part_of(&first),
+        json(r#"{"type":"text","text":"first-response"}"#)
+    );
+    let second = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r2","item_id":"i1","content_index":0}"#,
+    );
+    assert_eq!(
+        part_of(&second),
+        json(r#"{"type":"audio","transcript":"second-response"}"#)
+    );
 }
 
 #[test]
