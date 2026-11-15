@@ -1,0 +1,18 @@
+task: B3271
+deviations:
+  - what: A search tool whose JSON nests deeper than 64 levels or exceeds 1 MiB is refused with an error that names the field, where safe_dumps writes the text "MaxDepthExceeded" for anything below depth 100.
+    why: Stored JSON decodes through the bounded stored-contract decoder, so a document the decoder refuses never reaches the table.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_dumps.py#L39-L40
+  - what: A litellm_params key outside the five that SearchToolLiteLLMParams declares is refused with an error that names the field, where LiteLLM stores it unchanged.
+    why: SearchTool is a typed struct and an undeclared key would otherwise be dropped without a word.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/search.py#L17-L28
+  - what: Reading a row whose litellm_params column holds a JSON string returns the parsed SearchToolLiteLLMParams, where LiteLLM hands back the stored string in the typed field.
+    why: The declared type is SearchToolLiteLLMParams, and the table stores the serialized text as a JSON string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L205-L212
+kept_bugs:
+  - what: update_search_tool_in_db replaces the name, litellm_params and search_tool_info together, and an absent search_tool_info is written as "{}", which erases the stored info.
+    why: Callers send the whole tool on update, so a partial body already loses fields in LiteLLM and clients rely on the full replacement.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L164-L177
+  - what: delete_search_tool_from_db looks the tool up and deletes it in two statements with no transaction around them, so a concurrent delete between the two makes the second statement fail.
+    why: The task keeps the separate lookup and delete operations and adds no encompassing transaction.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/search_endpoints/search_tool_registry.py#L132-L141
