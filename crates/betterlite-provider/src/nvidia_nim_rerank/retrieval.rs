@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankResponse;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -137,7 +139,7 @@ impl BaseRerankConfig for NvidiaNimRerankConfig {
             Err(NvidiaNimRerankError::ReplyNotJson { .. }) => {
                 return Err(NvidiaNimRerankError::from(BaseLlmException {
                     status_code: request.raw_response.status_code,
-                    message: std::str::from_utf8(&request.raw_response.body).map_or_else(
+                    message: from_utf8(&request.raw_response.body).map_or_else(
                         |_| "the rerank reply body is not valid UTF-8".to_owned(),
                         str::to_owned,
                     ),

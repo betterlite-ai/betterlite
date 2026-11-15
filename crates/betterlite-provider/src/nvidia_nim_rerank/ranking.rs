@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
@@ -133,7 +134,7 @@ impl BaseRerankConfig for NvidiaNimRankingConfig {
             return Ok(response);
         };
         if results.len() > limit {
-            results.sort_by(|left, right| right.relevance_score.0.cmp(&left.relevance_score.0));
+            results.sort_by_key(|result| Reverse(result.relevance_score.0));
             results.truncate(limit);
         }
         Ok(response)

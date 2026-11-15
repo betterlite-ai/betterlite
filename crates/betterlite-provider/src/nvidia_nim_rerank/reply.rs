@@ -93,12 +93,9 @@ pub fn to_response(
     })
 }
 
-fn passage_text<'passages>(
-    passages: &'passages [Json],
-    index: i64,
-) -> Result<Option<&'passages str>, NvidiaNimRerankError> {
+fn passage_text(passages: &[Json], index: i64) -> Result<Option<&str>, NvidiaNimRerankError> {
     let position = if index < 0 {
-        let offset = usize::try_from(index.unsigned_abs()).map_err(|_| {
+        let offset = usize::try_from(index.unsigned_abs()).map_err(|_error| {
             NvidiaNimRerankError::RankingIndex {
                 index,
                 passages: passages.len(),
@@ -112,7 +109,7 @@ fn passage_text<'passages>(
                 passages: passages.len(),
             })?
     } else {
-        usize::try_from(index).map_err(|_| NvidiaNimRerankError::RankingIndex {
+        usize::try_from(index).map_err(|_error| NvidiaNimRerankError::RankingIndex {
             index,
             passages: passages.len(),
         })?

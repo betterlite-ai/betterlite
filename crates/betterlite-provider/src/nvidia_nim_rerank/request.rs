@@ -53,10 +53,10 @@ pub fn rerank_body(
     let Some(documents) = optional_rerank_params.get(DOCUMENTS) else {
         return Err(NvidiaNimRerankError::MissingDocuments);
     };
-    let Json::List(documents) = documents else {
+    let Json::List(entries) = documents else {
         return Err(NvidiaNimRerankError::DocumentsNotAList);
     };
-    let passages = passages(documents, supported_fields)?;
+    let passages = passages(entries, supported_fields)?;
     let mut body = Params::from([
         (MODEL.to_owned(), Json::Text(model.replace('_', "."))),
         (

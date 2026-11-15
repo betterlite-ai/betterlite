@@ -149,18 +149,19 @@ fn select_rerank_config_reads_the_raw_ranking_prefix() {
 
 #[test]
 fn select_rerank_config_returns_a_config_of_the_matching_family() {
-    let NvidiaNimRerankSelection::Ranking(selected) = select_rerank_config("ranking/x") else {
+    let NvidiaNimRerankSelection::Ranking(ranking_config) = select_rerank_config("ranking/x")
+    else {
         panic!("a ranking model selects the ranking config");
     };
     assert_eq!(
-        selected.get_complete_url(None, "ranking/x", None),
+        ranking_config.get_complete_url(None, "ranking/x", None),
         "https://ai.api.nvidia.com/v1/ranking"
     );
-    let NvidiaNimRerankSelection::Retrieval(selected) = select_rerank_config("x") else {
+    let NvidiaNimRerankSelection::Retrieval(retrieval_config) = select_rerank_config("x") else {
         panic!("any other model selects the retrieval config");
     };
     assert_eq!(
-        selected.get_complete_url(None, "x", None),
+        retrieval_config.get_complete_url(None, "x", None),
         "https://ai.api.nvidia.com/v1/retrieval/x/reranking"
     );
 }
@@ -622,9 +623,9 @@ fn transform_rerank_request_skips_a_null_or_absent_top_n() {
         .transform_rerank_request("ranking/m", &optional, &Headers::new(), None)
         .unwrap();
     assert_eq!(*config.top_n.lock().unwrap(), None);
-    let optional = params_with("{}");
+    let absent = params_with("{}");
     config
-        .transform_rerank_request("ranking/m", &optional, &Headers::new(), None)
+        .transform_rerank_request("ranking/m", &absent, &Headers::new(), None)
         .unwrap();
     assert_eq!(*config.top_n.lock().unwrap(), None);
 }
@@ -648,16 +649,11 @@ fn transform_rerank_response_reports_a_body_that_is_not_json() {
 #[case::array("[]")]
 #[case::null("null")]
 #[case::text(r#""text""#)]
-fn transform_rerank_response_reports_a_body_that_is_not_an_object(#[case] body: &str) {
-    let error = response(
-        &config(),
-        200,
-        body.as_bytes(),
-        &Params::new(),
-        &Params::new(),
-    )
-    .unwrap_err();
-    assert!(matches!(error, NvidiaNimRerankError::ReplyNotAnObject));
+fn decode_nvidia_nim_rerank_reply_reports_a_body_that_is_not_an_object(#[case] body: &str) {
+    assert!(matches!(
+        decode_nvidia_nim_rerank_reply(body.as_bytes()),
+        Err(NvidiaNimRerankError::ReplyNotAnObject)
+    ));
 }
 
 #[rstest]
