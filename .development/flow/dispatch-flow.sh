@@ -71,7 +71,8 @@ land_again() {
 }
 if [[ -z "${LAND_ONLY}" ]]; then
   waiting=
-  while ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
+  # a grant moves the next start to another vendor, so a used-up ladder does not hold a granted run
+  while [[ -z "${grant}" ]] && ! (cd "${main}" && cargo gate availability "${id}") > "${L}/availability-${id}.log" 2>&1; do
     if [[ -z "${waiting}" ]] && grep -q 'worker ladder is unavailable' "${L}/availability-${id}.log"; then
       say "waiting: every runner left on its worker ladder is unavailable; a grant moves its next start to another vendor"
       waiting=1
