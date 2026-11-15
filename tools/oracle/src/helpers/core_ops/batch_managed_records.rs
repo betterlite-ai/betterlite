@@ -91,15 +91,11 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         let lookups = Arc::new(Mutex::new(Vec::new()));
-        let files = if input.database.present {
-            Some(ScriptedFiles {
-                found: input.database.found.clone(),
-                failures: input.database.failures.iter().cloned().collect(),
-                lookups: Arc::clone(&lookups),
-            })
-        } else {
-            None
-        };
+        let files = input.database.present.then(|| ScriptedFiles {
+            found: input.database.found.clone(),
+            failures: input.database.failures.iter().cloned().collect(),
+            lookups: Arc::clone(&lookups),
+        });
         // LiteLLM reads PROXY_BATCH_POLLING_ENABLED once at import, so a helper process runs the default
         let records = BatchManagedRecords {
             files,
@@ -131,13 +127,12 @@ fn files_value(files: &BatchFileIds) -> Value {
 }
 
 fn stored_object_value(stored: Option<&BatchStoredObject>) -> Value {
-    match stored {
-        Some(object) => json!({
+    stored.map_or(Value::Null, |object| {
+        json!({
             "unified_object_id": &object.unified_object_id,
             "status": &object.status,
-        }),
-        None => Value::Null,
-    }
+        })
+    })
 }
 
 fn event_values(lookups: &[String]) -> Value {
