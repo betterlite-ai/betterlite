@@ -179,7 +179,7 @@ async fn repository_agent_row_keeps_its_identity_binding() {
     {
         let client = postgres.session().await.expect("the database connection");
         insert_agent(&client, "agent-1").await;
-        insert_identity(&client, "agent-1", "client-1", "rev-1").await
+        insert_identity(&client, "agent-1", "client-1", "rev-1").await;
     };
     let found = agent::load(&store, "agent-1")
         .await
@@ -207,7 +207,7 @@ async fn repository_binding_reads_the_composite_key() {
     {
         let client = postgres.session().await.expect("the database connection");
         insert_agent(&client, "agent-1").await;
-        insert_identity(&client, "agent-1", "client-1", "rev-1").await
+        insert_identity(&client, "agent-1", "client-1", "rev-1").await;
     };
     let bound = binding::bound_agent_id(&store, "tenant-1", "client-1")
         .await
@@ -230,7 +230,7 @@ async fn repository_retired_binding_and_history_are_visible() {
     {
         let client = postgres.session().await.expect("the database connection");
         insert_retired_identity(&client, "binding-1", "client-2").await;
-        insert_retired_agent(&client, "agent-9").await
+        insert_retired_agent(&client, "agent-9").await;
     };
     let failure = binding::bound_agent_id(&store, "tenant-1", "client-2")
         .await
@@ -259,7 +259,7 @@ async fn repository_authentication_update_counts_the_active_revision() {
     {
         let client = postgres.session().await.expect("the database connection");
         insert_agent(&client, "agent-1").await;
-        insert_identity(&client, "agent-1", "client-1", "rev-1").await
+        insert_identity(&client, "agent-1", "client-1", "rev-1").await;
     };
     let context = authentication_context("agent-1", Some("rev-1"));
     authentication::record_authentication(&store, &context)
@@ -276,7 +276,7 @@ async fn repository_authentication_update_counts_the_active_revision() {
             .await
             .expect("the stored instant")
             .get(0);
-        assert!(recorded)
+        assert!(recorded);
     };
     let stale = authentication_context("agent-1", Some("rev-0"));
     let failure = authentication::record_authentication(&store, &stale)
@@ -304,7 +304,7 @@ async fn repository_authentication_update_excludes_a_disabled_agent(
         let client = postgres.session().await.expect("the database connection");
         insert_agent(&client, agent_id).await;
         insert_identity(&client, agent_id, "client-1", revision).await;
-        disable(&client, agent_id, column).await
+        disable(&client, agent_id, column).await;
     };
     let context = authentication_context(agent_id, Some(revision));
     let failure = authentication::record_authentication(&store, &context)
@@ -323,7 +323,7 @@ async fn repository_enrollment_create_data_keeps_the_existing_row() {
     let (fixture, store, postgres) = database().await;
     {
         let client = postgres.session().await.expect("the database connection");
-        insert_user(&client, "user-1").await
+        insert_user(&client, "user-1").await;
     };
     enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -358,7 +358,7 @@ async fn repository_resolve_managed_agent_denies_a_disabled_agent() {
         let client = postgres.session().await.expect("the database connection");
         insert_agent(&client, "agent-1").await;
         insert_identity(&client, "agent-1", "client-1", "rev-1").await;
-        disable(&client, "agent-1", "enabled").await
+        disable(&client, "agent-1", "enabled").await;
     };
     let failure = resolve_managed_agent(&application_claims(), Some(&postgres), None)
         .await
