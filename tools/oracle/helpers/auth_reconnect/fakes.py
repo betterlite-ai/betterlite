@@ -92,21 +92,18 @@ class FakeWrapper(PrismaWrapper):
 class FakeRouting(RoutingPrismaWrapper):
     def __init__(
         self,
-        writer: PrismaWrapper,
-        reader: PrismaWrapper,
-        recreation: Outcome,
-        effects: list[Json],
+        writer: FakeWrapper,
+        reader: FakeWrapper,
         *,
         reader_unavailable: bool,
     ) -> None:
         super().__init__(writer, reader)
-        self.recreation = recreation
-        self.effects = effects
+        self.writer_fake = writer
         self._reader_unavailable = reader_unavailable
 
     @override
     def mark_writer_recovered(self) -> None:
-        self.effects.append({"effect": "mark_writer_recovered"})
+        self.writer_fake.effects.append({"effect": "mark_writer_recovered"})
         super().mark_writer_recovered()
 
     @override
@@ -117,14 +114,11 @@ class FakeRouting(RoutingPrismaWrapper):
         *,
         expected_generation: int | None = None,
     ) -> bool:
-        self.effects.append(
-            {"effect": "recreate", "expected_generation": expected_generation}
+        return await self.writer_fake.recreate_prisma_client(
+            new_db_url,
+            http_client=http_client,
+            expected_generation=expected_generation,
         )
-        if self.recreation["pending"]:
-            await asyncio.sleep(3600)
-        if self.recreation["error"] is not None:
-            raise RuntimeError(self.recreation["error"])
-        return self.recreation["value"] is True
 
 
 class ScriptedLock(asyncio.Lock):
@@ -150,14 +144,3 @@ class ScriptedLock(asyncio.Lock):
     def release(self) -> None:
         self.effects.append({"effect": "lock_release"})
         super().release()
-
-
-class Stale:
-    def __init__(self, wrapper: PrismaWrapper, generation: int) -> None:
-        self.wrapper = wrapper
-        self.generation = generation
-
-    def is_still_live(self, current: PrismaWrapper) -> bool:
-        if self.wrapper is not current:
-            return False
-        return self.generation == current.engine_generation
