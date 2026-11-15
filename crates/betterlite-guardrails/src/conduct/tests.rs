@@ -443,9 +443,12 @@ fn conduct_guardrail_binds_unreachable_fallback_inspects_the_constructor(
 fn conduct_guardrail_blocking_and_flagged_verdict_sets_are_the_litellm_ones() {
     assert_eq!(BLOCKING_VERDICTS, ["block", "approval"]);
     assert_eq!(FLAGGED_VERDICTS, ["warning", "advisory"]);
-    assert!(
-        ConductCheckError::MissingPackage
-            .to_string()
-            .contains("conduct-litellm-guard")
+}
+
+#[test]
+fn conduct_guardrail_missing_package_error_carries_the_litellm_message() {
+    assert_eq!(
+        ConductCheckError::MissingPackage.to_string(),
+        "conduct-litellm-guard>=0.2.5 is required for the Conduct guardrail. Install it with: pip install \"conduct-litellm-guard>=0.2.5\""
     );
 }

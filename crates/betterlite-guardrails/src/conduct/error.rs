@@ -5,7 +5,9 @@ use crate::guardrail_records::error::GuardrailRecordError;
 
 #[derive(Debug, Error)]
 pub enum ConductCheckError {
-    #[error("conduct-litellm-guard>=0.2.5 is required for the Conduct guardrail")]
+    #[error(
+        "conduct-litellm-guard>=0.2.5 is required for the Conduct guardrail. Install it with: pip install \"conduct-litellm-guard>=0.2.5\""
+    )]
     MissingPackage,
 }
 
