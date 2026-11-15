@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
 use super::fields::Fields;
-use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChatDelta, ChunkFactory};
+use super::records::{CHUNK_OBJECT, ChatChunk, ChunkFactory};
 use super::usage;
 
 mod parts;
@@ -29,6 +29,7 @@ pub(super) fn passthrough_chunk(
     };
     let model = optional_text(fields.get("model"), "model")?;
     let system_fingerprint = optional_text(fields.get("system_fingerprint"), "system_fingerprint")?;
+    let service_tier = optional_text(fields.get("service_tier"), "service_tier")?;
     let choices = parts::choices(fields.get("choices"))?;
     let usage = match fields.get("usage") {
         None => None,
@@ -55,6 +56,7 @@ pub(super) fn passthrough_chunk(
                 | "choices"
                 | "usage"
                 | "provider_specific_fields"
+                | "service_tier"
         ) {
             extra.insert(key.clone(), value.clone());
         }
@@ -68,7 +70,7 @@ pub(super) fn passthrough_chunk(
         choices,
         usage,
         provider_specific_fields,
-        service_tier: None,
+        service_tier,
         extra,
     })
 }
@@ -84,15 +86,4 @@ pub(super) fn optional_text(
         Some(Value::String(text)) => Ok(Some(Some(text.clone()))),
         Some(_) => Err(ResponsesChatStreamError::Field { field }),
     }
-}
-
-// a choices value that is not a list becomes the one default StreamingChoices the constructor writes
-fn default_choice() -> Vec<ChatChoice> {
-    vec![ChatChoice {
-        index: Some(0),
-        delta: ChatDelta::default(),
-        finish_reason: None,
-        logprobs: None,
-        extra: Map::new(),
-    }]
 }

@@ -51,11 +51,11 @@ impl ResponsesChatStream {
             Some(id) => chunk.id.clone_from(id),
             None => self.chat_completion_id = Some(chunk.id.clone()),
         }
-        // the terminal chunk's own service_tier, even an empty string, is kept over the remembered one
+        // a chunk without a nonnull tier, even one that sent an explicit null, takes the remembered tier
         if let Some(tier) = &self.served_service_tier
-            && chunk.service_tier.is_none()
+            && chunk.service_tier.as_ref().is_none_or(Option::is_none)
         {
-            chunk.service_tier = Some(tier.clone());
+            chunk.service_tier = Some(Some(tier.clone()));
         }
         Ok(chunk)
     }

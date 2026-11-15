@@ -1,8 +1,7 @@
-use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
-use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChunkFactory};
+use super::records::{ChatChunk, ChunkFactory};
 use super::translate::{delta, response_chunk};
 use super::usage;
 use crate::api::response_chat_history::metadata::{
@@ -80,7 +79,7 @@ pub(super) fn terminal_chunk(
     } else {
         Some(metadata)
     };
-    chunk.service_tier = service_tier;
+    chunk.service_tier = service_tier.map(Some);
     Ok(chunk)
 }
 

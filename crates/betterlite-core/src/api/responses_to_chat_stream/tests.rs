@@ -81,7 +81,7 @@ struct Captured(Arc<Mutex<Vec<String>>>);
 impl<Inner: Subscriber> Layer<Inner> for Captured {
     fn on_event(&self, event: &Event<'_>, _context: Context<'_, Inner>) {
         let mut message = String::new();
-        event.record(&mut |field: &EventField, value: &dyn fmt::Debug| {
+        event.record(&mut |_field: &EventField, value: &dyn fmt::Debug| {
             message = format!("{value:?}");
         });
         self.0.lock().unwrap().push(message);
@@ -274,14 +274,120 @@ fn stateless_translation_passes_a_chat_chunk_through() {
 }
 
 #[test]
+fn stateless_translation_cleans_a_passthrough_delta() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{
+            "index": 0,
+            "message": {"role": "assistant", "content": "dropped"},
+            "delta": {
+                "content": "c",
+                "message": "kept",
+                "annotations": null,
+                "images": [],
+                "thinking_blocks": null,
+                "reasoning_items": null,
+                "reasoning_content": "rc",
+                "reasoning": "r",
+                "provider_specific_fields": {"x": 1},
+            },
+        }],
+    }))
+    .unwrap();
+    assert_eq!(
+        chunk["choices"][0],
+        json!({
+            "index": 0,
+            "delta": {
+                "content": "c",
+                "role": null,
+                "function_call": null,
+                "tool_calls": null,
+                "audio": null,
+                "reasoning_content": "rc",
+                "message": "kept",
+                "reasoning": "r",
+                "provider_specific_fields": {"x": 1},
+            },
+            "finish_reason": null,
+            "logprobs": null,
+        })
+    );
+}
+
+#[test]
+fn passthrough_delta_maps_reasoning_only_and_keeps_thinking_blocks() {
+    let mapped = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"reasoning": "only"}}],
+    }))
+    .unwrap();
+    let delta = &mapped["choices"][0]["delta"];
+    assert_eq!(delta["reasoning_content"], json!("only"));
+    assert!(delta.get("reasoning").is_none());
+    let blocks = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"reasoning": null, "thinking_blocks": [{"type": "thinking"}]}}],
+    }))
+    .unwrap();
+    let delta = &blocks["choices"][0]["delta"];
+    assert_eq!(delta["thinking_blocks"], json!([{"type": "thinking"}]));
+    assert!(delta.get("reasoning").is_none());
+}
+
+#[test]
+fn passthrough_function_call_requires_its_arguments() {
+    let missing = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"function_call": {"name": "f"}}}],
+    }))
+    .unwrap_err();
+    assert!(matches!(
+        missing,
+        ResponsesChatStreamError::Field { field: "arguments" }
+    ));
+    let present = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{"index": 0, "delta": {"function_call": {"arguments": "{}"}}}],
+    }))
+    .unwrap();
+    assert_eq!(
+        present["choices"][0]["delta"]["function_call"],
+        json!({"name": null, "arguments": "{}"})
+    );
+}
+
+#[test]
+fn passthrough_tool_function_defaults_its_arguments_to_an_empty_string() {
+    let chunk = translated(&json!({
+        "object": "chat.completion.chunk",
+        "choices": [{
+            "index": 0,
+            "delta": {"tool_calls": [{"index": 0, "function": {"name": "f"}}]},
+        }],
+    }))
+    .unwrap();
+    assert_eq!(
+        chunk["choices"][0]["delta"]["tool_calls"][0]["function"],
+        json!({"name": "f", "arguments": ""})
+    );
+}
+
+#[test]
 fn stateless_translation_passes_a_missing_type_with_choices_through() {
     let chunk =
         translated(&json!({"choices": [{"index": 0, "delta": {"content": "hi"}}]})).unwrap();
     assert_eq!(chunk["id"], json!(GENERATED_ID));
     assert_eq!(chunk["choices"][0]["delta"]["content"], json!("hi"));
+    // an empty choices list is not a chat chunk, so the event falls to the unhandled empty chunk
     let bare = translated(&json!({"choices": []})).unwrap();
-    assert_eq!(bare["choices"][0]["index"], json!(0));
-    assert_eq!(bare["choices"][0]["delta"]["content"], json!(null));
+    assert_eq!(
+        bare,
+        chunk_of(
+            GENERATED_ID,
+            json!([choice(empty_delta(), json!(null), json!(0))])
+        )
+    );
 }
 
 #[test]
@@ -332,8 +438,9 @@ fn stateless_translation_carries_tool_calls_on_a_new_item() {
         "item": {"type": "function_call", "id": "fc_1", "call_id": "call_1", "name": "f", "arguments": "{}"},
     }))
     .unwrap();
+    // call_1 is Bedrock Mantle's index-form call_id, so B917 answers with the item id instead
     let expected_call = json!({
-        "id": "call_1",
+        "id": "fc_1",
         "index": 2,
         "type": "function",
         "function": {"name": "f", "arguments": "{}"},
@@ -481,7 +588,7 @@ fn stateless_translation_done_item_is_not_terminal() {
     }))
     .unwrap();
     let call = json!({
-        "id": "call_1",
+        "id": "fc_1",
         "index": 2,
         "type": "function",
         "function": {"name": "f", "arguments": "{}"},
@@ -747,21 +854,21 @@ fn stream_tier_is_remembered_and_overridden() {
     let created = iterator
         .chunk_parser(&json!({"type": "response.created", "response": {"id": "resp_a", "service_tier": "scale"}}))
         .unwrap();
-    assert_eq!(created.service_tier.as_deref(), Some("scale"));
+    assert_eq!(created.service_tier.flatten().as_deref(), Some("scale"));
     let carried = iterator
         .chunk_parser(&json!({"type": "response.output_text.delta", "delta": "b"}))
         .unwrap();
-    assert_eq!(carried.service_tier.as_deref(), Some("scale"));
+    assert_eq!(carried.service_tier.flatten().as_deref(), Some("scale"));
     let reset = iterator
         .chunk_parser(
             &json!({"type": "response.created", "response": {"id": "resp_a", "service_tier": ""}}),
         )
         .unwrap();
-    assert_eq!(reset.service_tier.as_deref(), Some("scale"));
+    assert_eq!(reset.service_tier.flatten().as_deref(), Some("scale"));
     let terminal = iterator
         .chunk_parser(&json!({"type": "response.completed", "response": {"id": "resp_a", "service_tier": ""}}))
         .unwrap();
-    assert_eq!(terminal.service_tier.as_deref(), Some(""));
+    assert_eq!(terminal.service_tier.flatten().as_deref(), Some(""));
 }
 
 #[test]
@@ -776,6 +883,35 @@ fn stream_tier_ignores_a_non_string_tier() {
         .chunk_parser(&json!({"type": "response.output_text.delta", "delta": "b"}))
         .unwrap();
     assert_eq!(carried.service_tier, None);
+}
+
+#[test]
+fn stream_tier_fills_a_passthrough_chunk() {
+    let mut iterator = stream();
+    iterator
+        .chunk_parser(&json!({"type": "response.created", "response": {"id": "resp_a", "service_tier": "scale"}}))
+        .unwrap();
+    let overridden = iterator
+        .chunk_parser(
+            &json!({"object": "chat.completion.chunk", "service_tier": null, "choices": []}),
+        )
+        .unwrap();
+    assert_eq!(overridden.service_tier.flatten().as_deref(), Some("scale"));
+    let kept = iterator
+        .chunk_parser(
+            &json!({"object": "chat.completion.chunk", "service_tier": "", "choices": []}),
+        )
+        .unwrap();
+    assert_eq!(kept.service_tier.flatten().as_deref(), Some(""));
+    let absent = iterator
+        .chunk_parser(&json!({"object": "chat.completion.chunk", "choices": []}))
+        .unwrap();
+    assert_eq!(
+        absent.service_tier.as_ref().and_then(Option::as_deref),
+        Some("scale")
+    );
+    let text = serde_json::to_string(&absent).unwrap();
+    assert_eq!(text.matches("\"service_tier\"").count(), 1);
 }
 
 #[test]

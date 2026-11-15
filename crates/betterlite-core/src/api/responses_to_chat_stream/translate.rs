@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 use super::error::ResponsesChatStreamError;
 use super::fields::{Fields, field, json_type_name, listed_choices, sequential_index};
 use super::passthrough::passthrough_chunk;
-use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChatDelta, ChatToolCall, ChunkFactory};
+use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChatDelta, ChunkFactory};
 use super::terminal::terminal_chunk;
 use super::text::repr_value;
 use super::tool_call::{self, CallShape};
@@ -96,7 +96,15 @@ fn dispatch_event(
         }
         Some(
             "response.function_call_arguments.delta" | "response.custom_tool_call_input.delta",
-        ) => argument_delta(parsed_chunk, fields, tool_call_index_map, factory),
+        ) => {
+            let arguments = argument_text(parsed_chunk, fields)?;
+            Ok(Some(argument_chunk(
+                fields,
+                tool_call_index_map,
+                factory,
+                arguments,
+            )?))
+        }
         Some("response.reasoning_summary_text.delta") => reasoning_delta_chunk(fields, factory),
         Some("response.completed" | "response.incomplete") => {
             Ok(Some(terminal_chunk(fields, event_type, factory)?))
@@ -182,12 +190,6 @@ pub(super) fn response_chunk(
     }
 }
 
-fn tool_chunk(factory: ChunkFactory, call: ChatToolCall) -> ChatChunk {
-    let mut delta = delta(None);
-    delta.tool_calls = Some(vec![call]);
-    response_chunk(factory, None, Some(0), delta, None)
-}
-
 fn item_chunk(
     fields: &Fields,
     tool_call_index_map: Option<&mut ToolCallIndices>,
@@ -232,7 +234,9 @@ fn item_chunk(
             index: output_index,
         },
     };
-    Ok(Some(tool_chunk(factory, tool_call::convert(item, shape)?)))
+    let mut delta = delta(None);
+    delta.tool_calls = Some(vec![tool_call::convert(item, shape)?]);
+    Ok(Some(response_chunk(factory, None, Some(0), delta, None)))
 }
 
 fn reasoning_delta_chunk(
@@ -246,21 +250,6 @@ fn reasoning_delta_chunk(
     let mut delta = delta(None);
     delta.reasoning_content = Some(reasoning.to_owned());
     Ok(Some(response_chunk(factory, None, index, delta, None)))
-}
-
-fn argument_delta(
-    parsed_chunk: &Value,
-    fields: &Fields,
-    tool_call_index_map: Option<&mut ToolCallIndices>,
-    factory: ChunkFactory,
-) -> Result<Option<ChatChunk>, ResponsesChatStreamError> {
-    let arguments = argument_text(parsed_chunk, fields)?;
-    Ok(Some(argument_chunk(
-        fields,
-        tool_call_index_map,
-        factory,
-        arguments,
-    )?))
 }
 
 fn argument_text<'a>(

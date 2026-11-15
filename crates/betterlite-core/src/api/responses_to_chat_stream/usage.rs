@@ -4,7 +4,7 @@ use super::error::ResponsesChatStreamError;
 use crate::api::responses_usage::{UsageInput, normalize_and_project};
 
 // Usage.model_dump() keeps its two declared detail fields, so an absent wrapper still prints as null
-pub fn chat_usage(value: &Value) -> Result<Value, ResponsesChatStreamError> {
+pub(super) fn chat_usage(value: &Value) -> Result<Value, ResponsesChatStreamError> {
     let Value::Object(mut fields) = normalize_and_project(UsageInput::Mapping(value))? else {
         return Err(ResponsesChatStreamError::Field { field: "usage" });
     };

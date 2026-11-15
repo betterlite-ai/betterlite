@@ -9,12 +9,12 @@ use crate::api::response_chat_history::tool_fields::output_tool_fields;
 
 const CONVERTED_INDEX: usize = 0;
 
-pub enum CallShape<'a> {
+pub(super) enum CallShape<'a> {
     Added { event: &'a Fields, index: i64 },
     Done { index: i64 },
 }
 
-pub fn convert(
+pub(super) fn convert(
     item: &Fields,
     shape: CallShape<'_>,
 ) -> Result<ChatToolCall, ResponsesChatStreamError> {
@@ -48,7 +48,10 @@ pub fn convert(
     })
 }
 
-pub fn delta_call(index: i64, arguments: &str) -> Result<ChatToolCall, ResponsesChatStreamError> {
+pub(super) fn delta_call(
+    index: i64,
+    arguments: &str,
+) -> Result<ChatToolCall, ResponsesChatStreamError> {
     Ok(ChatToolCall {
         id: None,
         index: Some(index),
@@ -60,7 +63,7 @@ pub fn delta_call(index: i64, arguments: &str) -> Result<ChatToolCall, Responses
     })
 }
 
-pub fn function_value(
+pub(super) fn function_value(
     name: Option<&str>,
     arguments: &str,
     provider: Option<&IndexMap<String, Json>>,

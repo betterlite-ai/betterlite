@@ -6,14 +6,13 @@ use super::super::fields::Fields;
 use super::super::records::{ChatChoice, ChatDelta, ChatToolCall};
 use super::optional_text;
 
-const CHOICE_KEYS: [&str; 4] = ["index", "delta", "finish_reason", "logprobs"];
-const DELTA_KEYS: [&str; 7] = [
+const CHOICE_KEYS: [&str; 5] = ["index", "delta", "finish_reason", "logprobs", "message"];
+const DELTA_KEYS: [&str; 6] = [
     "content",
     "role",
     "function_call",
     "tool_calls",
     "audio",
-    "reasoning",
     "reasoning_content",
 ];
 const TOOL_CALL_KEYS: [&str; 5] = ["id", "index", "type", "function", "custom"];
@@ -21,7 +20,14 @@ const FUNCTION_KEYS: [&str; 2] = ["name", "arguments"];
 
 pub(super) fn choices(value: Option<&Value>) -> Result<Vec<ChatChoice>, ResponsesChatStreamError> {
     let Some(Value::Array(items)) = value else {
-        return Ok(super::default_choice());
+        // not a list: the one default StreamingChoices the constructor writes
+        return Ok(vec![ChatChoice {
+            index: Some(0),
+            delta: ChatDelta::default(),
+            finish_reason: None,
+            logprobs: None,
+            extra: Map::new(),
+        }]);
     };
     let mut choices = Vec::with_capacity(items.len());
     for item in items {
@@ -104,12 +110,21 @@ fn delta(fields: &Fields) -> Result<ChatDelta, ResponsesChatStreamError> {
             });
         }
     };
+    let reasoning_consumed = fields.get("reasoning_content").is_none_or(Value::is_null);
     let mut extra = Map::new();
     for (key, value) in fields {
         if DELTA_KEYS.contains(&key.as_str()) {
             continue;
         }
-        if key.as_str() == "annotations" && value.is_null() {
+        if key.as_str() == "reasoning" && reasoning_consumed {
+            continue;
+        }
+        if value.is_null()
+            && matches!(
+                key.as_str(),
+                "annotations" | "images" | "reasoning_items" | "thinking_blocks"
+            )
+        {
             continue;
         }
         if key.as_str() == "images" && matches!(value, Value::Array(items) if items.is_empty()) {
@@ -134,7 +149,8 @@ fn delta(fields: &Fields) -> Result<ChatDelta, ResponsesChatStreamError> {
 
 fn function_call(call: &Fields) -> Result<Value, ResponsesChatStreamError> {
     let name = optional_text(call.get("name"), "name")?.flatten();
-    let arguments = optional_text(call.get("arguments"), "arguments")?.flatten();
+    let arguments = optional_text(call.get("arguments"), "arguments")?
+        .ok_or(ResponsesChatStreamError::Field { field: "arguments" })?;
     Ok(function_object(name, arguments, call))
 }
 
@@ -178,7 +194,9 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
             None | Some(Value::Null) => None,
             Some(Value::Object(call)) => Some(function_object(
                 optional_text(call.get("name"), "name")?.flatten(),
-                optional_text(call.get("arguments"), "arguments")?.flatten(),
+                optional_text(call.get("arguments"), "arguments")?
+                    .flatten()
+                    .unwrap_or_default(),
                 call,
             )),
             Some(_) => return Err(ResponsesChatStreamError::Field { field: "function" }),
@@ -202,13 +220,10 @@ fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, ResponsesChatStreamE
     Ok(calls)
 }
 
-fn function_object(name: Option<String>, arguments: Option<String>, fields: &Fields) -> Value {
+fn function_object(name: Option<String>, arguments: String, fields: &Fields) -> Value {
     let mut function = Map::new();
     function.insert("name".to_owned(), name.map_or(Value::Null, Value::String));
-    function.insert(
-        "arguments".to_owned(),
-        arguments.map_or(Value::Null, Value::String),
-    );
+    function.insert("arguments".to_owned(), Value::String(arguments));
     for (key, value) in fields {
         if !FUNCTION_KEYS.contains(&key.as_str()) {
             function.insert(key.clone(), value.clone());

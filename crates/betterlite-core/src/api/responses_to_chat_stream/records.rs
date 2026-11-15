@@ -32,8 +32,8 @@ pub struct ChatChunk {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<Value>,
     pub provider_specific_fields: Option<Map<String, Value>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub service_tier: Option<String>,
+    #[serde(with = "double_option", skip_serializing_if = "Option::is_none")]
+    pub service_tier: Option<Option<String>>,
     #[serde(flatten)]
     pub extra: Map<String, Value>,
 }

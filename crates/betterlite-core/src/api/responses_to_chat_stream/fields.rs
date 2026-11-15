@@ -3,9 +3,9 @@ use serde_json::{Map, Value};
 use super::error::ResponsesChatStreamError;
 use super::translate::ToolCallIndices;
 
-pub type Fields = Map<String, Value>;
+pub(super) type Fields = Map<String, Value>;
 
-pub trait FieldValue<'a>: Sized {
+pub(super) trait FieldValue<'a>: Sized {
     fn read(value: &'a Value) -> Option<Self>;
 }
 
@@ -27,7 +27,7 @@ impl FieldValue<'_> for i64 {
     }
 }
 
-pub fn field<'a, T: FieldValue<'a>>(
+pub(super) fn field<'a, T: FieldValue<'a>>(
     fields: &'a Fields,
     name: &'static str,
 ) -> Result<Option<T>, ResponsesChatStreamError> {
@@ -40,7 +40,7 @@ pub fn field<'a, T: FieldValue<'a>>(
 }
 
 #[must_use]
-pub fn listed_choices(fields: &Fields) -> bool {
+pub(super) fn listed_choices(fields: &Fields) -> bool {
     match fields.get("choices") {
         Some(Value::Array(items)) => !items.is_empty(),
         None
@@ -51,7 +51,7 @@ pub fn listed_choices(fields: &Fields) -> bool {
 }
 
 #[must_use]
-pub fn json_type_name(value: &Value) -> &'static str {
+pub(super) fn json_type_name(value: &Value) -> &'static str {
     match value {
         Value::Array(_) => "list",
         Value::Bool(_) => "bool",
@@ -63,7 +63,7 @@ pub fn json_type_name(value: &Value) -> &'static str {
     }
 }
 
-pub fn sequential_index(
+pub(super) fn sequential_index(
     map: Option<&mut ToolCallIndices>,
     output_index: i64,
 ) -> Result<i64, ResponsesChatStreamError> {

@@ -51,7 +51,7 @@ def run(input_value: Input) -> JsonValue:
 def _events(call: EventCall) -> JsonValue:
     iterator = ResponsesStream(iter([]), sync_stream=True)
     steps: list[JsonValue] = [
-        DUMP.validate_json(iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json())
+        DUMP.validate_json(iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True))
         for event in call["events"]
     ]
     result: dict[str, JsonValue] = {"steps": steps}
@@ -61,7 +61,7 @@ def _events(call: EventCall) -> JsonValue:
 def _lines(call: LineCall) -> JsonValue:
     reader = LineReader()
     steps: list[JsonValue] = [
-        {"chunk": DUMP.validate_json(reader.read(line).model_dump_json())} for line in call["lines"]
+        DUMP.validate_json(reader.read(line).model_dump_json(exclude_unset=True)) for line in call["lines"]
     ]
     result: dict[str, JsonValue] = {"steps": steps}
     return result

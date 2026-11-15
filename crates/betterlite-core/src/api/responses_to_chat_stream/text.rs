@@ -4,7 +4,7 @@ const EXPECTING_VALUE: &str = "Expecting value";
 const PROPERTY_NAME: &str = "Expecting property name enclosed in double quotes";
 
 #[must_use]
-pub fn repr_value(value: &Value) -> String {
+pub(super) fn repr_value(value: &Value) -> String {
     match value {
         Value::Null => "None".to_owned(),
         Value::Bool(true) => "True".to_owned(),
@@ -16,8 +16,10 @@ pub fn repr_value(value: &Value) -> String {
             format!("[{}]", rendered.join(", "))
         }
         Value::Object(fields) => {
-            let rendered: Vec<String> = fields
-                .iter()
+            let mut entries: Vec<(&String, &Value)> = fields.iter().collect();
+            entries.sort_by_key(|(key, _)| u8::from(key.as_str() != "type"));
+            let rendered: Vec<String> = entries
+                .into_iter()
                 .map(|(key, item)| format!("{}: {}", repr_text(key), repr_value(item)))
                 .collect();
             format!("{{{}}}", rendered.join(", "))
@@ -27,7 +29,7 @@ pub fn repr_value(value: &Value) -> String {
 
 // json.loads raises JSONDecodeError, whose text names the line, the column and the character
 #[must_use]
-pub fn json_error_message(text: &str, source: &serde_json::Error) -> String {
+pub(super) fn json_error_message(text: &str, source: &serde_json::Error) -> String {
     match scanned_error(text) {
         Some(message) => message,
         None => source.to_string(),
@@ -53,17 +55,15 @@ fn repr_text(text: &str) -> String {
 
 fn scanned_error(text: &str) -> Option<String> {
     let start = first_visible(text, 0);
+    let after = first_visible(text, start.saturating_add(1));
     match text.chars().nth(start) {
-        Some('{') => {
-            let after = first_visible(text, start.saturating_add(1));
-            match text.chars().nth(after) {
-                Some('"' | '}') => None,
-                Some(_) | None => Some(positioned(PROPERTY_NAME, text, after)),
-            }
-        }
+        Some('{') => match text.chars().nth(after) {
+            Some('"' | '}') => None,
+            Some(_) | None => Some(positioned(PROPERTY_NAME, text, after)),
+        },
         Some('"' | 't' | 'f' | 'n' | '-' | '0'..='9') => None,
-        Some(_) => Some(positioned(EXPECTING_VALUE, text, start)),
-        None => Some(positioned(EXPECTING_VALUE, text, start)),
+        Some('[') => Some(positioned(EXPECTING_VALUE, text, after)),
+        Some(_) | None => Some(positioned(EXPECTING_VALUE, text, start)),
     }
 }
 
