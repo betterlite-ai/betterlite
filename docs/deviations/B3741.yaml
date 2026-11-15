@@ -1,0 +1,24 @@
+task: B3741
+deviations:
+  - what: The MCP session and the per-call id reach conversation-id resolution as the request data's own mcp_tool_call_metadata and litellm_call_id keys, because betterlite's request data carries no litellm_logging_obj; LiteLLM reads both from that logging object.
+    why: The guardrail sees the metadata the logging layer already attached to the request data, and both ids are the values LiteLLM reads from the object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L410-L418
+  - what: The lookup also accepts that metadata nested under the request metadata, where LiteLLM only reads it from the logging object and only looks for headers under the metadata.
+    why: A nested mcp_tool_call_metadata names the same session, so a caller that attaches it under metadata keeps its conversation grouping instead of falling back to a per-call id.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L413-L430
+  - what: The token and evaluation response bodies are read with a 1 MiB bound, and a bigger body fails as a poster error; LiteLLM reads whatever length the endpoint sends.
+    why: An unbounded read grows the process memory on a shared proxy, and both endpoints answer with small JSON documents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L493-L509
+  - what: A request_timeout that is negative, NaN or infinite is refused when the guardrail is constructed, where LiteLLM stores the float and fails only when httpx builds a request.
+    why: The typed settings validate the value where it enters, so a bad Agent 365 config fails at startup instead of on the first tool call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L157-L172
+  - what: error and error_description are read as the string LiteLLM's type declares, and error_codes as i64 items; a non-string value falls back to its default where LiteLLM applies str(), and a code list holding a numeric string, an integral float or an item outside i64's range is empty where pydantic's int adapter coerces or accepts it.
+    why: A value of the wrong type is not coerced, and the gateway-owned verdict only differs for documents no Entra deployment sends; an i64-sized integer list, the shape the endpoint sends, is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L472-L478
+  - what: An expires_in of a JSON boolean takes the 3599-second default, where LiteLLM's isinstance check lets Python's bool-as-int coercion read true as one second.
+    why: Compatibility keeps values to the declared type and no Entra deployment sends a boolean lifetime; every number and numeric string parses the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L69-L75
+kept_bugs:
+  - what: A 4xx token response whose body is not a JSON object is reported as a malformed response instead of a token exchange error, because LiteLLM parses the body before it inspects the status.
+    why: A working setup branches on the malformed-response class for such bodies, and the classification is observable through the error the exchange raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/agent_365/agent_365.py#L465-L478
