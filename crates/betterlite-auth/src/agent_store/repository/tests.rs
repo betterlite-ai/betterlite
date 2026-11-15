@@ -18,9 +18,13 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::SecretString;
 use tokio_postgres::NoTls;
 
+use crate::agent_identity::error::IDENTITY_DENIED_STATUS;
 use crate::agent_policy::AgentExecutionMode;
 use crate::agent_store::AgentIdentityStore;
-use crate::agent_store::tests::support::{authentication_context, microsoft_subject};
+use crate::agent_store::resolve::resolve_managed_agent;
+use crate::agent_store::tests::support::{
+    application_claims, authentication_context, microsoft_subject,
+};
 use crate::identity::FailureCode;
 
 #[derive(Parser)]
@@ -330,6 +334,26 @@ async fn repository_enrollment_create_data_keeps_the_existing_row() {
     assert_eq!(
         failure.message,
         "Microsoft subject is already bound to another local identity"
+    );
+    close(fixture, postgres).await;
+}
+
+#[tokio::test]
+async fn repository_resolve_managed_agent_denies_a_disabled_agent() {
+    let (fixture, _store, postgres) = database().await;
+    {
+        let client = postgres.session().await.expect("the database connection");
+        insert_agent(&client, "agent-1").await;
+        insert_identity(&client, "agent-1", "client-1", "rev-1").await;
+        disable(&client, "agent-1", "enabled").await;
+    }
+    let failure = resolve_managed_agent(&application_claims(), Some(&postgres), None)
+        .await
+        .expect_err("the disabled agent");
+    assert_eq!(failure.status, IDENTITY_DENIED_STATUS);
+    assert_eq!(
+        failure.message,
+        "Agent is disabled or no longer bound to an identity"
     );
     close(fixture, postgres).await;
 }
