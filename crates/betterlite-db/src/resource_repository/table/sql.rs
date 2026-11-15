@@ -1,33 +1,57 @@
 use std::collections::BTreeMap;
 
-use serde::Serialize;
-
 use crate::auxiliary_repository::repository::TableError;
 use crate::budget_permission_rows::JsonData;
+use crate::postgres_store::session::PostgresStore;
 
-use super::ResourceBinding;
+use super::query::query_one;
+use super::{DocumentData, ResourceBinding};
+
+fn quoted_columns(document: &BTreeMap<String, JsonData>) -> Vec<String> {
+    document
+        .keys()
+        .map(|name| format!("\"{}\"", name.replace('"', "\"\"")))
+        .collect()
+}
+
+fn value_list(document: &BTreeMap<String, JsonData>) -> String {
+    quoted_columns(document)
+        .iter()
+        .map(|column| format!("r.{column}"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 #[must_use]
-pub(super) fn quote_identifier(name: &str) -> String {
-    format!("\"{}\"", name.replace('"', "\"\""))
+pub(super) fn select_one_statement<B: ResourceBinding>() -> String {
+    format!(
+        "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{}\" = $1",
+        B::TABLE,
+        B::KEY
+    )
 }
 
-pub(super) fn document<T>(value: &T) -> Result<BTreeMap<String, JsonData>, TableError>
-where
-    T: Serialize,
-{
-    let text = serde_json::to_string(value).map_err(TableError::Row)?;
-    serde_json::from_str(&text).map_err(TableError::Row)
+#[must_use]
+pub(super) fn delete_statement<B: ResourceBinding>() -> String {
+    format!(
+        "DELETE FROM \"{}\" AS t WHERE t.\"{}\" = $1",
+        B::TABLE,
+        B::KEY
+    )
 }
 
-pub(super) fn document_json(document: &BTreeMap<String, JsonData>) -> Result<String, TableError> {
-    serde_json::to_string(document).map_err(TableError::Row)
+#[must_use]
+pub(super) fn delete_returning_statement<B: ResourceBinding>() -> String {
+    let mut sql = delete_statement::<B>();
+    sql.push_str(" RETURNING row_to_json(t)::text");
+    sql
 }
 
 pub(super) fn generate_id<B: ResourceBinding>(document: &mut BTreeMap<String, JsonData>) {
-    if let Some(id) = B::ID
-        && !document.contains_key(id)
-    {
+    let Some(id) = B::ID else {
+        return;
+    };
+    if !document.contains_key(id) {
         document.insert(
             id.to_owned(),
             JsonData::String(uuid::Uuid::new_v4().to_string()),
@@ -36,32 +60,14 @@ pub(super) fn generate_id<B: ResourceBinding>(document: &mut BTreeMap<String, Js
 }
 
 #[must_use]
-fn column_list(document: &BTreeMap<String, JsonData>) -> String {
-    document
-        .keys()
-        .map(|name| quote_identifier(name))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-#[must_use]
-fn value_list(document: &BTreeMap<String, JsonData>) -> String {
-    document
-        .keys()
-        .map(|name| format!("r.{}", quote_identifier(name)))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
-#[must_use]
 pub(super) fn create_statement<B: ResourceBinding>(
     document: &BTreeMap<String, JsonData>,
 ) -> String {
-    let table = quote_identifier(B::TABLE);
+    let table = format!("\"{}\"", B::TABLE);
     if document.is_empty() {
         return format!("INSERT INTO {table} AS t DEFAULT VALUES RETURNING row_to_json(t)::text");
     }
-    let columns = column_list(document);
+    let columns = quoted_columns(document).join(", ");
     let values = value_list(document);
     format!(
         "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
@@ -71,21 +77,15 @@ pub(super) fn create_statement<B: ResourceBinding>(
 
 #[must_use]
 fn update_assignments<B: ResourceBinding>(document: &BTreeMap<String, JsonData>) -> Vec<String> {
-    let mut assignments: Vec<String> = document
-        .keys()
-        .map(|name| {
-            let column = quote_identifier(name);
-            format!("{column} = r.{column}")
-        })
+    let mut assignments: Vec<String> = quoted_columns(document)
+        .into_iter()
+        .map(|column| format!("{column} = r.{column}"))
         .collect();
-    if let Some(updated_at) = B::UPDATED_AT
-        && !document.contains_key(updated_at)
-    {
-        assignments.push(format!("{} = now()", quote_identifier(updated_at)));
+    if let Some(updated_at) = B::UPDATED_AT.filter(|name| !document.contains_key(*name)) {
+        assignments.push(format!("\"{updated_at}\" = now()"));
     }
     if assignments.is_empty() {
-        let key = quote_identifier(B::KEY);
-        assignments.push(format!("{key} = t.{key}"));
+        assignments.push(format!("\"{}\" = t.\"{}\"", B::KEY, B::KEY));
     }
     assignments
 }
@@ -94,8 +94,8 @@ fn update_assignments<B: ResourceBinding>(document: &BTreeMap<String, JsonData>)
 pub(super) fn update_statement<B: ResourceBinding>(
     document: &BTreeMap<String, JsonData>,
 ) -> String {
-    let table = quote_identifier(B::TABLE);
-    let key = quote_identifier(B::KEY);
+    let table = format!("\"{}\"", B::TABLE);
+    let key = format!("\"{}\"", B::KEY);
     let assignments = update_assignments::<B>(document).join(", ");
     format!(
         "UPDATE {table} AS t SET {assignments} FROM \
@@ -104,26 +104,33 @@ pub(super) fn update_statement<B: ResourceBinding>(
     )
 }
 
+pub(super) async fn update_one<B: ResourceBinding>(
+    store: &PostgresStore,
+    data: B::Update,
+    filter: &str,
+) -> Result<Option<JsonData>, TableError> {
+    let record = data.into_document()?;
+    let sql = update_statement::<B>(&record);
+    let json = serde_json::to_string(&record).map_err(TableError::Row)?;
+    query_one(store, &sql, &[&json, &filter]).await
+}
+
 #[must_use]
 pub(super) fn upsert_statement<B: ResourceBinding>(
     document: &BTreeMap<String, JsonData>,
 ) -> String {
-    let table = quote_identifier(B::TABLE);
-    let key = quote_identifier(B::KEY);
-    let columns = column_list(document);
+    let table = format!("\"{}\"", B::TABLE);
+    let key = format!("\"{}\"", B::KEY);
+    let columns = quoted_columns(document).join(", ");
     let values = value_list(document);
     let mut assignments: Vec<String> = document
         .keys()
-        .filter(|name| name.as_str() != B::KEY && B::ID != Some(name.as_str()))
-        .map(|name| {
-            let column = quote_identifier(name);
-            format!("{column} = EXCLUDED.{column}")
-        })
+        .zip(quoted_columns(document))
+        .filter(|(name, _)| name.as_str() != B::KEY && B::ID != Some(name.as_str()))
+        .map(|(_, column)| format!("{column} = EXCLUDED.{column}"))
         .collect();
-    if let Some(updated_at) = B::UPDATED_AT
-        && !document.contains_key(updated_at)
-    {
-        assignments.push(format!("{} = now()", quote_identifier(updated_at)));
+    if let Some(updated_at) = B::UPDATED_AT.filter(|name| !document.contains_key(*name)) {
+        assignments.push(format!("\"{updated_at}\" = now()"));
     }
     if assignments.is_empty() {
         assignments.push(format!("{key} = EXCLUDED.{key}"));
