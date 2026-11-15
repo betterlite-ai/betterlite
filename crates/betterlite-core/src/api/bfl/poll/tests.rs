@@ -12,9 +12,10 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use http::header::HeaderMap;
 use rstest::rstest;
+use tokio::time::Instant;
 use url::Url;
 
-use super::{BflPoller, PollClock, PollError, PollSleeper, PollTransport};
+use super::{BflPoller, MonotonicClock, PollClock, PollError, PollSleeper, PollTransport};
 
 const SUBMITTED: &str =
     r#"{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}"#;
@@ -189,6 +190,16 @@ fn clock(step: u64) -> StepClock {
     }
 }
 
+#[test]
+fn the_monotonic_clock_counts_the_time_since_its_origin() {
+    let origin = Instant::now()
+        .checked_sub(Duration::from_secs(5))
+        .expect("an instant five seconds ago");
+    let clock = MonotonicClock { origin };
+
+    assert!(clock.now() >= Duration::from_secs(5));
+}
+
 #[tokio::test]
 async fn a_ready_poll_returns_the_reply_after_sleeping_through_pending() {
     let script = Script::new(
@@ -251,6 +262,10 @@ async fn the_initial_status_is_checked_before_the_body_is_parsed() {
         PollError::InitialStatus { status: 400, .. }
     ));
     assert_eq!(error.status(), Some(400));
+    assert_eq!(
+        error.to_string(),
+        "the BFL submission answered HTTP 400: not json"
+    );
     assert!(script.urls().is_empty());
 }
 
