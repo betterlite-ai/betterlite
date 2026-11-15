@@ -71,7 +71,7 @@ fn the_json_limit_rejects_one_byte_over() {
         max_json_bytes: body.len() - 1,
         ..limits()
     };
-    assert!(decode_mistral_resource::<serde_json::Value>(body, &at).is_ok());
+    decode_mistral_resource::<serde_json::Value>(body, &at).expect("the body fits the limit");
     assert!(matches!(
         decode_mistral_resource::<serde_json::Value>(body, &below),
         Err(MistralDecodeError::Limit(BatchRecordsError::JsonTooLarge { limit }))
