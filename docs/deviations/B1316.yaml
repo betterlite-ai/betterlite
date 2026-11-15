@@ -1,0 +1,59 @@
+task: B1316
+deviations:
+  - what: >-
+      A streamed Gemini answer whose status is neither 200 nor 201 reports that status and the body text as the
+      provider error. LiteLLM's second gate reads response.text from a response opened with stream=True, which
+      httpx refuses with ResponseNotRead, so the VertexAIError it means to raise for a 202, a 204 or a 3xx never
+      reaches the caller and a client-side read error does instead.
+    why: >-
+      A 202 carrying a body is a refusal the caller must see, and a 500 from a read error hides the provider's
+      answer. betterlite reads the body the gate already opened and keeps the status the provider sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2589-L2593
+  - what: >-
+      The body read from a failed streamed answer is capped at 16 MiB; a larger one fails the stream with a typed
+      error instead of becoming the whole error message.
+    why: >-
+      Every provider body in betterlite carries a size bound, and a failure body that large is not an answer a
+      working setup reads. The bound keeps one hostile response from exhausting a worker.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2581-L2583
+  - what: >-
+      A timeout while the stream is opened becomes a 408 provider error with the message "Timeout error
+      occurred.", and a body failure during iteration becomes betterlite's typed stream error. LiteLLM lets the
+      httpx exception escape from its stream wrapper.
+    why: >-
+      The stream's item type is a typed error, so a transport failure cannot arrive as a Python client exception;
+      the 408 and its message are the pair LiteLLM's own complete path uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2581-L2597
+  - what: >-
+      A caller timeout reaches the shared transport as a total deadline, with the connect phase taken from the
+      pooled client's limits. LiteLLM builds a per-call httpx client whose float timeout bounds every phase, or
+      an httpx.Timeout when one was passed; with no timeout it uses the handler's own default.
+    why: >-
+      The transport's per-request input carries one deadline, as B1344 records for the embedding handlers. The
+      caller's value is still carried on ClientTimeout and pinned by the execution tests, and the pooled
+      client's limits belong to the task that installs it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2817-L2823
+  - what: >-
+      The module emits sanitized tracing facts (host, model, body size, status) for the request, the answer and
+      the opened stream, and calls no logging object's pre_call or post_call.
+    why: >-
+      betterlite's logging pipeline belongs to the dispatch and logging tasks; a logging object passed through
+      this module would duplicate that owner. The facts LiteLLM hands its logger for a call include the header
+      map, which carries the bearer token or the Gemini key, and betterlite never logs that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2725-L2734
+kept_bugs:
+  - what: >-
+      A non-streaming Gemini error skips translate_exception_str, so the empty-OBJECT-schema complaint reaches
+      the caller as the provider's own text while the streaming path rewrites it.
+    why: >-
+      LiteLLM only translates inside make_call's raise_for_status handling. A working setup that matches the
+      friendly message on a streamed call still sees the raw text on a non-streaming one today, and copying the
+      asymmetry keeps that behavior after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2843-L2848
+  - what: >-
+      A caller timeout of 0 is dropped by the `if timeout:` test before the client is built, so the handler's
+      default timeout governs the call instead of a disabled timeout.
+    why: >-
+      A setup that sends 0 gets the handler's bounded default today; passing 0 through the way httpx reads it
+      would change how long that call may run after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2817-L2819

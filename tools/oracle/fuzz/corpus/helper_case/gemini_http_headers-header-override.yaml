@@ -1,0 +1,13 @@
+kind: helper
+name: gemini-http-headers-header-override
+call:
+  gemini_http_headers:
+    api_key: ya29.seed-token
+    auth_map: null
+    headers:
+      Authorization: Bearer caller-key
+      Content-Type: text/plain
+      x-goog-custom: kept
+    optional_params: {}
+env: {}
+compare: {ignore: []}

@@ -1090,6 +1090,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1098,6 +1099,8 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
@@ -1913,6 +1916,7 @@ dependencies = [
  "mime_guess",
  "mutants",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rcgen",
  "regex",
@@ -1932,6 +1936,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-tungstenite",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -2215,6 +2220,7 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
+ "betterlite-models",
  "chrono",
  "libfuzzer-sys",
  "serde_json",
@@ -2393,6 +2399,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "speedate",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
@@ -10019,7 +10026,11 @@ checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
 ]
 
@@ -10355,6 +10366,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.10.3",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror",
 ]
