@@ -29,12 +29,7 @@ awsw2jwjSBwoFyOFAQ9uGh6a9sPAns2suhzFWCy0LU+KsHF0b9WY6f0=
 -----END RSA PRIVATE KEY-----
 ";
 
-const EC_KEY: &str = "-----BEGIN PRIVATE KEY-----
-MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgFXaqxJ7++oDroymW
-uluBKV0YSwaAFHhWArQlvmTrlRKhRANCAARfDQxaHo2TktAZvOxYh4JBe8IXX2Mo
-yFtqkDJDOWOikOlO8V9g6O8PfrZm2QwffC6WnAiqAXDthy9Ac0mZu5NE
------END PRIVATE KEY-----
-";
+const EC_KEY: &str = include_str!("fixtures/ec.pem");
 
 const ED_KEY: &str = "-----BEGIN PRIVATE KEY-----
 MC4CAQAwBQYDK2VwBCIEIKs0MB1rmJeaWaRqB9QDIcokFBas4VPS1CU5g6x55K6V
