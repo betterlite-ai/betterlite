@@ -2,8 +2,13 @@
 
 use std::collections::BTreeMap;
 use std::fs::{create_dir, read, write};
+use std::io;
 use std::path::Path;
-use std::sync::Arc;
+use std::str;
+use std::sync::{Arc, Mutex};
+
+use tracing::subscriber::with_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::{BucketModuleDownloader, ModuleDownloadError};
 use crate::bucket_config::source::BucketType;
@@ -248,4 +253,68 @@ async fn a_target_that_is_a_directory_is_the_write_error() {
         .unwrap_err();
 
     assert!(matches!(error, ModuleDownloadError::Write { .. }));
+}
+
+#[test]
+fn the_module_text_is_not_logged() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("handler.py");
+    let records = Arc::new(Mutex::new(String::new()));
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(CaptureWriter(Arc::clone(&records)))
+        .finish();
+    let downloader = downloader(module_objects());
+
+    with_default(subscriber, || {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(downloader.download_python_module(
+                BucketType::Gcs,
+                "bucket",
+                "module.py",
+                &path,
+            ))
+            .unwrap();
+    });
+
+    let captured = records.lock().unwrap();
+    assert!(
+        captured.contains("handler.py"),
+        "the path is logged: {captured}"
+    );
+    assert!(
+        !captured.contains("return 1"),
+        "the module text is logged: {captured}"
+    );
+}
+
+#[derive(Clone)]
+struct CaptureWriter(Arc<Mutex<String>>);
+
+impl io::Write for CaptureWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        let text = str::from_utf8(buf)
+            .map_err(|source| io::Error::new(io::ErrorKind::InvalidData, source))?;
+        self.0
+            .lock()
+            .map_err(|source| io::Error::other(source.to_string()))?
+            .push_str(text);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for CaptureWriter {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
 }
