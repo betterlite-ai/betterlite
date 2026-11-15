@@ -29,21 +29,19 @@ pub struct RawParams {
     pub complexity_router_config: Option<RawRouterConfig>,
 }
 
-// ComplexityRouterConfig is extra=allow, so the keys other sections do not read are captured here
 #[derive(Debug, Default, Deserialize)]
 pub struct RawRouterConfig {
     #[serde(default)]
     pub reminder_markers: Option<Vec<RawMarkerPair>>,
-    #[serde(flatten)]
-    pub siblings: BTreeMap<String, JsonValue>,
 }
 
+// pydantic ignores keys a ReminderMarkerPair does not declare, so they are claimed instead of refused
 #[derive(Debug, Default, Deserialize)]
 pub struct RawMarkerPair {
     open: String,
     close: String,
     #[serde(flatten)]
-    siblings: BTreeMap<String, JsonValue>,
+    pub siblings: BTreeMap<String, JsonValue>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
