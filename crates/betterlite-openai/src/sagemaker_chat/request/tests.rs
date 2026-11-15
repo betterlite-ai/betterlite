@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 
 use betterlite_prompts::arguments::json::{Json, Object as Body};
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::{
     HAS_CUSTOM_STREAM_WRAPPER, SUPPORTS_STREAM_PARAM_IN_BODY, TransformInput, get_error_class,
@@ -14,7 +14,7 @@ use crate::openai_base_config::{CatalogCapabilities, Headers, Object};
 use crate::sagemaker_chat::nova;
 
 fn messages() -> Vec<ChatMessage> {
-    serde_json::from_value(json!([{"role": "user", "content": "hi"}])).expect("the messages")
+    serde_json::from_str(r#"[{"role": "user", "content": "hi"}]"#).expect("the messages")
 }
 
 fn options(source: &str) -> Body {
@@ -135,10 +135,10 @@ fn the_chat_list_leaves_out_the_exact_openai_extensions() {
 
 #[test]
 fn the_stream_flags_match_the_pinned_config() {
-    assert!(HAS_CUSTOM_STREAM_WRAPPER);
-    assert!(!SUPPORTS_STREAM_PARAM_IN_BODY);
-    assert!(nova::HAS_CUSTOM_STREAM_WRAPPER);
-    assert!(nova::SUPPORTS_STREAM_PARAM_IN_BODY);
+    const { assert!(HAS_CUSTOM_STREAM_WRAPPER) };
+    const { assert!(!SUPPORTS_STREAM_PARAM_IN_BODY) };
+    const { assert!(nova::HAS_CUSTOM_STREAM_WRAPPER) };
+    const { assert!(nova::SUPPORTS_STREAM_PARAM_IN_BODY) };
 }
 
 #[test]
@@ -147,7 +147,10 @@ fn map_openai_params_keeps_only_the_supported_parameters() {
     let requested = serde_json::from_str(r#"{"temperature": 0.2, "unsupported": 1}"#)
         .expect("the requested options");
     map_openai_params("endpoint", &requested, &mut existing, &catalog());
-    assert_eq!(Value::Object(existing), json!({"temperature": 0.2}));
+    assert_eq!(
+        Value::Object(existing),
+        serde_json::from_str::<Value>(r#"{"temperature": 0.2}"#).expect("the expected options")
+    );
 }
 
 #[test]

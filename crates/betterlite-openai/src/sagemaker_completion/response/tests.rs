@@ -12,6 +12,10 @@ impl TextTokenCounter for WordCounter {
     }
 }
 
+fn reply_value(source: &str) -> Value {
+    serde_json::from_str(source).expect("the reply")
+}
+
 fn input<'request>(reply: &'request Value, prompt: &'request str) -> ReplyInput<'request> {
     ReplyInput {
         reply,
@@ -30,37 +34,38 @@ fn content(reply: &Value, prompt: &str) -> String {
 
 #[test]
 fn generation_is_read_before_generated_text() {
-    let reply = json!([{"generation": "from generation", "generated_text": "from text"}]);
+    let reply =
+        reply_value(r#"[{"generation": "from generation", "generated_text": "from text"}]"#);
     assert_eq!(content(&reply, ""), "from generation");
 }
 
 #[test]
 fn generated_text_is_read_when_generation_is_absent() {
-    let reply = json!({"generated_text": "from text"});
+    let reply = reply_value(r#"{"generated_text": "from text"}"#);
     assert_eq!(content(&reply, ""), "from text");
 }
 
 #[test]
 fn a_reply_with_neither_field_is_an_empty_completion() {
-    let reply = json!({"details": {}});
+    let reply = reply_value(r#"{"details": {}}"#);
     assert_eq!(content(&reply, ""), "");
 }
 
 #[test]
 fn the_first_list_item_is_read() {
-    let reply = json!([{"generation": "first"}, {"generation": "second"}]);
+    let reply = reply_value(r#"[{"generation": "first"}, {"generation": "second"}]"#);
     assert_eq!(content(&reply, ""), "first");
 }
 
 #[test]
 fn an_echoed_prompt_is_stripped_when_the_template_has_a_bos_token() {
-    let reply = json!({"generation": "<s>[INST] hi [/INST] there"});
+    let reply = reply_value(r#"{"generation": "<s>[INST] hi [/INST] there"}"#);
     assert_eq!(content(&reply, "<s>[INST] hi [/INST]"), " there");
 }
 
 #[test]
 fn a_bos_prompt_keeps_text_that_does_not_start_with_it() {
-    let reply = json!({"generation": "other text"});
+    let reply = reply_value(r#"{"generation": "other text"}"#);
     let response = transform_response(&input(&reply, "<s>[INST] hi [/INST]"), &WordCounter)
         .expect("a response");
     let choice = response.choices.first().expect("a choice");
@@ -72,13 +77,13 @@ fn a_bos_prompt_keeps_text_that_does_not_start_with_it() {
 
 #[test]
 fn a_prompt_without_a_bos_token_leaves_the_echo_in_place() {
-    let reply = json!({"generation": "hello there"});
+    let reply = reply_value(r#"{"generation": "hello there"}"#);
     assert_eq!(content(&reply, "hello"), "hello there");
 }
 
 #[test]
 fn usage_counts_the_prompt_and_the_reply_text() {
-    let reply = json!({"generation": "three four five"});
+    let reply = reply_value(r#"{"generation": "three four five"}"#);
     let response = transform_response(&input(&reply, "one two"), &WordCounter).expect("a response");
     assert_eq!(response.usage.prompt_tokens, 2);
     assert_eq!(response.usage.completion_tokens, 3);
@@ -87,7 +92,7 @@ fn usage_counts_the_prompt_and_the_reply_text() {
 
 #[test]
 fn the_response_keeps_the_default_id_created_model_and_finish_reason() {
-    let reply = json!({"generation": "hi"});
+    let reply = reply_value(r#"{"generation": "hi"}"#);
     let response = transform_response(&input(&reply, ""), &WordCounter).expect("a response");
     assert_eq!(response.id, "chatcmpl-default");
     assert_eq!(response.created, 1_700_000_000);
@@ -115,14 +120,14 @@ fn an_empty_list_fails_with_the_parse_error() {
 
 #[test]
 fn a_first_list_item_that_is_not_an_object_fails_with_the_parse_error() {
-    let reply = json!([7]);
+    let reply = json!([7_i32]);
     let error = transform_response(&input(&reply, "hi"), &WordCounter).expect_err("a failure");
     assert_eq!(error.status_code, 500);
 }
 
 #[test]
 fn a_non_string_generation_fails_with_the_parse_error() {
-    let reply = json!([{"generation": null}]);
+    let reply = reply_value(r#"[{"generation": null}]"#);
     let error = transform_response(&input(&reply, "hi"), &WordCounter).expect_err("a failure");
     assert_eq!(error.status_code, 500);
     assert!(error.message.contains(r#"[{"generation":null}]"#));

@@ -212,7 +212,7 @@ async fn a_stream_flag_other_than_true_leaves_the_body_without_stream() {
 #[tokio::test]
 async fn an_integer_one_stream_flag_is_not_the_body_flag() {
     let mut fixture = Fixture::new();
-    fixture.options.insert(String::from("stream"), json!(1));
+    fixture.options.insert(String::from("stream"), json!(1_i32));
     let built = body(&fixture.request("plain-model", None)).await;
     assert_eq!(keys(&built), ["parameters", "inputs"]);
 }
@@ -222,12 +222,15 @@ async fn the_other_options_land_under_parameters() {
     let mut fixture = Fixture::new();
     fixture
         .options
-        .insert(String::from("temperature"), json!(0.7));
+        .insert(String::from("temperature"), json!(0.7_f64));
     fixture.options.insert(String::from("stop"), json!(["END"]));
     let built = body(&fixture.request("plain-model", None)).await;
     assert_eq!(
         built.get("parameters"),
-        Some(&json!({"temperature": 0.7, "stop": ["END"]}))
+        Some(
+            &serde_json::from_str::<Value>(r#"{"temperature": 0.7, "stop": ["END"]}"#)
+                .expect("the parameters")
+        )
     );
 }
 

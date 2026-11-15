@@ -11,37 +11,37 @@ fn options(pairs: (&str, Value)) -> Options {
 
 #[test]
 fn a_zero_temperature_is_rewritten_to_the_positive_floor() {
-    let mut requested = options(("temperature", json!(0.0)));
+    let mut requested = options(("temperature", json!(0.0_f64)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("temperature"), Some(&json!(0.01)));
+    assert_eq!(mapped.get("temperature"), Some(&json!(0.01_f64)));
 }
 
 #[test]
 fn an_integer_zero_temperature_is_rewritten_to_the_positive_floor() {
-    let mut requested = options(("temperature", json!(0)));
+    let mut requested = options(("temperature", json!(0_i32)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("temperature"), Some(&json!(0.01)));
+    assert_eq!(mapped.get("temperature"), Some(&json!(0.01_f64)));
 }
 
 #[test]
 fn a_positive_temperature_is_kept_as_given() {
-    let mut requested = options(("temperature", json!(0.7)));
+    let mut requested = options(("temperature", json!(0.7_f64)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("temperature"), Some(&json!(0.7)));
+    assert_eq!(mapped.get("temperature"), Some(&json!(0.7_f64)));
 }
 
 #[test]
 fn the_allow_zero_temperature_flag_keeps_a_zero_temperature() {
     let mut requested = Options::from([
-        (String::from("temperature"), json!(0)),
+        (String::from("temperature"), json!(0_i32)),
         (String::from("aws_sagemaker_allow_zero_temp"), json!(true)),
     ]);
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("temperature"), Some(&json!(0)));
+    assert_eq!(mapped.get("temperature"), Some(&json!(0_i32)));
 }
 
 #[test]
@@ -55,68 +55,68 @@ fn the_allow_zero_temperature_flag_is_removed_from_the_callers_options() {
 
 #[test]
 fn n_writes_best_of_and_turns_sampling_on() {
-    let mut requested = options(("n", json!(3)));
+    let mut requested = options(("n", json!(3_i32)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("best_of"), Some(&json!(3)));
+    assert_eq!(mapped.get("best_of"), Some(&json!(3_i32)));
     assert_eq!(mapped.get("do_sample"), Some(&json!(true)));
 }
 
 #[test]
 fn a_zero_max_tokens_becomes_one() {
-    let mut requested = options(("max_tokens", json!(0)));
+    let mut requested = options(("max_tokens", json!(0_i32)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(1)));
+    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(1_i32)));
 }
 
 #[test]
 fn a_positive_max_tokens_is_kept_as_given() {
-    let mut requested = options(("max_tokens", json!(64)));
+    let mut requested = options(("max_tokens", json!(64_i32)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(64)));
+    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(64_i32)));
 }
 
 #[test]
 fn max_tokens_after_max_completion_tokens_wins() {
     let mut requested = Options::from([
-        (String::from("max_completion_tokens"), json!(70)),
-        (String::from("max_tokens"), json!(0)),
+        (String::from("max_completion_tokens"), json!(70_i32)),
+        (String::from("max_tokens"), json!(0_i32)),
     ]);
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(1)));
+    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(1_i32)));
 }
 
 #[test]
 fn max_completion_tokens_after_max_tokens_wins() {
     let mut requested = Options::from([
-        (String::from("max_tokens"), json!(0)),
-        (String::from("max_completion_tokens"), json!(70)),
+        (String::from("max_tokens"), json!(0_i32)),
+        (String::from("max_completion_tokens"), json!(70_i32)),
     ]);
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
-    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(70)));
+    assert_eq!(mapped.get("max_new_tokens"), Some(&json!(70_i32)));
 }
 
 #[test]
 fn stop_top_p_and_stream_pass_through_as_given() {
     let mut requested = Options::from([
         (String::from("stop"), json!(["END"])),
-        (String::from("top_p"), json!(0.9)),
+        (String::from("top_p"), json!(0.9_f64)),
         (String::from("stream"), json!(false)),
     ]);
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
     assert_eq!(mapped.get("stop"), Some(&json!(["END"])));
-    assert_eq!(mapped.get("top_p"), Some(&json!(0.9)));
+    assert_eq!(mapped.get("top_p"), Some(&json!(0.9_f64)));
     assert_eq!(mapped.get("stream"), Some(&json!(false)));
 }
 
 #[test]
 fn an_option_outside_the_supported_list_is_not_mapped() {
-    let mut requested = options(("frequency_penalty", json!(1)));
+    let mut requested = options(("frequency_penalty", json!(1_i32)));
     let mut mapped = Options::new();
     map_openai_params(&mut requested, &mut mapped);
     assert!(mapped.is_empty());
@@ -139,25 +139,28 @@ fn the_supported_options_keep_the_pinned_order() {
 }
 
 #[rstest]
-#[case::falsy_null(json!(null), json!(0.01))]
-#[case::falsy_bool(json!(false), json!(0.01))]
-#[case::falsy_integer(json!(0), json!(0.01))]
-#[case::falsy_float(json!(0.0), json!(0.01))]
-#[case::falsy_text(json!(""), json!(0.01))]
-#[case::falsy_list(json!([]), json!(0.01))]
-#[case::falsy_object(json!({}), json!(0.01))]
-#[case::truthy_bool(json!(true), json!(0))]
-#[case::truthy_integer(json!(1), json!(0))]
-#[case::truthy_negative_float(json!(-0.5), json!(0))]
-#[case::truthy_text(json!("yes"), json!(0))]
-#[case::truthy_list(json!([0]), json!(0))]
-#[case::truthy_object(json!({"k": 0}), json!(0))]
+#[case::falsy_null(json!(null), json!(0.01_f64))]
+#[case::falsy_bool(json!(false), json!(0.01_f64))]
+#[case::falsy_integer(json!(0_i32), json!(0.01_f64))]
+#[case::falsy_float(json!(0.0_f64), json!(0.01_f64))]
+#[case::falsy_text(json!(""), json!(0.01_f64))]
+#[case::falsy_list(json!([]), json!(0.01_f64))]
+#[case::falsy_object(json!({}), json!(0.01_f64))]
+#[case::truthy_bool(json!(true), json!(0_i32))]
+#[case::truthy_integer(json!(1_i32), json!(0_i32))]
+#[case::truthy_negative_float(json!(-0.5_f64), json!(0_i32))]
+#[case::truthy_text(json!("yes"), json!(0_i32))]
+#[case::truthy_list(json!([0_i32]), json!(0_i32))]
+#[case::truthy_object(
+    serde_json::from_str(r#"{"k": 0}"#).expect("the flag"),
+    json!(0_i32)
+)]
 fn the_allow_zero_temperature_flag_decides_a_zero_temperature(
     #[case] flag: Value,
     #[case] expected: Value,
 ) {
     let mut requested = Options::from([
-        (String::from("temperature"), json!(0)),
+        (String::from("temperature"), json!(0_i32)),
         (String::from("aws_sagemaker_allow_zero_temp"), flag.clone()),
     ]);
     let mut mapped = Options::new();

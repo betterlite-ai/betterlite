@@ -29,7 +29,7 @@ pub fn map_openai_params(non_default_params: &mut Options, optional_params: &mut
         match name.as_str() {
             "temperature" => {
                 // TGI rejects a zero temperature; the flag is the caller's way to keep it
-                let temperature = if value.as_f64() == Some(0.0) && !allow_zero {
+                let temperature = if value.as_f64() == Some(0.0_f64) && !allow_zero {
                     Value::from(ZERO_TEMPERATURE)
                 } else {
                     value.clone()
@@ -45,7 +45,7 @@ pub fn map_openai_params(non_default_params: &mut Options, optional_params: &mut
             }
             "max_tokens" => {
                 // TGI rejects max_new_tokens 0 as well, and only max_tokens gets the rewrite
-                let limit = if value.as_f64() == Some(0.0) {
+                let limit = if value.as_f64() == Some(0.0_f64) {
                     Value::from(1_u64)
                 } else {
                     value.clone()
