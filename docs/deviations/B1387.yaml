@@ -1,6 +1,6 @@
 task: B1387
 deviations:
-  - what: A token count in usage_metadata that is negative, fractional or larger than u64 ends the stream with an error naming the field, where LiteLLM's Usage holds any Python int, negative ones included.
+  - what: A token count in usage_metadata that is negative, larger than u64, or written as a float ends the stream with an error naming the field, where LiteLLM's Usage carries a negative int of any size and reads 4.0 as 4.
     why: betterlite's usage counts are u64, and docs/compatibility.md makes a value outside the declared type an error that names the field.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L65-L73
   - what: A failing response body larger than 16 MiB is refused instead of becoming the error message.

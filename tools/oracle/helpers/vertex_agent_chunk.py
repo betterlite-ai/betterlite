@@ -1,4 +1,4 @@
-from typing import Final, TypedDict
+from typing import Final, Protocol, TypedDict, cast
 
 from litellm.llms.vertex_ai.agent_engine.sse_iterator import VertexAgentEngineResponseIterator
 from litellm.types.utils import ModelResponseStream
@@ -30,16 +30,19 @@ class Input(TypedDict):
     chunks: list[dict[str, JsonValue]]
 
 
-ITERATOR: Final = VertexAgentEngineResponseIterator(
+# chunk_parser declares the generic stream kind as an answer too, while an Agent Engine line answers this one
+class ChunkParser(Protocol):
+    def chunk_parser(self, chunk: dict[str, JsonValue]) -> ModelResponseStream: ...
+
+
+PARSER: Final = cast(ChunkParser, VertexAgentEngineResponseIterator(  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L30
     streaming_response=iter(()), sync_stream=True
-)
-# chunk_parser is typed as a union, and every Agent Engine line answers the stream kind
-MODEL: Final = TypeAdapter(ModelResponseStream)
+))
 STREAM: Final = TypeAdapter(StreamView)
 
 
 def chunk_outcome(chunk: dict[str, JsonValue]) -> JsonValue:
-    parsed = MODEL.validate_python(ITERATOR.chunk_parser(chunk))
+    parsed = PARSER.chunk_parser(chunk)
     view = STREAM.validate_json(parsed.model_dump_json())
     choice = view["choices"][0]
     usage = view["usage"]
@@ -54,4 +57,6 @@ def chunk_outcome(chunk: dict[str, JsonValue]) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return {"chunks": [chunk_outcome(chunk) for chunk in input_value["chunks"]]}
+    return {
+        "chunks": [chunk_outcome(chunk) for chunk in input_value["chunks"]],
+    }
