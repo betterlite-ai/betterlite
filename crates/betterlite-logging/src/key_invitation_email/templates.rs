@@ -2,6 +2,7 @@ use std::iter::Peekable;
 use std::str::Chars;
 
 use betterlite_models::decisions::Json;
+use minijinja::HtmlEscape;
 use serde_json::Number;
 
 use crate::python_json;
@@ -132,7 +133,7 @@ fn budget_text(budget: Option<f64>) -> String {
     python_json::dumps(&Json::Number(number))
 }
 
-// only the doubled braces and the single-brace placeholders LiteLLM's templates use, never a field value
+// only the doubled braces and the single-brace placeholders LiteLLM's templates use, never a field value; each value is HTML-escaped
 fn fill_template(template: &str, fields: &[(&str, &str)]) -> String {
     let mut filled = String::with_capacity(template.len());
     let mut characters = template.chars().peekable();
@@ -164,7 +165,7 @@ fn fill_placeholder(
         name.push(next);
     }
     if let Some((_, value)) = fields.iter().find(|(field, _)| *field == name.as_str()) {
-        filled.push_str(value);
+        filled.push_str(&HtmlEscape(value).to_string());
     } else {
         filled.push('{');
         filled.push_str(&name);

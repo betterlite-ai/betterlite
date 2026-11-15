@@ -9,6 +9,7 @@ use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use minijinja::HtmlEscape;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -214,7 +215,7 @@ fn key_created_event() -> WebhookEvent {
         event_message: "key_created".to_owned(),
         event_group: EntityType::Key,
         spend: Decimal::ZERO,
-        max_budget: Some(Decimal::from(10)),
+        max_budget: Some(Decimal::from(10_i64)),
         soft_budget: None,
         token: Some(SecretString::from("sk-test-token")),
         customer_id: None,
@@ -307,8 +308,30 @@ fn render_user_invited_email_matches_the_litellm_template() {
         html.contains("You were invited to use OpenAI Proxy API for team Alpha  <br /> <br />")
     );
     assert!(html.contains(
-        "<a href=\"https://proxy.example/ui/onboarding?invitation_id=inv-1\" style=\"display: inline-block;"
+        "<a href=\"https:&#x2f;&#x2f;proxy.example&#x2f;ui&#x2f;onboarding?invitation_id=inv-1\" style=\"display: inline-block;"
     ));
+}
+
+#[test]
+fn render_escapes_html_in_substituted_values() {
+    let key = render_key_created_email(&KeyCreatedEmail {
+        email_logo_url: "a\"b",
+        recipient_email: Some("<i>&'"),
+        key_token: Some("<b>"),
+        email_support_contact: "<s>",
+        ..budget_email(Some(10.0_f64))
+    });
+    assert!(key.contains("<img src=\"a&quot;b\""));
+    assert!(key.contains("Hi &lt;i&gt;&amp;&#x27;, <br/>"));
+    assert!(key.contains("Key: <pre>&lt;b&gt;</pre> <br>"));
+    assert!(key.contains("api_key=\"&lt;b&gt;\""));
+    assert!(key.contains("send an email to &lt;s&gt; <br />"));
+    let invited = render_user_invited_email(&UserInvitedEmail {
+        team_name: "<a href=x>team</a>",
+        ..invited_email("x\"y")
+    });
+    assert!(invited.contains("for team &lt;a href=x&gt;team&lt;&#x2f;a&gt;  <br />"));
+    assert!(invited.contains("<a href=\"x&quot;y\" style="));
 }
 
 #[rstest]
@@ -423,7 +446,7 @@ async fn send_key_created_uses_the_default_branding() {
     assert_eq!(delivered[0].receiver.as_deref(), Some("alice@example.com"));
     assert_eq!(delivered[0].subject, "LiteLLM: key_created");
     let html = &delivered[0].html;
-    assert!(html.contains(&format!("src=\"{LITELLM_LOGO_URL}\"")));
+    assert!(html.contains(&format!("src=\"{}\"", HtmlEscape(LITELLM_LOGO_URL))));
     assert!(html.contains(&format!("send an email to {LITELLM_SUPPORT_CONTACT}")));
     assert!(html.contains("loaded with $10.0 per month"));
     assert!(html.contains("Key: <pre>sk-test-token</pre> <br>"));
@@ -446,10 +469,10 @@ async fn send_uses_customized_branding_without_a_license_check() {
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
     let html = &delivered[0].html;
-    assert!(html.contains("src=\"https://cdn.example/logo.png\""));
+    assert!(html.contains("src=\"https:&#x2f;&#x2f;cdn.example&#x2f;logo.png\""));
     assert!(!html.contains("ignored.example"));
     assert!(html.contains("send an email to help@example.com"));
-    assert!(!html.contains(LITELLM_LOGO_URL));
+    assert!(!html.contains(&HtmlEscape(LITELLM_LOGO_URL).to_string()));
     assert!(!html.contains(LITELLM_SUPPORT_CONTACT));
 }
 
@@ -467,7 +490,7 @@ async fn send_empty_branding_values_fall_back_to_the_defaults() {
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
     let html = &delivered[0].html;
-    assert!(html.contains(&format!("src=\"{LITELLM_LOGO_URL}\"")));
+    assert!(html.contains(&format!("src=\"{}\"", HtmlEscape(LITELLM_LOGO_URL))));
     assert!(html.contains(&format!("send an email to {LITELLM_SUPPORT_CONTACT}")));
 }
 
@@ -560,7 +583,9 @@ async fn send_internal_user_created_uses_the_team_alias() {
     assert!(
         html.contains("You were invited to use OpenAI Proxy API for team Alpha  <br /> <br />")
     );
-    assert!(html.contains("href=\"http://0.0.0.0:4000/ui/onboarding?invitation_id=inv-created\""));
+    assert!(html.contains(
+        "href=\"http:&#x2f;&#x2f;0.0.0.0:4000&#x2f;ui&#x2f;onboarding?invitation_id=inv-created\""
+    ));
     assert_eq!(creator.calls(), vec!["user-1"]);
     close(&pool, fixture).await;
 }
@@ -614,7 +639,7 @@ async fn send_internal_user_created_uses_the_default_team_without_a_team() {
     let delivered = sender.sent();
     let html = &delivered[0].html;
     assert!(html.contains("You were invited to use OpenAI Proxy API for team Default Team"));
-    assert!(html.contains("href=\"http://0.0.0.0:4000\""));
+    assert!(html.contains("href=\"http:&#x2f;&#x2f;0.0.0.0:4000\""));
     assert!(creator.calls().is_empty());
 }
 
@@ -658,11 +683,9 @@ async fn send_internal_user_created_links_an_existing_invitation() {
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
-    assert!(
-        delivered[0]
-            .html
-            .contains("href=\"http://0.0.0.0:4000/ui/onboarding?invitation_id=inv-existing\"")
-    );
+    assert!(delivered[0].html.contains(
+        "href=\"http:&#x2f;&#x2f;0.0.0.0:4000&#x2f;ui&#x2f;onboarding?invitation_id=inv-existing\""
+    ));
     assert!(creator.calls().is_empty());
     close(&pool, fixture).await;
 }
@@ -681,7 +704,11 @@ async fn send_internal_user_created_keeps_the_base_url_when_linking_fails() {
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
-    assert!(delivered[0].html.contains("href=\"http://0.0.0.0:4000\""));
+    assert!(
+        delivered[0]
+            .html
+            .contains("href=\"http:&#x2f;&#x2f;0.0.0.0:4000\"")
+    );
     assert!(creator.calls().is_empty());
     assert!(
         logs.contents()
@@ -781,7 +808,11 @@ async fn send_empty_proxy_base_url_falls_back_to_the_default() {
     event.user_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
-    assert!(delivered[0].html.contains("href=\"http://0.0.0.0:4000\""));
+    assert!(
+        delivered[0]
+            .html
+            .contains("href=\"http:&#x2f;&#x2f;0.0.0.0:4000\"")
+    );
 }
 
 #[tokio::test]
@@ -796,11 +827,9 @@ async fn send_custom_proxy_base_url_trims_trailing_slashes() {
     event.team_id = None;
     assert!(mailer.send_key_created_or_user_invited_email(&event).await);
     let delivered = sender.sent();
-    assert!(
-        delivered[0]
-            .html
-            .contains("href=\"https://proxy.example/ui/onboarding?invitation_id=inv-created\"")
-    );
+    assert!(delivered[0].html.contains(
+        "href=\"https:&#x2f;&#x2f;proxy.example&#x2f;ui&#x2f;onboarding?invitation_id=inv-created\""
+    ));
     close(&pool, fixture).await;
 }
 

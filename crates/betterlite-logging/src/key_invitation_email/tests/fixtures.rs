@@ -4,7 +4,7 @@
 
 pub(super) const KEY_CREATED_HTML: &str = concat!(
     "\n",
-    "                    <img src=\"https://cdn.example/logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
+    "                    <img src=\"https:&#x2f;&#x2f;cdn.example&#x2f;logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
     "\n",
     "                    <p> Hi alice@example.com, <br/>\n",
     "        \n",
@@ -47,7 +47,7 @@ pub(super) const KEY_CREATED_HTML: &str = concat!(
 
 pub(super) const KEY_CREATED_MISSING_HTML: &str = concat!(
     "\n",
-    "                    <img src=\"https://cdn.example/logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
+    "                    <img src=\"https:&#x2f;&#x2f;cdn.example&#x2f;logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
     "\n",
     "                    <p> Hi None, <br/>\n",
     "        \n",
@@ -90,13 +90,13 @@ pub(super) const KEY_CREATED_MISSING_HTML: &str = concat!(
 
 pub(super) const USER_INVITED_HTML: &str = concat!(
     "\n",
-    "                    <img src=\"https://cdn.example/logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
+    "                    <img src=\"https:&#x2f;&#x2f;cdn.example&#x2f;logo.png\" alt=\"LiteLLM Logo\" width=\"150\" height=\"50\" />\n",
     "\n",
     "                    <p> Hi bob@example.com, <br/>\n",
     "\n",
     "                    You were invited to use OpenAI Proxy API for team Alpha  <br /> <br />\n",
     "\n",
-    "                    <a href=\"https://proxy.example/ui/onboarding?invitation_id=inv-1\" style=\"display: inline-block; padding: 10px 20px; background-color: #87ceeb; color: #fff; text-decoration: none; border-radius: 20px;\">Accept Invitation</a> <br /> <br />\n",
+    "                    <a href=\"https:&#x2f;&#x2f;proxy.example&#x2f;ui&#x2f;onboarding?invitation_id=inv-1\" style=\"display: inline-block; padding: 10px 20px; background-color: #87ceeb; color: #fff; text-decoration: none; border-radius: 20px;\">Accept Invitation</a> <br /> <br />\n",
     "\n",
     "                    \n",
     "                    If you have any questions, please send an email to help@example.com <br /> <br />\n",

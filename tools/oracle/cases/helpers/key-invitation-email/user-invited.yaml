@@ -3,12 +3,12 @@ name: user-invited
 call:
   b4023:
     template: user_invited
-    email_logo_url: https://cdn.example/logo.png
+    email_logo_url: logo.png
     recipient_email: bob@example.com
     key_budget: null
     key_token: null
     team_name: Alpha
-    base_url: https://proxy.example/ui/onboarding?invitation_id=inv-1
+    base_url: proxy.example?invitation_id=inv-1
     email_support_contact: help@example.com
 env: {}
 compare:
