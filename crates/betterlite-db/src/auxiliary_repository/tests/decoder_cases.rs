@@ -4,6 +4,8 @@ use std::path::PathBuf;
 use betterlite_openai::batches::records::{BatchObject, BatchStatus};
 use rstest::rstest;
 
+use crate::resource_rows::ResourceRowsError;
+
 use super::super::decoder::{ManagedBatchRecordError, decode_managed_batch_record};
 use super::BATCH_JSON;
 
@@ -71,7 +73,9 @@ fn native_managed_batch_record_limits() {
     let over = format!("{exact} ");
     assert!(matches!(
         decode_managed_batch_record::<BatchObject>(over.as_bytes()),
-        Err(ManagedBatchRecordError::TooLarge { .. })
+        Err(ManagedBatchRecordError::Stored(
+            ResourceRowsError::TooLarge { .. }
+        ))
     ));
 
     let nested = |depth: usize| {
@@ -90,7 +94,7 @@ fn native_managed_batch_record_limits() {
     let deep = nested(64);
     assert!(matches!(
         decode_managed_batch_record::<BatchObject>(deep.as_bytes()),
-        Err(ManagedBatchRecordError::TooDeep { .. })
+        Err(ManagedBatchRecordError::Stored(ResourceRowsError::TooDeep))
     ));
     let quoted_shallow = serde_json::to_string(&shallow).unwrap();
     assert!(
@@ -101,7 +105,7 @@ fn native_managed_batch_record_limits() {
     let quoted_deep = serde_json::to_string(&deep).unwrap();
     assert!(matches!(
         decode_managed_batch_record::<BatchObject>(quoted_deep.as_bytes()),
-        Err(ManagedBatchRecordError::TooDeep { .. })
+        Err(ManagedBatchRecordError::Stored(ResourceRowsError::TooDeep))
     ));
 }
 
