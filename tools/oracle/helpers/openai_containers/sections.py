@@ -145,7 +145,7 @@ def create_reply(config: ContainerConfig, call: ReplyCall) -> JsonValue:
         return JSON.validate_python(answer)
     projected: dict[str, JsonValue] = {
         "ok": True,
-        "record": JSON.validate_python(record.model_dump()),
+        "record": JSON.validate_json(record.model_dump_json()),
         "hidden": HIDDEN.validate_python(record.get("_hidden_params")),
     }
     return JSON.validate_python(projected)
@@ -154,15 +154,15 @@ def create_reply(config: ContainerConfig, call: ReplyCall) -> JsonValue:
 def decode_metadata(config: ContainerConfig, kind: MetadataKind, raw: httpx.Response) -> JsonValue:
     if kind == "retrieve":
         retrieved = config.transform_container_retrieve_response(raw, recorder())
-        return JSON.validate_python(retrieved.model_dump())
+        return JSON.validate_json(retrieved.model_dump_json())
     if kind == "list":
         listed = config.transform_container_list_response(raw, recorder())
-        return JSON.validate_python(listed.model_dump())
+        return JSON.validate_json(listed.model_dump_json())
     if kind == "delete":
         deleted = config.transform_container_delete_response(raw, recorder())
-        return JSON.validate_python(deleted.model_dump())
+        return JSON.validate_json(deleted.model_dump_json())
     files = config.transform_container_file_list_response(raw, recorder())
-    return JSON.validate_python(files.model_dump())
+    return JSON.validate_json(files.model_dump_json())
 
 
 def metadata_reply(config: ContainerConfig, call: MetadataCall) -> JsonValue:
