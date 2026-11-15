@@ -565,6 +565,20 @@ async fn salt_key_or_missing_database_skips_the_migration() {
         matches!(&unconfigured_verdict, BootVerdict::Refused(refused) if refused.migration.is_none()),
         "a server without a database has no ciphertext to migrate"
     );
+
+    let salted_without_database = boot_verdict(with_database(
+        boot_input(Some("sk-1234")),
+        DatabaseState {
+            salt_key_is_set: true,
+            configured: false,
+        },
+    ));
+    let skipped_verdict =
+        with_stored_secrets_counted(salted_without_database, &secrets_counter).await;
+    assert!(
+        matches!(&skipped_verdict, BootVerdict::Refused(refused) if refused.migration.is_none()),
+        "a salt key skips the migration even when no database is configured"
+    );
     assert!(
         secrets_counter.asked().is_empty(),
         "no migration means no read"
