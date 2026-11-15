@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-model-capabilities-parallel-tools
+call:
+  bedrock_model_capabilities:
+    function: parallel_tools
+    model_cost:
+      one: {supports_parallel_tool_use_config: true}
+      integer: {supports_parallel_tool_use_config: 1}
+      malformed: 5
+    models: [one, integer, malformed, missing]
+env: {}
+compare: {ignore: []}

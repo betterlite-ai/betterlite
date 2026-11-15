@@ -87,6 +87,13 @@ description: >-
   wiring lines; 755 planned, 775 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/helpers/b8153.py"
+  - "tools/oracle/helpers/b6413.py"
+  - "crates/betterlite-openai/src/perplexity_cost.rs"
+  - "crates/betterlite-openai/src/perplexity_chat/tests.rs"
+  - "crates/betterlite-openai/src/perplexity_chat.rs"
+  - "crates/betterlite-openai/src/perplexity_chat/enhance.rs"
+  - "crates/betterlite-openai/src/perplexity_chat"
   - crates/betterlite-openai/Cargo.toml
   - crates/betterlite-openai/src/evals.rs
   - crates/betterlite-openai/src/evals/**
