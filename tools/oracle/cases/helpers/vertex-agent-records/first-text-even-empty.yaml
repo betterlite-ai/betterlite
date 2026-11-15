@@ -1,0 +1,25 @@
+kind: helper
+name: vertex-agent-records-first-text-even-empty
+call:
+  vertex_agent_records:
+    operation: response
+    calls:
+      - status: 200
+        body: |-
+          {"content":{"parts":[{"text":""},{"text":"later"}]},"actions":{"state_delta":{"k":"delta"}}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 1
+        completion_tokens: 1
+        counter: fixed
+      - status: 200
+        body: |-
+          {"content":{"parts":[{"text":"kept"}]}}
+          {"content":{"parts":[{"text":""}]},"actions":{"state_delta":{"k":"delta"}}}
+        model: agent_engine/7
+        messages: [{role: user, content: hi}]
+        prompt_tokens: 1
+        completion_tokens: 1
+        counter: fixed
+env: {}
+compare: {ignore: []}
