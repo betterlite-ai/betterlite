@@ -9,8 +9,8 @@ vendors:
     max_writers: 20
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 64
-    max_writers: 64
+    max_parallel: 16
+    max_writers: 16
 runners:
   - id: codex-worker
     vendor: openai
@@ -94,7 +94,7 @@ roles:
         model: deepseek-flash[1m]
         effort: max
         attempts: 1
-        timeout_minutes: 45
+        timeout_minutes: 30
       - runner: claude-reviewer
         model: claude-sonnet-5-5
         effort: high
