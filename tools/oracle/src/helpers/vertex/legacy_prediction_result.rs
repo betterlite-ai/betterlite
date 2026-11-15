@@ -1,15 +1,9 @@
-mod input;
-mod ops;
-mod tests;
-
-use crate::helpers::{Helper, HelperResult};
-
 pub(crate) struct Op;
 
-impl Helper for Op {
-    type Input = input::Input;
+impl crate::helpers::Helper for Op {
+    type Input = serde_json::Value;
 
-    fn run(input: &Self::Input) -> HelperResult {
-        Ok(ops::run(input))
+    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
+        Self::not_built("legacy_prediction_result")
     }
 }

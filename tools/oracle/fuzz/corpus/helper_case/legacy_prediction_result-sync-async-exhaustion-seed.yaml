@@ -1,8 +1,0 @@
-kind: helper
-name: legacy-prediction-result-sync-async-exhaustion-seed
-call:
-  legacy_prediction_result:
-    text: "a b"
-    steps: [sync, async, sync, async, async]
-env: {}
-compare: {ignore: []}
