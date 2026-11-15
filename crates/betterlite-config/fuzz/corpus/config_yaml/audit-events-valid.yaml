@@ -1,0 +1,8 @@
+litellm_settings:
+  store_audit_logs: true
+  audit_log_callbacks:
+    - s3_v2
+    - otel
+  s3_audit_callback_params:
+    bucket_name: audit-bucket
+    prefix: audit/
