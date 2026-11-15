@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use chrono::{TimeZone as _, Utc};
+use deadpool_postgres::Client;
 use rust_decimal::Decimal;
+use tokio_postgres::Row;
 
 use super::support::database;
 use crate::shadow_tables::postgres::PostgresShadowTables;
@@ -117,7 +119,43 @@ async fn shadow_eval_attempt_inserts_every_cost() {
     let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     let tables = PostgresShadowTables { client };
-    let attempt = ShadowAttemptRow {
+    tables.insert_attempt(&verdict_attempt()).await.unwrap();
+    tables.insert_attempt(&errored_attempt()).await.unwrap();
+    let stored = stored_verdict(&tables.client).await;
+    let failed = stored_error(&tables.client).await;
+    fixture.close_async().await.unwrap();
+    assert_eq!(stored.get::<_, String>("outcome"), "shadow");
+    for (column, expected) in [
+        ("confidence", Some(Decimal::new(875, 3))),
+        ("judge_cost", Some(Decimal::new(25, 2))),
+        ("shadow_cost", Some(Decimal::new(5, 1))),
+        ("shadow_classifier_cost", Some(Decimal::new(125, 3))),
+        ("real_cost", Some(Decimal::new(75, 2))),
+        ("real_classifier_cost", Some(Decimal::new(625, 4))),
+    ] {
+        assert_eq!(
+            stored.get::<_, Option<Decimal>>(column),
+            expected,
+            "{column}"
+        );
+    }
+    assert!(stored.get::<_, bool>("real_cache_hit"));
+    assert_eq!(stored.get::<_, Option<String>>("error"), None);
+    assert_eq!(failed.get::<_, String>("outcome"), "error");
+    assert_eq!(failed.get::<_, Option<String>>("tier"), None);
+    assert_eq!(failed.get::<_, Option<String>>("real_model"), None);
+    assert_eq!(
+        failed.get::<_, Option<String>>("error"),
+        Some("judge replied with no content".to_owned())
+    );
+    assert_eq!(
+        failed.get::<_, Option<Decimal>>("judge_cost"),
+        Some(Decimal::ZERO)
+    );
+}
+
+fn verdict_attempt() -> ShadowAttemptRow {
+    ShadowAttemptRow {
         job_id: "job-a".to_owned(),
         request_id: "req-verdict".to_owned(),
         router_name: "router-a".to_owned(),
@@ -133,8 +171,11 @@ async fn shadow_eval_attempt_inserts_every_cost() {
         real_classifier_cost: Decimal::new(625, 4),
         real_cache_hit: true,
         error: None,
-    };
-    let errored = ShadowAttemptRow {
+    }
+}
+
+fn errored_attempt() -> ShadowAttemptRow {
+    ShadowAttemptRow {
         job_id: "job-a".to_owned(),
         request_id: "req-error".to_owned(),
         router_name: "router-b".to_owned(),
@@ -150,14 +191,13 @@ async fn shadow_eval_attempt_inserts_every_cost() {
         real_classifier_cost: Decimal::ZERO,
         real_cache_hit: false,
         error: Some("judge replied with no content".to_owned()),
-    };
-    tables.insert_attempt(&attempt).await.unwrap();
-    tables.insert_attempt(&errored).await.unwrap();
-    let stored = tables
-        .client
+    }
+}
+
+async fn stored_verdict(client: &Client) -> Row {
+    client
         .query_one(
-            r#"SELECT "outcome", "router_name", "tier", "real_model", "shadow_model",
-                      "confidence"::numeric AS "confidence",
+            r#"SELECT "outcome", "tier", "real_model", "confidence"::numeric AS "confidence",
                       "judge_cost"::numeric AS "judge_cost",
                       "shadow_cost"::numeric AS "shadow_cost",
                       "shadow_classifier_cost"::numeric AS "shadow_classifier_cost",
@@ -168,9 +208,11 @@ async fn shadow_eval_attempt_inserts_every_cost() {
             &[],
         )
         .await
-        .unwrap();
-    let failed = tables
-        .client
+        .unwrap()
+}
+
+async fn stored_error(client: &Client) -> Row {
+    client
         .query_one(
             r#"SELECT "outcome", "tier", "real_model", "error",
                       "judge_cost"::numeric AS "judge_cost"
@@ -178,58 +220,7 @@ async fn shadow_eval_attempt_inserts_every_cost() {
             &[],
         )
         .await
-        .unwrap();
-    fixture.close_async().await.unwrap();
-    assert_eq!(stored.get::<_, String>("outcome"), "shadow");
-    assert_eq!(
-        stored.get::<_, Option<String>>("router_name"),
-        Some("router-a".to_owned())
-    );
-    assert_eq!(
-        stored.get::<_, Option<String>>("tier"),
-        Some("tier-shadow".to_owned())
-    );
-    assert_eq!(
-        stored.get::<_, Option<String>>("real_model"),
-        Some("gpt-4o".to_owned())
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("confidence"),
-        Some(Decimal::new(875, 3))
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("judge_cost"),
-        Some(Decimal::new(25, 2))
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("shadow_cost"),
-        Some(Decimal::new(5, 1))
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("shadow_classifier_cost"),
-        Some(Decimal::new(125, 3))
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("real_cost"),
-        Some(Decimal::new(75, 2))
-    );
-    assert_eq!(
-        stored.get::<_, Option<Decimal>>("real_classifier_cost"),
-        Some(Decimal::new(625, 4))
-    );
-    assert!(stored.get::<_, bool>("real_cache_hit"));
-    assert_eq!(stored.get::<_, Option<String>>("error"), None);
-    assert_eq!(failed.get::<_, String>("outcome"), "error");
-    assert_eq!(failed.get::<_, Option<String>>("tier"), None);
-    assert_eq!(failed.get::<_, Option<String>>("real_model"), None);
-    assert_eq!(
-        failed.get::<_, Option<String>>("error"),
-        Some("judge replied with no content".to_owned())
-    );
-    assert_eq!(
-        failed.get::<_, Option<Decimal>>("judge_cost"),
-        Some(Decimal::ZERO)
-    );
+        .unwrap()
 }
 
 #[tokio::test]

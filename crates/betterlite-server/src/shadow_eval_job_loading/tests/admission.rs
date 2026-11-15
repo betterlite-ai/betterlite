@@ -80,14 +80,8 @@ fn shadow_eval_admission_counts_only_a_dice_miss_as_not_sampled() {
     let starts = BTreeMap::new();
     let aliases = BTreeMap::new();
     let sampled = sampled_jobs(&jobs, &sample("req-1"), &starts, &aliases, now);
-    assert_eq!(
-        sampled
-            .eligible
-            .iter()
-            .map(|job| job.id.as_str())
-            .collect::<Vec<_>>(),
-        vec!["job-hit"]
-    );
+    let eligible: Vec<&str> = sampled.eligible.iter().map(|job| job.id.as_str()).collect();
+    assert_eq!(eligible, vec!["job-hit"]);
     assert_eq!(sampled.not_sampled, vec!["job-miss"]);
 }
 

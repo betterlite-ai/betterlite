@@ -55,11 +55,7 @@ async fn shadow_eval_job_loading_groups_rows_by_target_with_attempt_stats() {
     let database = loader.database.as_ref().unwrap();
     let state = database.state.lock().unwrap();
     assert_eq!(state.find_calls, 1);
-    let expected = vec![
-        "job-forward".to_owned(),
-        "job-reverse".to_owned(),
-        "job-invalid".to_owned(),
-    ];
+    let expected = ["job-forward", "job-reverse", "job-invalid"].map(str::to_owned);
     assert_eq!(state.stats_requests.first().unwrap(), &expected);
     drop(state);
     let paired = loaded
