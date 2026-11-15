@@ -12,7 +12,7 @@ use betterlite_provider::manus_responses::error::ManusResponsesError;
 use serde_json::{Value, json};
 
 use super::fixture;
-use super::{CreateProbe, GetProbe, Input, ReplyProbe, UrlProbe};
+use super::{CreateProbe, GetProbe, Input, ReplyProbe, Sdk, UrlProbe};
 
 fn create_body(
     config: &ManusResponsesConfig,
@@ -163,7 +163,14 @@ pub(super) fn output(input: &Input) -> Value {
             json!({"replies": evaluated(&config, &call.probes, reply_value)})
         }
         Input::GetRequests(call) => {
-            let config = fixture::config(&BTreeMap::new(), &fixture::empty_sdk(), 0);
+            let config = fixture::config(
+                &BTreeMap::new(),
+                &Sdk {
+                    api_base: None,
+                    api_key: None,
+                },
+                0,
+            );
             json!({"requests": evaluated(&config, &call.probes, get_value)})
         }
     }

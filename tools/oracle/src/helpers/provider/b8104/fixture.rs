@@ -70,10 +70,3 @@ pub(super) fn config(
         ids: Box::new(UuidIdSource),
     }
 }
-
-pub(super) const fn empty_sdk() -> Sdk {
-    Sdk {
-        api_base: None,
-        api_key: None,
-    }
-}
