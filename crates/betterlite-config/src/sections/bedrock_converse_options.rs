@@ -7,12 +7,16 @@ use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
 // LiteLLM's AmazonConverseConfig annotates every field None and stores only the values a caller passes.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
 pub struct ConverseOptionValues {
+    #[serde(rename = "maxTokens")]
     pub max_tokens: Option<i64>,
+    #[serde(rename = "stopSequences")]
     pub stop_sequences: Option<Vec<String>>,
     pub temperature: Option<Number>,
+    #[serde(rename = "topP")]
     pub top_p: Option<Number>,
+    #[serde(rename = "topK")]
     pub top_k: Option<i64>,
 }
 
@@ -57,38 +61,13 @@ pub struct Raw {
     #[serde(default)]
     model_list: Vec<RawDeployment>,
     #[serde(default)]
-    litellm_settings: RawParams,
+    litellm_settings: ConverseOptionValues,
 }
 
 #[derive(Debug, Default, Deserialize)]
 struct RawDeployment {
     #[serde(default)]
-    litellm_params: RawParams,
-}
-
-#[derive(Debug, Default, Deserialize)]
-struct RawParams {
-    #[serde(rename = "maxTokens")]
-    max_tokens: Option<i64>,
-    #[serde(rename = "stopSequences")]
-    stop_sequences: Option<Vec<String>>,
-    temperature: Option<Number>,
-    #[serde(rename = "topP")]
-    top_p: Option<Number>,
-    #[serde(rename = "topK")]
-    top_k: Option<i64>,
-}
-
-impl RawParams {
-    fn into_values(self) -> ConverseOptionValues {
-        ConverseOptionValues {
-            max_tokens: self.max_tokens,
-            stop_sequences: self.stop_sequences,
-            temperature: self.temperature,
-            top_p: self.top_p,
-            top_k: self.top_k,
-        }
-    }
+    litellm_params: ConverseOptionValues,
 }
 
 impl Section for Raw {
@@ -102,9 +81,9 @@ impl Section for Raw {
             deployments: self
                 .model_list
                 .into_iter()
-                .map(|deployment| deployment.litellm_params.into_values())
+                .map(|deployment| deployment.litellm_params)
                 .collect(),
-            litellm_settings: self.litellm_settings.into_values(),
+            litellm_settings: self.litellm_settings,
         })
     }
 }
