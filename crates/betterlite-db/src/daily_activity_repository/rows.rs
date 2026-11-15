@@ -70,9 +70,9 @@ impl DatabaseRow {
     {
         match self.value(column)? {
             DatabaseValue::Null => Ok(None),
-            value @ DatabaseValue::Text(_)
-            | value @ DatabaseValue::Integer(_)
-            | value @ DatabaseValue::Number(_) => T::from_value(value)
+            value @ (DatabaseValue::Text(_)
+            | DatabaseValue::Integer(_)
+            | DatabaseValue::Number(_)) => T::from_value(value)
                 .map(Some)
                 .ok_or_else(|| column_error(column, T::EXPECTED)),
         }

@@ -112,21 +112,24 @@ where
         })
     }
 
+    async fn key_spend(&self, query: &SqlQuery) -> Result<Vec<KeySpendRow>> {
+        let rows = self.query(query).await?;
+        key_spend_rows(&rows)
+    }
+
     pub async fn search_keys(
         &self,
         scope: &DailyActivityScope,
         search: &str,
         limit: i64,
     ) -> Result<Vec<String>> {
-        if !(1..=USAGE_KEY_SEARCH_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_KEY_SEARCH_MAX,
-            });
-        }
+        check_limit(limit, USAGE_KEY_SEARCH_MAX)?;
         let query = build_key_search_sql(scope, search, limit, &self.clock)?;
         let rows = self.query(&query).await?;
-        let decoded = key_spend_rows(&rows)?;
-        Ok(decoded.into_iter().map(|row| row.api_key).collect())
+        Ok(key_spend_rows(&rows)?
+            .into_iter()
+            .map(|row| row.api_key)
+            .collect())
     }
 
     pub async fn model_top_keys(
@@ -136,15 +139,10 @@ where
         by_model_group: bool,
         limit: i64,
     ) -> Result<Vec<KeySpendRow>> {
-        if !(1..=USAGE_MODEL_TOP_KEYS_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_MODEL_TOP_KEYS_MAX,
-            });
-        }
+        check_limit(limit, USAGE_MODEL_TOP_KEYS_MAX)?;
         let query =
             build_model_top_keys_sql(scope, model_group, by_model_group, limit, &self.clock)?;
-        let rows = self.query(&query).await?;
-        Ok(key_spend_rows(&rows)?)
+        self.key_spend(&query).await
     }
 
     pub async fn cache_leakage_keys(
@@ -152,13 +150,16 @@ where
         scope: &DailyActivityScope,
         limit: i64,
     ) -> Result<Vec<KeySpendRow>> {
-        if !(1..=USAGE_CACHE_LEAKAGE_KEYS_MAX).contains(&limit) {
-            return Err(DailyActivityRepositoryError::Limit {
-                maximum: USAGE_CACHE_LEAKAGE_KEYS_MAX,
-            });
-        }
-        let query = build_cache_leakage_keys_sql(scope, limit, &self.clock)?;
-        let rows = self.query(&query).await?;
-        Ok(key_spend_rows(&rows)?)
+        check_limit(limit, USAGE_CACHE_LEAKAGE_KEYS_MAX)?;
+        self.key_spend(&build_cache_leakage_keys_sql(scope, limit, &self.clock)?)
+            .await
+    }
+}
+
+fn check_limit(limit: i64, maximum: i64) -> Result<()> {
+    if (1..=maximum).contains(&limit) {
+        Ok(())
+    } else {
+        Err(DailyActivityRepositoryError::Limit { maximum })
     }
 }
