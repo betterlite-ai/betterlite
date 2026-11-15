@@ -1,0 +1,21 @@
+kind: helper
+name: prompt-end-response-done
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+    steps:
+      - {op: usage, usage: {totalInputTokens: 100, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 20}}}}}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [kept]}
+      - {op: prompt_end}
+      - {op: prompt_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: null, delta_type: audio, delta_chunks: [kept]}
+      - {op: prompt_end}
+      - {op: set_state, output_item_id: item_1, response_id: null, conversation_id: conv_1, delta_type: audio, delta_chunks: null}
+      - {op: prompt_end}
+      - {op: set_state, output_item_id: item_2, response_id: resp_2, conversation_id: conv_1, delta_type: audio, delta_chunks: null}
+      - {op: prompt_end}
+env: {}
+compare: {ignore: []}

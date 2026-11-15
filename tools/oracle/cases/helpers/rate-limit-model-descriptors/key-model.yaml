@@ -1,0 +1,40 @@
+kind: helper
+name: rate-limit-model-descriptors-key-model
+call:
+  b3038:
+    function: key_model
+    auth:
+      api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      metadata:
+        model_rpm_limit:
+          gpt-4: 7
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 60
+calls:
+  - b3038:
+      function: key_model
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        metadata:
+          model_rpm_limit:
+            other: 7
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+  - b3038:
+      function: key_model
+      auth:
+        api_key: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        model_max_budget:
+          gpt-4:
+            tpm_limit: 3
+            rpm_limit: 1
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 60
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,17 @@
+kind: helper
+name: policy-version-create-request-source-id
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyVersionCreateRequest
+    value:
+      source_policy_id: p9
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyVersionCreateRequest
+      value: {}
+env: {}
+compare: {ignore: []}
