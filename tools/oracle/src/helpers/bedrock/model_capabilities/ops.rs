@@ -24,7 +24,10 @@ use crate::helpers::{HelperError, HelperResult};
 const FIXTURE_CONFIG: &str =
     "model_list:\n  - model_name: fixture\n    litellm_params: {model: bedrock/fixture}\n";
 
-fn failure<E: Display>(error: E) -> Box<HelperError> {
+fn failure<E>(error: E) -> Box<HelperError>
+where
+    E: Display,
+{
     Box::new(HelperError {
         class: "ModelCapabilities".to_owned(),
         status: None,

@@ -143,7 +143,7 @@ impl Fixture {
         }
     }
 
-    pub(super) const fn capability_environment<'fixture>(
+    pub(super) fn capability_environment<'fixture>(
         &'fixture self,
         resolution: &'fixture ResolutionContext<'fixture>,
         keys: &'fixture mut ModelCostKeys,
