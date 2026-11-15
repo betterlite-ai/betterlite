@@ -1,0 +1,81 @@
+{
+  "chat_predict_defaults": {
+    "instances": [{"messages": [{"author": "user", "content": "Hello"}]}],
+    "parameters": {}
+  },
+  "chat_predict_options": {
+    "instances": [{"messages": [{"author": "user", "content": "Hello"}]}],
+    "parameters": {
+      "maxDecodeSteps": 8,
+      "temperature": 0.5,
+      "topK": 5,
+      "topP": 0.9,
+      "stopSequences": ["z"],
+      "candidateCount": 1
+    }
+  },
+  "text_predict_defaults": {
+    "instances": [{"content": "Hello"}],
+    "parameters": {"maxDecodeSteps": 128}
+  },
+  "text_predict_options": {
+    "instances": [{"content": "Hello"}],
+    "parameters": {
+      "maxDecodeSteps": 16,
+      "temperature": 0.5,
+      "topK": 40,
+      "topP": 0.9,
+      "stopSequences": ["x"],
+      "candidateCount": 2,
+      "logprobs": 1,
+      "presencePenalty": 0.1,
+      "frequencyPenalty": 0.2,
+      "logitBias": {"1": 0.5},
+      "seed": 7
+    }
+  },
+  "endpoint_predict": {
+    "instances": [{"prompt": "Hello", "temperature": 0}]
+  },
+  "text_streaming_defaults": {
+    "inputs": [{"structVal": {"content": {"stringVal": ["Hi"]}}}],
+    "parameters": {"structVal": {"maxDecodeSteps": {"intVal": [128]}}}
+  },
+  "chat_streaming_defaults": {
+    "inputs": [
+      {
+        "structVal": {
+          "messages": {
+            "listVal": [
+              {
+                "structVal": {
+                  "author": {"stringVal": ["user"]},
+                  "content": {"stringVal": ["Hi"]}
+                }
+              }
+            ]
+          }
+        }
+      }
+    ]
+  },
+  "chat_streaming_options": {
+    "inputs": [
+      {
+        "structVal": {
+          "messages": {
+            "listVal": [
+              {
+                "structVal": {
+                  "author": {"stringVal": ["user"]},
+                  "content": {"stringVal": ["Hi"]}
+                }
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "parameters": {"structVal": {"temperature": {"floatVal": [0.5]}}}
+  }
+}
