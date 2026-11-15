@@ -1,5 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::disallowed_methods,
+        reason = "the json! fixture states the encoded request body directly"
+    )
+)]
 
+use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
@@ -16,16 +24,14 @@ use super::{
     CohereRerankCall, DEFAULT_RERANK_URL, DEFAULT_RETURN_DOCUMENTS, SUPPORTED_COHERE_RERANK_PARAMS,
     get_complete_url, map_cohere_rerank_params, validate_environment,
 };
-use crate::api::rerank_contracts::records::{RerankDocument, RerankResponse};
+use crate::api::rerank_contracts::records::{
+    RerankDocument, RerankResponse, RerankResponseDocument,
+};
 use crate::fireworks_ai_common::{AUTHORIZATION_HEADER, CONTENT_TYPE_HEADER, FireworksEnv};
 use crate::openai_base_config::Headers;
 
 fn headers() -> Headers {
     Headers::new()
-}
-
-fn key(text: &str) -> Option<SecretString> {
-    Some(SecretString::from(text))
 }
 
 struct FixedIds;
@@ -124,15 +130,6 @@ fn map_cohere_rerank_params_drops_the_unsupported_params() {
     assert_eq!(mapped, params(Some("find"), Some(documents), None, None));
 }
 
-fn env_with(text: Option<&str>) -> FireworksEnv {
-    FireworksEnv {
-        fireworks_api_key: text.map(SecretString::from),
-        fireworks_ai_api_key: None,
-        fireworksai_api_key: None,
-        fireworks_ai_token: None,
-    }
-}
-
 #[test]
 fn rerank_validate_environment_names_both_key_variables_when_missing() {
     let error = validate_environment(&headers(), None, &FireworksEnv::default()).unwrap_err();
@@ -146,7 +143,7 @@ fn rerank_validate_environment_names_both_key_variables_when_missing() {
 fn rerank_validate_environment_sets_the_default_headers() {
     let built = validate_environment(
         &Headers::new(),
-        key("direct").as_ref(),
+        Some(&SecretString::from("direct")),
         &FireworksEnv::default(),
     )
     .unwrap();
@@ -164,8 +161,12 @@ fn rerank_validate_environment_sets_the_default_headers() {
 #[test]
 fn rerank_validate_environment_lets_an_exact_authorization_override() {
     let given = Headers::from([("Authorization".to_owned(), "Bearer caller".to_owned())]);
-    let built =
-        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
+    let built = validate_environment(
+        &given,
+        Some(&SecretString::from("direct")),
+        &FireworksEnv::default(),
+    )
+    .unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer caller")
@@ -175,8 +176,12 @@ fn rerank_validate_environment_lets_an_exact_authorization_override() {
 #[test]
 fn rerank_validate_environment_keeps_a_lowercase_authorization_apart() {
     let given = Headers::from([("authorization".to_owned(), "Bearer caller".to_owned())]);
-    let built =
-        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
+    let built = validate_environment(
+        &given,
+        Some(&SecretString::from("direct")),
+        &FireworksEnv::default(),
+    )
+    .unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
         Some("Bearer direct")
@@ -190,8 +195,12 @@ fn rerank_validate_environment_keeps_a_lowercase_authorization_apart() {
 #[test]
 fn rerank_validate_environment_lets_other_caller_headers_override() {
     let given = Headers::from([("Content-Type".to_owned(), "text/plain".to_owned())]);
-    let built =
-        validate_environment(&given, key("direct").as_ref(), &FireworksEnv::default()).unwrap();
+    let built = validate_environment(
+        &given,
+        Some(&SecretString::from("direct")),
+        &FireworksEnv::default(),
+    )
+    .unwrap();
     assert_eq!(
         built.get(CONTENT_TYPE_HEADER).map(String::as_str),
         Some("text/plain")
@@ -257,10 +266,6 @@ fn transform_rerank_request_sends_the_optional_params_only_when_present() {
     );
 }
 
-fn body(text: &str) -> Vec<u8> {
-    text.as_bytes().to_vec()
-}
-
 fn transform(status: u16, payload: &str) -> Result<RerankResponse, FireworksRerankError> {
     transform_rerank_response(status, &headers(), payload.as_bytes(), &FixedIds)
 }
@@ -279,11 +284,9 @@ fn transform_rerank_response_projects_data_results_and_usage() {
     assert_eq!(results[0].relevance_score.0, Decimal::new(95, 2));
     assert_eq!(
         results[0].document,
-        Some(
-            crate::api::rerank_contracts::records::RerankResponseDocument {
-                text: "first".to_owned()
-            }
-        )
+        Some(RerankResponseDocument {
+            text: "first".to_owned()
+        })
     );
     assert_eq!(results[1].document, None);
     let meta = response.meta.unwrap();
@@ -377,11 +380,11 @@ fn transform_rerank_response_needs_an_integer_index() {
 #[case::non_number_score(r#"{"data":[{"index":0,"relevance_score":"0.5"}]}"#)]
 fn transform_rerank_response_rejects_a_non_string_id_and_a_non_number_score(#[case] payload: &str) {
     let error = transform(200, payload).unwrap_err();
-    let FireworksRerankError::Fireworks(error) = error else {
+    let FireworksRerankError::Fireworks(failure) = error else {
         panic!("expected a FireworksError for {payload}");
     };
-    assert_eq!(error.status_code, 200);
-    assert!(error.message.starts_with("Failed to parse response"));
+    assert_eq!(failure.status_code, 200);
+    assert!(failure.message.starts_with("Failed to parse response"));
 }
 
 #[rstest]
@@ -404,7 +407,7 @@ fn transform_rerank_response_adds_a_document_only_for_text(
         response.results.unwrap()[0]
             .document
             .as_ref()
-            .map(|document| document.text.as_str()),
+            .map(|entry| entry.text.as_str()),
         expected
     );
 }
@@ -412,23 +415,23 @@ fn transform_rerank_response_adds_a_document_only_for_text(
 #[test]
 fn transform_rerank_response_rejects_a_body_that_is_not_an_object() {
     let error = transform(200, "[1,2]").unwrap_err();
-    let FireworksRerankError::Fireworks(error) = error else {
+    let FireworksRerankError::Fireworks(failure) = error else {
         panic!("expected a FireworksError");
     };
-    assert_eq!(error.status_code, 200);
-    assert!(error.message.starts_with("Failed to parse response"));
+    assert_eq!(failure.status_code, 200);
+    assert!(failure.message.starts_with("Failed to parse response"));
 }
 
 #[test]
 fn transform_rerank_response_reports_a_parse_failure_with_the_http_status() {
     let given = Headers::from([("x-request-id".to_owned(), "request-1".to_owned())]);
     let error = transform_rerank_response(502, &given, br#"{"data": [}"#, &FixedIds).unwrap_err();
-    let FireworksRerankError::Fireworks(error) = error else {
+    let FireworksRerankError::Fireworks(failure) = error else {
         panic!("expected a FireworksError");
     };
-    assert_eq!(error.status_code, 502);
-    assert_eq!(error.headers, Some(given));
-    assert!(error.message.starts_with("Failed to parse response"));
+    assert_eq!(failure.status_code, 502);
+    assert_eq!(failure.headers, Some(given));
+    assert!(failure.message.starts_with("Failed to parse response"));
 }
 
 #[test]
@@ -446,14 +449,14 @@ fn decode_rerank_response_accepts_a_body_of_exactly_the_limit() {
     let mut bytes = vec![b' '; MAX_RESPONSE_BYTES];
     bytes[0] = b'{';
     bytes[MAX_RESPONSE_BYTES - 1] = b'}';
-    assert!(decode_rerank_response(&bytes).is_ok());
+    decode_rerank_response(&bytes).unwrap();
 }
 
 #[rstest]
 fn replays_the_rerank_response_corpus(
     #[files("fuzz/corpus/fireworks_ai_rerank_response/*")] path: PathBuf,
 ) {
-    let _decoded = decode_rerank_response(&std::fs::read(path).expect("corpus file"));
+    let _decoded = decode_rerank_response(&fs::read(path).expect("corpus file"));
 }
 
 #[test]

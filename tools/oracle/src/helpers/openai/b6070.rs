@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::RerankDocument;
-use betterlite_openai::fireworks_ai_common::SessionParams;
+use betterlite_openai::fireworks_ai_common::{SessionParams, get_session_id};
 use betterlite_openai::openai_base_config::Headers;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -120,7 +120,9 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         Ok(json!({
             "api_keys": answers::api_keys_answer(&input.api_keys),
-            "sessions": answers::sessions_answer(&input.sessions),
+            "sessions": answers::map_answers(&input.sessions, |call| {
+                json!(get_session_id(&call.litellm_params))
+            }),
             "affinity": answers::affinity_answer(&input.affinity),
             "mixin_headers": answers::collect(&input.mixin_headers, answers::mixin_answer)?,
             "embedding_params": answers::embedding_answer(&input.embedding_params),

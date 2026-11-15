@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::fireworks_ai_common::error::MissingApiKey;
 use betterlite_openai::fireworks_ai_common::{
-    FireworksEnv, get_session_id, resolve_api_key, validate_environment, with_session_affinity,
+    FireworksEnv, resolve_api_key, validate_environment, with_session_affinity,
 };
 use betterlite_openai::fireworks_ai_cost::{FireworksPricingTiers, get_base_model_for_pricing};
 use betterlite_openai::fireworks_ai_embedding::{map_openai_params, supported_openai_params};
@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use super::{
     AffinityCall, ApiKeyCall, EmbeddingCall, HeadersCall, MixinCall, PricingCall, RequestCall,
-    ResponseCall, SessionCall, UrlCall,
+    ResponseCall, UrlCall,
 };
 use crate::helpers::HelperError;
 
@@ -50,7 +50,10 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
         message,
     })
 }
-fn map_answers<T>(items: &[T], answer: impl Fn(&T) -> Value) -> Value {
+pub(super) fn map_answers<T, F>(items: &[T], answer: F) -> Value
+where
+    F: Fn(&T) -> Value,
+{
     let mut answers = Vec::with_capacity(items.len());
     for item in items {
         answers.push(answer(item));
@@ -63,9 +66,6 @@ pub(super) fn api_keys_answer(items: &[ApiKeyCall]) -> Value {
         let resolved = resolve_api_key(argument.as_ref(), &env_of(&call.env));
         json!(resolved.map(|key| key.expose_secret().to_owned()))
     })
-}
-pub(super) fn sessions_answer(items: &[SessionCall]) -> Value {
-    map_answers(items, |call| json!(get_session_id(&call.litellm_params)))
 }
 pub(super) fn affinity_answer(items: &[AffinityCall]) -> Value {
     map_answers(items, |call| {

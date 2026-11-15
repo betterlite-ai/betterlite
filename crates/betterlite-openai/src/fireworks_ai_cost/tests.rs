@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::cost_usage::{CostUsage, PromptDetails};
-use betterlite_models::price_lookup::PriceLookup;
+use betterlite_models::price_lookup::PriceLookup as _;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
 use chrono::DateTime;
@@ -73,16 +73,20 @@ impl FakeLookup {
 }
 
 impl ModelInfoLookup for FakeLookup {
-    fn get(&self, model: &str, provider: Option<&str>) -> Result<ModelInfo, LookupFailed> {
+    fn get(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Result<ModelInfo, LookupFailed> {
         self.calls
             .lock()
-            .unwrap()
-            .push((model.to_owned(), provider.map(str::to_owned)));
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
         if self.fail_all {
             return Err(LookupFailed);
         }
         self.entries
-            .get(&(model.to_owned(), provider.map(str::to_owned)))
+            .get(&(model.to_owned(), custom_llm_provider.map(str::to_owned)))
             .cloned()
             .ok_or(LookupFailed)
     }

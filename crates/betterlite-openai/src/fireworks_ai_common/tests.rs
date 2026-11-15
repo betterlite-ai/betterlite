@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::error::{FireworksError, MissingApiKey};
 use super::{
@@ -9,6 +9,7 @@ use super::{
     SessionMetadata, SessionParams, get_session_id, resolve_api_key, validate_environment,
     with_session_affinity,
 };
+use crate::openai_base_config::Headers;
 
 fn key(text: &str) -> SecretString {
     SecretString::from(text)
@@ -40,8 +41,8 @@ fn params(
     }
 }
 
-fn exposed(key: &Option<SecretString>) -> Option<&str> {
-    key.as_ref().map(|secret| secret.expose_secret())
+fn exposed(key: Option<&SecretString>) -> Option<&str> {
+    key.map(ExposeSecret::expose_secret)
 }
 
 #[test]
@@ -49,7 +50,7 @@ fn resolve_api_key_takes_the_argument_before_every_env_name() {
     let argument = key("argument-key");
     let env = env_with(Some("first"), Some("second"), Some("third"), Some("fourth"));
     let resolved = resolve_api_key(Some(&argument), &env);
-    assert_eq!(exposed(&resolved), Some("argument-key"));
+    assert_eq!(exposed(resolved.as_ref()), Some("argument-key"));
 }
 
 #[rstest]
@@ -70,7 +71,7 @@ fn resolve_api_key_reads_the_four_env_names_in_order(
     let argument = key("");
     let env = env_with(fireworks, fireworks_ai, fireworksai, token);
     assert_eq!(
-        exposed(&resolve_api_key(Some(&argument), &env)),
+        exposed(resolve_api_key(Some(&argument), &env).as_ref()),
         Some(expected)
     );
 }
@@ -82,11 +83,11 @@ fn resolve_api_key_returns_none_without_any_key() {
     assert!(resolve_api_key(Some(&empty_argument), &FireworksEnv::default()).is_none());
 }
 
-fn generated() -> Option<SessionMetadata> {
-    Some(SessionMetadata {
+fn generated() -> SessionMetadata {
+    SessionMetadata {
         litellm_session_id_generated: Some(true),
         session_id: Some("metadata-session".to_owned()),
-    })
+    }
 }
 
 #[rstest]
@@ -95,7 +96,7 @@ fn generated() -> Option<SessionMetadata> {
 #[case::metadata_last(params(None, None, Some(SessionMetadata { litellm_session_id_generated: None, session_id: Some("three".to_owned()) })), Some("three"))]
 #[case::empty_litellm_session_skipped(params(Some(""), Some("two"), None), Some("two"))]
 #[case::empty_session_skipped(params(Some(""), Some(""), Some(SessionMetadata { litellm_session_id_generated: Some(false), session_id: Some("three".to_owned()) })), Some("three"))]
-#[case::generated_marker_returns_none(params(Some("one"), Some("two"), generated()), None)]
+#[case::generated_marker_returns_none(params(Some("one"), Some("two"), Some(generated())), None)]
 #[case::empty_metadata_session_skipped(params(None, None, Some(SessionMetadata { litellm_session_id_generated: None, session_id: Some(String::new()) })), None)]
 #[case::no_session_id(params(None, None, None), None)]
 fn get_session_id_follows_the_litellm_order(
@@ -105,11 +106,8 @@ fn get_session_id_follows_the_litellm_order(
     assert_eq!(get_session_id(&params).as_deref(), expected);
 }
 
-fn headers() -> crate::openai_base_config::Headers {
-    crate::openai_base_config::Headers::from([(
-        AUTHORIZATION_HEADER.to_owned(),
-        "Bearer caller".to_owned(),
-    )])
+fn headers() -> Headers {
+    Headers::from([(AUTHORIZATION_HEADER.to_owned(), "Bearer caller".to_owned())])
 }
 
 #[rstest]
@@ -156,7 +154,7 @@ fn with_session_affinity_without_a_session_id_returns_the_headers_unchanged() {
 #[test]
 fn validate_environment_fails_without_a_key() {
     let error = validate_environment(
-        &crate::openai_base_config::Headers::new(),
+        &Headers::new(),
         None,
         &FireworksEnv::default(),
         &SessionParams::default(),
@@ -170,7 +168,7 @@ fn validate_environment_fails_without_a_key() {
 fn validate_environment_builds_the_bearer_and_content_type_headers() {
     let env = env_with(None, Some("env-key"), None, None);
     let built = validate_environment(
-        &crate::openai_base_config::Headers::new(),
+        &Headers::new(),
         None,
         &env,
         &params(Some("session-1"), None, None),
@@ -193,7 +191,7 @@ fn validate_environment_builds_the_bearer_and_content_type_headers() {
 #[test]
 fn validate_environment_lets_a_caller_authorization_and_content_type_win() {
     let env = env_with(Some("env-key"), None, None, None);
-    let given = crate::openai_base_config::Headers::from([
+    let given = Headers::from([
         ("Authorization".to_owned(), "Bearer caller".to_owned()),
         ("content-type".to_owned(), "multipart/form-data".to_owned()),
     ]);
@@ -212,10 +210,7 @@ fn validate_environment_lets_a_caller_authorization_and_content_type_win() {
 #[test]
 fn validate_environment_keeps_a_differently_cased_authorization_apart() {
     let env = env_with(Some("env-key"), None, None, None);
-    let given = crate::openai_base_config::Headers::from([(
-        "authorization".to_owned(),
-        "Bearer caller".to_owned(),
-    )]);
+    let given = Headers::from([("authorization".to_owned(), "Bearer caller".to_owned())]);
     let built = validate_environment(&given, None, &env, &SessionParams::default()).unwrap();
     assert_eq!(
         built.get(AUTHORIZATION_HEADER).map(String::as_str),
@@ -229,10 +224,7 @@ fn validate_environment_keeps_a_differently_cased_authorization_apart() {
 
 #[test]
 fn a_fireworks_error_keeps_its_status_message_and_headers() {
-    let headers = crate::openai_base_config::Headers::from([(
-        "x-request-id".to_owned(),
-        "request-1".to_owned(),
-    )]);
+    let headers = Headers::from([("x-request-id".to_owned(), "request-1".to_owned())]);
     let error = FireworksError {
         status_code: 500,
         message: "Failed to parse response: bad".to_owned(),

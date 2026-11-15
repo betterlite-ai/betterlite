@@ -95,13 +95,12 @@ fn project_result(result: RawResult) -> Result<RerankResponseResult, FireworksRe
         document,
     })
 }
-pub fn transform_rerank_response(
+fn decode_failure(
+    error: FireworksRerankError,
     status_code: u16,
     headers: &Headers,
-    body: &[u8],
-    ids: &dyn IdSource,
-) -> Result<RerankResponse, FireworksRerankError> {
-    let reply = decode_rerank_response(body).map_err(|error| match error {
+) -> FireworksRerankError {
+    match error {
         FireworksRerankError::ResponseDecode { source } => {
             FireworksRerankError::Fireworks(FireworksError {
                 status_code,
@@ -118,7 +117,16 @@ pub fn transform_rerank_response(
         | FireworksRerankError::IndexShape
         | FireworksRerankError::RelevanceScore { .. }
         | FireworksRerankError::Fireworks(_)) => other,
-    })?;
+    }
+}
+pub fn transform_rerank_response(
+    status_code: u16,
+    headers: &Headers,
+    body: &[u8],
+    ids: &dyn IdSource,
+) -> Result<RerankResponse, FireworksRerankError> {
+    let reply = decode_rerank_response(body)
+        .map_err(|error| decode_failure(error, status_code, headers))?;
     let usage = reply.usage.unwrap_or_default();
     let results = match reply.data.filter(|data| !data.is_empty()) {
         Some(data) => data,
