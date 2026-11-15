@@ -1,0 +1,9 @@
+task: B528
+deviations:
+  - what: Websocket messages are capped at 16 MiB by default and an oversized frame closes with code 1009; REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES overrides the cap.
+    why: Bounded external buffers are required, so betterlite names a visible default where LiteLLM leaves the limit unlimited when the variable is unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L338-L339
+kept_bugs:
+  - what: A RuntimeError raised while closing a failed connection is swallowed when its text contains "already completed" or "websocket.close", so an unrelated close failure with that substring is ignored.
+    why: A working LiteLLM deployment relies on the ignore rule to keep an already-finished response from raising, and the pinned source spells it as a substring match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/realtime/handler.py#L183-L190

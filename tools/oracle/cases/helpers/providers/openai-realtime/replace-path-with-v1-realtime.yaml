@@ -1,0 +1,21 @@
+kind: helper
+name: openai-realtime-replace-path-with-v1-realtime
+call:
+  openai_realtime:
+    kind: connect
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 1048576
+    openai_api_base: null
+    openai_api_key: null
+    queries:
+      - {api_base: "https://api.openai.com/v1/realtime/sessions", query_params: null}
+      - {api_base: "https://proxy.test/openai/v1/", query_params: null}
+      - {api_base: "wss://example.test/base?q=1#frag", query_params: null}
+    failures: []
+    http_setups: []
+env:
+  REALTIME_WEBSOCKET_MAX_MESSAGE_SIZE_BYTES: "1048576"
+compare: {ignore: []}
