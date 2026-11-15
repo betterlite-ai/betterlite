@@ -35,7 +35,7 @@ impl ModelInfoSource for FakeModelInfo<'_> {
         };
         let mut info = entry.clone();
         for field in PER_TOKEN_RATES {
-            if rate_absent(&info, field) {
+            if matches!(info.get(field), None | Some(Json::Null)) {
                 info.insert(field.to_owned(), Json::Number(Number::from(0)));
             }
         }
@@ -119,15 +119,12 @@ impl FakeRouter<'_> {
     }
 }
 
-fn rate_absent(info: &JsonObject, field: &str) -> bool {
-    matches!(info.get(field), None | Some(Json::Null))
-}
-
 // A group snapshot with one per-token rate declared zero-fills the other; with neither it keeps both absent.
 fn fill_paired_rates(info: &mut JsonObject) {
     let [input_field, output_field] = PER_TOKEN_RATES;
-    let input_absent = rate_absent(info, input_field);
-    if input_absent == rate_absent(info, output_field) {
+    let input_absent = matches!(info.get(input_field), None | Some(Json::Null));
+    let output_absent = matches!(info.get(output_field), None | Some(Json::Null));
+    if input_absent == output_absent {
         return;
     }
     let missing = if input_absent {

@@ -1,12 +1,10 @@
 mod fakes;
 mod input;
 
-use betterlite_auth::reservation_cost::error::ReservationCostError;
 use betterlite_auth::reservation_cost::{
     EstimateRequest, EstimateSources, RouterModelInfo, count_request_input_tokens,
     estimate_request_input_cost, estimate_request_max_cost,
 };
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 
 use self::fakes::{FakeModelInfo, FakeRouter, FakeTokens, NoDecoders};
@@ -70,37 +68,37 @@ async fn estimate(input: &Input) -> HelperResult {
         body: &input.request,
         route: input.route.as_str(),
     };
+    dispatch(input, &request, &sources).await
+}
+
+async fn dispatch(
+    input: &Input,
+    request: &EstimateRequest<'_>,
+    sources: &EstimateSources<'_>,
+) -> HelperResult {
     let counts = input.input_token_counts.as_ref();
     match input.function {
-        Function::MaxCost => estimate_request_max_cost(&request, &sources, counts)
-            .await
-            .map_err(cost_error)
-            .and_then(defined_cost),
-        Function::InputCost => estimate_request_input_cost(&request, &sources, counts)
-            .await
-            .map_err(cost_error)
-            .and_then(defined_cost),
-        Function::Count => count_request_input_tokens(&request, &sources)
-            .await
-            .map_err(cost_error)
-            .and_then(serialize),
+        Function::MaxCost => {
+            let amount = estimate_request_max_cost(&request, &sources, counts)
+                .await
+                .map_err(|error| helper_error("ReservationCostError", error))?
+                .and_then(|amount| amount.round_dp(9).to_f64());
+            serde_json::to_value(amount).map_err(|error| helper_error("SerializationError", error))
+        }
+        Function::InputCost => {
+            let amount = estimate_request_input_cost(&request, &sources, counts)
+                .await
+                .map_err(|error| helper_error("ReservationCostError", error))?
+                .and_then(|amount| amount.round_dp(9).to_f64());
+            serde_json::to_value(amount).map_err(|error| helper_error("SerializationError", error))
+        }
+        Function::Count => {
+            let counted = count_request_input_tokens(&request, &sources)
+                .await
+                .map_err(|error| helper_error("ReservationCostError", error))?;
+            serde_json::to_value(counted).map_err(|error| helper_error("SerializationError", error))
+        }
     }
-}
-
-fn defined_cost(cost: Option<Decimal>) -> HelperResult {
-    let amount = cost.map(|amount| amount.round_dp(9).to_f64());
-    serialize(amount)
-}
-
-fn serialize<T>(value: T) -> HelperResult
-where
-    T: serde::Serialize,
-{
-    serde_json::to_value(value).map_err(|error| helper_error("SerializationError", error))
-}
-
-fn cost_error(error: ReservationCostError) -> Box<HelperError> {
-    helper_error("ReservationCostError", error)
 }
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>

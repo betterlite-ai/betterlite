@@ -29,7 +29,7 @@ class Input(TypedDict):
 
 
 def run(input_value: Input) -> float | None | dict[str, int]:
-    install_model_cost(input_value["model_cost"])
+    litellm.model_cost = dict(input_value["model_cost"])
     router = build_router(input_value["model_list"])
     function = input_value["function"]
     if function == "max_cost":
@@ -64,10 +64,6 @@ def rounded(cost: float | None) -> float | None:
     if cost is None:
         return None
     return round(cost, 9)
-
-
-def install_model_cost(entries: dict[str, dict[str, JsonValue]]) -> None:
-    litellm.model_cost = dict(entries)
 
 
 def build_router(deployments: list[Deployment]) -> Router | None:
