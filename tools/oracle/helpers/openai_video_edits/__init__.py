@@ -198,20 +198,36 @@ def extension_reply(call: ExtensionResponse) -> JsonValue:
     return JSON.validate_json(transformed.model_dump_json())
 
 
-def call_value(call: Call) -> JsonValue:
+def character_value(
+    call: CreateCharacterRequest
+    | GetCharacterRequest
+    | CreateCharacterResponse
+    | GetCharacterResponse,
+) -> JsonValue:
     match call["op"]:
         case "create_character_request":
             return create_character_value(call)
         case "get_character_request":
             return get_character_value(call)
-        case "edit_request":
-            return edit_value(call)
-        case "extension_request":
-            return extension_value(call)
         case "create_character_response":
             return create_character_reply(call)
         case "get_character_response":
             return get_character_reply(call)
+
+
+def call_value(call: Call) -> JsonValue:
+    match call["op"]:
+        case (
+            "create_character_request"
+            | "get_character_request"
+            | "create_character_response"
+            | "get_character_response"
+        ):
+            return character_value(call)
+        case "edit_request":
+            return edit_value(call)
+        case "extension_request":
+            return extension_value(call)
         case "edit_response":
             return edit_reply(call)
         case "extension_response":
