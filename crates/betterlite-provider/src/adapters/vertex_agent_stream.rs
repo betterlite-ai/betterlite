@@ -128,14 +128,11 @@ pub struct VertexAgentStream {
 impl VertexAgentStream {
     pub async fn next_chunk(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
         loop {
-            if self.pending.is_empty() {
-                if self.done {
-                    return Ok(None);
-                }
-                self.read_frame().await?;
-                continue;
+            if self.pending.is_empty() && self.done {
+                return Ok(None);
             }
             let Some(line) = self.pending.pop_front() else {
+                self.read_frame().await?;
                 continue;
             };
             match parse_line(&line, &self.model, self.ids.as_ref()) {
