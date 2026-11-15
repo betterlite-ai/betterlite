@@ -1,0 +1,16 @@
+task: B8218
+deviations:
+  - what: The initializers return argument structs and register nothing. LiteLLM builds the callback object and adds it to `litellm.logging_callback_manager`.
+    why: The callback classes have their own tasks and B3682 owns the registry and the registration, as with B3681. The structs carry the same data.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pillar/__init__.py#L28-L42
+  - what: A refusal is a ThirdPartyInitBError, not a Python ValueError or a pydantic ValidationError.
+    why: Same outcome, with a Rust error type. The error names the field and never a value that could be a secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/__init__.py#L52-L60
+  - what: Straiker's routing model is a plain struct with a check, not a pydantic model.
+    why: The Rust config types are not pydantic. The accepted api_version and format_hint values and the api_version warning are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/__init__.py#L15-L31
+  - what: >-
+      A pillar or straiker config that writes optional_params is read through the keys it wrote. LiteLLM validates every guardrail's optional_params as CiscoAIDefenseGuardrailConfigModelOptionalParams, so getattr returns that model's defaults when the mapping is present: fallback_on_error "block" and timeout 10.0 for pillar, and timeout 10.0 for straiker. LiteLLM also rejects optional_params values outside that model's bounds there (a timeout below 1 or above 60, a fallback_on_error outside allow and block); betterlite accepts only the values of the types the reading guardrail declares.
+    why: >-
+      Those defaults belong to another guardrail's optional-params model winning pydantic's method resolution order, so a pillar or straiker setup that writes optional_params gets a timeout it never configured and its top-level fallback_on_error stops applying. betterlite reads the values the config wrote, so the top-level timeout and fallback_on_error keep working.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/cisco_ai_defense.py#L41-L101
