@@ -294,7 +294,7 @@ async fn rejection_error(failure: TextCompletionFailure) -> (DispatchError, Trac
 }
 
 async fn failure_becomes_rejected() {
-    let (typed, typed_trace) = rejection_error(TextCompletionFailure {
+    let (throttled, throttled_trace) = rejection_error(TextCompletionFailure {
         status: 429,
         error_type: Some(String::from("throttling_error")),
         param: Some(String::from("prompt")),
@@ -302,17 +302,17 @@ async fn failure_becomes_rejected() {
     })
     .await;
     assert!(matches!(
-        typed,
+        throttled,
         DispatchError::Rejected {
             status: 429,
             ref error_type,
             ..
         } if error_type == "throttling_error"
     ));
-    assert_eq!(typed_trace.steps(), ["complete", "failure"]);
+    assert_eq!(throttled_trace.steps(), ["complete", "failure"]);
 
     // a null type has no text of its own, so it travels as an empty string and serializes as null again
-    let (untyped, untyped_trace) = rejection_error(TextCompletionFailure {
+    let (unmapped, unmapped_trace) = rejection_error(TextCompletionFailure {
         status: 500,
         error_type: None,
         param: None,
@@ -320,12 +320,12 @@ async fn failure_becomes_rejected() {
     })
     .await;
     assert!(matches!(
-        untyped,
+        unmapped,
         DispatchError::Rejected {
             status: 500,
             ref error_type,
             ..
         } if error_type.is_empty()
     ));
-    assert_eq!(untyped_trace.steps(), ["complete", "failure"]);
+    assert_eq!(unmapped_trace.steps(), ["complete", "failure"]);
 }
