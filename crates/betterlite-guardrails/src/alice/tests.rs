@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
-use std::io::{self, Write as _};
+use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -220,7 +220,10 @@ fn raised(outcome: Outcome) -> (String, u16, bool) {
     }
 }
 
-fn answer(body: impl Serialize) -> Answer {
+fn answer<T>(body: T) -> Answer
+where
+    T: Serialize,
+{
     Answer::Json {
         status: 200,
         body: serde_json::to_string(&body).expect("the scripted answer serializes"),
