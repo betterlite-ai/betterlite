@@ -9,9 +9,13 @@ use secrecy::SecretString;
 use serde_json::json;
 
 use super::reply::{EmbeddingReply, EmbeddingUsage, decode_embedding_reply};
-use super::request::{complete_url, transform_embedding_request, validate_environment};
+use super::request::{
+    complete_url, map_openai_params, transform_embedding_request, validate_environment,
+};
 use crate::openai_base_config::Headers;
+use crate::ovhcloud_audio::reply::decode_transcription_reply as decode_ovhcloud_transcription;
 use crate::ovhcloud_chat::chunk::chunk_parser;
+use crate::scaleway_audio::reply::decode_transcription_reply as decode_scaleway_transcription;
 
 fn object(value: serde_json::Value) -> Object {
     serde_json::from_value(value).expect("a JSON object")
@@ -126,6 +130,22 @@ fn an_option_named_input_or_model_wins() {
 }
 
 #[test]
+fn map_openai_params_copies_nothing_and_keeps_the_accumulator() {
+    let non_default = object(json!({"dimensions": 3, "encoding_format": "base64", "user": "u"}));
+    let mapped = map_openai_params(&non_default, object(json!({"spare": "kept"})));
+    assert_eq!(
+        serde_json::to_value(&mapped).expect("mapped"),
+        json!({"spare": "kept"})
+    );
+    let empty = map_openai_params(&non_default, Object::new());
+    let body = transform_embedding_request("m", &Json::Text(String::from("hi")), &empty);
+    assert_eq!(
+        body.keys().cloned().collect::<Vec<String>>(),
+        vec!["input", "model"]
+    );
+}
+
+#[test]
 fn decode_embedding_reply_copies_model_data_and_object() {
     let reply = decode_embedding_reply(
         br#"{"model":"up","data":[{"object":"embedding","embedding":[1,2],"index":0}],"object":"list","usage":{"prompt_tokens":3,"total_tokens":4}}"#,
@@ -199,9 +219,17 @@ fn decode_embedding_reply_reports_a_json_body_that_is_not_an_object() {
 #[rstest]
 fn replays_the_ovhcloud_reply_corpus(#[files("fuzz/corpus/ovhcloud_reply/*")] path: PathBuf) {
     let bytes = fs::read(path).expect("a corpus file");
-    let _embedding = decode_embedding_reply(&bytes, 200, &Headers::new());
-    let _chunk = serde_json::from_slice::<serde_json::Value>(&bytes)
-        .ok()
-        .and_then(|value| serde_json::from_value::<Object>(value).ok())
-        .map(|chunk| chunk_parser(&chunk));
+    let json_headers = Headers::from([(
+        String::from("content-type"),
+        String::from("application/json"),
+    )]);
+    drop(decode_embedding_reply(&bytes, 200, &Headers::new()));
+    drop(decode_ovhcloud_transcription(&bytes, 200, &Headers::new()));
+    drop(decode_scaleway_transcription(&bytes, 200, &Headers::new()));
+    drop(decode_scaleway_transcription(&bytes, 200, &json_headers));
+    drop(
+        serde_json::from_slice::<Object>(&bytes)
+            .ok()
+            .map(|chunk| chunk_parser(&chunk)),
+    );
 }

@@ -6,6 +6,9 @@ use crate::ovhcloud_chat::DEFAULT_API_BASE;
 
 use super::EMBEDDING_ENDPOINT;
 
+// OVHCloudEmbeddingConfig.get_supported_openai_params returns an empty list, so the request mapping copies nothing
+pub const SUPPORTED_OPENAI_PARAMS: [&str; 0] = [];
+
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     format!(
@@ -37,6 +40,17 @@ pub fn validate_environment(
     );
     defaults.extend(headers.clone());
     defaults
+}
+
+// the supported list is empty, so the mapping keeps the accumulator it was handed and adds nothing to it
+#[must_use]
+pub fn map_openai_params(non_default_params: &Object, mut optional_params: Object) -> Object {
+    for (name, value) in non_default_params {
+        if SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) {
+            optional_params.insert(name.clone(), value.clone());
+        }
+    }
+    optional_params
 }
 
 // options sit over input and model, so an option with either name wins exactly as the dict merge does
