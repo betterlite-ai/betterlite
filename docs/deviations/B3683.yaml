@@ -3,6 +3,9 @@ deviations:
   - what: IN_MEMORY_GUARDRAIL_HANDLER, the registry and GUARDRAIL_RECONCILE_LOCK are fields of one GuardrailRuntime built at startup and shared by Arc. The handler sits behind a tokio RwLock, and sync_locked and poll_database take the reconcile mutex first and the write lock second.
     why: Module-level state is forbidden in this codebase. LiteLLM readers take no lock, but Rust cannot share a mutable handler without one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L891-L893
+  - what: reconcile_db_guardrails and sync_guardrail_from_db are methods of the GuardrailReconcile trait, implemented for InMemoryGuardrailHandler, and start_from_config and poll_database are free functions that take the GuardrailRuntime. Callers import the trait or the function.
+    why: The workspace denies multiple_inherent_impl, so a second inherent impl block of either type in another module does not build. The behavior and the arguments are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_registry.py#L726-L746
   - what: start_from_config returns the router guardrail list and the caller hands it to the router. Each RouterGuardrail entry has no callback field, and a missing router is the caller's decision, so there is no "Router not initialized" skip inside.
     why: The callback object belongs to the guardrails crate, so the entry holds only the id and the router asks the runtime for the callback. betterlite-guardrails does not depend on the router crate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L52-L97
