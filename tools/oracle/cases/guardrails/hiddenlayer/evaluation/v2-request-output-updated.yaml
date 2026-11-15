@@ -1,0 +1,50 @@
+{
+  "kind": "helper",
+  "name": "v2-request-output-updated",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "secret"
+        ],
+        "structured_messages": [
+          {
+            "role": "user",
+            "content": "secret"
+          }
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "messages": [
+              {
+                "role": "user",
+                "content": "redacted"
+              },
+              {
+                "role": "assistant",
+                "content": ""
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

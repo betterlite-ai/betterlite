@@ -1,0 +1,41 @@
+{
+  "kind": "helper",
+  "name": "v2-endpoint-detection-v2-response",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "answer"
+        ]
+      },
+      "request_data": {},
+      "input_type": "response",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "choices": [
+              {
+                "message": {
+                  "content": "a"
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

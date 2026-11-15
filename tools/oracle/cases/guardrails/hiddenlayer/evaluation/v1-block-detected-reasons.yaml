@@ -1,0 +1,54 @@
+{
+  "kind": "helper",
+  "name": "v1-block-detected-reasons",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "secret"
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "evaluation": {
+              "action": "Block"
+            },
+            "analysis": [
+              {
+                "name": "prompt-injection",
+                "detected": true
+              },
+              {
+                "name": "pii",
+                "detected": false
+              },
+              {
+                "detected": true
+              },
+              {
+                "name": "harm",
+                "detected": true
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
