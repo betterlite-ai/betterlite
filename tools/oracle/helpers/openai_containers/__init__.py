@@ -257,27 +257,24 @@ def run(input_value: Input) -> JsonValue:
     if input_value["supported"]:
         supported = config.get_supported_openai_params()
     answer: dict[str, JsonValue] = {"supported": JSON.validate_python(supported)}
-    answer["maps"] = JSON.validate_python(
-        [
-            config.map_openai_params(call["params"], call["drop_params"])
-            for call in input_value["maps"]
-        ]
-    )
-    answer["joins"] = JSON.validate_python(
-        [
-            join_container_api_base_path(call["api_base"], call["path_suffix"])
-            for call in input_value["joins"]
-        ]
-    )
+    maps = [
+        config.map_openai_params(call["params"], call["drop_params"])
+        for call in input_value["maps"]
+    ]
+    answer["maps"] = JSON.validate_python(maps)
+    joins = [
+        join_container_api_base_path(call["api_base"], call["path_suffix"])
+        for call in input_value["joins"]
+    ]
+    answer["joins"] = JSON.validate_python(joins)
     answer["urls"] = [url(config, call) for call in input_value["urls"]]
-    answer["creates"] = JSON.validate_python(
-        [
-            config.transform_container_create_request(
-                call["name"], call["params"], GenericLiteLLMParams(), {}
-            )
-            for call in input_value["creates"]
-        ]
-    )
+    creates = [
+        config.transform_container_create_request(
+            call["name"], call["params"], GenericLiteLLMParams(), {}
+        )
+        for call in input_value["creates"]
+    ]
+    answer["creates"] = JSON.validate_python(creates)
     answer["requests"] = [request(config, call) for call in input_value["requests"]]
     answer["headers"] = [headers(config, call) for call in input_value["headers"]]
     answer["replies"] = [reply(config, call, logging) for call in input_value["replies"]]
