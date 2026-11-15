@@ -602,6 +602,23 @@ fn browser_searches_and_opens_are_counted_from_executed_tools() {
 }
 
 #[test]
+fn searches_without_opens_are_still_billed() {
+    let converted = reply(&reply_with(&json!([{"type": "browser_search"}])));
+    assert_eq!(converted.browser_actions, billed(1, 0));
+}
+
+#[test]
+fn a_null_executed_tools_list_is_not_a_bad_shape() {
+    let body = reply_with(&Value::Null);
+    let log = captured(|| {
+        let converted = reply(&body);
+        assert!(converted.browser_actions.is_none());
+        assert_eq!(converted.reply.response.choices.len(), 1);
+    });
+    assert!(!log.contains("did not match the expected shape"));
+}
+
+#[test]
 fn a_name_wins_over_the_type_of_an_executed_tool() {
     let converted = reply(&reply_with(&json!([
         {"name": "browser.open", "type": "browser_search"}
