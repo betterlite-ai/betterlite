@@ -6,20 +6,31 @@ use std::time::Duration;
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::Section;
 
 use super::{
     ENABLED_VARIABLE, INTERVAL_VARIABLE, PROBE_TIMEOUT_VARIABLE, RECONNECT_TIMEOUT_VARIABLE,
     SCHEMA_VARIABLE, Settings,
 };
 
-fn settings(variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
-    let lookup: BTreeMap<String, String> = variables
+fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
+    variables
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    ConfigLoader { lookup }
-        .load("model_list: []\n")
-        .map(|config| config.sections.db_watchdog)
+        .collect()
+}
+
+fn settings(variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    ConfigLoader {
+        lookup: environment(variables),
+    }
+    .load("model_list: []\n")
+    .map(|config| config.sections.db_watchdog)
+}
+
+// auth_reconnect reads the reconnect variable too and rejects an empty value, so this converts the section alone
+fn section_settings(variables: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+    Section::convert(super::Raw::default(), &environment(variables))
 }
 
 #[test]
@@ -95,7 +106,7 @@ fn watchdog_enabled_forms(#[case] value: &str, #[case] enabled: bool) {
 
 #[test]
 fn watchdog_empty_values_take_the_defaults() {
-    let settings = settings(&[
+    let settings = section_settings(&[
         (ENABLED_VARIABLE, ""),
         (INTERVAL_VARIABLE, "  "),
         (PROBE_TIMEOUT_VARIABLE, ""),
