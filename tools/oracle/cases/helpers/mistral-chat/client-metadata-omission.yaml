@@ -1,0 +1,32 @@
+kind: helper
+name: mistral-chat-client-metadata-omission
+call:
+  mistral_chat:
+    steps:
+      - kind: request
+        model: mistral-small-latest
+        optional_params:
+          client_metadata:
+            trace: abc
+          temperature: 0.3
+          max_retries: 2
+          tool_choice: any
+          tools:
+            - type: function
+              function:
+                name: f
+              cache_control:
+                type: ephemeral
+        messages:
+          - role: user
+            content: hi
+      - kind: request
+        model: mistral-small-latest
+        optional_params:
+          tool_choice: none
+          max_retries: 1
+        messages:
+          - role: user
+            content: hi
+env: {}
+compare: {ignore: []}
