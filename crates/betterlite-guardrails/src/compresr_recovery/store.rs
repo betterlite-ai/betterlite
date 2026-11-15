@@ -89,7 +89,7 @@ impl State {
         // One pass over the entries other than the newest, ending as soon as the rest fit
         let evictable = self.entries.len().saturating_sub(1);
         for _ in 0..evictable {
-            if self.entries.len() == 1 || self.total_bytes <= max_total_bytes {
+            if self.total_bytes <= max_total_bytes {
                 break;
             }
             self.evict_oldest();

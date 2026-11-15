@@ -225,6 +225,7 @@ fn byte_total_follows_replacements_and_removals_eviction() {
 #[case::one_byte_over_drops_the_oldest(&[6, 5], 10, 1)]
 #[case::the_newest_entry_is_kept_alone(&[20], 10, 1)]
 #[case::oldest_go_first_until_it_fits(&[4, 4, 4], 9, 2)]
+#[case::the_newest_survives_a_ceiling_even_it_exceeds(&[4, 4, 4], 1, 1)]
 fn global_ceiling_evicts_oldest_but_keeps_the_newest_eviction(
     #[case] sizes: &[usize],
     #[case] ceiling: usize,
