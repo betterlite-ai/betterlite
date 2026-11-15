@@ -1,10 +1,10 @@
+use betterlite_config::sections::anthropic_completion::OptionValues;
 use betterlite_models::decisions::Json;
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_prompts::builtin::Message;
 use indexmap::IndexMap;
 
 use crate::completion::error::CompletionError;
-use crate::completion::options::OptionDefaults;
 use crate::completion::prompt::{PromptSource, prompt_from_messages};
 
 // model and prompt come first, so an optional param of the same name overrides them
@@ -13,7 +13,7 @@ pub async fn transform_request(
     model: &str,
     messages: &[Message],
     mut optional_params: IndexMap<String, Json>,
-    defaults: &OptionDefaults,
+    defaults: &OptionValues,
 ) -> Result<IndexMap<String, Json>, CompletionError> {
     let prompt = prompt_from_messages(source, model, messages).await?;
     // a request's own value beats the configured default, so only absent keys are filled

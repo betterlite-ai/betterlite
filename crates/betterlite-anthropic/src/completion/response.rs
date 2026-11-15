@@ -3,9 +3,9 @@ use betterlite_prompts::builtin::Message;
 use betterlite_tokenizer::count::default_encoding::DefaultEncoding;
 use betterlite_tokenizer::engine::Engine;
 
-use crate::completion::error::{CompletionError, anthropic_text_error};
+use crate::completion::error::CompletionError;
 use crate::completion::prompt::{PromptSource, prompt_from_messages};
-use crate::completion::reply::{LegacyReply, decode_legacy_anthropic_reply};
+use crate::completion::reply::decode_legacy_anthropic_reply;
 
 pub struct ResponseInput<'input> {
     pub model: &'input str,
@@ -48,26 +48,14 @@ pub async fn transform_response(
     let reply = decode_legacy_anthropic_reply(input.status_code, input.body)?;
     // the prompt is rebuilt here for the usage, not read back from the request
     let prompt = prompt_from_messages(source, input.model, input.messages).await?;
-    let (completion, stop_reason) = match reply {
-        LegacyReply::Error { message } => {
-            return Err(CompletionError::Upstream(Box::new(anthropic_text_error(
-                input.status_code,
-                message,
-            ))));
-        }
-        LegacyReply::Completion {
-            completion,
-            stop_reason,
-        } => (completion, stop_reason),
-    };
     let choice = model_response
         .choices
         .first_mut()
         .ok_or(CompletionError::NoChoices)?;
-    if !completion.is_empty() {
-        choice.message.content = Some(completion);
+    if !reply.completion.is_empty() {
+        choice.message.content = Some(reply.completion);
     }
-    choice.finish_reason = stop_reason;
+    choice.finish_reason = reply.stop_reason;
     let prompt_tokens = count_tokens(tokenizer, &prompt)?;
     // an unset content counts as no tokens where tiktoken raises on None
     let completion_tokens = count_tokens(

@@ -8,7 +8,7 @@ use secrecy::SecretString;
 
 use crate::completion::error::{COMPLETE_URL, CompletionError, anthropic_text_error};
 use crate::completion::headers::validate_environment;
-use crate::completion::model::{LegacyModel, select};
+use crate::completion::model::selects;
 
 use super::{options, prompts, responses, streams};
 
@@ -43,21 +43,16 @@ async fn completion_cases(#[case] case: u8) {
             responses::failures().await;
             responses::tokenizer_choice().await;
         }
-        4 => {
-            streams::parsed_chunks();
-            streams::stream_lines();
-        }
+        4 => streams::parsed_chunks(),
         5 => legacy_auth(),
         _ => legacy_error_envelope(),
     }
 }
 
 fn legacy_model_selection() {
-    assert_eq!(select("claude-2"), Some(LegacyModel::Claude2));
-    assert_eq!(
-        select("claude-instant-1"),
-        Some(LegacyModel::ClaudeInstant1)
-    );
+    for legacy in ["claude-2", "claude-instant-1"] {
+        assert!(selects(legacy), "{legacy}");
+    }
     for other in [
         "Claude-2",
         "claude-2.1",
@@ -68,7 +63,7 @@ fn legacy_model_selection() {
         "claude-3-5-sonnet-20241022",
         "",
     ] {
-        assert_eq!(select(other), None, "{other}");
+        assert!(!selects(other), "{other}");
     }
 }
 

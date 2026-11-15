@@ -4,8 +4,7 @@ use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use indexmap::IndexMap;
 
-use crate::completion::error::CompletionError;
-use crate::completion::stream::{chunk_parser, decode_stream_line};
+use crate::completion::stream::chunk_parser;
 
 fn chunk(text: &str) -> IndexMap<String, Json> {
     serde_json::from_str(text).unwrap()
@@ -44,28 +43,4 @@ pub(super) fn parsed_chunks() {
     ] {
         assert!(chunk_parser(&chunk(invalid)).is_err(), "{invalid}");
     }
-}
-
-pub(super) fn stream_lines() {
-    let line = decode_stream_line(r#"data: {"completion":"Hi"}"#).unwrap();
-    assert_eq!(line.text, "Hi");
-    let tight = decode_stream_line(r#"data:{"completion":"Hi"}"#).unwrap();
-    assert_eq!(tight.text, "Hi");
-    let done = decode_stream_line("data: [DONE]").unwrap();
-    assert!(done.is_finished);
-    assert_eq!(done.finish_reason, "stop");
-    let blank = GenericChunk {
-        text: String::new(),
-        tool_use: None,
-        is_finished: false,
-        finish_reason: String::new(),
-        usage: None,
-        index: Some(0),
-        provider_specific_fields: None,
-    };
-    for ignored in ["", "{}", "null", "event: ping"] {
-        assert_eq!(decode_stream_line(ignored).unwrap(), blank, "{ignored}");
-    }
-    let scalar = decode_stream_line("[1]");
-    assert!(matches!(scalar, Err(CompletionError::ChunkNotObject)));
 }

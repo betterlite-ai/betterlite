@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::anthropic_completion::OptionValues;
 use indexmap::IndexMap;
 
-use crate::completion::options::{OptionDefaults, SUPPORTED_OPENAI_PARAMS, map_openai_params};
+use crate::completion::options::{SUPPORTED_OPENAI_PARAMS, map_openai_params, resolve_defaults};
 use crate::completion::prompt::PromptSource;
 use crate::completion::request::transform_request;
 
@@ -67,7 +67,7 @@ pub(super) async fn request_body() {
         prompts: &prompts,
         now: clock(),
     };
-    let unset = OptionDefaults::resolve(&OptionValues::default(), &OptionValues::default(), 4096);
+    let unset = resolve_defaults(&OptionValues::default(), &OptionValues::default(), 4096);
     let messages = user_messages();
     let body = transform_request(&source, "claude-2", &messages, IndexMap::new(), &unset).await;
     let body = body.unwrap();
@@ -102,7 +102,7 @@ pub(super) async fn request_defaults() {
         stop_sequences: Some(vec!["STOP".to_owned()]),
         metadata: Some(object(r#"{"user_id":"configured"}"#)),
     };
-    let defaults = OptionDefaults::resolve(&deployment, &global, 4096);
+    let defaults = resolve_defaults(&deployment, &global, 4096);
     let own = object(r#"{"top_k":7,"model":"override"}"#);
     let messages = user_messages();
     let body = transform_request(&source, "claude-2", &messages, own, &defaults).await;

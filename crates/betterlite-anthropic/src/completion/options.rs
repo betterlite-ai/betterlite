@@ -1,7 +1,6 @@
 use betterlite_config::sections::anthropic_completion::OptionValues;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::Serialize;
 
 use crate::completion::error::CompletionError;
 use crate::option_primitives::map_stop_sequences;
@@ -18,41 +17,29 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 8] = [
     "user",
 ];
 
-#[derive(Debug, Clone, Default, PartialEq, Serialize)]
-pub struct OptionDefaults {
-    pub max_tokens_to_sample: Option<i64>,
-    pub stop_sequences: Option<Vec<String>>,
-    pub temperature: Option<f64>,
-    pub top_p: Option<f64>,
-    pub top_k: Option<i64>,
-    pub metadata: Option<IndexMap<String, Json>>,
-}
-
-impl OptionDefaults {
-    // the deployment's litellm_params win over litellm_settings, and the constructor's DEFAULT_MAX_TOKENS fills what both leave out
-    #[must_use]
-    pub fn resolve(
-        deployment: &OptionValues,
-        global: &OptionValues,
-        default_max_tokens: i64,
-    ) -> Self {
-        Self {
-            max_tokens_to_sample: deployment
-                .max_tokens_to_sample
-                .or(global.max_tokens_to_sample)
-                .or(Some(default_max_tokens)),
-            stop_sequences: deployment
-                .stop_sequences
-                .clone()
-                .or_else(|| global.stop_sequences.clone()),
-            temperature: deployment.temperature.or(global.temperature),
-            top_p: deployment.top_p.or(global.top_p),
-            top_k: deployment.top_k.or(global.top_k),
-            metadata: deployment
-                .metadata
-                .clone()
-                .or_else(|| global.metadata.clone()),
-        }
+// the deployment's litellm_params win over litellm_settings, and the constructor's DEFAULT_MAX_TOKENS fills what both leave out
+#[must_use]
+pub fn resolve_defaults(
+    deployment: &OptionValues,
+    global: &OptionValues,
+    default_max_tokens: i64,
+) -> OptionValues {
+    OptionValues {
+        max_tokens_to_sample: deployment
+            .max_tokens_to_sample
+            .or(global.max_tokens_to_sample)
+            .or(Some(default_max_tokens)),
+        stop_sequences: deployment
+            .stop_sequences
+            .clone()
+            .or_else(|| global.stop_sequences.clone()),
+        temperature: deployment.temperature.or(global.temperature),
+        top_p: deployment.top_p.or(global.top_p),
+        top_k: deployment.top_k.or(global.top_k),
+        metadata: deployment
+            .metadata
+            .clone()
+            .or_else(|| global.metadata.clone()),
     }
 }
 

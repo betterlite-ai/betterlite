@@ -1,5 +1,4 @@
 use betterlite_models::decisions::Json;
-use betterlite_streaming::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use indexmap::IndexMap;
 
@@ -49,32 +48,4 @@ pub fn chunk_parser(chunk: &IndexMap<String, Json>) -> Result<GenericChunk, Comp
         index: Some(index),
         provider_specific_fields: None,
     })
-}
-
-// B2214's BaseModelResponseIterator._handle_string_chunk over one transport line, then chunk_parser
-pub fn decode_stream_line(line: &str) -> Result<GenericChunk, CompletionError> {
-    let empty = GenericChunk {
-        text: String::new(),
-        tool_use: None,
-        is_finished: false,
-        finish_reason: String::new(),
-        usage: None,
-        index: Some(0),
-        provider_specific_fields: None,
-    };
-    if line.contains("[DONE]") {
-        return Ok(GenericChunk {
-            is_finished: true,
-            finish_reason: "stop".to_owned(),
-            ..empty
-        });
-    }
-    let stripped = strip_sse_data_from_chunk(Some(line)).unwrap_or(line);
-    match serde_json::from_str::<Json>(stripped) {
-        Ok(Json::Object(fields)) if !fields.is_empty() => chunk_parser(&fields),
-        Ok(Json::Object(_) | Json::Null) | Err(_) => Ok(empty),
-        Ok(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
-            Err(CompletionError::ChunkNotObject)
-        }
-    }
 }

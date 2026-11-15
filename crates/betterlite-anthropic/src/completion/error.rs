@@ -44,8 +44,6 @@ pub enum CompletionError {
     },
     #[error("the model response has no choices")]
     NoChoices,
-    #[error("the stream chunk is not a JSON object")]
-    ChunkNotObject,
     #[error("the token count does not fit the usage block")]
     Usage,
     #[error("the text could not be tokenized")]
