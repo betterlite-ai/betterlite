@@ -27,4 +27,7 @@ deviations:
   - what: decode_audit_record rejects a record with an unknown field, over 1 MiB or deeper than 64 JSON levels; LiteLLM's LiteLLM_AuditLogs ignores unknown keys, because its pydantic base leaves extra at ignore, and parses a record of any size or depth.
     why: Audit JSON is an external stored-data boundary, and the B003 bounded decoder accepts only the nine fields and values LiteLLM declares, so anything else is rejected before it reaches storage.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3815-L3826
+  - what: The record's debug line redacts changed_by_api_key; LiteLLM's verbose_proxy_logger.debug prints the whole LiteLLM_AuditLogs model, str and all, so the raw changed-by key reaches the proxy debug log.
+    why: The key is a credential, and a debug sink that prints it leaks it wherever logs are shipped; the field holds a secrecy SecretString, exposed only when the row is inserted and the callback payload is built.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L219
 kept_bugs: []
