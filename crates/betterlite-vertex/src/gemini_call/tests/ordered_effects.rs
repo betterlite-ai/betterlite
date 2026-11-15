@@ -13,6 +13,7 @@ use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
+use crate::gemini_stream::error::StreamError;
 use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
 
 use super::support::{
@@ -350,6 +351,26 @@ fn ordered_effects_sync_stream_refuses_a_status_without_translating() {
     };
     assert_eq!(provider.status_code, 400);
     assert_eq!(provider.message, SCHEMA_ERROR);
+}
+
+#[test]
+fn ordered_effects_sync_stream_surfaces_a_chunk_error_once() {
+    let fixture = pooled_fixture(Vec::new(), vec![stream_reply(200, vec![line("[1]")])]);
+    let reply = fixture.run(Setup {
+        acompletion: false,
+        stream: Some(true),
+        timeout: None,
+    });
+    let Ok(GeminiReply::Stream(mut stream)) = reply else {
+        panic!("a streamed synchronous call answers with a generated stream");
+    };
+    let chunk = fixture.runtime.block_on(stream.next_chunk());
+    assert!(matches!(
+        chunk,
+        Some(Err(GeminiStreamError::Chunk(StreamError::NotAnObject)))
+    ));
+    let after = fixture.runtime.block_on(stream.next_chunk());
+    assert!(after.is_none(), "a failed stream stays finished");
 }
 
 #[test]
