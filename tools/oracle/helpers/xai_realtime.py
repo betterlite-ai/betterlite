@@ -103,7 +103,6 @@ class FakeWebsockets(ModuleType):
 
 
 RUNNER: RealtimeRunner = XAIRealtime()
-REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
 
 
 def ssl_kind(*, value: bool | str | ssl_module.SSLContext | None) -> SslKind:
