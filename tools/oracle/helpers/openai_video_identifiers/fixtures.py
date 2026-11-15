@@ -107,7 +107,7 @@ class FaultyBytesIO(io.BytesIO):
 
 
 class BufferedCursor:
-    def __init__(self, buffered: io.BufferedReader) -> None:
+    def __init__(self, buffered: io.BufferedIOBase) -> None:
         self.buffered = buffered
 
     def cursor(self) -> int:
