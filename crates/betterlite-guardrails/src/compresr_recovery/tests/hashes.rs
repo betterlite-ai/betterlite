@@ -69,8 +69,7 @@ fn entry_bytes_counts_utf8_bytes_of_every_original_hash() {
     assert_eq!(entry_bytes(&originals(&[("a", "\u{e9}"), ("b", "xyz")])), 5);
 }
 
-// Python holds a lone surrogate from a JSON \ud800 escape and hashes it with surrogatepass; the model-response parse
-// betterlite runs first refuses the escape, so no string the recovery path hashes or stores can carry one
+// Python hashes a lone \ud800 escape with surrogatepass; betterlite's response parse refuses it first, so none reaches the hash
 #[test]
 fn a_lone_surrogate_escape_is_rejected_before_hashing_hash() {
     let response = raw(r#"{"choices":[{"message":{"content":"\ud800"}}]}"#);
