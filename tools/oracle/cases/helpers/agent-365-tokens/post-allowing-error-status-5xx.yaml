@@ -1,0 +1,18 @@
+kind: helper
+name: post-allowing-error-status-5xx
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 503, body: {error: unavailable}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - kind: post
+        url: "https://agent365.example/agents/tool-evaluation/evaluate"
+        headers:
+          authorization: "Bearer assertion"
+          content-type: application/x-www-form-urlencoded
+        data:
+          verdict: Allow
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: agent-365-tokens-token-exchange-seed
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: seed-token}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: header.payload.signature}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,285 @@
+import asyncio
+import datetime as dt
+import urllib.parse
+import uuid
+from typing import Literal, TypeAlias, TypedDict
+from unittest.mock import patch
+
+import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.guardrails.guardrail_hooks.agent_365.agent_365 import (
+    Agent365Guardrail,
+    Agent365MalformedResponseError,
+    Agent365ThrottledError,
+    Agent365TokenExchangeError,
+    entra_assertion,
+)
+from litellm.types.guardrails import GuardrailEventHooks
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter
+
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+UUID_MARKER = "<uuid4>"
+UUID_VERSION = 4
+FIXED_NOW = 1_000_000.0
+
+
+class ScriptedReply(TypedDict):
+    status: int
+    body: JsonValue
+    raw: str | None
+
+
+class TokenRequest(TypedDict):
+    kind: Literal["token"]
+    assertion: str
+
+
+class RangeRequest(TypedDict):
+    kind: Literal["token_range"]
+    prefix: str
+    count: int
+
+
+class PostRequest(TypedDict):
+    kind: Literal["post"]
+    url: str
+    headers: dict[str, str]
+    data: dict[str, str]
+
+
+TokenStep: TypeAlias = TokenRequest | RangeRequest | PostRequest
+
+
+class TokenExchange(TypedDict):
+    function: Literal["agent_365_token_exchange"]
+    replies: list[ScriptedReply]
+    repeat_last_reply: bool
+    steps: list[TokenStep]
+
+
+class AssertionCheck(TypedDict):
+    function: Literal["agent_365_assertion"]
+    values: list[str]
+
+
+class RequestPayload(TypedDict, total=False):
+    litellm_logging_obj: Logging
+    litellm_call_id: str
+    metadata: dict[str, JsonValue]
+    litellm_metadata: dict[str, JsonValue]
+    mcp_tool_name: str
+    mcp_server_name: str
+    mcp_arguments: dict[str, JsonValue]
+
+
+class PayloadAssembly(TypedDict):
+    function: Literal["agent_365_payload_assembly"]
+    key_alias: str | None
+    mcp_session_id: str | None
+    litellm_call_id: str
+    metadata: dict[str, JsonValue] | None
+    litellm_metadata: dict[str, JsonValue] | None
+    mcp_tool_name: str | None
+    mcp_server_name: str | None
+    mcp_arguments: dict[str, JsonValue] | None
+
+
+Input: TypeAlias = TokenExchange | AssertionCheck | PayloadAssembly
+
+
+class EvaluatePayload(BaseModel):
+    tool: dict[str, str]
+    server_name: str = Field(alias="serverName")
+    conversation_id: str = Field(alias="conversationId")
+    arguments: dict[str, JsonValue] | None = None
+    agent_id: str | None = Field(default=None, alias="agentId")
+
+
+class ScriptedReplies:
+    def __init__(self, replies: list[ScriptedReply], *, repeat_last_reply: bool) -> None:
+        self.replies = replies
+        self.repeat_last_reply = repeat_last_reply
+        self.requests: list[dict[str, JsonValue]] = []
+        self.used = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        self.requests.append(capture_request(request))
+        reply = self.next_reply()
+        if reply["raw"] is not None:
+            return httpx.Response(reply["status"], content=reply["raw"])
+        return httpx.Response(reply["status"], json=reply["body"])
+
+    def next_reply(self) -> ScriptedReply:
+        if self.used < len(self.replies):
+            reply = self.replies[self.used]
+            self.used += 1
+            return reply
+        if self.repeat_last_reply and self.replies:
+            return self.replies[-1]
+        raise ValueError("the scripted replies are exhausted")
+
+
+class Probe(Agent365Guardrail):
+    async def fetch_token(self, assertion: str) -> str:
+        return await self._get_obo_token(assertion)
+
+    async def post_allowing(
+        self,
+        url: str,
+        headers: dict[str, str],
+        data: dict[str, str],
+    ) -> httpx.Response:
+        return await self._post_allowing_error_status(url=url, headers=headers, data=data)
+
+    def cache_items(self) -> list[tuple[str, str, float]]:
+        return [
+            (key, token, expires_at)
+            for key, (token, expires_at) in self._obo_token_cache.items()
+        ]
+
+    def build_payload(self, data: RequestPayload, auth: UserAPIKeyAuth) -> JsonValue:
+        payload = self._build_evaluate_payload(data, auth)
+        return JSON.validate_python(payload)
+
+
+def capture_request(request: httpx.Request) -> dict[str, JsonValue]:
+    pairs = urllib.parse.parse_qsl(request.content.decode(), keep_blank_values=True)
+    form = JSON.validate_python(dict(pairs))
+    return {"url": str(request.url), "content_type": request.headers["content-type"], "form": form}
+
+
+def make_guardrail() -> Probe:
+    # the positional fields are guardrail_name, tenant_id, client_id and client_secret
+    return Probe(
+        "agent-365-guard", "tenant-abc", "client-xyz", "secret-123",
+        event_hook=GuardrailEventHooks.pre_mcp_call, default_on=True,
+    )
+
+
+def exchange_outcome(error: Agent365TokenExchangeError) -> dict[str, JsonValue]:
+    return {
+        "kind": "token", "error": "exchange", "status_code": error.status_code,
+        "error_code": error.error_code, "description": error.description,
+        "aadsts_codes": JSON.validate_python(list(error.aadsts_codes)),
+        "gateway_owned": error.gateway_owned,
+    }
+
+
+async def token_outcome(guardrail: Probe, assertion: str) -> dict[str, JsonValue]:
+    try:
+        token = await guardrail.fetch_token(assertion)
+    except Agent365TokenExchangeError as error:
+        return exchange_outcome(error)
+    except Agent365ThrottledError as error:
+        return {"kind": "token", "error": "throttled", "status_code": error.status_code}
+    except Agent365MalformedResponseError as error:
+        return {"kind": "token", "error": "malformed", "message": str(error)}
+    except httpx.HTTPStatusError as error:
+        return {"kind": "token", "error": "http_status", "status_code": error.response.status_code}
+    return {"kind": "token", "access_token": token}
+
+
+async def range_outcome(guardrail: Probe, prefix: str, count: int) -> dict[str, JsonValue]:
+    token = ""
+    for index in range(count):
+        token = await guardrail.fetch_token(f"{prefix}{index}")
+    return {"kind": "token_range", "access_token": token}
+
+
+async def post_outcome(guardrail: Probe, step: PostRequest) -> dict[str, JsonValue]:
+    response = await guardrail.post_allowing(step["url"], step["headers"], step["data"])
+    body = JSON.validate_json(response.content)
+    return {"kind": "post", "status": response.status_code, "body": body}
+
+
+async def run_step(guardrail: Probe, step: TokenStep) -> dict[str, JsonValue]:
+    if step["kind"] == "token":
+        return await token_outcome(guardrail, step["assertion"])
+    if step["kind"] == "token_range":
+        return await range_outcome(guardrail, step["prefix"], step["count"])
+    return await post_outcome(guardrail, step)
+
+
+async def run_exchange(guardrail: Probe, steps: list[TokenStep]) -> list[dict[str, JsonValue]]:
+    outcomes = [await run_step(guardrail, step) for step in steps]
+    await guardrail.async_handler.client.aclose()
+    return outcomes
+
+
+def exchange_result(args: TokenExchange) -> JsonValue:
+    handler = ScriptedReplies(args["replies"], repeat_last_reply=args["repeat_last_reply"])
+    guardrail = make_guardrail()
+    guardrail.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    with patch("time.time", return_value=FIXED_NOW):
+        outcomes = asyncio.run(run_exchange(guardrail, args["steps"]))
+        cache = cache_entries(guardrail, FIXED_NOW)
+    return {
+        "requests": JSON.validate_python(handler.requests),
+        "steps": JSON.validate_python(outcomes),
+        "cache": JSON.validate_python(cache),
+    }
+
+
+def assertion_result(args: AssertionCheck) -> JsonValue:
+    accepted = [value for value in args["values"] if entra_assertion(value) is not None]
+    return {"accepted": JSON.validate_python(accepted)}
+
+
+def payload_request(args: PayloadAssembly) -> RequestPayload:
+    logging_obj = Logging(
+        model="mcp", messages=None, stream=False, call_type="call_mcp_tool",
+        start_time=dt.datetime.fromtimestamp(FIXED_NOW, tz=dt.UTC),
+        litellm_call_id=args["litellm_call_id"], function_id="fn-1",
+    )
+    if args["mcp_session_id"] is not None:
+        logging_obj.model_call_details["mcp_tool_call_metadata"] = {
+            "mcp_session_id": args["mcp_session_id"]
+        }
+    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"]}
+    data["litellm_logging_obj"] = logging_obj
+    if args["metadata"] is not None:
+        data["metadata"] = args["metadata"]
+    if args["litellm_metadata"] is not None:
+        data["litellm_metadata"] = args["litellm_metadata"]
+    if args["mcp_tool_name"] is not None:
+        data["mcp_tool_name"] = args["mcp_tool_name"]
+    if args["mcp_server_name"] is not None:
+        data["mcp_server_name"] = args["mcp_server_name"]
+    if args["mcp_arguments"] is not None:
+        data["mcp_arguments"] = args["mcp_arguments"]
+    return data
+
+
+def cache_entries(guardrail: Probe, now: float) -> list[list[JsonValue]]:
+    entries = guardrail.cache_items()
+    return [[key, token, int(expires_at - now)] for key, token, expires_at in entries]
+
+
+def conversation_marker(conversation: str) -> str:
+    try:
+        parsed = uuid.UUID(conversation)
+    except ValueError:
+        return conversation
+    if parsed.version != UUID_VERSION:
+        return conversation
+    return UUID_MARKER
+
+
+def payload_result(args: PayloadAssembly) -> JsonValue:
+    request_data = payload_request(args)
+    auth = UserAPIKeyAuth(key_alias=args["key_alias"])
+    payload = EvaluatePayload.model_validate(make_guardrail().build_payload(request_data, auth))
+    payload.conversation_id = conversation_marker(payload.conversation_id)
+    return {
+        "payload": JSON.validate_json(payload.model_dump_json(by_alias=True, exclude_none=True)),
+        "conversation_id_is_uuid4": payload.conversation_id == UUID_MARKER,
+    }
+
+
+def run(input_value: Input) -> JsonValue:
+    if input_value["function"] == "agent_365_token_exchange":
+        return exchange_result(input_value)
+    if input_value["function"] == "agent_365_assertion":
+        return assertion_result(input_value)
+    return payload_result(input_value)

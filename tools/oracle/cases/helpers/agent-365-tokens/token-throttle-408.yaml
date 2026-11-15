@@ -1,0 +1,12 @@
+kind: helper
+name: token-throttle-408
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 408, body: {}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: header.payload.signature}
+env: {}
+compare: {ignore: []}

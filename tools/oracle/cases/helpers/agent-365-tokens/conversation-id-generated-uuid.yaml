@@ -1,0 +1,15 @@
+kind: helper
+name: conversation-id-generated-uuid
+call:
+  b3741:
+    function: agent_365_payload_assembly
+    key_alias: null
+    mcp_session_id: null
+    litellm_call_id: ""
+    metadata: null
+    litellm_metadata: null
+    mcp_tool_name: search
+    mcp_server_name: null
+    mcp_arguments: null
+env: {}
+compare: {ignore: []}

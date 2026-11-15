@@ -1,0 +1,10 @@
+kind: helper
+name: assertion-rejects-virtual-key
+call:
+  b3741:
+    function: agent_365_assertion
+    values:
+      - sk-1234
+      - sk-proj-abc.def
+env: {}
+compare: {ignore: []}

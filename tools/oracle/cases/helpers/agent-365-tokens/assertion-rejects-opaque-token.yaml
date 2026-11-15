@@ -1,0 +1,11 @@
+kind: helper
+name: assertion-rejects-opaque-token
+call:
+  b3741:
+    function: agent_365_assertion
+    values:
+      - eyJhbGciOiJub25lIn0
+      - opaque-token
+      - session-bearer-7f3a
+env: {}
+compare: {ignore: []}

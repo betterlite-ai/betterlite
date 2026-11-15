@@ -1,0 +1,12 @@
+kind: helper
+name: assertion-error-within-invalid-client
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 400, body: {error: invalid_client, error_description: "AADSTS50027: Invalid JWT token", error_codes: [50027]}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: header.payload.signature}
+env: {}
+compare: {ignore: []}

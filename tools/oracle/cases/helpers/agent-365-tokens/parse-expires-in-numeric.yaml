@@ -1,0 +1,14 @@
+kind: helper
+name: parse-expires-in-numeric
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: tok-number, expires_in: 120}, raw: null}
+      - {status: 200, body: {access_token: tok-string, expires_in: "7200"}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: number.assertion.value}
+      - {kind: token, assertion: string.assertion.value}
+env: {}
+compare: {ignore: []}

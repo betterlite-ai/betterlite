@@ -1,0 +1,17 @@
+kind: helper
+name: obo-cache-expiry-margin
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: tok-61, expires_in: 61}, raw: null}
+      - {status: 200, body: {access_token: tok-60, expires_in: 60}, raw: null}
+      - {status: 200, body: {access_token: tok-fresh}, raw: null}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: margin.hit.value}
+      - {kind: token, assertion: margin.hit.value}
+      - {kind: token, assertion: margin.miss.value}
+      - {kind: token, assertion: margin.miss.value}
+env: {}
+compare: {ignore: []}
