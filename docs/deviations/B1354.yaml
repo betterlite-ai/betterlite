@@ -1,0 +1,8 @@
+task: B1354
+deviations:
+  - what: totalBilledDuration is read as an exact decimal, so a value that Python's float() accepts but a plain decimal number is not (nan, inf, infinity) leaves duration out of the response.
+    why: The task asks for exact decimal seconds instead of floating point, and no working setup relies on a nan or infinite billed duration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/transformation.py#L194-L200
+  - what: A Speech-to-Text reply over 16 MiB is refused with a typed TooLarge error before it is decoded, where LiteLLM parses any size.
+    why: Rule bounded-inputs caps every input from outside, and the 16 MiB ceiling is the pooled transport's reply cap that the shared generate-content decoder already uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/audio_transcription/transformation.py#L170

@@ -1,0 +1,16 @@
+kind: helper
+name: broken-directory-block-is-omitted
+call:
+  scim_projection:
+    kind: user
+    value:
+      user_id: u-2
+      user_email: ann@example.com
+      metadata:
+        scim_active: false
+        scim_enterprise: [1]
+        scim_entitlements: [[x]]
+        scim_roles: [admin]
+env: {}
+compare:
+  ignore: []
