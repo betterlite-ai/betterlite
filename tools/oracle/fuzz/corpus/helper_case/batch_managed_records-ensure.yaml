@@ -1,0 +1,17 @@
+kind: helper
+name: batch-managed-records-seed
+call:
+  batch_managed_records:
+    plan:
+      op: ensure
+      files:
+        input_file_id: file-raw-in
+        output_file_id: file-raw-out
+        error_file_id: null
+    database:
+      present: true
+      found:
+        file-raw-in: "litellm_proxy:file:unified-in"
+      failures: []
+env: {}
+compare: {ignore: []}

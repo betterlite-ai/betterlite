@@ -1,0 +1,10 @@
+kind: helper
+name: batch-managed-records-poller-job-absent
+call:
+  batch_managed_records:
+    plan:
+      op: poller_active
+    database:
+      present: false
+env: {}
+compare: {ignore: []}
