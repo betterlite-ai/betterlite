@@ -36,7 +36,10 @@ impl Llama3Config {
         existing: &mut Object,
         catalog: &CatalogCapabilities,
     ) {
-        let supported = Self::supported_params(model, catalog);
-        map_supported(&supported, &with_token_alias(requested), existing);
+        map_supported(
+            &Self::supported_params(model, catalog),
+            &with_token_alias(requested),
+            existing,
+        );
     }
 }

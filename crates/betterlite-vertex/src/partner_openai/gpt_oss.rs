@@ -30,7 +30,10 @@ impl GptOssConfig {
         catalog: &CatalogCapabilities,
         supports_function_calling: Option<bool>,
     ) {
-        let supported = Self::supported_params(model, catalog, supports_function_calling);
-        map_supported(&supported, requested, existing);
+        map_supported(
+            &Self::supported_params(model, catalog, supports_function_calling),
+            requested,
+            existing,
+        );
     }
 }

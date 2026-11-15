@@ -2,6 +2,7 @@
 
 use std::collections::BTreeSet;
 
+use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::chat_choices::stream::chunk_parser;
 use betterlite_openai::chat_choices::wire::StreamReply;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
@@ -179,14 +180,18 @@ fn llama_aliases_tokens_before_filtering_its_list() {
 
 #[test]
 fn partner_class_tokens_default_to_none_and_keep_a_configured_value() {
-    assert_eq!(Ai21Config::default().settings.max_tokens, None);
-    assert_eq!(Llama3Config::default().settings.max_tokens, None);
+    let default = provider_config(&Ai21Config::default().settings)
+        .expect("the default partner settings serialize");
+    assert!(default.is_empty(), "{default:?}");
     let configured = Llama3Config {
         settings: PartnerSettings {
             max_tokens: Some(512),
         },
     };
-    assert_eq!(configured.settings.max_tokens, Some(512));
+    let snapshot =
+        provider_config(&configured.settings).expect("the configured partner settings serialize");
+    assert_eq!(snapshot.get("max_tokens"), Some(&json!(512)));
+    assert_eq!(snapshot.len(), 1);
 }
 
 #[test]
