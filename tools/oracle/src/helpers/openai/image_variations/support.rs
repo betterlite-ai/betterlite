@@ -51,7 +51,8 @@ pub(crate) fn transform_value(probe: &Probe) -> HelperResult {
     let data = OpenAiImageVariationConfig::request_data(image, probe.optional_params.clone());
     let mut answer = empty_answer();
     if let Some(data) = data {
-        let view = data_view(&data);
+        let view =
+            serde_json::to_value(data_view(&data)).map_err(|error| invalid(error.to_string()))?;
         answer.insert(
             String::from("data"),
             view.get("data").cloned().unwrap_or(Value::Null),

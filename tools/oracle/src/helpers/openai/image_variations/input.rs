@@ -34,6 +34,8 @@ pub(crate) struct Reply {
     pub(crate) status: Option<u16>,
     pub(crate) headers: ImageHeaders,
     pub(crate) body: String,
+    // an error body can carry bytes that are not UTF-8, which the string field cannot hold
+    pub(crate) body_bytes: Option<Vec<u8>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

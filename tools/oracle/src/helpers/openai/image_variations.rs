@@ -15,9 +15,6 @@ use betterlite_openai::image_variations::error::OpenAiImageVariationError;
 use betterlite_openai::image_variations::logging::{
     ImageVariationLogger, PostCallRecord, PreCallRecord,
 };
-use betterlite_openai::image_variations::request::{
-    begin_image_variation, finish_image_variation, send_image_variation,
-};
 use betterlite_openai::image_variations::transport::ImageVariationTransport;
 use betterlite_openai::image_variations::{
     ImageVariationParams, ImageVariationRequest, OpenAiImageVariationConfig,
@@ -146,6 +143,14 @@ fn recorded_parts(body: RequestBody) -> Vec<Value> {
     }
 }
 
+fn body_of(probe: &Probe) -> Vec<u8> {
+    probe
+        .reply
+        .body_bytes
+        .clone()
+        .unwrap_or_else(|| probe.reply.body.as_bytes().to_vec())
+}
+
 fn recorded_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
     headers
         .iter()
@@ -179,7 +184,7 @@ impl ImageVariationTransport for FakeTransport<'_> {
             None => Ok(UpstreamResponse {
                 status: self.probe.reply.status.unwrap_or(200),
                 headers: self.headers.clone(),
-                body: self.probe.reply.body.as_bytes().to_vec(),
+                body: body_of(self.probe),
             }),
         };
         ready(outcome)
