@@ -52,6 +52,7 @@ pub mod virtual_key_routes;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{EmptyCatalog, RequestModelResolver};
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
@@ -134,19 +135,26 @@ fn model_stage_input(
 }
 fn headers_json(headers: &HeaderMap) -> JsonObject {
     let mut object = JsonObject::new();
-    for (name, value) in headers {
-        let Ok(text) = value.to_str() else {
-            tracing::debug!(name = ?name, "the request header is not UTF-8 and auth ignores it");
-            continue;
-        };
-        object.insert(name.as_str().to_owned(), Json::Text(text.to_owned()));
+    if let Some(value) = headers.get(MODEL_ROUTING_HEADER_NAME) {
+        // LiteLLM decodes header bytes as latin-1, and only this header feeds the model candidates
+        let text: String = value
+            .as_bytes()
+            .iter()
+            .map(|byte| char::from(*byte))
+            .collect();
+        object.insert(MODEL_ROUTING_HEADER_NAME.to_owned(), Json::Text(text));
     }
     object
 }
+const MODEL_QUERY_KEYS: [&str; 2] = ["model", "target_model_names"];
+
 fn query_json(query: Option<&str>) -> JsonObject {
     let mut object = JsonObject::new();
     for (name, value) in form_urlencoded::parse(query.unwrap_or_default().as_bytes()) {
-        object.insert(name.into_owned(), Json::Text(value.into_owned()));
+        // LiteLLM reads these two query keys into the model candidates and nothing else
+        if MODEL_QUERY_KEYS.contains(&name.to_lowercase().as_str()) {
+            object.insert(name.into_owned(), Json::Text(value.into_owned()));
+        }
     }
     object
 }

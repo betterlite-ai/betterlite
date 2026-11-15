@@ -10,6 +10,7 @@ use axum::extract::Extension;
 use axum::http::{HeaderValue, Request, StatusCode, header};
 use axum::routing::post;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
 use betterlite_auth::auth_request_models::catalog::{
     CatalogError, Collaborators, DeploymentRecord, ModelCatalog, RequestModelResolver,
 };
@@ -352,8 +353,8 @@ fn empty_and_nonstring_ids_yield_no_hints() {
 #[test]
 fn request_headers_and_query_reach_the_stage() {
     let mut request = Request::builder()
-        .uri("/files/list?model=x%20y&purpose=batch")
-        .header("x-model", "gpt-4")
+        .uri("/files/list?model=x%20y&target_model_names=batch")
+        .header(MODEL_ROUTING_HEADER_NAME, "gpt-4")
         .body(Body::empty())
         .expect("the request builds");
     request.headers_mut().insert(
@@ -363,13 +364,16 @@ fn request_headers_and_query_reach_the_stage() {
     let headers = headers_json(request.headers());
     assert_eq!(headers.len(), 1);
     assert_eq!(
-        headers.get("x-model"),
+        headers.get(MODEL_ROUTING_HEADER_NAME),
         Some(&Json::Text("gpt-4".to_owned()))
     );
     let query = query_json(request.uri().query());
     assert_eq!(query.len(), 2);
     assert_eq!(query.get("model"), Some(&Json::Text("x y".to_owned())));
-    assert_eq!(query.get("purpose"), Some(&Json::Text("batch".to_owned())));
+    assert_eq!(
+        query.get("target_model_names"),
+        Some(&Json::Text("batch".to_owned()))
+    );
     assert!(query_json(None).is_empty());
     let master_key = SecretString::from("secret-master-key".to_owned());
     let resolver = resolver_with(FakeCatalog::default());
@@ -381,4 +385,38 @@ fn request_headers_and_query_reach_the_stage() {
     assert!(stage.path_params.is_empty());
     assert_eq!(stage.endpoint_marker, None);
     assert_eq!(stage.team_id, None);
+}
+
+#[test]
+fn credentials_stay_out_of_the_stage_input() {
+    let request = Request::builder()
+        .uri("/files/list?api_key=sk-query-secret")
+        .header(header::AUTHORIZATION, "Bearer super-secret-key")
+        .body(Body::empty())
+        .expect("the request builds");
+    let master_key = SecretString::from("secret-master-key".to_owned());
+    let resolver = resolver_with(FakeCatalog::default());
+    let stage = model_stage_input(&request, master_context(&master_key), &resolver);
+    let debug = format!("{stage:?}");
+    assert!(!debug.contains("super-secret-key"));
+    assert!(!debug.contains("sk-query-secret"));
+    assert!(stage.headers.is_some_and(|headers| headers.is_empty()));
+    assert!(stage.query.is_some_and(|query| query.is_empty()));
+}
+
+#[test]
+fn non_utf8_model_header_keeps_its_latin1_value() {
+    let mut request = Request::builder()
+        .uri("/files/list")
+        .body(Body::empty())
+        .expect("the request builds");
+    request.headers_mut().insert(
+        MODEL_ROUTING_HEADER_NAME,
+        HeaderValue::from_bytes(b"gpt-\xff").expect("opaque bytes are a valid header value"),
+    );
+    let headers = headers_json(request.headers());
+    assert_eq!(
+        headers.get(MODEL_ROUTING_HEADER_NAME),
+        Some(&Json::Text("gpt-\u{ff}".to_owned()))
+    );
 }
