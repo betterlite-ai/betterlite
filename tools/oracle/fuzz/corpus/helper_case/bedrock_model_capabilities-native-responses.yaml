@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-model-capabilities-native-responses
+call:
+  bedrock_model_capabilities:
+    function: native_responses
+    model_cost:
+      listed: {supported_endpoints: [/v1/responses]}
+      absent: {}
+      number: {supported_endpoints: 5}
+    models: [listed, absent, number, null]
+env: {}
+compare: {ignore: []}

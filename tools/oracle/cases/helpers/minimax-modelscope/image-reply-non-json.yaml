@@ -1,0 +1,11 @@
+kind: helper
+name: modelscope-image-reply-non-json
+call:
+  b8174:
+    steps:
+      - kind: image_reply
+        status: 403
+        created: 1700000000
+        body: 'oops'
+env: {}
+compare: {ignore: []}

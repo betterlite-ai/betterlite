@@ -12,6 +12,7 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+betterlite-config = { path = "../../betterlite-config" }
 betterlite-http = { path = "../../betterlite-http" }
 betterlite-openai = { path = ".." }
 betterlite-prompts = { path = "../../betterlite-prompts" }
@@ -197,6 +198,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "sambanova_reply"
+path = "fuzz_targets/sambanova_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false
@@ -262,6 +270,13 @@ bench = false
 [[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compatible_image_reply"
+path = "fuzz_targets/compatible_image_reply.rs"
 test = false
 doc = false
 bench = false
@@ -540,6 +555,20 @@ bench = false
 [[bin]]
 name = "hosted_vllm_embedding_reply"
 path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "minimax_speech_reply"
+path = "fuzz_targets/minimax_speech_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "modelscope_image_reply"
+path = "fuzz_targets/modelscope_image_reply.rs"
 test = false
 doc = false
 bench = false
