@@ -141,12 +141,9 @@ fn next_reply(queue: &Mutex<VecDeque<Reply>>) -> Reply {
 }
 
 fn serve(listener: TcpListener, router: Router, stopped: oneshot::Receiver<()>) -> io::Result<()> {
-    let runtime = RuntimeBuilder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("a runtime");
+    let runtime = RuntimeBuilder::new_current_thread().enable_all().build()?;
     runtime.block_on(async move {
-        let async_listener = TokioListener::from_std(listener).expect("a tokio listener");
+        let async_listener = TokioListener::from_std(listener)?;
         axum::serve(async_listener, router)
             .with_graceful_shutdown(async move {
                 let _stopped = stopped.await;

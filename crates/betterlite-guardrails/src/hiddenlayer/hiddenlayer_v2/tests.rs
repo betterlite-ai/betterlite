@@ -15,6 +15,7 @@ use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
 
 use rstest::rstest;
 
+use super::writeback::last_choice_content;
 use super::*;
 
 fn json(value: &str) -> JsonValue {
@@ -61,7 +62,7 @@ fn settings_have_no_supported_hooks() {
 #[test]
 fn invalid_timeout_is_rejected() {
     let args = EvaluationArgs {
-        timeout: Some(-1.0),
+        timeout: Some(-1.0_f64),
         ..fixtures::args("http://127.0.0.1:1")
     };
     let result = HiddenlayerV2Guardrail::new(
@@ -428,14 +429,8 @@ fn write_response_without_scanned_output_keeps_the_inputs() {
     assert_eq!(empty_calls.tool_calls, Some(Vec::new()));
 }
 
-#[tokio::test]
-async fn sends_the_v2_request_evaluation() {
-    let server = server::start(vec![server::reply(
-        r#"{"messages": [{"role": "user", "content": "redacted"}]}"#,
-    )]);
-    let guardrail = guardrail(&server.base);
-    let mut data = proxy_data(&[("hl-project-id", "project")]);
-    let inputs = GuardrailApiInputs {
+fn request_inputs() -> GuardrailApiInputs {
+    GuardrailApiInputs {
         texts: None,
         images: None,
         tools: None,
@@ -443,9 +438,23 @@ async fn sends_the_v2_request_evaluation() {
         structured_messages: Some(vec![message("user", text("secret"))]),
         model: Some("gpt-4o".to_owned()),
         stream_holdback_chars: None,
-    };
+    }
+}
+
+#[tokio::test]
+async fn sends_the_v2_request_evaluation() {
+    let server = server::start(vec![server::reply(
+        r#"{"messages": [{"role": "user", "content": "redacted"}]}"#,
+    )]);
+    let guardrail = guardrail(&server.base);
+    let mut data = proxy_data(&[("hl-project-id", "project")]);
     let evaluated = guardrail
-        .evaluate(inputs, &mut data, GuardrailInputType::Request, None)
+        .evaluate(
+            request_inputs(),
+            &mut data,
+            GuardrailInputType::Request,
+            None,
+        )
         .await
         .expect("evaluated");
     assert_eq!(
@@ -473,7 +482,7 @@ async fn sends_the_v2_request_evaluation() {
         metadata::proxy_request_headers(&data).get("hl-roundtrip-id"),
         Some(&ROUNDTRIP_ID.to_owned())
     );
-    assert!(seen[0].headers.get("authorization").is_none());
+    assert!(!seen[0].headers.contains_key("authorization"));
     assert_eq!(
         canonical(&seen[0].body),
         r#"{"messages":[{"role":"user","content":"secret"}],"model":"gpt-4o","tools":null}"#

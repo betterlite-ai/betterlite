@@ -40,7 +40,8 @@ pub(crate) struct Input {
     answers: Vec<UpstreamAnswer>,
     inputs: GuardrailApiInputs,
     request_data: BTreeMap<String, GuardrailValue>,
-    input_type: Option<GuardrailInputType>,
+    #[serde(rename = "input_type")]
+    kind: Option<GuardrailInputType>,
 }
 
 #[derive(Default, Clone, Copy, Deserialize)]
@@ -82,7 +83,7 @@ fn apply(input: &Input) -> HelperResult {
     let mut request_data = input.request_data.clone();
     let mut logging = logging_target(&request_data);
     let guardrail = instance(&params, input, client)?;
-    let input_type = input.input_type.unwrap_or(GuardrailInputType::Request);
+    let input_type = input.kind.unwrap_or(GuardrailInputType::Request);
     let evaluated = runtime()?.block_on(guardrail.apply_guardrail(
         input.inputs.clone(),
         &mut request_data,

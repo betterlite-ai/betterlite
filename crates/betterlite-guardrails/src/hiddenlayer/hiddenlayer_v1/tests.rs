@@ -7,6 +7,7 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use reqwest::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
+use tokio::time::sleep;
 use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailMessage;
@@ -90,7 +91,7 @@ fn unsupported_event_hook_is_rejected() {
 #[test]
 fn invalid_timeout_is_rejected() {
     let args = EvaluationArgs {
-        timeout: Some(-1.0),
+        timeout: Some(-1.0_f64),
         ..fixtures::args("http://127.0.0.1:1")
     };
     let result = HiddenlayerV1Guardrail::new(
@@ -114,10 +115,10 @@ fn evaluation_timeout_defaults_to_thirty_seconds() {
         Duration::from_secs(30)
     );
     assert_eq!(
-        evaluation_timeout(Some(2.5)).expect("a timeout"),
+        evaluation_timeout(Some(2.5_f64)).expect("a timeout"),
         Duration::from_millis(2_500)
     );
-    assert!(evaluation_timeout(Some(-1.0)).is_err());
+    evaluation_timeout(Some(-1.0_f64)).unwrap_err();
 }
 
 #[test]
@@ -251,7 +252,7 @@ async fn empty_metadata_headers_fall_back_to_the_defaults() {
         .await
         .expect("evaluated");
     let seen = server.requests();
-    assert!(seen[0].headers.get("hl-project-id").is_none());
+    assert!(!seen[0].headers.contains_key("hl-project-id"));
     assert_eq!(
         canonical(&seen[0].body),
         r#"{"metadata":{"model":"unknown","requester_id":"LiteLLM"},"input":{"messages":[{"role":"user","content":"hello"}]}}"#
@@ -660,7 +661,7 @@ fn as_guardrail_message_defaults_a_missing_role_to_user() {
         as_guardrail_message(&object(vec![("role", GuardrailValue::UnsignedInteger(3))]))
             .expect("a message");
     assert_eq!(numeric_role.role, "user");
-    assert!(as_guardrail_message(&text("plain")).is_err());
+    as_guardrail_message(&text("plain")).unwrap_err();
 }
 
 #[test]
@@ -712,7 +713,7 @@ async fn sends_the_v1_interaction_request() {
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, "POST");
     assert_eq!(seen[0].path, "/detection/v1/interactions");
-    assert!(seen[0].headers.get("authorization").is_none());
+    assert!(!seen[0].headers.contains_key("authorization"));
     assert_eq!(
         canonical(&seen[0].body),
         r#"{"metadata":{"model":"unknown","requester_id":"LiteLLM"},"input":{"messages":[{"role":"user","content":"hello"}]}}"#
@@ -907,7 +908,7 @@ async fn other_status_codes_are_not_retried() {
 async fn the_configured_timeout_stops_the_single_attempt() {
     let server = server::start(vec![server::stall(Duration::from_secs(1))]);
     let args = EvaluationArgs {
-        timeout: Some(0.5),
+        timeout: Some(0.5_f64),
         ..fixtures::args(&server.base)
     };
     let guardrail = build(
@@ -928,7 +929,7 @@ async fn the_configured_timeout_stops_the_single_attempt() {
         panic!("a detection call that timed out");
     };
     assert!(source.is_timeout(), "{source}");
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    sleep(Duration::from_millis(100)).await;
     assert_eq!(server.requests().len(), 1);
 }
 

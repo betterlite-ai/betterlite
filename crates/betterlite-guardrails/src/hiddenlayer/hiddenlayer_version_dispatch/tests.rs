@@ -11,6 +11,7 @@ use uuid::Uuid;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
+use crate::hiddenlayer::evaluation::VIOLATED_POLICY;
 use crate::hiddenlayer::evaluation::tests::fixtures::{self, text, text_inputs};
 use crate::hiddenlayer::evaluation::tests::{server, tokens};
 
@@ -118,7 +119,7 @@ fn evaluation_args_read_every_parameter() {
     );
     assert_eq!(args.api_base.as_deref(), Some("http://api.example"));
     assert_eq!(args.auth_url.as_deref(), Some("http://auth.example"));
-    assert_eq!(args.timeout, Some(5.0));
+    assert_eq!(args.timeout, Some(5.0_f64));
     assert!(args.default_on);
 }
 
@@ -210,10 +211,7 @@ async fn contract_maps_a_v1_block_to_the_http_object() {
         panic!("an object failure");
     };
     assert_eq!(status, 400);
-    assert_eq!(
-        detail.get("error"),
-        Some(&text(crate::hiddenlayer::evaluation::VIOLATED_POLICY))
-    );
+    assert_eq!(detail.get("error"), Some(&text(VIOLATED_POLICY)));
     assert_eq!(
         detail.get("block_reasons"),
         Some(&GuardrailValue::Array(vec![text("prompt_injection")]))
