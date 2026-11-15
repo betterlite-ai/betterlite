@@ -213,34 +213,27 @@ pub fn request_body(
     body
 }
 
+fn result_urls(result: &BflResult) -> Vec<&str> {
+    match result {
+        BflResult::Sample(sample) => sample.sample.iter().map(String::as_str).collect(),
+        BflResult::List(entries) => entries
+            .iter()
+            .filter_map(|entry| match entry {
+                BflImageEntry::Url(url) => Some(url.as_str()),
+                BflImageEntry::Resource(resource) => resource.url.as_deref(),
+                BflImageEntry::Other(_) => None,
+            })
+            .collect(),
+        BflResult::Other(_) => Vec::new(),
+    }
+}
+
 pub fn apply_image_response(
     reply: &BflReply,
     mut data: Vec<ImageDatum>,
     now_seconds: i64,
 ) -> Result<BflImageResponse, BflError> {
-    let mut urls: Vec<&str> = Vec::new();
-    match &reply.result {
-        BflResult::Sample(sample) => {
-            if let Some(url) = &sample.sample {
-                urls.push(url);
-            }
-        }
-        BflResult::List(entries) => {
-            for entry in entries {
-                match entry {
-                    BflImageEntry::Url(url) => urls.push(url),
-                    BflImageEntry::Resource(resource) => {
-                        if let Some(url) = &resource.url {
-                            urls.push(url);
-                        }
-                    }
-                    BflImageEntry::Other(_) => {}
-                }
-            }
-        }
-        BflResult::Other(_) => {}
-    }
-    for url in urls {
+    for url in result_urls(&reply.result) {
         data.push(ImageDatum {
             b64_json: None,
             url: Some(url.to_owned()),

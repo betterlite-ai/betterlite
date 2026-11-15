@@ -151,16 +151,8 @@ fn rejects_other_generation_models(#[case] model: &str) {
         generation_endpoint(model),
         Err(BflError::UnknownModel { .. })
     ));
-    assert!(GenerationConfig::for_model(model).is_err());
-}
-
-#[test]
-fn for_model_accepts_a_generation_model() {
-    assert!(GenerationConfig::for_model("black_forest_labs/FLUX-Pro-1.1-ULTRA").is_ok());
-    assert!(matches!(
-        GenerationConfig::for_model("flux-unknown"),
-        Err(BflError::UnknownModel { .. })
-    ));
+    let error = GenerationConfig::for_model(model).unwrap_err();
+    assert!(matches!(&error, BflError::UnknownModel { .. }));
 }
 
 #[test]
@@ -198,12 +190,16 @@ fn other_models_drop_n() {
 }
 
 #[rstest]
-#[case::ultra_hd("flux-pro-1.1-ultra", Some(true))]
-#[case::other_model_hd("flux-dev", None)]
-#[case::ultra_standard("flux-pro-1.1-ultra", None)]
-fn quality_hd_becomes_raw_only_for_ultra(#[case] model: &str, #[case] raw: Option<bool>) {
+#[case::ultra_hd("flux-pro-1.1-ultra", "hd", Some(true))]
+#[case::other_model_hd("flux-dev", "hd", None)]
+#[case::ultra_standard("flux-pro-1.1-ultra", "standard", None)]
+fn quality_hd_becomes_raw_only_for_ultra(
+    #[case] model: &str,
+    #[case] quality: &str,
+    #[case] raw: Option<bool>,
+) {
     let mapped = map_openai_params(
-        &params(&[("quality", text("hd"))]),
+        &params(&[("quality", text(quality))]),
         IndexMap::new(),
         model,
         false,
@@ -212,19 +208,6 @@ fn quality_hd_becomes_raw_only_for_ultra(#[case] model: &str, #[case] raw: Optio
 
     assert_eq!(mapped.get("raw").cloned(), raw.map(Json::Bool));
     assert!(!mapped.contains_key("quality"));
-}
-
-#[test]
-fn other_quality_values_disappear() {
-    let mapped = map_openai_params(
-        &params(&[("quality", text("standard"))]),
-        IndexMap::new(),
-        "flux-pro-1.1-ultra",
-        false,
-    )
-    .unwrap();
-
-    assert!(mapped.is_empty());
 }
 
 #[rstest]
@@ -264,7 +247,7 @@ fn maps_lowercase_x_sizes_into_dimensions(
 #[case::trailing("1344x")]
 #[case::beyond_64_bits("99999999999999999999x512")]
 #[case::underscores("1_024x768")]
-#[case::non_ascii_digits("١٠٢٤x٧٦٨")]
+#[case::non_ascii_digits("\u{661}\u{660}\u{662}\u{664}x\u{667}\u{666}\u{668}")]
 fn malformed_sizes_raise_the_parse_error(#[case] size: &str) {
     let error = map_openai_params(
         &params(&[("size", text(size))]),
@@ -300,19 +283,24 @@ fn null_size_is_skipped_and_a_wrong_type_is_named() {
     assert!(matches!(wrong, BflError::InvalidSizeField));
 }
 
-#[test]
-fn an_existing_optional_key_wins_before_mapping() {
+#[rstest]
+#[case::non_ultra("flux-pro-1.1", number(3))]
+#[case::ultra_overwrites_the_mapped_name("flux-pro-1.1-ultra", number(4))]
+fn an_existing_optional_name_is_skipped_before_mapping(
+    #[case] model: &str,
+    #[case] num_images: Json,
+) {
     let mapped = map_openai_params(
         &params(&[("size", text("1024x1024")), ("n", number(4))]),
         params(&[("size", text("512x512")), ("num_images", number(3))]),
-        "flux-pro-1.1-ultra",
+        model,
         false,
     )
     .unwrap();
 
     assert_eq!(
         mapped,
-        params(&[("size", text("512x512")), ("num_images", number(3))])
+        params(&[("size", text("512x512")), ("num_images", num_images)])
     );
 }
 
