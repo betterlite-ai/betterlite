@@ -2,13 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::tls::Verification;
+use betterlite_http::tls::{TlsError, websocket_client_config};
 use futures_util::SinkExt as _;
 use futures_util::stream::{SplitSink, SplitStream, StreamExt as _};
 use reqwest::header::HeaderMap;
-use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
-use rustls::crypto::{CryptoProvider, aws_lc_rs, verify_tls12_signature, verify_tls13_signature};
-use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use tokio::net::TcpStream;
 use tokio::time;
 use tokio_tungstenite::tungstenite::client::IntoClientRequest as _;
@@ -57,11 +55,21 @@ impl CatoSocketConnector for WebSocketConnector {
         let config = WebSocketConfig::default()
             .max_message_size(Some(MAX_FRAME_BYTES))
             .max_frame_size(Some(MAX_FRAME_BYTES));
-        let connector = match &self.ssl {
+        let verification = match &self.ssl {
             None | Some(WsSsl::SystemRoots) => None,
-            Some(WsSsl::Disabled) => Some(Connector::Rustls(Arc::new(disabled_config()?))),
-            Some(WsSsl::CaFile(path)) => {
-                Some(Connector::Rustls(Arc::new(trusted_config(path).await?)))
+            Some(WsSsl::Disabled) => Some(Verification::Disabled),
+            Some(WsSsl::CaFile(path)) => Some(Verification::CaFile(path.clone())),
+        };
+        let connector = match verification {
+            None => None,
+            Some(verification) => {
+                let config =
+                    websocket_client_config(&verification).map_err(|source| match source {
+                        TlsError::ReadCa(source) => CatoError::WsCaFile { source },
+                        TlsError::RustlsConfig(source) => CatoError::WsTls { source },
+                        source => CatoError::Tls { source },
+                    })?;
+                Some(Connector::Rustls(Arc::new(config)))
             }
         };
         let opening = connect_async_tls_with_config(request, Some(config), false, connector);
@@ -118,75 +126,4 @@ impl CatoFrameWriter for TungsteniteWriter {
             .await
             .map_err(|source| CatoError::WebSocket { source })
     }
-}
-
-macro_rules! verify_signature {
-    ($method:ident, $verify:path) => {
-        fn $method(
-            &self,
-            message: &[u8],
-            cert: &CertificateDer<'_>,
-            dss: &DigitallySignedStruct,
-        ) -> Result<HandshakeSignatureValid, RustlsError> {
-            $verify(
-                message,
-                cert,
-                dss,
-                &self.provider.signature_verification_algorithms,
-            )
-        }
-    };
-}
-
-// ssl_verify=False verifies nothing, but still checks each handshake signature against its certificate
-#[derive(Debug)]
-struct NoVerification {
-    provider: Arc<CryptoProvider>,
-}
-
-impl ServerCertVerifier for NoVerification {
-    fn verify_server_cert(
-        &self,
-        _end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
-    ) -> Result<ServerCertVerified, RustlsError> {
-        Ok(ServerCertVerified::assertion())
-    }
-
-    // both protocol versions check the handshake signature the same way
-    verify_signature!(verify_tls12_signature, verify_tls12_signature);
-    verify_signature!(verify_tls13_signature, verify_tls13_signature);
-
-    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
-        self.provider
-            .signature_verification_algorithms
-            .supported_schemes()
-    }
-}
-
-fn disabled_config() -> Result<ClientConfig, CatoError> {
-    let provider = Arc::new(aws_lc_rs::default_provider());
-    let builder = ClientConfig::builder_with_provider(Arc::clone(&provider))
-        .with_safe_default_protocol_versions()
-        .map_err(|source| CatoError::WsTls { source })?;
-    Ok(builder
-        .dangerous()
-        .with_custom_certificate_verifier(Arc::new(NoVerification { provider }))
-        .with_no_client_auth())
-}
-
-async fn trusted_config(path: &str) -> Result<ClientConfig, CatoError> {
-    let pem = tokio::fs::read(path)
-        .await
-        .map_err(|source| CatoError::WsCaFile { source })?;
-    let roots =
-        betterlite_http::tls::parse_ca_pem(&pem).map_err(|source| CatoError::Tls { source })?;
-    let provider = Arc::new(aws_lc_rs::default_provider());
-    let builder = ClientConfig::builder_with_provider(provider)
-        .with_safe_default_protocol_versions()
-        .map_err(|source| CatoError::WsTls { source })?;
-    Ok(builder.with_root_certificates(roots).with_no_client_auth())
 }
