@@ -2,7 +2,8 @@ use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
 
 use super::catalog::{
-    CatalogError, DeploymentRecord, ManagedIdDecoders, ManagedIdField, ModelCatalog,
+    CatalogError, DeploymentRecord, ManagedIdDecoders, ManagedIdFamily, ManagedIdField,
+    ModelCatalog,
 };
 use super::dedupe_model_candidates;
 
@@ -11,24 +12,25 @@ pub fn resolve_model_id_with_router(
     model_id: Option<String>,
     catalog: Option<&dyn ModelCatalog>,
 ) -> Option<String> {
-    let model_id = model_id?;
-    let Some(catalog) = catalog else {
-        return Some(model_id);
+    let requested = model_id?;
+    let Some(known_catalog) = catalog else {
+        return Some(requested);
     };
-    match catalog.resolve_model_name_from_model_id(&model_id) {
+    match known_catalog.resolve_model_name(&requested) {
         Ok(Some(name)) if !name.is_empty() => Some(name),
-        Ok(_resolved) => Some(model_id),
+        Ok(_) => Some(requested),
         Err(error) => {
             tracing::debug!(
                 error = %error,
                 "unable to resolve model_id from managed resource ID"
             );
-            Some(model_id)
+            Some(requested)
         }
     }
 }
 
-pub fn extract_models_from_managed_resource_id(
+#[must_use]
+pub fn managed_resource_models(
     value: &Json,
     field: &str,
     catalog: Option<&dyn ModelCatalog>,
@@ -40,27 +42,26 @@ pub fn extract_models_from_managed_resource_id(
     if resource_id.is_empty() {
         return Vec::new();
     }
+    let families: &[ManagedIdFamily] = match ManagedIdField::from_name(field) {
+        ManagedIdField::Video => &[
+            ManagedIdFamily::LegacyFileBatch,
+            ManagedIdFamily::Unified,
+            ManagedIdFamily::Video,
+        ],
+        ManagedIdField::Character => &[
+            ManagedIdFamily::LegacyFileBatch,
+            ManagedIdFamily::Unified,
+            ManagedIdFamily::Character,
+        ],
+        ManagedIdField::Other => &[ManagedIdFamily::LegacyFileBatch, ManagedIdFamily::Unified],
+    };
     let mut candidates = Vec::new();
-    if let Err(error) = decoders.legacy_file_batch(resource_id, catalog, &mut candidates) {
-        tracing::debug!(
-            error = %error,
-            "unable to extract model from managed file/batch ID"
-        );
-    }
-    if let Err(error) = decoders.unified(resource_id, catalog, &mut candidates) {
-        tracing::debug!(
-            error = %error,
-            "unable to extract model from unified managed resource ID"
-        );
-    }
-    let field_kind = ManagedIdField::from_name(field);
-    if field_kind != ManagedIdField::Other {
-        if let Err(error) =
-            decoders.video_character(resource_id, field_kind, catalog, &mut candidates)
-        {
+    for family in families {
+        if let Err(error) = decoders.decode_family(*family, resource_id, catalog, &mut candidates) {
             tracing::debug!(
                 error = %error,
-                "unable to extract model from managed video/character ID"
+                family = ?family,
+                "unable to extract a model from a managed resource ID"
             );
         }
     }
@@ -74,19 +75,19 @@ fn team_can_use(deployment: &DeploymentRecord, team_id: Option<&str>) -> bool {
         .is_none_or(|team| Some(team) == team_id)
 }
 
-pub fn get_cache_prediction_deployments(
+pub fn prediction_deployments(
     current_deployment_id: &str,
     candidate_deployment_id: &str,
     catalog: Option<&dyn ModelCatalog>,
     team_id: Option<&str>,
 ) -> Result<Option<(DeploymentRecord, DeploymentRecord)>, CatalogError> {
-    let Some(catalog) = catalog else {
+    let Some(known_catalog) = catalog else {
         return Ok(None);
     };
-    let Some(current) = catalog.deployment(current_deployment_id)? else {
+    let Some(current) = known_catalog.deployment(current_deployment_id)? else {
         return Ok(None);
     };
-    let Some(candidate) = catalog.deployment(candidate_deployment_id)? else {
+    let Some(candidate) = known_catalog.deployment(candidate_deployment_id)? else {
         return Ok(None);
     };
     if !team_can_use(&current, team_id) || !team_can_use(&candidate, team_id) {
@@ -95,7 +96,7 @@ pub fn get_cache_prediction_deployments(
     Ok(Some((current, candidate)))
 }
 
-pub fn cache_prediction_model_candidates(
+pub fn prediction_candidates(
     request_data: &JsonObject,
     catalog: Option<&dyn ModelCatalog>,
     team_id: Option<&str>,
@@ -107,7 +108,7 @@ pub fn cache_prediction_model_candidates(
         return Ok(Vec::new());
     };
     let Some((current, candidate)) =
-        get_cache_prediction_deployments(current_id, candidate_id, catalog, team_id)?
+        prediction_deployments(current_id, candidate_id, catalog, team_id)?
     else {
         return Ok(Vec::new());
     };

@@ -1,8 +1,5 @@
 use super::catalog::{CatalogError, Collaborators, DeploymentRecord, ModelCatalog};
-use super::sources::{
-    RequestSnapshot, extract_model_candidates_from_request,
-    request_dispatched_to_pass_through_endpoint,
-};
+use super::sources::{RequestSnapshot, is_pass_through_dispatch, request_model_candidates};
 use super::{RequestedModels, format_model_candidates};
 use crate::resource_hints::azure::router_model_in_endpoint;
 use crate::resource_hints::bedrock::{
@@ -14,10 +11,10 @@ pub fn get_model_from_request(
     request: &RequestSnapshot<'_>,
     collaborators: &Collaborators<'_>,
 ) -> Result<RequestedModels, CatalogError> {
-    if request_dispatched_to_pass_through_endpoint(&request.dispatch) {
+    if is_pass_through_dispatch(&request.dispatch) {
         return Ok(RequestedModels::None);
     }
-    let candidates = extract_model_candidates_from_request(request, collaborators)?;
+    let candidates = request_model_candidates(request, collaborators)?;
     let model = route_or_candidate_model(request.route, format_model_candidates(candidates));
     route_family_model(request.route, model, collaborators.catalog)
 }
@@ -55,13 +52,21 @@ fn route_family_model(
     if lowered.starts_with("/bedrock") {
         return Ok(bedrock_route_model(route).map_or(model, RequestedModels::One));
     }
+    let Some(known_catalog) = catalog else {
+        return Ok(model);
+    };
     if lowered.starts_with("/azure/") || lowered.starts_with("/azure_ai/") {
-        let azure = azure_route_model(route, catalog)?;
-        return Ok(azure.map_or(model, RequestedModels::One));
+        let endpoint = strip_prefix_ignore_ascii_case(route, "/azure_ai/")
+            .or_else(|| strip_prefix_ignore_ascii_case(route, "/azure/"))
+            .unwrap_or(route);
+        let model_names: Vec<String> = known_catalog.model_names()?.into_iter().collect();
+        let found = router_model_in_endpoint(endpoint, &model_names);
+        return Ok(found.map_or(model, RequestedModels::One));
     }
     if lowered.starts_with("/nvidia_nim/") {
-        let nvidia = nvidia_route_model(route, catalog)?;
-        return Ok(nvidia.map_or(model, RequestedModels::One));
+        let deployments = known_catalog.model_list()?;
+        let hints: Vec<DeploymentHint<'_>> = deployments.iter().map(deployment_hint).collect();
+        return Ok(model_group_in_path(route, &hints).map_or(model, RequestedModels::One));
     }
     Ok(model)
 }
@@ -75,32 +80,6 @@ fn bedrock_route_model(route: &str) -> Option<String> {
         return None;
     }
     bedrock_extract_model(endpoint).ok()
-}
-
-fn azure_route_model(
-    route: &str,
-    catalog: Option<&dyn ModelCatalog>,
-) -> Result<Option<String>, CatalogError> {
-    let Some(catalog) = catalog else {
-        return Ok(None);
-    };
-    let endpoint = strip_prefix_ignore_ascii_case(route, "/azure_ai/")
-        .or_else(|| strip_prefix_ignore_ascii_case(route, "/azure/"))
-        .unwrap_or(route);
-    let model_names: Vec<String> = catalog.model_names()?.into_iter().collect();
-    Ok(router_model_in_endpoint(endpoint, &model_names))
-}
-
-fn nvidia_route_model(
-    route: &str,
-    catalog: Option<&dyn ModelCatalog>,
-) -> Result<Option<String>, CatalogError> {
-    let Some(catalog) = catalog else {
-        return Ok(None);
-    };
-    let deployments = catalog.model_list()?;
-    let hints: Vec<DeploymentHint<'_>> = deployments.iter().map(deployment_hint).collect();
-    Ok(model_group_in_path(route, &hints))
 }
 
 fn deployment_hint(deployment: &DeploymentRecord) -> DeploymentHint<'_> {
@@ -128,11 +107,6 @@ fn model_before_colon(text: &str) -> Option<&str> {
     (!model.is_empty()).then_some(model)
 }
 
-fn model_until_colon(text: &str) -> Option<&str> {
-    let model = text.split(':').next()?;
-    (!model.is_empty()).then_some(model)
-}
-
 fn google_models_path(route: &str) -> Option<String> {
     let mut remaining = route;
     loop {
@@ -155,7 +129,8 @@ fn root_models_path(route: &str) -> Option<String> {
 fn vertex_models_path(route: &str) -> Option<String> {
     route.match_indices("/models/").find_map(|(index, marker)| {
         let remaining = route.get(index.saturating_add(marker.len())..)?;
-        model_until_colon(remaining).map(str::to_owned)
+        let model = remaining.split(':').next()?;
+        (!model.is_empty()).then(|| model.to_owned())
     })
 }
 

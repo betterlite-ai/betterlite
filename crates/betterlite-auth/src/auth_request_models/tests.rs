@@ -9,20 +9,20 @@ use rstest::rstest;
 
 use super::catalog::{
     CatalogError, Collaborators, DeploymentRecord, EmptyCatalog, ManagedIdDecoders, ManagedIdError,
-    ManagedIdField, ModelCatalog,
+    ManagedIdFamily, ModelCatalog,
 };
 use super::managed::{
-    cache_prediction_model_candidates, extract_models_from_managed_resource_id,
-    get_cache_prediction_deployments, resolve_model_id_with_router,
+    managed_resource_models, prediction_candidates, prediction_deployments,
+    resolve_model_id_with_router,
 };
 use super::model::get_model_from_request;
 use super::sources::{
-    DispatchContext, RequestSnapshot, extract_model_candidates_from_request,
-    request_dispatched_to_pass_through_endpoint, request_dispatched_to_provider_pass_through,
+    DispatchContext, RequestSnapshot, is_pass_through_dispatch, is_provider_pass_through,
+    request_model_candidates,
 };
 use super::{
-    RequestedModels, append_model_candidates, dedupe_model_candidates, format_model_candidates,
-    is_falsey, route_matches_any_marker, route_uses_model_routing_sources,
+    MODEL_ROUTING_ROUTE_MARKERS, RequestedModels, append_model_candidates, dedupe_model_candidates,
+    format_model_candidates, is_falsey, route_matches_any_marker,
 };
 
 fn object(text: &str) -> JsonObject {
@@ -38,10 +38,7 @@ struct FakeCatalog {
 }
 
 impl ModelCatalog for FakeCatalog {
-    fn resolve_model_name_from_model_id(
-        &self,
-        model_id: &str,
-    ) -> Result<Option<String>, CatalogError> {
+    fn resolve_model_name(&self, model_id: &str) -> Result<Option<String>, CatalogError> {
         if self.failing {
             return Err(CatalogError::InvalidDeployment);
         }
@@ -74,74 +71,43 @@ impl ModelCatalog for FakeCatalog {
     }
 }
 
-#[derive(Debug)]
-struct StubDecoders;
-
-impl ManagedIdDecoders for StubDecoders {
-    fn legacy_file_batch(
-        &self,
-        _resource_id: &str,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Ok(())
-    }
-
-    fn unified(
-        &self,
-        _resource_id: &str,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Ok(())
-    }
-
-    fn video_character(
-        &self,
-        _resource_id: &str,
-        _field: ManagedIdField,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Ok(())
-    }
-}
-
 #[derive(Debug, Default)]
 struct RecordingDecoders {
-    ids_seen: Arc<Mutex<Vec<String>>>,
+    legacy_ids: Arc<Mutex<Vec<String>>>,
+    fails_unified: bool,
+}
+
+impl RecordingDecoders {
+    fn failing_unified() -> Self {
+        Self {
+            legacy_ids: Arc::default(),
+            fails_unified: true,
+        }
+    }
 }
 
 impl ManagedIdDecoders for RecordingDecoders {
-    fn legacy_file_batch(
+    fn decode_family(
         &self,
+        family: ManagedIdFamily,
         resource_id: &str,
         _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
+        candidates: &mut Vec<String>,
     ) -> Result<(), ManagedIdError> {
-        self.ids_seen
-            .lock()
-            .expect("the call log is not poisoned")
-            .push(resource_id.to_owned());
-        Ok(())
-    }
-
-    fn unified(
-        &self,
-        _resource_id: &str,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Ok(())
-    }
-
-    fn video_character(
-        &self,
-        _resource_id: &str,
-        _field: ManagedIdField,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
+        if family == ManagedIdFamily::LegacyFileBatch {
+            self.legacy_ids
+                .lock()
+                .map_err(|_poisoned| ManagedIdError::Decoder)?
+                .push(resource_id.to_owned());
+        }
+        if !self.fails_unified {
+            return Ok(());
+        }
+        match family {
+            ManagedIdFamily::LegacyFileBatch => candidates.push("partial".to_owned()),
+            ManagedIdFamily::Unified => return Err(ManagedIdError::Decoder),
+            ManagedIdFamily::Video | ManagedIdFamily::Character => {}
+        }
         Ok(())
     }
 }
@@ -161,8 +127,7 @@ fn candidates(
     body: &JsonObject,
     headers: &JsonObject,
     query: &JsonObject,
-    catalog: &dyn ModelCatalog,
-    decoders: &dyn ManagedIdDecoders,
+    collaborators: &Collaborators<'_>,
 ) -> Vec<String> {
     let path_params = BTreeSet::new();
     let request = RequestSnapshot {
@@ -176,22 +141,22 @@ fn candidates(
         },
         team_id: None,
     };
-    let collaborators = Collaborators {
-        catalog: Some(catalog),
-        decoders,
-    };
-    extract_model_candidates_from_request(&request, &collaborators)
-        .expect("the catalog lookup succeeds")
+    request_model_candidates(&request, collaborators).expect("the catalog lookup succeeds")
 }
 
 fn simple_candidates(route: &str, body: &JsonObject) -> Vec<String> {
+    let catalog = FakeCatalog::default();
+    let decoders = RecordingDecoders::default();
+    let collaborators = Collaborators {
+        catalog: Some(&catalog),
+        decoders: &decoders,
+    };
     candidates(
         route,
         body,
         &JsonObject::new(),
         &JsonObject::new(),
-        &FakeCatalog::default(),
-        &StubDecoders,
+        &collaborators,
     )
 }
 
@@ -210,7 +175,7 @@ fn resolve(route: &str, body: &JsonObject, catalog: Option<&dyn ModelCatalog>) -
         },
         team_id: None,
     };
-    let decoders = StubDecoders;
+    let decoders = RecordingDecoders::default();
     let collaborators = Collaborators {
         catalog,
         decoders: &decoders,
@@ -270,17 +235,19 @@ fn first_occurrence_dedup() {
     "exact"
 )]
 #[case(r#"{"X-LITELLM-MODEL": "upper"}"#, "upper")]
-fn exact_key_before_casefold(#[case] headers: &str, #[case] expected: &str) {
-    let headers = object(headers);
+fn exact_key_before_casefold(#[case] header_json: &str, #[case] expected_model: &str) {
+    let headers = object(header_json);
     let found = candidates(
         "/files",
         &JsonObject::new(),
         &headers,
         &JsonObject::new(),
-        &FakeCatalog::default(),
-        &StubDecoders,
+        &Collaborators {
+            catalog: Some(&FakeCatalog::default()),
+            decoders: &RecordingDecoders::default(),
+        },
     );
-    assert_eq!(found, [expected]);
+    assert_eq!(found, [expected_model]);
 }
 
 #[rstest]
@@ -294,7 +261,10 @@ fn marker_substring_casefold(
     #[case] routing_source: bool,
 ) {
     assert_eq!(route_matches_any_marker(route, &["/files"]), matches_files);
-    assert_eq!(route_uses_model_routing_sources(route), routing_source);
+    assert_eq!(
+        route_matches_any_marker(route, &MODEL_ROUTING_ROUTE_MARKERS),
+        routing_source
+    );
 }
 
 #[rstest]
@@ -353,27 +323,31 @@ fn query_before_header() {
         &JsonObject::new(),
         &headers,
         &query,
-        &FakeCatalog::default(),
-        &StubDecoders,
+        &Collaborators {
+            catalog: Some(&FakeCatalog::default()),
+            decoders: &RecordingDecoders::default(),
+        },
     );
     assert_eq!(found, ["from-query", "from-header"]);
 }
 
 #[rstest]
-#[case("/files", true)]
-#[case("/fine_tuning", true)]
-#[case("/vector_stores", false)]
-fn query_target_route_matrix(#[case] route: &str, #[case] appends_target: bool) {
+#[case("/files", &["query-target"])]
+#[case("/fine_tuning", &["query-target"])]
+#[case("/vector_stores", &[])]
+fn query_target_route_matrix(#[case] route: &str, #[case] expected: &[&str]) {
     let query = object(r#"{"target_model_names": "query-target"}"#);
     let found = candidates(
         route,
         &JsonObject::new(),
         &JsonObject::new(),
         &query,
-        &FakeCatalog::default(),
-        &StubDecoders,
+        &Collaborators {
+            catalog: Some(&FakeCatalog::default()),
+            decoders: &RecordingDecoders::default(),
+        },
     );
-    assert_eq!(found.len(), usize::from(appends_target));
+    assert_eq!(found, expected.to_vec());
 }
 
 #[test]
@@ -386,21 +360,23 @@ fn unrelated_route_ignores_ids() {
 
 #[test]
 fn each_managed_id_field_order() {
-    let mut fields = JsonObject::new();
-    for field in super::MODEL_ROUTING_ID_FIELDS {
-        fields.insert(field.to_owned(), Json::Text(format!("{field}-value")));
-    }
+    let fields: JsonObject = super::MODEL_ROUTING_ID_FIELDS
+        .iter()
+        .map(|field| ((*field).to_owned(), Json::Text(format!("{field}-value"))))
+        .collect();
     let decoders = RecordingDecoders::default();
     candidates(
         "/files",
         &fields,
         &JsonObject::new(),
         &JsonObject::new(),
-        &FakeCatalog::default(),
-        &decoders,
+        &Collaborators {
+            catalog: Some(&FakeCatalog::default()),
+            decoders: &decoders,
+        },
     );
     let seen = decoders
-        .ids_seen
+        .legacy_ids
         .lock()
         .expect("the call log is not poisoned")
         .clone();
@@ -414,18 +390,15 @@ fn each_managed_id_field_order() {
 #[test]
 fn prediction_missing_router_ids() {
     let body = object(r#"{"current_deployment_id": "a", "candidate_deployment_id": "b"}"#);
-    assert_eq!(
-        cache_prediction_model_candidates(&body, None, None),
-        Ok(Vec::new())
-    );
+    assert_eq!(prediction_candidates(&body, None, None), Ok(Vec::new()));
     let missing = object(r#"{"current_deployment_id": 1, "candidate_deployment_id": "b"}"#);
     let catalog = FakeCatalog::default();
     assert_eq!(
-        cache_prediction_model_candidates(&missing, Some(&catalog), None),
+        prediction_candidates(&missing, Some(&catalog), None),
         Ok(Vec::new())
     );
     assert_eq!(
-        cache_prediction_model_candidates(&JsonObject::new(), Some(&catalog), None),
+        prediction_candidates(&JsonObject::new(), Some(&catalog), None),
         Ok(Vec::new())
     );
 }
@@ -434,10 +407,12 @@ fn prediction_missing_router_ids() {
 fn prediction_missing_deployment() {
     let catalog = FakeCatalog {
         deployments: vec![deployment("known", None)],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     assert_eq!(
-        get_cache_prediction_deployments("known-id", "gone-id", Some(&catalog), None),
+        prediction_deployments("known-id", "gone-id", Some(&catalog), None),
         Ok(None)
     );
 }
@@ -446,7 +421,7 @@ fn prediction_missing_deployment() {
 #[case(Some("other-team"), None, false)]
 #[case(Some("other-team"), Some("team"), false)]
 #[case(Some("team"), Some("other-team"), false)]
-#[case(None, Some("team"), false)]
+#[case(None, Some("team"), true)]
 #[case(None, None, true)]
 #[case(Some("team"), Some("team"), true)]
 fn prediction_team_scope(
@@ -459,10 +434,11 @@ fn prediction_team_scope(
             deployment("current", current_team),
             deployment("candidate", None),
         ],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
-    let found =
-        get_cache_prediction_deployments("current-id", "candidate-id", Some(&catalog), team_id);
+    let found = prediction_deployments("current-id", "candidate-id", Some(&catalog), team_id);
     let names = found
         .expect("the catalog lookup succeeds")
         .map(|(current, candidate)| (current.model_name, candidate.model_name));
@@ -485,10 +461,12 @@ fn prediction_global_or_same_team() {
             deployment("current", None),
             deployment("candidate", Some("team")),
         ],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     assert_eq!(
-        cache_prediction_model_candidates(&body, Some(&catalog), Some("team")),
+        prediction_candidates(&body, Some(&catalog), Some("team")),
         Ok(vec!["current".to_owned(), "candidate".to_owned()])
     );
 }
@@ -500,7 +478,9 @@ fn prediction_ignores_body() {
     );
     let catalog = FakeCatalog {
         deployments: vec![deployment("current", None), deployment("candidate", None)],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     assert_eq!(
         resolve("/cost/predict-cache", &body, Some(&catalog)),
@@ -521,38 +501,39 @@ fn zero_one_many_format() {
     );
 }
 
-#[test]
-fn marker_exact_true_skips() {
+#[rstest]
+#[case::false_marker(Some(false), false)]
+#[case::absent_marker(None, false)]
+#[case::true_marker(Some(true), true)]
+fn marker_exact_true_skips(#[case] marker: Option<bool>, #[case] skips: bool) {
     let body = object(r#"{"model": "body-model"}"#);
     let path_params = BTreeSet::new();
-    let decoders = StubDecoders;
+    let decoders = RecordingDecoders::default();
     let catalog = FakeCatalog::default();
     let collaborators = Collaborators {
         catalog: Some(&catalog),
         decoders: &decoders,
     };
-    let kept = RequestedModels::One("body-model".to_owned());
-    for (marker, expected) in [
-        (Some(false), kept.clone()),
-        (None, kept),
-        (Some(true), RequestedModels::None),
-    ] {
-        let request = RequestSnapshot {
-            route: "/openai/deployments/path-model/chat/completions",
-            body: &body,
-            headers: None,
-            query: None,
-            dispatch: DispatchContext {
-                endpoint_marker: marker,
-                path_params: &path_params,
-            },
-            team_id: None,
-        };
-        assert_eq!(
-            get_model_from_request(&request, &collaborators),
-            Ok(expected)
-        );
-    }
+    let request = RequestSnapshot {
+        route: "/openai/deployments/path-model/chat/completions",
+        body: &body,
+        headers: None,
+        query: None,
+        dispatch: DispatchContext {
+            endpoint_marker: marker,
+            path_params: &path_params,
+        },
+        team_id: None,
+    };
+    let expected = if skips {
+        RequestedModels::None
+    } else {
+        RequestedModels::One("body-model".to_owned())
+    };
+    assert_eq!(
+        get_model_from_request(&request, &collaborators),
+        Ok(expected)
+    );
 }
 
 #[test]
@@ -562,14 +543,14 @@ fn provider_endpoint_presence() {
         endpoint_marker: None,
         path_params: &params,
     };
-    assert!(request_dispatched_to_provider_pass_through(&present));
+    assert!(is_provider_pass_through(&present));
     let empty = BTreeSet::new();
     let absent = DispatchContext {
         endpoint_marker: None,
         path_params: &empty,
     };
-    assert!(!request_dispatched_to_provider_pass_through(&absent));
-    assert!(!request_dispatched_to_pass_through_endpoint(&absent));
+    assert!(!is_provider_pass_through(&absent));
+    assert!(!is_pass_through_dispatch(&absent));
 }
 
 #[rstest]
@@ -584,13 +565,15 @@ fn provider_endpoint_presence() {
 #[case("/AZURE/chat/gpt-4/chat/completions", Some("gpt-4"))]
 fn azure_openai_path_fallback(#[case] route: &str, #[case] expected: Option<&str>) {
     let catalog = FakeCatalog {
+        deployments: Vec::new(),
         model_names: BTreeSet::from(["gpt-4".to_owned()]),
-        ..FakeCatalog::default()
+        resolved: BTreeMap::new(),
+        failing: false,
     };
-    let expected = expected.map_or(RequestedModels::None, |name| {
+    let wanted = expected.map_or(RequestedModels::None, |name| {
         RequestedModels::One(name.to_owned())
     });
-    assert_eq!(resolve(route, &JsonObject::new(), Some(&catalog)), expected);
+    assert_eq!(resolve(route, &JsonObject::new(), Some(&catalog)), wanted);
 }
 
 #[rstest]
@@ -641,8 +624,10 @@ fn count_tokens_keeps_body() {
 #[test]
 fn azure_catalog_path_overrides() {
     let catalog = FakeCatalog {
+        deployments: Vec::new(),
         model_names: BTreeSet::from(["gpt-4".to_owned()]),
-        ..FakeCatalog::default()
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     let body = object(r#"{"model": "body-model"}"#);
     assert_eq!(
@@ -661,7 +646,9 @@ fn nvidia_longest_exclusive_group() {
     longer.custom_llm_provider = Some("nvidia_nim".to_owned());
     let catalog = FakeCatalog {
         deployments: vec![shared_nim, shared_openai, longer],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     assert_eq!(
         resolve(
@@ -693,45 +680,12 @@ fn append_candidates_keeps_commas_and_empties_out() {
     assert_eq!(found, ["a", "b"]);
 }
 
-#[derive(Debug)]
-struct FailingSecondFamily;
-
-impl ManagedIdDecoders for FailingSecondFamily {
-    fn legacy_file_batch(
-        &self,
-        _resource_id: &str,
-        _catalog: Option<&dyn ModelCatalog>,
-        candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        candidates.push("partial".to_owned());
-        Ok(())
-    }
-
-    fn unified(
-        &self,
-        _resource_id: &str,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Err(ManagedIdError::Decoder)
-    }
-
-    fn video_character(
-        &self,
-        _resource_id: &str,
-        _field: ManagedIdField,
-        _catalog: Option<&dyn ModelCatalog>,
-        _candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError> {
-        Ok(())
-    }
-}
-
 #[test]
 fn family_error_retains_partial() {
     let value = Json::Text("any-id".to_owned());
+    let decoders = RecordingDecoders::failing_unified();
     assert_eq!(
-        extract_models_from_managed_resource_id(&value, "file_id", None, &FailingSecondFamily),
+        managed_resource_models(&value, "file_id", None, &decoders),
         ["partial"]
     );
 }
@@ -746,14 +700,16 @@ fn prediction_other_team_denied() {
             deployment("current", None),
             deployment("candidate", Some("other-team")),
         ],
-        ..FakeCatalog::default()
+        model_names: BTreeSet::new(),
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     assert_eq!(
-        cache_prediction_model_candidates(&body, Some(&catalog), Some("team")),
+        prediction_candidates(&body, Some(&catalog), Some("team")),
         Ok(Vec::new())
     );
     assert_eq!(
-        cache_prediction_model_candidates(&body, Some(&catalog), None),
+        prediction_candidates(&body, Some(&catalog), None),
         Ok(Vec::new())
     );
 }
@@ -782,8 +738,10 @@ fn bedrock_path_overrides_body() {
 #[test]
 fn azure_prefix_is_stripped_before_matching() {
     let catalog = FakeCatalog {
+        deployments: Vec::new(),
         model_names: BTreeSet::from(["azure".to_owned()]),
-        ..FakeCatalog::default()
+        resolved: BTreeMap::new(),
+        failing: false,
     };
     let body = object(r#"{"model": "body-model"}"#);
     assert_eq!(
@@ -841,27 +799,30 @@ fn truthy_model_skips_target_model_names(#[case] model: Json) {
 #[test]
 fn empty_catalog_knows_nothing() {
     let catalog = EmptyCatalog;
-    assert_eq!(catalog.resolve_model_name_from_model_id("m"), Ok(None));
+    assert_eq!(catalog.resolve_model_name("m"), Ok(None));
     assert_eq!(catalog.deployment("d"), Ok(None));
     assert_eq!(catalog.model_names(), Ok(BTreeSet::new()));
     assert_eq!(catalog.model_list(), Ok(Vec::new()));
 }
 
-#[test]
-fn model_id_resolution_keeps_original_unless_named() {
+#[rstest]
+#[case::named_id("named", "group")]
+#[case::blank_resolution("blank", "blank")]
+#[case::unknown_id("other", "other")]
+fn model_id_resolution_keeps_original_unless_named(#[case] model_id: &str, #[case] expected: &str) {
     let catalog = FakeCatalog {
+        deployments: Vec::new(),
+        model_names: BTreeSet::new(),
         resolved: BTreeMap::from([
             ("named".to_owned(), "group".to_owned()),
             ("blank".to_owned(), String::new()),
         ]),
-        ..FakeCatalog::default()
+        failing: false,
     };
-    for (model_id, expected) in [("named", "group"), ("blank", "blank"), ("other", "other")] {
-        assert_eq!(
-            resolve_model_id_with_router(Some(model_id.to_owned()), Some(&catalog)),
-            Some(expected.to_owned())
-        );
-    }
+    assert_eq!(
+        resolve_model_id_with_router(Some(model_id.to_owned()), Some(&catalog)),
+        Some(expected.to_owned())
+    );
     assert_eq!(resolve_model_id_with_router(None, Some(&catalog)), None);
     assert_eq!(
         resolve_model_id_with_router(Some("named".to_owned()), None),
@@ -881,32 +842,29 @@ fn vertex_later_models_segment_after_empty_one() {
     );
 }
 
-#[test]
-fn custom_collision_still_checks() {
+#[rstest]
+#[case::plain_route(None, RequestedModels::One("body-model".to_owned()))]
+#[case::marked_endpoint(Some(true), RequestedModels::None)]
+fn custom_collision_still_checks(#[case] marker: Option<bool>, #[case] expected: RequestedModels) {
     let body = object(r#"{"model": "body-model"}"#);
     let path_params = BTreeSet::new();
     let collaborators = Collaborators {
         catalog: None,
-        decoders: &StubDecoders,
+        decoders: &RecordingDecoders::default(),
     };
-    for (marker, expected) in [
-        (None, RequestedModels::One("body-model".to_owned())),
-        (Some(true), RequestedModels::None),
-    ] {
-        let request = RequestSnapshot {
-            route: "/v1/chat/completions",
-            body: &body,
-            headers: None,
-            query: None,
-            dispatch: DispatchContext {
-                endpoint_marker: marker,
-                path_params: &path_params,
-            },
-            team_id: None,
-        };
-        assert_eq!(
-            get_model_from_request(&request, &collaborators),
-            Ok(expected)
-        );
-    }
+    let request = RequestSnapshot {
+        route: "/v1/chat/completions",
+        body: &body,
+        headers: None,
+        query: None,
+        dispatch: DispatchContext {
+            endpoint_marker: marker,
+            path_params: &path_params,
+        },
+        team_id: None,
+    };
+    assert_eq!(
+        get_model_from_request(&request, &collaborators),
+        Ok(expected)
+    );
 }

@@ -24,10 +24,7 @@ pub struct DeploymentRecord {
 }
 
 pub trait ModelCatalog: Debug + Send + Sync {
-    fn resolve_model_name_from_model_id(
-        &self,
-        model_id: &str,
-    ) -> Result<Option<String>, CatalogError>;
+    fn resolve_model_name(&self, model_id: &str) -> Result<Option<String>, CatalogError>;
 
     fn deployment(&self, deployment_id: &str) -> Result<Option<DeploymentRecord>, CatalogError>;
 
@@ -40,10 +37,7 @@ pub trait ModelCatalog: Debug + Send + Sync {
 pub struct EmptyCatalog;
 
 impl ModelCatalog for EmptyCatalog {
-    fn resolve_model_name_from_model_id(
-        &self,
-        _model_id: &str,
-    ) -> Result<Option<String>, CatalogError> {
+    fn resolve_model_name(&self, _model_id: &str) -> Result<Option<String>, CatalogError> {
         Ok(None)
     }
 
@@ -84,25 +78,19 @@ impl ManagedIdField {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagedIdFamily {
+    LegacyFileBatch,
+    Unified,
+    Video,
+    Character,
+}
+
 pub trait ManagedIdDecoders: Debug + Send + Sync {
-    fn legacy_file_batch(
+    fn decode_family(
         &self,
+        family: ManagedIdFamily,
         resource_id: &str,
-        catalog: Option<&dyn ModelCatalog>,
-        candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError>;
-
-    fn unified(
-        &self,
-        resource_id: &str,
-        catalog: Option<&dyn ModelCatalog>,
-        candidates: &mut Vec<String>,
-    ) -> Result<(), ManagedIdError>;
-
-    fn video_character(
-        &self,
-        resource_id: &str,
-        field: ManagedIdField,
         catalog: Option<&dyn ModelCatalog>,
         candidates: &mut Vec<String>,
     ) -> Result<(), ManagedIdError>;
