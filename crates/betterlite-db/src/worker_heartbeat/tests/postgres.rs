@@ -286,7 +286,7 @@ async fn postgres_count_uses_writer_not_reader() {
     };
     assert_eq!(
         count_live_proxy_workers(WriterPinnedClient::Routed(&routing)).await,
-        Some(2)
+        Some(2_i32)
     );
     routing
         .availability
@@ -298,7 +298,7 @@ async fn postgres_count_uses_writer_not_reader() {
         .store(true, Ordering::SeqCst);
     assert_eq!(
         count_live_proxy_workers(WriterPinnedClient::Routed(&routing)).await,
-        Some(2)
+        Some(2_i32)
     );
     drop(routing);
     writer_pool.close();
