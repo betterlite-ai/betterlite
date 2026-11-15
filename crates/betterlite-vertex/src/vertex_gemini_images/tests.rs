@@ -350,6 +350,23 @@ fn a_token_count_that_is_not_an_integer_names_the_field() {
 }
 
 #[test]
+fn token_counts_that_leave_the_signed_range_are_refused() {
+    let body = format!(
+        r#"{{"usageMetadata":{{"promptTokensDetails":[{{"modality":"TEXT","tokenCount":{}}},{{"modality":"TEXT","tokenCount":{}}}]}}}}"#,
+        i64::MAX,
+        i64::MAX
+    );
+    let error = transform_image_generation_response(&reply(&body))
+        .expect_err("the text token sum overflows");
+    assert!(matches!(
+        error,
+        GeminiImageError::TokenOverflow {
+            field: "promptTokensDetails"
+        }
+    ));
+}
+
+#[test]
 fn a_body_that_is_not_json_keeps_the_upstream_status_and_headers() {
     let mut reply = reply(r#"{"candidates": ["#);
     reply.status = 502;
