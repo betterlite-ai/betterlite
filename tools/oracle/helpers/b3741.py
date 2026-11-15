@@ -122,7 +122,8 @@ class ScriptedReplies:
         return httpx.Response(reply["status"], json=reply["body"])
 
 
-class _ProbeMeta(type): ...
+class _ProbeMeta(type):
+    pass
 
 
 class Probe(Agent365Guardrail, metaclass=_ProbeMeta):
@@ -148,8 +149,8 @@ class Probe(Agent365Guardrail, metaclass=_ProbeMeta):
 
 def capture_request(request: httpx.Request) -> dict[str, JsonValue]:
     body = request.content.decode()
-    pairs: list[tuple[str, str]] = urllib.parse.parse_qsl(body, keep_blank_values=True)
-    form = JSON.validate_python(dict(pairs))
+    parsed = urllib.parse.parse_qs(body, keep_blank_values=True)
+    form = JSON.validate_python({name: values[0] for name, values in parsed.items()})
     return {"url": str(request.url), "content_type": request.headers["content-type"], "form": form}
 
 
@@ -256,8 +257,7 @@ def payload_request(args: PayloadAssembly) -> RequestPayload:
     if session is not None:
         details: LoggingDetails = logging_obj
         details.model_call_details["mcp_tool_call_metadata"] = {"mcp_session_id": session}
-    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"]}
-    data["litellm_logging_obj"] = logging_obj
+    data: RequestPayload = {"litellm_call_id": args["litellm_call_id"], "litellm_logging_obj": logging_obj}
     if args["metadata"] is not None:
         data["metadata"] = args["metadata"]
     if args["litellm_metadata"] is not None:
