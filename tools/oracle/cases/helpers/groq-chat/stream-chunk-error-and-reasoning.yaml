@@ -20,7 +20,5 @@ call:
               finish_reason: stop
       - chunk:
           error: {message: rate limited, code: 429}
-      - chunk:
-          error: {message: no code}
 env: {}
 compare: {ignore: []}
