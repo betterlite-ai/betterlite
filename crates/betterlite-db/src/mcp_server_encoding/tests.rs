@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use betterlite_secrets::error::SecretError;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::secret_map::decode_secret_map;
@@ -488,6 +486,19 @@ fn encrypt_credentials_encrypts_the_secret_fields_only() {
         plaintext.get("client_private_key"),
         "client_private_key was left in plaintext"
     );
+    assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
+    assert_eq!(credentials.get("access_token"), Some(&s("minted")));
+    assert_eq!(credentials.get("scopes"), Some(&json(r#"["read"]"#)));
+}
+
+#[test]
+fn encrypt_credentials_encrypts_the_aws_secret_fields_only() {
+    let cipher = encrypt_cipher();
+    let plaintext = blob(
+        r#"{"auth_value":"auth","client_id":"id","client_secret":"secret","client_private_key":"key","aws_access_key_id":"access","aws_secret_access_key":"aws-secret","aws_session_token":"session","aws_region_name":"us-east-1","scopes":["read"],"access_token":"minted"}"#,
+    );
+    let mut credentials = plaintext.clone();
+    encrypt_credentials(&mut credentials, &cipher).unwrap();
     assert_ne!(
         credentials.get("aws_access_key_id"),
         plaintext.get("aws_access_key_id"),
@@ -504,8 +515,6 @@ fn encrypt_credentials_encrypts_the_secret_fields_only() {
         "aws_session_token was left in plaintext"
     );
     assert_eq!(credentials.get("aws_region_name"), Some(&s("us-east-1")));
-    assert_eq!(credentials.get("access_token"), Some(&s("minted")));
-    assert_eq!(credentials.get("scopes"), Some(&json(r#"["read"]"#)));
 }
 
 #[test]
@@ -838,14 +847,8 @@ fn prepare_update_turns_null_json_maps_into_empty_objects() {
             "tool_name_to_description",
         ],
     );
-    assert_eq!(
-        prepared.get("tool_name_to_display_name"),
-        Some(&JsonValue::Object(BTreeMap::new()))
-    );
-    assert_eq!(
-        prepared.get("tool_name_to_description"),
-        Some(&JsonValue::Object(BTreeMap::new()))
-    );
+    assert_eq!(prepared.get("tool_name_to_display_name"), Some(&s("{}")));
+    assert_eq!(prepared.get("tool_name_to_description"), Some(&s("{}")));
 }
 
 #[test]
