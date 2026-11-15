@@ -46,7 +46,7 @@ impl InvokeSchemaCapabilities for Capabilities {
             provider: request.custom_llm_provider.map(str::to_owned),
             key: key.to_owned(),
         });
-        ready(self.factory_flags.iter().any(|flag| *flag == key))
+        ready(self.factory_flags.contains(&key))
     }
 
     fn supports_effort_param(&mut self, model: &str) -> impl Future<Output = bool> + Send {
