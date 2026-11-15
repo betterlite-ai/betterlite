@@ -128,18 +128,16 @@ pub struct VertexAgentStream {
 impl VertexAgentStream {
     pub async fn next_chunk(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
         loop {
-            if let Some(chunk) = self.next_pending()? {
-                return Ok(Some(chunk));
+            if self.pending.is_empty() {
+                if self.done {
+                    return Ok(None);
+                }
+                self.read_frame().await?;
+                continue;
             }
-            if self.done {
-                return Ok(None);
-            }
-            self.read_frame().await?;
-        }
-    }
-
-    fn next_pending(&mut self) -> Result<Option<Chunk>, VertexAgentStreamError> {
-        while let Some(line) = self.pending.pop_front() {
+            let Some(line) = self.pending.pop_front() else {
+                continue;
+            };
             match parse_line(&line, &self.model, self.ids.as_ref()) {
                 Ok(Some(chunk)) => {
                     self.finished |= chunk
@@ -155,7 +153,6 @@ impl VertexAgentStream {
                 }
             }
         }
-        Ok(None)
     }
 
     // a read error after a finish reason ends LiteLLM's wrapper cleanly, but a timeout still raises
