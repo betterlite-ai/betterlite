@@ -117,6 +117,25 @@ impl RemoteMediaFetcher for RefusingFetcher {
     }
 }
 
+// A gateway that answers the batch: the inline stage must spend it before translation, so a single fetch still refuses
+pub(crate) const INLINED_DATA_URL: &str = "data:image/png;base64,QUJD";
+
+pub(crate) struct InliningFetcher;
+
+impl RemoteMediaFetcher for InliningFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        ready(Err(refused(url)))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        let data_urls = urls.iter().map(|_url| INLINED_DATA_URL.to_owned());
+        ready(Ok(data_urls.collect()))
+    }
+}
+
 pub(crate) struct NoFileBlocks;
 
 #[derive(Debug, thiserror::Error)]
@@ -378,6 +397,16 @@ impl Scenario {
     }
 
     pub(crate) fn run(&self) -> Outcome {
+        let fetcher = RefusingFetcher::default();
+        let mut outcome = self.run_with(&fetcher);
+        outcome.fetch_calls = fetcher.calls();
+        outcome
+    }
+
+    pub(crate) fn run_with<F>(&self, fetcher: &F) -> Outcome
+    where
+        F: RemoteMediaFetcher + Sync,
+    {
         let fixture = Fixture::new(MODELS);
         let mut session = Session::new(&fixture);
         let (guard, warnings) = capture_warnings();
@@ -385,21 +414,22 @@ impl Scenario {
             .enable_all()
             .build()
             .expect("runtime");
-        let fetcher = RefusingFetcher::default();
         let catalog = ModelCatalog::parse(b"{}", UnknownFields::Warn).expect("empty catalog");
-        let result = runtime.block_on(self.prepare(&mut session, &fixture, &fetcher, &catalog));
-        let fetch_calls = fetcher.calls();
+        let result = runtime.block_on(self.prepare(&mut session, &fixture, fetcher, &catalog));
         drop(guard);
-        Outcome::new(result, warnings.messages(), fetch_calls)
+        Outcome::new(result, warnings.messages(), 0)
     }
 
-    async fn prepare(
+    async fn prepare<F>(
         &self,
         session: &mut Session<'_>,
         fixture: &Fixture,
-        fetcher: &RefusingFetcher,
+        fetcher: &F,
         catalog: &ModelCatalog,
-    ) -> Result<PreparedRequest, RequestError<NoFileError>> {
+    ) -> Result<PreparedRequest, RequestError<NoFileError>>
+    where
+        F: RemoteMediaFetcher + Sync,
+    {
         let mut environment = session.environment();
         let catalogs = fixture.catalogs();
         let request = AnthropicRequest {

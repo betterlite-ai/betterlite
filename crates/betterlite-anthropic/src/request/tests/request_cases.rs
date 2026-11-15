@@ -7,7 +7,7 @@ use crate::capabilities::speed::DROP_UNSUPPORTED_SPEED_WARNING;
 use crate::option_primitives::OptionDefaults;
 use crate::params::output_config::DROP_OUTPUT_CONFIG_WARNING;
 
-use super::fixture::{Outcome, Scenario, expect_absent, expect_field, fields};
+use super::fixture::{InliningFetcher, Outcome, Scenario, expect_absent, expect_field, fields};
 
 const ONE_USER: &str = r#"[{"role":"user","content":"u"}]"#;
 const TOOL_USER: &str = r#"[{"role":"user","content":"weather?"},{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"sunny"}]"#;
@@ -113,6 +113,17 @@ fn case_2_missing_tool_definition() {
     dummy_tools_fill_missing_declarations();
     declared_tools_are_renamed_and_mapped();
     advisor_blocks_follow_the_advisor_tool();
+    unreadable_tools_are_named();
+}
+
+fn unreadable_tools_are_named() {
+    let (status, message) = refused(one_user("plain-model").optional(r#"{"tools":5}"#).run());
+    assert_eq!(status, Some(400));
+    assert_eq!(message, "tools must be a list");
+
+    let (status, message) = refused(one_user("plain-model").optional(r#"{"tools":[5]}"#).run());
+    assert_eq!(status, Some(400));
+    assert_eq!(message, "tools entry 0 is not an object");
 }
 
 fn dummy_tools_fill_missing_declarations() {
@@ -150,6 +161,7 @@ fn declared_tools_are_renamed_and_mapped() {
     let outcome = scenario.run().ok();
     assert_eq!(scenario.optional_params, params, "the options changed");
     assert_eq!(scenario.headers, headers, "the headers changed");
+    assert_eq!(outcome.beta(), None, "a plain custom tool adds no beta");
     expect_field(
         &outcome,
         "tools",
@@ -440,6 +452,15 @@ fn declared_tools_stay_alone() {
         .run()
         .ok();
     expect_field(&plain, "tools", &format!(r#"[{WEATHER_TOOL}]"#));
+
+    let listed = Scenario::new(
+        "plain-model",
+        r#"[{"role":"user","content":[{"type":"text","text":"u"}]}]"#,
+    )
+    .optional(&format!(r#"{{"tools":[{WEATHER_TOOL}]}}"#))
+    .run()
+    .ok();
+    expect_field(&listed, "tools", &format!(r#"[{WEATHER_TOOL}]"#));
 }
 
 #[test]
@@ -639,6 +660,20 @@ fn other_media_never_downloads() {
         &document_url,
         "messages",
         r#"[{"role":"user","content":[{"type":"document","source":{"type":"url","url":"http://example.test/doc.pdf"}}]}]"#,
+    );
+}
+
+// The inline stage answers a plain-HTTP image, so the write-back carries its bytes and translation never fetches
+#[test]
+fn inline_bytes_replace_the_url_when_the_fetcher_answers() {
+    let history = r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"http://example.test/a.png"}}]}]"#;
+    let outcome = Scenario::new("plain-model", history)
+        .run_with(&InliningFetcher)
+        .ok();
+    expect_field(
+        &outcome,
+        "messages",
+        r#"[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}]"#,
     );
 }
 
