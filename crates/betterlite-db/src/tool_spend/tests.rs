@@ -62,9 +62,7 @@ impl FakeWriter {
 
     fn take_failure(&self, stage: Stage) -> Option<FakeFailure> {
         let mut failures = self.failures.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some((expected, _)) = failures.front() else {
-            return None;
-        };
+        let (expected, _) = failures.front()?;
         if *expected != stage {
             return None;
         }
@@ -76,10 +74,7 @@ impl FakeWriter {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(batch);
-        match self.take_failure(stage) {
-            Some(failure) => Err(failure),
-            None => Ok(()),
-        }
+        self.take_failure(stage).map_or(Ok(()), Err)
     }
 
     fn index_calls(&self) -> Vec<Vec<(String, String)>> {
@@ -258,7 +253,7 @@ fn a_tool_index_row_speaks_pythons_timestamp() {
 async fn flushes_every_index_row_then_one_grouped_rollup_batch() {
     let writer = FakeWriter::default();
     let (outcome, delays) = flush_with(&writer, &mixed_batch(), policy(1_000, 100, 3), 0).await;
-    assert!(outcome.is_ok());
+    outcome.expect("the flush writes");
     assert!(delays.is_empty());
     assert_eq!(
         writer.index_calls(),
@@ -300,11 +295,11 @@ async fn flushes_a_bounded_statement_per_slice() {
         1,
     )];
     let (outcome, _) = flush_with(&writer, &batch, policy(2_000_000, 2, 3), 0).await;
-    assert!(outcome.is_ok());
+    outcome.expect("the row cap flush writes");
     let lengths: Vec<usize> = writer.index_calls().iter().map(Vec::len).collect();
     assert_eq!(lengths, [2, 1]);
     let (by_bytes, _) = flush_with(&writer, &batch, policy(172, 100, 3), 0).await;
-    assert!(by_bytes.is_ok());
+    by_bytes.expect("the byte cap flush writes");
     let split: Vec<usize> = writer.index_calls().iter().map(Vec::len).collect();
     assert_eq!(split, [2, 1, 2, 1]);
 }
@@ -314,7 +309,7 @@ async fn retries_a_pre_send_index_failure_and_rewrites_the_rows() {
     let writer = FakeWriter::with_failures(vec![(Stage::Index, PRE_SEND)]);
     let (outcome, delays) =
         flush_with(&writer, &mixed_batch(), policy(1_000, 100, 3), 250_000_000).await;
-    assert!(outcome.is_ok());
+    outcome.expect("the retried flush writes");
     assert_eq!(delays, [Duration::from_millis(1_250)]);
     assert_eq!(writer.index_calls().len(), 2);
     assert_eq!(writer.rollup_calls().len(), 1);
@@ -324,7 +319,7 @@ async fn retries_a_pre_send_index_failure_and_rewrites_the_rows() {
 async fn retries_a_pre_send_rollup_failure_with_the_whole_attempt() {
     let writer = FakeWriter::with_failures(vec![(Stage::Rollup, PRE_SEND)]);
     let (outcome, delays) = flush_with(&writer, &mixed_batch(), policy(1_000, 100, 3), 0).await;
-    assert!(outcome.is_ok());
+    outcome.expect("the retried rollup flush writes");
     assert_eq!(delays, [Duration::from_secs(1)]);
     assert_eq!(writer.index_calls().len(), 2);
     assert_eq!(writer.rollup_calls().len(), 2);
@@ -369,7 +364,7 @@ async fn does_not_retry_an_ambiguous_write() {
 async fn an_empty_batch_touches_nothing() {
     let writer = FakeWriter::default();
     let (outcome, delays) = flush_with(&writer, &[], policy(1_000, 100, 3), 0).await;
-    assert!(outcome.is_ok());
+    outcome.expect("an empty flush writes nothing");
     assert!(delays.is_empty());
     assert!(writer.index_calls().is_empty());
     assert!(writer.rollup_calls().is_empty());

@@ -21,9 +21,7 @@ fn request_time() -> chrono::NaiveDateTime {
         .naive_utc()
 }
 
-#[tokio::test]
-async fn flushes_index_rows_and_daily_rollups() {
-    let case = ToolSpendCase::new().await;
+async fn flush_two_requests(case: &ToolSpendCase) {
     let writer = PostgresToolSpendWriter {
         store: case.store.clone(),
     };
@@ -49,49 +47,44 @@ async fn flushes_index_rows_and_daily_rollups() {
     .await
     .expect("the flush writes");
     assert!(pause.delays().is_empty());
-    let start = request_time();
-    assert_eq!(
-        case.index_rows().await,
-        [
-            (String::from("req-1"), String::from("fetch"), start),
-            (String::from("req-1"), String::from("search"), start),
-            (String::from("req-2"), String::from("fetch"), start),
-        ]
-    );
-    assert_eq!(
-        case.daily_rollups().await,
-        [
-            (
-                String::from("2026-01-02"),
-                String::from("fetch"),
-                1.25,
-                42,
-                1
-            ),
-            (
-                String::from("2026-01-02"),
-                String::from("search"),
-                1.25,
-                42,
-                1
-            ),
-            (
-                String::from("2026-01-03"),
-                String::from("fetch"),
-                0.75,
-                8,
-                1
-            ),
-        ]
-    );
-    case.close().await;
 }
 
-#[tokio::test]
-async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
-    let case = ToolSpendCase::new().await;
-    case.execute(REJECT_BLOCKED_SQL).await;
-    case.execute(SEED_ALPHA_SQL).await;
+fn expected_index_rows() -> [(String, String, chrono::NaiveDateTime); 3] {
+    let start = request_time();
+    [
+        (String::from("req-1"), String::from("fetch"), start),
+        (String::from("req-1"), String::from("search"), start),
+        (String::from("req-2"), String::from("fetch"), start),
+    ]
+}
+
+fn expected_daily_rollups() -> [(String, String, f64, i64, i64); 3] {
+    [
+        (
+            String::from("2026-01-02"),
+            String::from("fetch"),
+            1.25_f64,
+            42,
+            1,
+        ),
+        (
+            String::from("2026-01-02"),
+            String::from("search"),
+            1.25_f64,
+            42,
+            1,
+        ),
+        (
+            String::from("2026-01-03"),
+            String::from("fetch"),
+            0.75_f64,
+            8,
+            1,
+        ),
+    ]
+}
+
+async fn flush_blocked_tool(case: &ToolSpendCase) -> Result<(), ToolSpendWriteError> {
     let writer = PostgresToolSpendWriter {
         store: case.store.clone(),
     };
@@ -112,8 +105,26 @@ async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
         &pause,
     )
     .await;
-    assert!(matches!(outcome, Err(ToolSpendWriteError::AfterSend(_))));
     assert!(pause.delays().is_empty());
+    outcome
+}
+
+#[tokio::test]
+async fn flushes_index_rows_and_daily_rollups() {
+    let case = ToolSpendCase::new().await;
+    flush_two_requests(&case).await;
+    assert_eq!(case.index_rows().await, expected_index_rows());
+    assert_eq!(case.daily_rollups().await, expected_daily_rollups());
+    case.close().await;
+}
+
+#[tokio::test]
+async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
+    let case = ToolSpendCase::new().await;
+    case.execute(REJECT_BLOCKED_SQL).await;
+    case.execute(SEED_ALPHA_SQL).await;
+    let outcome = flush_blocked_tool(&case).await;
+    assert!(matches!(outcome, Err(ToolSpendWriteError::AfterSend(_))));
     let start = request_time();
     assert_eq!(
         case.index_rows().await,
@@ -127,7 +138,7 @@ async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
         [(
             String::from("2026-01-02"),
             String::from("alpha"),
-            1.0,
+            1.0_f64,
             10,
             1
         )]
