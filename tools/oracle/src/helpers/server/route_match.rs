@@ -6,9 +6,9 @@ use betterlite_auth::route_match::groups::get_actual_routes;
 use betterlite_auth::route_match::method::{MethodAccess, get_request_method};
 use betterlite_auth::route_match::templates::{
     RouteValue, check_route_access, route_matches_allowed_route, route_matches_pattern,
-    route_matches_wildcard_pattern,
 };
 use betterlite_auth::{auxiliary_routes, management_routes};
+use betterlite_routes::wildcard::route_matches_wildcard_pattern;
 use serde::Deserialize;
 use serde_json::Value;
 
