@@ -7,27 +7,42 @@ use crate::openai_video_identifiers::ids::{
 use crate::videos::VideoOptions;
 use crate::videos::error::VideoError;
 
-// a list item keeps every key the provider sent; only the id is read to be wrapped
+// a list item keeps every key the provider sent; id and model are the keys the wrap reads
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct VideoListItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::double_option"
+    )]
+    pub model: Option<Option<String>>,
     #[serde(flatten)]
     pub fields: VideoOptions,
 }
 
-impl VideoListItem {
-    #[must_use]
-    pub fn model(&self) -> Option<&str> {
-        self.fields.get("model").and_then(Value::as_str)
-    }
-}
-
-// the list keeps every top-level key the provider sent; data and the cursors are read to be wrapped
+// the list keeps every top-level key the provider sent; the declared ones are the keys the wrap reads
 #[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
 pub struct VideoList {
     #[serde(default)]
     pub data: Vec<VideoListItem>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<String>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::double_option"
+    )]
+    pub first_id: Option<Option<String>>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "serde_with::rust::double_option"
+    )]
+    pub last_id: Option<Option<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
     #[serde(flatten)]
     pub fields: VideoOptions,
 }
@@ -79,23 +94,22 @@ pub fn list_response(body: &[u8], provider: Option<&str>) -> Result<VideoList, V
     let first_model = list
         .data
         .first()
-        .and_then(VideoListItem::model)
-        .map(str::to_owned);
+        .and_then(|item| item.model.clone().flatten());
     let last_model = list
         .data
         .last()
-        .and_then(VideoListItem::model)
-        .map(str::to_owned);
+        .and_then(|item| item.model.clone().flatten());
     for item in &mut list.data {
-        let model = item.model().map(str::to_owned);
+        let model = item.model.clone().flatten();
         if let Some(id) = item.id.as_mut() {
             *id = encode_video_id_with_provider(id, provider_name, model.as_deref());
         }
     }
-    for (key, model) in [("first_id", first_model), ("last_id", last_model)] {
-        if let Some(Value::String(cursor)) = list.fields.get_mut(key) {
-            *cursor = encode_video_id_with_provider(cursor, provider_name, model.as_deref());
-        }
+    if let Some(Some(cursor)) = list.first_id.as_mut() {
+        *cursor = encode_video_id_with_provider(cursor, provider_name, first_model.as_deref());
+    }
+    if let Some(Some(cursor)) = list.last_id.as_mut() {
+        *cursor = encode_video_id_with_provider(cursor, provider_name, last_model.as_deref());
     }
     Ok(list)
 }

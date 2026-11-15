@@ -18,6 +18,9 @@ deviations:
   - what: "A reply counts as a video list only when its data value is an array; LiteLLM tests only the data key, so a number under data raises TypeError and an object raises KeyError in its cursor lookup, reaching the caller as a server error."
     why: "A reply that cannot be read as a list is the caller's 4xx, not a 500, and the ids it would have wrapped are not a reply anyone can use."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344-L352
+  - what: "A first_id or last_id that is neither a string nor null fails the decode; LiteLLM raises AttributeError from its string handling when a provider is set and passes the value through when one is not."
+    why: "OpenAI declares both cursors as strings or null, and a reply the service cannot read is the caller's 4xx, not a 500."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L356-L372
   - what: "A list reply with no data key answers an empty data array and leaves first_id and last_id unwrapped, where LiteLLM returns the payload with no data key at all and also leaves the cursors unwrapped."
     why: "VideoList always carries its data list, and the cursor wrapping LiteLLM skips outside the data branch stays skipped."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L344

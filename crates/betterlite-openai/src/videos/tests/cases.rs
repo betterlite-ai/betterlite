@@ -202,9 +202,16 @@ fn list_replies() {
         "vendor_page": 3
     });
     let decoded = list_response(&body(&reply), Some("openai")).unwrap();
+    assert_eq!(decoded.object.as_deref(), Some("list"));
+    assert_eq!(decoded.has_more, Some(true));
+    assert_eq!(decoded.data[0].model, Some(Some(MODEL.to_owned())));
+    assert_eq!(decoded.data[1].model, Some(None));
+    assert_eq!(decoded.data[0].fields.get("prompt"), Some(&json!("a cat")));
     let wrapped = serde_json::to_value(&decoded).unwrap();
     let first_id = encode_video_id_with_provider("vid-1", "openai", Some(MODEL));
     let last_id = encode_video_id_with_provider("vid-2", "openai", None);
+    assert_eq!(decoded.first_id, Some(Some(first_id.clone())));
+    assert_eq!(decoded.last_id, Some(Some(last_id.clone())));
     assert_eq!(
         wrapped,
         json!({
@@ -235,15 +242,32 @@ fn list_replies() {
         Some("openai"),
     )
     .unwrap();
-    assert_eq!(native.fields["first_id"], json!("vid-1"));
+    assert_eq!(native.first_id, Some(Some("vid-1".to_owned())));
+    assert_eq!(native.object.as_deref(), Some("list"));
+    assert_eq!(
+        serde_json::to_value(&native).unwrap(),
+        json!({"data": [], "first_id": "vid-1", "object": "list"})
+    );
 
     let null_cursor = list_response(
         &body(&json!({"data": [], "first_id": null, "last_id": ""})),
         Some("openai"),
     )
     .unwrap();
-    assert_eq!(null_cursor.fields["first_id"], Value::Null);
-    assert_eq!(null_cursor.fields["last_id"], json!(""));
+    assert_eq!(null_cursor.first_id, Some(None));
+    assert_eq!(null_cursor.last_id, Some(Some(String::new())));
+    assert_eq!(null_cursor.has_more, None);
+    assert_eq!(
+        serde_json::to_value(&null_cursor).unwrap(),
+        json!({"data": [], "first_id": null, "last_id": ""})
+    );
+
+    let absent_cursor = list_response(&body(&json!({"data": []})), Some("openai")).unwrap();
+    assert_eq!(absent_cursor.first_id, None);
+    assert_eq!(
+        serde_json::to_value(&absent_cursor).unwrap(),
+        json!({"data": []})
+    );
 
     let item_without_id = list_response(
         &body(&json!({"data": [{"object": "video"}]})),
@@ -252,9 +276,23 @@ fn list_replies() {
     .unwrap();
     assert_eq!(item_without_id.data[0].id, None);
 
+    let no_model = list_response(
+        &body(&json!({"data": [{"id": "vid-9", "object": "video"}]})),
+        None,
+    )
+    .unwrap();
+    assert_eq!(no_model.data[0].model, None);
+    assert_eq!(
+        serde_json::to_value(&no_model).unwrap(),
+        json!({"data": [{"id": "vid-9", "object": "video"}]})
+    );
+    assert!(list_response(&body(&json!({"data": [{"id": "vid-9", "model": 5}]})), None).is_err());
+    assert!(list_response(&body(&json!({"data": [], "first_id": 7})), Some("openai")).is_err());
+
     let plain = list_response(&body(&reply), Some("")).unwrap();
     assert_eq!(plain.data[0].id.as_deref(), Some("vid-1"));
-    assert_eq!(plain.fields["first_id"], json!("vid-1"));
+    assert_eq!(plain.first_id, Some(Some("vid-1".to_owned())));
+    assert_eq!(plain.data[1].model, Some(None));
     assert_eq!(serde_json::to_value(&plain).unwrap(), reply);
 }
 
