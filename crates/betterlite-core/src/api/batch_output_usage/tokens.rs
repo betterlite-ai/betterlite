@@ -103,36 +103,42 @@ async fn count_messages(
 async fn count_prompt(model: &str, value: &Json, counter: &TokenCounter) -> BatchResult<usize> {
     match value {
         Json::Text(text) => count_text(model, text, counter).await,
-        Json::List(items) => {
-            let mut total = 0_usize;
-            for item in items {
-                total = add_tokens(total, count_prompt_item(model, item, counter).await?)?;
-            }
-            Ok(total)
-        }
+        Json::List(items) => count_prompt_items(model, items, false, counter).await,
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Object(_) => Ok(0),
     }
 }
 
-async fn count_prompt_item(model: &str, item: &Json, counter: &TokenCounter) -> BatchResult<usize> {
+async fn count_prompt_items(
+    model: &str,
+    items: &[Json],
+    pre_tokenized: bool,
+    counter: &TokenCounter,
+) -> BatchResult<usize> {
+    let mut total = 0_usize;
+    for item in items {
+        total = add_tokens(
+            total,
+            count_prompt_item(model, item, pre_tokenized, counter).await?,
+        )?;
+    }
+    Ok(total)
+}
+
+// A pre-tokenized chunk counts its integers (Python counts a bool as an int) and token-counts its strings; a deeper list adds nothing.
+async fn count_prompt_item(
+    model: &str,
+    item: &Json,
+    pre_tokenized: bool,
+    counter: &TokenCounter,
+) -> BatchResult<usize> {
     match item {
         Json::Text(text) => count_text(model, text, counter).await,
         Json::Number(number) if number_is_integer(number) => Ok(1),
         Json::Bool(_) => Ok(1),
-        Json::List(items) => {
-            let mut total = 0_usize;
-            for chunk in items {
-                let contribution = match chunk {
-                    Json::Text(text) => count_text(model, text, counter).await?,
-                    Json::Number(number) if number_is_integer(number) => 1,
-                    Json::Bool(_) => 1,
-                    Json::Null | Json::Number(_) | Json::List(_) | Json::Object(_) => 0,
-                };
-                total = add_tokens(total, contribution)?;
-            }
-            Ok(total)
+        Json::List(items) if !pre_tokenized => {
+            Box::pin(count_prompt_items(model, items, true, counter)).await
         }
-        Json::Null | Json::Number(_) | Json::Object(_) => Ok(0),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => Ok(0),
     }
 }
 
