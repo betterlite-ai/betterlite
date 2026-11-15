@@ -3,20 +3,17 @@ use betterlite_config::sections::anthropic_capability_catalog::Settings;
 
 use crate::converse_options::budget::clamp_thinking_budget_tokens;
 use crate::converse_options::config::{class_attributes, config_blocks, get_config};
-use crate::converse_options::effort::{
-    output_config_effort, transform_reasoning_effort_to_reasoning_config,
-};
+use crate::converse_options::effort::{nova_reasoning_config, output_config_effort};
 use crate::converse_options::error::{
     BEDROCK_CONVERSE_PROVIDER, ConverseOptionsError, NOVA_2_REJECTION_MODEL,
 };
 use crate::converse_options::family::{
-    is_deepseek_model, is_nova_2_model, is_openai_gpt_reasoning_model,
-    model_rejects_reasoning_effort_param, requires_min_max_tokens,
+    is_deepseek_model, is_nova_2_model, is_openai_gpt_reasoning_model, rejects_reasoning_effort,
+    requires_min_max_tokens,
 };
-use crate::converse_options::reasoning::{ReasoningSources, handle_reasoning_effort_parameter};
+use crate::converse_options::reasoning::{ReasoningSources, handle_reasoning_effort};
 use crate::converse_options::supported::{
-    auto_tool_choice, model_accepts_anthropic_thinking_param, supported_openai_params,
-    supports_sampling_params,
+    accepts_thinking_param, auto_tool_choice, supported_openai_params, supports_sampling_params,
 };
 use crate::converse_options::web_search::map_web_search_options;
 use crate::model_routes::{ParamMap, ParamValue};
@@ -90,7 +87,7 @@ fn handle(
         packaged: fixture.packaged(),
     };
     let mut environment = session.environment();
-    runtime().block_on(handle_reasoning_effort_parameter(
+    runtime().block_on(handle_reasoning_effort(
         model,
         effort,
         optional,
@@ -107,11 +104,7 @@ fn supported(fixture: &Fixture, session: &mut Session<'_>, model: &str) -> Vec<S
 
 fn accepts_thinking(session: &mut Session<'_>, model: &str, base_model: &str) -> bool {
     let mut environment = session.environment();
-    runtime().block_on(model_accepts_anthropic_thinking_param(
-        model,
-        base_model,
-        &mut environment,
-    ))
+    runtime().block_on(accepts_thinking_param(model, base_model, &mut environment))
 }
 
 pub(super) fn nova2_reasoning_config() {
@@ -140,16 +133,14 @@ pub(super) fn nova2_reasoning_config() {
         assert!(!is_nova_2_model(model), "{model} is not a Nova 2 model");
     }
     for effort in ["low", "medium", "high"] {
-        let config =
-            transform_reasoning_effort_to_reasoning_config(effort).expect("a valid effort");
+        let config = nova_reasoning_config(effort).expect("a valid effort");
         let expected = params(&format!(
             r#"{{"reasoningConfig": {{"type": "enabled", "maxReasoningEffort": "{effort}"}}}}"#
         ));
         assert_eq!(config, expected, "{effort}");
     }
     for effort in ["minimal", "xhigh", "max", "none", "", "High", "high "] {
-        let error =
-            transform_reasoning_effort_to_reasoning_config(effort).expect_err("a rejected effort");
+        let error = nova_reasoning_config(effort).expect_err("a rejected effort");
         assert_eq!(
             error.to_string(),
             format!(
@@ -238,6 +229,21 @@ pub(super) fn gpt_reasoning_object() {
         Some(&ParamValue::Text("low".to_owned()))
     );
     assert_eq!(mixed.get("reasoning"), None);
+
+    let mut nova_gpt = ParamMap::new();
+    handle(
+        &fixture,
+        &mut session,
+        "nova-2/openai.gpt-5",
+        "minimal",
+        &mut nova_gpt,
+    )
+    .expect("the GPT detector wins over the Nova 2 prefix");
+    assert_eq!(
+        nova_gpt.get("reasoning"),
+        Some(&value(r#"{"effort": "minimal"}"#))
+    );
+    assert_eq!(nova_gpt.get("reasoningConfig"), None);
 }
 
 pub(super) fn gpt_oss_and_deepseek_effort() {
@@ -268,19 +274,13 @@ pub(super) fn gpt_oss_and_deepseek_effort() {
         "anthropic.claude-sonnet-4-20250514-v1:0",
         "amazon.nova-pro-v1:0"
     ));
-    assert!(model_rejects_reasoning_effort_param("deepseek.r1-v1:0", ""));
-    assert!(model_rejects_reasoning_effort_param(
-        "",
-        "bedrock/deepseek.r1-v1:0"
-    ));
-    assert!(!model_rejects_reasoning_effort_param(
+    assert!(rejects_reasoning_effort("deepseek.r1-v1:0", ""));
+    assert!(rejects_reasoning_effort("", "bedrock/deepseek.r1-v1:0"));
+    assert!(!rejects_reasoning_effort(
         "deepseek.v3-v1:0",
         "deepseek.v3-v1:0"
     ));
-    assert!(!model_rejects_reasoning_effort_param(
-        "amazon.nova-pro-v1:0",
-        ""
-    ));
+    assert!(!rejects_reasoning_effort("amazon.nova-pro-v1:0", ""));
 
     let v3 = supported(&fixture, &mut session, "deepseek.v3-v1:0");
     assert!(

@@ -62,5 +62,12 @@ calls:
       model: openai.gpt-oss-20b
       effort: minimal
       optional_params: {thinking: {type: enabled, budget_tokens: 2048}}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: nova-2/openai.gpt-5
+      effort: minimal
+      optional_params: {}
 env: {}
 compare: {ignore: []}
