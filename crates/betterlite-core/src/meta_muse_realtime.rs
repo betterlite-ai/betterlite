@@ -8,7 +8,8 @@ use secrecy::SecretString;
 use serde::Serialize;
 use thiserror::Error;
 
-use crate::api::transcription_protocol::RealtimeTranscriptionProtocolError;
+// ast-grep-ignore: no-long-names
+use crate::api::transcription_protocol::RealtimeTranscriptionProtocolError as ProtocolError;
 use crate::api::transcription_protocol::events::{TranscriptionSession, transcription_session};
 
 pub const MUSE_MODEL: &str = "muse-voice-transcribe-1.0";
@@ -110,35 +111,23 @@ impl MuseSampleRate {
     }
 
     #[must_use]
-    pub const fn packet_bytes(self) -> u32 {
-        let window = match self.bytes_per_second().checked_mul(PACKET_MS) {
-            Some(window) => window,
-            None => u32::MAX,
-        };
-        match window.checked_div(MILLIS_PER_SECOND) {
-            Some(packet) => packet,
-            None => 0,
-        }
+    pub fn packet_bytes(self) -> usize {
+        usize::try_from(
+            self.bytes_per_second()
+                .saturating_mul(PACKET_MS)
+                .saturating_div(MILLIS_PER_SECOND),
+        )
+        .unwrap_or(usize::MAX)
     }
 
     #[must_use]
-    pub const fn max_encoded_append_bytes(self) -> u32 {
-        let backlog = match self.bytes_per_second().checked_mul(AUDIO_BACKLOG_SECONDS) {
-            Some(backlog) => backlog,
-            None => u32::MAX,
-        };
-        let padded = match backlog.checked_add(2) {
-            Some(padded) => padded,
-            None => u32::MAX,
-        };
-        let groups = match padded.checked_div(3) {
-            Some(groups) => groups,
-            None => 0,
-        };
-        match groups.checked_mul(4) {
-            Some(encoded) => encoded,
-            None => u32::MAX,
-        }
+    pub fn max_encoded_append_bytes(self) -> usize {
+        let backlog = self
+            .bytes_per_second()
+            .saturating_mul(AUDIO_BACKLOG_SECONDS)
+            .saturating_add(2);
+        let groups = backlog.saturating_div(3);
+        usize::try_from(groups.saturating_mul(4)).unwrap_or(usize::MAX)
     }
 
     #[must_use]
@@ -236,7 +225,7 @@ impl Default for MuseSessionConfig {
 #[derive(Debug, Error)]
 pub enum MuseProtocolError {
     #[error(transparent)]
-    Protocol(#[from] RealtimeTranscriptionProtocolError),
+    Protocol(#[from] ProtocolError),
     #[error("language must be non-empty")]
     LanguageEmpty,
     #[error("unsupported Muse Voice language")]

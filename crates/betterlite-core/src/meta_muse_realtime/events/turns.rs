@@ -22,6 +22,23 @@ enum Emitted {
     Completed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpeechKind<'a> {
+    Start,
+    End,
+    Complete { transcript: &'a str },
+}
+
+impl SpeechKind<'_> {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Start => "speechStart",
+            Self::End => "speechEnd",
+            Self::Complete { .. } => "speechComplete",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub(super) struct TurnState {
     item_id: String,
@@ -109,15 +126,11 @@ impl TurnState {
     where
         Ids: EventIdSource + ?Sized,
     {
-        let event_id = ids.next_event_id();
-        let transcript = self.final_text.clone().unwrap_or_default();
         let usage = take_usage(unbilled);
-        events.push(MuseEvent::Completed(completed_event(
-            event_id,
-            &self.item_id,
-            &transcript,
-            usage,
-        )));
+        let transcript = self.final_text.as_deref().unwrap_or_default();
+        let event_id = ids.next_event_id();
+        let completed = completed_event(event_id, &self.item_id, transcript, usage);
+        events.push(MuseEvent::Completed(completed));
     }
 }
 
@@ -128,19 +141,28 @@ impl MuseEventTransformer {
         take_usage(&mut self.unbilled_seconds)
     }
 
-    pub(super) fn speech_start<Ids>(
+    pub(super) fn speech<Ids>(
         &mut self,
         frame: &JsonObject,
+        kind: SpeechKind<'_>,
         ids: &mut Ids,
     ) -> Result<Vec<MuseEvent>, MuseProtocolError>
     where
         Ids: EventIdSource + ?Sized,
     {
-        let turn_id = required_turn_id(frame, "speechStart")?;
+        let turn_id = required_turn_id(frame, kind.label())?;
         let state = turn(&mut self.turns, &turn_id);
-        if !state.stopped {
-            state.started = true;
-            self.active_turn_id = Some(state.item_id.clone());
+        match kind {
+            SpeechKind::Complete { transcript } => {
+                finish(state, transcript);
+                release_active(&mut self.active_turn_id, state);
+            }
+            SpeechKind::End => state.stopped = true,
+            SpeechKind::Start if state.stopped => {}
+            SpeechKind::Start => {
+                state.started = true;
+                self.active_turn_id = Some(state.item_id.clone());
+            }
         }
         Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
@@ -172,40 +194,6 @@ impl MuseEventTransformer {
         if state.final_text.is_none() {
             state.latest_partial = Some(text.clone());
         }
-        Ok(state.drain(ids, &mut self.unbilled_seconds))
-    }
-
-    pub(super) fn speech_end<Ids>(
-        &mut self,
-        frame: &JsonObject,
-        ids: &mut Ids,
-    ) -> Result<Vec<MuseEvent>, MuseProtocolError>
-    where
-        Ids: EventIdSource + ?Sized,
-    {
-        let turn_id = required_turn_id(frame, "speechEnd")?;
-        let state = turn(&mut self.turns, &turn_id);
-        state.stopped = true;
-        Ok(state.drain(ids, &mut self.unbilled_seconds))
-    }
-
-    pub(super) fn speech_complete<Ids>(
-        &mut self,
-        frame: &JsonObject,
-        ids: &mut Ids,
-    ) -> Result<Vec<MuseEvent>, MuseProtocolError>
-    where
-        Ids: EventIdSource + ?Sized,
-    {
-        let Some(Json::Text(text)) = frame.get("transcript") else {
-            return Err(MuseProtocolError::InvalidTranscript {
-                event: "speechComplete",
-            });
-        };
-        let turn_id = required_turn_id(frame, "speechComplete")?;
-        let state = turn(&mut self.turns, &turn_id);
-        finish(state, text);
-        release_active(&mut self.active_turn_id, state);
         Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 }

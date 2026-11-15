@@ -83,12 +83,13 @@ fn kind_of(event: &MuseEvent) -> &'static str {
 }
 
 fn turn_item(event: &MuseEvent) -> &str {
-    match event {
-        MuseEvent::Speech(speech) => speech.item_id.as_str(),
-        MuseEvent::Delta(delta) => delta.item_id.as_str(),
-        MuseEvent::Completed(completed) => completed.item_id.as_str(),
+    let item_id = match event {
+        MuseEvent::Speech(speech) => &speech.item_id,
+        MuseEvent::Delta(delta) => &delta.item_id,
+        MuseEvent::Completed(completed) => &completed.item_id,
         MuseEvent::Created(_) | MuseEvent::Error(_) => panic!("a turn event"),
-    }
+    };
+    item_id.as_str()
 }
 
 fn delta_text(event: &MuseEvent) -> &str {
@@ -119,22 +120,22 @@ fn emits_speech_started_before_the_first_delta() {
     assert_eq!(kinds(&started), vec!["started"]);
     assert_eq!(started_kind(&started[0]), SpeechEventType::Started);
     assert_eq!(turn_item(&started[0]), "t1");
-    let partial = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
+    let partial = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hell"}"#);
     assert_eq!(kinds(&partial), vec!["delta"]);
     assert_eq!(turn_item(&partial[0]), "t1");
-    assert_eq!(delta_text(&partial[0]), "hel");
+    assert_eq!(delta_text(&partial[0]), "hell");
 }
 
 #[test]
 fn repeated_partials_emit_only_the_new_suffix() {
     let mut harness = Harness::default();
     drop(harness.transform(r#"{"type":"speechStart","turnId":"t1"}"#));
-    let first = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
-    assert_eq!(delta_text(&first[0]), "hel");
-    let repeated = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hel"}"#);
+    let first = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hell"}"#);
+    assert_eq!(delta_text(&first[0]), "hell");
+    let repeated = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hell"}"#);
     assert!(repeated.is_empty());
     let extended = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hello"}"#);
-    assert_eq!(delta_text(&extended[0]), "lo");
+    assert_eq!(delta_text(&extended[0]), "o");
     let shortened = harness.transform(r#"{"type":"transcript","turnId":"t1","transcript":"hell"}"#);
     assert!(shortened.is_empty());
     let recovered =

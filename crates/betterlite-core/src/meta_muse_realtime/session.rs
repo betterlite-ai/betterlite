@@ -20,7 +20,8 @@ use crate::api::api_boundaries::ApiLimits;
 use crate::api::transcription_protocol::TranscriptionAudioFormat;
 use crate::api::transcription_protocol::TranscriptionLayout;
 use crate::api::transcription_protocol::TranscriptionSessionUpdate;
-use crate::api::transcription_protocol::parse_transcription_session_update;
+// ast-grep-ignore: no-long-names
+use crate::api::transcription_protocol::parse_transcription_session_update as parse_update;
 
 #[must_use]
 pub fn normalize_model(model: &str) -> String {
@@ -83,7 +84,7 @@ pub fn build_muse_realtime_url(api_base: Option<&str>) -> Result<String, MusePro
         "https" => "wss",
         other => other,
     };
-    let authority = parsed[Position::BeforeUsername..Position::AfterPort];
+    let authority = &parsed[Position::BeforeUsername..Position::AfterPort];
     let host = parsed.host_str().ok_or(MuseProtocolError::InvalidApiBase)?;
     if scheme != "wss" || authority.contains('@') || parsed.fragment().is_some() {
         return Err(MuseProtocolError::InvalidApiBase);
@@ -109,8 +110,7 @@ pub fn parse_session_update(
     expected_model: &str,
     limits: ApiLimits,
 ) -> Result<MuseSessionConfig, MuseProtocolError> {
-    let update =
-        parse_transcription_session_update::<MuseProtocolError>(payload.as_bytes(), limits)?;
+    let update = parse_update::<MuseProtocolError>(payload.as_bytes(), limits)?;
     match update.session_type.as_deref() {
         None | Some("transcription" | "realtime") => {}
         Some(_) => return Err(MuseProtocolError::TranscriptionOnly),

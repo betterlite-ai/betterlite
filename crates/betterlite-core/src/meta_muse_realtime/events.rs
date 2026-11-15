@@ -7,6 +7,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
+use self::turns::SpeechKind;
 use self::turns::TurnState;
 use super::MILLIS_PER_SECOND;
 use super::MuseMode;
@@ -67,10 +68,17 @@ impl MuseEventTransformer {
                 update_audio_progress(&mut self.last_ms, &mut self.unbilled_seconds, frame)?;
                 Ok(Vec::new())
             }
-            Some("speechStart") => self.speech_start(frame, ids),
+            Some("speechStart") => self.speech(frame, SpeechKind::Start, ids),
             Some("transcript") => self.transcript(frame, mode, ids),
-            Some("speechEnd") => self.speech_end(frame, ids),
-            Some("speechComplete") => self.speech_complete(frame, ids),
+            Some("speechEnd") => self.speech(frame, SpeechKind::End, ids),
+            Some("speechComplete") => {
+                let Some(Json::Text(transcript)) = frame.get("transcript") else {
+                    return Err(MuseProtocolError::InvalidTranscript {
+                        event: "speechComplete",
+                    });
+                };
+                self.speech(frame, SpeechKind::Complete { transcript }, ids)
+            }
             Some(_) | None => Ok(Vec::new()),
         }
     }

@@ -13,10 +13,10 @@ use secrecy::SecretString;
 use tracing::debug;
 
 use super::END_STREAM;
-use super::MuseEvent;
 use super::MuseMode;
 use super::MuseProtocolError;
 use super::MuseSessionConfig;
+use super::events::MuseEvent;
 use super::events::MuseEventTransformer;
 use super::events::event_json;
 use super::events::text_field;
@@ -166,12 +166,7 @@ where
         _model: &str,
         input: &RealtimeResponseTransformInput,
     ) -> Result<RealtimeResponseTypedDict, MuseProtocolError> {
-        let payload = match message {
-            RealtimeMessage::Text(text) => text.as_str(),
-            RealtimeMessage::Binary(bytes) => {
-                from_utf8(bytes).map_err(|_error| MuseProtocolError::FrameNotUtf8)?
-            }
-        };
+        let payload = text_of(message)?;
         let response = self.response_events(payload)?;
         Ok(RealtimeResponseTypedDict {
             response,
@@ -212,11 +207,11 @@ where
         let Some(config) = self.session.as_ref() else {
             return Err(MuseProtocolError::SessionNotConfigured);
         };
-        let packet_size = usize::from(config.sample_rate.packet_bytes());
+        let packet_size = config.sample_rate.packet_bytes();
         let max_encoded_bytes = config.sample_rate.max_encoded_append_bytes();
         let audio = decode_pcm16_append::<MuseProtocolError>(
             request.get("audio"),
-            Some(usize::from(max_encoded_bytes)),
+            Some(max_encoded_bytes),
         )?;
         let mut buffered = take(&mut self.pending_audio);
         buffered.extend_from_slice(&audio);
@@ -248,24 +243,22 @@ where
 
     fn response_events(&mut self, payload: &str) -> Result<Json, MuseProtocolError> {
         let frame = json_object::<MuseProtocolError>(payload.as_bytes())?;
-        match frame.get("sessionId") {
-            None | Some(Json::Null) => self.transformer_events(&frame),
-            Some(Json::Text(session_id)) => {
-                let trimmed = session_id.trim();
-                if trimmed.is_empty() {
-                    return Err(MuseProtocolError::InvalidHandshake);
-                }
-                let Some(config) = self.session.as_ref() else {
-                    return Err(MuseProtocolError::SessionNotConfigured);
-                };
-                let session = config.openai_session(trimmed);
-                let event_id = self.ids.next_event_id();
-                event_json(&MuseEvent::Created(created_event(event_id, &session)))
-            }
+        let session_id = match frame.get("sessionId") {
+            None | Some(Json::Null) => return self.transformer_events(&frame),
+            Some(Json::Text(text)) => text.trim(),
             Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-                Err(MuseProtocolError::InvalidHandshake)
+                return Err(MuseProtocolError::InvalidHandshake);
             }
+        };
+        if session_id.is_empty() {
+            return Err(MuseProtocolError::InvalidHandshake);
         }
+        let Some(config) = self.session.as_ref() else {
+            return Err(MuseProtocolError::SessionNotConfigured);
+        };
+        let event_id = self.ids.next_event_id();
+        let session = config.openai_session(session_id);
+        event_json(&MuseEvent::Created(created_event(event_id, &session)))
     }
 
     fn transformer_events(&mut self, frame: &JsonObject) -> Result<Json, MuseProtocolError> {
@@ -279,6 +272,15 @@ where
             .map(event_json)
             .collect::<Result<Vec<_>, _>>()?;
         Ok(Json::List(values))
+    }
+}
+
+fn text_of(message: &RealtimeMessage) -> Result<&str, MuseProtocolError> {
+    match message {
+        RealtimeMessage::Text(text) => Ok(text.as_str()),
+        RealtimeMessage::Binary(bytes) => {
+            from_utf8(bytes).map_err(|_error| MuseProtocolError::FrameNotUtf8)
+        }
     }
 }
 

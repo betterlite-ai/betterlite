@@ -12,7 +12,6 @@ use super::is_setup_message;
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::realtime_contracts::error::HeaderMap;
 use crate::api::realtime_contracts::events::AllDeltaType;
-// ast-grep-ignore: no-long-names
 use crate::api::realtime_contracts::events::RealtimeResponseTransformInput;
 use crate::api::realtime_contracts::events::RealtimeResponseTypedDict;
 use crate::api::realtime_contracts::transport::RealtimeMessage;
@@ -195,8 +194,8 @@ fn rejects_a_session_update_that_changes_the_model() {
 #[test]
 fn packetizes_appended_audio_into_80ms_frames() {
     let mut config = configured_config(&[]);
-    let first: Vec<u8> = (0..3_840).map(|index| index.to_le_bytes()[0]).collect();
-    let tail: Vec<u8> = (0..100).map(|index| index.to_le_bytes()[0]).collect();
+    let first: Vec<u8> = (0..3_840_u32).map(|index| index.to_le_bytes()[0]).collect();
+    let tail: Vec<u8> = (0..100_u32).map(|index| index.to_le_bytes()[0]).collect();
     let full = configure(&mut config, &append_message(&first));
     assert_eq!(full, vec![RealtimeMessage::Binary(first)]);
     let buffered = configure(&mut config, &append_message(&tail));
