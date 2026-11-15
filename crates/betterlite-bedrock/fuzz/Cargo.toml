@@ -130,3 +130,10 @@ path = "fuzz_targets/bedrock_pegasus.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_services_realtime_completion"
+path = "fuzz_targets/bedrock_services_realtime_completion.rs"
+test = false
+doc = false
+bench = false

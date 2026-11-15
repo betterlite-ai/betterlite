@@ -1,0 +1,34 @@
+kind: helper
+name: content-end-text-audio
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-00000000000a
+      - 00000000-0000-4000-8000-00000000000b
+      - 00000000-0000-4000-8000-00000000000c
+    steps:
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [Hel, lo]}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: audio, delta_chunks: [ignored]}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: null}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: video, delta_chunks: [kept]}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: null, delta_chunks: [kept]}
+      - {op: content_end}
+      - {op: set_state, output_item_id: null, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [kept]}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: null, conversation_id: conv_1, delta_type: text, delta_chunks: [kept]}
+      - {op: content_end}
+env: {}
+compare: {ignore: []}

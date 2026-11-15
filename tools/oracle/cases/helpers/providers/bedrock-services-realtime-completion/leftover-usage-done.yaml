@@ -1,0 +1,25 @@
+kind: helper
+name: leftover-usage-done
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+    steps:
+      - {op: leftover}
+      - {op: usage, usage: {totalInputTokens: 100, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 20}}}}}
+      - {op: leftover}
+      - {op: leftover}
+      - {op: usage, usage: {totalInputTokens: 100, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 21}}}}}
+      - {op: leftover}
+      - {op: usage, usage: {totalInputTokens: 80, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 21}}}}}
+      - {op: leftover}
+      - {op: leftover}
+env: {}
+compare: {ignore: []}
