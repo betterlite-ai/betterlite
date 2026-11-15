@@ -298,6 +298,35 @@ async fn an_unparseable_submission_keeps_the_initial_status() {
     assert!(script.urls().is_empty());
 }
 
+#[tokio::test]
+async fn an_initial_answer_that_is_not_utf8_names_its_byte_count() {
+    let script = Script::once(200, PENDING);
+    let clock = clock(0);
+    let sleeper = Recorder {
+        clock: &clock,
+        slept: Mutex::default(),
+    };
+    let poller = BflPoller {
+        transport: &script,
+        clock: &clock,
+        sleeper: &sleeper,
+    };
+    let rejected = UpstreamResponse {
+        status: 400,
+        headers: HeaderMap::new(),
+        body: vec![0xff, 0xfe, 0xfd],
+    };
+    let error = poller
+        .poll(&rejected, &HeaderMap::new())
+        .await
+        .expect_err("a rejected submission fails");
+    assert_eq!(
+        error.to_string(),
+        "the BFL submission answered HTTP 400: 3 bytes that are not UTF-8"
+    );
+    assert!(script.urls().is_empty());
+}
+
 #[rstest]
 #[case(r#"{"errors":null,"polling_url":"https://gateway.bfl.ai/v1/get_result"}"#)]
 #[case(r#"{"errors":[],"polling_url":"https://gateway.bfl.ai/v1/get_result"}"#)]
