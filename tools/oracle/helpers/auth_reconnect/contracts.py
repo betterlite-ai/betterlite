@@ -1,9 +1,9 @@
+import logging
 import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Literal, Protocol, TypedDict
 
-from litellm._logging import verbose_proxy_logger
 from litellm.proxy import utils as proxy_utils
 from pydantic import JsonValue as Json
 
@@ -17,7 +17,7 @@ LogArgument = str | int | float | BaseException
 class OpaqueHttpClient(Protocol): ...
 
 
-# the surface of litellm._logging.verbose_proxy_logger that attempt_db_reconnect calls
+# the surface of the LiteLLM Proxy logger that attempt_db_reconnect calls
 class ScriptedLogger(Protocol):
     def debug(self, message: str, *args: LogArgument) -> None: ...
 
@@ -154,5 +154,5 @@ def scripted_proxy(logger: ScriptedLogger, clock: ScriptedClock) -> Generator[No
     try:
         yield
     finally:
-        object.__setattr__(proxy_utils, "verbose_proxy_logger", verbose_proxy_logger)
+        object.__setattr__(proxy_utils, "verbose_proxy_logger", logging.getLogger("LiteLLM Proxy"))
         object.__setattr__(proxy_utils, "time", time)
