@@ -3,7 +3,7 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum VideoEditError {
-    #[error("the character id cannot become a path segment")]
+    #[error("the character id cannot become a path segment: {0}")]
     CharacterId(#[from] HttpError),
     #[error("the character reply is not a character object")]
     CharacterReply(#[source] serde_json::Error),
