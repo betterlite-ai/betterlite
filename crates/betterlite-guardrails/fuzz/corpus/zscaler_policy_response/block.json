@@ -1,0 +1,1 @@
+{"statusCode": 200, "action": "BLOCK", "transactionId": "tx-2", "detectorResponses": {"Prompt Injection": {"action": "BLOCK"}, "PII": {"action": "ALLOW"}}}

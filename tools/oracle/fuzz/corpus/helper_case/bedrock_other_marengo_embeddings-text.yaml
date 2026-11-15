@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-marengo-embeddings-text
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_text_input:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: [hello]
+      inference: {}
+      replies:
+        - data:
+            - embedding: [1.0, 2.0]
+env: {}
+compare:
+  ignore: []

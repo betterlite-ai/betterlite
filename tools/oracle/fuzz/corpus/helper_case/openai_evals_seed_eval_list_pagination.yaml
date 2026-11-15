@@ -1,0 +1,9 @@
+kind: helper
+name: openai-evals-seed-eval-list-pagination
+call:
+  openai_evals:
+    eval_list_pagination:
+      probes:
+        - list_params: {limit: 2, order: asc}
+env: {}
+compare: {ignore: []}
