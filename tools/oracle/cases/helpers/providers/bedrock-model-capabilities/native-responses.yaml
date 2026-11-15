@@ -9,9 +9,9 @@ call:
       substring: {supported_endpoints: /prefix/v1/responses/suffix}
       absent: {}
       empty: {supported_endpoints: []}
-      null: {supported_endpoints: null}
+      'null': {supported_endpoints: null}
       zero: {supported_endpoints: 0}
-      false: {supported_endpoints: false}
+      'false': {supported_endpoints: false}
       object: {supported_endpoints: {/v1/responses: 1}}
       object_miss: {supported_endpoints: {other: 1}}
       number: {supported_endpoints: 5}

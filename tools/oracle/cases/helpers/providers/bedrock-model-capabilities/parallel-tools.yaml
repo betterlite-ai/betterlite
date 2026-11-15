@@ -6,7 +6,7 @@ call:
     model_cost:
       one: {supports_parallel_tool_use_config: true}
       integer: {supports_parallel_tool_use_config: 1}
-      off: {supports_parallel_tool_use_config: false}
+      'off': {supports_parallel_tool_use_config: false}
       empty: {}
       null_entry: null
       false_entry: false
@@ -20,7 +20,7 @@ call:
     models:
       - one
       - integer
-      - off
+      - 'off'
       - empty
       - null_entry
       - false_entry
