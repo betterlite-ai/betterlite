@@ -1,7 +1,7 @@
 import asyncio
 import os
 from collections.abc import Callable, Coroutine
-from typing import Literal, Protocol
+from typing import Literal
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -23,30 +23,6 @@ Function = Literal[
     "rerank_error",
     "rerank_transport_logging",
 ]
-RerankCall = Callable[
-    [
-        str,
-        str,
-        list[Document],
-        JsonObject,
-        Logging,
-        int | None,
-        list[str] | None,
-        bool | None,
-        int | None,
-        bool | None,
-        float | None,
-        str | None,
-        JsonObject | None,
-        HTTPHandler | AsyncHTTPHandler | None,
-    ],
-    RerankResponse | Coroutine[None, None, RerankResponse],
-]
-
-
-class Handler(Protocol):
-    @property
-    def rerank(self) -> RerankCall: ...
 
 
 class Credentials(TypedDict):
@@ -92,27 +68,16 @@ class RecordingLogging(Logging):
         self.pre_complete_input_dict: JsonValue = None
         self.post_called = False
 
+    # LiteLLM passes pre_call and post_call their keywords, so the override takes them as a mapping
     @override
-    def pre_call(
-        self,
-        input: JsonValue,
-        api_key: str,
-        model: str | None = None,
-        additional_args: JsonObject | None = None,
-    ) -> None:
-        args: JsonObject = {} if additional_args is None else additional_args
-        self.pre_input = input
-        self.pre_api_base = args["api_base"]
-        self.pre_complete_input_dict = args["complete_input_dict"]
+    def pre_call(self, *_args: JsonValue, **kwargs: JsonValue) -> None:
+        self.pre_input = kwargs["input"]
+        arguments = TypeAdapter(JsonObject).validate_python(kwargs["additional_args"])
+        self.pre_api_base = arguments["api_base"]
+        self.pre_complete_input_dict = arguments["complete_input_dict"]
 
     @override
-    def post_call(
-        self,
-        original_response: JsonValue,
-        input: JsonValue = None,
-        api_key: str | None = None,
-        additional_args: JsonObject | None = None,
-    ) -> None:
+    def post_call(self, *_args: JsonValue, **_kwargs: JsonValue) -> None:
         self.post_called = True
 
 
@@ -135,13 +100,15 @@ class Transport:
 
 
 def settle(pending: RerankResponse | Coroutine[None, None, RerankResponse]) -> RerankResponse:
-    if asyncio.iscoroutine(pending):
-        return asyncio.run(pending)
-    return pending
+    match pending:
+        case Coroutine():
+            return asyncio.run(pending)
+        case object():
+            return pending
 
 
 def call_value(
-    handler: Handler, probe: Probe, logging: RecordingLogging, transport: Transport
+    handler: BedrockRerankHandler, probe: Probe, logging: RecordingLogging, transport: Transport
 ) -> RerankResponse:
     supplied = probe["supplied"]
     client: HTTPHandler | AsyncHTTPHandler

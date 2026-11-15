@@ -139,7 +139,7 @@ pub(super) fn logging_state() -> Result<LoggingState, Failure> {
         r#"{"model":"rerank-model","call_type":"rerank","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#,
     )?;
     let redactor = redactor()?;
-    Ok(LoggingState::new(
+    LoggingState::new(
         init,
         CorrelationSetup {
             context: &mut CorrelationContext::default(),
@@ -148,7 +148,8 @@ pub(super) fn logging_state() -> Result<LoggingState, Failure> {
         &redactor,
         || "generated".to_owned(),
         Duration::default,
-    )?)
+    )
+    .map_err(Failure::from)
 }
 
 pub(super) fn prepost_env<'env>(
@@ -173,5 +174,5 @@ pub(super) fn prepost_env<'env>(
 }
 
 pub(super) fn redactor() -> Result<Redactor, Failure> {
-    Ok(Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?)
+    Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(Failure::from)
 }

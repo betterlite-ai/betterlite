@@ -3,9 +3,8 @@
 use std::fs;
 use std::path::Path;
 
-use super::{Input, Op};
+use super::Input;
 use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
 
 #[test]
 fn helper_seeds_select_bedrock_other_rerank() {

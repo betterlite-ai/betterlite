@@ -212,8 +212,8 @@ fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure>
 fn observe(probe: &Probe, function: Function) -> Result<Value, Failure> {
     let (run, outcome) = run(probe)?;
     match function {
-        Function::ResultsIndexScore => Ok(serde_json::to_value(outcome?)?),
-        Function::RerankError => error_json(&run, &outcome),
+        Function::ResultsIndexScore => serde_json::to_value(outcome?).map_err(Failure::from),
+        Function::RerankError => Ok(error_json(&run, &outcome)),
         Function::RerankTransportLogging => {
             outcome?;
             transport_json(&run)
@@ -241,12 +241,12 @@ fn prepare_json(run: &Run, outcome: Result<RerankResponse, Failure>) -> Result<V
     }))
 }
 
-fn error_json(run: &Run, outcome: &Result<RerankResponse, Failure>) -> Result<Value, Failure> {
-    Ok(json!({
+fn error_json(run: &Run, outcome: &Result<RerankResponse, Failure>) -> Value {
+    json!({
         "ok": outcome.is_ok(),
         "status": outcome.as_ref().err().and_then(Failure::status),
         "post_call": run.state.model_call_details.get("original_response").is_some(),
-    }))
+    })
 }
 
 #[derive(Serialize)]
@@ -260,14 +260,15 @@ struct TransportFields<'request> {
 fn transport_json(run: &Run) -> Result<Value, Failure> {
     let request = run.posted().ok_or(Failure::Shape)?;
     let details = &run.state.model_call_details;
-    Ok(serde_json::to_value(TransportFields {
+    serde_json::to_value(TransportFields {
         posted_url: &request.url,
         timeout_ms: request
             .timeout
             .and_then(|timeout| u64::try_from(timeout.as_millis()).ok()),
         pre_call: details.get("input").is_some(),
         post_call: details.get("original_response").is_some(),
-    })?)
+    })
+    .map_err(Failure::from)
 }
 
 fn pre_call_json(state: &LoggingState) -> Result<Value, Failure> {
