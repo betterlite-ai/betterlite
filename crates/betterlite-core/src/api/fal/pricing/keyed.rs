@@ -7,34 +7,29 @@ use rust_decimal::Decimal;
 
 use super::{
     DEFAULT_KEYED_DIMENSIONS, FAL_AI_PROVIDER, FAL_KEYED_PRICING_DEFAULT_QUALITY,
-    FAL_NAMED_IMAGE_SIZES, FAL_TEXT_TO_IMAGE_DEFAULT_SIZE, FalCostRequest, FalPricingError,
-    image_dimensions, image_price, normalized_model, pixel_area, positive_integer, requested_param,
+    FAL_NAMED_IMAGE_SIZES, FAL_TEXT_TO_IMAGE_DEFAULT_SIZE, FalPricingError, image_dimensions,
+    image_price, positive_integer,
 };
 use crate::cost::image_dispatch::options::OptionalParams;
 
 pub(super) fn keyed_costs_for(
     catalog: &ModelCatalog,
     lookup: &dyn PriceLookup,
-    request: &FalCostRequest<'_>,
+    model: &str,
+    optional_params: Option<&OptionalParams>,
     images: &[Option<&IndexMap<String, Json>>],
 ) -> Result<Vec<Option<Decimal>>, FalPricingError> {
     images
         .iter()
         .map(|image| {
-            keyed_cost_per_image(
-                catalog,
-                lookup,
-                normalized_model(request.model),
-                *image,
-                request.optional_params,
-            )
-            .map_err(FalPricingError::from)
+            keyed_cost_per_image(catalog, lookup, model, *image, optional_params)
+                .map_err(FalPricingError::from)
         })
         .collect()
 }
 
 pub(super) fn keyed_size(optional_params: Option<&OptionalParams>) -> Option<String> {
-    match requested_param(optional_params, "image_size") {
+    match optional_params.and_then(|params| params.get("image_size")) {
         None | Some(Json::Null) => Some(FAL_TEXT_TO_IMAGE_DEFAULT_SIZE.to_owned()),
         Some(Json::Text(size)) if size == "auto" => Some(FAL_TEXT_TO_IMAGE_DEFAULT_SIZE.to_owned()),
         Some(Json::Text(size)) => FAL_NAMED_IMAGE_SIZES
@@ -51,7 +46,7 @@ pub(super) fn keyed_size(optional_params: Option<&OptionalParams>) -> Option<Str
 }
 
 pub(super) fn keyed_quality(optional_params: Option<&OptionalParams>) -> &str {
-    match requested_param(optional_params, "quality") {
+    match optional_params.and_then(|params| params.get("quality")) {
         Some(Json::Text(quality)) if quality != "auto" => quality,
         Some(
             Json::Null
@@ -70,14 +65,9 @@ pub(super) fn parse_keyed_dimensions(size: Option<&str>) -> Option<(u64, u64)> {
     if height.contains("-x-") {
         return None;
     }
-    Some((
-        positive_integer_text(width)?,
-        positive_integer_text(height)?,
-    ))
-}
-
-fn positive_integer_text(text: &str) -> Option<u64> {
-    text.parse::<u64>().ok().filter(|value| *value > 0)
+    let parsed_width = width.parse::<u64>().ok().filter(|value| *value > 0)?;
+    let parsed_height = height.parse::<u64>().ok().filter(|value| *value > 0)?;
+    Some((parsed_width, parsed_height))
 }
 
 struct KeyedRow {
@@ -135,9 +125,9 @@ fn keyed_cost_per_image(
     let target = image_dimensions(image)
         .or_else(|| parse_keyed_dimensions(keyed_size(optional_params).as_deref()))
         .unwrap_or(DEFAULT_KEYED_DIMENSIONS);
-    let target_pixels = pixel_area(target);
+    let target_pixels = u128::from(target.0).saturating_mul(u128::from(target.1));
     let best = rows.iter().min_by_key(|row| {
-        let area = pixel_area((row.width, row.height));
+        let area = u128::from(row.width).saturating_mul(u128::from(row.height));
         (area.abs_diff(target_pixels), area)
     });
     Ok(best.map(|row| row.price))

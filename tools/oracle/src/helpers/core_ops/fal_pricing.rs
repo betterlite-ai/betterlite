@@ -62,12 +62,6 @@ struct CaseLookup {
     entries: BTreeMap<String, PriceRecord>,
 }
 
-impl CaseLookup {
-    fn entry(&self, key: &str) -> Option<PriceRecord> {
-        self.entries.get(key).cloned()
-    }
-}
-
 impl PriceLookup for CaseLookup {
     fn effective_model_info(
         &self,
@@ -75,12 +69,12 @@ impl PriceLookup for CaseLookup {
         custom_llm_provider: Option<&str>,
     ) -> Option<PriceRecord> {
         custom_llm_provider
-            .and_then(|provider| self.entry(&format!("{provider}/{model}")))
-            .or_else(|| self.entry(model))
+            .and_then(|provider| self.entries.get(&format!("{provider}/{model}")).cloned())
+            .or_else(|| self.entries.get(model).cloned())
     }
 
     fn raw_cost_map_entry(&self, key: &str) -> Option<PriceRecord> {
-        self.entry(key)
+        self.entries.get(key).cloned()
     }
 
     fn effective_priced_model(
@@ -116,7 +110,9 @@ fn calculator_outcome(input: &Input) -> HelperResult {
         serde_json::to_vec(&input.catalog).map_err(|error| helper_error(error.to_string()))?;
     let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject)
         .map_err(|error| helper_error(error.to_string()))?;
-    let lookup = lookup_from(&bytes)?;
+    let lookup = CaseLookup {
+        entries: serde_json::from_slice(&bytes).map_err(|error| helper_error(error.to_string()))?,
+    };
     let mut costs = Vec::with_capacity(input.cases.len());
     for case in &input.cases {
         let images: Vec<Option<&IndexMap<String, Json>>> = case.images.iter().map(Some).collect();
@@ -136,7 +132,9 @@ fn calculator_outcome(input: &Input) -> HelperResult {
 fn passthrough_outcome(input: &Input) -> HelperResult {
     let bytes =
         serde_json::to_vec(&input.catalog).map_err(|error| helper_error(error.to_string()))?;
-    let lookup = lookup_from(&bytes)?;
+    let lookup = CaseLookup {
+        entries: serde_json::from_slice(&bytes).map_err(|error| helper_error(error.to_string()))?,
+    };
     let mut costs = Vec::with_capacity(input.passthrough_cases.len());
     for case in &input.passthrough_cases {
         let cost = fal_ai_passthrough_cost(&case.model, &case.request_body, &lookup)
@@ -144,11 +142,6 @@ fn passthrough_outcome(input: &Input) -> HelperResult {
         costs.push(cost.map(|value| value.normalize().to_string()));
     }
     Ok(serde_json::json!({ "costs": costs }))
-}
-
-fn lookup_from(bytes: &[u8]) -> Result<CaseLookup, Box<HelperError>> {
-    let entries = serde_json::from_slice(bytes).map_err(|error| helper_error(error.to_string()))?;
-    Ok(CaseLookup { entries })
 }
 
 fn helper_error(message: String) -> Box<HelperError> {

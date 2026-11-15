@@ -78,7 +78,10 @@ pub fn cost_calculator(
     let FalImageResponse::Image(images) = request.image_response else {
         return Err(FalPricingError::NotImageResponse);
     };
-    let model = normalized_model(request.model);
+    let model = request
+        .model
+        .strip_prefix("fal_ai/")
+        .unwrap_or(request.model);
     let image_count = Decimal::from(images.len());
     let deployment = deployment_pricing(request.model_info)?;
     if let Some(pricing) = &deployment
@@ -89,13 +92,16 @@ pub fn cost_calculator(
             .ok_or(FalPricingError::Overflow);
     }
     let resolution_entry = lookup.raw_cost_map_entry(&format!("{FAL_AI_PROVIDER}/{model}"));
-    let resolution = requested_param(request.optional_params, "resolution");
+    let resolution = request
+        .optional_params
+        .and_then(|params| params.get("resolution"));
     if let Some(cost) = resolution_cost_per_image(resolution_entry.as_ref(), resolution)? {
         return cost
             .checked_mul(image_count)
             .ok_or(FalPricingError::Overflow);
     }
-    let keyed_costs = keyed::keyed_costs_for(catalog, lookup, request, images)?;
+    let keyed_costs =
+        keyed::keyed_costs_for(catalog, lookup, model, request.optional_params, images)?;
     if keyed_costs.iter().all(Option::is_some) {
         return keyed_costs
             .iter()
@@ -104,7 +110,7 @@ pub fn cost_calculator(
                 total.checked_add(*cost).ok_or(FalPricingError::Overflow)
             });
     }
-    fallback_cost(request, deployment.as_ref(), lookup, images, &keyed_costs)
+    fallback_cost(deployment.as_ref(), lookup, model, images, &keyed_costs)
 }
 
 pub fn fal_ai_passthrough_cost(
@@ -125,14 +131,10 @@ pub fn fal_ai_passthrough_cost(
         .ok_or(FalPricingError::Overflow)
 }
 
-fn normalized_model(model: &str) -> &str {
-    model.strip_prefix("fal_ai/").unwrap_or(model)
-}
-
 fn fallback_cost(
-    request: &FalCostRequest<'_>,
     deployment: Option<&DeploymentPricing>,
     lookup: &dyn PriceLookup,
+    model: &str,
     images: &[Option<&IndexMap<String, Json>>],
     keyed_costs: &[Option<Decimal>],
 ) -> Result<Decimal, FalPricingError> {
@@ -141,7 +143,7 @@ fn fallback_cost(
         None => None,
     };
     let resolved = resolve_image_model_info(
-        normalized_model(request.model),
+        model,
         Some(FAL_AI_PROVIDER),
         deployment_record.as_ref(),
         lookup,
@@ -158,13 +160,6 @@ fn fallback_cost(
         total = total.checked_add(cost).ok_or(FalPricingError::Overflow)?;
     }
     Ok(total)
-}
-
-fn requested_param<'params>(
-    optional_params: Option<&'params OptionalParams>,
-    name: &str,
-) -> Option<&'params Json> {
-    optional_params.and_then(|params| params.get(name))
 }
 
 fn image_dimensions(fields: Option<&IndexMap<String, Json>>) -> Option<(u64, u64)> {
@@ -186,7 +181,8 @@ fn flat_cost_per_image(
     let Some(pixel) = output_cost_per_pixel else {
         return Ok(output_cost_per_image);
     };
-    let megapixels = pixel_area(dimensions).div_ceil(u128::from(FAL_PIXELS_PER_MEGAPIXEL));
+    let megapixels = (u128::from(dimensions.0).saturating_mul(u128::from(dimensions.1)))
+        .div_ceil(u128::from(FAL_PIXELS_PER_MEGAPIXEL));
     let units = u64::try_from(megapixels).map_err(|_| FalPricingError::Overflow)?;
     pixel
         .checked_mul(Decimal::from(FAL_PIXELS_PER_MEGAPIXEL))
@@ -264,10 +260,6 @@ fn positive_integer(value: Option<&Json>) -> Option<u64> {
         return None;
     };
     number.as_u64().filter(|integer| *integer > 0)
-}
-
-fn pixel_area(dimensions: (u64, u64)) -> u128 {
-    u128::from(dimensions.0).saturating_mul(u128::from(dimensions.1))
 }
 
 mod tests;
