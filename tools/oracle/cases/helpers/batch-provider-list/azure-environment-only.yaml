@@ -1,0 +1,13 @@
+kind: helper
+name: azure-environment-only
+call:
+  batch_provider_list:
+    request:
+      provider: azure
+    litellm_settings: {}
+    environment:
+      AZURE_API_BASE: https://azure-env.example
+      AZURE_API_VERSION: "2024-06-01"
+      AZURE_API_KEY: env-azure-key
+env: {}
+compare: {ignore: []}

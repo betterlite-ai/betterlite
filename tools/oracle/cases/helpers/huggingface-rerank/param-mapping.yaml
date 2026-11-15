@@ -1,0 +1,47 @@
+kind: helper
+name: param-mapping
+call:
+  b5848:
+    steps:
+      - {kind: supported_params, model: "org/model"}
+      - kind: params
+        model: "org/model"
+        drop_params: true
+        query: "formal-query"
+        documents: ["formal-document"]
+        custom_llm_provider: null
+        top_n: 9
+        rank_fields: null
+        return_documents: false
+        max_chunks_per_doc: null
+        max_tokens_per_doc: null
+        instruction: null
+        non_default_params: {query: "q", documents: ["a", {text: "b"}], top_n: 2, return_documents: true, rank_fields: ["x"], unknown: 1}
+      - kind: params
+        model: "org/model"
+        drop_params: false
+        query: ""
+        documents: []
+        custom_llm_provider: "huggingface"
+        top_n: null
+        rank_fields: ["r"]
+        return_documents: null
+        max_chunks_per_doc: 3
+        max_tokens_per_doc: 4
+        instruction: "rank"
+        non_default_params: {query: null, documents: null, top_n: null, return_documents: "yes", instruction: "drop"}
+      - kind: params
+        model: "org/model"
+        drop_params: false
+        query: ""
+        documents: []
+        custom_llm_provider: null
+        top_n: null
+        rank_fields: null
+        return_documents: null
+        max_chunks_per_doc: null
+        max_tokens_per_doc: null
+        instruction: null
+        non_default_params: null
+env: {}
+compare: {ignore: []}

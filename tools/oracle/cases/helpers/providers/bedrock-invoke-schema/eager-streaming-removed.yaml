@@ -1,0 +1,19 @@
+kind: helper
+name: bedrock-invoke-eager-streaming-removed
+call:
+  bedrock_invoke_schema:
+    model_cost: {}
+    steps:
+      - function: tools_without_eager_streaming
+        body:
+          tools:
+            - {name: t, eager_input_streaming: true, description: d}
+            - {name: u, eager_input_streaming: false}
+            - {name: v}
+      - {function: tools_without_eager_streaming, body: {tools: []}}
+      - {function: tools_without_eager_streaming, body: {model: m}}
+      - {function: tools_without_eager_streaming, body: {tools: null}}
+      - {function: tools_without_eager_streaming, body: {tools: [{name: t}, junk]}}
+      - {function: tools_without_eager_streaming, body: {tools: text}}
+env: {}
+compare: {ignore: []}

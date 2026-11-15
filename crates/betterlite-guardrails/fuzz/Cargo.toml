@@ -131,6 +131,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "qualifire_wire"
+path = "fuzz_targets/qualifire_wire.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "singulr_response"
 path = "fuzz_targets/singulr_response.rs"
 test = false
