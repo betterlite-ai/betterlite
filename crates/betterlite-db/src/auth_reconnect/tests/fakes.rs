@@ -134,7 +134,7 @@ impl FakeEngine {
         select(&mut script)
     }
 
-    fn observation(&self, handle: Arc<Handle>, generation: u64) -> Observation<Handle> {
+    fn observation(handle: Arc<Handle>, generation: u64) -> Observation<Handle> {
         Observation {
             generation,
             handle: Some(handle),
@@ -160,12 +160,12 @@ impl FakeEngine {
 
     pub(super) fn writer_observation(&self) -> Observation<Handle> {
         let generation = self.with_script(|script| script.writer_generation);
-        self.observation(Arc::clone(&self.shared.writer), generation)
+        Self::observation(Arc::clone(&self.shared.writer), generation)
     }
 
     pub(super) fn reader_observation(&self) -> Observation<Handle> {
         let generation = self.with_script(|script| script.reader_generation);
-        self.observation(Arc::clone(&self.shared.reader), generation)
+        Self::observation(Arc::clone(&self.shared.reader), generation)
     }
 }
 
@@ -193,7 +193,7 @@ impl ReconnectEngine for FakeEngine {
                 (Arc::clone(&self.shared.writer), script.writer_generation)
             }
         });
-        self.observation(handle, generation)
+        Self::observation(handle, generation)
     }
 
     fn engine_state(&self) -> EngineState {
@@ -212,8 +212,8 @@ impl ReconnectEngine for FakeEngine {
                     expected_generation,
                 },
             );
-            let gate = self.with_script(|script| script.hold_recreate.clone());
-            if let Some(gate) = gate {
+            let pending_gate = self.with_script(|script| script.hold_recreate.clone());
+            if let Some(gate) = pending_gate {
                 gate.notified().await;
             }
             let step = self
@@ -227,9 +227,9 @@ impl ReconnectEngine for FakeEngine {
         Box::pin(async move {
             record(&self.shared.effects, Effect::Probe);
             let step = self.with_script(|script| {
-                if script.bump_on_probe {
-                    script.writer_generation = script.writer_generation.saturating_add(1);
-                }
+                script.writer_generation = script
+                    .writer_generation
+                    .saturating_add(u64::from(script.bump_on_probe));
                 script.probes.pop_front()
             });
             apply(step.unwrap_or(Step::Done(false))).await
@@ -293,6 +293,7 @@ impl ReconnectClock for ScriptedClock {
         let mut script = self.script.lock().unwrap_or_else(PoisonError::into_inner);
         let fallback = script.fallback;
         let offset = script.offsets.pop_front().unwrap_or(fallback);
+        drop(script);
         self.base.checked_add(offset).unwrap_or(self.base)
     }
 }

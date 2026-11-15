@@ -7,9 +7,12 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures_util::future::{Either, select};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::sync::Notify;
+use tokio::task::yield_now;
+use tracing::subscriber::set_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
 use super::engine::EngineState;
@@ -54,7 +57,7 @@ fn policy_of(engine: FakeEngine, lock: FakeLock) -> Policy {
     AuthReconnect::new(
         engine,
         settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
+        ScriptedClock::from_seconds(&[1000.0_f64]),
         lock,
         ReconnectHistory::default(),
     )
@@ -69,16 +72,30 @@ fn gated_policy(effects: &Effects, gate: &Arc<Notify>) -> GatedPolicy {
     AuthReconnect::new(
         FakeEngine::new(script, Arc::clone(effects)),
         settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
+        ScriptedClock::from_seconds(&[1000.0_f64]),
         TokioLock::default(),
         ReconnectHistory::default(),
     )
 }
 
 fn scripted(probes: &[bool], recreates: Vec<Step<bool>>) -> EngineScript {
-    let mut script = EngineScript::default();
-    script.probes = probes.iter().copied().map(Step::Done).collect();
-    script.recreates = VecDeque::from(recreates);
+    EngineScript {
+        writer_generation: 0,
+        reader_generation: 0,
+        read_route: ReadRoute::Writer,
+        engine_state: EngineState::Alive,
+        probes: probes.iter().copied().map(Step::Done).collect(),
+        recreates: VecDeque::from(recreates),
+        selects: VecDeque::new(),
+        rearms: VecDeque::new(),
+        bump_on_probe: false,
+        hold_recreate: None,
+    }
+}
+
+fn reader_script(probes: &[bool], recreates: Vec<Step<bool>>) -> EngineScript {
+    let mut script = scripted(probes, recreates);
+    script.read_route = ReadRoute::Reader;
     script
 }
 
@@ -126,7 +143,7 @@ async fn wait_for_recreate(effects: &Effects) {
         .iter()
         .any(|effect| matches!(effect, Effect::Recreate { .. }))
     {
-        tokio::task::yield_now().await;
+        yield_now().await;
     }
 }
 
@@ -173,10 +190,7 @@ fn answers(fields: &BTreeMap<String, String>, name: &str, value: &str) -> bool {
 #[tokio::test]
 async fn equal_generation_different_handle() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
-    script.read_route = ReadRoute::Reader;
-    script.probes.push_back(Step::Done(false));
-    script.probes.push_back(Step::Done(false));
+    let script = reader_script(&[false, false], Vec::new());
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -198,13 +212,10 @@ async fn equal_generation_different_handle() {
 #[tokio::test]
 async fn stale_live_waives_once() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
-    script.read_route = ReadRoute::Reader;
-    script.probes.push_back(Step::Done(false));
-    script.probes.push_back(Step::Done(true));
-    script
-        .recreates
-        .push_back(Step::Failure("recreate failed".to_owned()));
+    let script = reader_script(
+        &[false, true],
+        vec![Step::Failure("recreate failed".to_owned())],
+    );
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -278,25 +289,21 @@ async fn queued_caller_rechecks() {
     let policy = gated_policy(&effects, &gate);
     let url = SecretString::from(URL);
     let first_request = request("first", &url);
-    let first = policy.attempt_db_reconnect(&first_request, None);
-    tokio::pin!(first);
-    tokio::select! {
-        biased;
-        result = first.as_mut() => {
+    let pending_first = Box::pin(policy.attempt_db_reconnect(&first_request, None));
+    let first = match select(pending_first, Box::pin(wait_for_recreate(&effects))).await {
+        Either::Left((result, _)) => {
             panic!("the first caller must wait on the recreate gate, got {result}");
         }
-        () = wait_for_recreate(&effects) => {}
-    }
+        Either::Right(((), first)) => first,
+    };
     let second_request = request("queued", &url);
-    let second = policy.attempt_db_reconnect(&second_request, None);
-    tokio::pin!(second);
-    tokio::select! {
-        biased;
-        result = second.as_mut() => {
+    let pending_second = Box::pin(policy.attempt_db_reconnect(&second_request, None));
+    let second = match select(pending_second, Box::pin(yield_now())).await {
+        Either::Left((result, _)) => {
             panic!("the queued caller must wait for the lock, got {result}");
         }
-        () = tokio::task::yield_now() => {}
-    }
+        Either::Right(((), second)) => second,
+    };
     gate.notify_waiters();
     assert!(first.await);
     assert!(!second.await);
@@ -323,7 +330,9 @@ async fn completion_time_cooldown() {
             auth_timeout: Duration::from_secs(2),
             auth_lock_timeout: Duration::from_millis(100),
         },
-        ScriptedClock::from_seconds(&[0.0, 0.0, 10.0, 14.0, 15.0, 15.0, 15.0]),
+        ScriptedClock::from_seconds(&[
+            0.0_f64, 0.0_f64, 10.0_f64, 14.0_f64, 15.0_f64, 15.0_f64, 15.0_f64,
+        ]),
         FakeLock::new(LockMode::Free, Arc::clone(&effects)),
         ReconnectHistory::default(),
     );
@@ -340,8 +349,7 @@ async fn completion_time_cooldown() {
 #[tokio::test]
 async fn lock_timeout_and_acquire_error() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let url = SecretString::from(URL);
     let timeout_effects = fakes::effects();
     let waiting = policy_with_lock(LockMode::Timeout, &timeout_effects);
@@ -377,18 +385,16 @@ async fn cancellation_acquire_race_releases() {
     let policy = AuthReconnect::new(
         engine,
         settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
+        ScriptedClock::from_seconds(&[1000.0_f64]),
         TokioLock::default(),
         ReconnectHistory::default(),
     );
     let url = SecretString::from(URL);
     let cancelled = request("cancelled", &url).forced();
-    tokio::select! {
-        biased;
-        result = policy.attempt_db_reconnect(&cancelled, None) => {
-            panic!("the cancelled caller must wait on the recreate gate, got {result}");
-        }
-        () = wait_for_recreate(&effects) => {}
+    let attempt = Box::pin(policy.attempt_db_reconnect(&cancelled, None));
+    if let Either::Left((result, _)) = select(attempt, Box::pin(wait_for_recreate(&effects))).await
+    {
+        panic!("the cancelled caller must wait on the recreate gate, got {result}");
     }
     let mut after = request("after_cancel", &url).forced();
     after.lock_timeout = Some(Duration::from_millis(20));
@@ -398,8 +404,7 @@ async fn cancellation_acquire_race_releases() {
 #[tokio::test]
 async fn escalation_marks_dead() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let engine = FakeEngine::new(escalation_script(), Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
@@ -429,9 +434,8 @@ async fn escalation_marks_dead() {
 #[tokio::test]
 async fn generation_snapshotted_before_await() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
+    let mut script = scripted(&[true], Vec::new());
     script.bump_on_probe = true;
-    script.probes.push_back(Step::Done(true));
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -446,8 +450,7 @@ async fn generation_snapshotted_before_await() {
 #[tokio::test]
 async fn missing_database_url_error() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let engine = FakeEngine::new(EngineScript::default(), Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
@@ -521,9 +524,7 @@ async fn dead_recreate_failure_keeps_marker() {
 #[tokio::test]
 async fn direct_writable_short_circuit() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
-    script.read_route = ReadRoute::Reader;
-    script.probes.push_back(Step::Done(false));
+    let script = reader_script(&[false], Vec::new());
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -547,8 +548,7 @@ async fn direct_writable_short_circuit() {
 #[tokio::test]
 async fn readonly_or_probe_error_recreates(#[case] probe: Step<bool>, #[case] failed: bool) {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.probes.push_back(probe);
@@ -602,8 +602,7 @@ async fn forced_skips_probe() {
 #[tokio::test]
 async fn direct_select_one_after_recreate() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.probes.push_back(Step::Done(true));
@@ -633,8 +632,7 @@ async fn direct_select_one_after_recreate() {
 #[tokio::test]
 async fn forced_decline_false_resets_failures() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let engine = FakeEngine::new(decline_script(), Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
@@ -668,12 +666,7 @@ async fn forced_decline_false_resets_failures() {
 #[tokio::test]
 async fn failures_record_original_target() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
-    script.read_route = ReadRoute::Reader;
-    script.probes.push_back(Step::Done(true));
-    script
-        .recreates
-        .push_back(Step::Failure("recreate failed".to_owned()));
+    let script = reader_script(&[true], vec![Step::Failure("recreate failed".to_owned())]);
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine.clone(), Arc::clone(&effects));
     let url = SecretString::from(URL);
@@ -715,8 +708,7 @@ async fn failed_repairs_keep_two() {
 #[tokio::test(start_paused = true)]
 async fn overall_timeout() {
     let logs = CapturedLogs::default();
-    let _guard =
-        tracing::subscriber::set_default(tracing_subscriber::registry().with(logs.clone()));
+    let _guard = set_default(tracing_subscriber::registry().with(logs.clone()));
     let effects = fakes::effects();
     let mut script = EngineScript::default();
     script.probes.push_back(Step::Done(true));
@@ -748,7 +740,7 @@ async fn overall_timeout() {
 #[tokio::test]
 async fn dead_engine_reads_the_engine_state() {
     let effects = fakes::effects();
-    let mut script = EngineScript::default();
+    let mut script = scripted(&[], Vec::new());
     script.engine_state = EngineState::Dead;
     let engine = FakeEngine::new(script, Arc::clone(&effects));
     let policy = policy_with_engine(engine, Arc::clone(&effects));
@@ -769,7 +761,7 @@ async fn dead_forced_decline_clears_marker() {
     let policy = AuthReconnect::new(
         engine,
         settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
+        ScriptedClock::from_seconds(&[1000.0_f64]),
         FakeLock::new(LockMode::Free, Arc::clone(&effects)),
         ReconnectHistory {
             last_attempt: None,
@@ -798,7 +790,7 @@ async fn unforced_false_replacement_succeeds(#[case] dead: bool) {
     let policy = AuthReconnect::new(
         engine,
         settings(),
-        ScriptedClock::from_seconds(&[1000.0]),
+        ScriptedClock::from_seconds(&[1000.0_f64]),
         FakeLock::new(LockMode::Free, Arc::clone(&effects)),
         ReconnectHistory {
             last_attempt: None,

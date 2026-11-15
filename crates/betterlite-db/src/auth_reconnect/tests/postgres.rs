@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::mem;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -184,7 +185,7 @@ impl ReconnectEngine for NativeEngine {
                     .pool
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner);
-                std::mem::replace(&mut *pool, Arc::new(replacement))
+                mem::replace(&mut *pool, Arc::new(replacement))
             };
             previous.close();
             self.shared.generation.fetch_add(1, Ordering::SeqCst);
