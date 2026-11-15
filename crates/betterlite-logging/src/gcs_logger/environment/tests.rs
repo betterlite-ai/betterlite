@@ -14,7 +14,9 @@ fn catalog_environment(pairs: &[(&str, &str)]) -> CatalogEnvironment {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    CatalogEnvironment::new(Arc::new(lookup))
+    CatalogEnvironment {
+        lookup: Arc::new(lookup),
+    }
 }
 
 #[test]

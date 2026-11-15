@@ -16,12 +16,13 @@ mod tests;
 
 // LiteLLM's GCSBucketLogger() reads GCS_BUCKET_NAME and the mock settings in its parent's __init__
 pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogError> {
-    let environment: Arc<dyn EnvironmentSource> =
-        Arc::new(CatalogEnvironment::new(Arc::clone(&inputs.env)));
+    let environment: Arc<dyn EnvironmentSource> = Arc::new(CatalogEnvironment {
+        lookup: Arc::clone(&inputs.env),
+    });
     let base = initialize(
         environment,
         None,
-        GoogleCloudAuth::new(),
+        GoogleCloudAuth::default(),
         PooledGcsClient {
             client: inputs.http.clone(),
         },

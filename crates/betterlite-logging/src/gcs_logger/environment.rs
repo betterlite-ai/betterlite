@@ -16,14 +16,7 @@ const SNAPSHOT_KEYS: [&str; 4] = [
 ];
 
 pub struct CatalogEnvironment {
-    lookup: Arc<dyn EnvironmentLookup + Send + Sync>,
-}
-
-impl CatalogEnvironment {
-    #[must_use]
-    pub fn new(lookup: Arc<dyn EnvironmentLookup + Send + Sync>) -> Self {
-        Self { lookup }
-    }
+    pub(crate) lookup: Arc<dyn EnvironmentLookup + Send + Sync>,
 }
 
 impl EnvironmentSource for CatalogEnvironment {
