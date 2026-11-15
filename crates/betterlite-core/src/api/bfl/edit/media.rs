@@ -9,17 +9,6 @@ pub struct SuppliedFile {
     pub position: usize,
 }
 
-impl SuppliedFile {
-    // tell, seek(0), read, seek(position) as a caller's open file handle sees it
-    fn read_from_start(&mut self) -> Vec<u8> {
-        let position = self.position;
-        self.position = 0;
-        let read = self.content.clone();
-        self.position = position;
-        read
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SuppliedMedia {
     Bytes(Vec<u8>),
@@ -46,7 +35,8 @@ pub(crate) fn read_media_bytes(
     }
     match media {
         SuppliedMedia::Bytes(bytes) => Ok(bytes.clone()),
-        SuppliedMedia::File(file) => Ok(file.read_from_start()),
+        // tell, seek(0), read, seek(position): the bytes come from the start and the cursor stays where it was
+        SuppliedMedia::File(file) => Ok(file.content.clone()),
         SuppliedMedia::List(items) => {
             let Some(first) = items.first_mut() else {
                 return Err(EditError::UnsupportedMedia { field });
