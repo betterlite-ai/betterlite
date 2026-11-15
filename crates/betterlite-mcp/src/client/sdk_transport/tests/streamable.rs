@@ -438,6 +438,46 @@ async fn an_sse_event_over_the_limit_fails_the_request() {
 }
 
 #[tokio::test]
+async fn an_sse_event_with_three_data_lines_over_the_limit_fails_the_request() {
+    let json = event_json(400_000);
+    let server = TestServer::start(move |_| {
+        streamed(vec![Bytes::from(format!(
+            "event: message\ndata: {json}\ndata: {json}\ndata: {json}\n\n"
+        ))])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    let (code, text) = error_of(&receive(&mut streams).await);
+    assert_eq!(code, -32_000_i32);
+    assert_eq!(
+        text,
+        "SSE stream failed: Server-sent event exceeded the 1048576 byte limit."
+    );
+}
+
+#[tokio::test]
+async fn a_crlf_event_with_three_data_lines_over_the_limit_fails_the_request() {
+    let json = event_json(400_000);
+    let server = TestServer::start(move |_| {
+        streamed(vec![Bytes::from(format!(
+            "event: message\r\ndata: {json}\r\ndata: {json}\r\ndata: {json}\r\n\r\n"
+        ))])
+    })
+    .await;
+    let (mut transport, _handler) = streamable(server.url("/mcp"));
+    let mut streams = enter(&mut transport).await;
+    send(&mut streams, request(7, "tools/list")).await;
+    let (code, text) = error_of(&receive(&mut streams).await);
+    assert_eq!(code, -32_000_i32);
+    assert_eq!(
+        text,
+        "SSE stream failed: Server-sent event exceeded the 1048576 byte limit."
+    );
+}
+
+#[tokio::test]
 async fn an_sse_event_at_the_size_limit_is_accepted() {
     let json = event_json(1_048_556);
     let server = TestServer::start(move |_| {
