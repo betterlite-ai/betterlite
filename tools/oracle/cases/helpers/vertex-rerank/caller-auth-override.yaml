@@ -1,0 +1,21 @@
+kind: helper
+name: vertex-rerank-caller-auth-override
+call:
+  vertex_rerank:
+    model: semantic-ranker-512@latest
+    api_base: null
+    vertex_project: null
+    vertex_credentials: null
+    access_project: access-project
+    headers: {Authorization: "Bearer caller-token", Content-Type: "text/plain", X-Extra: "1", x-goog-user-project: "lower"}
+    query: which one
+    documents: ["only document"]
+    top_n: null
+    return_documents: null
+    non_default_params: {}
+    litellm_params: null
+    response:
+      records:
+        - {id: "0", score: 0.4}
+env: {}
+compare: {ignore: []}

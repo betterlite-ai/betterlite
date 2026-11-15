@@ -1,0 +1,31 @@
+kind: helper
+name: plan-declared-type-beats-header
+call:
+  b3733:
+    function: plan_file_scans
+    messages:
+      - role: user
+        content:
+          - type: file
+            file:
+              file_data: "data:text/plain;base64,cGRmLWJ5dGVz"
+              filename: report.pdf
+          - type: file
+            file:
+              file_data: "data:application/pdf;base64,d29yZC1ieXRlcw=="
+              format: application/msword
+          - type: file
+            file:
+              file_data: "data:application/pdf;base64,cGxhaW4gdGV4dA=="
+              format: image/png
+              filename: notes.txt
+          - type: file
+            file:
+              file_data: "data:text/csv;base64,YSxiLGM="
+              filename: unknown.zzz
+          - type: file
+            file:
+              file_data: "data:application/pdf;base64,cGRmLWJ5dGVz"
+              filename: report.pdf
+env: {}
+compare: {ignore: []}
