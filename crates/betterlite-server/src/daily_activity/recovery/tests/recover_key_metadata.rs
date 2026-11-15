@@ -423,3 +423,58 @@ async fn recover_key_metadata_repository_factory_attaches_user_details() {
     );
     close(database).await;
 }
+
+#[tokio::test]
+async fn recover_key_metadata_history_cache_lives_in_the_repository() {
+    let database = database().await;
+    insert_spend_log(
+        &database.store,
+        DIGEST,
+        moment(2026, 1, 5, 10, 0),
+        "cached-alias",
+        None,
+    )
+    .await;
+    let spent = window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 0, 0));
+    let (first, second, fresh) = {
+        let client = client(&database.store).await;
+        let repository = daily_activity_repository(
+            PostgresDailyActivityDatabase {
+                writer: &client,
+                reader: None,
+            },
+            database.store.clone(),
+        );
+        let first = repository
+            .key_metadata(&keys(&[DIGEST]), Some(spent))
+            .await
+            .unwrap();
+        client
+            .execute(r#"DELETE FROM "LiteLLM_SpendLogs""#, &[])
+            .await
+            .unwrap();
+        let second = repository
+            .key_metadata(&keys(&[DIGEST]), Some(spent))
+            .await
+            .unwrap();
+        let fresh_repository = daily_activity_repository(
+            PostgresDailyActivityDatabase {
+                writer: &client,
+                reader: None,
+            },
+            database.store.clone(),
+        );
+        let fresh = fresh_repository
+            .key_metadata(&keys(&[DIGEST]), Some(spent))
+            .await
+            .unwrap();
+        (first, second, fresh)
+    };
+    assert_eq!(
+        first.get(DIGEST).unwrap().key_alias.as_deref(),
+        Some("cached-alias")
+    );
+    assert_eq!(second.get(DIGEST), first.get(DIGEST));
+    assert!(!fresh.contains_key(DIGEST));
+    close(database).await;
+}
