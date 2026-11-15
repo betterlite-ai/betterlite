@@ -141,6 +141,26 @@ fn wire_headers(headers: &BTreeMap<String, SecretString>) -> Result<HeaderMap, P
 fn send_error(source: TransportError) -> PostError {
     match source {
         TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => PostError::Timeout,
-        source => PostError::Send { source },
+        other @ (TransportError::Rejected(_)
+        | TransportError::Build(_)
+        | TransportError::Connect(_)
+        | TransportError::Request(_)
+        | TransportError::Body(_)
+        | TransportError::HeadersTooLarge { .. }
+        | TransportError::BodyTooLarge { .. }
+        | TransportError::InvalidHeader { .. }
+        | TransportError::MultipartContentType { .. }
+        | TransportError::MultipartBoundaryHeader { .. }
+        | TransportError::MultipartBoundary { .. }
+        | TransportError::Mock(_)
+        | TransportError::Closed
+        | TransportError::DrainTimeout { .. }
+        | TransportError::TooManyRedirects { .. }
+        | TransportError::RedirectTarget { .. }
+        | TransportError::RedirectUrl { .. }
+        | TransportError::RedirectUserinfo
+        | TransportError::RedirectScheme { .. }
+        | TransportError::InsecureRedirect
+        | TransportError::RedirectBody) => PostError::Send { source: other },
     }
 }

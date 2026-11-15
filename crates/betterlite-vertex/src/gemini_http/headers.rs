@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_prompts::arguments::json::{Json, Object};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::endpoint_target::headers::set_headers;
 use crate::endpoint_target::target::AuthHeader;

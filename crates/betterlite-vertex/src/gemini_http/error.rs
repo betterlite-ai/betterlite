@@ -65,7 +65,7 @@ impl GeminiHttpError {
 
     // LiteLLM hands its VertexAIError to the exception mapper; every other arm is a local failure
     #[must_use]
-    pub fn provider(&self) -> Option<&VertexAiError> {
+    pub const fn provider(&self) -> Option<&VertexAiError> {
         match self {
             Self::Provider(error) | Self::Timeout(error) => Some(error),
             Self::Credentials { .. }

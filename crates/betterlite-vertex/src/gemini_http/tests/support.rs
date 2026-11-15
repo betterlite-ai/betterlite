@@ -323,9 +323,10 @@ pub(super) fn llm(auth: &Auth) -> VertexLlm {
 }
 
 pub(super) fn pooled(recorder: &Arc<Recorder>) -> Clients {
+    let client = Arc::clone(recorder);
     Clients {
         supplied: None,
-        pooled: Arc::clone(recorder),
+        pooled: client,
     }
 }
 
@@ -334,12 +335,11 @@ pub(super) fn supplied(
     kind: ClientKind,
     pooled: &Arc<Recorder>,
 ) -> Clients {
+    let transport = Arc::clone(recorder);
+    let client = Arc::clone(pooled);
     Clients {
-        supplied: Some(SuppliedClient {
-            kind,
-            transport: Arc::clone(recorder),
-        }),
-        pooled: Arc::clone(pooled),
+        supplied: Some(SuppliedClient { kind, transport }),
+        pooled: client,
     }
 }
 

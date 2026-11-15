@@ -430,15 +430,17 @@ async fn execution_a_wrong_psc_flag_fails_before_any_request() {
             field: "use_psc_endpoint_format"
         }
     ));
-    let error = async_streaming(
+    let stream = async_streaming(
         &call,
         &catalog(),
         &llm(&fixture),
         &clients,
         Box::new(fixed_id),
     )
-    .await
-    .unwrap_err();
+    .await;
+    let Err(error) = stream else {
+        panic!("a wrong psc flag fails before the stream is built");
+    };
     assert!(matches!(error, GeminiHttpError::Flag { .. }));
     assert!(recorder.posts().is_empty());
     assert!(recorder.opens().is_empty());
@@ -921,9 +923,10 @@ async fn execution_sync_call_keeps_the_raw_error_body() {
             vec![Piece::Bytes(SCHEMA_ERROR.as_bytes().to_vec())],
         )],
     ));
-    let error = make_sync_call(None, recorder.as_ref(), &stream_call(VERTEX_URL))
-        .await
-        .unwrap_err();
+    let outcome = make_sync_call(None, recorder.as_ref(), &stream_call(VERTEX_URL)).await;
+    let Err(error) = outcome else {
+        panic!("a 500 is a provider rejection, not an opened stream");
+    };
     let GeminiStreamError::Http(GeminiHttpError::Provider(provider)) = error else {
         panic!("a 500 is a provider rejection");
     };

@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from typing import Protocol, TypeAlias, TypedDict
 
 import litellm
@@ -11,16 +12,21 @@ ApiKey: TypeAlias = str | dict[str, str] | None
 
 
 class Config(Protocol):
+    @property
     def validate_environment(
         self,
-        headers: HeaderMap | None,
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: Params,
-        litellm_params: Params,
-        api_key: ApiKey = None,
-        api_base: str | None = None,
-    ) -> HeaderMap: ...
+    ) -> Callable[
+        [
+            HeaderMap | None,
+            str,
+            list[AllMessageValues],
+            Params,
+            Params,
+            ApiKey,
+            str | None,
+        ],
+        HeaderMap,
+    ]: ...
 
 
 CONFIG: Config = VertexGeminiConfig()
@@ -52,11 +58,11 @@ def run(input_value: Case) -> Answer:
     headers = CONFIG.validate_environment(
         input_value["headers"],
         "gemini-2.5-flash",
-        [],
+        [],  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L998
         optional_params,
         {},
-        api_key=api_key(input_value),
-        api_base=None,
+        api_key(input_value),
+        None,
     )
     requested = optional_params.get("use_psc_endpoint_format")
     return {

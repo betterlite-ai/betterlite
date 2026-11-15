@@ -41,8 +41,8 @@ pub struct GeminiHttpStream {
 }
 
 enum StreamState {
-    Pending(StreamSetup),
-    Reading(Reading),
+    Pending(Box<StreamSetup>),
+    Reading(Box<Reading>),
     Finished,
 }
 
@@ -50,17 +50,24 @@ impl GeminiHttpStream {
     #[must_use]
     pub fn new(setup: StreamSetup, options: StreamOptions) -> Self {
         Self {
-            state: StreamState::Pending(setup),
+            state: StreamState::Pending(Box::new(setup)),
             options,
         }
     }
 
     pub async fn next_chunk(&mut self) -> Option<Result<StreamChunk, GeminiStreamError>> {
         if let StreamState::Pending(setup) = mem::replace(&mut self.state, StreamState::Finished) {
-            let opened = open_stream(&setup).await;
+            let call = StreamCall {
+                url: &setup.url,
+                headers: &setup.headers,
+                body: &setup.body,
+                model: &setup.model,
+            };
+            let opened = make_call(setup.supplied.as_deref(), setup.pooled.as_ref(), &call).await;
             match opened {
-                Ok(opened) => {
-                    self.state = StreamState::Reading(Reading::new(setup, opened, self.options));
+                Ok(reply) => {
+                    let reading = Reading::new(*setup, reply, self.options);
+                    self.state = StreamState::Reading(Box::new(reading));
                 }
                 Err(error) => return Some(Err(error)),
             }
@@ -105,54 +112,52 @@ impl Reading {
                 match self.decoder.push(line.as_bytes()) {
                     Ok(None) => continue,
                     Ok(Some(chunk)) => return Some(Ok(chunk)),
-                    Err(source) => {
-                        self.done = true;
-                        return Some(Err(GeminiStreamError::Chunk(source)));
-                    }
+                    Err(source) => return self.stop(GeminiStreamError::Chunk(source)),
                 }
             }
             if let Some(error) = self.error.take() {
-                self.done = true;
-                return Some(Err(error));
+                return self.stop(error);
             }
             if self.ended {
-                self.done = true;
-                return match self.decoder.finish() {
-                    Ok(None) => None,
-                    Ok(Some(chunk)) => Some(Ok(chunk)),
-                    Err(source) => Some(Err(GeminiStreamError::Chunk(source))),
-                };
+                return self.finish();
             }
             match self.chunks.next().await {
-                Some(Ok(bytes)) => {
-                    if let Err(source) = self.lines.push(&bytes, &mut self.pending) {
-                        self.error = Some(GeminiStreamError::Line { source });
-                    }
-                }
-                Some(Err(source)) => {
-                    self.error = Some(GeminiStreamError::body_error(source));
-                }
-                None => {
-                    self.lines.flush(&mut self.pending);
-                    self.ended = true;
-                }
+                Some(Ok(bytes)) => self.absorb(&bytes),
+                Some(Err(source)) => self.error = Some(GeminiStreamError::body_error(source)),
+                None => self.end(),
             }
         }
     }
-}
 
-async fn open_stream(setup: &StreamSetup) -> Result<OpenedReply, GeminiStreamError> {
-    make_call(
-        setup.supplied.as_deref(),
-        setup.pooled.as_ref(),
-        &StreamCall {
-            url: &setup.url,
-            headers: &setup.headers,
-            body: &setup.body,
-            model: &setup.model,
-        },
-    )
-    .await
+    // a failure ends the stream once the caller has seen it
+    const fn stop(
+        &mut self,
+        error: GeminiStreamError,
+    ) -> Option<Result<StreamChunk, GeminiStreamError>> {
+        self.done = true;
+        Some(Err(error))
+    }
+
+    // the decoder's last chunk comes out once the body ended, and the stream stays finished after it
+    fn finish(&mut self) -> Option<Result<StreamChunk, GeminiStreamError>> {
+        self.done = true;
+        match self.decoder.finish() {
+            Ok(None) => None,
+            Ok(Some(chunk)) => Some(Ok(chunk)),
+            Err(source) => Some(Err(GeminiStreamError::Chunk(source))),
+        }
+    }
+
+    fn absorb(&mut self, bytes: &[u8]) {
+        if let Err(source) = self.lines.push(bytes, &mut self.pending) {
+            self.error = Some(GeminiStreamError::Line { source });
+        }
+    }
+
+    fn end(&mut self) {
+        self.lines.flush(&mut self.pending);
+        self.ended = true;
+    }
 }
 
 // LiteLLM's make_call: the caller's handler wins, and raise_for_status translates a 4xx or 5xx first
