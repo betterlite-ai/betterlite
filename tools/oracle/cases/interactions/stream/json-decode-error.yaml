@@ -1,0 +1,14 @@
+kind: helper
+name: json-decode-error
+call:
+  b3491:
+    mode: async
+    lines:
+      - 'data: not json'
+      - 'data: {"id":"after"}'
+      - 'data: {'
+    litellm_params:
+      api_base: https://interactions.test
+env: {}
+compare:
+  ignore: []
