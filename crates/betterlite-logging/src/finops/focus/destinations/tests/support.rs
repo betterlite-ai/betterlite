@@ -220,9 +220,10 @@ pub(super) fn header<'request>(request: &'request S3Request, name: &str) -> Opti
 }
 
 pub(super) fn s3_connection(variables: &[(&str, &str)], http: &Arc<FakeS3Http>) -> S3Connection {
-    let http: Arc<dyn S3HttpClient> = Arc::clone(http);
+    let shared = Arc::clone(http);
+    let client: Arc<dyn S3HttpClient> = shared;
     S3Connection {
-        http,
+        http: client,
         environment: Arc::new(environment(variables)),
         clock: Arc::new(FixedClock),
     }
