@@ -280,11 +280,14 @@ fn models_value(runtime: &tokio::runtime::Runtime, case: &ModelsCase) -> Value {
     };
     let script = Script::recording(case);
     let listed = runtime.block_on(get_models(&options, &script, &request));
-    let requests = script
-        .requests
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    match (listed, requests.first().cloned()) {
+    let recorded = {
+        let requests = script
+            .requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        requests.first().cloned()
+    };
+    match (listed, recorded) {
         (Ok(models), Some((url, authorization))) => json!({
             "ok": true,
             "models": models,
