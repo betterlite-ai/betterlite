@@ -155,11 +155,17 @@ pub(crate) async fn model_json_columns(case: &Case) {
 pub(crate) async fn model_nonstring_params(case: &Case) {
     let params = r#"{"s":"text","n":0.25,"i":7,"b":true,"z":null,"arr":[1,"x"],"obj":{"k":"v"}}"#;
     insert_model(case, "nonstring", "mixed", params, None).await;
-    let repository = model_repository(case, None);
-    let models = matching(&repository.find_all_except("absent").await.unwrap(), "non");
+    let models = matching(
+        &model_repository(case, None)
+            .find_all_except("absent")
+            .await
+            .unwrap(),
+        "non",
+    );
+    assert_eq!(models.len(), 1);
     assert_eq!(
-        models,
-        vec![pinned_model("nonstring", "mixed", params, None)]
+        models.first().unwrap(),
+        &pinned_model("nonstring", "mixed", params, None)
     );
 }
 
@@ -588,7 +594,7 @@ async fn create_listed_credential(repository: &CredentialsRepository<'_>, name: 
 
 pub(crate) async fn credential_named_lookup(case: &Case) {
     insert_credential(
-        case,
+        &case.writer,
         "cred-lookup-id",
         "cred-lookup-name",
         r#"{"api_key":"sk-raw"}"#,
@@ -651,10 +657,10 @@ pub(crate) async fn falsey_credential_maps(case: &Case) {
         ("cred-null-info-id", "cred-null-info", None),
     ];
     for (id, name, info) in falsey {
-        insert_credential(case, id, name, r#"{"api_key":"k"}"#, info).await;
+        insert_credential(&case.writer, id, name, r#"{"api_key":"k"}"#, info).await;
     }
     insert_credential(
-        case,
+        &case.writer,
         "cred-empty-values-id",
         "cred-empty-values",
         "{}",

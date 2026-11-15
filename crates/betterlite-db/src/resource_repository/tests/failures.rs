@@ -19,7 +19,7 @@ use crate::resource_rows::ResourceRowsError;
 use super::support::{
     Case, Journal, NO_DB, batch, captured_logs, cipher, dead_redis, failing_publisher, field,
     insert_config, insert_credential, insert_model, observing_publisher, recording_publisher,
-    value, write, written,
+    text_row, text_rows, value, write, written,
 };
 
 pub(crate) async fn missing_client_before_query(_case: &Case) {
@@ -147,27 +147,52 @@ pub(crate) async fn model_raw_write_before_publication(case: &Case) {
         .await
         .unwrap();
     assert_eq!(field(&created, "model_name"), &value("\"observed-model\""));
+    let updated = repository
+        .table()
+        .unwrap()
+        .update(
+            write(&[("litellm_params", value(r#"{"api_key":"k2"}"#))]),
+            "observed-model-id".to_owned(),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        field(&updated, "litellm_params"),
+        &value(r#"{"api_key":"k2"}"#)
+    );
     assert_eq!(
         journal.entries(),
-        vec!["publish:litellm_proxymodeltable:visible=true".to_owned()]
+        vec![
+            "publish:litellm_proxymodeltable:visible=true".to_owned(),
+            "publish:litellm_proxymodeltable:visible=true".to_owned(),
+        ]
     );
 }
 
 pub(crate) async fn credential_write_before_publication(case: &Case) {
     let journal = Journal::default();
-    let sql = "SELECT 1 FROM \"LiteLLM_CredentialsTable\" WHERE credential_name = 'cred-observed'";
-    let publish = observing_publisher(&journal, &case.writer, sql.to_owned());
+    let publish = observing_publisher(
+        &journal,
+        &case.writer,
+        "SELECT 1 FROM \"LiteLLM_CredentialsTable\" WHERE credential_name = 'cred-observed'"
+            .to_owned(),
+    );
     let repository = CredentialsRepository::new(Some(case.client()), publish);
-    let created = repository
+    repository
         .create(written(
             r#"{"credential_name":"cred-observed","credential_values":{"api_key":"k"},"created_by":"seed","updated_by":"seed"}"#,
         ))
         .await
         .unwrap();
-    assert_eq!(
-        field(&created, "credential_name"),
-        &value("\"cred-observed\"")
-    );
+    let stored = text_row(
+        &case.writer,
+        "SELECT credential_name FROM \"LiteLLM_CredentialsTable\" \
+         WHERE credential_name = 'cred-observed'",
+        &[],
+    )
+    .await;
+    assert_eq!(stored, "cred-observed");
     assert_eq!(
         journal.entries(),
         vec!["publish:litellm_credentialstable:visible=true".to_owned()]
@@ -248,7 +273,7 @@ pub(crate) async fn injected_publisher_error_after_commit(case: &Case) {
 
 pub(crate) async fn read_has_no_publication(case: &Case) {
     insert_credential(
-        case,
+        &case.writer,
         "cred-read-id",
         "cred-read",
         r#"{"api_key":"k"}"#,

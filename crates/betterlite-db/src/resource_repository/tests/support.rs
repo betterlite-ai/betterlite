@@ -5,7 +5,9 @@ use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
+use betterlite_redis::config_sync::publish::{
+    PublishChange, PublishFuture, redis_config_change_publisher,
+};
 use betterlite_redis::config_sync::table_actions::ConfigSyncTableActions;
 use betterlite_redis::redis_cache::RedisCache;
 use betterlite_redis::redis_cache::connect::{RedisCacheOptions, connect};
@@ -35,9 +37,7 @@ use crate::budget_permission_rows::JsonData;
 use crate::database_replica::availability::Availability;
 use crate::postgres_store::errors::backend;
 use crate::postgres_store::session::PostgresStore;
-use crate::resource_repository::table::{
-    ResourceActions, ResourceBinding, RowWrite, silent_publisher,
-};
+use crate::resource_repository::table::{ResourceActions, ResourceBinding, RowWrite};
 use crate::stored_cipher::DbCipher;
 use crate::{
     schema_agent_identity, schema_baseline, schema_budget_windows, schema_daily_usage,
@@ -387,6 +387,11 @@ pub(crate) async fn execute(store: &PostgresStore, sql: &str, params: &[&(dyn To
     client.execute(sql, params).await.unwrap();
 }
 
+const INSERT_MODEL_SQL: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" (model_id, model_name, \
+     litellm_params, model_info, created_at, updated_at, created_by, updated_by) \
+     VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, '2026-01-02 03:04:05.123', \
+     '2026-01-03 04:05:06.789', 'seed', 'seed')";
+
 pub(crate) async fn insert_model(
     case: &Case,
     id: &str,
@@ -396,62 +401,53 @@ pub(crate) async fn insert_model(
 ) {
     execute(
         &case.writer,
-        "INSERT INTO \"LiteLLM_ProxyModelTable\" (model_id, model_name, litellm_params, \
-         model_info, created_at, updated_at, created_by, updated_by) \
-         VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, '2026-01-02 03:04:05.123', \
-         '2026-01-03 04:05:06.789', 'seed', 'seed')",
+        INSERT_MODEL_SQL,
         &[&id, &name, &params, &info],
     )
     .await;
 }
 
+const INSERT_BUDGET_SQL: &str = "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, \
+     soft_budget, max_parallel_requests, tpm_limit, rpm_limit, model_max_budget, budget_duration, \
+     budget_reset_at, created_by, updated_by) VALUES ($1, 10, 2.5, 3, 40, 50, \
+     '{\"gpt-4o\":0.5}', '1d', '2026-01-01 00:00:00', 'seed', 'seed')";
+
 pub(crate) async fn insert_budget(case: &Case, budget_id: &str) {
-    execute(
-        &case.writer,
-        "INSERT INTO \"LiteLLM_BudgetTable\" (budget_id, max_budget, soft_budget, \
-         max_parallel_requests, tpm_limit, rpm_limit, model_max_budget, budget_duration, \
-         budget_reset_at, created_by, updated_by) VALUES ($1, 10, 2.5, 3, 40, 50, \
-         '{\"gpt-4o\":0.5}', '1d', '2026-01-01 00:00:00', 'seed', 'seed')",
-        &[&budget_id],
-    )
-    .await;
+    execute(&case.writer, INSERT_BUDGET_SQL, &[&budget_id]).await;
 }
 
 // The stored value is Prisma's JSON string of the Python str LiteLLM writes.
+const INSERT_CONFIG_SQL: &str =
+    "INSERT INTO \"LiteLLM_Config\" (param_name, param_value) VALUES ($1, to_jsonb($2::text))";
+
 pub(crate) async fn insert_config(store: &PostgresStore, name: &str, content: &str) {
-    execute(
-        store,
-        "INSERT INTO \"LiteLLM_Config\" (param_name, param_value) VALUES ($1, to_jsonb($2::text))",
-        &[&name, &content],
-    )
-    .await;
+    execute(store, INSERT_CONFIG_SQL, &[&name, &content]).await;
 }
 
+const INSERT_CREDENTIAL_SQL: &str = "INSERT INTO \"LiteLLM_CredentialsTable\" (credential_id, \
+     credential_name, credential_values, credential_info, created_by, updated_by) \
+     VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, 'seed', 'seed')";
+
 pub(crate) async fn insert_credential(
-    case: &Case,
+    store: &PostgresStore,
     id: &str,
     name: &str,
     values: &str,
     info: Option<&str>,
 ) {
-    execute(
-        &case.writer,
-        "INSERT INTO \"LiteLLM_CredentialsTable\" (credential_id, credential_name, \
-         credential_values, credential_info, created_by, updated_by) \
-         VALUES ($1, $2, $3::text::jsonb, $4::text::jsonb, 'seed', 'seed')",
-        &[&id, &name, &values, &info],
-    )
-    .await;
+    let client = store.session().await.unwrap();
+    let params: [&(dyn ToSql + Sync); 4] = [&id, &name, &values, &info];
+    client
+        .execute(INSERT_CREDENTIAL_SQL, &params)
+        .await
+        .unwrap();
 }
 
+const INSERT_PERMISSION_SQL: &str = "INSERT INTO \"LiteLLM_ObjectPermissionTable\" \
+     (object_permission_id, mcp_servers) VALUES ($1, ARRAY[$2]::TEXT[])";
+
 pub(crate) async fn insert_permission(store: &PostgresStore, id: &str, server: &str) {
-    execute(
-        store,
-        "INSERT INTO \"LiteLLM_ObjectPermissionTable\" (object_permission_id, mcp_servers) \
-         VALUES ($1, ARRAY[$2]::TEXT[])",
-        &[&id, &server],
-    )
-    .await;
+    execute(store, INSERT_PERMISSION_SQL, &[&id, &server]).await;
 }
 
 pub(crate) async fn text_rows(
@@ -496,8 +492,11 @@ impl ResourceBinding for DefaultsBinding {
 pub(crate) fn defaults_actions(
     case: &Case,
 ) -> ConfigSyncTableActions<ResourceActions<'_, DefaultsBinding>> {
-    let repository =
-        PrismaTableRepository::new(Some(case.client()), silent_publisher(), DefaultsBinding);
+    let repository = PrismaTableRepository::new(
+        Some(case.client()),
+        redis_config_change_publisher(None),
+        DefaultsBinding,
+    );
     repository.table(ResourceActions::new).unwrap()
 }
 
