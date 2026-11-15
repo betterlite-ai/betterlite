@@ -82,6 +82,31 @@ async fn an_empty_header_value_is_left_out() {
 }
 
 #[tokio::test]
+async fn an_invalid_header_value_is_reported_with_its_header() {
+    let server = support::mock(StatusCode::OK, r#"{"should_block": false}"#).await;
+    let mut args = support::args_for(&server.base);
+    args.singulr_api_key = Some(SecretString::from("token\nline"));
+    let guardrail = support::build(&args);
+    let error = guardrail
+        .apply_guardrail(
+            support::inputs(r#"{"texts": ["hello"]}"#),
+            &support::data("{}"),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        SingulrError::InvalidHeader {
+            name: "x-singulr-gateway-token",
+            ..
+        }
+    ));
+    assert!(server.calls().is_empty());
+}
+
+#[tokio::test]
 async fn an_allowed_answer_returns_the_inputs_unchanged() {
     let server = support::mock(StatusCode::OK, r#"{}"#).await;
     let guardrail = support::guardrail(&server.base);

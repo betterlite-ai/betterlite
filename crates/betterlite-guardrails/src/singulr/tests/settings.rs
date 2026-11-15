@@ -79,6 +79,12 @@ fn plain_http_to_a_non_local_host_is_refused_and_keeps_the_token_out() {
     assert!(!message.contains(support::API_KEY));
 }
 
+#[test]
+fn a_plain_http_base_with_an_upper_case_scheme_is_refused_at_start() {
+    let error = resolve(&[("SINGULR_API_BASE", "HTTP://guard.example")]).unwrap_err();
+    assert!(matches!(error, SettingsError::PlainHttp { .. }));
+}
+
 #[rstest]
 #[case::localhost("http://localhost:8003")]
 #[case::loopback("http://127.0.0.1:8003")]
