@@ -14,7 +14,7 @@ use tokio::time;
 use tokio_rustls::TlsAcceptor;
 use tokio_tungstenite::tungstenite::Error as WebSocketError;
 use tokio_tungstenite::tungstenite::handshake::server::{ErrorResponse, Request, Response};
-use tokio_tungstenite::tungstenite::{Message, Utf8Bytes};
+use tokio_tungstenite::tungstenite::{Bytes, Message, Utf8Bytes};
 use tokio_tungstenite::{accept_async, accept_hdr_async};
 
 use super::{CALLER, ws_guardrail};
@@ -144,9 +144,9 @@ async fn connect_websocket(
 #[tokio::test]
 async fn websocket_connector_exchanges_text_and_binary_frames_with_a_local_server() {
     let frames = vec![
-        Message::Ping(Vec::new().into()),
+        Message::Ping(Bytes::new()),
         Message::Text(Utf8Bytes::from(r#"{"verified_chunk": {"id": "one"}}"#)),
-        Message::Binary(b"binary".to_vec().into()),
+        Message::Binary(Bytes::copy_from_slice(b"binary")),
     ];
     let (url, mut tasks) = cato_stream_server(frames, 0).await;
     let mut socket = connect_websocket(&url, None, Duration::from_secs(5))

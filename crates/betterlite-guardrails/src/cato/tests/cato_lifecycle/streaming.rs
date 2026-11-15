@@ -134,7 +134,7 @@ fn fake_connector(frames: Vec<FakeFrame>, fail_writes: bool) -> (FakeConnector, 
     let connect_call = Arc::new(Mutex::new(None));
     let (closed_tx, closed) = oneshot::channel();
     let connector = FakeConnector {
-        frames: Arc::new(Mutex::new(frames.into())),
+        frames: Arc::new(Mutex::new(VecDeque::from(frames))),
         sent: Arc::clone(&sent),
         sent_signal,
         connect_call: Arc::clone(&connect_call),
@@ -329,7 +329,7 @@ async fn streaming_relay_reports_a_model_stream_that_fails_midway() {
     let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
     let (sender, chunks) = mpsc::channel(8);
     sender.send(Ok(chunk.clone())).await.expect("chunk");
-    let failure: ModelStreamError = "upstream model dropped".into();
+    let failure = ModelStreamError::from("upstream model dropped");
     sender.send(Err(failure)).await.expect("failure");
     let (result, delivered) = relay(&connector, &guardrail, chunks).await;
     let error = result.expect_err("the model stream failed");
