@@ -22,7 +22,6 @@ impl ErrorClass {
 #[must_use]
 pub const fn error_class(status_code: u16) -> ErrorClass {
     match status_code {
-        400 => ErrorClass::BadRequest,
         401 => ErrorClass::Authentication,
         500..=u16::MAX => ErrorClass::Server,
         _ => ErrorClass::BadRequest,
