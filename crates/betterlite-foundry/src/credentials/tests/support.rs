@@ -190,8 +190,8 @@ pub(super) fn secrets() -> SecretLookup {
     let transport = Arc::new(NoOidc);
     SecretLookup {
         manager: None,
-        oidc_http: transport.clone(),
-        azure_tokens: transport.clone(),
+        oidc_http: Arc::clone(&transport),
+        azure_tokens: Arc::clone(&transport),
         clock: transport,
         oidc_cache: OidcTokenCache::default(),
     }
