@@ -1,0 +1,12 @@
+task: B747
+deviations:
+  - what: "An allowlist pattern is compiled by Rust's regex crate, so a pattern that engine rejects grants no model and the request gets the ordinary 403 denial; that covers malformed patterns such as `a[` and the constructs the crate lacks, such as lookarounds and backreferences. LiteLLM hands the pattern to re.match: a malformed pattern raises re.error out of the auth check and the proxy answers 500, and a lookaround or a backreference matches."
+    why: "A crash on an administrator's malformed allowlist entry is a 500 where a 4xx belongs, so rule owned-behavior-is-built replaces it with the denial the compatibility policy assigns to a refused request; the linear-time engine ports the `*` wildcard the allowlist documents, and a Rust test pins the denial for two patterns Python's re rejects."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6525-L6541
+  - what: "When the fallback-depth guard fires for a requested-model list, or with no requested model at all, the message names the models joined by commas and names nothing for the absent case. LiteLLM interpolates the Python value into the exception text, so a list reads as ['a', 'b'] and an absent model reads as None."
+    why: "The guard's text is the str() of a Python value, which docs/compatibility.md keeps out of parity; the request is refused in both implementations, and the ordinary request carries one model name where the texts agree."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4450-L4450
+  - what: "The access-group resource collectors keep the first-seen order of the resources and drop later duplicates. LiteLLM returns list(set(resources)), whose order changes with the process's hash seed."
+    why: "The order of a set-backed list is decided by Python's runtime and is not part of the declared return type; every caller this task owns answers membership, never position."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4296-L4296
+kept_bugs: []
