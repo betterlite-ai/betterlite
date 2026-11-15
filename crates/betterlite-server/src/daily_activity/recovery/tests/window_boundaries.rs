@@ -2,6 +2,8 @@
 
 use std::collections::BTreeMap;
 
+use chrono::NaiveDate;
+
 use super::support::{
     DIGEST, OTHER_DIGEST, close, database, dates, insert_spend_log, keys, moment, reads, recover,
 };
@@ -134,5 +136,28 @@ async fn window_boundaries_skip_spend_logs_for_an_empty_or_unparseable_date_set(
     .await;
     assert!(from_empty.is_empty());
     assert!(from_unparseable.is_empty());
+    close(database).await;
+}
+
+#[tokio::test]
+async fn window_boundaries_keep_a_fractional_pre_epoch_start() {
+    let database = database().await;
+    let started = NaiveDate::from_ymd_opt(1969, 12, 29)
+        .unwrap()
+        .and_hms_milli_opt(0, 0, 0, 600)
+        .unwrap();
+    insert_spend_log(&database.store, DIGEST, started, "pre-epoch-start", None).await;
+    let window = spend_logs_window(&dates(&["1969-12-30T00:00:00.500000"]));
+    let recovered = recover(
+        &reads(&database.store),
+        BTreeMap::new(),
+        &keys(&[DIGEST]),
+        window,
+    )
+    .await;
+    assert_eq!(
+        recovered.get(DIGEST).unwrap().key_alias.as_deref(),
+        Some("pre-epoch-start")
+    );
     close(database).await;
 }
