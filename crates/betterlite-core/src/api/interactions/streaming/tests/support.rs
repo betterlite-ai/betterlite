@@ -157,7 +157,7 @@ impl FakeAsyncResponse {
 }
 
 struct FakeAsyncLines {
-    lines: std::vec::IntoIter<Result<String, FixtureSourceError>>,
+    lines: IntoIter<Result<String, FixtureSourceError>>,
 }
 
 #[async_trait]
@@ -208,7 +208,7 @@ impl FakeSyncResponse {
 
 impl InteractionsSyncResponse for FakeSyncResponse {
     type Error = FixtureSourceError;
-    type Lines = std::vec::IntoIter<Result<String, FixtureSourceError>>;
+    type Lines = IntoIter<Result<String, FixtureSourceError>>;
 
     fn headers(&self) -> IndexMap<String, String> {
         self.headers.clone()

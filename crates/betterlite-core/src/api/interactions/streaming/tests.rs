@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
@@ -169,7 +170,7 @@ async fn async_iterator_construction_resolves_the_api_base_from_the_model() {
 async fn async_iterator_construction_swallows_api_base_resolution_errors() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
-    let mut iterator = InteractionsStreamIterator::new(
+    let iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[]),
         InteractionsStreamSetup {
             model: Some("gemini-2.5-flash"),
@@ -397,8 +398,8 @@ async fn async_iteration_yields_events_in_order_and_finishes() {
     let events = drain_async(&mut iterator).await;
     assert_eq!(ids(&events), vec!["a", "b"]);
     assert!(iterator.base.finished);
-    assert!(logging.records().is_empty());
     assert!(iterator.next_chunk().await.is_none());
+    assert!(logging.records().is_empty());
 }
 
 #[tokio::test]
@@ -679,7 +680,10 @@ async fn error_handling_async_source_error_sets_finished_and_errors() {
         .next_chunk()
         .await
         .expect("the stream reports an error");
-    assert!(matches!(failure, Err(InteractionStreamError::Source(_))));
+    assert!(matches!(
+        failure,
+        Err(InteractionStreamError::Source { .. })
+    ));
     assert!(iterator.base.finished);
     assert!(iterator.next_chunk().await.is_none());
 }
@@ -694,7 +698,10 @@ fn error_handling_sync_source_error_sets_finished_and_errors() {
         SyncInteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
             .expect("the fixture iterator builds");
     let failure = iterator.next_chunk().expect("the stream reports an error");
-    assert!(matches!(failure, Err(InteractionStreamError::Source(_))));
+    assert!(matches!(
+        failure,
+        Err(InteractionStreamError::Source { .. })
+    ));
     assert!(iterator.base.finished);
     assert!(iterator.next_chunk().is_none());
 }
@@ -712,7 +719,10 @@ async fn error_handling_transform_error_is_returned_without_finishing() {
         .next_chunk()
         .await
         .expect("the chunk is transformed");
-    assert!(matches!(failure, Err(InteractionStreamError::Transform(_))));
+    assert!(matches!(
+        failure,
+        Err(InteractionStreamError::Transform { .. })
+    ));
     assert!(!iterator.base.finished);
     let next = iterator.next_chunk().await.expect("the stream continues");
     assert_eq!(
@@ -731,7 +741,10 @@ fn error_handling_sync_transform_error_is_returned_without_finishing() {
     )
     .expect("the fixture iterator builds");
     let failure = iterator.next_chunk().expect("the chunk is transformed");
-    assert!(matches!(failure, Err(InteractionStreamError::Transform(_))));
+    assert!(matches!(
+        failure,
+        Err(InteractionStreamError::Transform { .. })
+    ));
     assert!(!iterator.base.finished);
     let next = iterator.next_chunk().expect("the stream continues");
     assert_eq!(

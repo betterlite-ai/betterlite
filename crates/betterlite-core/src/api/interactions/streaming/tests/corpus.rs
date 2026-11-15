@@ -11,6 +11,10 @@ const CORPUS_SEEDS: usize = 10;
 fn replays_the_interactions_sse_corpus() {
     let seeds = corpus_seeds();
     assert_eq!(seeds.len(), CORPUS_SEEDS);
+    replay_all(seeds);
+}
+
+fn replay_all(seeds: Vec<(String, Vec<u8>)>) {
     for (name, bytes) in seeds {
         let whole = replay(vec![bytes.clone()]);
         let byte_wise: Vec<Vec<u8>> = bytes.chunks(1).map(<[u8]>::to_vec).collect();
