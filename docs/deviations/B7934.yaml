@@ -1,0 +1,69 @@
+task: B7934
+deviations:
+  - what: >-
+      The ported config models and optional-params models derive from the wheel's ResponseObject
+      instead of pydantic's BaseModel. ResponseObject sets extra="allow", so an unknown key
+      survives validation and appears in model_dump(), and model_json_schema() carries
+      additionalProperties: true where LiteLLM's schema has none. This covers the config models
+      built on GuardrailConfigModel, IBMGuardrailsBaseConfigModel, IBMDetectorOptionalParams,
+      LassoGuardrailConfigModelOptionalParams and PangeaGuardrailConfigModelOptionalParams;
+      LiteLLM only allows extras explicitly on none of these. ContentFilterCategoryConfig already
+      derives from BaseLiteLLMOpenAIResponseObject on both sides, so it is unchanged.
+    why: >-
+      Every ported pydantic model under betterlite.types goes on ResponseObject, as B7930 set for
+      the guardrail types. The declared fields, required keys, defaults, Literal values,
+      validation errors and dumps of the declared fields match LiteLLM wherever LiteLLM's own
+      model_dump() works; where a set optional_params makes it raise TypeError, the
+      GuardrailConfigModel[BaseModel] deviation below covers the difference. Only keys LiteLLM
+      never declares differ.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L9
+  - what: >-
+      Fields LiteLLM types as Any or as a bare dict are dict[str, JsonValue], list[JsonValue] or
+      dict[str, dict[str, JsonValue]] here: javelin's config and metadata, lakera's metadata,
+      hide_secrets' detect_secrets_config, the content filter's patterns, blocked_words,
+      competitor_intent_config and CompetitorIntentDetection.evidence, and IBM's detector_params,
+      extra_headers, evidences, metadata and detectors.
+    why: >-
+      The Python rules forbid Any in annotations, and JsonValue is the JSON type the wheel uses. A
+      JSON body validates the same; a non-JSON Python object, which Any accepts, is rejected here.
+      The JSON schema of each field is the same open object that LiteLLM's bare dict produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/ibm_detector.py#L16
+  - what: >-
+      Config models LiteLLM leaves on the unparametrized GuardrailConfigModel are spelled
+      GuardrailConfigModel[BaseModel] here: HiddenlayerGuardrailConfigModel,
+      HideSecretsGuardrailConfigModel, JavelinGuardrailConfigModel,
+      LitellmContentFilterGuardrailConfigModel, MCPEndUserPermissionGuardrailConfigModel,
+      ModelArmorGuardrailConfigModel, NomaGuardrailConfigModel, NomaV2GuardrailConfigModel,
+      OnyxGuardrailConfigModel, OvalixGuardrailConfigModel and the OpenAI moderation models.
+      Pydantic resolves an unbound TypeVar to its BaseModel bound, so optional_params has the same
+      BaseModel | None type, schema and validation on both sides. A config that puts a value in
+      optional_params dumps here ({} for a plain BaseModel value); with LiteLLM's unparametrized
+      base, pydantic 2.14.1 gives that field a mock serializer, and model_dump() raises TypeError
+      because the mock is not an instance of SchemaSerializer.
+    why: >-
+      basedpyright strict reports a generic base class used without type arguments, and BaseModel
+      is the bound the unparametrized generic resolves to at runtime. The parametrized spelling
+      also keeps serialization working where LiteLLM's unparametrized generic crashes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py#L17
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, so
+      model_json_schema() has no description keys where LiteLLM's does.
+    why: >-
+      The repository keeps no docstrings. The description prose is most of the LiteLLM files.
+      Keys, required keys, types, Literal values, defaults and constraints are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hide_secrets.py#L8
+  - what: >-
+      HiddenlayerAction, HiddenlayerMessages and DetectionType derive from StrEnum where LiteLLM
+      writes class X(str, enum.Enum).
+    why: >-
+      StrEnum is the wheel's spelling for a string enum; it keeps str equality, the member names
+      and values, and pydantic's enum schema and validation. The base-class spelling is invisible
+      to a config author.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/litellm_content_filter.py#L42
+  - what: >-
+      IBMDetectorOptionalParams.detector_params and extra_headers default through
+      Field(default_factory=dict) where LiteLLM uses Field(default_factory=lambda: {}).
+    why: >-
+      The Python rules forbid lambda, and both factories return a fresh empty dict on every
+      construction. Neither appears as a schema default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/ibm/ibm_detector.py#L58
