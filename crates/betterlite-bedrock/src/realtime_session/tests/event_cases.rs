@@ -3,7 +3,9 @@ use super::support::{
 };
 use crate::invoke_primitives::environment::error_class;
 use crate::realtime_session::records::{SessionEventType, SessionObject};
-use crate::realtime_session::{REQUIRES_SESSION_CONFIGURATION, RealtimeSession, complete_url};
+use crate::realtime_session::{
+    REQUIRES_SESSION_CONFIGURATION, RealtimeSession, complete_url, validate_environment,
+};
 
 pub(super) fn created_updated_events() {
     created_event();
@@ -82,6 +84,12 @@ fn updated_event() {
 
 fn session_event_helpers() {
     const { assert!(REQUIRES_SESSION_CONFIGURATION) };
+    let caller = vec![
+        ("x-a".to_owned(), "1".to_owned()),
+        ("b".to_owned(), "2".to_owned()),
+    ];
+    assert_eq!(validate_environment(&caller), caller);
+    assert!(validate_environment(&[]).is_empty());
     assert_eq!(complete_url(None), "");
     assert_eq!(complete_url(Some("")), "");
     assert_eq!(
