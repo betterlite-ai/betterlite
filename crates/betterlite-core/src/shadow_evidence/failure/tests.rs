@@ -40,7 +40,7 @@ fn detail_without_a_call_site_keeps_the_class() {
 
 #[test]
 fn detail_displays_the_message_value() {
-    assert_eq!(detail("KeyError", None, 5), "KeyError: 5");
+    assert_eq!(detail("KeyError", None, 5_i32), "KeyError: 5");
 }
 
 #[rstest]
