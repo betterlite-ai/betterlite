@@ -1,0 +1,19 @@
+kind: helper
+name: messages-since-last-assistant-empty
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      structured_messages: []
+    request_data: {}
+    input_type: request
+env: {}
+compare:
+  ignore: []

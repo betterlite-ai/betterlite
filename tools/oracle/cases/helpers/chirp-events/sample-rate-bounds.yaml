@@ -1,0 +1,25 @@
+kind: helper
+name: chirp-events-sample-rate-bounds
+call:
+  chirp_events:
+    function: sessions
+    expected_model: chirp_2
+    payloads:
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":8000}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":48000}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":7999}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":48001}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":0}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":-1}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000,"channels":2}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000,"channels":1}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/opus","rate":16000}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"pcm16","rate":16000}}}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16"}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":"audio/pcm"}}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16","audio":{"input":{"format":{"type":"audio/pcm","rate":16000}}}}}'
+env: {}
+compare:
+  ignore: []
