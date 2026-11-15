@@ -1,7 +1,7 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::openrouter_chat::policy::ChatPolicy;
-use betterlite_openai::openrouter_chat::{ChatReply, ChatRequest, OpenrouterConfig};
+use betterlite_openai::openrouter_chat::{ChatRequest, OpenrouterConfig};
 use betterlite_openai::openrouter_embedding::transform_embedding_response;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
