@@ -70,7 +70,7 @@ fn hostname_matches(hostname: &str, suffixes: &[&str]) -> bool {
     suffixes.iter().any(|suffix| {
         hostname == *suffix
             || hostname
-                .strip_suffix(suffix)
+                .strip_suffix(*suffix)
                 .is_some_and(|prefix| prefix.ends_with('.'))
     })
 }
