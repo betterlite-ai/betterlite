@@ -1,6 +1,7 @@
 import json
 import subprocess
 import sys
+from collections.abc import Sequence
 from typing import Final
 
 from pydantic import JsonValue, TypeAdapter
@@ -725,7 +726,7 @@ CLASS_NAME_DEVIATIONS: Final = {"RouterRateLimitErrorBasic"}
 
 
 def run_probe(
-    prefix: str, module_name: str, mode: str, spec: list[str] | None = None
+    prefix: str, module_name: str, mode: str, spec: Sequence[str] | None = None
 ) -> dict[str, JsonValue]:
     done = subprocess.run(
         [sys.executable, "-c", PROBE, prefix, module_name, mode, json.dumps(spec)],
@@ -737,7 +738,7 @@ def run_probe(
     return OBJECT.validate_json(done.stdout)
 
 
-def assert_same(mode: str, spec: list[str] | None = None) -> None:
+def assert_same(mode: str, spec: Sequence[str] | None = None) -> None:
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, mode, spec)
     ours = run_probe(OURS_PREFIX, OURS_MODULE, mode, spec)
     assert ours == theirs
@@ -810,10 +811,10 @@ def test_names_error_signatures() -> None:
     theirs_limit = SIGNATURE.validate_python(theirs[limit])
     assert [item[0] for item in ours_limit] == [item[0] for item in theirs_limit]
     assert [item[2] for item in ours_limit] == [item[2] for item in theirs_limit]
-    ours_kinds = NAMES.validate_python([item[1] for item in ours_limit[2:]])
-    theirs_kinds = NAMES.validate_python([item[1] for item in theirs_limit[2:]])
-    assert set(ours_kinds) == {"KEYWORD_ONLY"}
-    assert set(theirs_kinds) == {"POSITIONAL_OR_KEYWORD"}
+    ours_kinds = [item[1] for item in ours_limit[2:]]
+    theirs_kinds = [item[1] for item in theirs_limit[2:]]
+    assert set(NAMES.validate_python(ours_kinds)) == {"KEYWORD_ONLY"}
+    assert set(NAMES.validate_python(theirs_kinds)) == {"POSITIONAL_OR_KEYWORD"}
 
 
 def test_names_enum_strings() -> None:
