@@ -1188,6 +1188,8 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
+ "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
