@@ -185,32 +185,43 @@ fn value_to_map(value: Value, path: &Path) -> Result<ConfigMap, IncludeError> {
     }
 }
 
+#[must_use]
+pub fn include_entries(config: &ConfigMap) -> Result<Vec<&str>, IncludeError> {
+    let Some(value) = config.get("include") else {
+        return Ok(Vec::new());
+    };
+    let Some(entries) = value.as_array() else {
+        return Err(IncludeError::EntriesNotList);
+    };
+    let mut paths = Vec::with_capacity(entries.len());
+    for (index, entry) in entries.iter().enumerate() {
+        let Some(entry_path) = entry.as_str() else {
+            return Err(IncludeError::EntryNotString { index });
+        };
+        paths.push(entry_path);
+    }
+    Ok(paths)
+}
+
 fn queue_includes(
     config: &ConfigMap,
     declared_in: &Path,
     pending: &mut VecDeque<(String, PathBuf)>,
 ) -> Result<(), IncludeError> {
-    let Some(value) = config.get("include") else {
-        return Ok(());
-    };
-    let Some(entries) = value.as_array() else {
-        return Err(IncludeError::EntriesNotList);
-    };
-    for (index, entry) in entries.iter().enumerate() {
-        let Some(entry_path) = entry.as_str() else {
-            return Err(IncludeError::EntryNotString { index });
-        };
+    for entry_path in include_entries(config)? {
         pending.push_back((entry_path.to_owned(), declared_in.to_path_buf()));
     }
     Ok(())
 }
 
-fn without_include(mut config: ConfigMap) -> ConfigMap {
+#[must_use]
+pub fn without_include(mut config: ConfigMap) -> ConfigMap {
     config.remove("include");
     config
 }
 
-fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
+#[must_use]
+pub fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
     for (key, included_value) in included {
         if let Some(base_value) = base.get_mut(&key)
             && let (Value::Array(base_values), Value::Array(included_values)) =
