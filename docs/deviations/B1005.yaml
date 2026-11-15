@@ -1,0 +1,6 @@
+task: B1005
+deviations: []
+kept_bugs:
+  - what: The OpenAI-Beta check matches realtime=v1 as a substring of the value, so a value such as realtime=v10 also selects the beta protocol.
+    why: A client sending such a value gets the beta protocol from LiteLLM today, and a strict token parse would change what it receives after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/realtime_streaming.py#L1170
