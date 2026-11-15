@@ -24,7 +24,7 @@ fn rotation_blob_prefers_json() {
         (r#""aGVsbG8=""#, json(r#""aGVsbG8=""#)),
     ] {
         let decoded = decode_mcp_rotation_blob(text.as_bytes()).unwrap();
-        assert_eq!(decoded, RotationBlob::Json(expected), "{text}");
+        assert!(decoded == RotationBlob::Json(expected), "{text}");
     }
 }
 
@@ -32,9 +32,9 @@ fn rotation_blob_prefers_json() {
 fn rotation_blob_falls_back_to_legacy_base64() {
     let encoded = URL_SAFE.encode("legacy-secret");
     let decoded = decode_mcp_rotation_blob(encoded.as_bytes()).unwrap();
-    assert_eq!(decoded, RotationBlob::Legacy("legacy-secret".to_owned()));
+    assert!(decoded == RotationBlob::Legacy("legacy-secret".to_owned()));
     let padded = decode_mcp_rotation_blob(b"aGVsbG8=").unwrap();
-    assert_eq!(padded, RotationBlob::Legacy("hello".to_owned()));
+    assert!(padded == RotationBlob::Legacy("hello".to_owned()));
 }
 
 #[test]

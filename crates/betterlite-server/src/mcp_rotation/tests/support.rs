@@ -82,7 +82,6 @@ pub fn string(text: &str) -> JsonValue {
     JsonValue::String(text.to_owned())
 }
 
-/// The stored form of a plaintext secret field under `key`.
 #[must_use]
 pub fn sealed(text: &str, key: &str) -> String {
     match encrypt_stored_value(string(text), &cipher(key), None).unwrap() {
@@ -91,7 +90,6 @@ pub fn sealed(text: &str, key: &str) -> String {
     }
 }
 
-/// The plaintext a stored text column holds under `key`.
 #[must_use]
 pub fn open(text: &str, key: &str) -> Option<String> {
     let value = StoredValue::<()>::Text(SecretString::from(text.to_owned()));
@@ -297,7 +295,6 @@ impl MakeWriter<'_> for LogBuffer {
     }
 }
 
-/// Captures every warning and info event the rotation emits on this thread.
 #[must_use]
 pub fn capture_logs() -> (LogBuffer, DefaultGuard) {
     let buffer = LogBuffer::default();

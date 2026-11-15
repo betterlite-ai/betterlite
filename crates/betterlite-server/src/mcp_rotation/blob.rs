@@ -18,9 +18,7 @@ const LENIENT: GeneralPurpose = GeneralPurpose::new(
         .with_decode_padding_mode(DecodePaddingMode::RequireNone),
 );
 
-/// One stored rotation value as its text column can hold it: JSON, or the legacy URL-safe
-/// base64 text that Python's `_decode_user_credential` reads when decryption fails. The
-/// legacy arm is decoded plaintext, so the type carries no Debug.
+// The legacy arm is decoded plaintext, so the type carries no Debug.
 #[derive(Clone, PartialEq)]
 pub enum RotationBlob {
     Json(JsonValue),

@@ -3,7 +3,7 @@ use std::future::Future;
 
 use betterlite_db::mcp_stored_contracts::JsonValue;
 
-/// The columns a server rotation writes, each absent when the source column needed no change.
+// A column is absent when the source column needed no change.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ServerUpdate {
     pub credentials: Option<JsonValue>,
@@ -23,8 +23,7 @@ impl ServerUpdate {
     }
 }
 
-// Rows keep the column text: JSON columns are JSON text, and the user credential columns are
-// ciphertext, so no Debug is derived for them.
+// The credential columns hold ciphertext, so no Debug is derived for a row.
 #[derive(Clone, Default)]
 pub struct StoredServerRow {
     pub server_id: String,
@@ -54,8 +53,7 @@ pub struct StoredUserEnvVarRow {
     pub values_b64: String,
 }
 
-/// The four MCP tables a master-key rotation walks, as the pinned Prisma table actions expose
-/// them: `find_many` with no filter, then one update per changed row.
+// Each table is read with no filter, then written one changed row at a time.
 pub trait McpRotationStore: Sync {
     type Error: Error + Send + 'static;
 
