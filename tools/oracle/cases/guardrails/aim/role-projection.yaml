@@ -1,0 +1,13 @@
+kind: helper
+name: aim-role-projection
+call:
+  b3750:
+    function: request
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {messages: [{role: system, content: "be precise"}, {role: tool, content: "tool output"}, {role: function, content: "function output"}, {role: assistant, content: "an answer"}, {role: user, content: "hello"}]}
+    hook: moderation
+    key_alias: null
+    answer: {required_action: {action_type: monitor_action}, analysis_result: {policy_drill_down: {}}}
+    answer_status: 200
+env: {}
+compare: {ignore: []}
