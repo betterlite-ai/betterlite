@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::error::{ErrorClass, ModelScopeImageError, error_class};
 use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
@@ -19,8 +19,12 @@ use crate::openai_base_config::{Headers, Object};
 
 const CREATED: i64 = 1_700_000_000;
 
-fn object(value: Value) -> Object {
-    let Value::Object(fields) = value else {
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("the fixture must be valid JSON")
+}
+
+fn object(text: &str) -> Object {
+    let Value::Object(fields) = fixture(text) else {
         panic!("the fixture must be a JSON object");
     };
     fields
@@ -46,7 +50,7 @@ fn advertises_the_four_openai_options() {
 
 #[test]
 fn copies_the_supported_options() {
-    let params = object(json!({"n": 2_i32, "size": "1024x1024", "user": "abc"}));
+    let params = object(r#"{"n": 2, "size": "1024x1024", "user": "abc"}"#);
     let mut optional = Object::new();
     map_openai_params(&params, &mut optional, "Qwen", false).expect("the options are supported");
     assert_eq!(optional, params);
@@ -54,15 +58,15 @@ fn copies_the_supported_options() {
 
 #[test]
 fn copies_other_keys_when_drop_params_is_set() {
-    let params = object(json!({"n": 1_i32, "quality": "hd", "style": "vivid"}));
+    let params = object(r#"{"n": 1, "quality": "hd", "style": "vivid"}"#);
     let mut optional = Object::new();
     map_openai_params(&params, &mut optional, "Qwen", true).expect("drop_params drops the rest");
-    assert_eq!(optional, object(json!({"n": 1_i32})));
+    assert_eq!(optional, object(r#"{"n": 1}"#));
 }
 
 #[test]
 fn rejects_an_unsupported_option_unless_it_is_dropped() {
-    let params = object(json!({"quality": "hd"}));
+    let params = object(r#"{"quality": "hd"}"#);
     let mut optional = Object::new();
     let error = map_openai_params(&params, &mut optional, "Qwen", false)
         .expect_err("quality is not a ModelScope option");
@@ -72,8 +76,8 @@ fn rejects_an_unsupported_option_unless_it_is_dropped() {
 
 #[test]
 fn an_earlier_option_is_replaced_by_the_same_name() {
-    let mut optional = object(json!({"n": 1_i32}));
-    map_openai_params(&object(json!({"n": 3_i32})), &mut optional, "Qwen", false)
+    let mut optional = object(r#"{"n": 1}"#);
+    map_openai_params(&object(r#"{"n": 3}"#), &mut optional, "Qwen", false)
         .expect("n is supported");
     assert_eq!(optional["n"], 3_i32);
 }
@@ -168,23 +172,25 @@ fn the_caller_headers_stay_beside_the_two_that_win() {
 
 #[test]
 fn builds_the_body_from_the_model_prompt_and_options() {
-    let options = object(json!({"n": 2_i32, "size": "1024x1024", "user": null}));
+    let options = object(r#"{"n": 2, "size": "1024x1024", "user": null}"#);
     let body = image_request_body("Qwen/Qwen-Image", "a cat", &options);
     assert_eq!(
         Value::Object(body),
-        json!({
-            "model": "Qwen/Qwen-Image",
-            "prompt": "a cat",
-            "n": 2_i32,
-            "size": "1024x1024",
-            "user": null
-        })
+        fixture(
+            r#"{
+                "model": "Qwen/Qwen-Image",
+                "prompt": "a cat",
+                "n": 2,
+                "size": "1024x1024",
+                "user": null
+            }"#,
+        )
     );
 }
 
 #[test]
 fn the_body_drops_options_whose_name_starts_with_an_underscore() {
-    let options = object(json!({"n": 1_i32, "_internal": "hidden", "_": true, "user": "abc"}));
+    let options = object(r#"{"n": 1, "_internal": "hidden", "_": true, "user": "abc"}"#);
     let body = image_request_body("Qwen", "a cat", &options);
     assert!(!body.contains_key("_internal"));
     assert!(!body.contains_key("_"));
@@ -311,8 +317,12 @@ fn replays_the_modelscope_image_reply_corpus() {
         .collect();
     paths.sort();
     assert!(!paths.is_empty(), "no ModelScope image corpus seeds");
-    paths.into_iter().for_each(|path| {
-        let bytes = fs::read(&path).expect("the corpus seed reads");
+    replay_image_replies(&paths);
+}
+
+fn replay_image_replies(paths: &[PathBuf]) {
+    for path in paths {
+        let bytes = fs::read(path).expect("the corpus seed reads");
         let _reply = decode_image_generation_reply(
             &ImageReply {
                 status: 200,
@@ -320,5 +330,5 @@ fn replays_the_modelscope_image_reply_corpus() {
             },
             CREATED,
         );
-    });
+    }
 }

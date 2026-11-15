@@ -57,35 +57,28 @@ fn take(params: &mut Object, name: &str, default: Value) -> Value {
     }
 }
 
+fn take_settings(params: &mut Object, defaults: &[(&str, Value)]) -> Object {
+    defaults
+        .iter()
+        .map(|(name, default)| (String::from(*name), take(params, name, default.clone())))
+        .collect()
+}
+
 fn build_voice_setting(params: &mut Object, voice: &str) -> Object {
     let fallback = if voice.is_empty() {
         DEFAULT_VOICE_ID
     } else {
         voice
     };
-    let voice_id = take(params, "voice_id", Value::String(fallback.to_owned()));
-    let speed = take(params, "speed", Value::from(DEFAULT_SPEED));
-    let vol = take(params, "vol", Value::from(DEFAULT_VOL));
-    let pitch = take(params, "pitch", Value::from(DEFAULT_PITCH));
-    Object::from_iter([
-        (String::from("voice_id"), voice_id),
-        (String::from("speed"), speed),
-        (String::from("vol"), vol),
-        (String::from("pitch"), pitch),
-    ])
-}
-
-fn build_audio_setting(params: &mut Object) -> Object {
-    let sample_rate = take(params, "sample_rate", Value::from(DEFAULT_SAMPLE_RATE));
-    let bitrate = take(params, "bitrate", Value::from(DEFAULT_BITRATE));
-    let format = take(params, "format", Value::from(DEFAULT_FORMAT));
-    let channel = take(params, "channel", Value::from(DEFAULT_CHANNEL));
-    Object::from_iter([
-        (String::from("sample_rate"), sample_rate),
-        (String::from("bitrate"), bitrate),
-        (String::from("format"), format),
-        (String::from("channel"), channel),
-    ])
+    take_settings(
+        params,
+        &[
+            ("voice_id", Value::String(fallback.to_owned())),
+            ("speed", Value::from(DEFAULT_SPEED)),
+            ("vol", Value::from(DEFAULT_VOL)),
+            ("pitch", Value::from(DEFAULT_PITCH)),
+        ],
+    )
 }
 
 #[must_use]
@@ -97,7 +90,15 @@ pub fn speech_request_body(
 ) -> Object {
     let mut params = optional_params.clone();
     let voice_setting = build_voice_setting(&mut params, voice);
-    let audio_setting = build_audio_setting(&mut params);
+    let audio_setting = take_settings(
+        &mut params,
+        &[
+            ("sample_rate", Value::from(DEFAULT_SAMPLE_RATE)),
+            ("bitrate", Value::from(DEFAULT_BITRATE)),
+            ("format", Value::from(DEFAULT_FORMAT)),
+            ("channel", Value::from(DEFAULT_CHANNEL)),
+        ],
+    );
     let output_format = take(
         &mut params,
         "output_format",

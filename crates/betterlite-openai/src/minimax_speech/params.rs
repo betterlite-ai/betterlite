@@ -98,11 +98,11 @@ fn mapped_speed(speed: Option<Value>) -> Result<f64, MinimaxSpeechError> {
 }
 
 pub fn map_openai_params(
-    voice: Option<VoiceInput<'_>>,
+    voice: Option<&VoiceInput<'_>>,
     optional_params: &Object,
 ) -> Result<MappedOptions, MinimaxSpeechError> {
     let mut params = optional_params.clone();
-    let mapped_voice = resolve_voice_id(voice.as_ref(), &mut params);
+    let mapped_voice = resolve_voice_id(voice, &mut params);
     let response_format = params.remove("response_format");
     if matches!(&response_format, Some(value) if !value.is_null() && !value.is_string()) {
         return Err(MinimaxSpeechError::Option {

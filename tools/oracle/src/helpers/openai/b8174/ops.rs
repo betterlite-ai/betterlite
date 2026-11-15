@@ -54,7 +54,8 @@ fn mapped_options(
     voice: Option<&Voice>,
     params: &Object,
 ) -> Result<MappedOptions, Box<HelperError>> {
-    map_openai_params(voice.map(Voice::input), params).map_err(|error| {
+    let input = voice.map(Voice::input);
+    map_openai_params(input.as_ref(), params).map_err(|error| {
         failure(
             "UnsupportedParamsError",
             error.status_code(),
@@ -73,11 +74,6 @@ fn header_map(headers: &Headers) -> Result<HeaderMap, Box<HelperError>> {
         map.insert(header_name, header_value);
     }
     Ok(map)
-}
-
-fn speech_params(voice: Option<&Voice>, params: &Object) -> Result<Value, Box<HelperError>> {
-    let mapped = mapped_options(voice, params)?;
-    Ok(json!({"voice": mapped.voice, "params": mapped.params}))
 }
 
 fn speech_body(
@@ -197,7 +193,10 @@ impl Voice {
 
 pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::SpeechParams { voice, params } => speech_params(voice.as_ref(), params),
+        Step::SpeechParams { voice, params } => {
+            let mapped = mapped_options(voice.as_ref(), params)?;
+            Ok(json!({"voice": mapped.voice, "params": mapped.params}))
+        }
         Step::SpeechBody {
             model,
             input,

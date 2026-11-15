@@ -55,7 +55,7 @@ class ImageConfig(Protocol):
         /,
     ) -> str: ...
 
-    def transform_image_generation_request(
+    def transform_image_generation_request(  # ast-grep-ignore: no-long-names
         self,
         _model: str,
         _prompt: str,
@@ -65,7 +65,7 @@ class ImageConfig(Protocol):
         /,
     ) -> Object: ...
 
-    def transform_image_generation_response(
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
         self,
         _model: str,
         _raw_response: httpx.Response,
