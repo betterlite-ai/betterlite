@@ -309,6 +309,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_evals"
+path = "fuzz_targets/openai_evals.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_models"
 path = "fuzz_targets/xai_models.rs"
 test = false
@@ -367,6 +374,13 @@ bench = false
 [[bin]]
 name = "vercel_ai_gateway_reply"
 path = "fuzz_targets/vercel_ai_gateway_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openrouter_embedding_reply"
+path = "fuzz_targets/openrouter_embedding_reply.rs"
 test = false
 doc = false
 bench = false
