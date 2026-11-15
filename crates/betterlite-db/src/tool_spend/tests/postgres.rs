@@ -1,6 +1,7 @@
 use std::slice::from_ref;
 use std::time::Duration;
 
+use betterlite_models::tool_spend::ToolUsageTransaction;
 use chrono::DateTime;
 use rust_decimal::Decimal;
 
@@ -21,32 +22,25 @@ fn request_time() -> chrono::NaiveDateTime {
         .naive_utc()
 }
 
-async fn flush_two_requests(case: &ToolSpendCase) {
+async fn flush(
+    case: &ToolSpendCase,
+    transactions: &[ToolUsageTransaction],
+) -> Result<(), ToolSpendWriteError> {
     let writer = PostgresToolSpendWriter {
         store: case.store.clone(),
     };
-    let transactions = [
-        transaction(
-            "req-1",
-            "2026-01-02",
-            &["search", "fetch"],
-            Decimal::new(125, 2),
-            42,
-        ),
-        transaction("req-2", "2026-01-03", &["fetch"], Decimal::new(75, 2), 8),
-    ];
     let jitter = FixedJitter { nanos: 0 };
     let pause = RecordingPause::default();
-    flush_tool_usage_transactions(
+    let outcome = flush_tool_usage_transactions(
         &writer,
-        &transactions,
+        transactions,
         policy(2_000_000, 100, 3),
         &jitter,
         &pause,
     )
-    .await
-    .expect("the flush writes");
+    .await;
     assert!(pause.delays().is_empty());
+    outcome
 }
 
 fn expected_index_rows() -> [(String, String, chrono::NaiveDateTime); 3] {
@@ -84,35 +78,20 @@ fn expected_daily_rollups() -> [(String, String, f64, i64, i64); 3] {
     ]
 }
 
-async fn flush_blocked_tool(case: &ToolSpendCase) -> Result<(), ToolSpendWriteError> {
-    let writer = PostgresToolSpendWriter {
-        store: case.store.clone(),
-    };
-    let transactions = [transaction(
-        "req-1",
-        "2026-01-02",
-        &["alpha", "blocked"],
-        Decimal::new(125, 2),
-        42,
-    )];
-    let jitter = FixedJitter { nanos: 0 };
-    let pause = RecordingPause::default();
-    let outcome = flush_tool_usage_transactions(
-        &writer,
-        &transactions,
-        policy(2_000_000, 100, 3),
-        &jitter,
-        &pause,
-    )
-    .await;
-    assert!(pause.delays().is_empty());
-    outcome
-}
-
 #[tokio::test]
 async fn flushes_index_rows_and_daily_rollups() {
     let case = ToolSpendCase::new().await;
-    flush_two_requests(&case).await;
+    let transactions = [
+        transaction(
+            "req-1",
+            "2026-01-02",
+            &["search", "fetch"],
+            Decimal::new(125, 2),
+            42,
+        ),
+        transaction("req-2", "2026-01-03", &["fetch"], Decimal::new(75, 2), 8),
+    ];
+    flush(&case, &transactions).await.expect("the flush writes");
     assert_eq!(case.index_rows().await, expected_index_rows());
     assert_eq!(case.daily_rollups().await, expected_daily_rollups());
     case.close().await;
@@ -123,7 +102,14 @@ async fn rolls_back_every_daily_increment_when_a_later_upsert_fails() {
     let case = ToolSpendCase::new().await;
     case.execute(REJECT_BLOCKED_SQL).await;
     case.execute(SEED_ALPHA_SQL).await;
-    let outcome = flush_blocked_tool(&case).await;
+    let transactions = [transaction(
+        "req-1",
+        "2026-01-02",
+        &["alpha", "blocked"],
+        Decimal::new(125, 2),
+        42,
+    )];
+    let outcome = flush(&case, &transactions).await;
     assert!(matches!(outcome, Err(ToolSpendWriteError::AfterSend(_))));
     let start = request_time();
     assert_eq!(
