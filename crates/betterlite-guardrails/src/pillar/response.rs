@@ -164,17 +164,17 @@ pub fn process_pillar_response(
     let alias_metadata =
         key != "metadata" && !matches!(data.get("metadata"), Some(GuardrailValue::Object(_)));
     store_response_metadata(&mut bucket, response, settings);
-    if response.flagged.unwrap_or(false) {
-        if let Some(detail) = apply_flagged_action(settings, response, data) {
-            // the writes above stay on the request data, as they do before LiteLLM raises
-            store_bucket(data, key, bucket, alias_metadata);
-            return Err(PillarError::Http(GuardrailFailure::HttpObject {
-                status: BLOCKED_STATUS,
-                detail,
-            }));
-        }
+    if response.flagged.unwrap_or(false)
+        && let Some(detail) = apply_flagged_action(settings, response, data)
+    {
+        // the writes above stay on the request data, as they do before LiteLLM raises
+        store_bucket(data, key, bucket, alias_metadata);
+        return Err(PillarError::Http(GuardrailFailure::HttpObject {
+            status: BLOCKED_STATUS,
+            detail,
+        }));
     }
-    build_pillar_response_headers(&mut bucket);
+    let _headers = build_pillar_response_headers(&mut bucket);
     store_bucket(data, key, bucket, alias_metadata);
     Ok(())
 }

@@ -3,7 +3,7 @@ use betterlite_config::loader::EnvironmentLookup;
 use super::error::PillarError;
 
 // LiteLLM's _parse_bool_value takes bool, int or str, and the resolver's provided value can be any of them
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BoolSetting {
     Boolean(bool),
     Integer(i64),

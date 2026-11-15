@@ -29,7 +29,7 @@ fn text(value: &str) -> BoolSetting {
 #[case::integer_one(BoolSetting::Integer(1))]
 #[case::integer_negative(BoolSetting::Integer(-3))]
 fn parses_true_values(#[case] value: BoolSetting) {
-    assert_eq!(parse_flag_setting(&value), Ok(true));
+    assert!(matches!(parse_flag_setting(&value), Ok(true)));
 }
 
 #[rstest]
@@ -42,7 +42,7 @@ fn parses_true_values(#[case] value: BoolSetting) {
 #[case::boolean_false(BoolSetting::Boolean(false))]
 #[case::integer_zero(BoolSetting::Integer(0))]
 fn parses_false_values(#[case] value: BoolSetting) {
-    assert_eq!(parse_flag_setting(&value), Ok(false));
+    assert!(matches!(parse_flag_setting(&value), Ok(false)));
 }
 
 #[rstest]

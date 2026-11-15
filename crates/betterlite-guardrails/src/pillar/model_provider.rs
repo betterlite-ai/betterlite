@@ -96,20 +96,18 @@ pub fn extract_model_and_provider(
     let custom = optional_text(data, "custom_llm_provider")?;
     let api_base = optional_text(data, "api_base")?;
     let api_key = optional_text(data, "api_key")?;
-    match resolver.model_and_provider(
+    if let Ok((chosen, provider)) = resolver.model_and_provider(
         &model,
         custom.as_deref(),
         api_base.as_deref(),
         api_key.as_deref(),
     ) {
-        Ok((resolved, provider)) => Ok((non_empty(resolved), non_empty(provider))),
-        Err(_) => {
-            // LiteLLM reads the provider field only when the custom provider is absent or empty
-            let declared = match custom {
-                Some(custom) if !custom.is_empty() => Some(custom),
-                _ => optional_text(data, "provider")?,
-            };
-            Ok((non_empty(model), non_empty(declared.unwrap_or_default())))
-        }
+        return Ok((non_empty(chosen), non_empty(provider)));
     }
+    // LiteLLM reads the provider field only when the custom provider is absent or empty
+    let declared = match custom {
+        Some(name) if !name.is_empty() => Some(name),
+        _ => optional_text(data, "provider")?,
+    };
+    Ok((non_empty(model), non_empty(declared.unwrap_or_default())))
 }

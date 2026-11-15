@@ -1,3 +1,4 @@
+use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
 use thiserror::Error;
 
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -25,12 +26,12 @@ pub enum PillarError {
     #[error("a Pillar request header name is not valid")]
     InvalidHeaderName {
         #[source]
-        source: reqwest::header::InvalidHeaderName,
+        source: InvalidHeaderName,
     },
     #[error("a Pillar request header value is not valid")]
     InvalidHeaderValue {
         #[source]
-        source: reqwest::header::InvalidHeaderValue,
+        source: InvalidHeaderValue,
     },
     #[error("the {field} field is not {expected}")]
     Field {
