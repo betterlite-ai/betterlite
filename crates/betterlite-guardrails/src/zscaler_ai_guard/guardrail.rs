@@ -168,7 +168,7 @@ fn handle_response(status: StatusCode, body: &[u8]) -> Result<(), ZscalerAiGuard
     }
     let answer: PolicyResponse = serde_json::from_slice(body)
         .map_err(|source| ZscalerAiGuardError::ResponseJson { source })?;
-    evaluate_answer(&answer)
+    evaluate_answer(&answer.exact())
 }
 
 // LiteLLM's HTTP client raises on every status outside 2xx before _handle_response runs, so those arrive as a 500

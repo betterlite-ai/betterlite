@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::error::ZscalerAiGuardError;
+use super::wire::exact_value;
 use crate::generic_guardrail_contracts::headers::python_str;
 
 const METADATA: &str = "metadata";
@@ -47,6 +48,7 @@ pub(crate) fn selected_policy_id(
     let selected = from_metadata.or(from_user_key).or(from_team);
     Ok(selected
         .cloned()
+        .map(exact_value)
         .unwrap_or(GuardrailValue::SignedInteger(configured)))
 }
 
@@ -59,7 +61,9 @@ fn metadata_value(
         .and_then(|fields| fields.get(key))
         .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(python_str(value).trim().to_owned()));
+        return Ok(Some(
+            python_str(&exact_value(value.clone())).trim().to_owned(),
+        ));
     }
     // transform_user_api_key_dict_to_metadata prefixes key_alias with user_api_key_
     if key == ALIAS
@@ -67,14 +71,18 @@ fn metadata_value(
             .and_then(|fields| fields.get(KEY_ALIAS))
             .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(python_str(value).trim().to_owned()));
+        return Ok(Some(
+            python_str(&exact_value(value.clone())).trim().to_owned(),
+        ));
     }
     let metadata = section(request_data, METADATA)?;
     if let Some(value) = metadata
         .and_then(|fields| fields.get(key))
         .filter(|value| !matches!(value, GuardrailValue::Null))
     {
-        return Ok(Some(python_str(value).trim().to_owned()));
+        return Ok(Some(
+            python_str(&exact_value(value.clone())).trim().to_owned(),
+        ));
     }
     Ok(None)
 }

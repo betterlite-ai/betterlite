@@ -105,6 +105,13 @@ fn metadata_values_are_trimmed() {
 }
 
 #[test]
+fn decimal_metadata_values_render_the_way_python_prints_them() {
+    let data = request_data(r#"{"metadata": {"user_api_key_user_id": 7.5}}"#);
+    let value = metadata::header_value(&data, "user_api_key_user_id").unwrap();
+    assert_eq!(value, "7.5");
+}
+
+#[test]
 fn metadata_header_values_default_to_not_available() {
     let empty = request_data(r#"{"metadata": {"user_api_key_user_id": "   "}}"#);
     assert_eq!(
@@ -359,6 +366,30 @@ async fn a_missing_transaction_id_prints_as_none() {
     );
 }
 
+#[tokio::test]
+async fn a_decimal_transaction_id_is_printed_the_way_python_prints_it() {
+    let mock = mock(
+        200,
+        r#"{"statusCode": 200, "action": "BLOCK", "transactionId": 6.0, "detectorResponses": {}}"#,
+    )
+    .await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["attack"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.detail(),
+        ZscalerErrorDetail::Block {
+            error: "Content blocked by Zscaler AI Guard: {'transactionId': 6.0, 'blockingDetectors': []}".to_owned()
+        }
+    );
+}
+
 async fn passing_answer(action: &str) {
     let reply = format!(r#"{{"statusCode": 200, "action": "{action}"}}"#);
     let mock = mock(200, &reply).await;
@@ -446,6 +477,53 @@ async fn a_bad_status_code_in_the_answer_is_a_500() {
         ZscalerErrorDetail::Service {
             error_type: super::ERROR_TYPE,
             reason: "statusCode in response: 400, errorMsg: bad policy".to_owned()
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_decimal_error_message_is_printed_the_way_python_prints_it() {
+    let mock = mock(
+        200,
+        r#"{"statusCode": 400, "errorMsg": [4.5, {"code": 5.5}]}"#,
+    )
+    .await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.detail(),
+        ZscalerErrorDetail::Service {
+            error_type: super::ERROR_TYPE,
+            reason: "statusCode in response: 400, errorMsg: [4.5, {'code': 5.5}]".to_owned()
+        }
+    );
+}
+
+#[tokio::test]
+async fn a_decimal_action_is_printed_the_way_python_prints_it() {
+    let mock = mock(200, r#"{"statusCode": 200, "action": 4.5}"#).await;
+    let guardrail = guardrail(&mock.base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["hello"]),
+            &request_data(r#"{"metadata": {}}"#),
+            GuardrailInputType::Request,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.detail(),
+        ZscalerErrorDetail::Service {
+            error_type: super::ERROR_TYPE,
+            reason: "Action field in response is 4.5, expecting 'ALLOW', 'BLOCK' or 'DETECT'"
+                .to_owned()
         }
     );
 }
