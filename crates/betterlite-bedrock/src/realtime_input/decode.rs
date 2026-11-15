@@ -97,10 +97,10 @@ fn shape(source: serde_json::Error) -> InputError {
     }
 }
 
-fn field<T: DeserializeOwned>(
-    fields: &BTreeMap<Cow<'_, str>, &RawValue>,
-    name: &str,
-) -> Result<Option<T>, InputError> {
+fn field<T>(fields: &BTreeMap<Cow<'_, str>, &RawValue>, name: &str) -> Result<Option<T>, InputError>
+where
+    T: DeserializeOwned,
+{
     fields
         .get(name)
         .map(|raw| serde_json::from_str(raw.get()).map_err(shape))
