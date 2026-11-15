@@ -102,7 +102,7 @@ def named_answer(model_class: ModelClass) -> dict[str, JsonValue]:
     return fields
 
 
-def provider_fields() -> dict[str, JsonValue]:
+def provider_fields() -> dict[str, dict[str, JsonValue]]:
     models: tuple[ModelClass, ModelClass, ModelClass] = (ToolPermissionModel, HideSecretsModel, LakeraModel)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/base.py#L12
     tool_permission, hide_secrets, lakera = models
     bedrock: dict[str, JsonValue] = {
@@ -122,8 +122,9 @@ def provider_fields() -> dict[str, JsonValue]:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["model"] == "synthetic_generic":
-        return {
+        answers: dict[str, JsonValue] = {
             "unfilled": named_answer(SyntheticGenericUnfilled),
             "filled": named_answer(SyntheticGenericFilled),
         }
+        return answers
     return provider_fields()[input_value["model"]]
