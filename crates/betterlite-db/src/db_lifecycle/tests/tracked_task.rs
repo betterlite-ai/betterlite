@@ -35,6 +35,7 @@ async fn a_task_that_panics_is_reported_when_it_stops() {
     assert!(tracked.start_with(&tasks, async {
         panic!("the loop died");
     }));
+    tasks.close();
     tasks.wait().await;
     assert!(tracked.stop().await);
     drop(guard);

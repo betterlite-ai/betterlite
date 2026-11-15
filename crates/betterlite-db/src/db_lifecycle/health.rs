@@ -30,7 +30,7 @@ pub struct HealthFailure {
     pub duration: Duration,
 }
 
-pub trait HealthCheck {
+pub trait HealthCheck: Send + Sync {
     type Error: DatabaseFailure;
 
     fn health_check(&self) -> LifecycleFuture<'_, Result<(), Self::Error>>;

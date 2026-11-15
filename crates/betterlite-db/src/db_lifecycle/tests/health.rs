@@ -15,6 +15,7 @@ async fn probe_failure_retries_three_times_and_reports_each_try() {
     let started = Instant::now();
     harness.state.script_failing_probes(3, FakeFailure::Dropped);
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     drop(guard);
     assert!(matches!(outcome, Err(FakeFailure::Dropped)));
@@ -60,6 +61,7 @@ async fn probe_success_stops_the_retries() {
         .state
         .script_probe(Reply::Value(Err(FakeFailure::Dropped)));
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert!(outcome.is_ok());
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 2);
@@ -76,6 +78,7 @@ async fn planned_replacement_after_a_moved_generation_is_not_reported() {
     ));
     *harness.state.generation_during_probe.lock().unwrap() = Some(1);
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     drop(guard);
     assert!(matches!(outcome, Err(FakeFailure::Dropped)));
@@ -103,6 +106,7 @@ async fn planned_replacement_without_a_moved_generation_is_reported() {
         Err(FakeFailure::Dropped),
     ));
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert!(matches!(outcome, Err(FakeFailure::Dropped)));
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
@@ -126,6 +130,7 @@ async fn planned_replacement_needs_a_fresh_probe_to_answer() {
         .script_probe(Reply::Value(Err(FakeFailure::Caller)));
     *harness.state.generation_during_probe.lock().unwrap() = Some(2);
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     drop(guard);
     assert!(matches!(outcome, Err(FakeFailure::Dropped)));
@@ -149,6 +154,7 @@ async fn a_caller_error_is_never_absorbed_by_a_replacement() {
     ));
     *harness.state.generation_during_probe.lock().unwrap() = Some(3);
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert!(matches!(outcome, Err(FakeFailure::Caller)));
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
@@ -171,6 +177,7 @@ async fn report_is_spawned_and_not_awaited_by_the_caller() {
     assert_eq!(harness.reporter.started.load(Ordering::SeqCst), 3);
     assert!(harness.reporter.failures().is_empty());
     gate.notify_waiters();
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert_eq!(harness.reporter.failures().len(), 3);
 }
@@ -183,6 +190,7 @@ async fn health_check_gives_up_after_the_budget() {
         Err(FakeFailure::Dropped),
     ));
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert!(matches!(outcome, Err(FakeFailure::Dropped)));
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
@@ -199,6 +207,7 @@ async fn health_check_retries_just_under_the_budget() {
         Err(FakeFailure::Dropped),
     ));
     let outcome = harness.checker.run_health_check().await;
+    harness.checker.tasks.close();
     harness.checker.tasks.wait().await;
     assert!(outcome.is_ok());
     assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 2);

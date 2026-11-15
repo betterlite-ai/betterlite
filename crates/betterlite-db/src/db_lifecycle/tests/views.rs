@@ -250,6 +250,14 @@ async fn view_setup_gives_up_when_the_attempts_keep_failing() {
         "{:?}",
         logs.lines()
     );
+    assert!(
+        logs.lines().iter().any(|line| line.contains(
+            "Spend view setup attempt failed, retrying until the schema settles: the spend view catalog \
+             could not be read: the connection dropped"
+        )),
+        "{:?}",
+        logs.lines()
+    );
 }
 
 #[tokio::test]
