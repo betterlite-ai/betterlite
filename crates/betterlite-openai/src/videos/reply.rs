@@ -14,7 +14,7 @@ pub enum VideoObjectType {
 }
 
 // VideoObject: the fields LiteLLM's pydantic model declares, in the same optionality
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VideoObject {
     pub id: String,
     pub object: VideoObjectType,
@@ -31,17 +31,16 @@ pub struct VideoObject {
     pub usage: Option<Map<String, Value>>,
 }
 
-fn parse_duration(text: &str) -> Option<f64> {
-    let parsed: f64 = text.trim().parse().ok()?;
-    parsed.is_finite().then_some(parsed)
-}
-
 impl VideoObject {
     // float(seconds) in LiteLLM: a string "0" is truthy and becomes 0.0, a numeric 0 is not
     #[must_use]
     pub fn duration_seconds(&self) -> Option<f64> {
         match self.seconds.as_ref()? {
-            Value::String(text) => parse_duration(text),
+            Value::String(text) => text
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .filter(|parsed| parsed.is_finite()),
             Value::Number(number) => number
                 .as_f64()
                 .filter(|value| value.classify() != FpCategory::Zero && value.is_finite()),
@@ -53,8 +52,8 @@ impl VideoObject {
 
 // the encoder leaves an empty provider or id alone; only create passes a model
 pub(crate) fn wrap_video_id(video: &mut VideoObject, provider: Option<&str>, model: Option<&str>) {
-    if let Some(provider) = provider {
-        video.id = encode_video_id_with_provider(&video.id, provider, model);
+    if let Some(name) = provider {
+        video.id = encode_video_id_with_provider(&video.id, name, model);
     }
 }
 
@@ -67,7 +66,7 @@ pub fn duration_usage(video: &VideoObject) -> Map<String, Value> {
     usage
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VideoReply {
     Video(Box<VideoObject>),
     List(Box<VideoList>),
@@ -84,8 +83,9 @@ pub fn decode_video_reply(body: &[u8]) -> Result<VideoReply, VideoError> {
     Ok(VideoReply::Video(Box::new(video)))
 }
 
-pub(crate) fn expect_video(reply: VideoReply) -> Result<VideoObject, VideoError> {
-    match reply {
+// the video endpoints (create, remix, status, delete) accept only the single-object shape
+pub fn decode_video(body: &[u8]) -> Result<VideoObject, VideoError> {
+    match decode_video_reply(body)? {
         VideoReply::Video(video) => Ok(*video),
         VideoReply::List(_) => Err(VideoError::ExpectedVideo),
     }

@@ -32,7 +32,7 @@ pub struct VideoCredentials {
     pub environment_api_key: Option<SecretString>,
 }
 
-const fn redacted(value: &Option<SecretString>) -> Option<&'static str> {
+const fn redacted(value: Option<&SecretString>) -> Option<&'static str> {
     if value.is_some() {
         Some("[REDACTED]")
     } else {
@@ -41,14 +41,16 @@ const fn redacted(value: &Option<SecretString>) -> Option<&'static str> {
 }
 
 impl fmt::Debug for VideoCredentials {
-    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("VideoCredentials")
-            .field("api_key", &redacted(&self.api_key))
-            .field("params_api_key", &redacted(&self.params_api_key))
-            .field("global_api_key", &redacted(&self.global_api_key))
-            .field("openai_key", &redacted(&self.openai_key))
-            .field("environment_api_key", &redacted(&self.environment_api_key))
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("VideoCredentials")
+            .field("api_key", &redacted(self.api_key.as_ref()))
+            .field("params_api_key", &redacted(self.params_api_key.as_ref()))
+            .field("global_api_key", &redacted(self.global_api_key.as_ref()))
+            .field("openai_key", &redacted(self.openai_key.as_ref()))
+            .field(
+                "environment_api_key",
+                &redacted(self.environment_api_key.as_ref()),
+            )
             .finish()
     }
 }
@@ -70,10 +72,10 @@ fn first_secret(credentials: &VideoCredentials) -> Option<&SecretString> {
 // validate_environment: the first truthy key wins, and an absent key still writes Bearer None
 #[must_use]
 pub fn validate_environment(mut headers: Headers, credentials: &VideoCredentials) -> Headers {
-    let authorization = match first_secret(credentials) {
-        Some(secret) => format!("Bearer {}", secret.expose_secret()),
-        None => "Bearer None".to_owned(),
-    };
+    let authorization = first_secret(credentials).map_or_else(
+        || "Bearer None".to_owned(),
+        |secret| format!("Bearer {}", secret.expose_secret()),
+    );
     headers.insert(
         "Authorization".to_owned(),
         SecretString::from(authorization),
@@ -84,8 +86,10 @@ pub fn validate_environment(mut headers: Headers, credentials: &VideoCredentials
 // get_complete_url defaults only a None api_base and strips every trailing slash
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
-    let base = api_base.unwrap_or(DEFAULT_API_BASE);
-    format!("{}/videos", base.trim_end_matches('/'))
+    format!(
+        "{}/videos",
+        api_base.unwrap_or(DEFAULT_API_BASE).trim_end_matches('/')
+    )
 }
 
 // map_openai_params copies every option, supported or not, and drop_params changes nothing

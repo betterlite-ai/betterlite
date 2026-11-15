@@ -49,6 +49,20 @@ fn openai_videos_credential_identity_isolation() {
     assert_eq!(complete_url(None), format!("{DEFAULT_API_BASE}/videos"));
 }
 
+fn failure_samples() -> [VideoError; 3] {
+    [
+        VideoError::Path {
+            source: HttpError::Required {
+                field_name: "video_id".to_owned(),
+            },
+        },
+        VideoError::ExpectedVideo,
+        VideoError::Reply {
+            source: serde_json::from_str::<Value>("{").unwrap_err(),
+        },
+    ]
+}
+
 #[test]
 fn openai_videos_secret_safe_failure() {
     let secret = "sk-live-fixture-secret";
@@ -70,20 +84,12 @@ fn openai_videos_secret_safe_failure() {
     );
     assert!(!format!("{returned:?}").contains(secret));
 
-    let failures = [
-        VideoError::Path {
-            source: HttpError::Required {
-                field_name: "video_id".to_owned(),
-            },
-        },
-        VideoError::ExpectedVideo,
-        VideoError::Reply {
-            source: serde_json::from_str::<Value>("{").unwrap_err(),
-        },
-    ];
-    for failure in failures {
-        assert!(!format!("{failure} {failure:?}").contains(secret));
-    }
+    let failures = failure_samples();
+    assert!(
+        failures
+            .iter()
+            .all(|failure| !format!("{failure} {failure:?}").contains(secret))
+    );
 
     let error = get_error_class("rate limited", 429, headers(&[("retry-after", "1")]));
     assert!(!format!("{error:?}").contains(secret));

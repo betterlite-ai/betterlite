@@ -8,7 +8,7 @@ use crate::videos::VideoOptions;
 use crate::videos::error::VideoError;
 
 // a list item keeps every key the provider sent; id and model are the keys the wrap reads
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VideoListItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
@@ -23,7 +23,7 @@ pub struct VideoListItem {
 }
 
 // the list keeps every top-level key the provider sent; the declared ones are the keys the wrap reads
-#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 pub struct VideoList {
     #[serde(default)]
     pub data: Vec<VideoListItem>,
@@ -63,15 +63,15 @@ pub fn list_request(
     extra_query: &VideoOptions,
 ) -> (String, VideoOptions) {
     let mut params = VideoOptions::new();
-    if let Some(after) = after {
-        let original = decode_video_id_with_provider(after).video_id;
+    if let Some(cursor) = after {
+        let original = decode_video_id_with_provider(cursor).video_id;
         params.insert("after".to_owned(), Value::String(original));
     }
-    if let Some(limit) = limit {
-        params.insert("limit".to_owned(), Value::String(limit.to_string()));
+    if let Some(count) = limit {
+        params.insert("limit".to_owned(), Value::String(count.to_string()));
     }
-    if let Some(order) = order {
-        params.insert("order".to_owned(), Value::String(order.to_owned()));
+    if let Some(direction) = order {
+        params.insert("order".to_owned(), Value::String(direction.to_owned()));
     }
     for (name, value) in extra_query {
         params.insert(name.clone(), value.clone());
@@ -79,8 +79,7 @@ pub fn list_request(
     (api_base.to_owned(), params)
 }
 
-// transform_video_list_response: ids and cursors are wrapped only inside the data-key branch;
-// the encoder leaves an empty provider or id alone, as LiteLLM's truthiness checks do
+// transform_video_list_response: ids and cursors are wrapped only inside the data-key branch
 pub fn list_response(body: &[u8], provider: Option<&str>) -> Result<VideoList, VideoError> {
     let json = serde_json::from_slice::<Value>(body)?;
     let in_data_branch = carries_list_data(&json);

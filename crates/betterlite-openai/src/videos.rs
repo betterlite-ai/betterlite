@@ -1,7 +1,6 @@
 pub mod config;
 pub mod content;
 pub mod create;
-pub mod delete;
 pub mod error;
 pub mod list;
 pub mod remix;

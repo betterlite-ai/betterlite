@@ -8,12 +8,10 @@ use crate::openai_video_identifiers::multipart::{MediaBody, MultipartPart, add_i
 use crate::videos::VideoOptions;
 use crate::videos::config::map_params;
 use crate::videos::error::VideoError;
-use crate::videos::reply::{
-    VideoObject, decode_video_reply, duration_usage, expect_video, wrap_video_id,
-};
+use crate::videos::reply::{VideoObject, decode_video, duration_usage, wrap_video_id};
 
 // VideoCreateOptionalRequestParams: the declared text options are typed, every other key rides along
-#[derive(Clone, Debug, Default, PartialEq, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct VideoCreate {
     pub seconds: Option<String>,
     pub size: Option<String>,
@@ -63,7 +61,7 @@ pub fn create_response(
     body: &[u8],
     provider: Option<&str>,
 ) -> Result<VideoObject, VideoError> {
-    let mut video = expect_video(decode_video_reply(body)?)?;
+    let mut video = decode_video(body)?;
     wrap_video_id(&mut video, provider, Some(model));
     video.usage = Some(duration_usage(&video));
     Ok(video)

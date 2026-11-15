@@ -7,58 +7,70 @@ use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::config::{
     MULTIPART_FORM_DATA, SUPPORTED_PARAMS, VideoCredentials, complete_url, validate_environment,
 };
-use betterlite_openai::videos::content::{content_request, content_response};
+use betterlite_openai::videos::content::content_request;
 use betterlite_openai::videos::create::{create_request, create_response};
-use betterlite_openai::videos::delete::{delete_request, delete_response};
 use betterlite_openai::videos::error::{VideoError, get_error_class};
 use betterlite_openai::videos::list::{list_request, list_response};
 use betterlite_openai::videos::remix::{remix_request, remix_response};
-use betterlite_openai::videos::reply::VideoObject;
-use betterlite_openai::videos::status::{status_request, status_response};
+use betterlite_openai::videos::reply::{VideoObject, decode_video};
+use betterlite_openai::videos::segment::path_url;
+use betterlite_openai::videos::status::status_response;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use super::input::{
-    Body, Call, ContentRequest, Create, CreateResponse, Environment, ListRequest, Reference,
-    RemixRequest, Request, Response,
+    Body, Call, Create, CreateResponse, Environment, ErrorCall, ListRequest, Reference, Request,
+    Response,
 };
 
-type PathRequest = fn(&str, &str) -> Result<(String, VideoOptions), VideoError>;
 type VideoReply = fn(&[u8], Option<&str>) -> Result<VideoObject, VideoError>;
 
 pub(super) fn run_call(call: &Call) -> HelperResult {
     match call {
         Call::Create(create) => create_view(create),
         Call::CreateResponse(response) => create_response_view(response),
-        Call::ContentRequest(request) => content_request_view(request),
+        Call::ContentRequest(request) => request_view(content_request(
+            &request.video_id,
+            &request.api_base,
+            request.variant.as_deref(),
+        )),
         Call::ContentResponse(body) => {
             let bytes = STANDARD.decode(&body.body_base64).or_value_error()?;
-            Ok(json!({"body_base64": STANDARD.encode(content_response(&bytes))}))
+            Ok(json!({"body_base64": STANDARD.encode(bytes)}))
         }
-        Call::RemixRequest(request) => remix_request_view(request),
+        Call::RemixRequest(request) => request_view(remix_request(
+            &request.video_id,
+            &request.prompt,
+            &request.api_base,
+            &VideoOptions::new(),
+        )),
         Call::RemixResponse(response) => video_response_view(response, remix_response),
         Call::ListRequest(request) => list_request_view(request),
         Call::ListResponse(response) => list_response_view(response),
-        Call::DeleteRequest(request) => path_request_view(request, delete_request),
+        Call::DeleteRequest(request) => path_request_view(request),
         Call::DeleteResponse(body) => delete_response_view(body),
-        Call::StatusRequest(request) => path_request_view(request, status_request),
+        Call::StatusRequest(request) => path_request_view(request),
         Call::StatusResponse(response) => video_response_view(response, status_response),
         Call::ValidateEnvironment(environment) => environment_view(environment),
-        Call::CompleteUrl(call) => Ok(json!({"url": complete_url(call.api_base.as_deref())})),
-        Call::ErrorClass(call) => {
-            let error = get_error_class(&call.message, call.status, call.headers.clone());
-            Err(Box::new(HelperError {
-                class: "BaseLLMException".to_owned(),
-                status: Some(error.status_code),
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: error.message,
-            }))
+        Call::CompleteUrl(complete) => {
+            Ok(json!({"url": complete_url(complete.api_base.as_deref())}))
         }
+        Call::ErrorClass(failure) => error_class_view(failure),
     }
+}
+
+fn error_class_view(call: &ErrorCall) -> HelperResult {
+    let error = get_error_class(&call.message, call.status, call.headers.clone());
+    Err(Box::new(HelperError {
+        class: "BaseLLMException".to_owned(),
+        status: Some(error.status_code),
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message: error.message,
+    }))
 }
 
 fn files_view(files: &[MultipartPart<'_>]) -> Vec<Value> {
@@ -111,42 +123,31 @@ fn create_view(call: &Create) -> HelperResult {
     }))
 }
 
-fn content_request_view(call: &ContentRequest) -> HelperResult {
-    let (url, params) = content_request(&call.video_id, &call.api_base, call.variant.as_deref())
-        .or_value_error()?;
-    Ok(json!({"url": url, "params": params}))
-}
-
-fn remix_request_view(call: &RemixRequest) -> HelperResult {
-    let (url, params) = remix_request(
-        &call.video_id,
-        &call.prompt,
-        &call.api_base,
-        &VideoOptions::new(),
-    )
-    .or_value_error()?;
-    Ok(json!({"url": url, "params": params}))
+fn request_view(request: Result<(String, VideoOptions), VideoError>) -> HelperResult {
+    request
+        .or_value_error()
+        .map(|(url, params)| json!({"url": url, "params": params}))
 }
 
 fn list_request_view(call: &ListRequest) -> HelperResult {
-    let (url, params) = list_request(
+    let listed = list_request(
         &call.api_base,
         call.after.as_deref(),
         call.limit,
         call.order.as_deref(),
         &VideoOptions::new(),
     );
-    Ok(json!({"url": url, "params": params}))
+    request_view(Ok(listed))
 }
 
-fn path_request_view(call: &Request, transform: PathRequest) -> HelperResult {
-    let (url, params) = transform(&call.video_id, &call.api_base).or_value_error()?;
-    Ok(json!({"url": url, "params": params}))
+fn path_request_view(call: &Request) -> HelperResult {
+    let url = path_url(&call.video_id, &call.api_base, "");
+    request_view(url.map(|path| (path, VideoOptions::new())))
 }
 
 fn delete_response_view(body: &Body) -> HelperResult {
     let bytes = STANDARD.decode(&body.body_base64).or_value_error()?;
-    let video = delete_response(&bytes).or_value_error()?;
+    let video = decode_video(&bytes).or_value_error()?;
     serde_json::to_value(&video).or_value_error()
 }
 

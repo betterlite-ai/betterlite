@@ -18,15 +18,9 @@ pub fn content_request(
     variant: Option<&str>,
 ) -> Result<(String, VideoOptions), VideoError> {
     let mut url = path_url(video_id, api_base, "/content")?;
-    if let Some(variant) = variant {
+    if let Some(value) = variant {
         url.push_str("?variant=");
-        url.push_str(&utf8_percent_encode(variant, VARIANT).to_string());
+        url.push_str(&utf8_percent_encode(value, VARIANT).to_string());
     }
     Ok((url, VideoOptions::new()))
-}
-
-// transform_video_content_response: the reply bytes are handed back untouched
-#[must_use]
-pub fn content_response(body: &[u8]) -> Vec<u8> {
-    body.to_vec()
 }

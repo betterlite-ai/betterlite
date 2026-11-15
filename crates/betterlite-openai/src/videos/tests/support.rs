@@ -1,10 +1,36 @@
 use secrecy::{ExposeSecret, SecretString};
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::openai_base_config::Headers;
+use crate::openai_video_identifiers::ids::decode_video_id_with_provider;
 use crate::vector_stores::Headers as SecretHeaders;
 use crate::videos::config::VideoCredentials;
 use crate::videos::create::VideoCreate;
+
+pub(super) const MODEL: &str = "sora-2";
+pub(super) const PROMPT: &str = "make a video";
+pub(super) const API_BASE: &str = "https://mock.example/v1/videos";
+pub(super) const SLASH_BASE: &str = "https://mock.example/v1/videos/";
+
+pub(super) fn video_of(encoded: &str) -> String {
+    decode_video_id_with_provider(encoded).video_id
+}
+
+pub(super) fn model_of(encoded: &str) -> Option<String> {
+    decode_video_id_with_provider(encoded).model_id
+}
+
+pub(super) fn video_body(id: &str, seconds: Option<Value>) -> Vec<u8> {
+    let mut fields = options(&[
+        ("id", json!(id)),
+        ("object", json!("video")),
+        ("status", json!("completed")),
+    ]);
+    if let Some(value) = seconds {
+        fields.insert("seconds".to_owned(), value);
+    }
+    body(&Value::Object(fields))
+}
 
 pub(super) fn options(pairs: &[(&str, Value)]) -> Map<String, Value> {
     pairs
