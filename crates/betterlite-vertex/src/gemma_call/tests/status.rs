@@ -19,7 +19,7 @@ use tokio::io::AsyncReadExt as _;
 use tokio::net::{TcpListener, TcpSocket};
 use url::Url;
 
-use crate::gemma_call::error::FailureStatus;
+use crate::gemma_call::error::FailureStatus as _;
 
 #[test]
 fn a_handler_timeout_reports_408() {
@@ -38,7 +38,7 @@ async fn a_pooled_timeout_reports_408() {
         let Ok((mut connection, _peer)) = listener.accept().await else {
             return;
         };
-        let mut buffer = [0u8; 512];
+        let mut buffer = [0_u8; 512];
         while matches!(connection.read(&mut buffer).await, Ok(read) if read > 0) {}
     });
     let policy = Arc::new(
