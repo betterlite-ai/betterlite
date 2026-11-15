@@ -114,10 +114,10 @@ fn auth_step(step: &AuthStep) -> Value {
         refresh_enabled: false,
         sources: &sources,
     };
-    match get_azure_ai_auth_headers(&request) {
-        Ok(headers) => json!({"kind": "headers", "headers": headers}),
-        Err(_) => json!({"kind": "error"}),
-    }
+    get_azure_ai_auth_headers(&request).map_or_else(
+        |_| json!({"kind": "error"}),
+        |headers| json!({"kind": "headers", "headers": headers}),
+    )
 }
 
 fn gate_step(step: &GateStep) -> Value {
@@ -153,7 +153,6 @@ fn settings_step(step: &SettingsStep) -> Result<Value, Box<HelperError>> {
         environment_api_key: settings.api_key.as_ref(),
     };
     let sources = EchoSources;
-    let secrets = secrets();
     let reply = get_azure_ai_entra_token(&EntraTokenRequest {
         params: step.params.as_ref(),
         environment: &step.environment,
