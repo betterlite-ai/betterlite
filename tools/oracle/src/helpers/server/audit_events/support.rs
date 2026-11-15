@@ -76,7 +76,10 @@ impl AuditCallbackRegistry for LocalRegistry {
 }
 
 fn stored_json(text: &str) -> JsonValue {
-    serde_json::from_str(text).unwrap_or(JsonValue::Null)
+    match serde_json::from_str(text) {
+        Ok(value) => value,
+        Err(_) => JsonValue::Null,
+    }
 }
 
 fn payload_view(payload: &AuditLogPayload) -> JsonValue {

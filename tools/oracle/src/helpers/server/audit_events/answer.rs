@@ -3,39 +3,36 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_config::loader::ConfigLoader;
-use betterlite_config::sections::audit_events::LITELLM_STORE_AUDIT_LOGS_ENV;
+use betterlite_config::sections::audit_events::{LITELLM_STORE_AUDIT_LOGS_ENV, Settings};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_server::audit_events::callbacks::{AuditCallbackConfig, AuditCallbackDispatcher};
-use betterlite_server::audit_events::enums::{AuditAction, AuditTable};
+use betterlite_server::audit_events::enums::{AuditAction, AuditName, AuditTable};
 use betterlite_server::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
 use betterlite_server::audit_events::payload::build_audit_log_payload;
 use betterlite_server::audit_events::record::{
-    AuditLogRecord, decode_audit_record, json_timestamp,
+    AuditLogRecord, decode_audit_record, timestamp_text,
 };
-use betterlite_server::audit_events::settings::AuditSettings;
+use betterlite_server::audit_events::settings::ConfiguredAuditSettings;
 use betterlite_server::audit_events::sink::{
-    AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
+    AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog, SystemAuditClock,
 };
-use chrono::{DateTime, FixedOffset};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::json;
 
 use super::support::{CollectingSpawner, LocalRecorder, LocalRegistry, delivery_view};
-use super::types::{
-    CallbackCall, DispatchCall, IdentityCall, ObjectCall, PolicyCall, RecordCall, SinkCall, failure,
-};
+use super::types::{Aspect, CallbackCall, Input, failure};
 
-pub(super) async fn answer(input: &super::types::Input) -> crate::helpers::HelperResult {
-    match input {
-        super::types::Input::Policy(call) => policy_answer(call),
-        super::types::Input::Identity(call) => Ok(identity_answer(call)),
-        super::types::Input::Record(call) => record_answer(call),
-        super::types::Input::Dispatch(call) => dispatch_answer(call).await,
-        super::types::Input::SinkDisabled(call) => sink_answer(call).await,
+pub(super) async fn answer(input: &Input) -> crate::helpers::HelperResult {
+    match input.aspect {
+        Aspect::Policy => policy_answer(input),
+        Aspect::Identity => Ok(identity_answer(input)),
+        Aspect::Record => Ok(record_view(&decoded_record(&input.record)?)),
+        Aspect::Dispatch => dispatch_answer(input).await,
+        Aspect::SinkDisabled => sink_answer(input).await,
     }
 }
 
-fn policy_answer(call: &PolicyCall) -> crate::helpers::HelperResult {
+fn policy_answer(call: &Input) -> crate::helpers::HelperResult {
     let lookup = match &call.env {
         Some(env) => BTreeMap::from([(LITELLM_STORE_AUDIT_LOGS_ENV.to_owned(), env.clone())]),
         None => BTreeMap::new(),
@@ -49,7 +46,7 @@ fn policy_answer(call: &PolicyCall) -> crate::helpers::HelperResult {
     Ok(json!({"enabled": settings.is_audit_logging_enabled(call.explicit)}))
 }
 
-fn identity_answer(call: &IdentityCall) -> JsonValue {
+fn identity_answer(call: &Input) -> JsonValue {
     let caller = CallerIdentity {
         user_id: call.user_id.clone(),
         api_key: None,
@@ -65,8 +62,10 @@ fn identity_answer(call: &IdentityCall) -> JsonValue {
 }
 
 fn decoded_record(record: &JsonValue) -> Result<AuditLogRecord, Box<crate::helpers::HelperError>> {
-    let bytes = serde_json::to_vec(record).map_err(|error| failure("InvalidRecord", error))?;
-    decode_audit_record(&bytes).map_err(|error| failure("ValidationError", error))
+    match serde_json::to_vec(record) {
+        Ok(bytes) => decode_audit_record(&bytes).map_err(|error| failure("ValidationError", error)),
+        Err(error) => Err(failure("InvalidRecord", error)),
+    }
 }
 
 fn record_view(record: &AuditLogRecord) -> JsonValue {
@@ -76,7 +75,7 @@ fn record_view(record: &AuditLogRecord) -> JsonValue {
         .map(|api_key| api_key.expose_secret());
     json!({
         "id": record.id,
-        "updated_at": json_timestamp(record.updated_at),
+        "updated_at": timestamp_text(record.updated_at, "Z"),
         "changed_by": record.changed_by,
         "changed_by_api_key": changed_by_api_key,
         "action": record.action.as_str(),
@@ -87,12 +86,7 @@ fn record_view(record: &AuditLogRecord) -> JsonValue {
     })
 }
 
-fn record_answer(call: &RecordCall) -> crate::helpers::HelperResult {
-    let record = decoded_record(&call.record)?;
-    Ok(record_view(&record))
-}
-
-async fn dispatch_answer(call: &DispatchCall) -> crate::helpers::HelperResult {
+async fn dispatch_answer(call: &Input) -> crate::helpers::HelperResult {
     let record = decoded_record(&call.record)?;
     let spawner = Arc::new(CollectingSpawner::default());
     let mut recorders = Vec::new();
@@ -119,21 +113,46 @@ async fn dispatch_answer(call: &DispatchCall) -> crate::helpers::HelperResult {
     Ok(json!({"delivered": delivery_view(&recorders)}))
 }
 
-struct LocalSettings {
-    callbacks: Vec<AuditCallbackConfig>,
+fn local_sink(
+    recorder: &Arc<LocalRecorder>,
+    repository: &Arc<LocalRepository>,
+    spawner: &Arc<CollectingSpawner>,
+) -> AuditEventSink {
+    AuditEventSink {
+        settings: Arc::new(ConfiguredAuditSettings {
+            config: Settings {
+                store_audit_logs: Some(false),
+                store_audit_logs_env: None,
+                audit_log_callbacks: Vec::new(),
+                s3_audit_callback_params: None,
+            },
+            callbacks: vec![AuditCallbackConfig::Instance(recorder.clone())],
+        }),
+        callbacks: Arc::new(AuditCallbackDispatcher::new(
+            Arc::new(LocalRegistry),
+            spawner.clone(),
+        )),
+        repository: repository.clone(),
+        clock: Arc::new(SystemAuditClock),
+        new_id: Arc::new(|| "audit-id-1".to_owned()),
+    }
 }
 
-impl AuditSettings for LocalSettings {
-    fn is_audit_logging_enabled(&self, _explicit: Option<bool>) -> bool {
-        false
-    }
-
-    fn audit_log_callbacks(&self) -> &[AuditCallbackConfig] {
-        &self.callbacks
-    }
-
-    fn s3_audit_callback_params(&self) -> Option<&JsonValue> {
-        None
+fn object_entry<'entry>(
+    call: &'entry Input,
+    caller: &'entry CallerIdentity,
+    action: AuditAction,
+    table_name: AuditTable,
+) -> ObjectAuditLog<'entry> {
+    ObjectAuditLog {
+        object_id: &call.object_id,
+        action,
+        litellm_changed_by: None,
+        caller,
+        litellm_proxy_admin_name: None,
+        table_name,
+        before_value: call.before_value.as_deref(),
+        after_value: call.after_value.as_deref(),
     }
 }
 
@@ -156,34 +175,6 @@ impl AuditLogRepository for LocalRepository {
     }
 }
 
-struct LocalClock {
-    now: DateTime<FixedOffset>,
-}
-
-impl AuditClock for LocalClock {
-    fn now(&self) -> DateTime<FixedOffset> {
-        self.now
-    }
-}
-
-fn object_audit<'entry>(
-    object: &'entry ObjectCall,
-    caller: &'entry CallerIdentity,
-    action: AuditAction,
-    table_name: AuditTable,
-) -> ObjectAuditLog<'entry> {
-    ObjectAuditLog {
-        object_id: &object.object_id,
-        action,
-        litellm_changed_by: None,
-        caller,
-        litellm_proxy_admin_name: None,
-        table_name,
-        before_value: object.before_value.as_deref(),
-        after_value: object.after_value.as_deref(),
-    }
-}
-
 fn stored_ids(repository: &LocalRepository) -> Vec<String> {
     let inserted = repository
         .inserted
@@ -192,27 +183,11 @@ fn stored_ids(repository: &LocalRepository) -> Vec<String> {
     inserted.iter().map(|record| record.id.clone()).collect()
 }
 
-async fn log_object(
-    sink: &AuditEventSink,
-    call: &SinkCall,
-    action: AuditAction,
-    table_name: AuditTable,
-) {
-    let caller = CallerIdentity {
-        user_id: call.caller.user_id.clone(),
-        api_key: call.caller.api_key.clone().map(SecretString::from),
-        metadata: None,
-        team_metadata: None,
-    };
-    let entry = object_audit(&call.object, &caller, action, table_name);
-    sink.create_object_audit_log(entry).await;
-}
-
-async fn sink_answer(call: &SinkCall) -> crate::helpers::HelperResult {
+async fn sink_answer(call: &Input) -> crate::helpers::HelperResult {
     let record = decoded_record(&call.record)?;
-    let action = AuditAction::parse(&call.object.action)
+    let action = AuditAction::parse(&call.action)
         .ok_or_else(|| failure("InvalidInput", "unknown audit action"))?;
-    let table_name = AuditTable::parse(&call.object.table_name)
+    let table_name = AuditTable::parse(&call.table_name)
         .ok_or_else(|| failure("InvalidInput", "unknown audit table"))?;
     let recorder = Arc::new(LocalRecorder {
         label: "sink".to_owned(),
@@ -223,22 +198,16 @@ async fn sink_answer(call: &SinkCall) -> crate::helpers::HelperResult {
         inserted: Mutex::new(Vec::new()),
     });
     let spawner = Arc::new(CollectingSpawner::default());
-    let sink = AuditEventSink {
-        settings: Arc::new(LocalSettings {
-            callbacks: vec![AuditCallbackConfig::Instance(recorder.clone())],
-        }),
-        callbacks: Arc::new(AuditCallbackDispatcher::new(
-            Arc::new(LocalRegistry),
-            spawner.clone(),
-        )),
-        repository: repository.clone(),
-        clock: Arc::new(LocalClock {
-            now: record.updated_at,
-        }),
-        new_id: Arc::new(|| "audit-id-1".to_owned()),
-    };
+    let sink = local_sink(&recorder, &repository, &spawner);
     sink.create_audit_log_for_update(record).await;
-    log_object(&sink, call, action, table_name).await;
+    let caller = CallerIdentity {
+        user_id: call.user_id.clone(),
+        api_key: call.api_key.clone().map(SecretString::from),
+        metadata: None,
+        team_metadata: None,
+    };
+    sink.create_object_audit_log(object_entry(call, &caller, action, table_name))
+        .await;
     spawner.run_all().await;
     Ok(json!({
         "delivered": delivery_view(&[recorder]),

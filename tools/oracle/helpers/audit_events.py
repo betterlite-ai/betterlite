@@ -1,11 +1,11 @@
 import asyncio
 import os
 import sys
+from collections.abc import Callable
 from types import ModuleType
-from typing import Final, Literal, TypedDict
+from typing import Final, Literal, Protocol, TypedDict
 
 import litellm
-from litellm import CALLBACK_TYPES
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.proxy._types import (
     AUDIT_ACTIONS,
@@ -13,28 +13,23 @@ from litellm.proxy._types import (
     LitellmTableNames,
     UserAPIKeyAuth,
 )
+from litellm.proxy.management_helpers import audit_logs
 from litellm.proxy.management_helpers.audit_logs import (
-    create_audit_log_for_update,
-    create_object_audit_log,
     get_audit_log_changed_by,
     is_audit_logging_enabled,
     reset_audit_log_callback_cache,
 )
 from litellm.types.utils import StandardAuditLogPayload
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 AUDIT_LOGS_ENV: Final = "LITELLM_STORE_AUDIT_LOGS"
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 JSON: Final = TypeAdapter(JsonValue)
-ACTION_VALUES: Final[dict[str, AUDIT_ACTIONS]] = {
-    "created": "created",
-    "updated": "updated",
-    "deleted": "deleted",
-    "blocked": "blocked",
-    "unblocked": "unblocked",
-    "rotated": "rotated",
-    "kill_switch_fired": "kill_switch_fired",
-}
+OBJECT: Final = TypeAdapter(dict[str, JsonValue])
+# LiteLLM's CALLBACK_TYPES holds a bare Callable, whose Any strict mypy rejects; this names the same union
+CallbackEntry = CustomLogger | str | Callable[[], None]
+ACTION: Final = TypeAdapter(AUDIT_ACTIONS)
 
 
 class PolicyCall(TypedDict):
@@ -81,39 +76,28 @@ class NamedCallback(TypedDict):
     name: str
 
 
-CallbackCall = InstanceCallback | NamedCallback
-
-
 class DispatchCall(TypedDict):
     aspect: Literal["dispatch"]
     record: AuditRecord
-    callbacks: list[CallbackCall]
-
-
-class Caller(TypedDict):
-    user_id: str | None
-    api_key: str | None
-
-
-class ObjectCall(TypedDict):
-    object_id: str
-    action: str
-    table_name: str
-    before_value: str | None
-    after_value: str | None
+    callbacks: list[InstanceCallback | NamedCallback]
 
 
 class SinkCall(TypedDict):
     aspect: Literal["sink_disabled"]
     record: AuditRecord
-    object: ObjectCall
-    caller: Caller
+    object_id: str
+    action: str
+    table_name: str
+    before_value: str | None
+    after_value: str | None
+    user_id: str | None
+    api_key: str | None
 
 
 Call = PolicyCall | IdentityCall | RecordCall | DispatchCall | SinkCall
 
 
-class RecordView(TypedDict):
+class Stored(TypedDict):
     id: str
     updated_at: str
     changed_by: str | None
@@ -125,20 +109,7 @@ class RecordView(TypedDict):
     updated_values: str | None
 
 
-class PayloadView(TypedDict):
-    id: str
-    updated_at: str
-    changed_by: str
-    changed_by_api_key: str
-    action: str
-    table_name: str
-    object_id: str
-    before_value: str | None
-    updated_values: str | None
-
-
-RECORD_VIEW: Final = TypeAdapter(RecordView)
-PAYLOAD_VIEW: Final = TypeAdapter(PayloadView)
+STORED: Final = TypeAdapter(Stored)
 
 
 class ProxyServer(ModuleType):
@@ -146,20 +117,39 @@ class ProxyServer(ModuleType):
     prisma_client: None = None
 
 
+class AuditLogWrites(Protocol):
+    async def create_audit_log_for_update(self, request_data: LiteLLM_AuditLogs) -> None: ...
+
+    async def create_object_audit_log(
+        self,
+        object_id: str,
+        action: AUDIT_ACTIONS,
+        litellm_changed_by: str | None,
+        user_api_key_dict: UserAPIKeyAuth,
+        litellm_proxy_admin_name: str | None,
+        table_name: LitellmTableNames,
+        before_value: str | None = None,
+        after_value: str | None = None,
+    ) -> None: ...
+
+
+AUDIT_LOG_WRITES: AuditLogWrites = audit_logs
+
+
 class Recorder(CustomLogger):
     def __init__(self, label: str, *, fails: bool) -> None:
-        super().__init__()
         self.label = label
         self.fails = fails
-        self.delivered: list[PayloadView] = []
+        self.delivered: list[Stored] = []
 
+    @override
     async def async_log_audit_log_event(self, audit_log: StandardAuditLogPayload) -> None:
         if self.fails:
             raise RuntimeError("the audit log callback failed")
-        self.delivered.append(PAYLOAD_VIEW.validate_python(audit_log))
+        self.delivered.append(audit_log)
 
 
-def install_proxy(premium: bool) -> ModuleType | None:
+def install_proxy(*, premium: bool) -> ModuleType | None:
     module = ProxyServer(PROXY_MODULE)
     module.premium_user = premium
     saved = sys.modules.get(PROXY_MODULE)
@@ -187,46 +177,25 @@ def policy_answer(call: PolicyCall) -> JsonValue:
         os.environ.pop(AUDIT_LOGS_ENV, None)
     else:
         os.environ[AUDIT_LOGS_ENV] = call["env"]
-    answer: dict[str, JsonValue] = {"enabled": is_audit_logging_enabled(call["explicit"])}
-    return answer
+    return {"enabled": is_audit_logging_enabled(call["explicit"])}
 
 
 def identity_answer(call: IdentityCall) -> JsonValue:
-    values: dict[str, JsonValue] = {}
-    if call["user_id"] is not None:
-        values["user_id"] = call["user_id"]
-    if call["metadata"] is not None:
-        values["metadata"] = call["metadata"]
-    if call["team_metadata"] is not None:
-        values["team_metadata"] = call["team_metadata"]
+    caller = UserAPIKeyAuth(
+        user_id=call["user_id"],
+        metadata=call["metadata"],
+        team_metadata=call["team_metadata"],
+    )
     changed_by = get_audit_log_changed_by(
         litellm_changed_by=call["litellm_changed_by"],
-        user_api_key_dict=UserAPIKeyAuth.model_validate(values),
+        user_api_key_dict=caller,
         litellm_proxy_admin_name=call["admin_name"],
     )
-    answer: dict[str, JsonValue] = {"changed_by": changed_by}
-    return answer
+    return {"changed_by": changed_by}
 
 
-def audit_model(record: AuditRecord) -> LiteLLM_AuditLogs:
-    values: dict[str, JsonValue] = {
-        "id": record["id"],
-        "updated_at": record["updated_at"],
-        "changed_by": record["changed_by"],
-        "changed_by_api_key": record["changed_by_api_key"],
-        "action": record["action"],
-        "table_name": record["table_name"],
-        "object_id": record["object_id"],
-        "before_value": record["before_value"],
-        "updated_values": record["updated_values"],
-    }
-    return LiteLLM_AuditLogs.model_validate(values)
-
-
-def record_answer(call: RecordCall) -> JsonValue:
-    model = audit_model(call["record"])
-    view = RECORD_VIEW.validate_json(model.model_dump_json())
-    answer: dict[str, JsonValue] = {
+def stored_json(view: Stored) -> JsonValue:
+    return {
         "id": view["id"],
         "updated_at": view["updated_at"],
         "changed_by": view["changed_by"],
@@ -237,39 +206,24 @@ def record_answer(call: RecordCall) -> JsonValue:
         "before_value": parsed(view["before_value"]),
         "updated_values": parsed(view["updated_values"]),
     }
-    return answer
 
 
-def payload_value(payload: PayloadView) -> JsonValue:
-    answer: dict[str, JsonValue] = {
-        "id": payload["id"],
-        "updated_at": payload["updated_at"],
-        "changed_by": payload["changed_by"],
-        "changed_by_api_key": payload["changed_by_api_key"],
-        "action": payload["action"],
-        "table_name": payload["table_name"],
-        "object_id": payload["object_id"],
-        "before_value": parsed(payload["before_value"]),
-        "updated_values": parsed(payload["updated_values"]),
-    }
-    return answer
+def record_answer(call: RecordCall) -> JsonValue:
+    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
+    return stored_json(STORED.validate_json(model.model_dump_json()))
 
 
 def delivery_view(recorders: list[Recorder]) -> JsonValue:
     delivered: list[JsonValue] = []
     for recorder in recorders:
         for payload in recorder.delivered:
-            entry: dict[str, JsonValue] = {
-                "callback": recorder.label,
-                "payload": payload_value(payload),
-            }
-            delivered.append(entry)
+            delivered.append({"callback": recorder.label, "payload": stored_json(payload)})
     return delivered
 
 
-def dispatch_entries(call: DispatchCall) -> tuple[list[Recorder], list[CALLBACK_TYPES]]:
+def dispatch_entries(call: DispatchCall) -> tuple[list[Recorder], list[CallbackEntry]]:
     recorders: list[Recorder] = []
-    callbacks: list[CALLBACK_TYPES] = []
+    callbacks: list[CallbackEntry] = []
     for entry in call["callbacks"]:
         if entry["kind"] == "instance":
             recorder = Recorder(entry["label"], fails=entry["fails"])
@@ -285,9 +239,9 @@ async def dispatch_answer(call: DispatchCall) -> JsonValue:
     litellm.audit_log_callbacks = callbacks
     reset_audit_log_callback_cache()
     saved = install_proxy(premium=True)
-    model = audit_model(call["record"])
+    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
     try:
-        await create_audit_log_for_update(request_data=model)
+        await AUDIT_LOG_WRITES.create_audit_log_for_update(request_data=model)
         await asyncio.sleep(0)
         await asyncio.sleep(0)
     finally:
@@ -297,38 +251,30 @@ async def dispatch_answer(call: DispatchCall) -> JsonValue:
 
 async def sink_answer(call: SinkCall) -> JsonValue:
     recorder = Recorder("sink", fails=False)
-    callbacks: list[CALLBACK_TYPES] = [recorder]
+    callbacks: list[CallbackEntry] = [recorder]
     litellm.audit_log_callbacks = callbacks
     litellm.store_audit_logs = None
     os.environ.pop(AUDIT_LOGS_ENV, None)
     reset_audit_log_callback_cache()
     saved = install_proxy(premium=False)
-    model = audit_model(call["record"])
-    caller: dict[str, JsonValue] = {
-        "user_id": call["caller"]["user_id"],
-        "api_key": call["caller"]["api_key"],
-    }
+    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
+    caller = UserAPIKeyAuth(user_id=call["user_id"], api_key=call["api_key"])
     try:
-        await create_audit_log_for_update(request_data=model)
-        await create_object_audit_log(
-            object_id=call["object"]["object_id"],
-            action=ACTION_VALUES[call["object"]["action"]],
+        await AUDIT_LOG_WRITES.create_audit_log_for_update(request_data=model)
+        await AUDIT_LOG_WRITES.create_object_audit_log(
+            object_id=call["object_id"],
+            action=ACTION.validate_python(call["action"]),
             litellm_changed_by=None,
-            user_api_key_dict=UserAPIKeyAuth.model_validate(caller),
+            user_api_key_dict=caller,
             litellm_proxy_admin_name=None,
-            table_name=LitellmTableNames(call["object"]["table_name"]),
-            before_value=call["object"]["before_value"],
-            after_value=call["object"]["after_value"],
+            table_name=LitellmTableNames(call["table_name"]),
+            before_value=call["before_value"],
+            after_value=call["after_value"],
         )
         await asyncio.sleep(0)
     finally:
         restore_proxy(saved)
-    answer: dict[str, JsonValue] = {
-        "delivered": delivery_view([recorder]),
-        "stored": [],
-        "calls": 2,
-    }
-    return answer
+    return {"delivered": delivery_view([recorder]), "stored": [], "calls": 2}
 
 
 def run(input_value: Call) -> JsonValue:

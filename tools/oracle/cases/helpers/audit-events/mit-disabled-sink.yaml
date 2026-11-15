@@ -13,15 +13,13 @@ call:
       object_id: team-1
       before_value: '{"api_key": "sk-1234567890"}'
       updated_values: '{"key": "abcdefgh"}'
-    object:
-      object_id: team-1
-      action: updated
-      table_name: LiteLLM_TeamTable
-      before_value: '{"name": "team"}'
-      after_value: '{"name": "team", "key": "abcdefgh"}'
-    caller:
-      user_id: user-1
-      api_key: sk-key
+    object_id: team-1
+    action: updated
+    table_name: LiteLLM_TeamTable
+    before_value: '{"name": "team"}'
+    after_value: '{"name": "team", "key": "abcdefgh"}'
+    user_id: user-1
+    api_key: sk-key
 calls:
   - audit_events:
       aspect: sink_disabled
@@ -35,14 +33,12 @@ calls:
         object_id: user-1
         before_value: null
         updated_values: null
-      object:
-        object_id: user-1
-        action: created
-        table_name: LiteLLM_UserTable
-        before_value: null
-        after_value: null
-      caller:
-        user_id: null
-        api_key: null
+      object_id: user-1
+      action: created
+      table_name: LiteLLM_UserTable
+      before_value: null
+      after_value: null
+      user_id: null
+      api_key: null
 env: {}
 compare: {ignore: []}
