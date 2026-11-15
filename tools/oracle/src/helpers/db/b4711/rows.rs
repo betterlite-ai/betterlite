@@ -7,15 +7,23 @@ use betterlite_db::mcp::table_access::types::{ACTIVE, McpServerAccess, McpTableE
 
 // An in-memory stand-in for the Prisma MCP server table: it answers the same filters in table order
 pub(super) struct RowStore {
-    pub(super) rows: Mutex<Vec<JsonData>>,
+    rows: Mutex<Vec<JsonData>>,
+}
+
+impl RowStore {
+    pub(super) fn new(rows: &[JsonData]) -> Self {
+        Self {
+            rows: Mutex::new(rows.to_vec()),
+        }
+    }
 }
 
 impl McpServerAccess for RowStore {
     async fn find_servers(&self, request: &FindServers) -> Result<Vec<JsonData>, McpTableError> {
         let mut selected = {
-            let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+            let stored_rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
             let mut matched = Vec::new();
-            for stored in &*rows {
+            for stored in &*stored_rows {
                 if request
                     .filter
                     .as_ref()
@@ -41,8 +49,8 @@ impl McpServerAccess for RowStore {
         &self,
         request: &ServerUpdate,
     ) -> Result<Option<JsonData>, McpTableError> {
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        for stored in &mut *rows {
+        let mut stored_rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        for stored in &mut *stored_rows {
             if text(stored, "server_id") == Some(request.server_id.as_str()) {
                 apply(stored, &request.data)?;
                 return Ok(Some(stored.clone()));
@@ -52,6 +60,7 @@ impl McpServerAccess for RowStore {
     }
 }
 
+// Prisma's insensitive mode lowercases both sides, as LOWER() does in the betterlite query
 fn matches(stored: &JsonData, filter: &ServerFilter) -> bool {
     match filter {
         ServerFilter::ServerId(server_id) => text(stored, "server_id") == Some(server_id.as_str()),
@@ -65,12 +74,13 @@ fn matches(stored: &JsonData, filter: &ServerFilter) -> bool {
             value,
             exclude_server_id,
         } => {
-            let named = ["server_name", "alias"].iter().any(|field| {
-                text(stored, field).is_some_and(|name| name.eq_ignore_ascii_case(value))
-            });
+            let wanted = value.to_lowercase();
+            let named = ["server_name", "alias"]
+                .iter()
+                .any(|field| text(stored, field).is_some_and(|name| name.to_lowercase() == wanted));
             let excluded = exclude_server_id
                 .as_deref()
-                .is_some_and(|excluded| text(stored, "server_id") == Some(excluded));
+                .is_some_and(|own_id| text(stored, "server_id") == Some(own_id));
             named && !excluded && text(stored, "approval_status") != Some("draft")
         }
         ServerFilter::ApprovalStatus(status) => {
@@ -101,10 +111,7 @@ fn text<'row>(stored: &'row JsonData, name: &str) -> Option<&'row str> {
     let JsonData::Object(fields) = stored else {
         return None;
     };
-    let Some(value) = fields.get(name) else {
-        return None;
-    };
-    match value {
+    match fields.get(name)? {
         JsonData::String(value) => Some(value),
         JsonData::Null
         | JsonData::Bool(_)

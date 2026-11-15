@@ -1,224 +1,183 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
 
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_db::managed_resource_rows::mcp::McpServerTable;
 use betterlite_db::mcp::table_access::rows::RowFields;
 use betterlite_db::mcp::table_access::server_reads::{
     _identifier_field, get_mcp_server, get_mcp_servers,
 };
 use betterlite_db::mcp::table_access::{
-    _mcp_identifier_lock_keys, approve_mcp_server, find_identifier_conflict, get_all_mcp_servers,
-    get_mcp_submissions, reject_mcp_server, set_mcp_server_pinned_tools,
+    _mcp_identifier_lock_keys, McpIdentifierConflict, approve_mcp_server, find_identifier_conflict,
+    get_all_mcp_servers, get_mcp_submissions, reject_mcp_server, set_mcp_server_pinned_tools,
 };
 // ast-grep-ignore: no-long-names
-use betterlite_db::mcp::table_access::get_active_submitted_mcp_server_ids_for_user as get_active_submitted_ids;
+use betterlite_db::mcp::table_access::get_active_submitted_mcp_server_ids_for_user as active_ids;
 use betterlite_db::mcp_stored_contracts::{JsonValue, PinnedMCPTool};
+use betterlite_db::stored_cipher::DbCipher;
+use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
+use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
+use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use crate::helpers::HelperResult;
+use crate::helpers::OrHelperError as _;
 
-use super::ReviewAction;
-use super::helper_error;
 use super::rows::RowStore;
-use super::views::{cipher, conflict_value, review_view, server_view};
+use super::{
+    ActiveSubmissions, CreateIfFree, FindConflict, GetAll, GetServer, PinnedTools, Review,
+    ReviewAction, Submissions,
+};
 
-pub(super) async fn find_conflict(
-    server_name: Option<&str>,
-    alias: Option<&str>,
-    exclude_server_id: Option<&str>,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let conflict = find_identifier_conflict(&store, server_name, alias, exclude_server_id)
-        .await
-        .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    Ok(json!({"conflict": conflict_value(conflict)}))
+fn cipher(salt: &str) -> DbCipher {
+    StoredCipher {
+        settings: CipherSettings {
+            signing_key: Some(SecretString::from(salt.to_owned())),
+            algorithm: Algorithm::XSalsa20Poly1305,
+        },
+        nonces: OsNonces,
+        diagnostics: TracingDiagnostics,
+    }
 }
 
-pub(super) async fn create_if_free(
-    server_name: &Value,
-    alias: &Value,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let fields = identifier_fields(Some(server_name), Some(alias))?;
-    let extracted_name = _identifier_field(&fields, "server_name");
-    let extracted_alias = _identifier_field(&fields, "alias");
-    let lock_keys =
-        _mcp_identifier_lock_keys(&[extracted_name.as_deref(), extracted_alias.as_deref()]);
-    let conflict = find_identifier_conflict(
+fn conflict_value(conflict: Option<&McpIdentifierConflict>) -> Value {
+    conflict.map_or(Value::Null, |found| {
+        json!({"field": found.field.as_str(), "value": found.value, "server_id": found.server_id})
+    })
+}
+
+fn server_view(server: &McpServerTable) -> HelperResult {
+    let env = serde_json::to_value(&server.env).or_value_error()?;
+    Ok(
+        json!({"server_id": server.server_id, "approval_status": server.approval_status, "env": env}),
+    )
+}
+
+pub(super) async fn find_conflict(call: &FindConflict) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let found = find_identifier_conflict(
         &store,
-        extracted_name.as_deref(),
-        extracted_alias.as_deref(),
-        None,
+        call.server_name.as_deref(),
+        call.alias.as_deref(),
+        call.exclude_server_id.as_deref(),
     )
     .await
-    .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    let written = conflict.is_none();
+    .or_value_error()?;
+    Ok(conflict_value(found.as_ref()))
+}
+
+// the create path reads both identifiers back as strings, locks them, then checks for a collision
+pub(super) async fn create_if_free(call: &CreateIfFree) -> HelperResult {
+    let mut fields = BTreeMap::new();
+    for (name, value) in [("server_name", &call.server_name), ("alias", &call.alias)] {
+        fields.insert(
+            name,
+            value.clone().map_or(JsonValue::Null, JsonValue::String),
+        );
+    }
+    let data = RowFields(fields);
+    let name = _identifier_field(&data, "server_name");
+    let alias = _identifier_field(&data, "alias");
+    let lock_keys = _mcp_identifier_lock_keys(&[name.as_deref(), alias.as_deref()]);
+    let store = RowStore::new(&call.rows);
+    let conflict = find_identifier_conflict(&store, name.as_deref(), alias.as_deref(), None)
+        .await
+        .or_value_error()?;
     Ok(json!({
-        "conflict": conflict_value(conflict),
+        "conflict": conflict_value(conflict.as_ref()),
         "lock_keys": lock_keys,
-        "written": written,
+        "written": conflict.is_none(),
     }))
 }
 
-pub(super) async fn get_all(
-    salt_key: &str,
-    approval_status: Option<&str>,
-    server_ids: Option<&[String]>,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let db_cipher = cipher(salt_key);
-    let servers = match server_ids {
-        Some(server_ids) => get_mcp_servers(&store, &db_cipher, server_ids)
-            .await
-            .map_err(|source| helper_error("McpTableError", &source.to_string()))?,
-        None => get_all_mcp_servers(&store, &db_cipher, approval_status)
-            .await
-            .map_err(|source| helper_error("McpTableError", &source.to_string()))?,
-    };
+pub(super) async fn get_all(call: &GetAll) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let db_cipher = cipher(&call.salt_key);
+    let servers = match &call.server_ids {
+        Some(ids) => get_mcp_servers(&store, &db_cipher, ids).await,
+        None => get_all_mcp_servers(&store, &db_cipher, call.approval_status.as_deref()).await,
+    }
+    .or_value_error()?;
     let mut views = Vec::with_capacity(servers.len());
     for server in &servers {
         views.push(server_view(server)?);
     }
-    Ok(json!({"servers": views}))
+    Ok(Value::Array(views))
 }
 
-pub(super) async fn get_server(
-    salt_key: &str,
-    server_id: &str,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let found = get_mcp_server(&store, &cipher(salt_key), server_id)
-        .await
-        .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    let Some(server) = found else {
-        return Ok(json!({"server": Value::Null}));
-    };
-    let view = server_view(&server)?;
-    Ok(json!({"server": view}))
+pub(super) async fn get_server(call: &GetServer) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let read = get_mcp_server(&store, &cipher(&call.salt_key), &call.server_id).await;
+    read.or_value_error()?
+        .as_ref()
+        .map_or(Ok(Value::Null), server_view)
 }
 
-pub(super) async fn review(
-    salt_key: &str,
-    action: &ReviewAction,
-    server_id: &str,
-    touched_by: &str,
-    review_notes: Option<&str>,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let db_cipher = cipher(salt_key);
-    let server = match action {
+pub(super) async fn review(call: &Review) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let db_cipher = cipher(&call.salt_key);
+    let (server_id, touched_by) = (call.server_id.as_str(), call.touched_by.as_str());
+    let reviewed = match call.action {
         ReviewAction::Approve => {
             approve_mcp_server(&store, &db_cipher, server_id, touched_by).await
         }
         ReviewAction::Reject => {
-            reject_mcp_server(&store, &db_cipher, server_id, touched_by, review_notes).await
+            let notes = call.review_notes.as_deref();
+            reject_mcp_server(&store, &db_cipher, server_id, touched_by, notes).await
         }
-    }
-    .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    Ok(review_view(&server))
+    };
+    let server = reviewed.or_value_error()?;
+    Ok(json!({
+        "server_id": server.server_id,
+        "approval_status": server.approval_status,
+        "review_notes": server.review_notes,
+        "updated_by": server.updated_by,
+        "reviewed_at_present": server.reviewed_at.is_some(),
+    }))
 }
 
-pub(super) async fn pinned_tools(
-    salt_key: &str,
-    server_id: &str,
-    pinned_tools: Option<&Value>,
-    touched_by: &str,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let decoded: Option<BTreeMap<String, PinnedMCPTool>> = pinned_tools
-        .map(|value| serde_json::from_value(value.clone()))
+pub(super) async fn pinned_tools(call: &PinnedTools) -> HelperResult {
+    let tools: Option<BTreeMap<String, PinnedMCPTool>> = call
+        .pinned_tools
+        .clone()
+        .map(serde_json::from_value)
         .transpose()
-        .map_err(|source| helper_error("InvalidInput", &source.to_string()))?;
-    let updated = set_mcp_server_pinned_tools(
+        .or_value_error()?;
+    let store = RowStore::new(&call.rows);
+    let db_cipher = cipher(&call.salt_key);
+    let pinned = set_mcp_server_pinned_tools(
         &store,
-        &cipher(salt_key),
-        server_id,
-        decoded.as_ref(),
-        touched_by,
+        &db_cipher,
+        &call.server_id,
+        tools.as_ref(),
+        &call.touched_by,
     )
     .await
-    .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    let Some(server) = updated else {
-        return Ok(json!({"found": false, "pinned_tools": Value::Null}));
+    .or_value_error()?;
+    let Some(server) = pinned else {
+        return Ok(Value::Null);
     };
-    let tools = serde_json::to_value(&server.pinned_tools)
-        .map_err(|source| helper_error("SerializationError", &source.to_string()))?;
-    Ok(json!({"found": true, "pinned_tools": tools}))
+    Ok(json!({"pinned_tools": serde_json::to_value(&server.pinned_tools).or_value_error()?}))
 }
 
-pub(super) async fn submissions(salt_key: &str, rows: &[Value]) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let summary = get_mcp_submissions(&store, &cipher(salt_key))
+pub(super) async fn submissions(call: &Submissions) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let summary = get_mcp_submissions(&store, &cipher(&call.salt_key))
         .await
-        .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    let first_server_id = summary
-        .items
-        .first()
-        .map(|server| server.server_id.as_str());
-    let last_server_id = summary.items.last().map(|server| server.server_id.as_str());
+        .or_value_error()?;
+    let mut server_ids = Vec::with_capacity(summary.items.len());
+    for server in &summary.items {
+        server_ids.push(server.server_id.as_str());
+    }
     Ok(json!({
         "total": summary.total,
         "pending_review": summary.pending_review,
         "active": summary.active,
         "rejected": summary.rejected,
-        "first_server_id": first_server_id,
-        "last_server_id": last_server_id,
+        "server_ids": server_ids,
     }))
 }
 
-pub(super) async fn active_submissions(
-    user_id: &str,
-    rows: &[Value],
-) -> Result<Value, Box<HelperError>> {
-    let store = store_from(rows)?;
-    let server_ids = get_active_submitted_ids(&store, user_id)
-        .await
-        .map_err(|source| helper_error("McpTableError", &source.to_string()))?;
-    Ok(json!({"server_ids": server_ids}))
-}
-
-fn store_from(rows: &[Value]) -> Result<RowStore, Box<HelperError>> {
-    let mut stored = Vec::with_capacity(rows.len());
-    for row in rows {
-        stored.push(row_data(row)?);
-    }
-    Ok(RowStore {
-        rows: Mutex::new(stored),
-    })
-}
-
-fn row_data(value: &Value) -> Result<JsonData, Box<HelperError>> {
-    if !value.is_object() {
-        return Err(helper_error(
-            "InvalidInput",
-            "every row must be a JSON object",
-        ));
-    }
-    serde_json::from_value(value.clone())
-        .map_err(|source| helper_error("InvalidInput", &source.to_string()))
-}
-
-fn identifier_fields(
-    server_name: Option<&Value>,
-    alias: Option<&Value>,
-) -> Result<RowFields, Box<HelperError>> {
-    let mut fields: BTreeMap<&'static str, JsonValue> = BTreeMap::new();
-    for (name, value) in [("server_name", server_name), ("alias", alias)] {
-        let Some(value) = value else {
-            continue;
-        };
-        if value.is_null() {
-            continue;
-        }
-        let decoded = serde_json::from_value(value.clone())
-            .map_err(|source| helper_error("InvalidInput", &source.to_string()))?;
-        fields.insert(name, decoded);
-    }
-    Ok(RowFields(fields))
+pub(super) async fn active_submissions(call: &ActiveSubmissions) -> HelperResult {
+    let store = RowStore::new(&call.rows);
+    let ids = active_ids(&store, &call.user_id).await.or_value_error()?;
+    Ok(Value::Array(ids.into_iter().map(Value::String).collect()))
 }
