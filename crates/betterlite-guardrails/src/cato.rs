@@ -28,7 +28,6 @@ pub const LITELLM_VERSION: &str = "1.105.1";
 pub const DEFAULT_BLOCK_MESSAGE: &str = "the request was blocked by the Cato Networks guardrail";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 pub(crate) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-const USER_AGENT_VARIABLE: &str = "LITELLM_USER_AGENT";
 
 pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PreCall,
@@ -148,7 +147,7 @@ where
     L: EnvironmentLookup,
 {
     let verification = tls::resolve_verification(ssl_verify, lookup);
-    let user_agent = tls::environment_value(lookup, USER_AGENT_VARIABLE)
+    let user_agent = tls::environment_value(lookup, "LITELLM_USER_AGENT")
         .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION")));
     let policy = TlsPolicy {
         ca_file: match &verification {
