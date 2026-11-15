@@ -20,6 +20,7 @@ PROTOCOLS: Final = (
 )
 GENERATED_ID_LENGTH: Final = 36
 MOCK_INT_MARKER: Final = 1
+EXTRA_MODELS: Final = 19
 
 PROBE: Final = """
 import ast, dataclasses, datetime, enum, importlib, inspect, json, sys, typing
@@ -284,6 +285,14 @@ def deployment_results():
     generated_dump = generated.to_json()
     generated_dump["model_info"].pop("id")
     result["dict_info_dump"] = plain(generated_dump)
+    bare = module.Deployment(model_name="n", litellm_params=module.LiteLLM_Params(model="m"))
+    result["bare_id"] = {
+        "str": isinstance(bare.model_info.id, str),
+        "length": len(bare.model_info.id),
+    }
+    bare_dump = bare.to_json()
+    bare_dump["model_info"].pop("id")
+    result["bare_dump"] = plain(bare_dump)
     extra = module.Deployment(
         model_name="j",
         litellm_params=module.LiteLLM_Params(model="m"),
@@ -299,6 +308,50 @@ def deployment_results():
         ),
         "model_name",
     )
+    return result
+
+
+def extra_results():
+    module = load()
+    cases = {
+        "ModelConfig": {
+            "model_name": "m", "litellm_params": {"model": "m", "messages": []},
+            "tpm": 1, "rpm": 2,
+        },
+        "RoutingGroup": {
+            "group_name": "g", "models": ["a"], "routing_strategy": "simple-shuffle",
+        },
+        "RouterConfig": {"model_list": []},
+        "RetryPolicy": {},
+        "UpdateRouterConfig": {},
+        "RouterGeneralSettings": {},
+        "GenericBudgetWindowDetails": {
+            "budget_start": 1.0, "spend_key": "s", "start_time_key": "t", "ttl_seconds": 60,
+        },
+        "AllowedFailsPolicy": {},
+        "AlertingConfig": {"webhook_url": "http://example.test"},
+        "ModelGroupInfo": {"model_group": "g", "providers": ["p"]},
+        "FineTuningConfig": {"custom_llm_provider": "openai"},
+        "updateDeployment": {},
+        "CredentialLiteLLMParams": {},
+        "ModelGroupSettings": {},
+        "PreRoutingHookResponse": {"model": "m", "messages": []},
+        "RoutingContext": {
+            "raw_messages": [], "structured_messages": [], "candidate_models": [],
+        },
+        "AdaptiveRouterWeights": {},
+        "AdaptiveRouterConfig": {"available_models": []},
+        "AdaptiveRouterPreferences": {"quality_tier": 1},
+    }
+    result = {}
+    for name, payload in cases.items():
+        instance = getattr(module, name)(**payload, unknown=1)
+        dumped = plain(instance.model_dump())
+        result[name] = {
+            "has_unknown": hasattr(instance, "unknown"),
+            "contains": "unknown" in dumped,
+            "dump": dumped,
+        }
     return result
 
 
@@ -565,6 +618,8 @@ elif mode == "params":
     result = params_results()
 elif mode == "deployment":
     result = deployment_results()
+elif mode == "extra":
+    result = extra_results()
 elif mode == "groups":
     result = groups_results()
 elif mode == "errors":
@@ -753,7 +808,18 @@ def test_behavior_deployment() -> None:
     assert result["mirror"] == {"input": 0.5, "output": 0.25}
     assert result["dict_params_mirror"] is None
     assert result["dict_info_id"] == {"str": True, "length": GENERATED_ID_LENGTH}
+    assert result["bare_id"] == {"str": True, "length": GENERATED_ID_LENGTH}
     assert_same("deployment")
+
+
+def test_behavior_extra_keys() -> None:
+    result = run_probe(OURS_PREFIX, OURS_MODULE, "extra")
+    assert len(result) == EXTRA_MODELS
+    for name, item in result.items():
+        entry = OBJECT.validate_python(item)
+        assert entry["has_unknown"] is False, name
+        assert entry["contains"] is False, name
+    assert_same("extra")
 
 
 def test_behavior_model_group_info() -> None:
