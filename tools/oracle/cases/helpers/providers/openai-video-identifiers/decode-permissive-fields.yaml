@@ -1,0 +1,42 @@
+kind: helper
+name: openai-video-identifiers-decode-permissive-fields
+call:
+  openai_video_identifiers:
+    calls:
+      - op: decode_video_id
+        encoded: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhO3ZpZGVvX2lkOnZpZA
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhO3ZpZGVvX2lkOnZpZA==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_eDt5O3o=
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_cHJlIGxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjptaWQ7bW8gZGVsIG1vZGVsX2lkOiBkZWw7dmlkZW9faWQ6b25lIHZpZGVvX2lkOnR3bw==
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YTtiO2M7ZDtl
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YWJjO2I7Yw==AA
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YWJjO2I7Yw==AAAA
+        capture_debug: true
+      - op: decode_character_id
+        encoded: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjaGFyYWN0ZXJfaWQ6b25lIGNoYXJhY3Rlcl9pZDp0d287ZXh0cmE=
+        capture_debug: true
+env: {}
+compare:
+  ignore:
+    - pointer: /value/5
+      why: >-
+        The pinned CPython 3.13 keeps decoding after the padding quad and gives this payload the
+        video_id c\0\0; betterlite stops at the quad that completes the group, CPython 3.12 and
+        earlier's rule, so the trailing bytes are not decoded and the two answers differ.
+    - pointer: /value/6
+      why: >-
+        The pinned CPython 3.13 raises Incorrect padding for this payload and LiteLLM falls back
+        with a debug line; betterlite stops at the padding quad and decodes abc;b;c, so the two
+        answers differ on this malformed payload.
