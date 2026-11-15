@@ -12,6 +12,8 @@ description: >-
   Own all imports, module-level constants (GUARDRAIL_NAME), class/field declarations and the _ToolPermissionRuleFields shape. This task compiles rules; B3811 and B3812 evaluate them against requests, B3813 enforces them in responses.
 scope:
   paths:
+    - "crates/betterlite-guardrails/src/tool_permission.rs"
+    - "crates/betterlite-guardrails/src/lib.rs"
     - crates/betterlite-guardrails/src/tool_permission/**
     - tools/oracle/cases/tool_permission/**
     - tools/oracle/helpers/b3810.py
