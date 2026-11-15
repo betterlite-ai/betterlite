@@ -2,6 +2,10 @@ use betterlite_config::sections::guardrail_params::records::LakeraCategoryThresh
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
+mod flagged;
+pub mod rejection;
+pub mod response;
+
 pub const DEFAULT_API_BASE: &str = "https://api.lakera.ai";
 pub const DEFAULT_MODERATION_CHECK: ModerationCheck = ModerationCheck::InParallel;
 

@@ -10,6 +10,9 @@ use super::{
     LegacyLakeraModerationParams, ModerationCheck, SUPPORTED_EVENT_HOOKS,
 };
 
+#[path = "tests/lakera_moderation.rs"]
+mod lakera_moderation;
+
 fn empty_env(_key: &str) -> String {
     String::new()
 }
