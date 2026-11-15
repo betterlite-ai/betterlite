@@ -1,0 +1,21 @@
+kind: helper
+name: fal-render-profiles-portrait-preset-difference
+call:
+  fal_render_profiles:
+    operation: portrait_preset_difference
+    sizes:
+      - "1536x1024"
+      - "1024x1536"
+      - "576x1024"
+      - "1024x576"
+      - "1024x1024"
+      - "768x1024"
+      - "512x512"
+      - "1024x768"
+      - "auto"
+      - "1024X768"
+      - "10x20x30"
+      - "1_024x768"
+env: {}
+compare:
+  ignore: []

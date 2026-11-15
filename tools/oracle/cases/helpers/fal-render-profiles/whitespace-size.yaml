@@ -1,0 +1,15 @@
+kind: helper
+name: fal-render-profiles-whitespace-size
+call:
+  fal_render_profiles:
+    operation: whitespace_size
+    sizes:
+      - " 1024x1024 "
+      - "\u00a01536x1024\u00a0"
+      - "\u2003512x512\u2003"
+      - " 576x1024 "
+      - "1024x768 "
+      - "\t768x1024\n"
+env: {}
+compare:
+  ignore: []

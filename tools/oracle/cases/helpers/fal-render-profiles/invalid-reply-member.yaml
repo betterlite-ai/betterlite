@@ -1,0 +1,45 @@
+kind: helper
+name: fal-render-profiles-invalid-reply-member
+call:
+  fal_render_profiles:
+    operation: invalid_reply_member
+    replies:
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png", "b64_json": "aGk=", "width": 10, "height": 20}]}'
+        data:
+          - {b64_json: "aGk=", url: "https://existing.test/0.png", revised_prompt: "kept"}
+        hidden_params: {existing: keep}
+      - status: 200
+        headers: {}
+        body: '{"images": [null, {}, {"url": null}]}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"images": [7]}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"images": [true]}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": [1]}]}'
+        data: []
+        hidden_params: {}
+      - status: 200
+        headers: {}
+        body: '{"images": {"url": "https://a.test/1.png"}}'
+        data: []
+        hidden_params: {}
+      - status: 502
+        headers: {x-request-id: req-1}
+        body: '{'
+        data: []
+        hidden_params: {}
+env: {}
+compare:
+  ignore: []
