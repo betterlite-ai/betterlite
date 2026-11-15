@@ -25,3 +25,19 @@ deviations:
       value a provider or LiteLLM itself encodes, and the two oracle calls in
       decode-permissive-fields.yaml that differ on the pinned CPython 3.13 are ignored.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L75-L78
+  - what: >-
+      A provider, model id or video id whose text contains a ';' or the literal label the decoder
+      removes from its field (litellm:custom_llm_provider:, model_id:, and video_id: or
+      character_id: for the id) is encoded as video_ or character_ plus base64 of litellm:quoted:
+      and a JSON object holding custom_llm_provider, model_id and value, so encode then decode
+      returns the same three strings. LiteLLM joins the fields with ';', splits the decoded text
+      on every ';' and keeps the first three parts while removing every literal label from them,
+      so litellm:custom_llm_provider:openai;model_id:m;video_id:a;b decodes to video_id a and
+      loses the b.
+    why: >-
+      That provider video id is data a provider gave betterlite, and a shorter id would address a
+      different video on later requests. The marked payload appears only when the plain payload
+      would not decode back to the fields it was built from, so every payload without a ';' or a
+      stripped label keeps LiteLLM's exact bytes, and an id LiteLLM wrote decodes exactly as
+      LiteLLM decoded it, its lossy answer for a ';' included.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L87-L100
