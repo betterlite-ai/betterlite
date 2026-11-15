@@ -20,17 +20,14 @@ use crate::gemini_http::stream::StreamSetup;
 use crate::gemini_request::orchestration::transform_request_body;
 use crate::gemini_response::complete::{CompleteRequest, RawResponse, transform_response};
 use crate::gemini_stream::StreamOptions;
-use crate::model_policy::error::VertexAiError;
 use crate::token_refresh::ensure_access_token;
-use crate::vertex_embedding_call::post::{ClientTimeout, PostError};
+use crate::vertex_embedding_call::post::ClientTimeout;
 
 use super::body::body_request;
 use super::error::GeminiCallError;
 use super::selection::sync_client_timeout;
 use super::target::resolve_target;
 use super::{CallDeps, GeminiCall, GeminiReply};
-
-const TIMEOUT_MESSAGE: &str = "Timeout error occurred.";
 
 struct Prepared {
     url: String,
@@ -147,7 +144,7 @@ async fn complete(
             timeout,
         })
         .await
-        .map_err(transport_error)?;
+        .map_err(GeminiHttpError::transport)?;
     tracing::debug!(
         model = call.model,
         status = reply.status,
@@ -173,21 +170,6 @@ async fn complete(
     )
     .map_err(GeminiHttpError::Provider)?;
     Ok(GeminiReply::Complete(Box::new(response)))
-}
-
-// LiteLLM turns its client's timeout into a VertexAIError with this status and message
-fn transport_error(source: PostError) -> GeminiHttpError {
-    match source {
-        PostError::Timeout => GeminiHttpError::Timeout(VertexAiError {
-            status_code: 408,
-            message: String::from(TIMEOUT_MESSAGE),
-            headers: None,
-        }),
-        other @ (PostError::Url(_)
-        | PostError::HeaderName { .. }
-        | PostError::HeaderValue { .. }
-        | PostError::Send { .. }) => GeminiHttpError::Transport { source: other },
-    }
 }
 
 // B1316's pre_call facts, cut to values that carry no header or credential
