@@ -48,8 +48,7 @@ pub(crate) fn selected_policy_id(
     let selected = from_metadata.or(from_user_key).or(from_team);
     Ok(selected
         .cloned()
-        .map(exact_value)
-        .unwrap_or(GuardrailValue::SignedInteger(configured)))
+        .map_or(GuardrailValue::SignedInteger(configured), exact_value))
 }
 
 fn metadata_value(
