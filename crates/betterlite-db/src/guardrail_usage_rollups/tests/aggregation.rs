@@ -187,6 +187,14 @@ fn keys_a_unit_by_the_entry_name_when_the_name_to_id_map_does_not_apply() {
 }
 
 #[test]
+fn leaves_the_api_key_out_of_the_unit_key_diagnostic() {
+    let text = format!("{:?}", unit_key("g1", "a"));
+    assert!(text.contains("UsageUnitKey"));
+    assert!(text.contains("usage_unit"));
+    assert!(!text.contains("sk-1"));
+}
+
+#[test]
 fn keeps_the_queued_rows_first_when_merging_counters() {
     let base = IndexMap::from([
         (metrics_key("g1"), counts(1, 1, 0, 0)),

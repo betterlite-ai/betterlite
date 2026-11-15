@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt;
 use std::future::Future;
 use std::mem;
 use std::pin::Pin;
@@ -87,6 +88,19 @@ pub struct UsageUnitKey {
     pub team_id: String,
     pub api_key: String,
     pub usage_unit: String,
+}
+
+// the key holds the caller's api key, so a diagnostic shows the other fields and leaves that one out
+impl fmt::Debug for UsageUnitKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("UsageUnitKey")
+            .field("guardrail_id", &self.guardrail_id)
+            .field("date", &self.date)
+            .field("team_id", &self.team_id)
+            .field("usage_unit", &self.usage_unit)
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
