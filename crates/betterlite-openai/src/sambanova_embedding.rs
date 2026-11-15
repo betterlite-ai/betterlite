@@ -43,6 +43,17 @@ struct WireUsage {
     total_tokens: Option<u32>,
 }
 
+// the embedding mapping copies a supported param only, so unlike the chat one it never renames the token limit
+#[must_use]
+pub fn map_openai_params(non_default_params: &Object, mut optional_params: Object) -> Object {
+    for (name, value) in non_default_params {
+        if SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) {
+            optional_params.insert(name.clone(), value.clone());
+        }
+    }
+    optional_params
+}
+
 pub fn get_complete_url(api_base: Option<&str>) -> Result<String, SambaNovaEmbeddingError> {
     let base = api_base.ok_or(SambaNovaEmbeddingError::MissingApiBase)?;
     let trimmed = base.trim_end_matches('/');

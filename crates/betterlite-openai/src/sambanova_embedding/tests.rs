@@ -10,7 +10,7 @@ use serde_json::json;
 use super::error::{SambaNovaEmbeddingError, SambaNovaError, get_error_class};
 use super::{
     SUPPORTED_OPENAI_PARAMS, SambaNovaEmbeddingResponse, SambaNovaUsage,
-    decode_sambanova_embedding, get_complete_url, transform_embedding_request,
+    decode_sambanova_embedding, get_complete_url, map_openai_params, transform_embedding_request,
     validate_environment,
 };
 use crate::error::ProviderError;
@@ -119,6 +119,21 @@ fn other_caller_headers_are_added_and_a_differently_cased_authorization_is_a_sec
 #[test]
 fn no_embedding_param_is_supported() {
     assert!(SUPPORTED_OPENAI_PARAMS.is_empty());
+}
+
+#[test]
+fn the_embedding_mapping_copies_nothing_and_never_renames_the_token_limit() {
+    let mapped = map_openai_params(
+        &object(r#"{"dimensions": 3, "max_completion_tokens": 5}"#),
+        Object::new(),
+    );
+    assert!(mapped.is_empty());
+}
+
+#[test]
+fn the_embedding_mapping_keeps_the_optional_params_it_is_given() {
+    let mapped = map_openai_params(&object(r#"{"dimensions": 3}"#), object(r#"{"user": "u"}"#));
+    assert_eq!(mapped, object(r#"{"user": "u"}"#));
 }
 
 #[test]
