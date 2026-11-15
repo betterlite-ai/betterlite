@@ -5,7 +5,9 @@ use async_trait::async_trait;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::audit_events::{LITELLM_STORE_AUDIT_LOGS_ENV, Settings};
 use betterlite_config::sections::settings::JsonValue;
-use betterlite_server::audit_events::callbacks::{AuditCallbackConfig, AuditCallbackDispatcher};
+use betterlite_server::audit_events::callbacks::{
+    AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
+};
 use betterlite_server::audit_events::enums::{AuditAction, AuditTable};
 use betterlite_server::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
 use betterlite_server::audit_events::payload::build_audit_log_payload;
@@ -99,7 +101,8 @@ async fn dispatch_answer(call: &Input) -> crate::helpers::HelperResult {
                     fails: *fails,
                     delivered: Mutex::new(Vec::new()),
                 });
-                configs.push(AuditCallbackConfig::Instance(Arc::clone(&recorder)));
+                let erased: Arc<dyn AuditLogCallback> = Arc::<LocalRecorder>::clone(&recorder);
+                configs.push(AuditCallbackConfig::Instance(erased));
                 recorders.push(recorder);
             }
             CallbackCall::Named { name } => {
@@ -107,7 +110,10 @@ async fn dispatch_answer(call: &Input) -> crate::helpers::HelperResult {
             }
         }
     }
-    let dispatcher = AuditCallbackDispatcher::new(Arc::new(LocalRegistry), Arc::clone(&spawner));
+    let dispatcher = AuditCallbackDispatcher::new(
+        Arc::new(LocalRegistry),
+        Arc::<CollectingSpawner>::clone(&spawner),
+    );
     dispatcher.dispatch(&configs, None, &build_audit_log_payload(&record));
     spawner.run_all().await;
     Ok(json!({"delivered": delivery_view(&recorders)}))
@@ -126,13 +132,15 @@ fn local_sink(
                 audit_log_callbacks: Vec::new(),
                 s3_audit_callback_params: None,
             },
-            callbacks: vec![AuditCallbackConfig::Instance(Arc::clone(recorder))],
+            callbacks: vec![AuditCallbackConfig::Instance(Arc::<LocalRecorder>::clone(
+                recorder,
+            ))],
         }),
         callbacks: Arc::new(AuditCallbackDispatcher::new(
             Arc::new(LocalRegistry),
-            Arc::clone(spawner),
+            Arc::<CollectingSpawner>::clone(spawner),
         )),
-        repository: Arc::clone(repository),
+        repository: Arc::<LocalRepository>::clone(repository),
         clock: Arc::new(SystemAuditClock),
         new_id: Arc::new(|| "audit-id-1".to_owned()),
     }
