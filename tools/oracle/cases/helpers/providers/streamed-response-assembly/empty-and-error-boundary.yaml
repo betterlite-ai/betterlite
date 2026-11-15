@@ -38,6 +38,7 @@ calls:
           content: A
     counter: {messages: 3, text: 1}
     messages: []
+    costs: {completion_cost: '0.0000175'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble

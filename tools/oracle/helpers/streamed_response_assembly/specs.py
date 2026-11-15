@@ -33,7 +33,6 @@ class LoggingInput(TypedDict):
     provider: str | None
     cache_hit: bool
     response_cost: NotRequired[Json]
-    response_cost_error: NotRequired[bool]
 
 
 class Input(TypedDict):

@@ -42,6 +42,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
     messages: []
+    costs: {completion_cost: '0.000075'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble

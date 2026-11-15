@@ -1,6 +1,7 @@
 from typing import Final, TypedDict
 
 from litellm.types.utils import ModelResponse, TextCompletionResponse
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic import JsonValue as Json
 from pydantic import TypeAdapter
 
@@ -36,6 +37,17 @@ class UsageDump(TypedDict, total=False):
     cost: float | None
 
 
+class HiddenDump(TypedDict, total=False):
+    response_cost: float | None
+    provider_specific_fields: Json
+
+
+class PrivateDump(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    hidden: HiddenDump = Field(alias="_hidden_params")
+
+
 class ResponseDump(TypedDict, total=False):
     id: Json
     object: Json
@@ -54,10 +66,20 @@ def response_view(response: ModelResponse | TextCompletionResponse) -> Json:
     dump = DUMP.validate_json(response.model_dump_json())
     if dump.get("object") == TEXT_OBJECT:
         return clean_value(text_view(dump))
-    return clean_value(chat_view(dump))
+    return clean_value(chat_view(dump, hidden_view(response)))
 
 
-def chat_view(dump: ResponseDump) -> Json:
+# model_dump_json leaves the private _hidden_params map out, so it is read as an attribute.
+def hidden_view(response: ModelResponse | TextCompletionResponse) -> Json:
+    hidden = PrivateDump.model_validate(response).hidden
+    cost = hidden.get("response_cost")
+    return {
+        "response_cost": None if cost is None else f"{cost:.12f}",
+        "provider_specific_fields": hidden.get("provider_specific_fields"),
+    }
+
+
+def chat_view(dump: ResponseDump, hidden: Json) -> Json:
     return {
         "kind": "chat",
         "id": dump.get("id"),
@@ -68,6 +90,7 @@ def chat_view(dump: ResponseDump) -> Json:
         "service_tier": dump.get("service_tier"),
         "choices": chat_choices(dump.get("choices")),
         "usage": usage_view(dump.get("usage")),
+        "hidden_params": hidden,
     }
 
 

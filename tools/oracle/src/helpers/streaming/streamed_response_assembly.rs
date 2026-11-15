@@ -1,5 +1,5 @@
 use betterlite_error::error::ErrorClass;
-use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
+use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, JsonValue};
 use betterlite_streaming::stream_usage_assembly::wire::Usage;
 use betterlite_streaming::streamed_response_assembly::response::{ChatChoice, TextUsage};
 use betterlite_streaming::streamed_response_assembly::{
@@ -150,6 +150,7 @@ fn response_view(response: &Response) -> Value {
                 "service_tier": chat.service_tier,
                 "choices": choices,
                 "usage": usage_view(&chat.usage),
+                "hidden_params": hidden_view(&chat.hidden_params),
             })
         }
         Response::Text(text) => {
@@ -201,7 +202,7 @@ fn chat_choice_view(choice: &ChatChoice) -> Value {
     })
 }
 
-fn usage_view(usage: &Usage) -> JsonValue {
+fn usage_view(usage: &Usage) -> Value {
     json!({
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,
@@ -210,7 +211,29 @@ fn usage_view(usage: &Usage) -> JsonValue {
     })
 }
 
-fn text_usage_view(usage: &TextUsage) -> JsonValue {
+// The response_cost prints like the usage cost so 1 and 1.0 compare equal.
+fn hidden_view(hidden: &JsonObject) -> Value {
+    json!({
+        "response_cost": hidden
+            .get("response_cost")
+            .and_then(response_cost_number)
+            .map(|cost| format!("{cost:.12}")),
+        "provider_specific_fields": hidden.get("provider_specific_fields"),
+    })
+}
+
+fn response_cost_number(cost: &JsonValue) -> Option<f64> {
+    match cost {
+        JsonValue::Number(number) => number.as_f64(),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => None,
+    }
+}
+
+fn text_usage_view(usage: &TextUsage) -> Value {
     json!({
         "prompt_tokens": usage.prompt_tokens,
         "completion_tokens": usage.completion_tokens,

@@ -24,6 +24,7 @@ call:
     count_prompt_tokens: 10
     counter: {messages: 0, text: 1}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 calls:
 - streamed_response_assembly:
@@ -64,6 +65,7 @@ calls:
       _hidden_params:
         provider_specific_fields: {}
     messages: []
+    costs: {completion_cost: '0.000075'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -83,6 +85,7 @@ calls:
     count_prompt_tokens: raise
     counter: {messages: 0, text: 1}
     messages: []
+    costs: {completion_cost: '0.00001'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -103,6 +106,7 @@ calls:
         finish_reason: stop
     counter: {messages: 3, text: 1}
     messages: []
+    costs: {completion_cost: '0.0000007'}
     now: 1700000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

@@ -99,6 +99,7 @@ calls:
         finish_reason: stop
     counter: {messages: 3, text: 1}
     messages: []
+    costs: {completion_cost: '0.0000175'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -142,6 +143,7 @@ calls:
         custom_llm_provider: openai
     counter: {messages: 3, text: 1}
     messages: []
+    costs: {completion_cost: '0.0000175'}
     now: 1700000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}

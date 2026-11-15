@@ -20,8 +20,6 @@ use serde::Deserialize;
 pub(crate) struct CounterFixture {
     pub(crate) text: i64,
     pub(crate) messages: i64,
-    pub(crate) fail_text: bool,
-    pub(crate) fail_messages: bool,
 }
 
 pub(crate) struct FixtureCounter {
@@ -34,23 +32,16 @@ impl FixtureCounter {
             fixture: fixture.clone(),
         }
     }
-
-    const fn counted(failed: bool, count: i64) -> Result<i64, CountError> {
-        if failed {
-            return Err(CountError::MissingInput);
-        }
-        Ok(count)
-    }
 }
 
 #[async_trait]
 impl UsageTokenCounter for FixtureCounter {
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
-        Self::counted(self.fixture.fail_text, self.fixture.text)
+        Ok(self.fixture.text)
     }
 
     async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
-        Self::counted(self.fixture.fail_text, self.fixture.text)
+        Ok(self.fixture.text)
     }
 
     async fn count_messages(
@@ -61,7 +52,7 @@ impl UsageTokenCounter for FixtureCounter {
         if messages.is_none() {
             return Err(CountError::MissingInput);
         }
-        Self::counted(self.fixture.fail_messages, self.fixture.messages)
+        Ok(self.fixture.messages)
     }
 }
 
@@ -69,10 +60,6 @@ impl UsageTokenCounter for FixtureCounter {
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct CostFixture {
     pub(crate) completion_cost: Option<String>,
-    pub(crate) completion_cost_error: bool,
-    pub(crate) prompt_cost: Option<String>,
-    pub(crate) completion_tokens_cost: Option<String>,
-    pub(crate) per_token_error: bool,
 }
 
 pub(crate) struct FixtureCosts {
@@ -93,11 +80,6 @@ impl StreamCostCalculator for FixtureCosts {
         _input: &CostInput<'_>,
         _provider: Option<&str>,
     ) -> Result<Option<Decimal>, CostError> {
-        if self.fixture.completion_cost_error {
-            return Err(CostError {
-                message: "fixture completion_cost failure".to_owned(),
-            });
-        }
         self.fixture
             .completion_cost
             .as_deref()
@@ -110,29 +92,9 @@ impl StreamCostCalculator for FixtureCosts {
         _model: &str,
         _usage: &Usage,
     ) -> Result<(Decimal, Decimal), CostError> {
-        if self.fixture.per_token_error {
-            return Err(CostError {
-                message: "fixture cost_per_token failure".to_owned(),
-            });
-        }
-        let prompt = self
-            .fixture
-            .prompt_cost
-            .as_deref()
-            .ok_or_else(|| CostError {
-                message: "fixture prompt cost is missing".to_owned(),
-            })?;
-        let completion = self
-            .fixture
-            .completion_tokens_cost
-            .as_deref()
-            .ok_or_else(|| CostError {
-                message: "fixture completion cost is missing".to_owned(),
-            })?;
-        Ok((
-            Decimal::from_str(prompt).map_err(fixture_decimal)?,
-            Decimal::from_str(completion).map_err(fixture_decimal)?,
-        ))
+        Err(CostError {
+            message: "fixture cost_per_token is not priced".to_owned(),
+        })
     }
 }
 
@@ -148,7 +110,6 @@ pub(crate) struct LoggingFixture {
     pub(crate) provider: Option<String>,
     pub(crate) cache_hit: bool,
     pub(crate) response_cost: Option<String>,
-    pub(crate) response_cost_error: bool,
 }
 
 pub(crate) struct FixtureLogging {
@@ -169,11 +130,6 @@ impl StreamLogging for FixtureLogging {
     }
 
     fn response_cost(&self, _input: &CostInput<'_>) -> Result<Option<Decimal>, CostError> {
-        if self.fixture.response_cost_error {
-            return Err(CostError {
-                message: "fixture logging cost failure".to_owned(),
-            });
-        }
         // Logging._response_cost_calculator returns 0.0 before pricing a cache hit.
         if self.fixture.cache_hit {
             return Ok(Some(Decimal::ZERO));

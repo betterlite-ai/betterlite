@@ -37,6 +37,7 @@ call:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 calls:
 - streamed_response_assembly:
@@ -70,6 +71,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -103,6 +105,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -140,6 +143,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -164,6 +168,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -188,6 +193,7 @@ calls:
         finish_reason: stop
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 - streamed_response_assembly:
     function: assemble
@@ -207,6 +213,7 @@ calls:
       - index: 0
         delta:
           function_call:
+            name: get_weather
             arguments: 'Paris"}'
     - choices:
       - index: 0
@@ -214,6 +221,7 @@ calls:
         finish_reason: function_call
       usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
     messages: []
+    costs: {completion_cost: '0.000045'}
     now: 1700000000
 env: {LITELLM_RUST: 'false'}
 compare: {ignore: []}
