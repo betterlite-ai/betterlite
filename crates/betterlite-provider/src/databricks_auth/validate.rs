@@ -51,7 +51,7 @@ async fn authenticate(
         api_key,
         api_base,
         custom_endpoint,
-        headers: mut headers,
+        mut headers,
     } = request;
     let oauth = oauth_credentials(env, api_base.as_deref());
     if let Some((client_id, client_secret, base)) = oauth {
