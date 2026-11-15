@@ -1,4 +1,5 @@
-from typing import Final, TypedDict
+from types import SimpleNamespace
+from typing import TypedDict
 
 from litellm.proxy.auth.auth_utils import (
     get_cache_prediction_deployments,
@@ -6,7 +7,10 @@ from litellm.proxy.auth.auth_utils import (
     request_dispatched_to_provider_pass_through,
 )
 from litellm.router import Router
-from pydantic import JsonValue, TypeAdapter
+from litellm.types.passthrough_endpoints.pass_through_endpoints import (
+    LITELLM_PASS_THROUGH_ENDPOINT_MARKER as PASS_THROUGH_MARKER,
+)
+from pydantic import JsonValue
 from starlette.requests import Request
 from starlette.types import Scope
 
@@ -31,34 +35,28 @@ class Input(TypedDict):
     steps: list[Step]
 
 
-INPUT: Final = TypeAdapter(Input)
-OUTPUT: Final = TypeAdapter(dict[str, JsonValue])
+class StepResult(TypedDict):
+    prediction: list[str] | None
+    pass_through: bool
+    provider_pass_through: bool
 
 
-class MarkedEndpoint:
-    __litellm_pass_through_endpoint__ = True
+def run(input_value: Input) -> list[StepResult]:
+    return [
+        run_step(step)
+        for step in input_value["steps"]
+    ]
 
 
-class PlainEndpoint:
-    pass
-
-
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    typed = INPUT.validate_python(input_value)
-    return [run_step(step) for step in typed["steps"]]
-
-
-def run_step(step: Step) -> JsonValue:
+def run_step(step: Step) -> StepResult:
     router = build_router(step)
     request = build_request(step)
     prediction = prediction_models(step, router)
-    return OUTPUT.validate_python(
-        {
-            "prediction": prediction,
-            "pass_through": request_dispatched_to_pass_through_endpoint(request),
-            "provider_pass_through": request_dispatched_to_provider_pass_through(request),
-        }
-    )
+    return {
+        "prediction": prediction,
+        "pass_through": request_dispatched_to_pass_through_endpoint(request),
+        "provider_pass_through": request_dispatched_to_provider_pass_through(request),
+    }
 
 
 def prediction_models(step: Step, router: Router | None) -> list[str] | None:
@@ -102,7 +100,7 @@ def build_request(step: Step) -> Request:
     }
     marker = step["endpoint_marker"]
     if marker is True:
-        scope["endpoint"] = MarkedEndpoint()
+        scope["endpoint"] = SimpleNamespace(**{PASS_THROUGH_MARKER: True})
     elif marker is False:
-        scope["endpoint"] = PlainEndpoint()
+        scope["endpoint"] = SimpleNamespace()
     return Request(scope=scope)

@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 
 use betterlite_auth::auth_request_models::catalog::{CatalogError, DeploymentRecord, ModelCatalog};
-use betterlite_auth::auth_request_models::managed::get_cache_prediction_deployments;
+use betterlite_auth::auth_request_models::managed::prediction_deployments;
 use betterlite_auth::auth_request_models::sources::{
-    DispatchContext, request_dispatched_to_pass_through_endpoint,
-    request_dispatched_to_provider_pass_through,
+    DispatchContext, is_pass_through_dispatch, is_provider_pass_through,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -77,8 +76,8 @@ fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     };
     Ok(json!({
         "prediction": prediction(step, &catalog)?,
-        "pass_through": request_dispatched_to_pass_through_endpoint(&dispatch),
-        "provider_pass_through": request_dispatched_to_provider_pass_through(&dispatch),
+        "pass_through": is_pass_through_dispatch(&dispatch),
+        "provider_pass_through": is_provider_pass_through(&dispatch),
     }))
 }
 
@@ -92,22 +91,17 @@ fn prediction(step: &Step, catalog: &StepCatalog) -> Result<Value, Box<HelperErr
     if catalog.deployments.is_empty() {
         return Ok(Value::Null);
     }
-    let found = get_cache_prediction_deployments(
-        current,
-        candidate,
-        Some(catalog),
-        step.team_id.as_deref(),
-    )
-    .map_err(|error| {
-        Box::new(HelperError {
-            class: "CatalogError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
+    let found = prediction_deployments(current, candidate, Some(catalog), step.team_id.as_deref())
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "CatalogError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
     Ok(found.map_or(Value::Null, |(current, candidate)| {
         json!([current.model_name, candidate.model_name])
     }))
@@ -119,10 +113,7 @@ struct StepCatalog {
 }
 
 impl ModelCatalog for StepCatalog {
-    fn resolve_model_name_from_model_id(
-        &self,
-        _model_id: &str,
-    ) -> Result<Option<String>, CatalogError> {
+    fn resolve_model_name(&self, _model_id: &str) -> Result<Option<String>, CatalogError> {
         Ok(None)
     }
 
