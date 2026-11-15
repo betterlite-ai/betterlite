@@ -41,8 +41,8 @@ pub(super) fn parse_reply<T>(raw_response: &EvalsHttpResponse<'_>) -> Result<T, 
 where
     T: DeserializeOwned,
 {
-    let value = decode_eval_reply(raw_response.text.as_bytes())?;
-    serde_json::from_value(value).map_err(|source| EvalsError::ReplyModel { source })
+    serde_json::from_value(decode_eval_reply(raw_response.text.as_bytes())?)
+        .map_err(|source| EvalsError::ReplyModel { source })
 }
 
 pub(super) fn context_api_base<'call>(context: &EvalsRequestContext<'call>) -> &'call str {

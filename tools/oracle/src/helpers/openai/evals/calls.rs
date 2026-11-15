@@ -127,7 +127,7 @@ fn evals_config(probe: &Probe) -> Result<OpenAiEvalsConfig, Box<HelperError>> {
     Ok(OpenAiEvalsConfig {
         api_key: probe.litellm_api_key.clone().map(SecretString::from),
         openai_key: probe.litellm_openai_key.clone().map(SecretString::from),
-        env_api_key: config.sections.resource_sdk_settings.openai_api_key.clone(),
+        env_api_key: config.sections.resource_sdk_settings.openai_api_key,
     })
 }
 
