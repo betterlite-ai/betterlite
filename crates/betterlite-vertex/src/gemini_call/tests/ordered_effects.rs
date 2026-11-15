@@ -1,8 +1,13 @@
 #![cfg(test)]
 
+use std::fs;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tracing::Level;
+use tracing::subscriber::with_default;
 
 use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
@@ -88,6 +93,8 @@ fn ordered_effects_sync_stream_opens_only_when_iterated() {
     // LiteLLM's make_sync_call partial carries no timeout, so the caller's value never reaches the stream
     assert_eq!(opens[0].timeout, ClientTimeout::HandlerDefault);
     assert!(fixture.recorder.posts().is_empty());
+    let ended = fixture.runtime.block_on(stream.next_chunk());
+    assert!(ended.is_none(), "the stream ends after its last chunk");
 }
 
 #[test]
@@ -180,6 +187,49 @@ fn ordered_effects_supplied_client_matches_the_sync_branch(
     };
     assert_eq!(used.len(), 1);
     assert_eq!(used[0].timeout, expected);
+    assert!(unused.is_empty());
+}
+
+#[rstest]
+#[case::supplied_sync_client_opens_on_its_own_transport(ClientKind::Sync)]
+#[case::supplied_async_client_opens_on_the_pooled_transport(ClientKind::Async)]
+fn ordered_effects_supplied_client_matches_the_stream_branch(kind: ClientKind) {
+    let fixture = supplied_fixture(
+        kind,
+        (
+            Vec::new(),
+            vec![stream_reply(200, vec![line(STREAM_CHUNK)])],
+        ),
+        (
+            Vec::new(),
+            vec![stream_reply(200, vec![line(STREAM_CHUNK)])],
+        ),
+    );
+    let reply = fixture.run(Setup {
+        acompletion: false,
+        stream: Some(true),
+        timeout: None,
+    });
+    let Ok(GeminiReply::Stream(mut stream)) = reply else {
+        panic!("a streamed synchronous call answers with a generated stream");
+    };
+    let caller = fixture.caller.as_ref().expect("a supplied client");
+    assert!(caller.opens().is_empty() && fixture.recorder.opens().is_empty());
+    let chunk = fixture
+        .runtime
+        .block_on(stream.next_chunk())
+        .expect("a first chunk")
+        .expect("a decoded chunk");
+    assert_eq!(chunk.id, "r1");
+    let caller_opens = caller.opens();
+    let pooled_opens = fixture.recorder.opens();
+    let (used, unused) = if kind == ClientKind::Sync {
+        (caller_opens, pooled_opens)
+    } else {
+        (pooled_opens, caller_opens)
+    };
+    assert_eq!(used.len(), 1);
+    assert_eq!(used[0].url, STREAM_URL);
     assert!(unused.is_empty());
 }
 
@@ -284,4 +334,28 @@ fn ordered_effects_sync_stream_refuses_a_status_without_translating() {
     };
     assert_eq!(provider.status_code, 400);
     assert_eq!(provider.message, SCHEMA_ERROR);
+}
+
+#[test]
+fn ordered_effects_sync_completion_logs_the_request() {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
+    let log = NamedTempFile::new().expect("a log file");
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(Level::DEBUG)
+        .with_writer(Arc::new(log.reopen().expect("a log writer")))
+        .finish();
+    let reply = with_default(subscriber, || {
+        fixture.run(Setup {
+            acompletion: false,
+            stream: None,
+            timeout: None,
+        })
+    });
+    assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    let logged = fs::read_to_string(log.path()).expect("the captured log");
+    assert!(logged.contains("sending the Gemini request"));
+    assert!(logged.contains("gemini-2.5-flash"));
+    assert!(logged.contains("us-central1-aiplatform.googleapis.com"));
+    assert!(!logged.contains(TOKEN));
 }
