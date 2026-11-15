@@ -1,0 +1,18 @@
+kind: helper
+name: fal-image-core-pricing-quality-alias
+call:
+  fal_image_core:
+    operation: pricing_quality_alias
+    model: gpt-image-2
+    catalog:
+      fal_ai/high/1024-x-768/openai/gpt-image-2: {litellm_provider: fal_ai}
+      fal_ai/low/1024-x-768/openai/gpt-image-2: {litellm_provider: fal_ai}
+      fal_ai/medium/1024-x-768/gpt-image-2: {litellm_provider: fal_ai}
+      fal_ai/high/1024-x-768/openai/gpt-image-2/edit: {litellm_provider: fal_ai}
+      fal_ai/high/1024-x-768/gpt-image-2: {litellm_provider: fal_ai}
+      fal_ai/short: {litellm_provider: fal_ai}
+      other/high/1024-x-768/openai/gpt-image-2: {litellm_provider: other}
+    qualities: ["hd", "standard", "low", "auto", "ultra", 5, null, {quality: high}]
+env: {}
+compare:
+  ignore: []
