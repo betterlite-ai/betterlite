@@ -62,25 +62,20 @@ impl Endpoint {
 }
 
 pub(super) async fn start_endpoint(args: &AliceApplyArgs) -> Result<Endpoint, Box<HelperError>> {
-    match (&args.answer, &args.failure) {
-        (Some(answer), _) => serve(answer.clone()).await,
-        (None, Some(FailureKind::Timeout)) => {
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let address = listener.local_addr()?;
-            Ok(Endpoint::Silent {
-                base: format!("http://{address}"),
-                _listener: listener,
-            })
-        }
-        (None, Some(FailureKind::Connect) | None) => {
-            let listener = TcpListener::bind("127.0.0.1:0").await?;
-            let address = listener.local_addr()?;
-            drop(listener);
-            Ok(Endpoint::Refused {
-                base: format!("http://{address}"),
-            })
-        }
+    if let Some(answer) = &args.answer {
+        return serve(answer.clone()).await;
     }
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = listener.local_addr()?;
+    let base = format!("http://{address}");
+    if args.failure == Some(FailureKind::Timeout) {
+        return Ok(Endpoint::Silent {
+            base,
+            _listener: listener,
+        });
+    }
+    drop(listener);
+    Ok(Endpoint::Refused { base })
 }
 
 async fn serve(answer: ScriptedAnswer) -> Result<Endpoint, Box<HelperError>> {
