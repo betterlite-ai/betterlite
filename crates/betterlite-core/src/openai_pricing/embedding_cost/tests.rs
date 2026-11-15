@@ -1,10 +1,10 @@
 #![cfg(test)]
 
 use std::fmt::Debug;
-use std::io::Error as IoError;
 use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_openai::embedding::EmbeddingResponse;
 use rust_decimal::Decimal;
 use tracing::field::{Field, Visit};
@@ -14,7 +14,8 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::embedding_cost;
-use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostError, CostedResponse};
+use crate::openai_pricing::cost_error::CostError;
+use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostedResponse};
 use crate::routes::CallType;
 
 const BODY: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1,0.2],"index":0}],"model":"text-embedding-3-small","usage":{"prompt_tokens":8,"total_tokens":8}}"#;
@@ -64,7 +65,7 @@ impl CompletionCost for RecordingCost {
             embedding: matches!(request.response, CostedResponse::Embedding(_)),
         });
         if self.fails {
-            return Err(Box::new(IoError::other("model not mapped")));
+            return Err(CostError::UnknownModel(TokenCostError::UnknownModel));
         }
         Ok(self.charge)
     }

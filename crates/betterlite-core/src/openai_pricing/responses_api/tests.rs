@@ -1,6 +1,5 @@
 #![cfg(test)]
 
-use std::io::Error as IoError;
 use std::mem;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -13,6 +12,7 @@ use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
+use betterlite_models::token_cost::error::TokenCostError;
 use betterlite_openai::response_events::{RawResponse, ReplyBody, ResponsesReply};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
@@ -21,7 +21,8 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 
 use super::{ResponsesApiError, ResponsesCostRequest, responses_with_cost};
-use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostError, CostedResponse};
+use crate::openai_pricing::cost_error::CostError;
+use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostedResponse};
 use crate::routes::CallType;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
@@ -114,7 +115,7 @@ impl CompletionCost for RecordingCost {
             embedding: matches!(request.response, CostedResponse::Embedding(_)),
         });
         if self.fails {
-            return Err(Box::new(IoError::other("no price for the model")));
+            return Err(CostError::UnpricedField(TokenCostError::Overflow));
         }
         Ok(self.charge)
     }
@@ -241,6 +242,11 @@ fn a_failed_cost_is_returned_and_drops_the_reply() {
     let Err(error) = run(REPLY, &cost, &mut state, &env) else {
         panic!("the cost must fail");
     };
-    assert!(matches!(error, ResponsesApiError::Cost { .. }));
+    assert!(matches!(
+        error,
+        ResponsesApiError::Cost {
+            source: CostError::UnpricedField(_)
+        }
+    ));
     assert_eq!(cost.observed().len(), 1);
 }

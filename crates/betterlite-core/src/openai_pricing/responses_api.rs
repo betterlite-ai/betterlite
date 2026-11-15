@@ -4,7 +4,8 @@ use betterlite_openai::error::OpenAiError;
 use betterlite_openai::response_events::{RawResponse, ResponsesReply, transform_response};
 use rust_decimal::Decimal;
 
-use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostError, CostedResponse};
+use crate::openai_pricing::cost_error::CostError;
+use crate::openai_pricing::{CompletionCost, CompletionCostRequest, CostedResponse};
 use crate::routes::CallType;
 
 mod tests;

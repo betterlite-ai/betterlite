@@ -1,15 +1,15 @@
+pub mod cost_error;
 pub mod embedding_cost;
 pub mod get_provider_config;
 pub mod image_cost;
 pub mod responses_api;
 pub mod route_predicates;
 
-use std::error::Error;
-
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::response_events::ResponsesReply;
 use rust_decimal::Decimal;
 
+use self::cost_error::CostError;
 use crate::routes::CallType;
 
 pub enum CostedResponse<'request> {
@@ -23,8 +23,6 @@ pub struct CompletionCostRequest<'request> {
     pub custom_llm_provider: &'request str,
     pub call_type: CallType,
 }
-
-pub type CostError = Box<dyn Error + Send + Sync>;
 
 // The async pricing pipeline cannot run inside a synchronous relay handler, so the caller binds a cost service that can
 pub trait CompletionCost {
