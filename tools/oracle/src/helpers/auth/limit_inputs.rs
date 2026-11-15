@@ -10,7 +10,7 @@ use betterlite_auth::auth_limit_inputs::estimates::{
     OutputTokenEstimateRequest, enforce_estimate_admin_only, get_estimated_output_tokens,
 };
 use betterlite_auth::auth_limit_inputs::key_limits::{
-    ModelLimitQuery, ModelRateLimitKey, get_key_model_rpm_limit, get_key_model_tpm_limit,
+    ModelRateLimitKey, get_key_model_rpm_limit, get_key_model_tpm_limit,
 };
 use betterlite_auth::auth_limit_inputs::metadata_limits::{
     MetadataAccessor, get_key_mcp_rpm_limit, get_key_tag_rpm_limit, get_team_mcp_rpm_limit,
@@ -94,13 +94,8 @@ fn key_model_limits(
 ) -> HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(fields.clone())).or_value_error()?;
     let catalog = Catalog { deployments };
-    let query = ModelLimitQuery {
-        auth: &auth,
-        model_name,
-        catalog: Some(&catalog),
-    };
-    let rpm = get_key_model_rpm_limit(&query).or_value_error()?;
-    let tpm = get_key_model_tpm_limit(&query).or_value_error()?;
+    let rpm = get_key_model_rpm_limit(&auth, model_name, Some(&catalog)).or_value_error()?;
+    let tpm = get_key_model_tpm_limit(&auth, model_name, Some(&catalog)).or_value_error()?;
     Ok(json!({ "rpm": rpm, "tpm": tpm }))
 }
 

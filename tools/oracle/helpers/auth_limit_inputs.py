@@ -1,8 +1,6 @@
 from logging import Handler, Logger, LogRecord, getLogger
-from typing import Literal, NotRequired, TypeAlias, TypedDict
+from typing import Literal, NotRequired, TypeAlias, TypedDict, override
 
-from fastapi import HTTPException
-from litellm import Router
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UpdateKeyRequest, UserAPIKeyAuth
 from litellm.proxy.auth.auth_utils import (
@@ -16,7 +14,9 @@ from litellm.proxy.auth.auth_utils import (
     get_model_rate_limit_from_metadata,
     get_team_mcp_rpm_limit,
 )
+from litellm.router import Router
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
+from starlette.exceptions import HTTPException
 
 
 class DeploymentInput(TypedDict):
@@ -93,6 +93,7 @@ class WarningHandler(Handler):
         super().__init__()
         self.warnings: list[JsonValue] = []
 
+    @override
     def emit(self, record: LogRecord) -> None:
         self.warnings.append(TypeAdapter(str).validate_python(ignored_field(record.getMessage())))
 
@@ -171,31 +172,26 @@ def rejection(error: HTTPException) -> dict[str, JsonValue]:
     }
 
 
-def enforce_output_estimates(call: EnforceOutputEstimatesInput) -> dict[str, JsonValue]:
+def enforce_admin_only(
+    call: EnforceOutputEstimatesInput | EnforceBatchLimitInput,
+) -> dict[str, JsonValue]:
     request = update_request(call["request"])
     caller = TypeAdapter(UserAPIKeyAuth).validate_python(call["caller"])
     try:
-        enforce_output_token_estimates_are_admin_only(
-            data=request,
-            existing_metadata=call["existing_metadata"],
-            user_api_key_dict=caller,
-            entity=call["entity"],
-        )
-    except HTTPException as error:
-        return rejection(error)
-    return {"ok": True}
-
-
-def enforce_batch_limit(call: EnforceBatchLimitInput) -> dict[str, JsonValue]:
-    request = update_request(call["request"])
-    caller = TypeAdapter(UserAPIKeyAuth).validate_python(call["caller"])
-    try:
-        enforce_batch_enqueued_token_limit_is_admin_only(
-            data=request,
-            existing_metadata=call["existing_metadata"],
-            user_api_key_dict=caller,
-            entity=call["entity"],
-        )
+        if call["function"] == "enforce_output_estimates":
+            enforce_output_token_estimates_are_admin_only(
+                data=request,
+                existing_metadata=call["existing_metadata"],
+                user_api_key_dict=caller,
+                entity=call["entity"],
+            )
+        else:
+            enforce_batch_enqueued_token_limit_is_admin_only(
+                data=request,
+                existing_metadata=call["existing_metadata"],
+                user_api_key_dict=caller,
+                entity=call["entity"],
+            )
     except HTTPException as error:
         return rejection(error)
     return {"ok": True}
@@ -249,9 +245,7 @@ def run(input_value: Input) -> dict[str, JsonValue]:
             return key_model_limits(input_value)
         case "estimated_output_tokens":
             return estimated_output_tokens(input_value)
-        case "enforce_output_estimates":
-            return enforce_output_estimates(input_value)
-        case "enforce_batch_limit":
-            return enforce_batch_limit(input_value)
+        case "enforce_output_estimates" | "enforce_batch_limit":
+            return enforce_admin_only(input_value)
         case "mcp_rpm_limit" | "tag_rpm_limit" | "tenant_fields":
             return key_limit_lookup(input_value)

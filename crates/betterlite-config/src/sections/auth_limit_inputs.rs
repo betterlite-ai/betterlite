@@ -7,14 +7,14 @@ use crate::sections::Section;
 mod tests;
 
 // One deployment's declared per-key defaults, kept raw so the auth projection applies int()'s skip and overflow rules.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DeploymentLimitDefaults {
     pub model_name: String,
     pub default_api_key_rpm_limit: Option<Json>,
     pub default_api_key_tpm_limit: Option<Json>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Settings {
     pub deployments: Vec<DeploymentLimitDefaults>,
 }

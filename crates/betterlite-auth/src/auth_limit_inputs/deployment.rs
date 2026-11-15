@@ -129,7 +129,7 @@ fn float_limit(number: f64) -> ConvertedLimit {
     if !number.is_finite() {
         return ConvertedLimit::Overflow;
     }
-    match Decimal::from_f64_retain(number).map(Decimal::trunc) {
+    match Decimal::from_f64_retain(number).map(|value| value.trunc()) {
         Some(truncated) => truncated
             .to_i64()
             .map_or(ConvertedLimit::Overflow, ConvertedLimit::Value),

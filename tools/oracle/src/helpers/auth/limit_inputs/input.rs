@@ -4,7 +4,6 @@ use betterlite_auth::auth_limit_inputs::batch::BatchEnqueuedTokenLimitField;
 use betterlite_auth::auth_limit_inputs::deployment::{DeploymentLimitValue, DeploymentLimits};
 use betterlite_auth::auth_limit_inputs::error::ManagementEntity;
 use betterlite_auth::auth_limit_inputs::estimates::OutputTokenEstimateField;
-use betterlite_auth::auth_limit_inputs::metadata_limits::MetadataAccessor;
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_models::decisions::Json;
 use serde::Deserialize;
@@ -106,24 +105,6 @@ impl From<EntityInput> for ManagementEntity {
         match value {
             EntityInput::Key => Self::Key,
             EntityInput::Team => Self::Team,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AccessorInput {
-    TeamMetadata,
-    OrganizationMetadata,
-    ProjectMetadata,
-}
-
-impl From<AccessorInput> for MetadataAccessor {
-    fn from(value: AccessorInput) -> Self {
-        match value {
-            AccessorInput::TeamMetadata => Self::Team,
-            AccessorInput::OrganizationMetadata => Self::Organization,
-            AccessorInput::ProjectMetadata => Self::Project,
         }
     }
 }
