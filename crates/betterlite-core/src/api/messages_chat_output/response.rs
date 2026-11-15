@@ -7,8 +7,8 @@ use crate::api::messages_chat_output::output::{
     AnthropicStopReason, AssistantRole, ContentEntry, ContextManagement, MessageKind,
     MessageResponse, UsageProjection,
 };
-use crate::api::messages_chat_output::records::ResponseRecord;
-use crate::api::messages_chat_output::usage::{project_usage, zero_usage};
+use crate::api::messages_chat_output::records::{ResponseRecord, UsageRecord, refusal_text};
+use crate::api::messages_chat_output::usage::project_usage;
 use crate::api::messages_context_clear::result::{
     CompactionBlock, PolyfillResult, UsageIteration, UsageKind,
 };
@@ -23,10 +23,12 @@ pub fn response_message(
     polyfill_result: Option<&PolyfillResult>,
 ) -> Result<MessageResponse, ChatOutputError> {
     let mut content = content_blocks(&response.choices, tool_name_mapping)?;
-    let refusal_text = response
-        .choices
-        .iter()
-        .find_map(|choice| choice.message.refusal_text());
+    let refusal = response.choices.iter().find_map(|choice| {
+        refusal_text(
+            &choice.message.refusal,
+            &choice.message.provider_specific_fields,
+        )
+    });
     if let Some(block) = polyfill_result.and_then(|result| result.compaction_block.as_ref()) {
         content.insert(0, ContentEntry::Compaction(compaction_object(block)));
     }
@@ -36,22 +38,22 @@ pub fn response_message(
         .and_then(|choice| choice.finish_reason.as_deref())
         .unwrap_or("stop");
     let translated = anthropic_finish_reason(openai_reason);
-    let stop_reason = stop_reason(&content, refusal_text.as_deref(), translated);
+    let stop_reason = stop_reason(&content, refusal.as_deref(), translated);
     Ok(MessageResponse {
         id: response.id.clone(),
         kind: MessageKind::Message,
         role: AssistantRole::Assistant,
-        model: response
-            .model
-            .clone()
-            .filter(|model| !model.is_empty())
-            .unwrap_or_else(|| UNKNOWN_MODEL.to_owned()),
+        model: if response.model.is_empty() {
+            UNKNOWN_MODEL.to_owned()
+        } else {
+            response.model.clone()
+        },
         stop_sequence: None,
         usage: response_usage(response, polyfill_result),
         content,
         stop_reason,
         stop_details: (stop_reason == AnthropicStopReason::Refusal)
-            .then(|| refusal_stop_details(refusal_text)),
+            .then(|| refusal_stop_details(refusal)),
         context_management: polyfill_result
             .and_then(PolyfillResult::applied_edits_for_response)
             .map(|applied_edits| ContextManagement { applied_edits }),
@@ -83,7 +85,7 @@ fn response_usage(
     let mut usage = response
         .usage
         .as_ref()
-        .map_or_else(zero_usage, project_usage);
+        .map_or_else(|| project_usage(&UsageRecord::default()), project_usage);
     let Some(iterations) = polyfill_result.and_then(|result| result.iterations_usage.as_deref())
     else {
         return usage;

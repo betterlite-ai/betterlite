@@ -72,26 +72,18 @@ fn first_positive_detail(usage: &UsageRecord, keys: &[&str]) -> i64 {
         .unwrap_or(0)
 }
 
-fn cache_read_input_tokens(usage: &UsageRecord) -> i64 {
-    let explicit = first_positive(
-        usage.cache_read_input_tokens.as_ref(),
-        usage.private_cache_read_input_tokens.as_ref(),
-    );
-    if explicit > 0 {
-        return explicit;
+// An explicit counter wins in order; a zero or invalid one falls through to the prompt details.
+fn cache_counter(
+    usage: &UsageRecord,
+    public: Option<&Json>,
+    private: Option<&Json>,
+    detail_keys: &[&str],
+) -> i64 {
+    let found = first_positive(public, private);
+    if found > 0 {
+        return found;
     }
-    first_positive_detail(usage, &CACHE_READ_DETAILS)
-}
-
-fn cache_creation_input_tokens(usage: &UsageRecord) -> i64 {
-    let explicit = first_positive(
-        usage.cache_creation_input_tokens.as_ref(),
-        usage.private_cache_creation_input_tokens.as_ref(),
-    );
-    if explicit > 0 {
-        return explicit;
-    }
-    first_positive_detail(usage, &CACHE_CREATION_DETAILS)
+    first_positive_detail(usage, detail_keys)
 }
 
 fn web_search_request_count(usage: &UsageRecord) -> i64 {
@@ -108,16 +100,26 @@ fn web_search_request_count(usage: &UsageRecord) -> i64 {
 
 #[must_use]
 pub fn project_usage(usage: &UsageRecord) -> UsageProjection {
-    let cache_read = cache_read_input_tokens(usage);
-    let cache_creation = cache_creation_input_tokens(usage);
+    let cache_read = cache_counter(
+        usage,
+        usage.cache_read_input_tokens.as_ref(),
+        usage.private_cache_read_tokens.as_ref(),
+        &CACHE_READ_DETAILS,
+    );
+    let cache_creation = cache_counter(
+        usage,
+        usage.cache_creation_input_tokens.as_ref(),
+        usage.private_cache_creation_tokens.as_ref(),
+        &CACHE_CREATION_DETAILS,
+    );
     let web_search_requests = web_search_request_count(usage);
-    let prompt_tokens = usage.prompt_tokens.unwrap_or(0);
     UsageProjection {
-        input_tokens: prompt_tokens
+        input_tokens: usage
+            .prompt_tokens
             .saturating_sub(cache_read)
             .saturating_sub(cache_creation)
             .max(0),
-        output_tokens: usage.completion_tokens.unwrap_or(0),
+        output_tokens: usage.completion_tokens,
         cache_creation_input_tokens: (cache_creation > 0).then_some(cache_creation),
         cache_read_input_tokens: (cache_read > 0).then_some(cache_read),
         server_tool_use: (web_search_requests > 0).then_some(ServerToolProjection {
@@ -125,9 +127,4 @@ pub fn project_usage(usage: &UsageRecord) -> UsageProjection {
         }),
         iterations: None,
     }
-}
-
-#[must_use]
-pub fn zero_usage() -> UsageProjection {
-    project_usage(&UsageRecord::default())
 }

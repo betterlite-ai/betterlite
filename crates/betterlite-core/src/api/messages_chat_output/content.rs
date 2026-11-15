@@ -8,7 +8,9 @@ use crate::api::messages_chat_output::error::{ARGUMENT_CONTEXT, ChatOutputError}
 use crate::api::messages_chat_output::output::{
     AnthropicStopReason, ContentBlock, ContentEntry, SignatureFields,
 };
-use crate::api::messages_chat_output::records::{ChoiceRecord, MessageRecord, ToolCallRecord};
+use crate::api::messages_chat_output::records::{
+    ChoiceRecord, MessageRecord, ToolCallRecord, refusal_text,
+};
 use crate::api::messages_content_primitives::signatures::{
     FunctionFields, ToolCallFields, compaction_blocks, tool_call_signature,
 };
@@ -57,7 +59,7 @@ fn choice_entries(
             text: content.clone(),
         }));
     }
-    if let Some(refusal) = message.refusal_text() {
+    if let Some(refusal) = refusal_text(&message.refusal, &message.provider_specific_fields) {
         entries.push(ContentEntry::Block(ContentBlock::Text { text: refusal }));
     }
     for tool_call in &message.tool_calls {
@@ -72,16 +74,13 @@ fn thinking_entries(message: &MessageRecord) -> Result<Vec<ContentEntry>, ChatOu
         .as_ref()
         .filter(|blocks| !blocks.is_empty());
     let Some(blocks) = blocks else {
-        let reasoning = message
-            .reasoning_content
-            .as_deref()
-            .filter(|text| !text.is_empty());
-        return Ok(reasoning.map_or_else(Vec::new, |text| {
-            vec![ContentEntry::Block(ContentBlock::Thinking {
-                thinking: text.to_owned(),
-                signature: None,
-            })]
-        }));
+        if message.reasoning_content.is_empty() {
+            return Ok(Vec::new());
+        }
+        return Ok(vec![ContentEntry::Block(ContentBlock::Thinking {
+            thinking: message.reasoning_content.clone(),
+            signature: None,
+        })]);
     };
     let mut entries = Vec::new();
     for block in blocks {
@@ -112,11 +111,13 @@ fn response_thinking_entry(block: &Object) -> Result<Option<ContentEntry>, ChatO
 
 // str(value) if value is not None else None, with LiteLLM's "" default for an absent key.
 fn response_text(block: &Object, key: &'static str) -> Result<Option<String>, ChatOutputError> {
-    match block.get(key) {
-        None => Ok(Some(String::new())),
-        Some(Json::Text(text)) => Ok(Some(text.clone())),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+    let Some(value) = block.get(key) else {
+        return Ok(Some(String::new()));
+    };
+    match value {
+        Json::Text(text) => Ok(Some(text.clone())),
+        Json::Null => Ok(None),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
             Err(ChatOutputError::NonTextThinkingField { field: key })
         }
     }
@@ -124,14 +125,16 @@ fn response_text(block: &Object, key: &'static str) -> Result<Option<String>, Ch
 
 // Streaming chunks read value or "" and then assert the result is a string.
 pub(super) fn stream_text(block: &Object, key: &'static str) -> Result<String, ChatOutputError> {
-    match block.get(key) {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(value) if !value.is_truthy() => Ok(String::new()),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ChatOutputError::NonTextThinkingField { field: key })
-        }
+    let Some(value) = block.get(key) else {
+        return Ok(String::new());
+    };
+    if let Json::Text(text) = value {
+        return Ok(text.clone());
     }
+    if value.is_truthy() {
+        return Err(ChatOutputError::NonTextThinkingField { field: key });
+    }
+    Ok(String::new())
 }
 
 fn tool_use_entry(
@@ -157,7 +160,7 @@ fn tool_use_entry(
         tool_name: original_name.clone(),
         context: ARGUMENT_CONTEXT,
         arguments: arguments.to_owned(),
-        source,
+        source: Box::new(source),
     })?;
     if !matches!(input, Json::Object(_)) {
         return Err(ChatOutputError::NonObjectArguments {

@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_anthropic::stream_state::IdSource;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_prompts::arguments::json::Json;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -34,16 +34,25 @@ fn json(source: &str) -> Json {
     serde_json::from_str(source).expect("valid fixture")
 }
 
-fn rendered<T: Serialize>(value: &T) -> Json {
+fn rendered<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
     let text = serde_json::to_string(value).expect("serializes");
     serde_json::from_str(&text).expect("valid json")
 }
 
-pub(super) fn assert_rendered<T: Serialize>(value: &T, expected: &str) {
+pub(super) fn assert_rendered<T>(value: &T, expected: &str)
+where
+    T: Serialize,
+{
     assert_eq!(rendered(value), json(expected));
 }
 
-fn decode<T: DeserializeOwned>(source: &str) -> T {
+fn decode<T>(source: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_str(source).expect("valid record")
 }
 
@@ -74,7 +83,12 @@ pub(super) fn polyfill_result() -> PolyfillResult {
         applied_edits: vec![AppliedEdit {
             edit_type: Some("clear_tool_uses_20250919".to_owned()),
             cleared_input_tokens: Some(5),
-            ..AppliedEdit::default()
+            cleared_tool_uses: None,
+            cleared_thinking_turns: None,
+            summary_input_tokens: None,
+            summary_output_tokens: None,
+            error: None,
+            warnings: None,
         }],
         compaction_block: Some(CompactionBlock {
             kind: CompactionKind::Compaction,

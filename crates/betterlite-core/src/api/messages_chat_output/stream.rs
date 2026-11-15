@@ -1,5 +1,5 @@
 use betterlite_anthropic::message_replay::tool_ids::normalize_tool_use_id;
-use betterlite_anthropic::stream_state::IdSource;
+use betterlite_anthropic::stream_state::state::IdSource;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::gemini_tool_invokes::signatures::THOUGHT_SIGNATURE_SEPARATOR;
 
@@ -9,14 +9,14 @@ use crate::api::messages_chat_output::output::{
     ContentBlock, ContextManagement, DeltaProjection, MessageDelta, SignatureFields, StreamFrame,
 };
 use crate::api::messages_chat_output::records::{
-    ChoiceRecord, DeltaRecord, TerminalRecord, ToolCallRecord,
+    ChoiceRecord, DeltaRecord, TerminalRecord, ToolCallRecord, UsageRecord, refusal_text,
 };
-use crate::api::messages_chat_output::usage::{project_usage, zero_usage};
+use crate::api::messages_chat_output::usage::project_usage;
 
 #[must_use]
 pub fn content_block(
     choices: &[ChoiceRecord],
-    ids: &impl IdSource,
+    ids: &dyn IdSource,
 ) -> Result<ContentBlock, ChatOutputError> {
     for choice in choices {
         if let Some(tool_call) = choice.delta.tool_calls.first()
@@ -39,7 +39,7 @@ pub fn content_block(
 }
 
 // A first tool call with a function wins; a call whose function is absent falls through the chain.
-fn tool_use_start(tool_call: &ToolCallRecord, ids: &impl IdSource) -> ContentBlock {
+fn tool_use_start(tool_call: &ToolCallRecord, ids: &dyn IdSource) -> ContentBlock {
     let raw_id = tool_call
         .id
         .clone()
@@ -65,24 +65,24 @@ fn tool_use_start(tool_call: &ToolCallRecord, ids: &impl IdSource) -> ContentBlo
 }
 
 fn has_text_or_refusal(delta: &DeltaRecord) -> bool {
-    let has_text = delta
+    if delta
         .content
         .as_deref()
-        .is_some_and(|text| !text.is_empty());
-    has_text || delta.refusal_text().is_some()
+        .is_some_and(|text| !text.is_empty())
+    {
+        return true;
+    }
+    refusal_text(&delta.refusal, &delta.provider_specific_fields).is_some()
 }
 
 // A present thinking_blocks attribute of any length stops the reasoning_content fallback.
 fn thinking_start(delta: &DeltaRecord) -> Result<Option<ContentBlock>, ChatOutputError> {
     let Some(blocks) = &delta.thinking_blocks else {
-        let reasoning = delta
-            .reasoning_content
-            .as_deref()
-            .filter(|text| !text.is_empty());
-        return Ok(reasoning.map(|_| ContentBlock::Thinking {
+        let thinking = ContentBlock::Thinking {
             thinking: String::new(),
             signature: Some(String::new()),
-        }));
+        };
+        return Ok((!delta.reasoning_content.is_empty()).then_some(thinking));
     };
     let Some(block) = blocks
         .first()
@@ -115,8 +115,8 @@ pub fn delta(choices: &[ChoiceRecord]) -> Result<DeltaProjection, ChatOutputErro
             partial_json = Some(choice_arguments(&choice.delta));
         } else if let Some(blocks) = &choice.delta.thinking_blocks {
             thinking_blocks_text(blocks, &mut thinking, &mut signature)?;
-        } else if let Some(reasoning) = choice.delta.reasoning_content.as_deref() {
-            thinking.push_str(reasoning);
+        } else {
+            thinking.push_str(&choice.delta.reasoning_content);
         }
     }
     if let Some(partial_json) = partial_json {
@@ -130,7 +130,12 @@ pub fn delta(choices: &[ChoiceRecord]) -> Result<DeltaProjection, ChatOutputErro
     }
     let refusals: String = choices
         .iter()
-        .filter_map(|choice| choice.delta.refusal_text())
+        .filter_map(|choice| {
+            refusal_text(
+                &choice.delta.refusal,
+                &choice.delta.provider_specific_fields,
+            )
+        })
         .collect();
     Ok(DeltaProjection::TextDelta {
         text: format!("{text}{refusals}"),
@@ -180,7 +185,7 @@ pub fn terminal_frame(record: &TerminalRecord) -> Result<StreamFrame, ChatOutput
         .usage
         .as_ref()
         .or(record.hidden_usage.as_ref())
-        .map_or_else(zero_usage, project_usage);
+        .map_or_else(|| project_usage(&UsageRecord::default()), project_usage);
     Ok(StreamFrame::MessageDelta {
         delta: MessageDelta {
             stop_reason: anthropic_finish_reason(finish_reason),

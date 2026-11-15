@@ -13,7 +13,7 @@ pub enum ChatOutputError {
         context: &'static str,
         arguments: String,
         #[source]
-        source: ParseArgumentsError,
+        source: Box<ParseArgumentsError>,
     },
     #[error("tool call arguments for tool {tool_name:?} decoded to a non-object JSON value")]
     NonObjectArguments { tool_name: String },

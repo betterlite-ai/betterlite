@@ -111,7 +111,7 @@ fn usage_projects_cache_counters(#[case] source: &str, #[case] expected: &str) {
 #[case(r#"{"prompt_tokens_details": {"web_search_requests": 9}}"#, Some(9))]
 #[case(r#"{"server_tool_use": {"web_search_requests": 0}}"#, None)]
 #[case(r#"{"server_tool_use": {}}"#, None)]
-#[case(r#"{}"#, None)]
+#[case("{}", None)]
 fn usage_projects_web_search_counts(#[case] source: &str, #[case] expected: Option<i64>) {
     let projected = project_usage(&usage(source));
     assert_eq!(
@@ -149,8 +149,11 @@ fn empty_iterations_still_append_the_final_record() {
         r#"{{"id": "{RESPONSE_ID}", "choices": [{{"message": {{}}}}], "usage": {{"prompt_tokens": 50, "completion_tokens": 7}}}}"#
     ));
     let polyfill = PolyfillResult {
+        messages: Vec::new(),
+        system: None,
+        applied_edits: Vec::new(),
+        compaction_block: None,
         iterations_usage: Some(Vec::new()),
-        ..PolyfillResult::default()
     };
     let translated = response_message(&record, None, Some(&polyfill)).expect("translates");
     assert_rendered(
@@ -182,8 +185,11 @@ fn negative_completion_omits_the_iteration_output() {
             "usage": {{"prompt_tokens": 5, "completion_tokens": -5}}}}"#
     ));
     let polyfill = PolyfillResult {
+        messages: Vec::new(),
+        system: None,
+        applied_edits: Vec::new(),
+        compaction_block: None,
         iterations_usage: Some(Vec::new()),
-        ..PolyfillResult::default()
     };
     let translated = response_message(&record, None, Some(&polyfill)).expect("translates");
     assert_rendered(

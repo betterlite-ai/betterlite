@@ -11,7 +11,8 @@ fn terminal_chunk_projects_stop_reason_and_usage() {
     let record = terminal(
         r#"{"choices": [{"finish_reason": "stop", "delta": {"content": "ignored"}}],
             "usage": {"prompt_tokens": 100, "completion_tokens": 7, "cache_read_input_tokens": 20,
-                      "cache_creation_input_tokens": 30}}"#,
+                      "cache_creation_input_tokens": 30},
+            "hidden_usage": {"prompt_tokens": 1, "completion_tokens": 2}}"#,
     );
     assert_rendered(
         &terminal_frame(&record).expect("projects a frame"),

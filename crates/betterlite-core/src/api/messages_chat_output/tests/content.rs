@@ -133,14 +133,13 @@ fn tool_name_mapping_restores_long_name() {
 }
 
 #[test]
-fn tool_id_suffix_yields_signature_but_is_stripped_from_id() {
+fn tool_id_suffix_is_stripped_without_adding_a_signature() {
     let source = r#"[{"message": {"tool_calls": [
         {"id": "functions.Bash:0__thought__sig", "function": {"name": "Bash", "arguments": "{}"}}
     ]}}]"#;
     assert_rendered(
         &blocks(source),
-        r#"[{"type": "tool_use", "id": "functions_Bash_0", "name": "Bash", "input": {},
-            "provider_specific_fields": {"signature": "sig"}}]"#,
+        r#"[{"type": "tool_use", "id": "functions_Bash_0", "name": "Bash", "input": {}}]"#,
     );
 }
 
@@ -353,12 +352,15 @@ fn a_polyfill_block_alone_sets_the_compaction_stop_reason() {
         r#"{{"id": "{RESPONSE_ID}", "choices": [{{"message": {{}}}}]}}"#
     ));
     let polyfill = PolyfillResult {
+        messages: Vec::new(),
+        system: None,
+        applied_edits: Vec::new(),
         compaction_block: Some(CompactionBlock {
             kind: CompactionKind::Compaction,
             content: None,
             signature: None,
         }),
-        ..PolyfillResult::default()
+        iterations_usage: None,
     };
     let translated = response_message(&record, None, Some(&polyfill)).expect("translates");
     assert_eq!(translated.stop_reason, AnthropicStopReason::Compaction);
@@ -394,6 +396,15 @@ fn model_is_preserved_or_unknown() {
     ));
     assert_eq!(
         response_message(&blank, None, None)
+            .expect("translates")
+            .model,
+        "unknown-model"
+    );
+    let null = response(&format!(
+        r#"{{"id": "{RESPONSE_ID}", "model": null, "usage": {{}}}}"#
+    ));
+    assert_eq!(
+        response_message(&null, None, None)
             .expect("translates")
             .model,
         "unknown-model"
