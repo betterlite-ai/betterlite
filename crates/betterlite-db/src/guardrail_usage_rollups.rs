@@ -23,7 +23,7 @@ pub mod rollups;
 
 mod tests;
 
-// LiteLLM retries an upsert only for DB_RETRY_SAFE_ERROR_TYPES (httpx.ConnectError) and sleeps 2 ** retries_left seconds between attempts
+// LiteLLM retries an upsert only for DB_RETRY_SAFE_ERROR_TYPES (httpx.ConnectError) and waits 2 ** (_UPSERT_RETRY_TIMES - retries_left) seconds between attempts
 pub const UPSERT_RETRY_TIMES: u32 = 3;
 
 // LiteLLM caps each pending queue on its own: daily metrics and usage units never share the limit
