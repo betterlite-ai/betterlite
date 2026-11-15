@@ -20,8 +20,8 @@ class Input(TypedDict):
 
 def run(input_value: Input) -> JsonValue:
     provider = input_value["provider"]
-    answer = json.dumps(asyncio.run(get_provider_specific_params()), default=UndefinedAsNull())
-    params = ANSWERS.validate_json(answer)
+    text = json.dumps(asyncio.run(get_provider_specific_params()), default=UndefinedAsNull())
+    params = ANSWERS.validate_json(text)
     if provider not in params:
         raise ValueError(f"no config model for {provider}")
     return params[provider]
