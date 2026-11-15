@@ -395,6 +395,18 @@ fn update_applies_the_advisory_fields_and_the_new_mode() {
 }
 
 #[test]
+fn update_keeps_the_connection_fields() {
+    let mut args = args();
+    args.api_base = Some("http://live".to_owned());
+    args.project_id = Some("live-project".to_owned());
+    let mut guardrail = built(args);
+    let params = update_params(r#", "api_base": "http://other", "project_id": "other""#);
+    guardrail.update_params(&params).expect("a valid update");
+    assert_eq!(guardrail.api_base, "http://live");
+    assert_eq!(guardrail.project_id.as_deref(), Some("live-project"));
+}
+
+#[test]
 fn update_rejects_a_wrong_typed_payload() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
     let params = update_params(r#", "payload": "yes""#);

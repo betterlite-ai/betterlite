@@ -397,6 +397,7 @@ fn the_constructor_refuses_the_escaped_reason_template() {
     let mut args = args();
     args.on_flagged = Some(LakeraOnFlagged::InjectSystemMessage);
     args.advisory_system_message = Some("Watch out for {{reason}}".to_owned());
+    args.payload = Some(false);
     let env = BTreeMap::new();
     let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
         .expect_err("the constructor validates the template");
