@@ -1,7 +1,9 @@
 use betterlite_context::non_default_params::mapper::DropPolicy;
+use indexmap::IndexMap;
 use rstest::rstest;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_json::value::RawValue;
 
 use crate::image_models::params::{Field, Params};
 use crate::marengo_embeddings::error::MarengoEmbeddingsError;
@@ -17,8 +19,27 @@ use crate::marengo_embeddings::response::{
 use crate::marengo_three::error::Marengo3Error;
 use crate::marengo_three::is_marengo_3_model;
 
+type RawEntries = IndexMap<String, Box<RawValue>>;
+
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, default)]
+struct RawScenario {
+    model: Option<String>,
+    input: String,
+    inference: RawEntries,
+    non_default: RawEntries,
+    optional: RawEntries,
+    async_invoke_route: Option<bool>,
+    model_id: Option<String>,
+    output_s3_uri: Option<String>,
+    drop_params: Option<bool>,
+    replies: Vec<Box<RawValue>>,
+    batch: Vec<Box<RawValue>>,
+    global_drop_params: Option<bool>,
+    deployment_drop_params: Option<bool>,
+}
+
+#[derive(Debug)]
 struct Scenario {
     model: Option<String>,
     input: String,
@@ -82,6 +103,45 @@ where
 {
     let value = serde_json::from_str(text).map_err(|error| error.to_string())?;
     serde_json::from_value(value).map_err(|error| error.to_string())
+}
+
+// non_default is mapped in document order, and a later key overrides an earlier one
+fn parse_scenario(text: &str) -> Result<Scenario, String> {
+    let raw: RawScenario = serde_json::from_str(text).map_err(|error| error.to_string())?;
+    Ok(Scenario {
+        model: raw.model,
+        input: raw.input,
+        inference: parse_entries(&raw.inference)?,
+        non_default: parse_entries(&raw.non_default)?,
+        optional: parse_entries(&raw.optional)?,
+        async_invoke_route: raw.async_invoke_route,
+        model_id: raw.model_id,
+        output_s3_uri: raw.output_s3_uri,
+        drop_params: raw.drop_params,
+        replies: parse_raw_values(&raw.replies)?,
+        batch: parse_raw_values(&raw.batch)?,
+        global_drop_params: raw.global_drop_params,
+        deployment_drop_params: raw.deployment_drop_params,
+    })
+}
+
+fn parse_entries(entries: &RawEntries) -> Result<Params, String> {
+    let mut params = Params::new();
+    for (key, value) in entries {
+        params.insert(key.clone(), parse_json(value.get())?);
+    }
+    Ok(params)
+}
+
+fn parse_raw_values<T>(values: &[Box<RawValue>]) -> Result<Vec<T>, String>
+where
+    T: DeserializeOwned,
+{
+    let mut parsed = Vec::with_capacity(values.len());
+    for value in values {
+        parsed.push(parse_json(value.get())?);
+    }
+    Ok(parsed)
 }
 
 fn batch(scenario: &Scenario, request: &Field) -> Result<Vec<MarengoBilledRequest>, String> {
@@ -623,7 +683,7 @@ const WRAPPED_VIDEO: &str = r#"{
     Check::Usage(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": null, "image_count": 1}}"#)
 )]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
-    let parsed: Scenario = parse_json(scenario).unwrap();
+    let parsed = parse_scenario(scenario).unwrap();
     match check {
         Check::Supported { marengo_3 } => verify_supported(&parsed, marengo_3),
         Check::Mapped(expected) => verify_mapped(&parsed, expected),
