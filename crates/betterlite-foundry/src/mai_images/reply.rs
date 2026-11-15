@@ -63,7 +63,7 @@ pub fn decode_mai_image_reply(body: &[u8], status_code: u16) -> Result<Object, M
     Ok(response)
 }
 
-pub fn transform_image_generation_response(
+pub fn transform_image_reply(
     reply: &MaiImageReply<'_>,
     logging: &mut dyn ImageLogging,
 ) -> Result<MaiImageResponse, MaiImageError> {

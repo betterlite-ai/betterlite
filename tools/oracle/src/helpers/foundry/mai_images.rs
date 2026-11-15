@@ -1,7 +1,7 @@
 use betterlite_foundry::mai_images::error::MaiImageError;
 use betterlite_foundry::mai_images::params::map_openai_params;
 use betterlite_foundry::mai_images::reply::{
-    ImageLogging, MaiImageReply, PostCall, transform_image_generation_response,
+    ImageLogging, MaiImageReply, PostCall, transform_image_reply,
 };
 use betterlite_foundry::mai_images::url::{ImageOperation, is_mai_model, mai_image_url};
 use betterlite_foundry::mai_images::usage::normalize_mai_image_usage;
@@ -130,7 +130,7 @@ fn params_outcome(call: &ParamsCall) -> Value {
 fn reply_outcome(call: &ReplyCall) -> Value {
     let key = call.api_key.as_deref().map(SecretString::from);
     let mut recorder = Recorder::default();
-    let result = transform_image_generation_response(
+    let result = transform_image_reply(
         &MaiImageReply {
             body: call.body.as_bytes(),
             status_code: call.status_code,

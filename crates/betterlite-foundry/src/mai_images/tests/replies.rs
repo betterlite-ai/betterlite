@@ -3,7 +3,7 @@ use secrecy::SecretString;
 
 use crate::mai_images::error::MaiImageError;
 use crate::mai_images::reply::{
-    ImageLogging, MaiImageReply, MaiImageResponse, transform_image_generation_response,
+    ImageLogging, MaiImageReply, MaiImageResponse, transform_image_reply,
 };
 
 use super::support::{RecordedLogging, kind, object, variant};
@@ -15,7 +15,7 @@ fn transform(
     logging: &mut dyn ImageLogging,
 ) -> Result<MaiImageResponse, MaiImageError> {
     let key = SecretString::from("sk-fixture");
-    transform_image_generation_response(
+    transform_image_reply(
         &MaiImageReply {
             body: body.as_bytes(),
             status_code: 200,
@@ -96,7 +96,7 @@ fn reply_failures() {
         optional_params: &optional_params,
         api_key: Some(&key),
     };
-    let error = transform_image_generation_response(&reply, &mut logging).unwrap_err();
+    let error = transform_image_reply(&reply, &mut logging).unwrap_err();
     assert!(matches!(
         &error,
         MaiImageError::NotJson { record, .. }
@@ -109,7 +109,7 @@ fn reply_failures() {
         body: b"\xffnot json",
         ..reply
     };
-    let lossy = transform_image_generation_response(&invalid_utf8, &mut logging).unwrap_err();
+    let lossy = transform_image_reply(&invalid_utf8, &mut logging).unwrap_err();
     assert_eq!(lossy.to_string(), "\u{FFFD}not json");
     assert!(logging.calls.is_empty());
     unusable_replies();

@@ -100,7 +100,8 @@ def params_value(call: ParamsCall) -> JsonValue:
 
 
 def usage_value(usage: dict[str, JsonValue] | None) -> JsonValue:
-    return OBJECT.validate_python(MaiConfig.normalize_mai_image_usage(usage))
+    normalized = MaiConfig.normalize_mai_image_usage(usage)
+    return OBJECT.validate_python(normalized)
 
 
 def reply_value(call: ReplyCall) -> JsonValue:
