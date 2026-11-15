@@ -1,9 +1,22 @@
+mod fetch;
+mod run;
+mod support;
+
+use serde_json::Value;
+
+use crate::helpers::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = Value;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b4657")
+    fn run(input: &Self::Input) -> HelperResult {
+        match input.get("function").and_then(Value::as_str) {
+            Some("fetch") => fetch::fetch(input),
+            Some("cache") => run::cache(input),
+            Some("coordinator") => run::coordinator(input),
+            _ => Err(support::value_error("unknown function".to_owned())),
+        }
     }
 }
