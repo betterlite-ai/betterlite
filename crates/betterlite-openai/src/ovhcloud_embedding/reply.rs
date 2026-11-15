@@ -1,4 +1,5 @@
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::gitlab_client::payload::decode_text;
 use serde::{Deserialize, Serialize};
 
 use crate::openai_base_config::Headers;
@@ -52,7 +53,7 @@ pub fn decode_embedding_reply(
     headers: &Headers,
 ) -> Result<EmbeddingReply, OvhCloudError> {
     let reply = serde_json::from_slice::<WireReply>(body).map_err(|_error| OvhCloudError {
-        message: String::from_utf8_lossy(body).into_owned(),
+        message: decode_text(body),
         status_code: Some(status),
         headers: headers.clone(),
     })?;
