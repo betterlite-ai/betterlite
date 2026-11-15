@@ -124,6 +124,49 @@ async fn a_fingerprint_mismatch_recomputes() {
 }
 
 #[tokio::test]
+async fn a_remint_stores_the_new_tokens_own_ttl() {
+    let (cache, clock) = cache();
+    let computes = Arc::new(AtomicUsize::new(0));
+    cache
+        .get_or_compute(
+            "key",
+            "user-a",
+            minted(computes.clone(), "token-a", Some(600)),
+        )
+        .await
+        .unwrap();
+    clock.advance(100);
+    assert_eq!(
+        cache
+            .get_or_compute(
+                "key",
+                "user-b",
+                minted(computes.clone(), "token-b", Some(65))
+            )
+            .await
+            .unwrap(),
+        "token-b"
+    );
+    clock.advance(9);
+    assert_eq!(
+        cache
+            .get_or_compute("key", "user-b", minted(computes.clone(), "unused", None))
+            .await
+            .unwrap(),
+        "token-b"
+    );
+    clock.advance(1);
+    assert_eq!(
+        cache
+            .get_or_compute("key", "user-b", minted(computes.clone(), "token-c", None))
+            .await
+            .unwrap(),
+        "token-c"
+    );
+    assert_eq!(computes.load(Ordering::SeqCst), 3);
+}
+
+#[tokio::test]
 async fn concurrent_misses_on_one_key_share_a_compute() {
     let (cache, _clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));

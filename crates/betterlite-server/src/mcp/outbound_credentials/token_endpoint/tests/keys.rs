@@ -41,6 +41,13 @@ MC4CAQAwBQYDK2VwBCIEIKs0MB1rmJeaWaRqB9QDIcokFBas4VPS1CU5g6x55K6V
 -----END PRIVATE KEY-----
 ";
 
+const SEC1_EC_KEY: &str = "-----BEGIN EC PRIVATE KEY-----
+MHcCAQEEIHUBLcJcUQ76z8Mxd9QdRm3plOGAsFCOVF2FnDzSMSOaoAoGCCqGSM49
+AwEHoUQDQgAESufTWoe21/tLLkwuAHaXYj+A/6dkJ1SIXqthbZXZkjeFeWcj6k+F
+zXpk6sw1TlgYMHVUZNzf2sZGo6Ewde0CeQ==
+-----END EC PRIVATE KEY-----
+";
+
 #[tokio::test]
 async fn signs_with_a_pkcs1_rsa_key() {
     let (client, post) = client(vec![answered(200, r#"{"access_token":"minted"}"#)]);
@@ -91,4 +98,20 @@ async fn signs_with_an_ed_key() {
     let (header, claims) = read_assertion(post.form().get("client_assertion").unwrap());
     assert_eq!(header.alg, "EdDSA");
     assert_eq!(claims.exp - claims.iat, 60);
+}
+
+#[tokio::test]
+async fn rejects_an_sec1_ec_key() {
+    let (client, post) = client(vec![answered(200, r#"{"access_token":"minted"}"#)]);
+    let error = client
+        .fetch(
+            ENDPOINT,
+            CLIENT_ID,
+            &grant(),
+            &jwt_auth("ES256", SEC1_EC_KEY, None),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error, CredError::Misconfigured(SIGNING_FAILED.to_owned()));
+    assert!(post.forms.lock().unwrap().is_empty());
 }
