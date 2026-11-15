@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
+use secrecy::SecretString;
 
 use crate::loader::ConfigLoader;
 
@@ -36,48 +37,29 @@ enum Field {
     VertexProject,
 }
 
+fn exposed(secret: Option<&SecretString>) -> Option<String> {
+    let text = secret?;
+    Some(text.expose_secret().to_owned())
+}
+
 fn value(settings: &Settings, field: Field) -> Option<String> {
     match field {
         Field::ApiBase => settings.api_base.clone(),
-        Field::ApiKey => settings
-            .api_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::ApiKey => exposed(settings.api_key.as_ref()),
         Field::ApiVersion => settings.api_version.clone(),
-        Field::AzureAdToken => settings
-            .azure_ad_token
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::AzureAdToken => exposed(settings.azure_ad_token.as_ref()),
         Field::AzureApiBase => settings.azure_api_base.clone(),
-        Field::AzureApiKey => settings
-            .azure_api_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::AzureApiKey => exposed(settings.azure_api_key.as_ref()),
         Field::AzureApiVersion => settings.azure_api_version.clone(),
-        Field::AzureKey => settings
-            .azure_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
-        Field::AzureOpenaiApiKey => settings
-            .azure_openai_api_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::AzureKey => exposed(settings.azure_key.as_ref()),
+        Field::AzureOpenaiApiKey => exposed(settings.azure_openai_api_key.as_ref()),
         Field::OpenaiApiBase => settings.openai_api_base.clone(),
-        Field::OpenaiApiKey => settings
-            .openai_api_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::OpenaiApiKey => exposed(settings.openai_api_key.as_ref()),
         Field::OpenaiBaseUrl => settings.openai_base_url.clone(),
-        Field::OpenaiKey => settings
-            .openai_key
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::OpenaiKey => exposed(settings.openai_key.as_ref()),
         Field::OpenaiOrganization => settings.openai_organization.clone(),
         Field::Organization => settings.organization.clone(),
-        Field::VertexaiCredentials => settings
-            .vertexai_credentials
-            .as_ref()
-            .map(|text| text.expose_secret().to_owned()),
+        Field::VertexaiCredentials => exposed(settings.vertexai_credentials.as_ref()),
         Field::VertexaiLocation => settings.vertexai_location.clone(),
         Field::VertexaiProject => settings.vertexai_project.clone(),
         Field::VertexLocation => settings.vertex_location.clone(),
