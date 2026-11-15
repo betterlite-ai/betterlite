@@ -10,6 +10,24 @@ use crate::mcp_stored_contracts::secret::StoredSecret;
 use super::super::error::StoreError;
 use super::SearchToolRow;
 
+// LiteLLM's Prisma client writes these columns as JSON strings; a row written here holds the document
+fn decode_stored<Stored>(field: &'static str, stored: &JsonValue) -> Result<Stored, StoreError>
+where
+    Stored: DeserializeOwned,
+{
+    let text = match stored {
+        JsonValue::String(text) => text.clone(),
+        JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => {
+            serde_json::to_string(stored).map_err(|source| StoreError::Field { field, source })?
+        }
+    };
+    serde_json::from_str(&text).map_err(|source| StoreError::Field { field, source })
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct SearchToolParams {
@@ -37,24 +55,6 @@ pub struct SearchTool {
     pub created_at: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<String>,
-}
-
-// The table stores each field as a JSON string, but a row written as a JSON object reads the same way
-fn decode_stored<Stored>(field: &'static str, stored: &JsonValue) -> Result<Stored, StoreError>
-where
-    Stored: DeserializeOwned,
-{
-    let text = match stored {
-        JsonValue::String(text) => text.clone(),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => {
-            serde_json::to_string(stored).map_err(|source| StoreError::Field { field, source })?
-        }
-    };
-    serde_json::from_str(&text).map_err(|source| StoreError::Field { field, source })
 }
 
 impl TryFrom<SearchToolRow> for SearchTool {
