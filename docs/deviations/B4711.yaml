@@ -6,16 +6,19 @@ deviations:
   - what: Advisory-lock keys are computed with the blake2 crate's 8-byte BLAKE2b digest read big-endian as i64, from the lowercased non-empty identifiers sorted and deduped.
     why: hashlib is a Python module; the digest, the byte order and the signed reading are the same, so two betterlite writers and a LiteLLM writer take the same PostgreSQL advisory lock.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L594
-  - what: The transaction seam is a concrete TransactionManager returned by _db_transaction_manager, and the env-var table binding is implemented locally, instead of LiteLLM's _UserEnvVarsTransactionClient and _UserEnvVarsTransaction Protocol declarations.
-    why: The Protocols declare a surface that B714 still has to implement; Rust states the same contract as a concrete type whose begin returns a transaction, and the env-var table binding is this task's own repository.
+  - what: The transaction seam is a concrete TransactionManager returned by db_transaction_manager plus a LockedTable that reads and writes the server table through the open transaction, and the env-var table binding is implemented locally, instead of LiteLLM's _UserEnvVarsTransactionClient and _UserEnvVarsTransaction Protocol declarations.
+    why: The Protocols declare a surface that B714 still has to implement; Rust states the same contract as a concrete type whose begin returns a transaction, and the locked identifier check runs the same conflict lookup against that transaction, as LiteLLM passes tx.litellm_mcpservertable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L75
   - what: _identifier_where's Prisma where object is rendered as SQL predicates, with case-insensitive equality as LOWER(column) = LOWER($n), the NULL-or-not-draft arm as explicit SQL, and the optional server_id guard as an AND.
     why: betterlite queries PostgreSQL directly instead of through Prisma; the matched rows, the NULL inclusion and the draft exclusion are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L516-L531
+  - what: The MCP table actions' update and delete with an empty filter match no row and answer None, where Prisma rejects an update or delete whose where names no unique field; update_many and delete_many with an empty filter touch every row, as Prisma's do with where={}.
+    why: The statements are plain SQL, so a missing unique key has to be stated as WHERE FALSE rather than left to a Prisma validation error; no caller in this task passes an empty filter.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L636-L650
   - what: The pinned-tool snapshot is serialized with serde_json rather than B192's safe_dumps.
     why: safe_dumps belongs to B192 and strips NUL bytes; serde_json keeps them and PostgreSQL then rejects the jsonb value loudly (22P05) instead of silently changing a tool description.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2155
-  - what: _get_prisma_client_or_none and get_prisma_client_or_throw take the database handle as a parameter instead of reading the litellm.proxy.proxy_server.prisma_client global.
+  - what: get_prisma_client_or_none and get_prisma_client_or_throw take the database handle as a parameter instead of reading the litellm.proxy.proxy_server.prisma_client global.
     why: 'betterlite has no module-level proxy state; the handle is injected, and an absent one is either returned as None or turned into ProxyCheckError::Database, which answers 500 with detail {"error": message}.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L576-L581
 kept_bugs: []
