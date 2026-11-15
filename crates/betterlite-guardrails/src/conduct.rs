@@ -91,6 +91,7 @@ fn message_value(message: &GuardrailMessage) -> GuardrailValue {
     GuardrailValue::Object(object)
 }
 
+#[must_use]
 pub fn decision_status(decision: &ConductDecision) -> GuardrailStatus {
     if FLAGGED_VERDICTS.contains(&decision.verdict.as_str()) {
         GuardrailStatus::GuardrailFlagged
@@ -151,13 +152,14 @@ where
     Ok(inputs)
 }
 
-fn call_type(input_type: GuardrailInputType) -> &'static str {
+const fn call_type(input_type: GuardrailInputType) -> &'static str {
     match input_type {
         GuardrailInputType::Request => "request",
         GuardrailInputType::Response => "response",
     }
 }
 
+#[must_use]
 pub fn binds_unreachable_fallback(parameters: &[String]) -> bool {
     for parameter in parameters {
         if parameter == UNREACHABLE_FALLBACK_PARAMETER {

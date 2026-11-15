@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
+use tokio::runtime::Runtime;
 
 use super::error::{ConductCheckError, ConductError};
 use super::{
@@ -341,7 +342,7 @@ fn conduct_guardrail_apply_raises_the_blocked_failure(#[case] verdict: &str) {
         record: &mut record,
     };
     let inputs = text_inputs(&["hello"]);
-    let error = tokio::runtime::Runtime::new()
+    let error = Runtime::new()
         .expect("a runtime")
         .block_on(apply_conduct_guardrail(
             inputs,
@@ -381,7 +382,7 @@ fn conduct_guardrail_apply_records_an_allowed_decision_and_returns_the_inputs() 
         record: &mut record,
     };
     let inputs = text_inputs(&["hello"]);
-    let returned = tokio::runtime::Runtime::new()
+    let returned = Runtime::new()
         .expect("a runtime")
         .block_on(apply_conduct_guardrail(
             inputs.clone(),
@@ -410,7 +411,7 @@ fn conduct_guardrail_apply_skips_the_check_for_a_response_input() {
         record: &mut record,
     };
     let inputs = text_inputs(&["answer"]);
-    let returned = tokio::runtime::Runtime::new()
+    let returned = Runtime::new()
         .expect("a runtime")
         .block_on(apply_conduct_guardrail(
             inputs.clone(),
