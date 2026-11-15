@@ -13,10 +13,16 @@ use crate::hiddenlayer::evaluation::tests::fixtures::{
 use crate::hiddenlayer::evaluation::tests::{fixtures, server, tokens};
 use crate::hiddenlayer::hiddenlayer_authentication::error::HiddenlayerError;
 
+use rstest::rstest;
+
 use super::*;
 
 fn json(value: &str) -> JsonValue {
     serde_json::from_str(value).expect("JSON")
+}
+
+fn value(json: &str) -> GuardrailValue {
+    serde_json::from_str(json).expect("JSON")
 }
 
 fn fixed_id() -> Uuid {
@@ -74,8 +80,8 @@ fn invalid_timeout_is_rejected() {
 #[test]
 fn request_payload_carries_messages_model_and_tools() {
     let inputs = GuardrailApiInputs {
-        structured_messages: Some(vec![message("user", text("hi"))]),
-        model: Some("gpt-4o".to_owned()),
+        texts: None,
+        images: None,
         tools: Some(vec![GuardrailToolParam {
             tool_type: "function".to_owned(),
             extra: BTreeMap::from([(
@@ -83,7 +89,10 @@ fn request_payload_carries_messages_model_and_tools() {
                 object(vec![("name", text("lookup"))]),
             )]),
         }]),
-        ..GuardrailApiInputs::default()
+        tool_calls: None,
+        structured_messages: Some(vec![message("user", text("hi"))]),
+        model: Some("gpt-4o".to_owned()),
+        stream_holdback_chars: None,
     };
     assert_eq!(
         request_payload(&inputs).expect("a payload"),
@@ -118,11 +127,15 @@ fn response_payload_wraps_the_first_text_in_a_choice() {
 fn response_payload_uses_tool_calls_without_texts() {
     let inputs = GuardrailApiInputs {
         texts: Some(Vec::new()),
+        images: None,
+        tools: None,
         tool_calls: Some(vec![object(vec![
             ("id", text("call-1")),
             ("type", text("function")),
         ])]),
-        ..GuardrailApiInputs::default()
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
     assert_eq!(
         response_payload(&inputs).expect("a payload"),
@@ -138,8 +151,13 @@ fn response_payload_without_choices_or_tool_calls_is_empty() {
     );
     assert_eq!(
         response_payload(&GuardrailApiInputs {
+            texts: None,
+            images: None,
+            tools: None,
             tool_calls: Some(Vec::new()),
-            ..GuardrailApiInputs::default()
+            structured_messages: None,
+            model: None,
+            stream_holdback_chars: None,
         })
         .expect("a payload"),
         json("{}")
@@ -253,7 +271,7 @@ fn detection_headers_let_the_hl_headers_win() {
 #[test]
 fn write_request_rebuilds_the_texts_and_messages() {
     let mut inputs = text_inputs(&["old"]);
-    let output = json(
+    let output = value(
         r#"{"messages": [
             {"role": "system", "content": "a"},
             {"content": [{"type": "text", "text": "b"}, {"type": "text", "text": "c"}]},
@@ -272,20 +290,20 @@ fn write_request_rebuilds_the_texts_and_messages() {
     assert_eq!(messages.len(), 5);
     assert_eq!(
         messages[1].extra.get("content"),
-        Some(&json(
+        Some(&value(
             r#"[{"type": "text", "text": "b"}, {"type": "text", "text": "c"}]"#
         ))
     );
 }
 
-#[test]
-fn write_request_without_messages_clears_both_lists() {
-    for output in [json(r#"{"other": 1}"#), json(r#"{"messages": null}"#)] {
-        let mut inputs = text_inputs(&["old"]);
-        write_request(&mut inputs, &output).expect("written");
-        assert_eq!(inputs.texts, Some(Vec::new()));
-        assert_eq!(inputs.structured_messages, Some(Vec::new()));
-    }
+#[rstest]
+#[case::other_keys(r#"{"other": 1}"#)]
+#[case::null_messages(r#"{"messages": null}"#)]
+fn write_request_without_messages_clears_both_lists(#[case] body: &str) {
+    let mut inputs = text_inputs(&["old"]);
+    write_request(&mut inputs, &value(body)).expect("written");
+    assert_eq!(inputs.texts, Some(Vec::new()));
+    assert_eq!(inputs.structured_messages, Some(Vec::new()));
 }
 
 #[test]
@@ -294,7 +312,7 @@ fn write_request_rejects_a_shape_it_cannot_read() {
         write_request(&mut text_inputs(&["old"]), &text("not an object")),
         Err(EvaluationError::Shape { .. })
     ));
-    let body = json(r#"{"messages": ["plain"]}"#);
+    let body = value(r#"{"messages": ["plain"]}"#);
     assert!(matches!(
         write_request(&mut text_inputs(&["old"]), &body),
         Err(EvaluationError::Shape { .. })
@@ -304,7 +322,7 @@ fn write_request_rejects_a_shape_it_cannot_read() {
 #[test]
 fn write_response_takes_the_last_choice_content() {
     let mut inputs = text_inputs(&["old"]);
-    let output = json(
+    let output = value(
         r#"{"choices": [{"message": {"content": "first"}}, {"message": {"content": "redacted"}}]}"#,
     );
     write_response(&mut inputs, &output).expect("written");
@@ -314,53 +332,68 @@ fn write_response_takes_the_last_choice_content() {
 #[test]
 fn last_choice_content_reads_only_a_text_content() {
     assert_eq!(
-        last_choice_content(&json("{}")).expect("content"),
+        last_choice_content(&value("{}")).expect("content"),
         String::new()
     );
     assert_eq!(
-        last_choice_content(&json(r#"{"choices": [{"message": {}}]}"#)).expect("content"),
+        last_choice_content(&value(r#"{"choices": [{"message": {}}]}"#)).expect("content"),
         String::new()
     );
     assert_eq!(
-        last_choice_content(&json(r#"{"choices": [{"message": {"content": "c"}}]}"#))
+        last_choice_content(&value(r#"{"choices": [{"message": {"content": "c"}}]}"#))
             .expect("content"),
         "c"
     );
 }
 
-#[test]
-fn last_choice_content_without_a_choice_is_a_shape_error() {
-    for output in [
-        text("plain"),
-        json(r#"{"choices": []}"#),
-        json(r#"{"choices": null}"#),
-        json(r#"{"choices": ["plain"]}"#),
-        json(r#"{"choices": [{"message": {"content": 3}}]}"#),
-        json(r#"{"choices": [{"message": "plain"}]}"#),
-    ] {
-        assert!(
-            matches!(
-                last_choice_content(&output),
-                Err(EvaluationError::Shape { .. })
-            ),
-            "{output:?}"
-        );
-    }
+#[rstest]
+#[case::plain_text(r#""plain""#)]
+#[case::empty_choices(r#"{"choices": []}"#)]
+#[case::null_choices(r#"{"choices": null}"#)]
+#[case::plain_choice(r#"{"choices": ["plain"]}"#)]
+#[case::numeric_content(r#"{"choices": [{"message": {"content": 3}}]}"#)]
+#[case::plain_message(r#"{"choices": [{"message": "plain"}]}"#)]
+fn last_choice_content_without_a_choice_is_a_shape_error(#[case] body: &str) {
+    let output = value(body);
+    assert!(
+        matches!(
+            last_choice_content(&output),
+            Err(EvaluationError::Shape { .. })
+        ),
+        "{output:?}"
+    );
 }
 
 #[test]
 fn write_response_replaces_only_the_tool_calls() {
     let mut inputs = GuardrailApiInputs {
         texts: Some(Vec::new()),
+        images: None,
+        tools: None,
         tool_calls: Some(vec![text("old")]),
-        ..GuardrailApiInputs::default()
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
-    let output = json(r#"[{"id": "new"}]"#);
+    let output = value(r#"[{"id": "new"}]"#);
     write_response(&mut inputs, &output).expect("written");
-    assert_eq!(inputs.tool_calls, Some(vec![json(r#"{"id": "new"}"#)]));
+    assert_eq!(inputs.tool_calls, Some(vec![value(r#"{"id": "new"}"#)]));
     assert_eq!(inputs.texts, Some(Vec::new()));
+}
+
+#[test]
+fn a_response_replacing_tool_calls_must_be_a_list() {
+    let mut inputs = GuardrailApiInputs {
+        texts: Some(Vec::new()),
+        images: None,
+        tools: None,
+        tool_calls: Some(vec![text("old")]),
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    };
     assert!(matches!(
-        write_response(&mut text_inputs(&["old"]), &json(r#"{"id": "new"}"#)),
+        write_response(&mut inputs, &value(r#"{"id": "new"}"#)),
         Err(EvaluationError::Shape { .. })
     ));
 }
@@ -368,7 +401,7 @@ fn write_response_replaces_only_the_tool_calls() {
 #[test]
 fn write_response_fails_on_an_empty_choice_list() {
     assert!(matches!(
-        write_response(&mut text_inputs(&["old"]), &json(r#"{"choices": []}"#)),
+        write_response(&mut text_inputs(&["old"]), &value(r#"{"choices": []}"#)),
         Err(EvaluationError::Shape { .. })
     ));
 }
@@ -376,13 +409,18 @@ fn write_response_fails_on_an_empty_choice_list() {
 #[test]
 fn write_response_without_scanned_output_keeps_the_inputs() {
     let mut inputs = GuardrailApiInputs::default();
-    write_response(&mut inputs, &json("{}")).expect("written");
+    write_response(&mut inputs, &value("{}")).expect("written");
     assert_eq!(inputs, GuardrailApiInputs::default());
     let mut empty_calls = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
         tool_calls: Some(Vec::new()),
-        ..GuardrailApiInputs::default()
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     };
-    write_response(&mut empty_calls, &json("{}")).expect("written");
+    write_response(&mut empty_calls, &value("{}")).expect("written");
     assert_eq!(empty_calls.tool_calls, Some(Vec::new()));
 }
 
@@ -394,9 +432,13 @@ async fn sends_the_v2_request_evaluation() {
     let guardrail = guardrail(&server.base);
     let mut data = proxy_data(&[("hl-project-id", "project")]);
     let inputs = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
+        tool_calls: None,
         structured_messages: Some(vec![message("user", text("secret"))]),
         model: Some("gpt-4o".to_owned()),
-        ..GuardrailApiInputs::default()
+        stream_holdback_chars: None,
     };
     let evaluated = guardrail
         .evaluate(inputs, &mut data, GuardrailInputType::Request, None)

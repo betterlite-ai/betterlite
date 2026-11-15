@@ -60,7 +60,12 @@ pub(crate) fn message(role: &str, content: GuardrailValue) -> GuardrailMessage {
 pub(crate) fn text_inputs(texts: &[&str]) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(texts.iter().map(|value| (*value).to_owned()).collect()),
-        ..GuardrailApiInputs::default()
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
     }
 }
 

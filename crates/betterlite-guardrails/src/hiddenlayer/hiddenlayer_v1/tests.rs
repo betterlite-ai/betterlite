@@ -5,9 +5,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
-use reqwest::header::HeaderValue;
+use reqwest::header::{HeaderMap, HeaderValue};
+use rstest::rstest;
 use uuid::Uuid;
 
+use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::hiddenlayer::evaluation::tests::fixtures::{
     canonical, headers_value, logging_data, message, object, proxy_data, text, text_inputs,
 };
@@ -121,12 +123,16 @@ fn evaluation_timeout_defaults_to_thirty_seconds() {
 #[test]
 fn scan_payload_scans_the_last_structured_message() {
     let inputs = GuardrailApiInputs {
+        texts: Some(vec!["ignored".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
         structured_messages: Some(vec![
             message("user", text("first")),
             message("assistant", text("second")),
         ]),
-        texts: Some(vec!["ignored".to_owned()]),
-        ..GuardrailApiInputs::default()
+        model: None,
+        stream_holdback_chars: None,
     };
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
@@ -146,11 +152,16 @@ fn scan_payload_flattens_text_parts() {
         object(vec![("type", text("text")), ("text", text("b"))]),
     ]);
     let inputs = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
+        tool_calls: None,
         structured_messages: Some(vec![GuardrailMessage {
             role: "user".to_owned(),
             extra: BTreeMap::from([("content".to_owned(), content)]),
         }]),
-        ..GuardrailApiInputs::default()
+        model: None,
+        stream_holdback_chars: None,
     };
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
@@ -165,11 +176,16 @@ fn scan_payload_flattens_text_parts() {
 #[test]
 fn scan_payload_message_without_content_scans_empty_text() {
     let inputs = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
+        tool_calls: None,
         structured_messages: Some(vec![GuardrailMessage {
             role: "user".to_owned(),
             extra: BTreeMap::new(),
         }]),
-        ..GuardrailApiInputs::default()
+        model: None,
+        stream_holdback_chars: None,
     };
     let payload = scan_payload(&inputs).expect("a payload");
     assert_eq!(
@@ -210,7 +226,12 @@ fn scan_payload_without_inputs_is_none() {
     assert!(
         scan_payload(&GuardrailApiInputs {
             texts: Some(Vec::new()),
-            ..GuardrailApiInputs::default()
+            images: None,
+            tools: None,
+            tool_calls: None,
+            structured_messages: None,
+            model: None,
+            stream_holdback_chars: None,
         })
         .is_none()
     );
@@ -511,112 +532,100 @@ fn apply_result_redact_rewrites_only_the_response_texts() {
     assert_eq!(evaluated.structured_messages, None);
 }
 
-#[test]
-fn redact_without_modified_messages_keeps_the_inputs() {
+#[rstest]
+#[case::missing_modified_data(r#"{"evaluation": {"action": "Redact"}}"#)]
+#[case::empty_modified_data(r#"{"evaluation": {"action": "Redact"}, "modified_data": {}}"#)]
+#[case::null_input(r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": null}}"#)]
+#[case::output_only(
+    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": [{"content": "out"}]}}}"#
+)]
+#[case::empty_input(r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {}}}"#)]
+fn redact_without_modified_messages_keeps_the_inputs(#[case] body: &str) {
     let inputs = text_inputs(&["hello"]);
-    for body in [
-        r#"{"evaluation": {"action": "Redact"}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": null}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": [{"content": "out"}]}}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {}}}"#,
-    ] {
-        assert_eq!(
-            apply_result(
-                inputs.clone(),
-                &interaction(body),
-                GuardrailInputType::Request
-            )
-            .expect("unchanged"),
-            inputs
-        );
-    }
+    assert_eq!(
+        apply_result(
+            inputs.clone(),
+            &interaction(body),
+            GuardrailInputType::Request
+        )
+        .expect("unchanged"),
+        inputs
+    );
 }
 
-#[test]
-fn redact_without_indexable_messages_is_a_shape_error() {
-    for body in [
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": []}}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"other": 1}}}"#,
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": null}}}"#,
-    ] {
-        assert!(
-            matches!(
-                apply_result(
-                    text_inputs(&["hello"]),
-                    &interaction(body),
-                    GuardrailInputType::Request
-                ),
-                Err(EvaluationError::Shape { .. })
-            ),
-            "{body}"
-        );
-    }
-    let empty_output = interaction(
-        r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": []}}}"#,
-    );
-    assert!(matches!(
-        apply_result(
-            text_inputs(&["hello"]),
-            &empty_output,
-            GuardrailInputType::Response
+#[rstest]
+#[case::empty_messages(
+    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": []}}}"#,
+    GuardrailInputType::Request
+)]
+#[case::other_keys(
+    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"other": 1}}}"#,
+    GuardrailInputType::Request
+)]
+#[case::null_messages(
+    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"input": {"messages": null}}}"#,
+    GuardrailInputType::Request
+)]
+#[case::empty_output(
+    r#"{"evaluation": {"action": "Redact"}, "modified_data": {"output": {"messages": []}}}"#,
+    GuardrailInputType::Response
+)]
+fn redact_without_indexable_messages_is_a_shape_error(
+    #[case] body: &str,
+    #[case] input_type: GuardrailInputType,
+) {
+    assert!(
+        matches!(
+            apply_result(text_inputs(&["hello"]), &interaction(body), input_type),
+            Err(EvaluationError::Shape { .. })
         ),
-        Err(EvaluationError::Shape { .. })
+        "{body}"
+    );
+}
+
+// the redacted texts of a v1 request whose only modified message is the given JSON
+fn redacted_texts_of(message: &str) -> Result<Vec<String>, EvaluationError> {
+    let body = interaction(&format!(
+        r#"{{"evaluation": {{"action": "Redact"}}, "modified_data": {{"input": {{"messages": [{message}]}}}}}}"#
     ));
+    let evaluated = apply_result(text_inputs(&["hello"]), &body, GuardrailInputType::Request)?;
+    Ok(evaluated.texts.expect("texts"))
 }
 
 #[test]
 fn redacted_texts_read_content_parts() {
-    let last = object(vec![(
-        "content",
-        GuardrailValue::Array(vec![
-            object(vec![("type", text("text")), ("text", text("a"))]),
-            object(vec![("type", text("image_url"))]),
-            object(vec![("type", text("text")), ("text", text("b"))]),
-        ]),
-    )]);
+    let parts = r#"{"content": [{"type": "text", "text": "a"}, {"type": "image_url"}, {"type": "text", "text": "b"}]}"#;
     assert_eq!(
-        redacted_texts(&last).expect("texts"),
+        redacted_texts_of(parts).expect("texts"),
         vec!["a".to_owned(), "b".to_owned()]
     );
+    let images_only = r#"{"content": [{"type": "image_url"}]}"#;
     assert_eq!(
-        redacted_texts(&object(vec![(
-            "content",
-            GuardrailValue::Array(vec![object(vec![("type", text("image_url"))])])
-        )]))
-        .expect("texts"),
+        redacted_texts_of(images_only).expect("texts"),
         vec![String::new()]
     );
+    let plain = r#"{"content": "plain"}"#;
     assert_eq!(
-        redacted_texts(&object(vec![("content", text("plain"))])).expect("texts"),
+        redacted_texts_of(plain).expect("texts"),
         vec!["plain".to_owned()]
     );
+    let missing_text = r#"{"content": [{"type": "text", "text": "a"}, {"type": "text"}]}"#;
     assert_eq!(
-        redacted_texts(&object(vec![(
-            "content",
-            GuardrailValue::Array(vec![
-                object(vec![("type", text("text")), ("text", text("a"))]),
-                object(vec![("type", text("text"))])
-            ])
-        )]))
-        .expect("texts"),
+        redacted_texts_of(missing_text).expect("texts"),
         vec!["a".to_owned()]
     );
 }
 
-#[test]
-fn redacted_texts_without_a_content_are_a_shape_error() {
-    for message in [
-        object(vec![("role", text("user"))]),
-        object(vec![("content", GuardrailValue::Null)]),
-        object(vec![("content", GuardrailValue::UnsignedInteger(3))]),
-        text("not a message"),
-    ] {
-        assert!(matches!(
-            redacted_texts(&message),
-            Err(EvaluationError::Shape { .. })
-        ));
-    }
+#[rstest]
+#[case::role_only(r#"{"role": "user"}"#)]
+#[case::null_content(r#"{"content": null}"#)]
+#[case::numeric_content(r#"{"content": 3}"#)]
+#[case::not_a_message(r#""not a message""#)]
+fn redacted_texts_without_a_content_are_a_shape_error(#[case] message: &str) {
+    assert!(matches!(
+        redacted_texts_of(message),
+        Err(EvaluationError::Shape { .. })
+    ));
 }
 
 #[test]
