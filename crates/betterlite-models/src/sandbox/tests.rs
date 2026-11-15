@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::iter::once;
 use std::string::FromUtf8Error;
 
 use futures_util::stream;
@@ -97,6 +98,56 @@ async fn read_capped_lines_keeps_empty_lines_and_drops_the_final_separator() {
 }
 
 #[tokio::test]
+async fn read_capped_lines_keeps_the_same_lines_for_output_under_the_cap() {
+    let chunks = stream::iter(vec![
+        Ok::<Vec<u8>, io::Error>(b"alpha\r\n\r\nbe".to_vec()),
+        Ok(b"ta\ngamma".to_vec()),
+    ]);
+    assert_eq!(
+        read_capped_lines(chunks).await.unwrap(),
+        vec!["alpha", "", "beta", "gamma"]
+    );
+}
+
+#[tokio::test]
+async fn read_capped_lines_counts_bare_newlines_until_the_cap() {
+    let data = vec![b'\n'; SANDBOX_MAX_OUTPUT_BYTES.saturating_mul(2)];
+    let chunks = stream::iter(
+        data.chunks(4096)
+            .map(|chunk| Ok::<Vec<u8>, io::Error>(chunk.to_vec()))
+            .chain(once(Err::<Vec<u8>, io::Error>(io::Error::other(
+                "a chunk the reader must never request",
+            )))),
+    );
+    assert!(matches!(
+        read_capped_lines(chunks).await.unwrap_err(),
+        SandboxOutputError::Exceeded { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
+    ));
+}
+
+#[tokio::test]
+async fn read_capped_lines_accepts_a_line_whose_newline_reaches_the_cap() {
+    let mut data = "a".repeat(SANDBOX_MAX_OUTPUT_BYTES - 1).into_bytes();
+    data.push(b'\n');
+    let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(data)]);
+    assert_eq!(
+        read_capped_lines(chunks).await.unwrap(),
+        vec!["a".repeat(SANDBOX_MAX_OUTPUT_BYTES - 1)]
+    );
+}
+
+#[tokio::test]
+async fn read_capped_lines_rejects_a_full_cap_line_whose_newline_crosses_it() {
+    let mut data = "a".repeat(SANDBOX_MAX_OUTPUT_BYTES).into_bytes();
+    data.push(b'\n');
+    let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(data)]);
+    assert!(matches!(
+        read_capped_lines(chunks).await.unwrap_err(),
+        SandboxOutputError::Exceeded { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
+    ));
+}
+
+#[tokio::test]
 async fn read_capped_lines_accepts_exactly_the_limit() {
     let line = "a".repeat(SANDBOX_MAX_OUTPUT_BYTES);
     let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(line.into_bytes())]);
@@ -104,6 +155,18 @@ async fn read_capped_lines_accepts_exactly_the_limit() {
         read_capped_lines(chunks).await.unwrap(),
         vec!["a".repeat(SANDBOX_MAX_OUTPUT_BYTES)]
     );
+}
+
+#[tokio::test]
+async fn read_capped_lines_counts_utf8_bytes_rather_than_characters() {
+    // each character is two bytes, so the line passes a character cap and crosses the byte cap
+    let mut data = "\u{e9}".repeat(SANDBOX_MAX_OUTPUT_BYTES - 1).into_bytes();
+    data.push(b'\n');
+    let chunks = stream::iter(vec![Ok::<Vec<u8>, io::Error>(data)]);
+    assert!(matches!(
+        read_capped_lines(chunks).await.unwrap_err(),
+        SandboxOutputError::Exceeded { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
+    ));
 }
 
 #[tokio::test]
