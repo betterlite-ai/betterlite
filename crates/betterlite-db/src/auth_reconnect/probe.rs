@@ -18,15 +18,19 @@ pub enum WriterProbeError {
     },
 }
 
-pub async fn writer_is_read_only(pool: &Pool) -> Result<bool, WriterProbeError> {
+async fn probe_rows(pool: &Pool, sql: &str) -> Result<Vec<tokio_postgres::Row>, WriterProbeError> {
     let connection = pool
         .get()
         .await
         .map_err(|source| WriterProbeError::Pool { source })?;
-    let rows = connection
-        .query(WRITER_READ_ONLY_PROBE_SQL, &[])
+    connection
+        .query(sql, &[])
         .await
-        .map_err(|source| WriterProbeError::Query { source })?;
+        .map_err(|source| WriterProbeError::Query { source })
+}
+
+pub async fn writer_is_read_only(pool: &Pool) -> Result<bool, WriterProbeError> {
+    let rows = probe_rows(pool, WRITER_READ_ONLY_PROBE_SQL).await?;
     for row in &rows {
         let value = row
             .try_get::<_, String>("transaction_read_only")
@@ -39,13 +43,6 @@ pub async fn writer_is_read_only(pool: &Pool) -> Result<bool, WriterProbeError> 
 }
 
 pub async fn writer_select_one(pool: &Pool) -> Result<(), WriterProbeError> {
-    let connection = pool
-        .get()
-        .await
-        .map_err(|source| WriterProbeError::Pool { source })?;
-    connection
-        .query(WRITER_SELECT_ONE_SQL, &[])
-        .await
-        .map_err(|source| WriterProbeError::Query { source })?;
+    probe_rows(pool, WRITER_SELECT_ONE_SQL).await?;
     Ok(())
 }

@@ -8,6 +8,7 @@ pub struct StaleReadEngine<Handle> {
 }
 
 impl<Handle> StaleReadEngine<Handle> {
+    #[must_use]
     pub fn observe(observation: &Observation<Handle>) -> Option<Self> {
         let handle = observation.handle.as_ref()?;
         Some(Self {

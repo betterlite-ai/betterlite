@@ -35,7 +35,7 @@ impl ReconnectLock for TokioLock {
         Box::pin(async move {
             let permits = Arc::clone(&self.permits);
             let acquired = match limit {
-                Some(limit) => timeout(limit, permits.acquire_owned()).await.ok(),
+                Some(bounded) => timeout(bounded, permits.acquire_owned()).await.ok(),
                 None => Some(permits.acquire_owned().await),
             };
             Ok(acquired.and_then(Result::ok))

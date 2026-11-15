@@ -138,9 +138,9 @@ where
         if !within {
             return false;
         }
-        stale.is_none_or(|stale| {
-            self.has_failed_repair_for(&stale.handle, stale.generation)
-                || !stale.is_still_live(&self.engine.read_target())
+        stale.is_none_or(|repair| {
+            self.has_failed_repair_for(&repair.handle, repair.generation)
+                || !repair.is_still_live(&self.engine.read_target())
         })
     }
 
@@ -188,7 +188,7 @@ where
             self.dead.store(true, Ordering::SeqCst);
         }
         warn!(reason = request.reason, "Attempting Prisma DB reconnect.");
-        let outcome = self.run_cycle(request).await;
+        let outcome = cycle::run_cycle(self, request).await;
         *self
             .last_attempt
             .lock()
@@ -218,8 +218,8 @@ where
                     .failures
                     .fetch_add(1, Ordering::SeqCst)
                     .saturating_add(1);
-                if let Some(stale) = stale {
-                    self.record_failed_repair(stale);
+                if let Some(repair) = stale {
+                    self.record_failed_repair(repair);
                 }
                 error!(
                     consecutive = %consecutive,

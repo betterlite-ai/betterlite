@@ -1,3 +1,4 @@
+use std::str::FromStr;
 use std::time::Duration;
 
 use betterlite_db::auth_reconnect::settings::ReconnectSettings;
@@ -14,8 +15,8 @@ const WATCHDOG_VARIABLE: &str = "PRISMA_WATCHDOG_RECONNECT_TIMEOUT_SECONDS";
 const AUTH_TIMEOUT_VARIABLE: &str = "PRISMA_AUTH_RECONNECT_TIMEOUT_SECONDS";
 const AUTH_LOCK_VARIABLE: &str = "PRISMA_AUTH_RECONNECT_LOCK_TIMEOUT_SECONDS";
 
-const DEFAULT_COOLDOWN_SECONDS: u64 = 15;
-const DEFAULT_ESCALATION_THRESHOLD: u64 = 3;
+const DEFAULT_COOLDOWN_SECONDS: i64 = 15;
+const DEFAULT_ESCALATION_THRESHOLD: i64 = 3;
 const DEFAULT_WATCHDOG_SECONDS: f64 = 30.0;
 const DEFAULT_AUTH_TIMEOUT_SECONDS: f64 = 2.0;
 const DEFAULT_AUTH_LOCK_SECONDS: f64 = 0.1;
@@ -61,9 +62,31 @@ impl Section for Raw {
     }
 }
 
-fn integer<L>(lookup: &L, name: &str, default: u64, minimum: u64) -> Result<u64, ConfigError>
+fn integer<L>(lookup: &L, name: &str, default: i64, minimum: u64) -> Result<u64, ConfigError>
 where
     L: EnvironmentLookup,
+{
+    let value = setting(lookup, name, default, ConfigError::InvalidInteger)?;
+    Ok(u64::try_from(value).unwrap_or(minimum).max(minimum))
+}
+
+fn seconds<L>(lookup: &L, name: &str, default: f64, minimum: f64) -> Result<Duration, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let value = setting(lookup, name, default, ConfigError::InvalidFloat)?;
+    Ok(lower_bounded(value, minimum))
+}
+
+fn setting<T, L>(
+    lookup: &L,
+    name: &str,
+    default: T,
+    invalid: fn(String, T::Err) -> ConfigError,
+) -> Result<T, ConfigError>
+where
+    L: EnvironmentLookup,
+    T: FromStr,
 {
     let Some(text) = lookup.lookup(name) else {
         return Ok(default);
@@ -72,33 +95,9 @@ where
     if trimmed.is_empty() {
         return Err(number_error(name));
     }
-    let value = trimmed
-        .parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: name.to_owned(),
-            source,
-        })?;
-    Ok(u64::try_from(value).unwrap_or(minimum).max(minimum))
-}
-
-fn seconds<L>(lookup: &L, name: &str, default: f64, minimum: f64) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(lower_bounded(default, minimum));
-    };
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return Err(number_error(name));
-    }
-    let value = trimmed
-        .parse::<f64>()
-        .map_err(|source| ConfigError::InvalidFloat {
-            path: name.to_owned(),
-            source,
-        })?;
-    Ok(lower_bounded(value, minimum))
+    trimmed
+        .parse::<T>()
+        .map_err(|source| invalid(name.to_owned(), source))
 }
 
 // Python's max(lower, value): NaN and negative infinity select the lower bound, positive infinity stays
