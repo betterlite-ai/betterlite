@@ -309,6 +309,11 @@ async fn grounded_response(grounding: Reply, block: Option<bool>) -> Vec<Seen> {
 fn blocked_object(failure: &GuardrailFailure) -> (u16, &IndexMap<String, GuardrailValue>) {
     match failure {
         GuardrailFailure::HttpObject { status, detail } => (*status, detail),
-        other => panic!("an object failure: {other:?}"),
+        other @ (GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Http { .. }
+        | GuardrailFailure::Other(_)) => panic!("an object failure: {other:?}"),
     }
 }

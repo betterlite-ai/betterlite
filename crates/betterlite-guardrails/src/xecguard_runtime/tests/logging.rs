@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::io::{self, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
@@ -91,9 +92,9 @@ fn assert_logging_entry(entry: &GuardrailValue) {
     );
     assert_eq!(
         field(entry, "end_time"),
-        &GuardrailValue::Decimal(1_700_000_000.0_f64)
+        &GuardrailValue::Decimal(1_700_000_001.0_f64)
     );
-    assert_eq!(field(entry, "duration"), &GuardrailValue::Decimal(0.0_f64));
+    assert_eq!(field(entry, "duration"), &GuardrailValue::Decimal(1.0_f64));
     assert_eq!(
         text(field(field(entry, "guardrail_response"), "decision")),
         "UNSAFE"
@@ -168,7 +169,15 @@ pub(super) async fn logging_appends_to_existing_list() {
 }
 
 pub(super) async fn logging_swallowed_non_object() {
-    assert_not_appended(LOGGED_WITH_NON_OBJECT, (200, SAFE)).await;
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_NON_OBJECT);
+    let before = values(&kwargs);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    assert!(logged_entries(&kwargs).is_empty());
+    assert_eq!(values(&kwargs), before);
 }
 
 pub(super) async fn logging_redacts_secret_fields() {
@@ -199,7 +208,14 @@ async fn scan_logged(
 ) -> Vec<GuardrailValue> {
     let mock = mock(scan, (200, SAFE));
     let mut guard = guard_at(&mock.base);
-    guard.clock = fixed_clock;
+    let reads = AtomicU64::new(0_u64);
+    guard.clock = Arc::new(move || {
+        SystemTime::UNIX_EPOCH
+            .checked_add(Duration::from_secs(
+                1_700_000_000_u64.saturating_add(reads.fetch_add(1, Ordering::Relaxed)),
+            ))
+            .expect("the advancing clock")
+    });
     let mut kwargs = logged(kwargs_json);
     guard.async_logging_hook(&mut kwargs, &result).await;
     let sent = seen(&mock);
@@ -266,21 +282,27 @@ fn logged_entries(kwargs: &RequestData) -> Vec<GuardrailValue> {
     let standard = field(&payload, "standard_logging_object");
     match field(standard, "guardrail_information") {
         GuardrailValue::Array(entries) => entries.clone(),
-        _ => Vec::new(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Object(_) => Vec::new(),
     }
 }
 
 fn keys(value: &GuardrailValue) -> Vec<&str> {
     match value {
         GuardrailValue::Object(fields) => fields.keys().map(String::as_str).collect(),
-        _ => Vec::new(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => Vec::new(),
     }
-}
-
-fn fixed_clock() -> SystemTime {
-    SystemTime::UNIX_EPOCH
-        .checked_add(Duration::from_secs(1_700_000_000_u64))
-        .expect("the fixed clock")
 }
 
 #[derive(Clone, Default)]

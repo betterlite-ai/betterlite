@@ -4,6 +4,7 @@ pub mod error;
 mod logging;
 mod tests;
 
+use std::sync::Arc;
 use std::time::SystemTime;
 
 use betterlite_config::sections::xecguard_runtime::Settings as RuntimeSettings;
@@ -17,12 +18,13 @@ use crate::third_party_init_b::xecguard::XecGuardArgs;
 use crate::xecguard_primitives::logging_hook::logging_hook;
 use crate::xecguard_primitives::settings::XecGuardSettings;
 
-#[derive(Debug)]
+type Clock = Arc<dyn Fn() -> SystemTime + Send + Sync>;
+
 pub struct XecGuardGuard {
     base: GuardrailBase,
     settings: XecGuardSettings,
     client: Client,
-    clock: fn() -> SystemTime,
+    clock: Clock,
 }
 
 impl XecGuardGuard {
@@ -36,7 +38,7 @@ impl XecGuardGuard {
             settings: construction::resolve(args, settings, &base)?,
             base,
             client,
-            clock: SystemTime::now,
+            clock: Arc::new(SystemTime::now),
         })
     }
 

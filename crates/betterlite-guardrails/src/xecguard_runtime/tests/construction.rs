@@ -37,7 +37,11 @@ pub(super) fn constructor_precedence() {
     input.policy_names = Some(vec!["Custom-Policy".to_owned()]);
     input.block_on_error = Some(true);
     input.grounding_strictness = Some("STRICT".to_owned());
-    let guard = new_guard(input, &environment(), base(Some(GUARDRAIL_NAME), Some(2.5)));
+    let guard = new_guard(
+        &input,
+        &environment(),
+        base(Some(GUARDRAIL_NAME), Some(2.5_f64)),
+    );
     assert_eq!(guard.settings.api_key.expose_secret(), "key-from-args");
     assert_eq!(guard.settings.api_base, "http://args.test");
     assert_eq!(guard.settings.model, "model-from-args");
@@ -59,7 +63,7 @@ pub(super) fn environment_fallbacks() {
     input.api_key = None;
     input.api_base = None;
     input.policy_names = Some(Vec::new());
-    let guard = new_guard(input, &environment(), base(None, None));
+    let guard = new_guard(&input, &environment(), base(None, None));
     assert_eq!(
         guard.settings.api_key.expose_secret(),
         "key-from-environment"
@@ -103,7 +107,7 @@ pub(super) async fn default_policy_list() {
     let mut input = args();
     input.api_base = Some(mock.base.clone());
     input.policy_names = Some(Vec::new());
-    let guard = new_guard(input, &RuntimeSettings::default(), base(None, None));
+    let guard = new_guard(&input, &RuntimeSettings::default(), base(None, None));
     let mut data = request_data(USER_REQUEST);
     let returned = guard
         .apply_guardrail(
@@ -130,7 +134,7 @@ pub(super) async fn configured_policy_list() {
     let mut input = args();
     input.api_base = Some(mock.base.clone());
     input.policy_names = Some(vec!["Custom-Policy".to_owned()]);
-    let guard = new_guard(input, &RuntimeSettings::default(), base(None, None));
+    let guard = new_guard(&input, &RuntimeSettings::default(), base(None, None));
     let mut data = request_data(USER_REQUEST);
     guard
         .apply_guardrail(
@@ -153,7 +157,7 @@ pub(super) fn unrepresentable_timeout() {
     let error = XecGuardGuard::new(
         &args(),
         &RuntimeSettings::default(),
-        base(Some(GUARDRAIL_NAME), Some(-1.0)),
+        base(Some(GUARDRAIL_NAME), Some(-1.0_f64)),
         client(),
     )
     .expect_err("a negative timeout is not a duration");
