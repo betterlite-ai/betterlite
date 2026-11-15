@@ -1,7 +1,7 @@
 id: B731
 milestone: M4 keys, spend and management
 title: Database worker census and database-tool diagnostics
-status: todo
+status: done
 depends_on: [B002, B003, B171, B700, B714, B856, B860]
 file: tasks/B731-worker-heartbeat.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/proxy/db/dynamo_db.py"
 parent: B051
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1640
