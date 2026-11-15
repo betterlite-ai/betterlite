@@ -148,21 +148,17 @@ fn plan_drops(
         }
         plan.exchanges = plan.exchanges.saturating_add(1);
         for index in group.iter().skip(1) {
-            if is_tool_result(rows, *index) {
+            let role = rows
+                .get(*index)
+                .and_then(Json::as_object)
+                .and_then(|fields| fields.get("role"))
+                .and_then(Json::as_str);
+            if matches!(role, Some("tool" | "function")) {
                 plan.indices.insert(*index);
             }
         }
     }
     plan
-}
-
-fn is_tool_result(rows: &[Json], index: usize) -> bool {
-    let role = rows
-        .get(index)
-        .and_then(Json::as_object)
-        .and_then(|fields| fields.get("role"))
-        .and_then(Json::as_str);
-    matches!(role, Some("tool" | "function"))
 }
 
 fn removed_chars(guardrail: &TypeSafeGuardrail, rows: &[Json], dropped: &BTreeSet<usize>) -> i64 {
