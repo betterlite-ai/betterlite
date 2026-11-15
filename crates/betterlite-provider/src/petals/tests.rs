@@ -12,7 +12,8 @@ use rstest::rstest;
 use serde_json::Number;
 
 use super::config::{
-    DEFAULT_MAX_NEW_TOKENS, PetalsConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params,
+    MAX_NEW_TOKENS_ENV, PetalsConfig, SUPPORTED_OPENAI_PARAMS, map_openai_params,
+    max_new_tokens_default,
 };
 use super::error::{PetalsSetupError, get_error_class};
 use super::request::{CustomPrompt, RequestContext};
@@ -21,6 +22,25 @@ mod reply;
 
 fn params(wire: &str) -> Object {
     serde_json::from_str(wire).unwrap()
+}
+
+fn environment(values: &[(&str, &str)]) -> BTreeMap<String, String> {
+    values
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+fn config(max_new_tokens: i64) -> PetalsConfig {
+    PetalsConfig {
+        max_length: None,
+        max_new_tokens,
+        do_sample: None,
+        temperature: None,
+        top_k: None,
+        top_p: None,
+        repetition_penalty: None,
+    }
 }
 
 fn messages(wire: &str) -> Vec<Message> {
@@ -58,7 +78,7 @@ fn custom_prompt_dict(wire: &str) -> BTreeMap<String, CustomPrompt> {
 fn full_config() -> PetalsConfig {
     PetalsConfig {
         max_length: Some(Number::from(10)),
-        max_new_tokens: Number::from(7),
+        max_new_tokens: 7,
         do_sample: Some(true),
         temperature: Some(Number::from_f64(0.1).unwrap()),
         top_k: Some(Number::from(5)),
@@ -75,13 +95,30 @@ fn supported_openai_params_are_litellm_order() {
     );
 }
 
+#[rstest]
+#[case::unset(&[], 4096)]
+#[case::configured(&[(MAX_NEW_TOKENS_ENV, "77")], 77)]
+#[case::zero(&[(MAX_NEW_TOKENS_ENV, "0")], 0)]
+#[case::blank(&[(MAX_NEW_TOKENS_ENV, "")], 4096)]
+#[case::whitespace(&[(MAX_NEW_TOKENS_ENV, " ")], 4096)]
+fn max_new_tokens_default_reads_the_environment(
+    #[case] pairs: &[(&str, &str)],
+    #[case] expected: i64,
+) {
+    let environment = environment(pairs);
+    assert_eq!(max_new_tokens_default(&environment).unwrap(), expected);
+}
+
 #[test]
-fn the_default_config_sets_max_new_tokens() {
-    assert_eq!(
-        PetalsConfig::default().get_config(),
-        params(r#"{"max_new_tokens":4096}"#)
-    );
-    assert_eq!(DEFAULT_MAX_NEW_TOKENS, 4096);
+fn max_new_tokens_default_rejects_a_value_that_is_not_a_number() {
+    let environment = environment(&[(MAX_NEW_TOKENS_ENV, "many")]);
+    let error = max_new_tokens_default(&environment).unwrap_err();
+    assert!(error.to_string().contains(MAX_NEW_TOKENS_ENV), "{error}");
+}
+
+#[test]
+fn get_config_lists_the_callers_max_new_tokens() {
+    assert_eq!(config(77).get_config(), params(r#"{"max_new_tokens":77}"#));
 }
 
 #[test]
@@ -98,7 +135,7 @@ fn get_config_lists_every_set_value() {
 fn get_config_keeps_zero_and_false() {
     let config = PetalsConfig {
         max_length: Some(Number::from(0)),
-        max_new_tokens: Number::from(0),
+        max_new_tokens: 0,
         do_sample: Some(false),
         temperature: Some(Number::from(0)),
         top_k: Some(Number::from(0)),
@@ -138,7 +175,7 @@ fn openai_params_keep_the_existing_options() {
 
 #[tokio::test]
 async fn request_body_carries_the_config_defaults() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = BTreeMap::new();
     let context = context(&config, &prompts, &custom);
@@ -186,7 +223,7 @@ async fn request_body_keeps_the_caller_options_over_the_config() {
 
 #[tokio::test]
 async fn request_body_pops_stream_but_keeps_the_mapped_options() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = BTreeMap::new();
     let context = context(&config, &prompts, &custom);
@@ -215,7 +252,7 @@ async fn request_body_pops_stream_but_keeps_the_mapped_options() {
 #[case::empty(Some(""))]
 #[tokio::test]
 async fn request_body_without_a_base_is_the_engine_error(#[case] api_base: Option<&str>) {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = BTreeMap::new();
     let context = context(&config, &prompts, &custom);
@@ -244,7 +281,7 @@ async fn request_body_without_a_base_is_the_engine_error(#[case] api_base: Optio
 
 #[tokio::test]
 async fn a_custom_prompt_dictionary_entry_builds_the_prompt() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = custom_prompt_dict(
         r#"{"m":{"roles":{"user":{"pre_message":"U:","post_message":"!"}},"initial_prompt_value":"I","final_prompt_value":"F"}}"#,
@@ -264,7 +301,7 @@ async fn a_custom_prompt_dictionary_entry_builds_the_prompt() {
 
 #[tokio::test]
 async fn a_custom_prompt_for_another_model_uses_the_prompt_factory() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = custom_prompt_dict(
         r#"{"other":{"roles":{},"initial_prompt_value":"I","final_prompt_value":"F"}}"#,
@@ -297,7 +334,7 @@ async fn a_custom_prompt_for_another_model_uses_the_prompt_factory() {
 )]
 #[tokio::test]
 async fn a_custom_prompt_entry_missing_a_field_fails(#[case] wire: &str, #[case] field: &str) {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = custom_prompt_dict(wire);
     let context = context(&config, &prompts, &custom);
@@ -319,7 +356,7 @@ async fn a_custom_prompt_entry_missing_a_field_fails(#[case] wire: &str, #[case]
 
 #[tokio::test]
 async fn a_prompt_error_wins_over_the_engine_error() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = custom_prompt_dict(r#"{"m":{"roles":{}}}"#);
     let context = context(&config, &prompts, &custom);
@@ -337,7 +374,7 @@ async fn a_prompt_error_wins_over_the_engine_error() {
 
 #[tokio::test]
 async fn request_body_without_a_prompt_factory_match_has_a_null_input() {
-    let config = PetalsConfig::default();
+    let config = config(4096);
     let prompts = factory();
     let custom = BTreeMap::new();
     let context = context(&config, &prompts, &custom);

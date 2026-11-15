@@ -1,20 +1,24 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::loader::EnvironmentLookup;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
-// petals requires max tokens to be set, so litellm.max_tokens (4096) is the class default
-pub const DEFAULT_MAX_NEW_TOKENS: i64 = 4096;
+use super::error::PetalsSetupError;
+
+// LiteLLM reads DEFAULT_MAX_TOKENS when it imports (constants.py L90) and uses it as litellm.max_tokens, which is the petals class default (transformation.py L43); an unset or blank value is 4096
+pub const MAX_NEW_TOKENS_ENV: &str = "DEFAULT_MAX_TOKENS";
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 4] = ["max_tokens", "temperature", "top_p", "stream"];
 
 // PetalsConfig.validate_environment returns {}: a petals request carries no provider headers and drops the caller's (transformation.py L123-L133)
 pub const REQUEST_HEADERS: Headers = BTreeMap::new();
 
+// max_new_tokens is the caller's resolved default, the way PredibaseConfig takes its own and triton takes max_tokens_default
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PetalsConfig {
     pub max_length: Option<Number>,
-    pub max_new_tokens: Number,
+    pub max_new_tokens: i64,
     pub do_sample: Option<bool>,
     pub temperature: Option<Number>,
     pub top_k: Option<Number>,
@@ -22,18 +26,13 @@ pub struct PetalsConfig {
     pub repetition_penalty: Option<Number>,
 }
 
-impl Default for PetalsConfig {
-    fn default() -> Self {
-        Self {
-            max_length: None,
-            max_new_tokens: Number::from(DEFAULT_MAX_NEW_TOKENS),
-            do_sample: None,
-            temperature: None,
-            top_k: None,
-            top_p: None,
-            repetition_penalty: None,
-        }
-    }
+pub fn max_new_tokens_default(
+    environment: &dyn EnvironmentLookup,
+) -> Result<i64, PetalsSetupError> {
+    let text = environment.lookup(MAX_NEW_TOKENS_ENV).unwrap_or_default();
+    let configured = betterlite_env::number::<i64>(MAX_NEW_TOKENS_ENV, &text)
+        .map_err(|source| PetalsSetupError::Environment { source })?;
+    Ok(configured.unwrap_or(4096))
 }
 
 impl PetalsConfig {
@@ -45,7 +44,7 @@ impl PetalsConfig {
         }
         config.insert(
             String::from("max_new_tokens"),
-            Json::Number(self.max_new_tokens.clone()),
+            Json::Number(Number::from(self.max_new_tokens)),
         );
         if let Some(do_sample) = self.do_sample {
             config.insert(String::from("do_sample"), Json::Bool(do_sample));

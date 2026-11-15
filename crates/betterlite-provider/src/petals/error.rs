@@ -22,6 +22,11 @@ pub enum PetalsSetupError {
     Prompt(#[from] FactoryError),
     #[error("the prompt factory returned an ollama prompt for a petals request")]
     OllamaPrompt,
+    #[error("the petals environment is invalid: {source}")]
+    Environment {
+        #[source]
+        source: betterlite_env::EnvError,
+    },
 }
 
 impl PetalsSetupError {
@@ -29,7 +34,10 @@ impl PetalsSetupError {
     pub const fn status(&self) -> Option<u16> {
         match self {
             Self::Engine { status_code, .. } => Some(*status_code),
-            Self::CustomPromptField { .. } | Self::Prompt(_) | Self::OllamaPrompt => None,
+            Self::CustomPromptField { .. }
+            | Self::Prompt(_)
+            | Self::OllamaPrompt
+            | Self::Environment { .. } => None,
         }
     }
 }
