@@ -1,0 +1,10 @@
+kind: helper
+name: gemini-stream-complete-before-truncated-tail
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"t0","candidates":[{"content":{"parts":[{"text":"whole"}]}}]}{"responseId":"t1","candidates":[{"content":{"parts":[{"te'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}

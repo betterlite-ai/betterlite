@@ -1,0 +1,10 @@
+kind: helper
+name: gemini-stream-metadata-only
+call:
+  gemini_stream:
+    fragments:
+      - '{"responseId":"m1","candidates":[{"groundingMetadata":{"webSearchQueries":["q"]}},{"safetyRatings":[{"category":"X"}]}]}'
+    legacy_function: false
+    headers: {}
+env: {}
+compare: {ignore: []}
