@@ -1,7 +1,7 @@
 id: B609
 milestone: M3 providers
 title: Bedrock Invoke provider and JSON-mode streams
-status: todo
+status: done
 depends_on: [B599, B608, B581, B582, B578, B504, B206, B004, B171, B2214, B010, B2201]
 file: tasks/B609-bedrock-invoke-events.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/bedrock/chat/__init__.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1652

@@ -820,6 +820,7 @@ checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
  "bytes",
+ "form_urlencoded",
  "futures-util",
  "http 1.5.0",
  "http-body 1.1.0",
@@ -835,6 +836,7 @@ dependencies = [
  "serde_core",
  "serde_json",
  "serde_path_to_error",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tower",
@@ -1088,6 +1090,7 @@ dependencies = [
 name = "betterlite-anthropic"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-config",
  "betterlite-context",
  "betterlite-error",
@@ -1096,6 +1099,8 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
+ "betterlite-streaming",
+ "betterlite-tokenizer",
  "chrono",
  "futures-util",
  "hex",
@@ -1296,9 +1301,12 @@ dependencies = [
 name = "betterlite-bedrock-fuzz"
 version = "0.0.0"
 dependencies = [
+ "async-trait",
  "betterlite-bedrock",
+ "betterlite-tokenizer",
  "bytes",
  "libfuzzer-sys",
+ "tokio",
 ]
 
 [[package]]
@@ -1598,6 +1606,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "caseless",
  "chrono",
  "futures-util",
  "hex",
@@ -1684,6 +1693,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
@@ -1819,20 +1829,33 @@ dependencies = [
 name = "betterlite-foundry"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
  "betterlite-models",
+ "betterlite-openai",
  "betterlite-prompts",
  "chrono",
+ "indexmap 2.14.2",
  "jiff",
+ "percent-encoding",
  "rstest",
  "rust_decimal",
  "secrecy",
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
+]
+
+[[package]]
+name = "betterlite-foundry-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-foundry",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1892,6 +1915,7 @@ dependencies = [
  "mime_guess",
  "mutants",
  "pem",
+ "percent-encoding",
  "pkcs8",
  "rcgen",
  "regex",
@@ -1911,6 +1935,8 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-rustls",
+ "tokio-tungstenite",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "tree-sitter",
@@ -2193,6 +2219,7 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
+ "betterlite-models",
  "chrono",
  "libfuzzer-sys",
  "serde_json",
@@ -2221,6 +2248,7 @@ dependencies = [
  "http 1.5.0",
  "pem",
  "regex",
+ "rmcp",
  "rstest",
  "rust_decimal",
  "rustix",
@@ -2230,6 +2258,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
+ "sse-stream",
  "strum",
  "subtle",
  "thiserror",
@@ -2369,6 +2398,7 @@ dependencies = [
  "serde_with",
  "sha2 0.11.1",
  "speedate",
+ "subtle",
  "tempfile",
  "thiserror",
  "tokio",
@@ -2383,6 +2413,7 @@ dependencies = [
 name = "betterlite-openai-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-http",
  "betterlite-openai",
  "betterlite-prompts",
@@ -2523,6 +2554,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-anthropic",
  "betterlite-auth",
+ "betterlite-bedrock",
  "betterlite-config",
  "betterlite-context",
  "betterlite-core",
@@ -2530,6 +2562,7 @@ dependencies = [
  "betterlite-error",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-interactions",
  "betterlite-logging",
  "betterlite-mcp",
  "betterlite-models",
@@ -2540,6 +2573,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
+ "betterlite-secret-managers",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
@@ -2547,6 +2581,7 @@ dependencies = [
  "chrono",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "rand 0.10.3",
@@ -2620,6 +2655,7 @@ dependencies = [
  "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-mcp",
  "betterlite-ocr",
  "betterlite-oracle",
@@ -2628,6 +2664,7 @@ dependencies = [
  "betterlite-roi",
  "betterlite-semantic",
  "betterlite-server",
+ "betterlite-tracing",
  "betterlite-transcribe",
  "chrono",
  "flate2",
@@ -3106,10 +3143,12 @@ dependencies = [
  "async-trait",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-core",
  "betterlite-error",
  "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-tokenizer",
  "chrono",
@@ -3278,6 +3317,7 @@ dependencies = [
  "betterlite-a2a",
  "betterlite-auth",
  "betterlite-azure",
+ "betterlite-bedrock",
  "betterlite-billing",
  "betterlite-cache",
  "betterlite-config",
@@ -3302,6 +3342,7 @@ dependencies = [
  "betterlite-router",
  "betterlite-semantic",
  "betterlite-tokenizer",
+ "betterlite-tracing",
  "betterlite-vertex",
  "caseless",
  "chrono",
@@ -8636,6 +8677,7 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tokio-stream",
  "tokio-util",
  "tracing",
  "uuid",
@@ -9417,6 +9459,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sse-stream"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c25ac7aff0abd1dbc474536e40416e1102c7dd9bfba0b9861c6d357f835dcfb4"
+dependencies = [
+ "bytes",
+ "futures-util",
+ "http-body 1.1.0",
+ "http-body-util",
+ "pin-project-lite",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9970,7 +10025,11 @@ checksum = "17a073bfed563fa236697a068031408a93cd9522e08abf9933ead3e73411bd71"
 dependencies = [
  "futures-util",
  "log",
+ "rustls",
+ "rustls-native-certs",
+ "rustls-pki-types",
  "tokio",
+ "tokio-rustls",
  "tungstenite",
 ]
 
@@ -10306,6 +10365,8 @@ dependencies = [
  "httparse",
  "log",
  "rand 0.10.3",
+ "rustls",
+ "rustls-pki-types",
  "sha1",
  "thiserror",
 ]

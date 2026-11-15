@@ -1,0 +1,13 @@
+kind: helper
+name: unreachable-fail-open
+call:
+  b3751:
+    op: unreachable
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+      unreachable_fallback: fail_open
+    inputs:
+      texts: ["hello"]
+env: {}
+compare: {ignore: []}

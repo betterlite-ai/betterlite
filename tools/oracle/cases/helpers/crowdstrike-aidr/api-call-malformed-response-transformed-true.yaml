@@ -1,0 +1,27 @@
+kind: helper
+name: api-call-malformed-response-transformed-true
+call:
+  b3766:
+    function: apply
+    settings:
+      guardrail_name: cs-aidr
+      api_key: test-key
+      api_base: https://cs.test
+    environment:
+      CS_AIDR_TOKEN: test-key
+      CS_AIDR_BASE_URL: https://cs.test
+    inputs:
+      texts:
+      - hi
+    request_data: {}
+    input_type: request
+    answer:
+      status: 200
+      headers: {}
+      body:
+        result:
+          transformed: true
+          guard_output: nope
+env: {}
+compare:
+  ignore: []

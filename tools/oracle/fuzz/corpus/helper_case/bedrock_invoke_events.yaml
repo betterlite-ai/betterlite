@@ -1,0 +1,22 @@
+kind: helper
+name: bedrock-invoke-events-selector-seed
+call:
+  bedrock_invoke_events:
+    framed:
+      - construction: base
+        provider: null
+        sync: true
+        model: bedrock/amazon.titan
+        json_mode: null
+        chunks: []
+        headers: {content-type: application/vnd.amazon.eventstream}
+    fake:
+      - response:
+          choices:
+            - message: {content: hi}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+        json_mode: false
+        steps: [next, next]
+env: {}
+compare: {ignore: []}
