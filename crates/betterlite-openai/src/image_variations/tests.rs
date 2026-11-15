@@ -203,30 +203,45 @@ impl FakeTransport {
     }
 }
 
+fn recorded_parts(body: RequestBody) -> Vec<Part> {
+    match body {
+        RequestBody::Multipart { parts, .. } => parts
+            .into_iter()
+            .map(
+                |MultipartPart {
+                     name,
+                     file_name,
+                     content_type,
+                     data,
+                 }| Part {
+                    name,
+                    file_name,
+                    content_type,
+                    data,
+                },
+            )
+            .collect(),
+        RequestBody::Empty | RequestBody::Json(_) | RequestBody::Bytes { .. } => Vec::new(),
+    }
+}
+
+fn recorded_headers(headers: &BTreeMap<String, String>) -> HeaderMap {
+    let mut recorded = HeaderMap::new();
+    for (name, value) in headers {
+        recorded.insert(
+            HeaderName::from_bytes(name.as_bytes()).unwrap(),
+            HeaderValue::from_str(value).unwrap(),
+        );
+    }
+    recorded
+}
+
 impl ImageVariationTransport for FakeTransport {
     fn create_variation(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> {
-        let parts = match request.body {
-            RequestBody::Multipart { parts, .. } => parts
-                .into_iter()
-                .map(
-                    |MultipartPart {
-                         name,
-                         file_name,
-                         content_type,
-                         data,
-                     }| Part {
-                        name,
-                        file_name,
-                        content_type,
-                        data,
-                    },
-                )
-                .collect(),
-            RequestBody::Empty | RequestBody::Json(_) | RequestBody::Bytes { .. } => Vec::new(),
-        };
+        let parts = recorded_parts(request.body);
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -240,16 +255,9 @@ impl ImageVariationTransport for FakeTransport {
         let outcome = if self.failure {
             Err(TransportError::Closed)
         } else {
-            let mut headers = HeaderMap::new();
-            for (name, value) in &self.headers {
-                headers.insert(
-                    HeaderName::from_bytes(name.as_bytes()).unwrap(),
-                    HeaderValue::from_str(value).unwrap(),
-                );
-            }
             Ok(UpstreamResponse {
                 status: self.status,
-                headers,
+                headers: recorded_headers(&self.headers),
                 body: self.body.clone(),
             })
         };
@@ -298,6 +306,14 @@ async fn run(
     let prepared = begin_image_variation(call, recorder)?;
     let sent = send_image_variation(&prepared, transport).await;
     finish_image_variation(&prepared, sent, recorder)
+}
+
+async fn failure_of(
+    call: ImageVariationRequest,
+    transport: &FakeTransport,
+    recorder: &mut Recorder,
+) -> OpenAiImageVariationError {
+    run(call, transport, recorder).await.unwrap_err()
 }
 
 fn prepared(
@@ -494,9 +510,7 @@ async fn provider_error() {
         r#"{"error":{"message":"slow down"}}"#,
     );
     let mut recorder = Recorder::default();
-    let failure = run(request(image(None, "PNGDATA")), &status, &mut recorder)
-        .await
-        .unwrap_err();
+    let failure = failure_of(request(image(None, "PNGDATA")), &status, &mut recorder).await;
     assert_eq!(failure.status_code, 429);
     assert_eq!(
         failure.headers,
@@ -510,26 +524,21 @@ async fn provider_error() {
     assert_eq!(recorder.pre.len(), 1);
     assert!(recorder.post.is_empty());
     let transport = FakeTransport::failing();
-    let failure = run(request(image(None, "PNGDATA")), &transport, &mut recorder)
-        .await
-        .unwrap_err();
+    let failure = failure_of(request(image(None, "PNGDATA")), &transport, &mut recorder).await;
     assert_eq!(failure.status_code, 500);
     assert_eq!(failure.headers, None);
     let mut delegated = request(image(None, "PNGDATA"));
     delegated.params = ImageVariationParams { async_call: true };
-    let failure = run(delegated, &FakeTransport::failing(), &mut recorder)
-        .await
-        .unwrap_err();
+    let failure = failure_of(delegated, &FakeTransport::failing(), &mut recorder).await;
     assert_eq!(failure.status_code, 500);
     // the SDK parses the reply as ImagesResponse, so an error object is a 500, not a 422
     let error_object = FakeTransport::answering(200, &[], r#"{"error":{"message":"boom"}}"#);
-    let failure = run(
+    let failure = failure_of(
         request(image(None, "PNGDATA")),
         &error_object,
         &mut recorder,
     )
-    .await
-    .unwrap_err();
+    .await;
     assert_eq!(failure.status_code, 500);
     assert!(matches!(*failure.source, ImageVariationSource::Reply(_)));
 }
@@ -652,7 +661,10 @@ impl LogSink for Sink {
     }
 }
 
-fn logging() -> (Redactor, LoggingState, Sink) {
+type Snapshots = Arc<Mutex<Vec<Json>>>;
+type SnapshotLogger = Box<dyn Fn(&Json) -> Result<(), PrePostError>>;
+
+fn logging() -> (Redactor, LoggingState, Sink, Snapshots, SnapshotLogger) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let state = LoggingState::new(
         serde_json::from_str::<LoggingInit>(
@@ -668,20 +680,20 @@ fn logging() -> (Redactor, LoggingState, Sink) {
         || Duration::default(),
     )
     .unwrap();
-    (redactor, state, Sink::default())
-}
-
-#[tokio::test]
-async fn image_variations_logs_the_pre_call_then_the_post_call() {
-    let (redactor, mut state, sink) = logging();
-    let snapshots = Mutex::new(Vec::new());
-    let logger = |details: &Json| {
-        snapshots
+    let snapshots: Snapshots = Arc::default();
+    let recorded = Arc::clone(&snapshots);
+    let logger: SnapshotLogger = Box::new(move |details: &Json| {
+        recorded
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(details.clone());
         Ok(())
-    };
+    });
+    (redactor, state, Sink::default(), snapshots, logger)
+}
+
+async fn logged_records(call: ImageVariationRequest) -> Vec<Json> {
+    let (redactor, mut state, sink, snapshots, logger) = logging();
     let env = PrePostEnv {
         debug: DebugSettings::default(),
         globals: GlobalFlags::default(),
@@ -693,23 +705,17 @@ async fn image_variations_logs_the_pre_call_then_the_post_call() {
         log: &sink,
         input_callbacks: &[],
         sentry: None,
-        logger_fn: Some(&logger),
+        logger_fn: Some(logger.as_ref()),
         now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
     };
-    let transport = FakeTransport::ok();
     let prepared = {
         let mut hooks = PrePostLogger {
             state: &mut state,
             env: &env,
         };
-        let mut call = request(image(Some("cat.png"), "PNGDATA"));
-        call.headers = Some(ImageHeaders::from([(
-            String::from("x-caller"),
-            String::from("yes"),
-        )]));
         begin_image_variation(call, &mut hooks).unwrap()
     };
-    let sent = send_image_variation(&prepared, &transport).await;
+    let sent = send_image_variation(&prepared, &FakeTransport::ok()).await;
     {
         let mut hooks = PrePostLogger {
             state: &mut state,
@@ -717,9 +723,20 @@ async fn image_variations_logs_the_pre_call_then_the_post_call() {
         };
         finish_image_variation(&prepared, sent, &mut hooks).unwrap();
     }
-    let recorded = snapshots
-        .into_inner()
-        .unwrap_or_else(PoisonError::into_inner);
+    snapshots
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+#[tokio::test]
+async fn image_variations_logs_the_pre_call_then_the_post_call() {
+    let mut call = request(image(Some("cat.png"), "PNGDATA"));
+    call.headers = Some(ImageHeaders::from([(
+        String::from("x-caller"),
+        String::from("yes"),
+    )]));
+    let recorded = logged_records(call).await;
     assert_eq!(recorded.len(), 2);
     assert_eq!(
         object(&recorded[0]).get("log_event_type"),

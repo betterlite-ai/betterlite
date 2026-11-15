@@ -122,42 +122,49 @@ impl<'probe> FakeTransport<'probe> {
     }
 }
 
+fn recorded_parts(body: RequestBody) -> Vec<Value> {
+    match body {
+        RequestBody::Multipart { parts, .. } => parts
+            .into_iter()
+            .map(
+                |MultipartPart {
+                     name,
+                     file_name,
+                     content_type,
+                     data,
+                 }| {
+                    json!({
+                        "name": name,
+                        "filename": file_name,
+                        "content_type": content_type,
+                        "data": String::from_utf8(data).unwrap_or_default(),
+                    })
+                },
+            )
+            .collect(),
+        RequestBody::Empty | RequestBody::Json(_) | RequestBody::Bytes { .. } => Vec::new(),
+    }
+}
+
+fn recorded_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
+    headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|value| (name.as_str().to_owned(), value.to_owned()))
+        })
+        .collect()
+}
+
 impl ImageVariationTransport for FakeTransport<'_> {
     fn create_variation(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> {
-        let parts = match request.body {
-            RequestBody::Multipart { parts, .. } => parts
-                .into_iter()
-                .map(
-                    |MultipartPart {
-                         name,
-                         file_name,
-                         content_type,
-                         data,
-                     }| {
-                        json!({
-                            "name": name,
-                            "filename": file_name,
-                            "content_type": content_type,
-                            "data": String::from_utf8(data).unwrap_or_default(),
-                        })
-                    },
-                )
-                .collect::<Vec<Value>>(),
-            RequestBody::Empty | RequestBody::Json(_) | RequestBody::Bytes { .. } => Vec::new(),
-        };
-        let headers: BTreeMap<String, String> = request
-            .headers
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|value| (name.as_str().to_owned(), value.to_owned()))
-            })
-            .collect();
+        let parts = recorded_parts(request.body);
+        let headers = recorded_headers(&request.headers);
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
