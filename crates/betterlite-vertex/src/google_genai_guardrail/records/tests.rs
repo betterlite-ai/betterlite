@@ -280,8 +280,29 @@ fn python_splitlines_boundaries_end_a_data_line(#[case] separator: &[u8]) {
 #[case::invalid_json(b"data: {oops}\n")]
 #[case::non_object_payload(b"data: [1,2]\n")]
 #[case::other_lines(b"event: ping\n: comment\ndata: text\n")]
+#[case::nan_number(
+    b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}],\"usageMetadata\":{\"totalTokenCount\":NaN}}\n"
+)]
+#[case::lone_surrogate(
+    b"data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\\ud800\"}]}}]}\n"
+)]
 fn ignored_sse_payloads_produce_no_text(#[case] chunk: &[u8]) {
     assert_eq!(decode_google_guardrail_sse(&[chunk]), Vec::<String>::new());
+}
+
+// json.loads accepts this payload, while serde_json stops at its 128-level recursion cap
+#[test]
+fn deeply_nested_payload_is_dropped() {
+    let mut payload = String::from(
+        "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"x\"}]}}],\"extra\":",
+    );
+    payload.push_str(&"[".repeat(200));
+    payload.push_str(&"]".repeat(200));
+    payload.push_str("}\n");
+    assert_eq!(
+        decode_google_guardrail_sse(&[payload.as_bytes()]),
+        Vec::<String>::new()
+    );
 }
 
 #[rstest]
@@ -302,9 +323,9 @@ fn each_chunk_decodes_with_replacement_before_the_join() {
         "data: {\"candidates\":[{\"content\":{\"parts\":[{\"text\":\"\u{e9}\"}]}}]}\r\n\r\n";
     let bytes = payload.as_bytes();
     let index = payload.find('\u{e9}').unwrap();
-    let (first, second) = bytes.split_at(index.saturating_add(1));
+    let chunks = <[&[u8]; 2]>::from(bytes.split_at(index.saturating_add(1)));
     assert_eq!(
-        decode_google_guardrail_sse(&[first, second]),
+        decode_google_guardrail_sse(&chunks),
         vec!["\u{fffd}\u{fffd}".to_owned()]
     );
 }
