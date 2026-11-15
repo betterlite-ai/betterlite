@@ -283,7 +283,7 @@ pub(super) fn clear_thinking_budget() {
     assert!(messages.is_empty());
 
     assert!(matches!(
-        resolve_clear_thinking_budget(Some(&ParamValue::Number(7.into())), 1024),
+        resolve_clear_thinking_budget(Some(&ParamValue::Number(serde_json::Number::from(7))), 1024),
         Ok(7)
     ));
     assert!(matches!(resolve_clear_thinking_budget(None, 5), Ok(5)));
