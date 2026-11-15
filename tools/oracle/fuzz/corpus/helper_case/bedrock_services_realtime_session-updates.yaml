@@ -1,0 +1,25 @@
+kind: helper
+name: bedrock-services-realtime-session-updates
+call:
+  bedrock_services_realtime_session:
+    case: session_update_options
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    updates:
+      - session: {}
+      - session:
+          max_response_output_tokens: 2048
+          temperature: 0.5
+          voice: amy
+      - session:
+          instructions: be brief
+      - session:
+          max_response_output_tokens: null
+          temperature: null
+          voice: ""
+          instructions: null
+env: {}
+compare: {ignore: []}
