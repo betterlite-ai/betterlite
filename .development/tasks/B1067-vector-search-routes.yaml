@@ -97,7 +97,7 @@ deviations:
 - what: >-
     Pending the managed-resource decision, nonempty target_model_names returns the MIT 500 detail error
     above. betterlite does not install the enterprise managed_vector_stores hook or create stores across models.
-  why: Preserve the checked-out open-source behavior until Max chooses the managed-files/batches/resource policy.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vector_store_endpoints/endpoints.py#L221-L244
 out_of_scope:
 - B1068 owns retrieve/list/update/delete in this file; B1064 owns SDK create/search and its provider calls.
