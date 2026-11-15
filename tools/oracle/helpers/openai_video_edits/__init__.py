@@ -1,4 +1,4 @@
-from typing import Annotated, Final, Literal, TypeAlias, TypedDict
+from typing import Annotated, Literal, TypeAlias, TypedDict
 
 import httpx
 from litellm.types.router import GenericLiteLLMParams
@@ -15,8 +15,8 @@ from .fixtures import (
     state_of,
 )
 
-JSON: Final = TypeAdapter(JsonValue)
-TEXT: Final = TypeAdapter(str)
+JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+TEXT: TypeAdapter[str] = TypeAdapter(str)
 
 
 class CreateCharacterRequest(TypedDict):
