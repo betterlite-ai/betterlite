@@ -248,55 +248,49 @@ impl FixtureClient {
     }
 }
 
+fn replied<T>(
+    reply: Option<Result<T, PredictionError>>,
+) -> impl Future<Output = Result<T, PredictionError>> + Send
+where
+    T: Send,
+{
+    async move { reply.expect("a fixture reply") }
+}
+
 impl PredictionClient for FixtureClient {
     fn send_message_async(
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        let reply = self
-            .take_text(Call::Message(request.clone()))
-            .expect("a fixture text reply");
-        async move { reply }
+        replied(self.take_text(Call::Message(request.clone())))
     }
 
     fn predict_async(
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        let reply = self
-            .take_text(Call::Text(request.clone()))
-            .expect("a fixture text reply");
-        async move { reply }
+        replied(self.take_text(Call::Text(request.clone())))
     }
 
     fn predict_endpoint(
         &self,
         request: &EndpointPredictRequest,
     ) -> impl Future<Output = Result<PredictionsReply, PredictionError>> + Send {
-        let reply = self
-            .take_predictions(Call::Endpoint(request.clone()))
-            .expect("a fixture reply");
-        async move { reply }
+        replied(self.take_predictions(Call::Endpoint(request.clone())))
     }
 
     fn send_message_streaming_async(
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        let stream = self
-            .take_stream(Call::MessageStream(request.clone()))
-            .expect("a fixture stream");
-        async move { stream }
+        replied(self.take_stream(Call::MessageStream(request.clone())))
     }
 
     fn predict_streaming_async(
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        let stream = self
-            .take_stream(Call::TextStream(request.clone()))
-            .expect("a fixture stream");
-        async move { stream }
+        replied(self.take_stream(Call::TextStream(request.clone())))
     }
 }
 

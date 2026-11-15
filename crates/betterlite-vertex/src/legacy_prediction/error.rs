@@ -88,40 +88,7 @@ pub enum PredictionError {
     MissingInstances,
 }
 
-impl PredictionError {
-    #[must_use]
-    pub const fn status_code(&self) -> u16 {
-        match self {
-            Self::Http { status, .. } => *status,
-            Self::Transport { .. }
-            | Self::Read { .. }
-            | Self::Decode { .. }
-            | Self::TooLarge { .. }
-            | Self::BodyShape
-            | Self::StreamShape
-            | Self::StreamUnfinished
-            | Self::MissingPrediction
-            | Self::MissingField { .. }
-            | Self::WrongFieldType { .. }
-            | Self::MultipleOutputs { .. }
-            | Self::Url { .. }
-            | Self::VertexUrl { .. }
-            | Self::Serialize { .. }
-            | Self::Header { .. }
-            | Self::UnsupportedOption { .. }
-            | Self::OptionType { .. }
-            | Self::MissingUsage { .. }
-            | Self::UsageOverflow
-            | Self::NonTextContent
-            | Self::Encoding { .. }
-            | Self::Credentials { .. }
-            | Self::CustomEndpointContext
-            | Self::MissingInstances => 500,
-        }
-    }
-}
-
-// LiteLLM's async_completion turns every failure into VertexAIError(500); async_streaming lets the SDK's status through
+// LiteLLM's async_completion and async_streaming surface every failure as 500
 #[derive(Debug, Error)]
 pub enum LegacyPredictionError {
     #[error("the Vertex prediction failed: {source}")]
@@ -142,8 +109,7 @@ impl LegacyPredictionError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
-            Self::Completion { .. } | Self::UnableToGenerate => 500,
-            Self::Streaming { source } => source.status_code(),
+            Self::Completion { .. } | Self::Streaming { .. } | Self::UnableToGenerate => 500,
         }
     }
 }

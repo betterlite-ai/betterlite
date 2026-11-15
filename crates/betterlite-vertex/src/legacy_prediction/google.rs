@@ -31,6 +31,15 @@ use super::tensor::chunk_of;
 
 pub const API_VERSION: &str = "v1";
 
+const GOOG_USER_PROJECT: &str = "x-goog-user-project";
+
+// The bearer token and the project the auth library sends as the quota project
+#[derive(Clone, Copy)]
+struct RpcAuth<'auth> {
+    token: &'auth SecretString,
+    project: &'auth str,
+}
+
 // The PredictionService RPCs the legacy SDK objects call, over B173's pooled transport
 pub struct GooglePredictionClient {
     pub transport: ProxiedClient,
@@ -44,7 +53,7 @@ impl GooglePredictionClient {
         body: Vec<u8>,
     ) -> Result<PredictionsReply, PredictionError> {
         let url = rpc_url(&request.location, &publisher_resource(request), "predict")?;
-        let reply = self.buffered(&request.token, url, body).await?;
+        let reply = self.buffered(publisher_auth(request), url, body).await?;
         decode_legacy_prediction(&reply)
     }
 
@@ -59,16 +68,17 @@ impl GooglePredictionClient {
             &publisher_resource(request),
             "serverStreamingPredict",
         )?;
-        self.streaming(&request.token, url, body, kind).await
+        self.streaming(publisher_auth(request), url, body, kind)
+            .await
     }
 
     async fn buffered(
         &self,
-        token: &SecretString,
+        auth: RpcAuth<'_>,
         url: Url,
         body: Vec<u8>,
     ) -> Result<Vec<u8>, PredictionError> {
-        let request = rpc_request(token, url, body, self.deadline)?;
+        let request = rpc_request(auth, url, body, self.deadline)?;
         let response = self
             .transport
             .send_following(request)
@@ -83,12 +93,12 @@ impl GooglePredictionClient {
 
     async fn streaming(
         &self,
-        token: &SecretString,
+        auth: RpcAuth<'_>,
         url: Url,
         body: Vec<u8>,
         kind: ChunkKind,
     ) -> Result<PredictionStream, PredictionError> {
-        let request = rpc_request(token, url, body, self.deadline)?;
+        let request = rpc_request(auth, url, body, self.deadline)?;
         let response = self
             .transport
             .send_following(request)
@@ -139,7 +149,7 @@ impl PredictionClient for GooglePredictionClient {
     ) -> Result<PredictionsReply, PredictionError> {
         let body = endpoint_predict_body(&request.instances)?;
         let url = rpc_url(&request.location, &request.endpoint, "predict")?;
-        let reply = self.buffered(&request.token, url, body).await?;
+        let reply = self.buffered(endpoint_auth(request), url, body).await?;
         decode_legacy_prediction(&reply)
     }
 
@@ -161,7 +171,7 @@ impl PredictionClient for GooglePredictionClient {
 }
 
 fn rpc_request(
-    token: &SecretString,
+    auth: RpcAuth<'_>,
     url: Url,
     body: Vec<u8>,
     deadline: Duration,
@@ -170,24 +180,42 @@ fn rpc_request(
         method: Method::POST,
         url,
         query: Vec::new(),
-        headers: auth_headers(token)?,
+        headers: auth_headers(auth)?,
         body: RequestBody::Json(body),
         deadline,
     })
 }
 
-fn auth_headers(token: &SecretString) -> Result<HeaderMap, PredictionError> {
+fn auth_headers(auth: RpcAuth<'_>) -> Result<HeaderMap, PredictionError> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    let mut value =
-        HeaderValue::from_str(&format!("Bearer {}", token.expose_secret())).map_err(|source| {
-            PredictionError::Header {
-                source: http::Error::from(source),
-            }
+    let mut value = HeaderValue::from_str(&format!("Bearer {}", auth.token.expose_secret()))
+        .map_err(|source| PredictionError::Header {
+            source: http::Error::from(source),
         })?;
     value.set_sensitive(true);
     headers.insert(AUTHORIZATION, value);
+    let mut project =
+        HeaderValue::from_str(auth.project).map_err(|source| PredictionError::Header {
+            source: http::Error::from(source),
+        })?;
+    project.set_sensitive(true);
+    headers.insert(GOOG_USER_PROJECT, project);
     Ok(headers)
+}
+
+const fn publisher_auth(request: &PublisherPredictRequest) -> RpcAuth<'_> {
+    RpcAuth {
+        token: &request.token,
+        project: &request.project,
+    }
+}
+
+const fn endpoint_auth(request: &EndpointPredictRequest) -> RpcAuth<'_> {
+    RpcAuth {
+        token: &request.token,
+        project: &request.project,
+    }
 }
 
 fn publisher_resource(request: &PublisherPredictRequest) -> String {

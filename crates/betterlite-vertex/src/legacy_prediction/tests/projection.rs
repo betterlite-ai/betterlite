@@ -195,25 +195,26 @@ async fn projection_language_finish_mapping() {
                 content: String::from("ok"),
                 finish_reason: Some(String::from("MAX_TOKENS")),
             }]),
-            usage_metadata: Some(usage_metadata()),
+            usage_metadata: Some(UsageMetadata {
+                prompt_token_count: Some(1),
+                candidates_token_count: Some(2),
+                total_token_count: Some(9),
+            }),
         },
     };
     let client = FixtureClient::with_text(reply);
-    let result = complete(
-        &client,
-        chat_invocation(Extra::new()),
-        &context,
-        access_lookup(),
-    )
-    .await
-    .expect("the projection");
+    let invocation = chat_invocation(Extra::new());
+    let lookup = access_lookup();
+    let result = complete(&client, invocation, &context, lookup)
+        .await
+        .expect("the projection");
     assert_eq!(result.finish_reason, Some(FinishReason::ContentFilter));
     assert_eq!(
         result.usage,
         LegacyUsage {
             prompt_tokens: 1,
             completion_tokens: 2,
-            total_tokens: 3
+            total_tokens: 9
         }
     );
 }

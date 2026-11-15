@@ -57,6 +57,7 @@ pub struct PublisherPredictRequest {
 #[derive(Clone, Debug)]
 pub struct EndpointPredictRequest {
     pub token: SecretString,
+    pub project: String,
     pub location: String,
     pub endpoint: String,
     pub instances: Vec<Json>,

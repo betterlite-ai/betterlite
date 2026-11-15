@@ -133,6 +133,7 @@ where
 {
     let request = EndpointPredictRequest {
         token: scope.token,
+        project: scope.project,
         location: scope.location,
         endpoint,
         instances,

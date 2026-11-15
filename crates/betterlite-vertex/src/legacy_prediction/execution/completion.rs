@@ -130,10 +130,7 @@ fn endpoint_call(invocation: LegacyInvocation, scope: &RpcScope) -> Option<Endpo
         | LegacyInvocation::Text { .. }
         | LegacyInvocation::Vision { .. } => return None,
     };
-    let endpoint = match given_endpoint {
-        Some(endpoint) => endpoint,
-        None => endpoint_path(scope, &model),
-    };
+    let endpoint = given_endpoint.unwrap_or_else(|| endpoint_path(scope, &model));
     Some(EndpointCall {
         model,
         prompt,
@@ -159,6 +156,7 @@ where
     } = call;
     let request = EndpointPredictRequest {
         token: scope.token,
+        project: scope.project,
         location: scope.location,
         endpoint,
         instances,

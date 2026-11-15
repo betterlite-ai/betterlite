@@ -1,22 +1,17 @@
-use std::future::Future;
-
 use futures_util::stream::BoxStream;
 
-use crate::token_cache::error::CredentialCacheError;
-use crate::token_cache::probe::AccessToken;
-
-use super::client::PredictionClient;
 use super::error::{LegacyPredictionError, PredictionError};
-use super::invocation::LegacyInvocation;
-use super::projection::{LegacyResult, ProjectionServices};
+use super::projection::ProjectionServices;
 use super::records::LegacyChunk;
 
-use self::completion::complete_inner;
-use self::streaming::stream_inner;
-
 mod completion;
+mod completion_entry;
 mod scope;
 mod streaming;
+mod streaming_entry;
+
+pub use self::completion_entry::complete;
+pub use self::streaming_entry::stream;
 
 pub type LegacyChunkStream = BoxStream<'static, Result<LegacyChunk, LegacyPredictionError>>;
 
@@ -35,37 +30,5 @@ pub(super) enum StreamFailure {
 impl From<PredictionError> for StreamFailure {
     fn from(source: PredictionError) -> Self {
         Self::Prediction(source)
-    }
-}
-
-pub async fn complete<C, Lookup>(
-    client: &C,
-    invocation: LegacyInvocation,
-    context: &LegacyContext<'_, '_>,
-    lookup: Lookup,
-) -> Result<LegacyResult, LegacyPredictionError>
-where
-    C: PredictionClient,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
-    complete_inner(client, invocation, context, lookup)
-        .await
-        .map_err(|source| LegacyPredictionError::Completion { source })
-}
-
-pub async fn stream<C, Lookup>(
-    client: &C,
-    invocation: LegacyInvocation,
-    context: &LegacyContext<'_, '_>,
-    lookup: Lookup,
-) -> Result<LegacyChunkStream, LegacyPredictionError>
-where
-    C: PredictionClient,
-    Lookup: Future<Output = Result<AccessToken, CredentialCacheError>> + Send,
-{
-    match stream_inner(client, invocation, context, lookup).await {
-        Ok(stream) => Ok(stream),
-        Err(StreamFailure::Unable) => Err(LegacyPredictionError::UnableToGenerate),
-        Err(StreamFailure::Prediction(source)) => Err(LegacyPredictionError::Streaming { source }),
     }
 }

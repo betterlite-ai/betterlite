@@ -9,8 +9,8 @@ use secrecy::ExposeSecret as _;
 
 use crate::legacy_prediction::client::options::{PredictCall, parameters};
 use crate::legacy_prediction::client::{
-    chat_predict_body, chat_streaming_body, endpoint_predict_body, text_predict_body,
-    text_streaming_body,
+    EndpointPredictRequest, chat_predict_body, chat_streaming_body, endpoint_predict_body,
+    text_predict_body, text_streaming_body,
 };
 use crate::legacy_prediction::error::{LegacyPredictionError, PredictionError};
 use crate::legacy_prediction::execution::{LegacyContext, complete, stream as execute_stream};
@@ -23,6 +23,25 @@ use super::support::{
     predictions_reply, projection_services, text_invocation, text_reply, vision_invocation,
     words_of,
 };
+
+async fn streamed_words(
+    client: &FixtureClient,
+    invocation: LegacyInvocation,
+    context: &LegacyContext<'_, '_>,
+) -> Vec<String> {
+    let chunks = execute_stream(client, invocation, context, access_lookup())
+        .await
+        .expect("a stream");
+    words_of(chunks).await
+}
+
+fn one_endpoint_call(client: &FixtureClient) -> EndpointPredictRequest {
+    let calls = client.calls();
+    let [Call::Endpoint(request)] = calls.as_slice() else {
+        panic!("one endpoint callback");
+    };
+    request.clone()
+}
 
 #[tokio::test]
 async fn execution_resolves_tokens() {
@@ -135,7 +154,7 @@ async fn execution_endpoint_failure_is_vertex_500() {
 }
 
 #[tokio::test]
-async fn execution_streaming_failure_keeps_status() {
+async fn execution_streaming_failure_is_vertex_500() {
     let encoding = FakeEncoding {
         counts: IndexMap::new(),
     };
@@ -155,7 +174,7 @@ async fn execution_streaming_failure_keeps_status() {
     else {
         panic!("a failed stream");
     };
-    assert_eq!(error.status_code(), 404);
+    assert_eq!(error.status_code(), 500);
     assert!(matches!(
         error,
         LegacyPredictionError::Streaming {
@@ -317,42 +336,21 @@ async fn execution_private_instance_mutation() {
     let instances = vec![json("{\"prompt\":\"hello\",\"stream\":true}")];
 
     let private = FixtureClient::with_endpoint(predictions_reply(&["first second"]));
-    let private_chunks = execute_stream(
-        &private,
-        private_invocation(instances.clone()),
-        &context,
-        access_lookup(),
-    )
-    .await
-    .expect("a private stream");
     assert_eq!(
-        words_of(private_chunks).await,
+        streamed_words(&private, private_invocation(instances.clone()), &context).await,
         vec![String::from("first"), String::from("second")]
     );
-    let calls = private.calls();
-    let [Call::Endpoint(request)] = calls.as_slice() else {
-        panic!("one private callback");
-    };
-    assert_eq!(request.instances, vec![json("{\"prompt\":\"hello\"}")]);
+    assert_eq!(
+        one_endpoint_call(&private).instances,
+        vec![json("{\"prompt\":\"hello\"}")]
+    );
 
     let custom = FixtureClient::with_endpoint(predictions_reply(&["first second"]));
-    let custom_chunks = execute_stream(
-        &custom,
-        custom_invocation(instances.clone()),
-        &context,
-        access_lookup(),
-    )
-    .await
-    .expect("a custom stream");
     assert_eq!(
-        words_of(custom_chunks).await,
+        streamed_words(&custom, custom_invocation(instances.clone()), &context).await,
         vec![String::from("first"), String::from("second")]
     );
-    let custom_calls = custom.calls();
-    let [Call::Endpoint(custom_request)] = custom_calls.as_slice() else {
-        panic!("one custom callback");
-    };
-    assert_eq!(custom_request.instances, instances);
+    assert_eq!(one_endpoint_call(&custom).instances, instances);
 }
 
 #[tokio::test]
@@ -407,12 +405,8 @@ async fn execution_endpoint_completion_selection() {
     )
     .await
     .expect("the custom completion");
-    let custom_calls = custom.calls();
-    let [Call::Endpoint(custom_request)] = custom_calls.as_slice() else {
-        panic!("one custom endpoint callback");
-    };
     assert_eq!(
-        custom_request.endpoint,
+        one_endpoint_call(&custom).endpoint,
         "projects/proj/locations/us-central1/endpoints/model-garden"
     );
 
@@ -425,12 +419,8 @@ async fn execution_endpoint_completion_selection() {
     )
     .await
     .expect("the private completion");
-    let private_calls = private.calls();
-    let [Call::Endpoint(private_request)] = private_calls.as_slice() else {
-        panic!("one private endpoint callback");
-    };
     assert_eq!(
-        private_request.endpoint,
+        one_endpoint_call(&private).endpoint,
         "projects/proj/locations/us-central1/endpoints/5678"
     );
 
@@ -485,46 +475,32 @@ async fn execution_endpoint_stream_selection() {
     let context = legacy_context(&services);
 
     let custom = FixtureClient::with_endpoint(predictions_reply(&["first second"]));
-    let custom_stream = execute_stream(
-        &custom,
-        custom_invocation(vec![json("{\"prompt\":\"hello\"}")]),
-        &context,
-        access_lookup(),
-    )
-    .await
-    .expect("the custom stream");
     assert_eq!(
-        words_of(custom_stream).await,
+        streamed_words(
+            &custom,
+            custom_invocation(vec![json("{\"prompt\":\"hello\"}")]),
+            &context
+        )
+        .await,
         vec![String::from("first"), String::from("second")]
     );
-    let custom_calls = custom.calls();
-    let [Call::Endpoint(custom_request)] = custom_calls.as_slice() else {
-        panic!("one custom endpoint callback");
-    };
     assert_eq!(
-        custom_request.endpoint,
+        one_endpoint_call(&custom).endpoint,
         "projects/proj/locations/us-central1/endpoints/model-garden"
     );
 
     let private = FixtureClient::with_endpoint(predictions_reply(&["first second"]));
-    let private_stream = execute_stream(
-        &private,
-        private_invocation(vec![json("{\"prompt\":\"hello\"}")]),
-        &context,
-        access_lookup(),
-    )
-    .await
-    .expect("the private stream");
     assert_eq!(
-        words_of(private_stream).await,
+        streamed_words(
+            &private,
+            private_invocation(vec![json("{\"prompt\":\"hello\"}")]),
+            &context
+        )
+        .await,
         vec![String::from("first"), String::from("second")]
     );
-    let private_calls = private.calls();
-    let [Call::Endpoint(private_request)] = private_calls.as_slice() else {
-        panic!("one private endpoint callback");
-    };
     assert_eq!(
-        private_request.endpoint,
+        one_endpoint_call(&private).endpoint,
         "projects/proj/locations/us-central1/endpoints/5678"
     );
 }

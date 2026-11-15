@@ -6,13 +6,18 @@ use std::time::Duration;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
+use betterlite_models::decisions::Extra;
 use futures_util::{StreamExt as _, stream};
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, Method};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{PredictionChunks, auth_headers, message_of, rpc_request, rpc_url, success_body};
+use super::{
+    GOOG_USER_PROJECT, PredictionChunks, RpcAuth, auth_headers, endpoint_auth, message_of,
+    publisher_auth, rpc_request, rpc_url, success_body,
+};
+use crate::legacy_prediction::client::{EndpointPredictRequest, PublisherPredictRequest};
 use crate::legacy_prediction::error::PredictionError;
 use crate::legacy_prediction::frames::PredictionFrames;
 use crate::legacy_prediction::records::{ChunkKind, LegacyChunk};
@@ -60,9 +65,13 @@ fn google_rpc_url_names_the_regional_host() {
 #[test]
 fn google_rpc_request_carries_the_bearer_token() {
     let token = SecretString::from("tok");
+    let auth = RpcAuth {
+        token: &token,
+        project: "proj",
+    };
     let url = rpc_url("global", "x", "predict").expect("a url");
-    let request = rpc_request(&token, url.clone(), b"{}".to_vec(), Duration::from_secs(7))
-        .expect("a request");
+    let request =
+        rpc_request(auth, url.clone(), b"{}".to_vec(), Duration::from_secs(7)).expect("a request");
     assert_eq!(request.method, Method::POST);
     assert_eq!(request.url, url);
     assert!(request.query.is_empty());
@@ -71,12 +80,49 @@ fn google_rpc_request_carries_the_bearer_token() {
     assert_eq!(request.headers[CONTENT_TYPE], "application/json");
     assert_eq!(request.headers[AUTHORIZATION], "Bearer tok");
     assert!(request.headers[AUTHORIZATION].is_sensitive());
-    let headers = auth_headers(&token).expect("headers");
+    assert_eq!(request.headers[GOOG_USER_PROJECT], "proj");
+    assert!(request.headers[GOOG_USER_PROJECT].is_sensitive());
+    let headers = auth_headers(auth).expect("headers");
     assert_eq!(headers[AUTHORIZATION], "Bearer tok");
     assert!(matches!(
-        auth_headers(&SecretString::from("bad\ntoken")),
+        auth_headers(RpcAuth {
+            token: &SecretString::from("bad\ntoken"),
+            project: "proj",
+        }),
         Err(PredictionError::Header { .. })
     ));
+    assert!(matches!(
+        auth_headers(RpcAuth {
+            token: &token,
+            project: "bad\nproject",
+        }),
+        Err(PredictionError::Header { .. })
+    ));
+}
+
+#[test]
+fn google_predict_requests_carry_the_quota_project() {
+    let publisher = PublisherPredictRequest {
+        token: SecretString::from("tok"),
+        project: String::from("publisher-project"),
+        location: String::from("us-central1"),
+        model: String::from("chat-bison"),
+        prompt: String::from("hello"),
+        options: Extra::new(),
+    };
+    let headers = auth_headers(publisher_auth(&publisher)).expect("publisher headers");
+    assert_eq!(headers[AUTHORIZATION], "Bearer tok");
+    assert_eq!(headers[GOOG_USER_PROJECT], "publisher-project");
+    let endpoint = EndpointPredictRequest {
+        token: SecretString::from("tok"),
+        project: String::from("endpoint-project"),
+        location: String::from("us-central1"),
+        endpoint: String::from("projects/p/locations/l/endpoints/e"),
+        instances: Vec::new(),
+    };
+    let headers = auth_headers(endpoint_auth(&endpoint)).expect("endpoint headers");
+    assert_eq!(headers[AUTHORIZATION], "Bearer tok");
+    assert_eq!(headers[GOOG_USER_PROJECT], "endpoint-project");
 }
 
 #[rstest]
