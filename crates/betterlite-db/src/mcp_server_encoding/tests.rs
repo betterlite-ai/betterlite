@@ -922,6 +922,51 @@ fn prepare_create_drops_a_null_env_vars() {
 }
 
 #[test]
+fn prepare_create_defaults_a_missing_env_var_value_and_scope() {
+    let prepared = create(&request(
+        r#"{"server_name":"srv","env_vars":[{"name":"A"}]}"#,
+    ));
+    assert_eq!(
+        env_text(&prepared, "env_vars"),
+        json(r#"[{"name":"A","value":"","scope":"global"}]"#)
+    );
+}
+
+#[test]
+fn prepare_update_keeps_a_missing_env_var_value_and_scope_out_of_the_entry() {
+    let prepared = update(
+        &request(r#"{"server_id":"s1","env_vars":[{"name":"A"}]}"#),
+        &["server_id", "env_vars"],
+        &["server_id", "env_vars"],
+    );
+    assert_eq!(env_text(&prepared, "env_vars"), json(r#"[{"name":"A"}]"#));
+}
+
+#[test]
+fn prepare_create_drops_a_null_env_var_description() {
+    let prepared = create(&request(
+        r#"{"server_name":"srv","env_vars":[{"name":"A","description":null}]}"#,
+    ));
+    assert_eq!(
+        env_text(&prepared, "env_vars"),
+        json(r#"[{"name":"A","value":"","scope":"global"}]"#)
+    );
+}
+
+#[test]
+fn prepare_update_keeps_an_explicit_null_env_var_description() {
+    let prepared = update(
+        &request(r#"{"server_id":"s1","env_vars":[{"name":"A","description":null}]}"#),
+        &["server_id", "env_vars"],
+        &["server_id", "env_vars"],
+    );
+    assert_eq!(
+        env_text(&prepared, "env_vars"),
+        json(r#"[{"name":"A","description":null}]"#)
+    );
+}
+
+#[test]
 fn prepare_update_encrypts_credentials_without_dropping_null_values() {
     let prepared = update(
         &request(r#"{"server_id":"s1","credentials":{"client_id":"abc","client_secret":null}}"#),
