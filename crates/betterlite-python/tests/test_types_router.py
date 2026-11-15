@@ -57,7 +57,7 @@ SIBLING_TYPES: Final = (
 )
 
 PROBE: Final = """
-import ast, dataclasses, datetime, enum, importlib, inspect, json, sys, typing
+import ast, dataclasses, datetime, enum, httpx, importlib, inspect, json, sys, typing
 from pydantic import BaseModel, TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 from typing_extensions import ReadOnly
@@ -720,6 +720,20 @@ elif mode == "class_names":
         "update_deployment": module.updateDeployment.__name__,
         "basic_limit": module.RouterRateLimitErrorBasic.__name__,
     }
+elif mode == "type_deviations":
+    module = load()
+    result = {
+        "timeout_object": outcome(
+            lambda: type(
+                module.GenericLiteLLMParams(timeout=httpx.Timeout(10.0)).timeout
+            ).__name__
+        ),
+        "mock_lambda": outcome(
+            lambda: type(
+                module.GenericLiteLLMParams(mock_response=lambda: 1).mock_response
+            ).__name__
+        ),
+    }
 print(json.dumps(result))
 """
 
@@ -967,6 +981,14 @@ def test_behavior_mock_passthrough() -> None:
     theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "mock_passthrough")
     assert ours == {"fallbacks": None, "context": None, "remaining": {}}
     assert theirs == {"fallbacks": MOCK_INT_MARKER, "context": ["x"], "remaining": {}}
+
+
+def test_behavior_type_deviations() -> None:
+    ours = run_probe(OURS_PREFIX, OURS_MODULE, "type_deviations")
+    theirs = run_probe(LITELLM_PREFIX, LITELLM_MODULE, "type_deviations")
+    assert OBJECT.validate_python(ours["timeout_object"])["validation"] != []
+    assert OBJECT.validate_python(ours["mock_lambda"])["validation"] != []
+    assert theirs == {"timeout_object": {"ok": "Timeout"}, "mock_lambda": {"ok": "function"}}
 
 
 def test_behavior_constants() -> None:
