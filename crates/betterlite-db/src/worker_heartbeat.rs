@@ -84,24 +84,18 @@ where
         worker_id: &'database str,
         hostname: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.execute_statement(BEAT_SQL, [&worker_id, &hostname])
-                .await
-        })
+        self.execute_statement(BEAT_SQL, [&worker_id, &hostname])
     }
 
     fn prune(&self, retention_seconds: f64) -> HeartbeatFuture<'_, (), Self::Error> {
-        Box::pin(async move {
-            self.execute_statement(PRUNE_SQL, [&retention_seconds])
-                .await
-        })
+        self.execute_statement(PRUNE_SQL, [&retention_seconds])
     }
 
     fn deregister<'database>(
         &'database self,
         worker_id: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
-        Box::pin(async move { self.execute_statement(DEREGISTER_SQL, [&worker_id]).await })
+        self.execute_statement(DEREGISTER_SQL, [&worker_id])
     }
 
     fn count_live_workers(
