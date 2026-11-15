@@ -106,10 +106,10 @@ fn url_outcome(call: &UrlCall) -> Value {
         project: call.project.as_deref(),
         location: call.location.as_deref(),
     };
-    match complete_url(&target) {
-        Ok(url) => json!({"ok": true, "url": url}),
-        Err(_) => json!({"ok": false}),
-    }
+    complete_url(&target).map_or_else(
+        |_| json!({"ok": false}),
+        |url| json!({"ok": true, "url": url}),
+    )
 }
 fn request_outcome(call: &RequestCall) -> Result<Value, Box<HelperError>> {
     let uuid = Uuid::parse_str(&call.uuid).or_value_error()?;

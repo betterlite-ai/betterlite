@@ -96,20 +96,20 @@ fn a_response_call_collects_the_last_snapshot() {
     let value = run(json!({
         "operation": "response",
         "calls": [{
-            "status": 200,
+            "status": 200_u16,
             "body": "{\"content\":{\"parts\":[{\"text\":\"first\"}]}}\n{\"content\":{\"parts\":[{\"text\":\"last\"}]}}",
             "model": "agent_engine/7",
             "messages": [{"role": "user", "content": "hi"}],
-            "prompt_tokens": 3,
-            "completion_tokens": 2,
+            "prompt_tokens": 3_u64,
+            "completion_tokens": 2_u64,
             "counter": "fixed",
         }],
     }));
     let answer = &value["calls"][0]["answer"];
     assert_eq!(answer["choice"]["message"]["content"], json!("last"));
     assert_eq!(answer["choice"]["finish_reason"], json!("stop"));
-    assert_eq!(answer["choice"]["index"], json!(0));
-    assert_eq!(answer["usage"], json!([3, 2, 5]));
+    assert_eq!(answer["choice"]["index"], json!(0_u32));
+    assert_eq!(answer["usage"], json!([3_u64, 2_u64, 5_u64]));
 }
 
 #[test]
@@ -117,12 +117,12 @@ fn a_failing_counter_leaves_the_usage_null() {
     let value = run(json!({
         "operation": "response",
         "calls": [{
-            "status": 200,
+            "status": 200_u16,
             "body": "{\"content\":{\"parts\":[{\"text\":\"kept\"}]}}",
             "model": "agent_engine/7",
             "messages": [{"role": "user", "content": "hi"}],
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
+            "prompt_tokens": 0_u64,
+            "completion_tokens": 0_u64,
             "counter": "failure",
         }],
     }));

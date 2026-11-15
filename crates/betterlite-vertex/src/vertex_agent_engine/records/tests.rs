@@ -64,17 +64,27 @@ fn body_of(lines: &[&str]) -> Vec<u8> {
 
 struct FixedCounter;
 
+fn prompt_tokens(model: &str) -> Result<u64, CountError> {
+    if model == TOKEN_MODEL {
+        return Ok(3);
+    }
+    Err(CountError::Overflow)
+}
+
+fn completion_tokens(model: &str, text: &str) -> Result<u64, CountError> {
+    if model == TOKEN_MODEL && text == "hi" {
+        return Ok(5);
+    }
+    Err(CountError::Overflow)
+}
+
 impl TokenCounter for FixedCounter {
     fn count_messages<'count>(
         &'count self,
         model: &'count str,
         _messages: &'count [Message],
     ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
-        ready(if model == TOKEN_MODEL {
-            Ok(3)
-        } else {
-            Err(CountError::Overflow)
-        })
+        ready(prompt_tokens(model))
     }
 
     fn count_response_tokens<'count>(
@@ -82,11 +92,7 @@ impl TokenCounter for FixedCounter {
         model: &'count str,
         text: &'count str,
     ) -> impl Future<Output = Result<u64, CountError>> + Send + 'count {
-        ready(if model == TOKEN_MODEL && text == "hi" {
-            Ok(5)
-        } else {
-            Err(CountError::Overflow)
-        })
+        ready(completion_tokens(model, text))
     }
 }
 
