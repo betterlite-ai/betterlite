@@ -108,22 +108,6 @@ pub(super) fn output_item_completion() {
     assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
 }
 
-pub(super) fn output_item_completion() {
-    let mut state = open_state(None, None);
-    let events = state.content_end_events(&FixedIds::sequence(1));
-    assert_eq!(
-        wire(&events),
-        [format!(
-            r#"{{"type":"response.output_item.done","event_id":"{EVENT_1}",{ITEM_DONE_BODY}"#
-        )]
-    );
-    assert_eq!(state.delta_chunks, None);
-    assert_eq!(state.delta_type, None);
-    assert_eq!(state.output_item_id.as_deref(), Some("item_1"));
-    assert_eq!(state.response_id.as_deref(), Some("resp_1"));
-    assert_eq!(state.conversation_id.as_deref(), Some("conv_1"));
-}
-
 pub(super) fn multiple_content_blocks() {
     let ids = FixedIds::sequence(11);
     let mut state = open_state(Some(DeltaType::Text), Some(&["one", "two"]));

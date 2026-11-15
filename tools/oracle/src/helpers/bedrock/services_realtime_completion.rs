@@ -105,46 +105,56 @@ fn replay(
             session.cumulative_usage = serde_json::from_value::<UsageEvent>(usage.clone())?;
             Ok(Value::Null)
         }
-        Step::ContentEnd => {
-            let events = state.content_end_events(ids);
-            let chunks = state.delta_chunks.as_ref().map(|kept| {
-                kept.iter()
-                    .map(|chunk| chunk.delta.as_str())
-                    .collect::<Vec<_>>()
-            });
-            Ok(json!({ "events": serde_json::to_value(&events)?, "delta_chunks": chunks }))
-        }
-        Step::PromptEnd => {
-            let events = session.response_done_events(state, ids).or_value_error()?;
-            Ok(json!({
-                "events": serde_json::to_value(&events)?,
-                "output_item_id": state.output_item_id,
-                "response_id": state.response_id,
-                "delta_type": Value::Null,
-            }))
-        }
+        Step::ContentEnd => content_end(state, ids),
+        Step::PromptEnd => prompt_end(session, state, ids),
         Step::TakeUsage => take_usage(session, ids),
         Step::Leftover => {
             let events = session.leftover_usage_done_events(ids).or_value_error()?;
             Ok(json!({ "events": serde_json::to_value(&events)? }))
         }
-        Step::ToolUse { event } => {
-            let parsed: ToolUseEvent = serde_json::from_str(&event.to_string())?;
-            let output = state.tool_use_events(&parsed, ids).or_value_error()?;
-            let mut events = serde_json::to_value(&output.events)?;
-            // json.dumps spacing is not part of the contract, so both sides compare the decoded arguments
-            if let Some(CompletionEvent::FunctionCallArgumentsDone(done)) = output.events.first()
-                && let Some(slot) = events.pointer_mut("/0/arguments")
-            {
-                *slot = serde_json::from_str(&done.arguments)?;
-            }
-            Ok(json!({
-                "events": events,
-                "tool_call_id": output.tool_call_id,
-                "tool_name": output.tool_name,
-            }))
-        }
+        Step::ToolUse { event } => tool_use(state, event, ids),
     }
+}
+
+fn content_end(state: &mut ResponseState, ids: &FixedIds) -> HelperResult {
+    let events = state.content_end_events(ids);
+    let chunks = state.delta_chunks.as_ref().map(|kept| {
+        kept.iter()
+            .map(|chunk| chunk.delta.as_str())
+            .collect::<Vec<_>>()
+    });
+    Ok(json!({ "events": serde_json::to_value(&events)?, "delta_chunks": chunks }))
+}
+
+fn prompt_end(
+    session: &mut RealtimeSession,
+    state: &mut ResponseState,
+    ids: &FixedIds,
+) -> HelperResult {
+    let events = session.response_done_events(state, ids).or_value_error()?;
+    Ok(json!({
+        "events": serde_json::to_value(&events)?,
+        "output_item_id": state.output_item_id,
+        "response_id": state.response_id,
+        "delta_type": Value::Null,
+    }))
+}
+
+fn tool_use(state: &ResponseState, event: &Value, ids: &FixedIds) -> HelperResult {
+    let parsed: ToolUseEvent = serde_json::from_str(&event.to_string())?;
+    let output = state.tool_use_events(&parsed, ids).or_value_error()?;
+    let mut events = serde_json::to_value(&output.events)?;
+    // json.dumps spacing is not part of the contract, so both sides compare the decoded arguments
+    if let Some(CompletionEvent::FunctionCallArgumentsDone(done)) = output.events.first()
+        && let Some(slot) = events.pointer_mut("/0/arguments")
+    {
+        *slot = serde_json::from_str(&done.arguments)?;
+    }
+    Ok(json!({
+        "events": events,
+        "tool_call_id": output.tool_call_id,
+        "tool_name": output.tool_name,
+    }))
 }
 
 // LiteLLM's usage delta is private, so both sides reach it through the public response.done

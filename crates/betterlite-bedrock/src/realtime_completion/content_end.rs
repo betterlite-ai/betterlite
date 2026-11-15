@@ -45,35 +45,8 @@ fn part_done_events(
     ids: &dyn IdSource,
 ) -> Vec<CompletionEvent> {
     let (done, part) = match delta_type {
-        Some(DeltaType::Text) => {
-            let text: String = chunks
-                .unwrap_or_default()
-                .iter()
-                .map(|chunk| chunk.delta.as_str())
-                .collect();
-            let done = TextDone {
-                content_index: 0,
-                event_id: format!("event_{}", ids.next_id()),
-                item_id: item_id.to_owned(),
-                output_index: 0,
-                response_id: response_id.to_owned(),
-                text: text.clone(),
-            };
-            (CompletionEvent::TextDone(done), ContentPart::Text { text })
-        }
-        Some(DeltaType::Audio) => {
-            let done = AudioDone {
-                content_index: 0,
-                event_id: format!("event_{}", ids.next_id()),
-                item_id: item_id.to_owned(),
-                output_index: 0,
-                response_id: response_id.to_owned(),
-            };
-            let part = ContentPart::Audio {
-                transcript: String::new(),
-            };
-            (CompletionEvent::AudioDone(done), part)
-        }
+        Some(DeltaType::Text) => text_done(chunks, item_id, response_id, ids),
+        Some(DeltaType::Audio) => audio_done(item_id, response_id, ids),
         None => return Vec::new(),
     };
     let content_part = ContentPartDone {
@@ -85,4 +58,44 @@ fn part_done_events(
         response_id: response_id.to_owned(),
     };
     vec![done, CompletionEvent::ContentPartDone(content_part)]
+}
+
+fn text_done(
+    chunks: Option<&[DeltaChunk]>,
+    item_id: &str,
+    response_id: &str,
+    ids: &dyn IdSource,
+) -> (CompletionEvent, ContentPart) {
+    let text: String = chunks
+        .unwrap_or_default()
+        .iter()
+        .map(|chunk| chunk.delta.as_str())
+        .collect();
+    let done = TextDone {
+        content_index: 0,
+        event_id: format!("event_{}", ids.next_id()),
+        item_id: item_id.to_owned(),
+        output_index: 0,
+        response_id: response_id.to_owned(),
+        text: text.clone(),
+    };
+    (CompletionEvent::TextDone(done), ContentPart::Text { text })
+}
+
+fn audio_done(
+    item_id: &str,
+    response_id: &str,
+    ids: &dyn IdSource,
+) -> (CompletionEvent, ContentPart) {
+    let done = AudioDone {
+        content_index: 0,
+        event_id: format!("event_{}", ids.next_id()),
+        item_id: item_id.to_owned(),
+        output_index: 0,
+        response_id: response_id.to_owned(),
+    };
+    let part = ContentPart::Audio {
+        transcript: String::new(),
+    };
+    (CompletionEvent::AudioDone(done), part)
 }

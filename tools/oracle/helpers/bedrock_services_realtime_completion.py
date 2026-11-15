@@ -1,10 +1,10 @@
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import fastuuid
 from litellm.llms.bedrock.realtime.transformation import BedrockRealtimeConfig, BedrockUsageEvent
-from litellm.types.llms.openai import OpenAIRealtimeResponseDelta
+from litellm.types.llms.openai import OpenAIRealtimeEvents, OpenAIRealtimeResponseDelta
 from pydantic import JsonValue, TypeAdapter
 
 from bedrock_services_realtime_session import FixedFast
@@ -71,7 +71,7 @@ class Input(TypedDict):
 class RealtimeConfig(Protocol):
     def transform_usage_event(self, usage_event: BedrockUsageEvent) -> None: ...
 
-    def leftover_usage_done_events(self) -> Sequence[Mapping[str, object]]: ...
+    def leftover_usage_done_events(self) -> Sequence[OpenAIRealtimeEvents]: ...
 
     def transform_content_end_event(
         self,
@@ -80,21 +80,21 @@ class RealtimeConfig(Protocol):
         current_response_id: str | None,
         current_delta_type: str | None,
         current_delta_chunks: list[OpenAIRealtimeResponseDelta] | None,
-    ) -> tuple[Sequence[Mapping[str, object]], list[OpenAIRealtimeResponseDelta] | None]: ...
+    ) -> tuple[Sequence[OpenAIRealtimeEvents], list[OpenAIRealtimeResponseDelta] | None]: ...
 
     def transform_prompt_end_event(
         self,
         event: dict[str, JsonValue],
         current_response_id: str | None,
         current_conversation_id: str | None,
-    ) -> tuple[Sequence[Mapping[str, object]], str | None, str | None, str | None]: ...
+    ) -> tuple[Sequence[OpenAIRealtimeEvents], str | None, str | None, str | None]: ...
 
     def transform_tool_use_event(
         self,
         event: dict[str, JsonValue],
         current_output_item_id: str | None,
         current_response_id: str | None,
-    ) -> tuple[Sequence[Mapping[str, object]], str, str]: ...
+    ) -> tuple[Sequence[OpenAIRealtimeEvents], str, str]: ...
 
 
 CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig

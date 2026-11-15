@@ -11,6 +11,7 @@ call:
       - 00000000-0000-4000-8000-000000000006
       - 00000000-0000-4000-8000-000000000007
       - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
     steps:
       - {op: leftover}
       - {op: usage, usage: {totalInputTokens: 100, totalOutputTokens: 50, totalTokens: 150, details: {total: {input: {speechTokens: 60, textTokens: 40}, output: {speechTokens: 30, textTokens: 20}}}}}
