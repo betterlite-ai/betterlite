@@ -4,7 +4,7 @@ from contextlib import redirect_stdout
 import litellm
 from pydantic import JsonValue
 
-from .configs import GPT5, O_SERIES_PARAMS
+from .contracts import GPT5, INPUT, O_SERIES_PARAMS, Input
 from .values import (
     alias_value,
     allowlist_value,
@@ -13,7 +13,6 @@ from .values import (
     stream_value,
     transform_value,
 )
-from .views import INPUT, Input
 
 litellm.suppress_debug_info = True
 

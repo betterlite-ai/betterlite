@@ -1,18 +1,22 @@
 import httpx
 import litellm
 import openai
-from litellm.llms.azure.chat.gpt_5_transformation import AzureOpenAIGPT5Config
 from pydantic import JsonValue
 
-from .configs import GPT5, O_SERIES_STREAM, UNSUPPORTED, Failure, ParamsConfig, Recorder
-from .views import (
+from .contracts import (
     AZURE_ENDPOINT,
     AZURE_KEY,
     AZURE_VERSION,
+    GPT5,
+    O_SERIES_STREAM,
     PROJECTED,
+    UNSUPPORTED,
     AliasStep,
+    AllowlistConfig,
+    Failure,
     Install,
     MapStep,
+    Recorder,
     StreamStep,
     TransformStep,
 )
@@ -22,7 +26,8 @@ def install(source: Install) -> None:
     litellm.model_cost = source["model_cost"]
     litellm.open_ai_chat_completion_models = set(source["chat_models"])
     litellm.open_ai_text_completion_models = set(source["text_models"])
-    litellm.model_list_set = set(source["chat_models"]) | set(source["text_models"])
+    models = set(source["chat_models"]) | set(source["text_models"])
+    litellm.model_list_set = models
     litellm.drop_params = source["drop_params"]
     litellm.openai_system_messages_first = source["openai_system_messages_first"]
 
@@ -32,9 +37,9 @@ def alias_value(step: AliasStep) -> JsonValue:
     supported: list[JsonValue] = [*GPT5.get_supported_openai_params(model)]
     return {
         "model": model,
-        "family": AzureOpenAIGPT5Config.is_model_gpt_5_model(model),
+        "family": GPT5.is_model_gpt_5_model(model),
         "supported": supported,
-        "resolves_none": AzureOpenAIGPT5Config.effort_resolves_to_none(model, None),
+        "resolves_none": GPT5.effort_resolves_to_none(model, None),
     }
 
 
@@ -47,7 +52,7 @@ def stream_value(step: StreamStep) -> JsonValue:
     return {"model": step["model"], "stream": step["stream"], "fake": fake}
 
 
-def allowlist_value(config: ParamsConfig, model: str) -> JsonValue:
+def allowlist_value(config: AllowlistConfig, model: str) -> JsonValue:
     supported: list[JsonValue] = [*config.get_supported_openai_params(model)]
     return {"model": model, "supported": supported}
 
