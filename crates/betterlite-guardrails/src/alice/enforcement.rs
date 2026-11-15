@@ -44,7 +44,7 @@ pub(super) fn apply_replacements(
         let Some(slot) = texts.get_mut(position) else {
             return Err(blocked(verdict));
         };
-        *slot = text.to_owned();
+        text.clone_into(slot);
     }
     inputs.texts = Some(texts);
     Ok(())
