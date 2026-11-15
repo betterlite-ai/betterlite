@@ -1,9 +1,12 @@
+use betterlite_context::agentic_callback::AgenticCall;
 use rstest::rstest;
 
+use crate::compresr_recovery::error::RecoveryError;
 use crate::compresr_recovery::hash::{content_hash, display_hash, recovery_marker};
+use crate::compresr_recovery::plan::should_run;
 use crate::compresr_recovery::store::entry_bytes;
 
-use super::support::originals;
+use super::support::{RETRIEVE_TOOL, map, messages, originals, raw};
 
 #[rstest]
 #[case::empty("", "e3b0c44298fc1c149afbf4c8")]
@@ -66,8 +69,24 @@ fn entry_bytes_counts_utf8_bytes_of_every_original_hash() {
     assert_eq!(entry_bytes(&originals(&[("a", "\u{e9}"), ("b", "xyz")])), 5);
 }
 
-// Python holds a lone surrogate from a JSON \ud800 escape; a Rust string cannot, so the parser refuses it first
+// Python holds a lone surrogate from a JSON \ud800 escape and hashes it with surrogatepass; the model-response parse
+// betterlite runs first refuses the escape, so no string the recovery path hashes or stores can carry one
 #[test]
 fn a_lone_surrogate_escape_is_rejected_before_hashing_hash() {
-    assert!(serde_json::from_str::<String>("\"\\ud800\"").is_err());
+    let response = raw(r#"{"choices":[{"message":{"content":"\ud800"}}]}"#);
+    let tools = messages(RETRIEVE_TOOL);
+    let kwargs = map("{}");
+    let call = AgenticCall {
+        response: &response,
+        model: "gpt-4o",
+        messages: &[],
+        tools: Some(&tools),
+        stream: false,
+        custom_llm_provider: "openai",
+        kwargs: &kwargs,
+    };
+    assert!(matches!(
+        should_run(&call),
+        Err(RecoveryError::Response { .. })
+    ));
 }
