@@ -272,8 +272,14 @@ fn last_choice_content(output: &GuardrailValue) -> Result<String, EvaluationErro
     let Some(GuardrailValue::Object(choice)) = choices.last() else {
         return Err(EvaluationError::Shape { field: "choices" });
     };
-    let Some(GuardrailValue::Object(message)) = choice.get("message") else {
-        return Ok(String::new());
+    let message = match choice.get("message") {
+        Some(GuardrailValue::Null) | None => return Ok(String::new()),
+        Some(GuardrailValue::Object(message)) => message,
+        Some(_) => {
+            return Err(EvaluationError::Shape {
+                field: "choices.message",
+            });
+        }
     };
     match message.get("content") {
         Some(GuardrailValue::Text(content)) => Ok(content.clone()),
