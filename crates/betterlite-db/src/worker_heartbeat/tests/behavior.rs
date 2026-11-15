@@ -9,7 +9,7 @@ use uuid::Uuid;
 use super::support::{Call, FakeDatabase, FakeError, RecordingIdentity, capture_logs};
 use crate::database_replica::pinned::WriterPinnedClient;
 use crate::worker_heartbeat::{
-    HostnameError, ProxyWorkerHeartbeat, SystemWorkerIdentity, WorkerIdentity,
+    HostnameError, ProxyWorkerHeartbeat, SystemWorkerIdentity, WorkerIdentity as _,
     count_live_proxy_workers,
 };
 
@@ -144,9 +144,9 @@ async fn cancellation_propagates() {
 
 #[tokio::test]
 async fn count_zero_is_known() {
-    let database = FakeDatabase::default().with_counts(vec![Some(0)]);
+    let database = FakeDatabase::default().with_counts(vec![Some(0_i32)]);
     let count = count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await;
-    assert_eq!(count, Some(0));
+    assert_eq!(count, Some(0_i32));
     assert_eq!(database.calls(), vec![Call::Count("180".to_owned())]);
 }
 
@@ -154,7 +154,7 @@ async fn count_zero_is_known() {
 #[case::empty(vec![], "the result has no live worker count row")]
 #[case::null_row(vec![None], "a live worker count row is not an integer")]
 #[case::invalid_tail(
-    vec![Some(1), None],
+    vec![Some(1_i32), None],
     "a live worker count row is not an integer"
 )]
 #[tokio::test]
@@ -171,8 +171,8 @@ async fn count_empty_none_malformed_unknown(
 }
 
 #[rstest]
-#[case::first_wins(vec![Some(3), Some(9)], Some(3))]
-#[case::later_row_validated(vec![Some(3), None], None)]
+#[case::first_wins(vec![Some(3_i32), Some(9_i32)], Some(3_i32))]
+#[case::later_row_validated(vec![Some(3_i32), None], None)]
 #[tokio::test]
 async fn count_validates_all_rows_uses_first(
     #[case] rows: Vec<Option<i32>>,

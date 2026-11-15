@@ -84,10 +84,10 @@ async fn postgres_clock_ignores_process_skew() {
         assert!(row.get::<_, bool>(0));
         assert_eq!(
             count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-            Some(2)
+            Some(2_i32)
         );
-        database.client.commit().await.unwrap();
-    }
+        database.client.commit().await.unwrap()
+    };
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -214,7 +214,7 @@ async fn postgres_live_and_prune_strict_boundaries() {
         };
         assert_eq!(
             count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-            Some(1)
+            Some(1_i32)
         );
         heartbeat(Some("worker-a"), "host-a").beat(&database).await;
         let rows = database
@@ -232,10 +232,10 @@ async fn postgres_live_and_prune_strict_boundaries() {
         );
         assert_eq!(
             count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
-            Some(2)
+            Some(2_i32)
         );
-        database.client.commit().await.unwrap();
-    }
+        database.client.commit().await.unwrap()
+    };
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();

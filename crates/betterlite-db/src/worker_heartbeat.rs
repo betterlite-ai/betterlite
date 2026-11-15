@@ -205,7 +205,8 @@ enum CensusError<DatabaseError>
 where
     DatabaseError: StdError + Send + Sync + 'static,
 {
-    #[error("the database did not answer")]
+    // LiteLLM logs str(exception), so the driver text is what reaches the DEBUG line
+    #[error("{source}")]
     Database {
         #[source]
         source: DatabaseError,

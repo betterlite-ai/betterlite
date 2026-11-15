@@ -9,7 +9,7 @@ use crate::database_diagnostics::json_formatter::JsonFormatter;
 use crate::database_diagnostics::legacy::TextFormatter;
 use crate::database_diagnostics::message::{LogArguments, LogValue};
 use crate::database_diagnostics::record::{ExceptionRecord, LogRecord};
-use crate::database_diagnostics::timestamp::{LocalTime, SystemLocalTime, format_time};
+use crate::database_diagnostics::timestamp::{LocalTime as _, SystemLocalTime, format_time};
 
 fn json_output(record: &LogRecord<'_>) -> JsonOutput {
     let local = utc();
@@ -81,9 +81,9 @@ fn local_iso_no_zone() {
 }
 
 #[rstest]
-#[case::whole_second(1_700_000_000.0, "2023-11-14T22:13:20")]
-#[case::microseconds(1_700_000_000.125, "2023-11-14T22:13:20.125000")]
-#[case::single_microsecond(1_700_000_000.000_001, "2023-11-14T22:13:20.000001")]
+#[case::whole_second(1_700_000_000.0_f64, "2023-11-14T22:13:20")]
+#[case::microseconds(1_700_000_000.125_f64, "2023-11-14T22:13:20.125000")]
+#[case::single_microsecond(1_700_000_000.000_001_f64, "2023-11-14T22:13:20.000001")]
 fn iso_fraction_only_when_nonzero(#[case] created: f64, #[case] expected: &str) {
     let local = utc();
     assert_eq!(format_time(&local, created, None).unwrap(), expected);
@@ -119,14 +119,14 @@ fn stacktrace_only_with_exception() {
 fn json_unicode_control_strings() {
     let local = utc();
     let redactor = redactor();
-    let message = "héllo\nworld\u{1}";
+    let message = "h\u{e9}llo\nworld\u{1}";
     let rendered = JsonFormatter {
         local_time: &local,
         redactor: &redactor,
     }
     .format(&record(1_700_000_000.0, "INFO", message))
     .unwrap();
-    assert!(rendered.contains("héllo"));
+    assert!(rendered.contains("h\u{e9}llo"));
     assert!(rendered.contains("\\n"));
     assert!(rendered.contains("\\u0001"));
     let parsed: JsonOutput = serde_json::from_str(&rendered).unwrap();
