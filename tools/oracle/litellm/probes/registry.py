@@ -77,6 +77,7 @@ from probes.quality_router import QualityRouter
 from probes.redis_failure_policy import RedisFailurePolicy
 from probes.request_batch import RequestBatch
 from probes.request_scheduler import RequestScheduler
+from probes.reservation_cost import ReservationCost
 from probes.responses_stream_fallback import ResponsesStreamFallback
 from probes.retry_policy import RetryPolicy
 from probes.router_compaction import RouterCompaction
@@ -211,6 +212,7 @@ OPERATIONS: dict[str, type[Operation]] = {
     "redis_failure_policy": RedisFailurePolicy,
     "request_batch": RequestBatch,
     "request_scheduler": RequestScheduler,
+    "reservation_cost": ReservationCost,
     "responses_stream_fallback": ResponsesStreamFallback,
     "retry_policy": RetryPolicy,
     "router_compaction": RouterCompaction,
