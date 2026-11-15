@@ -614,3 +614,10 @@ path = "fuzz_targets/ovhcloud_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "host_rerank"
+path = "fuzz_targets/host_rerank.rs"
+test = false
+doc = false
+bench = false
