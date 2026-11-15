@@ -1,0 +1,125 @@
+use betterlite_policy::context::ResolvedPolicy;
+use betterlite_policy::records::attachment::{
+    PolicyAttachmentCreateRequest, PolicyAttachmentDBResponse, PolicyAttachmentListResponse,
+};
+use betterlite_policy::records::crud::{
+    PolicyConditionRequest, PolicyCreateRequest, PolicyUpdateRequest,
+};
+use betterlite_policy::records::db::{PolicyDBResponse, PolicyListDBResponse};
+use betterlite_policy::records::inspection::{
+    PolicyGuardrailsResponse, PolicyInfoResponse, PolicyListResponse, PolicyScopeResponse,
+    PolicySummaryItem, PolicyTestResponse,
+};
+use betterlite_policy::records::resolution::{
+    AttachmentImpactResponse, PipelineTestRequest, PolicyMatchDetail, PolicyResolveRequest,
+    PolicyResolveResponse,
+};
+use betterlite_policy::records::version::{
+    PolicyVersionCompareResponse, PolicyVersionCreateRequest, PolicyVersionListResponse,
+    PolicyVersionStatusUpdateRequest,
+};
+use betterlite_policy::values::{Policy, PolicyGuardrails, PolicyScope};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+use super::invalid_input;
+use crate::helpers::{HelperError, HelperResult};
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub(crate) enum Call {
+    Validate {
+        model: String,
+        value: Value,
+    },
+    ProjectScope {
+        scope: Value,
+    },
+    ProjectGuardrails {
+        guardrails: Value,
+    },
+    ProjectInfo {
+        policy_name: String,
+        policy: Value,
+        resolved: Value,
+    },
+}
+
+pub(super) fn run(call: &Call) -> HelperResult {
+    match call {
+        Call::Validate { model, value } => dumped_record(model, value.clone()),
+        Call::ProjectScope { scope } => {
+            let scope: PolicyScope = decoded(scope.clone())?;
+            serialized(&PolicyScopeResponse::from_scope(&scope))
+        }
+        Call::ProjectGuardrails { guardrails } => {
+            let guardrails: PolicyGuardrails = decoded(guardrails.clone())?;
+            serialized(&PolicyGuardrailsResponse::from_guardrails(&guardrails))
+        }
+        Call::ProjectInfo {
+            policy_name,
+            policy,
+            resolved,
+        } => {
+            let policy: Policy = decoded(policy.clone())?;
+            let resolved: ResolvedPolicy = decoded(resolved.clone())?;
+            serialized(&PolicyInfoResponse::from_policy(
+                policy_name,
+                &policy,
+                &resolved,
+            ))
+        }
+    }
+}
+
+fn decoded<T>(value: Value) -> Result<T, Box<HelperError>>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_value(value).map_err(|error| invalid_input(error.to_string()))
+}
+
+fn serialized<T>(record: &T) -> HelperResult
+where
+    T: Serialize,
+{
+    serde_json::to_value(record).map_err(|error| invalid_input(error.to_string()))
+}
+
+fn dumped<T>(value: Value) -> HelperResult
+where
+    T: DeserializeOwned + Serialize,
+{
+    let record: T = decoded(value)?;
+    serialized(&record)
+}
+
+fn dumped_record(model: &str, value: Value) -> HelperResult {
+    match model {
+        "PolicyScopeResponse" => dumped::<PolicyScopeResponse>(value),
+        "PolicyGuardrailsResponse" => dumped::<PolicyGuardrailsResponse>(value),
+        "PolicyInfoResponse" => dumped::<PolicyInfoResponse>(value),
+        "PolicySummaryItem" => dumped::<PolicySummaryItem>(value),
+        "PolicyListResponse" => dumped::<PolicyListResponse>(value),
+        "PolicyTestResponse" => dumped::<PolicyTestResponse>(value),
+        "PolicyConditionRequest" => dumped::<PolicyConditionRequest>(value),
+        "PolicyCreateRequest" => dumped::<PolicyCreateRequest>(value),
+        "PolicyUpdateRequest" => dumped::<PolicyUpdateRequest>(value),
+        "PolicyDBResponse" => dumped::<PolicyDBResponse>(value),
+        "PolicyListDBResponse" => dumped::<PolicyListDBResponse>(value),
+        "PolicyVersionCreateRequest" => dumped::<PolicyVersionCreateRequest>(value),
+        "PolicyVersionStatusUpdateRequest" => dumped::<PolicyVersionStatusUpdateRequest>(value),
+        "PolicyVersionListResponse" => dumped::<PolicyVersionListResponse>(value),
+        "PolicyVersionCompareResponse" => dumped::<PolicyVersionCompareResponse>(value),
+        "PolicyAttachmentCreateRequest" => dumped::<PolicyAttachmentCreateRequest>(value),
+        "PolicyAttachmentDBResponse" => dumped::<PolicyAttachmentDBResponse>(value),
+        "PolicyAttachmentListResponse" => dumped::<PolicyAttachmentListResponse>(value),
+        "PipelineTestRequest" => dumped::<PipelineTestRequest>(value),
+        "PolicyResolveRequest" => dumped::<PolicyResolveRequest>(value),
+        "PolicyResolveResponse" => dumped::<PolicyResolveResponse>(value),
+        "PolicyMatchDetail" => dumped::<PolicyMatchDetail>(value),
+        "AttachmentImpactResponse" => dumped::<AttachmentImpactResponse>(value),
+        _ => Err(invalid_input(format!("unknown record model {model}"))),
+    }
+}
