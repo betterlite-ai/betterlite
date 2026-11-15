@@ -11,36 +11,6 @@ call:
     tracing: true
     master_key: "sk-master"
     script:
-      decoder:
-        kind: ok
-        rows: [
-              {
-                Timestamp: 1000000,
-                TraceId: trace-1,
-                SpanId: span-1,
-                ParentSpanId: "",
-                TraceState: "",
-                SpanName: chat gpt-4o,
-                SpanKind: SPAN_KIND_CLIENT,
-                ServiceName: demo,
-                ResourceAttributes: {service.name: demo},
-                ScopeName: "",
-                ScopeVersion: "",
-                SpanAttributes: {gen_ai.response.id: req-1},
-                Duration: 1000000,
-                StatusCode: STATUS_CODE_OK,
-                StatusMessage: "",
-                TeamId: "",
-                ApiKeyHash: "",
-                ObservationType: llm,
-                AgentName: researcher,
-                Model: gpt-4o,
-                LiteLLMRequestId: req-1,
-                InputTokens: 3,
-                OutputTokens: 4,
-                Input: hello,
-                Output: world
-              }
-            ]
+      decoder: {kind: ok}
 env: {}
 compare: {ignore: []}

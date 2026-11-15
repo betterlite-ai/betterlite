@@ -6,8 +6,8 @@ call:
       method: GET
       path: /v1/traces
       query:
-        start_ms: 100
-        end_ms: 200
+        start_ms: "100"
+        end_ms: "200"
     auth: {user_role: internal_user}
     tracing: true
     master_key: "sk-master"
