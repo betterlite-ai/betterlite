@@ -1,0 +1,21 @@
+task: B4711
+deviations:
+  - what: An identifier collision is a typed McpIdentifierConflict record carrying field ("alias" or "server_name"), value and server_id, and a locked write answers with a typed LockedWriteOutcome of Written(row) or Conflict(record).
+    why: Rust has no tuple-returning duck-typed contract; the record names the three values the caller reads and the outcome keeps the conflict and the written row apart at compile time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L538-L565
+  - what: Advisory-lock keys are computed with the blake2 crate's 8-byte BLAKE2b digest read big-endian as i64, from the lowercased non-empty identifiers sorted and deduped.
+    why: hashlib is a Python module; the digest, the byte order and the signed reading are the same, so two betterlite writers and a LiteLLM writer take the same PostgreSQL advisory lock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L583-L594
+  - what: The transaction seam is a concrete TransactionManager returned by _db_transaction_manager, and the env-var table binding is implemented locally, instead of LiteLLM's _UserEnvVarsTransactionClient and _UserEnvVarsTransaction Protocol declarations.
+    why: The Protocols declare a surface that B714 still has to implement; Rust states the same contract as a concrete type whose begin returns a transaction, and the env-var table binding is this task's own repository.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L75
+  - what: _identifier_where's Prisma where object is rendered as SQL predicates, with case-insensitive equality as LOWER(column) = LOWER($n), the NULL-or-not-draft arm as explicit SQL, and the optional server_id guard as an AND.
+    why: betterlite queries PostgreSQL directly instead of through Prisma; the matched rows, the NULL inclusion and the draft exclusion are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L516-L531
+  - what: The pinned-tool snapshot is serialized with serde_json rather than B192's safe_dumps.
+    why: safe_dumps belongs to B192 and strips NUL bytes; serde_json keeps them and PostgreSQL then rejects the jsonb value loudly (22P05) instead of silently changing a tool description.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2155
+  - what: _get_prisma_client_or_none and get_prisma_client_or_throw take the database handle as a parameter instead of reading the litellm.proxy.proxy_server.prisma_client global.
+    why: betterlite has no module-level proxy state; the handle is injected, and an absent one is either returned as None or turned into ProxyCheckError::Database, which answers 500 with detail {"error": message}.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L576-L581
+kept_bugs: []
