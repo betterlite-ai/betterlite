@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
@@ -46,14 +48,10 @@ fn a_non_list_payload_that_fits_keeps_its_encoding() {
 
 #[test]
 fn a_non_list_payload_over_the_budget_becomes_the_truncated_marker() {
-    let evidence = GuardrailValue::Object(
-        [(
-            "evidence".to_owned(),
-            GuardrailValue::Text("hello".to_owned()),
-        )]
-        .into_iter()
-        .collect(),
-    );
+    let evidence = GuardrailValue::Object(BTreeMap::from([(
+        "evidence".to_owned(),
+        GuardrailValue::Text("hello".to_owned()),
+    )]));
     let result = truncate_evidence_payload(&evidence, 5);
     assert_eq!(
         result.evidence,
@@ -67,7 +65,8 @@ fn a_non_list_payload_over_the_budget_becomes_the_truncated_marker() {
 fn a_long_evidence_text_is_halved_until_the_encoding_fits() {
     let evidence = listed(vec![entry(&"x".repeat(100), 1)]);
     let result = truncate_evidence_payload(&evidence, 120);
-    let expected = "x".repeat(13) + "...[truncated]";
+    let mut expected = "x".repeat(13);
+    expected.push_str("...[truncated]");
     assert_eq!(
         result.evidence,
         listed(vec![GuardrailValue::Object(
@@ -92,11 +91,10 @@ fn a_long_evidence_text_is_halved_until_the_encoding_fits() {
 
 #[test]
 fn a_shrink_that_lands_exactly_on_the_budget_stops() {
-    let only_evidence = GuardrailValue::Object(
-        [("evidence".to_owned(), GuardrailValue::Text("x".repeat(60)))]
-            .into_iter()
-            .collect(),
-    );
+    let only_evidence = GuardrailValue::Object(BTreeMap::from([(
+        "evidence".to_owned(),
+        GuardrailValue::Text("x".repeat(60)),
+    )]));
     let result = truncate_evidence_payload(&listed(vec![only_evidence]), 88);
     let expected = GuardrailValue::Object(
         [
@@ -127,11 +125,10 @@ fn an_entry_that_cannot_shrink_enough_is_dropped() {
 
 #[test]
 fn an_entry_without_evidence_text_is_dropped() {
-    let entry = GuardrailValue::Object(
-        [("score".to_owned(), GuardrailValue::SignedInteger(1))]
-            .into_iter()
-            .collect(),
-    );
+    let entry = GuardrailValue::Object(BTreeMap::from([(
+        "score".to_owned(),
+        GuardrailValue::SignedInteger(1),
+    )]));
     let result = truncate_evidence_payload(&listed(vec![entry]), 5);
     assert_eq!(result.evidence, listed(Vec::new()));
     assert!(result.was_truncated);
@@ -141,7 +138,7 @@ fn an_entry_without_evidence_text_is_dropped() {
 #[case::null(GuardrailValue::Null)]
 #[case::number(GuardrailValue::SignedInteger(9))]
 fn an_entry_whose_evidence_is_not_a_string_is_dropped(#[case] evidence: GuardrailValue) {
-    let entry = GuardrailValue::Object([("evidence".to_owned(), evidence)].into_iter().collect());
+    let entry = GuardrailValue::Object(BTreeMap::from([("evidence".to_owned(), evidence)]));
     let result = truncate_evidence_payload(&listed(vec![entry]), 5);
     assert_eq!(result.evidence, listed(Vec::new()));
     assert!(result.was_truncated);

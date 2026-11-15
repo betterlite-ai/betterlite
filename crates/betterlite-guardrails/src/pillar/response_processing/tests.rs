@@ -31,9 +31,10 @@ fn text(value: &str) -> GuardrailValue {
 }
 
 fn messages() -> GuardrailValue {
-    GuardrailValue::Array(vec![GuardrailValue::Object(
-        [("role".to_owned(), text("user"))].into_iter().collect(),
-    )])
+    GuardrailValue::Array(vec![GuardrailValue::Object(data(&[(
+        "role",
+        text("user"),
+    )]))])
 }
 
 fn data(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue> {
@@ -51,11 +52,10 @@ fn response(flagged: bool) -> ProtectResponse {
             "pii".to_owned(),
             GuardrailValue::Boolean(true),
         )])),
-        evidence: Some(vec![GuardrailValue::Object(
-            [("evidence".to_owned(), text("secret"))]
-                .into_iter()
-                .collect(),
-        )]),
+        evidence: Some(vec![GuardrailValue::Object(data(&[(
+            "evidence",
+            text("secret"),
+        )]))]),
         masked_session_messages: None,
         other: BTreeMap::new(),
     }
@@ -111,11 +111,7 @@ fn monitor_mode_stores_the_flag_scanners_evidence_and_session() {
 
 #[test]
 fn an_existing_pillar_session_id_is_not_replaced_from_the_response_but_the_response_copy_is() {
-    let metadata = GuardrailValue::Object(
-        [("pillar_session_id".to_owned(), text("sent-session"))]
-            .into_iter()
-            .collect(),
-    );
+    let metadata = GuardrailValue::Object(data(&[("pillar_session_id", text("sent-session"))]));
     let mut request = data(&[("messages", messages()), ("metadata", metadata)]);
     process_pillar_response(
         &response(false),
@@ -211,9 +207,12 @@ fn mask_mode_replaces_the_request_messages() {
     };
     assert_eq!(replaced.len(), 1);
     assert_eq!(
-        replaced.first().and_then(|message| match message {
-            GuardrailValue::Object(fields) => fields.get("content"),
-            _ => None,
+        replaced.first().and_then(|message| {
+            if let GuardrailValue::Object(fields) = message {
+                fields.get("content")
+            } else {
+                None
+            }
         }),
         Some(&text("[masked]"))
     );
@@ -269,8 +268,7 @@ fn a_litellm_metadata_bucket_receives_the_entries_and_metadata_aliases_it() {
 
 #[test]
 fn an_existing_metadata_object_stays_separate_from_litellm_metadata() {
-    let existing =
-        GuardrailValue::Object([("caller".to_owned(), text("kept"))].into_iter().collect());
+    let existing = GuardrailValue::Object(data(&[("caller", text("kept"))]));
     let mut request = data(&[
         ("litellm_metadata", GuardrailValue::Object(BTreeMap::new())),
         ("metadata", existing),

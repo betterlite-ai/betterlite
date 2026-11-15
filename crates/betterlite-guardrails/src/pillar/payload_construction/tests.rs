@@ -25,6 +25,30 @@ impl ModelProviderResolver for FixedResolver {
     }
 }
 
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SentPayload {
+    messages: Vec<SentMessage>,
+    tools: Vec<GuardrailValue>,
+    metadata: SentMetadata,
+    model: String,
+    provider: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SentMessage {
+    content: String,
+    role: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SentMetadata {
+    source: String,
+    version: String,
+}
+
 fn data(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue> {
     entries
         .iter()
@@ -58,16 +82,20 @@ fn the_payload_carries_messages_tools_metadata_and_the_resolved_model() {
         ("model", text("openai/gpt-4o")),
         ("tools", GuardrailValue::Array(Vec::new())),
     ]);
-    assert_eq!(
-        serde_json::to_value(&payload).expect("the payload serializes"),
-        json!({
-            "messages": [{"content": "hi", "role": "user"}],
-            "tools": [],
-            "metadata": {"source": "litellm", "version": "1.105.1"},
-            "model": "clean-model",
-            "provider": "openai",
-        })
-    );
+    let sent: SentPayload =
+        serde_json::from_value(serde_json::to_value(&payload).expect("the payload serializes"))
+            .expect("the sent payload has the wire shape");
+    assert_eq!(sent.messages.len(), 1);
+    let Some(message) = sent.messages.first() else {
+        panic!("the payload carries the message");
+    };
+    assert_eq!(message.content, "hi");
+    assert_eq!(message.role, "user");
+    assert!(sent.tools.is_empty());
+    assert_eq!(sent.metadata.source, "litellm");
+    assert_eq!(sent.metadata.version, "1.105.1");
+    assert_eq!(sent.model, "clean-model");
+    assert_eq!(sent.provider, "openai");
 }
 
 #[test]
@@ -84,11 +112,7 @@ fn the_user_id_is_sent_when_the_request_has_one() {
 
 #[test]
 fn the_session_id_comes_from_the_metadata_bucket() {
-    let metadata = GuardrailValue::Object(
-        [("pillar_session_id".to_owned(), text("session-1"))]
-            .into_iter()
-            .collect(),
-    );
+    let metadata = GuardrailValue::Object(data(&[("pillar_session_id", text("session-1"))]));
     let payload = prepared(&[
         ("messages", messages()),
         ("metadata", metadata),
@@ -99,16 +123,8 @@ fn the_session_id_comes_from_the_metadata_bucket() {
 
 #[test]
 fn the_session_id_reads_metadata_even_when_litellm_metadata_is_present() {
-    let metadata = GuardrailValue::Object(
-        [("pillar_session_id".to_owned(), text("session-1"))]
-            .into_iter()
-            .collect(),
-    );
-    let other = GuardrailValue::Object(
-        [("pillar_session_id".to_owned(), text("ignored"))]
-            .into_iter()
-            .collect(),
-    );
+    let metadata = GuardrailValue::Object(data(&[("pillar_session_id", text("session-1"))]));
+    let other = GuardrailValue::Object(data(&[("pillar_session_id", text("ignored"))]));
     let payload = prepared(&[
         ("litellm_metadata", other),
         ("messages", messages()),
@@ -164,14 +180,10 @@ fn a_metadata_field_that_is_not_an_object_is_rejected() {
 
 #[test]
 fn a_non_string_session_id_is_rejected() {
-    let metadata = GuardrailValue::Object(
-        [(
-            "pillar_session_id".to_owned(),
-            GuardrailValue::SignedInteger(7),
-        )]
-        .into_iter()
-        .collect(),
-    );
+    let metadata = GuardrailValue::Object(data(&[(
+        "pillar_session_id",
+        GuardrailValue::SignedInteger(7),
+    )]));
     let error = prepare_payload(
         &data(&[("metadata", metadata), ("model", text("gpt-4o"))]),
         &FixedResolver,

@@ -42,8 +42,7 @@ fn a_text_flagged_value_is_lowercased() {
 
 #[test]
 fn scanners_are_percent_encoded_json() {
-    let scanners =
-        GuardrailValue::Object([("scanner".to_owned(), text("pii"))].into_iter().collect());
+    let scanners = GuardrailValue::Object(store(&[("scanner", text("pii"))]));
     let mut metadata = store(&[("pillar_scanners", scanners)]);
     let headers = build_pillar_response_headers(&mut metadata);
     assert_eq!(
@@ -54,9 +53,10 @@ fn scanners_are_percent_encoded_json() {
 
 #[test]
 fn a_small_evidence_payload_is_only_encoded() {
-    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(
-        [("evidence".to_owned(), text("abc"))].into_iter().collect(),
-    )]);
+    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(store(&[(
+        "evidence",
+        text("abc"),
+    )]))]);
     let mut metadata = store(&[("pillar_evidence", evidence.clone())]);
     let headers = build_pillar_response_headers(&mut metadata);
     assert_eq!(
@@ -70,9 +70,10 @@ fn a_small_evidence_payload_is_only_encoded() {
 #[test]
 fn an_oversized_evidence_payload_is_truncated_and_marked() {
     let long = "x".repeat(9_000);
-    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(
-        [("evidence".to_owned(), text(&long))].into_iter().collect(),
-    )]);
+    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(store(&[(
+        "evidence",
+        text(&long),
+    )]))]);
     let mut metadata = store(&[("pillar_evidence", evidence)]);
     let headers = build_pillar_response_headers(&mut metadata);
     let encoded = headers
@@ -137,9 +138,10 @@ fn the_session_header_uses_the_response_version_not_the_persisted_one() {
 #[test]
 fn evidence_between_one_kib_and_the_full_budget_is_not_truncated() {
     let long = "x".repeat(2_000);
-    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(
-        [("evidence".to_owned(), text(&long))].into_iter().collect(),
-    )]);
+    let evidence = GuardrailValue::Array(vec![GuardrailValue::Object(store(&[(
+        "evidence",
+        text(&long),
+    )]))]);
     let mut metadata = store(&[("pillar_evidence", evidence.clone())]);
     let headers = build_pillar_response_headers(&mut metadata);
     assert!(headers.contains_key("x-pillar-evidence"));

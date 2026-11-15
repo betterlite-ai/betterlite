@@ -132,7 +132,7 @@ def protect(settings: Settings, key: Key, request_data: JsonValue, answer: Reply
     data = OBJECT.validate_python(request_data)
     status = 200
     try:
-        # a failed model lookup prints LiteLLM's provider list to stdout, which would corrupt the helper's JSON
+        # a failed model lookup prints LiteLLM's provider list, corrupting the helper's JSON
         with redirect_stdout(io.StringIO()):
             asyncio.run(runner.run_pillar_guardrail(data, key_context(key)))
     except HTTPException as error:

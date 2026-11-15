@@ -54,7 +54,10 @@ fn encodes_like_json_dumps_without_ascii_escapes(
 
 #[test]
 fn non_ascii_text_is_utf8_percent_encoded_rather_than_escaped() {
-    let value = object(&[("text", GuardrailValue::Text("héllo wörld".to_owned()))]);
+    let value = object(&[(
+        "text",
+        GuardrailValue::Text("h\u{e9}llo w\u{f6}rld".to_owned()),
+    )]);
     assert_eq!(
         encoded(&value),
         "%7B%22text%22%3A%22h%C3%A9llo%20w%C3%B6rld%22%7D"

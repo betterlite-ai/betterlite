@@ -1,13 +1,15 @@
 #![cfg(test)]
 
-use betterlite_config::loader::EnvironmentLookup;
+use std::collections::BTreeMap;
+
+use betterlite_config::loader::EnvironmentLookup as _;
 use rstest::rstest;
 
 use super::bool_config::{BoolSetting, parse_flag_setting, resolve_bool_config};
 use super::error::PillarError;
 use super::settings::{FallbackAction, OnFlaggedAction};
 
-fn environment(entries: &[(&str, &str)]) -> std::collections::BTreeMap<String, String> {
+fn environment(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -55,7 +57,7 @@ fn rejects_unrecognised_values(#[case] value: BoolSetting) {
     let BoolSetting::Text(raw) = &value else {
         panic!("the case is text");
     };
-    assert!(matches!(&error, PillarError::BoolValue { value } if value == raw));
+    assert!(matches!(&error, PillarError::BoolValue { value: reported } if reported == raw));
     assert_eq!(
         error.to_string(),
         format!("Unrecognised boolean value: {raw}")

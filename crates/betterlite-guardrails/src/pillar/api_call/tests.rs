@@ -18,6 +18,7 @@ use rstest::rstest;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
 use super::api_call::call_pillar_api;
 use super::error::PillarError;
@@ -69,7 +70,7 @@ async fn serve_after(
             let request_sender = sender.clone();
             let reply = body.clone();
             async move {
-                tokio::time::sleep(delay).await;
+                sleep(delay).await;
                 let captured = Captured {
                     method: String::from("POST"),
                     path: uri.path().to_owned(),
@@ -104,11 +105,10 @@ fn pillar_settings(api_base: &str) -> PillarSettings {
 
 fn payload() -> ProtectPayload {
     ProtectPayload {
-        messages: GuardrailValue::Array(vec![GuardrailValue::Object(
-            [("role".to_owned(), GuardrailValue::Text("user".to_owned()))]
-                .into_iter()
-                .collect(),
-        )]),
+        messages: GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([(
+            "role".to_owned(),
+            GuardrailValue::Text("user".to_owned()),
+        )]))]),
         tools: GuardrailValue::Array(Vec::new()),
         metadata: ProtectMetadata {
             source: "litellm",
@@ -152,14 +152,14 @@ async fn the_call_posts_the_payload_to_the_protect_route() {
         captured
             .headers
             .get("authorization")
-            .and_then(|v| v.to_str().ok()),
+            .and_then(|value| value.to_str().ok()),
         Some("Bearer sk-test")
     );
     assert_eq!(
         captured
             .headers
             .get("content-type")
-            .and_then(|v| v.to_str().ok()),
+            .and_then(|value| value.to_str().ok()),
         Some("application/json")
     );
     let body: CapturedPayload = serde_json::from_str(&captured.body).expect("valid JSON body");
