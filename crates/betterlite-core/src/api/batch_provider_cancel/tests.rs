@@ -574,7 +574,12 @@ fn batch_cancel_keeps_a_structured_timeout_for_bedrock() {
 #[test]
 fn batch_cancel_structured_timeout_without_read_falls_back() {
     let mut params = base_params();
-    params.timeout = Some(CancelTimeout::Structured(StructuredTimeout::default()));
+    params.timeout = Some(CancelTimeout::Structured(StructuredTimeout {
+        connect: None,
+        read: None,
+        write: None,
+        pool: None,
+    }));
     let call = first_call(base_settings(), "vertex_ai", params);
     assert_eq!(call["timeout"], json!(600.0));
 }
