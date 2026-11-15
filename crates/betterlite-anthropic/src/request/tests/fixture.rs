@@ -131,8 +131,7 @@ impl RemoteMediaFetcher for InliningFetcher {
         &self,
         urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
-        let data_urls = urls.iter().map(|_url| INLINED_DATA_URL.to_owned());
-        ready(Ok(data_urls.collect()))
+        ready(Ok(vec![INLINED_DATA_URL.to_owned(); urls.len()]))
     }
 }
 
