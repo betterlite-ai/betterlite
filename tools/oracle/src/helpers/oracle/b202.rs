@@ -1,8 +1,14 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
+use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
+use betterlite_openai::text_completion_execution::catalog::{
+    CompletionCatalog, CompletionRoute, route_for,
+};
+use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::helpers::{HelperError, HelperResult};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -14,33 +20,56 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-// main.py asks get_llm_provider for the model a request names, then switches an openai miss of the chat catalog to text-completion-openai
-fn selected_model(
-    model: &str,
-    chat_models: &BTreeSet<String>,
-    text_models: &BTreeSet<String>,
-) -> (String, String) {
-    match model.split_once('/') {
-        Some((provider, name)) => (provider.to_owned(), name.to_owned()),
-        None if chat_models.contains(model) => (String::from("openai"), model.to_owned()),
-        None if text_models.contains(model) => {
-            (String::from("text-completion-openai"), model.to_owned())
-        }
-        None => (String::from("unmapped"), model.to_owned()),
+fn listed(model: &str) -> ModelDeployment {
+    ModelDeployment {
+        model_name: String::from("g"),
+        litellm_params: LiteLlmParams {
+            ssl_verify: None,
+            model: Some(model.to_owned()),
+            api_base: Some(String::from("http://127.0.0.1:9/v1")),
+            api_key: Some(SecretString::from("oracle-key")),
+            api_version: None,
+            timeout: None,
+            stream_timeout: None,
+            max_retries: None,
+            rpm: None,
+            tpm: None,
+            weight: None,
+        },
+        model_info: ModelInfo::default(),
     }
+}
+
+// only an openai prefix resolves with no catalog loaded; every other model takes the refusal shape the execution tests build
+fn deployment(model: &str) -> Result<ChatDeployment, Box<HelperError>> {
+    if model.starts_with("openai/") {
+        return ChatDeployment::resolve(&listed(model), &OpenAiDefaults::default())
+            .or_config_error();
+    }
+    let mut deployment =
+        ChatDeployment::resolve(&listed("openai/gpt-4o"), &OpenAiDefaults::default())
+            .or_config_error()?;
+    model.clone_into(&mut deployment.litellm_model);
+    deployment.provider = Provider::Unsupported {
+        model: model.to_owned(),
+    };
+    Ok(deployment)
 }
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
+        let catalog = CompletionCatalog {
+            chat_models: input.chat_models.clone(),
+            text_models: input.text_models.clone(),
+        };
         let mut selected = BTreeMap::new();
         for model in &input.models {
-            let (provider, name) = selected_model(model, &input.chat_models, &input.text_models);
-            let target = if provider == "openai" && !input.chat_models.contains(&name) {
-                format!("text-completion-openai/{name}")
-            } else {
-                model.clone()
+            // main.py rewrites an openai model the chat catalog lacks to the text-completion-openai identity
+            let target = match route_for(&deployment(model)?, &catalog) {
+                CompletionRoute::Text { model: bare } => format!("text-completion-openai/{bare}"),
+                CompletionRoute::Chat { .. } | CompletionRoute::Unsupported { .. } => model.clone(),
             };
             selected.insert(model.clone(), target);
         }

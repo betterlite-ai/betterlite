@@ -132,11 +132,13 @@ async fn completions(
             if let CompletionRequestError::Body { source } = &error {
                 include &= body.is_empty() || !(source.is_syntax() || source.is_eof());
             }
-            return render(
-                &FailureAnswer::request(error.to_string()),
-                &call_id,
-                include,
-            );
+            let answer = FailureAnswer {
+                status: 400,
+                error_type: Some(String::from("invalid_request_error")),
+                param: None,
+                message: error.to_string(),
+            };
+            return render(&answer, &call_id, include);
         }
     };
     let model = path_model
@@ -171,8 +173,9 @@ async fn execute(
             if let Some(model) = asked_model {
                 result.response.model = Some(model);
             }
+            // LiteLLM's completion handler leaves get_custom_headers no provider header, so a 200 carries only x-litellm-*
             let response_headers = success_headers(
-                &result.upstream_headers,
+                &HeaderMap::new(),
                 deployment,
                 call_id,
                 result.upstream_time,

@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::io;
 
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
@@ -42,8 +43,8 @@ pub enum CompletionRequestError {
 }
 
 // OpenAI's completion prompt: one string, a list of strings, token ids, or one token list per prompt
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(from = "Value", into = "Value")]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(from = "Value")]
 pub enum CompletionPrompt {
     Text(String),
     Texts(Vec<String>),
@@ -62,56 +63,72 @@ pub enum PromptRefusal {
     Unreadable,
 }
 
+// a refused prompt keeps the array the client sent, under the shape its dispatch reached
+fn refused(shape: PromptRefusal, items: Vec<Value>) -> CompletionPrompt {
+    match shape {
+        PromptRefusal::Unmapped => CompletionPrompt::Unmapped(Value::Array(items)),
+        PromptRefusal::Unreadable => CompletionPrompt::Unreadable(Value::Array(items)),
+    }
+}
+
 // main.py 7623-7692 dispatches on the first element only, so a later element it cannot convert decides the failure shape
 fn classify(items: Vec<Value>) -> CompletionPrompt {
     let Some(first) = items.first() else {
-        return CompletionPrompt::Unmapped(Value::Array(items));
+        return refused(PromptRefusal::Unmapped, items);
     };
     if first.is_string() {
         return string_first(items);
     }
     // Python's int test accepts no bool or float, so only a JSON integer starts the token branch
     if matches!(first, Value::Number(number) if number.is_i64() || number.is_u64()) {
-        return items
+        let tokens = items
             .iter()
             .map(Value::as_i64)
-            .collect::<Option<Vec<i64>>>()
-            .map_or_else(
-                || CompletionPrompt::Unreadable(Value::Array(items)),
-                CompletionPrompt::Tokens,
-            );
+            .collect::<Option<Vec<i64>>>();
+        return tokens.map_or_else(
+            || refused(PromptRefusal::Unreadable, items),
+            CompletionPrompt::Tokens,
+        );
     }
     if first.is_array() {
-        return items
+        let rows = items
             .iter()
             .map(|item| {
-                item.as_array()
-                    .and_then(|inner| inner.iter().map(Value::as_i64).collect())
+                let inner = item.as_array()?;
+                inner.iter().map(Value::as_i64).collect()
             })
-            .collect::<Option<Vec<Vec<i64>>>>()
-            .map_or_else(
-                || CompletionPrompt::Unreadable(Value::Array(items)),
-                CompletionPrompt::TokenLists,
-            );
+            .collect::<Option<Vec<Vec<i64>>>>();
+        return rows.map_or_else(
+            || refused(PromptRefusal::Unreadable, items),
+            CompletionPrompt::TokenLists,
+        );
     }
-    CompletionPrompt::Unmapped(Value::Array(items))
+    refused(PromptRefusal::Unmapped, items)
 }
 
-// the file-id pass walks every message before any transform, so a truthy number or bool fails the whole prompt first
+// the file-id pass walks every message before any transform, so a truthy number or bool fails the whole prompt before a list does
 fn string_first(items: Vec<Value>) -> CompletionPrompt {
-    let scalars = items.iter().any(|item| {
-        matches!(item, Value::Bool(true))
-            || matches!(item, Value::Number(number) if number.as_f64() != Some(0.0))
-    });
-    if scalars {
-        return CompletionPrompt::Unmapped(Value::Array(items));
+    let mut scalar = false;
+    let mut block = false;
+    for item in &items {
+        match item {
+            Value::Bool(true) => scalar = true,
+            Value::Number(number) if number.as_f64() != Some(0.0_f64) => scalar = true,
+            // a non-empty list is one convert_content_list_to_str cannot read; every other non-string reads as ""
+            Value::Array(content) if !content.is_empty() => block = true,
+            Value::String(_)
+            | Value::Bool(false)
+            | Value::Number(_)
+            | Value::Array(_)
+            | Value::Null
+            | Value::Object(_) => {}
+        }
     }
-    // a later non-empty list is one convert_content_list_to_str cannot read; every other later non-string reads as ""
-    if items
-        .iter()
-        .any(|item| matches!(item, Value::Array(content) if !content.is_empty()))
-    {
-        return CompletionPrompt::Unreadable(Value::Array(items));
+    if scalar {
+        return refused(PromptRefusal::Unmapped, items);
+    }
+    if block {
+        return refused(PromptRefusal::Unreadable, items);
     }
     CompletionPrompt::Texts(
         items
@@ -133,8 +150,14 @@ impl CompletionPrompt {
                     .collect()
             });
         }
-        (!matches!(self, Self::Unmapped(_) | Self::Unreadable(_)))
-            .then(|| vec![user_message(Value::from(self.clone()))])
+        // the client's value as it arrived, token ids staying numbers
+        let content = match self {
+            Self::Text(text) => Value::from(text.as_str()),
+            Self::Tokens(tokens) => Value::from(tokens.clone()),
+            Self::TokenLists(lists) => Value::from(lists.clone()),
+            Self::Texts(_) | Self::Unmapped(_) | Self::Unreadable(_) => return None,
+        };
+        Some(vec![user_message(content)])
     }
 
     #[must_use]
@@ -152,19 +175,10 @@ impl From<Value> for CompletionPrompt {
         match value {
             Value::String(text) => Self::Text(text),
             Value::Array(items) => classify(items),
-            other => Self::Unmapped(other),
-        }
-    }
-}
-
-impl From<CompletionPrompt> for Value {
-    fn from(prompt: CompletionPrompt) -> Self {
-        match prompt {
-            CompletionPrompt::Text(text) => Self::String(text),
-            CompletionPrompt::Texts(texts) => Self::from(texts),
-            CompletionPrompt::Tokens(tokens) => Self::from(tokens),
-            CompletionPrompt::TokenLists(lists) => Self::from(lists),
-            CompletionPrompt::Unmapped(value) | CompletionPrompt::Unreadable(value) => value,
+            Value::Null => Self::Unmapped(Value::Null),
+            Value::Bool(flag) => Self::Unmapped(Value::Bool(flag)),
+            Value::Number(number) => Self::Unmapped(Value::Number(number)),
+            Value::Object(fields) => Self::Unmapped(Value::Object(fields)),
         }
     }
 }
@@ -181,13 +195,16 @@ fn user_message(content: Value) -> Value {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct CompletionRequest {
     pub model: Option<String>,
+    // the prompt is never part of optional_params; it reaches the provider as the message the transport builds
+    #[serde(skip_serializing)]
     pub prompt: CompletionPrompt,
     pub stream: Option<bool>,
     pub stream_options: Option<StreamOptions>,
     pub max_tokens: Option<i64>,
     pub temperature: Option<serde_json::Number>,
     pub top_p: Option<serde_json::Number>,
-    pub n: Option<i64>,
+    #[serde(rename = "n")]
+    pub count: Option<i64>,
     pub stop: Option<Stop>,
     pub presence_penalty: Option<serde_json::Number>,
     pub frequency_penalty: Option<serde_json::Number>,
@@ -238,20 +255,22 @@ impl CompletionRequest {
         Ok(())
     }
 
-    // the transform overlays these onto model/prompt; stream is a control here because a stream request never reaches the text endpoint
+    // the transform overlays these onto model/prompt; a stream request never reaches the text endpoint
     pub fn optional_params(&self) -> Result<Map<String, Value>, CompletionRequestError> {
         let Value::Object(mut params) = serde_json::to_value(self)
             .map_err(|source| CompletionRequestError::Encode { source })?
         else {
             return Err(CompletionRequestError::Encode {
-                source: serde_json::Error::io(std::io::Error::other(
+                source: serde_json::Error::io(io::Error::other(
                     "the completion request did not serialize as an object",
                 )),
             });
         };
         params.remove("model");
-        params.remove("prompt");
-        params.remove("stream");
+        // a stream request goes to the not-built TextStream entry; an explicit false reaches the provider like LiteLLM's optional_params
+        if self.stream == Some(true) {
+            params.remove("stream");
+        }
         params.retain(|name, _| SUPPORTED_PARAMS.contains(&name.as_str()));
         Ok(params)
     }

@@ -14,26 +14,6 @@ pub(super) struct FailureAnswer {
     pub(super) message: String,
 }
 
-impl FailureAnswer {
-    pub(super) fn request(message: String) -> Self {
-        Self {
-            status: 400,
-            error_type: Some(String::from("invalid_request_error")),
-            param: None,
-            message,
-        }
-    }
-
-    fn internal(message: &str) -> Self {
-        Self {
-            status: 500,
-            error_type: Some(String::from("internal_server_error")),
-            param: None,
-            message: String::from(message),
-        }
-    }
-}
-
 pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
     match error {
         DispatchError::Rejected {
@@ -66,9 +46,12 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
         | DispatchError::MismatchedOperation { .. }
         | DispatchError::Rules { .. }
         | DispatchError::Chat { .. }
-        | DispatchError::Embedding { .. } => {
-            FailureAnswer::internal("the completion call could not be dispatched")
-        }
+        | DispatchError::Embedding { .. } => FailureAnswer {
+            status: 500,
+            error_type: Some(String::from("internal_server_error")),
+            param: None,
+            message: String::from("the completion call could not be dispatched"),
+        },
     }
 }
 

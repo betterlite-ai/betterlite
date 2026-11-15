@@ -89,9 +89,9 @@ fn header_value(name: &str, value: &str) -> Result<HeaderValue, SdkError> {
 
 impl HttpCompletionSdk {
     fn prepare(&self, data: &Map<String, Value>) -> Result<Prepared, SdkError> {
-        let mut body = data.clone();
+        let mut payload = data.clone();
         // the SDK reads extra_headers as request options, so they never become part of the JSON body
-        let extra = body.remove("extra_headers");
+        let extra = payload.remove("extra_headers");
         let url = Url::parse(&format!(
             "{}/completions",
             self.base_url.trim_end_matches('/')
@@ -100,9 +100,10 @@ impl HttpCompletionSdk {
             message: format!("the completion base URL is not a URL: {source}"),
         })?;
         let headers = self.request_headers(extra)?;
-        let body = serde_json::to_vec(&Value::Object(body)).map_err(|source| SdkError::Other {
-            message: format!("the completion request could not be written as JSON: {source}"),
-        })?;
+        let body =
+            serde_json::to_vec(&Value::Object(payload)).map_err(|source| SdkError::Other {
+                message: format!("the completion request could not be written as JSON: {source}"),
+            })?;
         Ok(Prepared { url, headers, body })
     }
 

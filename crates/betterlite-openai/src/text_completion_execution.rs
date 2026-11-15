@@ -63,7 +63,13 @@ impl CompletionExecutor {
                 authorization: deployment.credential(),
                 facts: Arc::clone(&facts),
             },
-            configs: completion_configs(),
+            // the four provider tags main.py's text completion switch reaches, all sharing the one transform
+            configs: TextCompletionConfigs {
+                open_ai: transform_completion_request,
+                fireworks_ai: transform_completion_request,
+                together_ai: transform_completion_request,
+                text_completion_inception: transform_completion_request,
+            },
             now: system_instant,
             next_id: Uuid::new_v4,
         };
@@ -79,15 +85,15 @@ impl CompletionExecutor {
                     "the provider completion could not be read: {source}"
                 ))
             })?;
-        let facts = facts
+        let captured = facts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take()
             .unwrap_or_default();
         Ok(CompletionAnswer {
             response: Box::new(response),
-            upstream_headers: facts.headers,
-            upstream_time: facts.elapsed,
+            upstream_headers: captured.headers,
+            upstream_time: captured.elapsed,
         })
     }
 }
@@ -114,7 +120,9 @@ fn transport_request(
         timeout: request.timeout.unwrap_or(deployment.timeout_seconds),
         // main.py's text dispatch leaves the handler's organization at None, so no openai-organization header is sent
         organization: None,
-        optional_params: request.optional_params().map_err(request_failure)?,
+        optional_params: request
+            .optional_params()
+            .map_err(|error| request_failure(&error))?,
         headers: None,
         acompletion: true,
     })
@@ -136,14 +144,4 @@ async fn drive(
     transport
         .finish(&begun, sent, &mut *logger)
         .map_err(|failure| transport_failure(failure, redactor))
-}
-
-#[must_use]
-pub const fn completion_configs() -> TextCompletionConfigs {
-    TextCompletionConfigs {
-        open_ai: transform_completion_request,
-        fireworks_ai: transform_completion_request,
-        together_ai: transform_completion_request,
-        text_completion_inception: transform_completion_request,
-    }
 }

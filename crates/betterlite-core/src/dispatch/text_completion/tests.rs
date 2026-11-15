@@ -108,7 +108,6 @@ enum Scenario {
     ExpiredDeadline,
     MissingDeployment,
     FailureBecomesRejected,
-    NullTypeBecomesRejected,
 }
 
 #[rstest]
@@ -118,7 +117,6 @@ enum Scenario {
 #[case::expired_deadline(Scenario::ExpiredDeadline)]
 #[case::missing_deployment(Scenario::MissingDeployment)]
 #[case::failure_becomes_rejected(Scenario::FailureBecomesRejected)]
-#[case::null_type_becomes_rejected(Scenario::NullTypeBecomesRejected)]
 #[tokio::test]
 async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
@@ -138,7 +136,6 @@ async fn call_dispatch_tests_behavior(#[case] scenario: Scenario) {
             .await;
         }
         Scenario::FailureBecomesRejected => failure_becomes_rejected().await,
-        Scenario::NullTypeBecomesRejected => null_type_becomes_rejected().await,
     }
 }
 
@@ -265,17 +262,10 @@ async fn refused_before_transport(
     assert!(calls.seen().is_empty());
 }
 
-async fn failure_becomes_rejected() {
+// the shared Rejected variant takes the provider failure's status and carries a null type as an empty string
+async fn rejection_error(failure: TextCompletionFailure) -> (DispatchError, Trace) {
     let trace = Trace::default();
-    let calls = Arc::new(FakeCompletion::failing(
-        trace.clone(),
-        TextCompletionFailure {
-            status: 429,
-            error_type: Some(String::from("throttling_error")),
-            param: Some(String::from("prompt")),
-            message: String::from("slow down"),
-        },
-    ));
+    let calls = Arc::new(FakeCompletion::failing(trace.clone(), failure));
     let log = Arc::new(RecordingLog::new(trace.clone()));
     let dispatch = Arc::new(Dispatch::new(
         vec![deployment(MODEL_ID, Duration::from_mins(100))],
@@ -297,56 +287,42 @@ async fn failure_becomes_rejected() {
     else {
         panic!("the provider failure must fail the call");
     };
+    (error, trace)
+}
+
+async fn failure_becomes_rejected() {
+    let (typed, typed_trace) = rejection_error(TextCompletionFailure {
+        status: 429,
+        error_type: Some(String::from("throttling_error")),
+        param: Some(String::from("prompt")),
+        message: String::from("slow down"),
+    })
+    .await;
     assert!(matches!(
-        error,
+        typed,
         DispatchError::Rejected {
             status: 429,
             ref error_type,
             ..
         } if error_type == "throttling_error"
     ));
-    assert_eq!(trace.steps(), ["complete", "failure"]);
-}
+    assert_eq!(typed_trace.steps(), ["complete", "failure"]);
 
-async fn null_type_becomes_rejected() {
-    let trace = Trace::default();
-    let calls = Arc::new(FakeCompletion::failing(
-        trace.clone(),
-        TextCompletionFailure {
-            status: 500,
-            error_type: None,
-            param: None,
-            message: String::from("unmapped prompt"),
-        },
-    ));
-    let log = Arc::new(RecordingLog::new(trace.clone()));
-    let dispatch = Arc::new(Dispatch::new(
-        vec![deployment(MODEL_ID, Duration::from_mins(100))],
-        Arc::new(crate::dispatch::NoRules),
-        log,
-    ));
-    let context = context(None, SystemTime::UNIX_EPOCH);
-    let Err(error) = dispatch
-        .execute(
-            crate::operation::Operation::TextCompletion(request(
-                "completion-7",
-                MODEL_ID,
-                Arc::clone(&dispatch),
-                calls,
-            )),
-            &context,
-        )
-        .await
-    else {
-        panic!("a provider failure without a type must fail the call");
-    };
+    // a null type has no text of its own, so it travels as an empty string and serializes as null again
+    let (untyped, untyped_trace) = rejection_error(TextCompletionFailure {
+        status: 500,
+        error_type: None,
+        param: None,
+        message: String::from("unmapped prompt"),
+    })
+    .await;
     assert!(matches!(
-        error,
+        untyped,
         DispatchError::Rejected {
             status: 500,
             ref error_type,
             ..
         } if error_type.is_empty()
     ));
-    assert_eq!(trace.steps(), ["complete", "failure"]);
+    assert_eq!(untyped_trace.steps(), ["complete", "failure"]);
 }

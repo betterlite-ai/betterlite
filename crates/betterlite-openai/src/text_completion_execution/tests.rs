@@ -11,7 +11,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 use tempfile::NamedTempFile;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -28,7 +28,7 @@ use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::text_completion_request::CompletionRequest;
 use crate::text_completion_transport::error::{ErrorSource, ErrorStatus, TextCompletionError};
 use crate::text_completion_transport::logging::{
-    CompletionLogger, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
+    CompletionLogger as _, PostCallRecord, PreCallRecord, ResponseKind, SecretHeaders,
 };
 use crate::text_completion_transport::sdk::{
     ClientConstructor as _, ClientKind, HttpClientSource, SdkArguments, TextCompletionSdk as _,
@@ -215,7 +215,7 @@ fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
             let built = transport_request(&deployment, &request, "gpt-3.5-turbo-instruct")
                 .expect("transport request");
             assert_eq!(built.api_base.as_deref(), Some("http://127.0.0.1:9/v1"));
-            assert!(built.timeout > 0.0);
+            assert!(built.timeout > 0.0_f64);
             assert!(built.acompletion);
         }
         Scenario::UnsupportedProvider => {
@@ -237,15 +237,18 @@ fn an_unmapped_prompt_fails_before_any_provider_call() {
     assert_eq!(failure.error_type, None);
 
     let unreadable = completion(r#"[["a"]]"#);
-    let failure = transport_request(
+    let unreadable_failure = transport_request(
         &deployment("openai/gpt-3.5-turbo-instruct"),
         &unreadable,
         "m",
     )
     .err()
     .expect("unreadable prompt");
-    assert_eq!(failure.status, 500);
-    assert_eq!(failure.error_type.as_deref(), Some("internal_server_error"));
+    assert_eq!(unreadable_failure.status, 500);
+    assert_eq!(
+        unreadable_failure.error_type.as_deref(),
+        Some("internal_server_error")
+    );
 }
 
 #[test]
@@ -261,9 +264,9 @@ fn the_completion_call_takes_the_body_timeout_and_never_the_configured_organizat
         br#"{"model":"gpt-3.5-turbo-instruct","prompt":"hi","timeout":2.5}"#,
     )
     .expect("completion request");
-    let built = transport_request(&deployment, &timed, "gpt-3.5-turbo-instruct")
+    let timed_built = transport_request(&deployment, &timed, "gpt-3.5-turbo-instruct")
         .expect("transport request");
-    assert!((built.timeout - 2.5).abs() < f64::EPSILON);
+    assert!((timed_built.timeout - 2.5).abs() < f64::EPSILON);
 }
 
 #[test]
@@ -278,7 +281,10 @@ fn the_route_logger_records_counts_and_never_the_prompt() {
         let mut logger = TracingCompletionLog;
         logger
             .pre_call(PreCallRecord {
-                input: vec![json!({"role": "user", "content": "secret prompt"})],
+                input: vec![Value::Object(Map::from_iter([
+                    (String::from("role"), Value::from("user")),
+                    (String::from("content"), Value::from("secret prompt")),
+                ]))],
                 api_key: None,
                 headers: SecretHeaders::default(),
                 api_base: Some(String::from("http://upstream.test/v1")),

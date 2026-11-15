@@ -1,20 +1,17 @@
 task: B202
 deviations:
-  - what: A request-level api_base or api_key is read as a control and never reaches the provider; LiteLLM forwards both to the SDK constructor.
-    why: Outbound URLs and credentials come only from the deployment config, so a request body cannot redirect a call or supply a credential.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7480-L7482
-  - what: Client mock controls (mock_response, mock_tool_calls, mock_timeout, mock_delay) are dropped instead of answering with a mock completion.
-    why: betterlite's mock framework is configured per deployment; a client-supplied mock response is not part of the completion route yet, matching the embeddings route's refusal to honor one.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L656
+  - what: A body's api_base, api_key, api_version, engine, litellm_params, metadata, num_retries and mock controls (mock_response, mock_tool_calls, mock_timeout, mock_delay) are read as controls and never reach the provider; LiteLLM forwards api_base and api_key to the SDK constructor and answers a mock control with a client mock.
+    why: Outbound URLs and credentials come only from the deployment config, so a request body cannot redirect a call or supply a credential; betterlite's mock framework is configured per deployment, and none of the other controls changes the OpenAI text provider request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460-L7487
   - what: A completion parameter outside the text config's allowlist answers 400 invalid_request_error naming the parameter; LiteLLM raises UnsupportedParamsError, which the proxy answers with 500. The same refusal names the fallbacks, model_list, custom_llm_provider and deployment_id controls, which LiteLLM acts on.
     why: betterlite names the field and its own message, and docs/compatibility makes a value of the wrong type a named client error; the status differs only for a request that fails on both sides. A per-request fallback list, deployment list, provider or deployment id is not built, so refusing the control by name beats ignoring it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4540
-  - what: A body's api_version, engine, litellm_params, metadata and num_retries are read as controls and dropped.
-    why: None of them changes the OpenAI text provider request; retries arrive with B017 and call metadata belongs to logging.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460-L7487
-  - what: A request body carrying top_logprobs reaches the provider; LiteLLM lists the parameter as supported but its SDK call rejects it, so every such request answers 500 before any provider call.
-    why: A working LiteLLM setup cannot rely on a parameter that always fails, and the text config names top_logprobs as supported; betterlite forwards it and the provider decides.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L121-L144
+  - what: A request body carrying top_logprobs, functions, function_call, tools, tool_choice or response_format reaches the provider; LiteLLM's text config lists them as supported but its completions.create(**data) call rejects them, so every such request answers 500 before any provider call.
+    why: A working LiteLLM setup cannot rely on a parameter that always fails, and the text config names all six as supported; betterlite forwards them and the provider decides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/handler.py#L140
+  - what: The /engines/{model}/completions and /openai/deployments/{model}/completions aliases take a model name without a slash, so a slash-containing model answers 404 instead of routing; LiteLLM declares both with {model:path}, which spans slashes.
+    why: axum's matchit 0.8 refuses a catch-all that has a literal suffix after it, so /engines/{*model}/completions cannot be registered; /v1/completions and /completions take the model from the body and serve the same requests.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12107-L12116
   - what: A later content-block list in a string-first prompt, such as ["a",[{"type":"text","text":"x"}]], answers 500 internal_server_error; LiteLLM concatenates each block's text and forwards the prompt as two strings.
     why: The completion prompt declares a later element as a string or a token list, and the text transform reads each element as a string; a block list is a message-content shape the OpenAI completion API does not declare.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L172-L179

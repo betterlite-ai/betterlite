@@ -45,14 +45,14 @@ fn prompt_shapes_become_messages(#[case] prompt: &str, #[case] expected: &str) {
     let body = format!(r#"{{"model":"m","prompt":{prompt}}}"#);
     let request = parsed(&body);
     let messages = request.prompt.messages().expect("messages");
-    let expected: Value = serde_json::from_str(expected).expect("expected messages");
-    assert_eq!(Value::Array(messages), expected);
+    let wanted: Value = serde_json::from_str(expected).expect("expected messages");
+    assert_eq!(Value::Array(messages), wanted);
 }
 
 #[rstest]
 #[case::empty_list("[]")]
 #[case::number("5")]
-#[case::float(r#"[1.5]"#)]
+#[case::float("[1.5]")]
 #[case::null("null")]
 #[case::object(r#"{"a":1}"#)]
 #[case::mixed_string_and_number(r#"["a",1]"#)]
@@ -98,9 +98,10 @@ fn a_missing_prompt_is_a_body_error() {
 #[test]
 fn token_prompts_serialize_ids_as_numbers_in_their_nested_shape() {
     let request = parsed(r#"{"model":"m","prompt":[[1,2],[3]]}"#);
+    let messages = request.prompt.messages().expect("messages");
     assert_eq!(
-        Value::from(request.prompt.clone()),
-        serde_json::from_str::<Value>("[[1,2],[3]]").expect("token lists")
+        messages.first().and_then(|message| message.get("content")),
+        Some(&serde_json::from_str::<Value>("[[1,2],[3]]").expect("token lists"))
     );
     assert_eq!(
         parsed(r#"{"model":"m","prompt":"x"}"#).prompt,
@@ -130,7 +131,7 @@ fn controls_never_reach_the_provider_params(#[case] control: &str) {
     );
     let params = request.optional_params().expect("optional params");
     assert!(!params.contains_key(control), "{control} leaked");
-    assert_eq!(params.get("max_retries"), Some(&Value::from(4)));
+    assert_eq!(params.get("max_retries"), Some(&Value::from(4_i64)));
 }
 
 #[test]
@@ -193,12 +194,35 @@ fn unsupported_parameters_are_refused_by_name(#[case] body: &str) {
     assert!(!name.is_empty());
 }
 
+// main.py puts stream in optional_params whenever it is not None; stream true goes to the not-built TextStream entry instead
 #[test]
-fn stream_is_read_but_kept_out_of_the_provider_params() {
+fn stream_true_is_kept_out_of_the_provider_params_and_an_explicit_false_is_forwarded() {
     let request = parsed(r#"{"model":"m","prompt":"x","stream":true}"#);
     assert_eq!(request.stream, Some(true));
     let params = request.optional_params().expect("optional params");
     assert!(!params.contains_key("stream"));
+
+    let answered = parsed(r#"{"model":"m","prompt":"x","stream":false}"#);
+    let params = answered.optional_params().expect("optional params");
+    assert_eq!(params.get("stream"), Some(&Value::from(false)));
+}
+
+// the text config lists these as supported, so betterlite forwards them and the provider decides
+#[test]
+fn the_sdk_rejected_parameters_are_forwarded() {
+    let request = parsed(
+        r#"{"model":"m","prompt":"x","response_format":{"type":"json_object"},"functions":[],"function_call":"none","tools":[],"tool_choice":"auto"}"#,
+    );
+    let params = request.optional_params().expect("optional params");
+    for name in [
+        "response_format",
+        "functions",
+        "function_call",
+        "tools",
+        "tool_choice",
+    ] {
+        assert!(params.contains_key(name), "{name} dropped");
+    }
 }
 
 #[rstest]

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::str;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
@@ -133,7 +134,7 @@ async fn answered(
     let status = response.status();
     let headers = response.headers().clone();
     let bytes = to_bytes(response.into_body(), 1 << 20).await.expect("body");
-    let raw = std::str::from_utf8(&bytes).expect("utf8 body").to_owned();
+    let raw = str::from_utf8(&bytes).expect("utf8 body").to_owned();
     Answered {
         status,
         headers,
@@ -159,6 +160,7 @@ enum Scenario {
     ProviderBadRequest,
     ProviderRateLimit,
     StreamNotBuilt,
+    StreamFalse,
     AuthRequired,
 }
 
@@ -177,6 +179,7 @@ enum Scenario {
 #[case::provider_bad_request(Scenario::ProviderBadRequest)]
 #[case::provider_rate_limit(Scenario::ProviderRateLimit)]
 #[case::stream_not_built(Scenario::StreamNotBuilt)]
+#[case::stream_false(Scenario::StreamFalse)]
 #[case::auth_required(Scenario::AuthRequired)]
 #[tokio::test]
 async fn text_completions_text_completion_tests_behavior(#[case] scenario: Scenario) {
@@ -195,6 +198,7 @@ async fn text_completions_text_completion_tests_behavior(#[case] scenario: Scena
         Scenario::ProviderBadRequest => provider_error(400, None).await,
         Scenario::ProviderRateLimit => provider_error(429, Some("throttling_error")).await,
         Scenario::StreamNotBuilt => stream_not_built().await,
+        Scenario::StreamFalse => stream_false().await,
         Scenario::AuthRequired => auth_required().await,
     }
 }
@@ -228,6 +232,17 @@ async fn string_prompt() {
         answered.sent.starts_with("POST /v1/completions "),
         "{}",
         answered.sent
+    );
+    // the completion handler leaves get_custom_headers with no provider headers, so a 200 carries none of the provider's
+    assert!(
+        !answered.headers.contains_key("llm_provider-x-request-id"),
+        "{:?}",
+        answered.headers
+    );
+    assert!(
+        !answered.headers.contains_key("llm_provider-content-type"),
+        "{:?}",
+        answered.headers
     );
 }
 
@@ -403,6 +418,18 @@ async fn provider_error(status: u16, error_type: Option<&str>) {
     );
 }
 
+async fn stream_false() {
+    let body = r#"{"model":"text-model","prompt":"hi","stream":false}"#;
+    let answered = call("/v1/completions", body, 200, ANSWER).await;
+    assert_eq!(answered.status, StatusCode::OK);
+    // LiteLLM puts stream in optional_params whenever it is not None, so the provider body keeps the explicit false
+    assert!(
+        answered.sent.contains(r#""stream":false"#),
+        "{}",
+        answered.sent
+    );
+}
+
 async fn stream_not_built() {
     let body = r#"{"model":"text-model","prompt":"hi","stream":true}"#;
     let answered = call("/v1/completions", body, 200, ANSWER).await;
@@ -458,6 +485,19 @@ async fn error_bodies_carry_the_call_id_when_the_setting_is_on() {
         empty.raw.contains(r#""litellm_call_id":"caller-id""#),
         "{}",
         empty.raw
+    );
+
+    // a body that parses as JSON but not as a completion request is read before LiteLLM builds the call id, so the id stays
+    let data = call_with_call_id_in_body(
+        r#"{"model":"text-model","prompt":"hi","stream":"yes"}"#,
+        true,
+    )
+    .await;
+    assert_eq!(data.status, StatusCode::BAD_REQUEST);
+    assert!(
+        data.raw.contains(r#""litellm_call_id":"caller-id""#),
+        "{}",
+        data.raw
     );
 
     // this body parsed, so its refusal carries the id LiteLLM had already resolved

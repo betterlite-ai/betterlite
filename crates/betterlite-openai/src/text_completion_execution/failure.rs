@@ -19,23 +19,22 @@ pub struct CompletionFailure {
 }
 
 impl CompletionFailure {
-    pub(super) fn internal(message: String) -> Self {
+    const fn new(status: u16, error_type: Option<String>, message: String) -> Self {
         Self {
-            status: 500,
-            error_type: Some(String::from("internal_server_error")),
+            status,
+            error_type,
             param: None,
             message,
         }
     }
 
+    pub(super) fn internal(message: String) -> Self {
+        Self::new(500, Some(String::from("internal_server_error")), message)
+    }
+
     // main.py's own "Unmapped prompt format" Exception reaches the client as an APIConnectionError, whose type is null
-    pub(super) fn unmapped(message: String) -> Self {
-        Self {
-            status: 500,
-            error_type: None,
-            param: None,
-            message,
-        }
+    pub(super) const fn unmapped(message: String) -> Self {
+        Self::new(500, None, message)
     }
 
     pub(super) fn route(route: &CompletionRoute) -> Self {
@@ -43,29 +42,26 @@ impl CompletionFailure {
             CompletionRoute::Text { .. } => Self::internal(String::from(
                 "betterlite does not serve this completion deployment yet",
             )),
-            CompletionRoute::Chat { .. } => Self {
-                status: 500,
-                error_type: Some(String::from("internal_server_error")),
-                param: None,
-                message: String::from("betterlite does not serve chat-model text completions yet"),
-            },
-            CompletionRoute::Unsupported { provider } => Self {
-                status: 501,
-                error_type: Some(String::from("internal_server_error")),
-                param: None,
-                message: format!("betterlite does not serve text completions for {provider}"),
-            },
+            CompletionRoute::Chat { .. } => Self::new(
+                500,
+                Some(String::from("internal_server_error")),
+                String::from("betterlite does not serve chat-model text completions yet"),
+            ),
+            CompletionRoute::Unsupported { provider } => Self::new(
+                501,
+                Some(String::from("internal_server_error")),
+                format!("betterlite does not serve text completions for {provider}"),
+            ),
         }
     }
 }
 
-pub(super) fn request_failure(error: CompletionRequestError) -> CompletionFailure {
-    CompletionFailure {
-        status: 400,
-        error_type: Some(String::from("invalid_request_error")),
-        param: None,
-        message: error.to_string(),
-    }
+pub(super) fn request_failure(error: &CompletionRequestError) -> CompletionFailure {
+    CompletionFailure::new(
+        400,
+        Some(String::from("invalid_request_error")),
+        error.to_string(),
+    )
 }
 
 // The unwrapped SDK exception fails the way the route's own except does, with no type of its own
@@ -75,12 +71,7 @@ pub(super) fn transport_failure(
 ) -> CompletionFailure {
     match failure {
         TextCompletionFailure::Wrapped(error) => wrapped_failure(&error, redactor),
-        TextCompletionFailure::Raw(error) => CompletionFailure {
-            status: 500,
-            error_type: None,
-            param: None,
-            message: error.to_string(),
-        },
+        TextCompletionFailure::Raw(error) => CompletionFailure::new(500, None, error.to_string()),
     }
 }
 

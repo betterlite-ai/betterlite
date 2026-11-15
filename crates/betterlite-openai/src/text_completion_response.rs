@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 // B2238's normalization forces object and defaults usage and every choice field; extra keeps the provider's other fields
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CompletionResponse {
     #[serde(default)]
     pub id: String,
@@ -23,7 +23,7 @@ pub struct CompletionResponse {
 }
 
 // B188's redact_choice blanks the text of a choice when message logging is turned off, so this type keeps that shape
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CompletionChoice {
     #[serde(default)]
     pub text: Option<String>,
@@ -37,7 +37,7 @@ pub struct CompletionChoice {
     pub extra: Map<String, Value>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct CompletionUsage {
     #[serde(default)]
     pub prompt_tokens: i64,
