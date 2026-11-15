@@ -335,16 +335,17 @@ fn a_single_non_text_tool_part_keeps_its_python_json_text() {
     );
 }
 
-// the deviation log records that a typed part writes type first, whatever position the caller gave it
+// the deviation log records that a typed part writes type first and sorts its other keys, whatever order the caller gave
 #[test]
 fn a_dumped_tool_part_writes_type_before_the_callers_other_keys() {
-    let transformed =
-        tool_messages(r#"[{"role": "tool", "content": [{"text": "kept", "type": "audio"}]}]"#);
+    let transformed = tool_messages(
+        r#"[{"role": "tool", "content": [{"text": "kept", "alt": "b", "type": "audio"}]}]"#,
+    );
     assert_eq!(
         serde_json::to_value(&transformed[0]).unwrap(),
         serde_json::json!({
             "role": "tool",
-            "content": r#"[{"type": "audio", "text": "kept"}]"#,
+            "content": r#"[{"type": "audio", "alt": "b", "text": "kept"}]"#,
         })
     );
 }

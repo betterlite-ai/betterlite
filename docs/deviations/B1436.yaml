@@ -12,8 +12,8 @@ deviations:
   - what: A rerank body or error message past max_body_bytes is left unparsed, so the response keeps the supplied model_response and the error keeps the original message, while LiteLLM parses any length.
     why: The bounded-inputs rule caps untrusted JSON parsing, and both decoders take the limit from their caller.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L183-L184
-  - what: A tool content part whose caller put another key before type is dumped with type first and the other keys in their input order, while LiteLLM's json.dumps keeps the caller's exact order.
-    why: betterlite parses messages into typed parts with type as a named field, so the position of type among a part's keys is not kept.
+  - what: A tool content part whose caller put another key before type is dumped with type first and its other keys sorted, while LiteLLM's json.dumps keeps the caller's exact order.
+    why: betterlite parses messages into typed parts with type as a named field, and the parent transform passes them through serde_json::Value, whose maps sort keys, so neither the position of type nor the order of the other keys is kept.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/chat/transformation.py#L150-L150
 kept_bugs:
   - what: A malformed rerank body, or a post_call hook that raises, returns the supplied model_response with null id, results and meta instead of an error.
