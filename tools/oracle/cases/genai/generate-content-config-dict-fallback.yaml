@@ -1,0 +1,24 @@
+kind: helper
+name: genai-generate-content-config-dict-fallback
+call:
+  b3480:
+    constructs:
+      - record: request
+        fields:
+          model: gemini-2.5-flash
+          contents: []
+          generationConfig:
+            temperature: 0
+            top_p: 0
+            unknownKey: {nested: null}
+            emptyText: ""
+            emptyList: []
+      - record: request
+        fields:
+          model: gemini-2.5-flash
+          contents: []
+          generationConfig: {}
+    top_level: []
+    errors: []
+env: {}
+compare: {ignore: []}

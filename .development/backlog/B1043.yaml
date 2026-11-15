@@ -1,14 +1,14 @@
 id: B1043
 milestone: M5 api families
 title: Batch enqueued refund
-status: todo
+status: done
 depends_on: [B360, B4326, B4327, B4328, B171, B1042, B1087]
 file: tasks/B1043-batch-enqueued-refund.yaml
 covers:
   - "litellm/proxy/hooks/batch_enqueued_tokens.py"
 parent: B086
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1715

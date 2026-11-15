@@ -1,0 +1,15 @@
+kind: helper
+name: gemini-request-studio-omits-labels
+call:
+  gemini_request:
+    model: gemini-2.5-pro
+    provider: gemini
+    supports: {system_message: true, response_schema: true}
+    modify_params: false
+    messages:
+      - {role: user, content: hi}
+    optional_params:
+      labels: {team: core, tier: "3"}
+    litellm_params: {}
+env: {}
+compare: {ignore: []}

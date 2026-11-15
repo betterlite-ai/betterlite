@@ -1,0 +1,18 @@
+kind: helper
+name: genai-get-error-class-status-message-headers
+call:
+  b3480:
+    constructs: []
+    top_level: []
+    errors:
+      - message: rate limited
+        status_code: 429
+        headers: {retry-after: "2", x-request-id: abc}
+      - message: upstream failed
+        status_code: 500
+        headers: {}
+      - message: ""
+        status_code: 400
+        headers: {content-type: application/json}
+env: {}
+compare: {ignore: []}

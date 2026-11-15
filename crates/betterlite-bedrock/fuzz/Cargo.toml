@@ -99,3 +99,10 @@ path = "fuzz_targets/bedrock_other_count_call.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_transcription_reply"
+path = "fuzz_targets/bedrock_transcription_reply.rs"
+test = false
+doc = false
+bench = false
