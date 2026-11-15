@@ -33,7 +33,6 @@ class SpeechConfig(Protocol):
         drop_params: bool,
     ) -> tuple[str | None, Object]: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_text_to_speech_request(
         self,
         _model: str,
@@ -62,7 +61,6 @@ class SpeechConfig(Protocol):
         /,
     ) -> str: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_text_to_speech_response(
         self,
         _model: str,

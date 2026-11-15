@@ -26,11 +26,7 @@ pub(crate) enum Step {
         api_base: Option<String>,
         env_base: Option<String>,
     },
-    SpeechHeaders {
-        api_key: Option<String>,
-        global_key: Option<String>,
-        env_key: Option<String>,
-    },
+    SpeechHeaders(SpeechHeaderKeys),
     SpeechReply {
         status: u16,
         #[serde(default)]
@@ -60,6 +56,13 @@ pub(crate) enum Step {
         #[serde(default)]
         created: i64,
     },
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SpeechHeaderKeys {
+    pub(crate) api_key: Option<String>,
+    pub(crate) global_key: Option<String>,
+    pub(crate) env_key: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

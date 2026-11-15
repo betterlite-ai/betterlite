@@ -55,7 +55,6 @@ class ImageConfig(Protocol):
         /,
     ) -> str: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_image_generation_request(
         self,
         _model: str,
@@ -66,7 +65,6 @@ class ImageConfig(Protocol):
         /,
     ) -> Object: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_image_generation_response(
         self,
         _model: str,

@@ -18,7 +18,7 @@ use serde_json::{Value, json};
 
 use crate::helpers::HelperError;
 
-use super::input::{Step, Voice};
+use super::input::{SpeechHeaderKeys, Step, Voice};
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
@@ -75,6 +75,11 @@ fn header_map(headers: &Headers) -> Result<HeaderMap, Box<HelperError>> {
     Ok(map)
 }
 
+fn speech_params(voice: Option<&Voice>, params: &Object) -> Result<Value, Box<HelperError>> {
+    let mapped = mapped_options(voice, params)?;
+    Ok(json!({"voice": mapped.voice, "params": mapped.params}))
+}
+
 fn speech_body(
     voice: Option<&Voice>,
     model: &str,
@@ -90,14 +95,10 @@ fn speech_body(
     )))
 }
 
-fn speech_headers(
-    api_key: Option<&str>,
-    global_key: Option<&str>,
-    environment_key: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
-    let key = api_key.map(|text| SecretString::from(text.to_owned()));
-    let global = global_key.map(|text| SecretString::from(text.to_owned()));
-    let environment = environment_key.map(|text| SecretString::from(text.to_owned()));
+fn speech_headers(keys: &SpeechHeaderKeys) -> Result<Value, Box<HelperError>> {
+    let key = keys.api_key.clone().map(SecretString::from);
+    let global = keys.global_key.clone().map(SecretString::from);
+    let environment = keys.env_key.clone().map(SecretString::from);
     let headers = validate_environment(
         &Headers::new(),
         key.as_ref(),
@@ -133,7 +134,7 @@ fn speech_reply(status: u16, headers: &Headers, body: &str) -> Result<Value, Box
         headers: &map,
         body: body.as_bytes(),
     };
-    match decode_speech_reply(reply) {
+    match decode_speech_reply(&reply) {
         Ok(response) => render_audio(response),
         Err(error) => Err(error.helper_error()),
     }
@@ -157,7 +158,7 @@ fn image_params(
 
 fn image_reply(status: u16, body: &str, created: i64) -> Result<Value, Box<HelperError>> {
     let reply = decode_image_generation_reply(
-        ImageReply {
+        &ImageReply {
             status,
             body: body.as_bytes(),
         },
@@ -196,10 +197,7 @@ impl Voice {
 
 pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::SpeechParams { voice, params } => {
-            let mapped = mapped_options(voice.as_ref(), params)?;
-            Ok(json!({"voice": mapped.voice, "params": mapped.params}))
-        }
+        Step::SpeechParams { voice, params } => speech_params(voice.as_ref(), params),
         Step::SpeechBody {
             model,
             input,
@@ -210,15 +208,7 @@ pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
             api_base.as_deref(),
             env_base.as_deref(),
         ))),
-        Step::SpeechHeaders {
-            api_key,
-            global_key,
-            env_key,
-        } => speech_headers(
-            api_key.as_deref(),
-            global_key.as_deref(),
-            env_key.as_deref(),
-        ),
+        Step::SpeechHeaders(keys) => speech_headers(keys),
         Step::SpeechReply {
             status,
             headers,

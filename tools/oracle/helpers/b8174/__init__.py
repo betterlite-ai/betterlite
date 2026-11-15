@@ -1,5 +1,6 @@
 from collections.abc import Callable
 
+import litellm
 from pydantic import JsonValue, TypeAdapter
 
 from .image import image_body, image_params, image_reply, image_url
@@ -11,6 +12,9 @@ from .speech import (
     speech_url,
 )
 from .steps import Input, Step
+
+# LiteLLM prints debug output to stdout, which corrupts the helper JSON.
+litellm.suppress_debug_info = True
 
 HANDLERS: dict[str, Callable[[Step], JsonValue]] = {
     "speech_params": speech_params,
