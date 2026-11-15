@@ -351,20 +351,23 @@ trait Counted {
     fn at_least(&self, expected: usize) -> bool;
 }
 
-impl Counted for AtomicUsize {
+impl Counted for &AtomicUsize {
     fn at_least(&self, expected: usize) -> bool {
         self.load(Ordering::SeqCst) >= expected
     }
 }
 
-impl<T> Counted for mpsc::Receiver<T> {
+impl<T> Counted for &mut mpsc::Receiver<T> {
     fn at_least(&self, expected: usize) -> bool {
         self.len() >= expected
     }
 }
 
-async fn wait_for<T: Counted>(counted: &T, expected: usize) {
-    timeout(Duration::from_secs(5), async {
+async fn wait_for<C>(counted: C, expected: usize)
+where
+    C: Counted + Send,
+{
+    timeout(Duration::from_secs(5), async move {
         while !counted.at_least(expected) {
             yield_now().await;
         }
@@ -604,7 +607,7 @@ async fn discard_suppresses_old_events() {
         response(SpeechEventType::Unspecified, 0, 500_000_000),
     )
     .await;
-    wait_for(&harness.backend.outbox, 1).await;
+    wait_for(&mut harness.backend.outbox, 1).await;
     harness.clock.advance(Duration::from_secs(240));
     harness.send_audio(2).await;
     drop(first_responses);
@@ -614,7 +617,7 @@ async fn discard_suppresses_old_events() {
         response(SpeechEventType::Unspecified, 0, 250_000_000),
     )
     .await;
-    wait_for(&harness.backend.outbox, 2).await;
+    wait_for(&mut harness.backend.outbox, 2).await;
     harness.send_text(DISCARD).await;
     let marker = timeout(Duration::from_secs(5), harness.backend.recv())
         .await
@@ -761,12 +764,12 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
                 "the reason names the stream failure: {reason}"
             );
         }
-        other @ ChirpBackendError::Command(_)
-        | other @ ChirpBackendError::Encode(_)
-        | other @ ChirpBackendError::NotConfigured
-        | other @ ChirpBackendError::Token(_)
-        | other @ ChirpBackendError::QueueClosed
-        | other @ ChirpBackendError::Stream(_) => {
+        other @ (ChirpBackendError::Command(_)
+        | ChirpBackendError::Encode(_)
+        | ChirpBackendError::NotConfigured
+        | ChirpBackendError::Token(_)
+        | ChirpBackendError::QueueClosed
+        | ChirpBackendError::Stream(_)) => {
             panic!("expected a stream failure close, got {other:?}")
         }
     }
@@ -776,7 +779,7 @@ async fn a_stream_failure_closes_with_the_stream_failure_code() {
 async fn close_queues_the_closed_sentinel_after_buffered_events() {
     let mut harness = harness(Vec::new());
     harness.send_text(FINISH).await;
-    wait_for(&harness.backend.outbox, 1).await;
+    wait_for(&mut harness.backend.outbox, 1).await;
     harness.backend.close().await;
     harness.backend.close().await;
     assert_eq!(
@@ -815,7 +818,7 @@ async fn drain_outbox(harness: &mut Harness) {
 async fn full_outbox_close() {
     let mut harness = harness(Vec::new());
     fill_outbox(&mut harness).await;
-    wait_for(&harness.backend.outbox, 256).await;
+    wait_for(&mut harness.backend.outbox, 256).await;
     harness.backend.close().await;
     assert_eq!(
         harness.backend.outbox.len(),
