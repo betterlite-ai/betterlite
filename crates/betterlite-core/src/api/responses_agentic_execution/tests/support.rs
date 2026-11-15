@@ -34,7 +34,8 @@ use super::super::responses_plan::execute_responses_agentic_plan;
 use super::super::values::typed_map;
 use super::super::{AgenticResult, LoggingView};
 use crate::api::chat_agentic_loop::tests::support::{
-    CallbackRecords, Script, ScriptedCallback, StopError, json_map, messages, plan, raw,
+    CallbackRecords, Script, ScriptedCallback, StopError, gate, json_map, messages, overrides,
+    plan, raw,
 };
 use crate::api::responses_hook_policy::agentic::AgenticLoopSettings;
 use crate::api::responses_hook_policy::safety::{ApiSurface, sort_json_keys};
@@ -136,6 +137,7 @@ impl Fixture {
     }
 }
 
+#[derive(Default)]
 pub(crate) struct ScriptedExecutor {
     responses: Mutex<Option<Result<Box<RawValue>, StopError>>>,
     anthropic: Mutex<Option<Result<Box<RawValue>, StopError>>>,
@@ -144,39 +146,21 @@ pub(crate) struct ScriptedExecutor {
 }
 
 impl ScriptedExecutor {
-    fn empty() -> Self {
-        Self {
-            responses: Mutex::new(None),
-            anthropic: Mutex::new(None),
-            responses_calls: Mutex::new(Vec::new()),
-            anthropic_calls: Mutex::new(Vec::new()),
-        }
-    }
-
     pub(crate) fn responding(body: &str) -> Self {
-        let executor = Self::empty();
-        *executor
-            .responses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(Ok(raw(body)));
+        let executor = Self::default();
+        fill(&executor.responses, Ok(raw(body)));
         executor
     }
 
     pub(crate) fn anthropic_responding(body: &str) -> Self {
-        let executor = Self::empty();
-        *executor
-            .anthropic
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(Ok(raw(body)));
+        let executor = Self::default();
+        fill(&executor.anthropic, Ok(raw(body)));
         executor
     }
 
     pub(crate) fn failing(message: &'static str) -> Self {
-        let executor = Self::empty();
-        *executor
-            .responses
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(Err(StopError { message }));
+        let executor = Self::default();
+        fill(&executor.responses, Err(StopError { message }));
         executor
     }
 
@@ -199,6 +183,14 @@ impl ScriptedExecutor {
             .len()
             .saturating_add(self.anthropic_calls().len())
     }
+}
+
+fn fill(
+    slot: &Mutex<Option<Result<Box<RawValue>, StopError>>>,
+    answer: Result<Box<RawValue>, StopError>,
+) {
+    let mut scripted = slot.lock().unwrap_or_else(PoisonError::into_inner);
+    *scripted = Some(answer);
 }
 
 fn take_script(
@@ -363,10 +355,41 @@ pub(crate) fn plan_with_patch(request_patch: AgenticLoopRequestPatch) -> Agentic
     plan(Some(request_patch), None, false, true)
 }
 
+pub(crate) fn gated_script(tools: &JsonMap) -> Script {
+    Script::default()
+        .with_overrides(overrides(true, false, false))
+        .with_gate(gate(true, tools.clone()))
+}
+
+pub(crate) fn legacy_script(body: &str) -> Script {
+    Script::default()
+        .with_overrides(overrides(true, false, false))
+        .with_gate(gate(true, JsonMap::new()))
+        .with_legacy(Some(raw(body)))
+}
+
+pub(crate) fn null_legacy_script() -> Script {
+    Script::default()
+        .with_overrides(overrides(true, false, false))
+        .with_gate(gate(true, JsonMap::new()))
+        .with_legacy(None)
+}
+
+pub(crate) fn plan_script(tools: &JsonMap, request_patch: AgenticLoopRequestPatch) -> Script {
+    Script::default()
+        .with_overrides(overrides(true, true, false))
+        .with_gate(gate(true, tools.clone()))
+        .with_plan(plan_with_patch(request_patch))
+}
+
 // the direct plan-executor harness: one callback, one plan, one gate, no dispatcher above it
 pub(crate) struct PlanHarness {
     pub fixture: Fixture,
     pub callback: Arc<RecordingCallback>,
+    pub state: PlanState,
+}
+
+pub(crate) struct PlanState {
     pub gate: AgenticGate,
     pub tool_calls: Json,
     pub settings: AgenticLoopSettings,
@@ -376,25 +399,34 @@ pub(crate) struct PlanHarness {
     pub logging: Option<AgenticLogging>,
 }
 
+impl Default for PlanState {
+    fn default() -> Self {
+        Self {
+            gate: AgenticGate::default(),
+            tool_calls: Json::Null,
+            settings: AgenticLoopSettings {
+                depth: 0,
+                max_loops: 3,
+                fingerprints: Vec::new(),
+            },
+            fingerprint: "fingerprint-1".to_owned(),
+            hook_kwargs: JsonMap::new(),
+            provider_kwargs: IndexMap::new(),
+            logging: Some(AgenticLogging {
+                call_id: Some("call-1".to_owned()),
+                agentic_loop_params: None,
+            }),
+        }
+    }
+}
+
 pub(crate) fn plan_harness(fixture: Fixture, script: Script) -> PlanHarness {
     let order = Arc::new(Mutex::new(Vec::new()));
+    let callback = recording("cb", script, &order);
     PlanHarness {
-        callback: recording("cb", script, &order),
         fixture,
-        gate: AgenticGate::default(),
-        tool_calls: Json::Null,
-        settings: AgenticLoopSettings {
-            depth: 0,
-            max_loops: 3,
-            fingerprints: Vec::new(),
-        },
-        fingerprint: "fingerprint-1".to_owned(),
-        hook_kwargs: JsonMap::new(),
-        provider_kwargs: IndexMap::new(),
-        logging: Some(AgenticLogging {
-            call_id: Some("call-1".to_owned()),
-            agentic_loop_params: None,
-        }),
+        callback,
+        state: PlanState::default(),
     }
 }
 
@@ -404,9 +436,7 @@ impl PlanHarness {
         plan: &AgenticLoopPlan,
         executor: &ScriptedExecutor,
     ) -> Result<Box<RawValue>, CallbackError<StopError>> {
-        let call = self.fixture.call();
-        let run = self.callback_run(&call);
-        execute_responses_agentic_plan(&PlanRun { run: &run, plan }, executor).await
+        self.execute(plan, executor, ApiSurface::Responses).await
     }
 
     pub(crate) async fn anthropic(
@@ -414,22 +444,38 @@ impl PlanHarness {
         plan: &AgenticLoopPlan,
         executor: &ScriptedExecutor,
     ) -> Result<Box<RawValue>, CallbackError<StopError>> {
+        self.execute(plan, executor, ApiSurface::AnthropicMessages)
+            .await
+    }
+
+    async fn execute(
+        &self,
+        plan: &AgenticLoopPlan,
+        executor: &ScriptedExecutor,
+        surface: ApiSurface,
+    ) -> Result<Box<RawValue>, CallbackError<StopError>> {
         let call = self.fixture.call();
         let run = self.callback_run(&call);
-        execute_anthropic_agentic_plan(&PlanRun { run: &run, plan }, executor).await
+        let plan_run = PlanRun { run: &run, plan };
+        match surface {
+            ApiSurface::Responses => execute_responses_agentic_plan(&plan_run, executor).await,
+            ApiSurface::AnthropicMessages => {
+                execute_anthropic_agentic_plan(&plan_run, executor).await
+            }
+        }
     }
 
     fn callback_run<'run>(&'run self, call: &'run CompletionCall<'run>) -> CallbackRun<'run> {
         CallbackRun {
             call: call.clone(),
             callback: self.callback.as_ref(),
-            gate: &self.gate,
-            tool_calls: &self.tool_calls,
-            settings: &self.settings,
-            fingerprint: &self.fingerprint,
-            hook_kwargs: &self.hook_kwargs,
-            provider_kwargs: &self.provider_kwargs,
-            logging: self.logging.as_ref(),
+            gate: &self.state.gate,
+            tool_calls: &self.state.tool_calls,
+            settings: &self.state.settings,
+            fingerprint: &self.state.fingerprint,
+            hook_kwargs: &self.state.hook_kwargs,
+            provider_kwargs: &self.state.provider_kwargs,
+            logging: self.state.logging.as_ref(),
         }
     }
 }
