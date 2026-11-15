@@ -57,16 +57,14 @@ class StandardLoggingRoutingDecision(TypedDict, total=False):
     classifier_calibration_version: ReadOnly[str]
     classifier_efficient_p_solve: ReadOnly[float]
     classifier_capable_p_solve: ReadOnly[float]
-    # ast-grep-ignore: no-long-names
-    classifier_calibrated_efficient_p_solve: ReadOnly[float]
+    classifier_calibrated_efficient_p_solve: ReadOnly[float]  # ast-grep-ignore: no-long-names
     classifier_calibrated_capable_p_solve: ReadOnly[float]  # ast-grep-ignore: no-long-names
     classifier_max_quality_gap: ReadOnly[float]
     classifier_prompt_version: ReadOnly[str]
     classifier_threshold: float
     escalated: bool
     context_escalated: bool
-    # ast-grep-ignore: no-long-names
-    context_escalation_original_tier: str
+    context_escalation_original_tier: str  # ast-grep-ignore: no-long-names
     tier_boundaries: StandardLoggingRoutingDecisionTierBoundaries  # ast-grep-ignore: no-long-names
     reasoning_override_min_score: float
     conversation_continuing: bool

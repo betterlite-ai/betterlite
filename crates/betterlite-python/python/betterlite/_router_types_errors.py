@@ -19,8 +19,7 @@ class RouterGeneralSettings(ResponseObject):
 class RouterBasicRateLimitError(ValueError):
     def __init__(self, model: str) -> None:
         self.model = model
-        message: Final = f"{RouterErrors.no_deployments_available.value}."
-        super().__init__(message)
+        super().__init__(f"{RouterErrors.no_deployments_available.value}.")
 
 
 class RouterErrorTypes(StrEnum):
@@ -30,13 +29,8 @@ class RouterErrorTypes(StrEnum):
 
 class RouterRateLimitError(ValueError):
     def __init__(
-        self,
-        model: str,
-        *,
-        cooldown_time: float,
-        enable_pre_call_checks: bool,
-        cooldown_list: list[str],
-        model_ids: Sequence[str] = (),
+        self, model: str, *, cooldown_time: float, enable_pre_call_checks: bool,
+        cooldown_list: list[str], model_ids: Sequence[str] = (),
     ) -> None:
         self.model = model
         self.cooldown_time = cooldown_time
@@ -49,12 +43,11 @@ class RouterRateLimitError(ValueError):
         if self.all_deployments_in_cooldown:
             self.type = RouterErrorTypes.all_deployments_in_cooldown.value
             reason = f" {RouterErrors.all_deployments_in_cooldown.value}."
-        message: Final = (
+        super().__init__(
             f"{RouterErrors.no_deployments_available.value}, Try again in {cooldown_time} seconds."
             f"{reason} Passed model={model}. pre-call-checks={enable_pre_call_checks}, "
             f"cooldown_list={cooldown_list}"
         )
-        super().__init__(message)
 
 
 class RouterModelGroupAliasItem(TypedDict):

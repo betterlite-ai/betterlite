@@ -1,12 +1,12 @@
 from enum import Enum
 from typing import ClassVar, Literal, Required
 
-from pydantic import ConfigDict, Field, JsonValue
-from typing_extensions import TypedDict, override
+from pydantic import ConfigDict, Field, JsonValue, field_validator
+from typing_extensions import TypedDict
 
 from betterlite._router_types_config import CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS
 from betterlite._router_types_litellm_params import LiteLLMParamsTypedDict
-from betterlite.types.utils.base import InitValue, ResponseObject
+from betterlite.types.utils.base import ResponseObject
 from betterlite.types.utils.search import SearchProvider
 
 
@@ -33,10 +33,8 @@ class AllowedFailsPolicy(ResponseObject):
     AuthenticationErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
     TimeoutErrorAllowedFails: int | None = None
     RateLimitErrorAllowedFails: int | None = None
-    # ast-grep-ignore: no-long-names
-    ContentPolicyViolationErrorAllowedFails: int | None = None
-    # ast-grep-ignore: no-long-names
-    InternalServerErrorAllowedFails: int | None = None
+    ContentPolicyViolationErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
+    InternalServerErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
     ServiceUnavailableErrorAllowedFails: int | None = None  # ast-grep-ignore: no-long-names
     BadGatewayErrorAllowedFails: int | None = None
     NotFoundErrorAllowedFails: int | None = None
@@ -49,6 +47,12 @@ class AlertingConfig(ResponseObject):
     alerting_threshold: float | None = 300
 
 
+_ModelMode = Literal[
+    "chat", "embedding", "completion", "image_generation", "audio_transcription", "rerank",
+    "moderations",
+]
+
+
 class ModelGroupInfo(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(extra="ignore")
 
@@ -59,10 +63,7 @@ class ModelGroupInfo(ResponseObject):
     input_cost_per_token: float | None = None
     output_cost_per_token: float | None = None
     input_cost_per_pixel: float | None = None
-    mode: str | Literal[
-        "chat", "embedding", "completion", "image_generation", "audio_transcription",
-        "rerank", "moderations",
-    ] | None = Field(default="chat")
+    mode: str | _ModelMode | None = Field(default="chat")
     tpm: int | None = None
     rpm: int | None = None
     itpm: int | None = None
@@ -80,12 +81,14 @@ class ModelGroupInfo(ResponseObject):
     # ast-grep-ignore: no-long-names
     configurable_clientside_auth_params: CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS = None
 
-    @override
-    def __init__(self, **data: InitValue) -> None:
-        for name, field in self.__class__.model_fields.items():
-            if field.annotation is bool and data.get(name) is None:
-                data[name] = False
-        super().__init__(**data)
+    @field_validator(
+        "supports_parallel_function_calling", "supports_vision", "supports_web_search",
+        "supports_url_context", "supports_reasoning", "supports_function_calling",
+        "supports_fast_mode", mode="before",
+    )
+    @classmethod
+    def _unset_bool_is_false(cls, value: JsonValue) -> JsonValue:
+        return False if value is None else value
 
 
 class AssistantsTypedDict(TypedDict):

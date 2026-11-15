@@ -37,8 +37,7 @@ class RoutingGroup(ResponseObject):
     model_priorities: (
         dict[str, Annotated[int, Field(strict=True, ge=1, le=9007199254740991)]] | None
     ) = Field(
-        default=None,
-        description=(
+        default=None, description=(
             "For priority groups, every model's priority. Lower numbers are tried first; "
             "equal numbers share traffic."
         ),
@@ -74,17 +73,17 @@ class RouterConfig(ResponseObject):
     redis_password: str | None = None
 
     cache_responses: bool | None = False
-    cache_kwargs: dict[str, JsonValue] | None = {}
+    cache_kwargs: dict[str, JsonValue] | None = Field(default={})
     caching_groups: list[tuple[str, list[str]]] | None = None
     client_ttl: int | None = 3600
     num_retries: int | None = 0
     timeout: float | None = None
-    default_litellm_params: dict[str, str] | None = {}
+    default_litellm_params: dict[str, str] | None = Field(default={})
     set_verbose: bool | None = False
-    fallbacks: list[JsonValue] | None = []
+    fallbacks: list[JsonValue] | None = Field(default=[])
     allowed_fails: int | None = None
-    context_window_fallbacks: list[JsonValue] | None = []
-    model_group_alias: dict[str, list[str]] | None = {}
+    context_window_fallbacks: list[JsonValue] | None = Field(default=[])
+    model_group_alias: dict[str, list[str]] | None = Field(default={})
     retry_after: int | None = 0
     routing_strategy: RoutingStrategyName = "simple-shuffle"
     routing_groups: list[RoutingGroup] | None = None
@@ -104,13 +103,11 @@ class RetryPolicy(ResponseObject):
     DefaultRetries: int | None = None
 
 
-OptionalPreCallChecks = list[
-    Literal[
-        "prompt_caching", "router_budget_limiting", "responses_api_deployment_check",
-        "deployment_affinity", "session_affinity", "forward_client_headers_by_model_group",
-        "enforce_model_rate_limits", "encrypted_content_affinity",
-    ]
-]
+OptionalPreCallChecks = list[Literal[
+    "prompt_caching", "router_budget_limiting", "responses_api_deployment_check",
+    "deployment_affinity", "session_affinity", "forward_client_headers_by_model_group",
+    "enforce_model_rate_limits", "encrypted_content_affinity",
+]]
 
 
 class UpdateRouterConfig(ResponseObject):
@@ -130,7 +127,7 @@ class UpdateRouterConfig(ResponseObject):
     retry_after: float | None = None
     fallbacks: list[dict[str, JsonValue]] | None = None
     context_window_fallbacks: list[dict[str, JsonValue]] | None = None
-    model_group_alias: dict[str, str | dict[str, JsonValue]] | None = {}
+    model_group_alias: dict[str, str | dict[str, JsonValue]] | None = Field(default={})
     enable_tag_filtering: bool | None = None
     weights: RouterWeights | None = None
     tag_routing_prefix: str | None = None

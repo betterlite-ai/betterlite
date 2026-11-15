@@ -4,7 +4,6 @@ from collections.abc import Sequence
 from typing import ClassVar, Final
 
 from pydantic import (
-    BaseModel,
     ConfigDict,
     Field,
     JsonValue,
@@ -24,11 +23,12 @@ from betterlite.types.utils.response import ModelResponse
 LOGGER: Final = logging.getLogger("LiteLLM")
 _RESERVED_INIT_KEYS: Final = frozenset({"self", "params", "__class__"})
 _HTTP_HEADER_NAME_PATTERN: Final = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
-_FORBIDDEN_AFFINITY_HEADERS: Final = frozenset(
-    "api-key authorization connection content-length content-type cookie host keep-alive "
-    "proxy-authenticate proxy-authorization proxy-connection set-cookie te trailer "
-    "transfer-encoding upgrade www-authenticate x-api-key x-goog-api-key".split()
-)
+_FORBIDDEN_AFFINITY_HEADERS: Final = frozenset({
+    "api-key", "authorization", "connection", "content-length", "content-type", "cookie",
+    "host", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+    "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "www-authenticate",
+    "x-api-key", "x-goog-api-key",
+})
 _DROP_PARAMS_BOOL: Final[TypeAdapter[bool]] = TypeAdapter(bool)
 
 
@@ -112,8 +112,9 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
 
     @override
     def __init__(self, /, **data: InitValue) -> None:
-        # pydantic keeps self positional-only so a reserved "self" key reaches preprocess_input_data
-        BaseModel.__init__(self, **data)
+        # ResponseObject's self is not positional-only, so a reserved "self" key is dropped here
+        data.pop("self", None)
+        ResponseObject.__init__(self, **data)
 
     custom_llm_provider: str | None = None
     tpm: int | None = None
@@ -196,9 +197,7 @@ class GenericLiteLLMParams(CredentialLiteLLMParams, CustomPricingLiteLLMParams):
         match data:
             case dict():
                 filtered: dict[str, JsonValue] = {
-                    key: value
-                    for key, value in data.items()
-                    if key not in _RESERVED_INIT_KEYS
+                    key: value for key, value in data.items() if key not in _RESERVED_INIT_KEYS
                 }
                 retries: Final = filtered.get("max_retries")
                 match retries:

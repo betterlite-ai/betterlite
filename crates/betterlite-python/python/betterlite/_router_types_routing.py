@@ -33,11 +33,6 @@ class LiteLLMRouterFileObject(TypedDict, total=False):
     file_object: OpenAIFileObject
 
 
-def _str_to_bool(value: str) -> bool | None:
-    flags: Final = {"true": True, "false": False}
-    return flags.get(value.strip().lower())
-
-
 def _extract_bool_param(kwargs: dict[str, JsonValue], name: str) -> bool | None:
     value: Final = kwargs.pop(name, None)
     if value is None:
@@ -46,7 +41,8 @@ def _extract_bool_param(kwargs: dict[str, JsonValue], name: str) -> bool | None:
         case bool():
             return value
         case str():
-            return _str_to_bool(value)
+            flags: Final = {"true": True, "false": False}
+            return flags.get(value.strip().lower())
         case int() | float() | list() | dict():
             return None
 
@@ -65,8 +61,7 @@ class MockRouterTestingParams:
             kwargs, "mock_testing_content_policy_fallbacks"
         )
         return cls(
-            mock_testing_fallbacks=fallbacks,
-            mock_testing_context_fallbacks=context_fallbacks,
+            mock_testing_fallbacks=fallbacks, mock_testing_context_fallbacks=context_fallbacks,
             mock_testing_content_policy_fallbacks=content_policy_fallbacks,
         )
 
@@ -112,12 +107,9 @@ class ConsumedRequestTagsStamp:
 @runtime_checkable
 class PreRoutingStrategy(Protocol):
     async def async_pre_routing_hook(
-        self,
-        model: str,
-        request_kwargs: dict[str, JsonValue],
+        self, model: str, request_kwargs: dict[str, JsonValue],
         messages: list[dict[str, JsonValue]] | None = None,
-        input_value: str | list[JsonValue] | None = None,
-        *,
+        input_value: str | list[JsonValue] | None = None, *,
         specific_deployment: bool | None = False,
     ) -> PreRoutingHookResponse | None: ...
 

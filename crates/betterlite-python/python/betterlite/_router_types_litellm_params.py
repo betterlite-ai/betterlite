@@ -83,13 +83,12 @@ SPECIAL_MODEL_INFO_PARAMS: Final[tuple[str, ...]] = tuple(MirroredPricingParams.
 
 
 def _resolved_model_info(value: ModelInfo | dict[str, JsonValue] | None) -> ModelInfo:
-    if value is None:
-        return ModelInfo()
     match value:
         case dict():
             return ModelInfo.model_validate(value)
         case ModelInfo():
             return value
+    return ModelInfo()
 
 
 def _mirror_pricing(
@@ -99,7 +98,7 @@ def _mirror_pricing(
         case LiteLLMParams():
             pricing: Final[dict[str, JsonValue]] = litellm_params.model_dump()
             for key in SPECIAL_MODEL_INFO_PARAMS:
-                value: Final = pricing.get(key)
+                value = pricing.get(key)
                 if value is not None:
                     model_info[key] = value
         case Mapping():
@@ -115,11 +114,8 @@ class Deployment(ResponseObject):
 
     @override
     def __init__(
-        self,
-        model_name: str,
-        litellm_params: LiteLLMParams | Mapping[str, JsonValue],
-        model_info: ModelInfo | dict[str, JsonValue] | None = None,
-        **params: InitValue,
+        self, model_name: str, litellm_params: LiteLLMParams | Mapping[str, JsonValue],
+        model_info: ModelInfo | dict[str, JsonValue] | None = None, **params: InitValue,
     ) -> None:
         resolved: Final = _resolved_model_info(model_info)
         _mirror_pricing(resolved, litellm_params)

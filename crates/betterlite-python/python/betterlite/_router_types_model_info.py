@@ -1,4 +1,4 @@
-import datetime
+import datetime as dt
 from typing import ClassVar, Final, Literal, Self
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -10,25 +10,25 @@ from betterlite.types.utils.base import InitValue, ResponseObject
 from betterlite.types.utils.pricing import MirroredPricingParams
 
 
-def _as_utc(value: datetime.datetime | None) -> datetime.datetime | None:
+def _as_utc(value: dt.datetime | None) -> dt.datetime | None:
     if value is None:
         return None
     if value.tzinfo is None:
-        return value.replace(tzinfo=datetime.timezone.utc)
-    return value.astimezone(datetime.timezone.utc)
+        return value.replace(tzinfo=dt.UTC)
+    return value.astimezone(dt.UTC)
 
 
 class ModelAccessWindow(ResponseObject):
     model_config: ClassVar[ConfigDict] = ConfigDict(frozen=True, extra="forbid")
 
-    start: datetime.time
-    end: datetime.time
+    start: dt.time
+    end: dt.time
     timezone: str
     team_ids: tuple[str, ...] = Field(min_length=1)
 
     @field_validator("start", "end")
     @classmethod
-    def _naive_wall_clock(cls, value: datetime.time) -> datetime.time:
+    def _naive_wall_clock(cls, value: dt.time) -> dt.time:
         if value.tzinfo is not None:
             raise ValueError("start and end must be local wall-clock times without a UTC offset")
         return value
@@ -60,19 +60,17 @@ def _model_id(value: JsonValue) -> JsonValue:
     match value:
         case bool() | int():
             return str(value)
-        case str():
-            return value
-        case float() | list() | dict() | None:
+        case str() | float() | list() | dict() | None:
             return value
 
 
 class ModelInfo(MirroredPricingParams):
     id: str | None
     db_model: bool = False
-    updated_at: datetime.datetime | None = None
+    updated_at: dt.datetime | None = None
     updated_by: str | None = None
 
-    created_at: datetime.datetime | None = None
+    created_at: dt.datetime | None = None
     created_by: str | None = None
 
     base_model: str | None = None
@@ -92,8 +90,8 @@ class ModelInfo(MirroredPricingParams):
 
     ptu_count: int | None = None
     cost_per_ptu_per_hour: float | None = None
-    ptu_effective_from: datetime.datetime | None = None
-    ptu_effective_to: datetime.datetime | None = None
+    ptu_effective_from: dt.datetime | None = None
+    ptu_effective_to: dt.datetime | None = None
 
     allow_fail_open: bool | None = None
     enable_tag_filtering: bool | None = None
@@ -102,21 +100,20 @@ class ModelInfo(MirroredPricingParams):
     @override
     def __init__(self, id: str | int | None = None, **params: InitValue) -> None:
         model_id: Final = str(uuid4()) if id is None else _model_id(id)
-        super().__init__(id=model_id, **params)
+        ResponseObject.__init__(self, id=model_id, **params)
 
     @model_validator(mode="after")
     def _validate_ptu_bounds(self) -> Self:
-        if self.ptu_count is not None and not 0 < self.ptu_count <= self.MAX_PTU_COUNT:
-            raise ValueError(
-                f"ptu_count must be a positive integer no greater than {self.MAX_PTU_COUNT}"
-            )
+        max_count: Final = self.MAX_PTU_COUNT
+        if self.ptu_count is not None and not 0 < self.ptu_count <= max_count:
+            raise ValueError(f"ptu_count must be a positive integer no greater than {max_count}")
+        max_cost: Final = self.MAX_COST_PER_PTU_PER_HOUR
         if (
             self.cost_per_ptu_per_hour is not None
-            and not 0 <= self.cost_per_ptu_per_hour <= self.MAX_COST_PER_PTU_PER_HOUR
+            and not 0 <= self.cost_per_ptu_per_hour <= max_cost
         ):
             raise ValueError(
-                "cost_per_ptu_per_hour must be a finite number between 0 and "
-                f"{self.MAX_COST_PER_PTU_PER_HOUR}"
+                f"cost_per_ptu_per_hour must be a finite number between 0 and {max_cost}"
             )
         start: Final = _as_utc(self.ptu_effective_from)
         end: Final = _as_utc(self.ptu_effective_to)
