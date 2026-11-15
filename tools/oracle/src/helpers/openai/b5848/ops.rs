@@ -122,6 +122,7 @@ impl TextTokenCounter for RecordedCounter {
         let mut calls = self.calls.lock().unwrap_or_else(PoisonError::into_inner);
         let index = *calls;
         *calls = calls.saturating_add(1);
+        drop(calls);
         match self.outcomes.get(index) {
             Some(Some(value)) => Ok(*value),
             Some(None) | None => Err(CountError::MissingInput),
