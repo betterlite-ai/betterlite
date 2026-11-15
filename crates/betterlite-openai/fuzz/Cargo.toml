@@ -567,6 +567,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "perplexity_chat_reply"
+path = "fuzz_targets/perplexity_chat_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fireworks_ai_rerank_response"
 path = "fuzz_targets/fireworks_ai_rerank_response.rs"
 test = false
