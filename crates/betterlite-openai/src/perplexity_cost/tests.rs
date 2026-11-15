@@ -58,8 +58,8 @@ fn cost_value(value: Value) -> Json {
 
 fn rates() -> Value {
     json!({
-        "input_cost_per_token": "0.1",
-        "output_cost_per_token": "0.2"
+        "input_cost_per_token": 0.1,
+        "output_cost_per_token": 0.2
     })
 }
 
@@ -508,4 +508,36 @@ fn missing_or_unparsable_token_rates_charge_nothing() {
     .expect("the unparsable rates");
     assert_eq!(unparsable.prompt_cost, Decimal::ZERO);
     assert_eq!(unparsable.completion_cost, Decimal::ZERO);
+}
+
+#[test]
+fn catalog_number_rates_are_read_with_their_exponents() {
+    let mut usage = usage(100, 10);
+    usage.citation_tokens = Some(8);
+    usage.reasoning_tokens = Some(4);
+    usage.tokens.prompt_details = Some(PromptDetails {
+        text_tokens: None,
+        audio_tokens: None,
+        image_tokens: None,
+        video_tokens: None,
+        web_search_requests: Some(2),
+    });
+    let result = run(
+        json!({
+            "input_cost_per_token": 1e-6,
+            "output_cost_per_token": 2e-6,
+            "citation_cost_per_token": 2e-6,
+            "output_cost_per_reasoning_token": 3e-6,
+            "search_context_cost_per_query": {"search_context_size_low": 0.005},
+            "off_peak_pricing": {
+                "hours_utc": "00:00-23:59",
+                "input_cost_per_token": 5e-6,
+                "output_cost_per_token": 7e-6
+            }
+        }),
+        &usage,
+    )
+    .expect("the catalog numbers");
+    assert_eq!(result.prompt_cost, dec("0.000516"));
+    assert_eq!(result.completion_cost, dec("0.010054"));
 }
