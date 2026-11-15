@@ -1,0 +1,23 @@
+kind: helper
+name: reservation-cost-unknown-input-cost-returns-none
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: no-cost-group
+      max_tokens: 10
+    route: /v1/chat/completions
+    model_cost:
+      no-cost-model:
+        mode: chat
+        max_input_tokens: 100000
+        max_output_tokens: 1000
+    input_token_counts:
+      no-cost-group: 1000
+    model_list:
+      - model_name: no-cost-group
+        backend_model: openai/no-cost-model
+        model_info:
+          id: dep-n
+env: {}
+compare: {ignore: []}
