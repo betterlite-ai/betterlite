@@ -139,6 +139,19 @@ fn config_model_and_event_hooks_differ_by_version() {
     let v2 = instance(&params(
         r#", "api_base": "http://127.0.0.1:1", "version": 2"#,
     ));
+    assert_eq!(
+        config_model(),
+        GuardrailValue::Object(BTreeMap::from([
+            (
+                "model".to_owned(),
+                GuardrailValue::Text("HiddenlayerGuardrailConfigModel".to_owned())
+            ),
+            (
+                "ui_friendly_name".to_owned(),
+                GuardrailValue::Text("Hiddenlayer Guardrail".to_owned())
+            ),
+        ]))
+    );
     assert_eq!(v1.get_config_model(), Some(config_model()));
     assert_eq!(v2.get_config_model(), Some(config_model()));
     assert_eq!(

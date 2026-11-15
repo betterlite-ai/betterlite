@@ -244,6 +244,13 @@ fn evaluation_model_reads_the_logging_object() {
     assert_eq!(
         metadata::evaluation_model(&BTreeMap::from([(
             "litellm_logging_obj".to_owned(),
+            object(vec![("model", text(""))])
+        )])),
+        "unknown"
+    );
+    assert_eq!(
+        metadata::evaluation_model(&BTreeMap::from([(
+            "litellm_logging_obj".to_owned(),
             object(vec![("model", GuardrailValue::Null)])
         )])),
         "unknown"
