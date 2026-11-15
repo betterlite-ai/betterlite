@@ -1,0 +1,2 @@
+{"responseId":"r1","candidates":[{"content":{"parts":[{"text":"a"}]}}]}
+{"error":{"code":"429","status":"RESOURCE_EXHAUSTED","message":"quota"}}
