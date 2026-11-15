@@ -363,7 +363,7 @@ async fn _call_crowdstrike_aidr_guard_transformed_malformed() {
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
         error.detail().get("guardrail_name"),
-        Some(&GuardrailValue::Null)
+        Some(&GuardrailValue::Text("cs-aidr".to_owned()))
     );
 }
 
