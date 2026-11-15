@@ -1,0 +1,15 @@
+kind: helper
+name: dashscope-rerank-request
+call:
+  b8171:
+    function: rerank_request
+    model: qwen3-rerank
+    query: which one
+    documents:
+      - first
+      - second
+    top_n: 1
+    return_documents: true
+    rank_fields: null
+env: {}
+compare: {ignore: []}

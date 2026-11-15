@@ -1,0 +1,6 @@
+model_list:
+  - model_name: claude-2
+    litellm_params:
+      model: anthropic_text/claude-2
+      max_tokens_to_sample: 512
+      anthropic_legacy_extra: 4
