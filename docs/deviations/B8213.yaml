@@ -1,0 +1,23 @@
+task: B8213
+deviations:
+  - what: The initializer returns QualifireArgs and registers nothing.
+    why: B3682 owns the registry and the callback registration, as with B3681.
+    link: ""
+  - what: An in-memory update applies an api_base it carries to the live guardrail and keeps the live base when it carries none; LiteLLM's update blind-setattrs self.api_base, which Qualifire never reads, so its qualifire_api_base stays as constructed for every update.
+    why: The update path applies the entry's own connection setting the way the other live fields update, and never falls back to a null base; no LiteLLM setup can rely on a base change through that method because every request uses the constructed qualifire_api_base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1466-L1471
+  - what: betterlite uses litellm_params.timeout on the guardrail entry as given and falls back to 600 seconds only when it is absent or null; LiteLLM passes timeout=self.timeout, which stays None when no guardrail timeout is configured, and httpx reads None as no timeout at all.
+    why: A Qualifire server that accepts the connection and never answers would hold the proxy request forever; 600 seconds is the read/write fallback the shared AsyncHTTPHandler client is built with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L377-L382
+  - what: A timeout that a Duration cannot represent (negative, NaN, infinite or too large) is rejected while the guardrail is built or updated. LiteLLM stores the float on the guardrail and every evaluation then fails inside httpx.
+    why: betterlite's timeout is a std Duration, which cannot hold a negative or non-finite duration; the invalid configuration is reported where it enters instead of turning every evaluation into a failure at request time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L377-L382
+  - what: A failed on_flagged update reports an error that is betterlite's own, quoting the value with single quotes rather than Python's repr.
+    why: Error messages are betterlite's own words; repr text is outside the compatibility contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L109-L118
+  - what: 'A function tool whose function is absent or null is dropped, where LiteLLM sends {"name": "", "description": "", "parameters": {}} for an absent function and raises AttributeError for a null one.'
+    why: 'A function tool without a definition is not a tool any model can call, and the task names {"type": "function", "function": {...}} as the accepted shape; forwarding an empty definition would put a nameless tool in the request.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L226-L236
+  - what: A Qualifire answer body larger than 1 MiB is refused with a ResponseTooLarge error before it is parsed, where LiteLLM reads and parses whatever size arrives.
+    why: The shared read_bounded cap keeps an evaluation answer from being buffered whole; a verdict lists a few checks and stays far below the cap.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L383-L384

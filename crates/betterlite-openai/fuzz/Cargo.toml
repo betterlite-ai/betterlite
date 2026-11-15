@@ -169,6 +169,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "voyage_rerank"
+path = "fuzz_targets/voyage_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_store_records"
 path = "fuzz_targets/vector_store_records.rs"
 test = false
@@ -178,13 +185,6 @@ bench = false
 [[bin]]
 name = "openai_vector_stores"
 path = "fuzz_targets/openai_vector_stores.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "sambanova_reply"
-path = "fuzz_targets/sambanova_reply.rs"
 test = false
 doc = false
 bench = false
@@ -351,6 +351,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "mistral_chat"
+path = "fuzz_targets/mistral_chat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vercel_ai_gateway_reply"
 path = "fuzz_targets/vercel_ai_gateway_reply.rs"
 test = false
@@ -402,6 +409,13 @@ bench = false
 [[bin]]
 name = "huggingface_embedding_response"
 path = "fuzz_targets/huggingface_embedding_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "huggingface_rerank_response"
+path = "fuzz_targets/huggingface_rerank_response.rs"
 test = false
 doc = false
 bench = false
@@ -505,13 +519,6 @@ bench = false
 [[bin]]
 name = "hosted_vllm_embedding_reply"
 path = "fuzz_targets/hosted_vllm_embedding_reply.rs"
-test = false
-doc = false
-bench = false
-
-[[bin]]
-name = "perplexity_chat_reply"
-path = "fuzz_targets/perplexity_chat_reply.rs"
 test = false
 doc = false
 bench = false

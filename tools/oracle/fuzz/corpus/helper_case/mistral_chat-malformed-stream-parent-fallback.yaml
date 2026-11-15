@@ -1,0 +1,24 @@
+kind: helper
+name: mistral-chat-malformed-stream-parent-fallback
+call:
+  mistral_chat:
+    steps:
+      - kind: chunk
+        chunk:
+          error:
+            message: upstream failed
+            code: 400
+          choices:
+            - delta:
+                content:
+                  - type: thinking
+                    thinking: not-a-list
+      - kind: chunk
+        chunk:
+          choices:
+            - delta:
+                content:
+                  - type: thinking
+                    thinking: 5
+env: {}
+compare: {ignore: []}
