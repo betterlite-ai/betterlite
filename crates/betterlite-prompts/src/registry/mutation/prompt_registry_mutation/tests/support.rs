@@ -7,6 +7,7 @@ use secrecy::SecretString;
 use crate::registry::mutation::prompt_registry_mutation::callbacks::PromptCallbackManager;
 use crate::registry::mutation::prompt_registry_mutation::methods::PromptRegistryMutation as _;
 use crate::registry::prompt_registry::InMemoryPromptRegistry;
+use crate::tests::{prompt_params, prompt_spec as base_prompt_spec};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum CallbackCall {
@@ -31,13 +32,13 @@ impl RecordingCallbacks {
     }
 
     pub(crate) fn removed(&self) -> Vec<PromptManagementClient> {
-        self.calls
-            .iter()
-            .filter_map(|call| match call {
-                CallbackCall::Removed(callback) => Some(callback.clone()),
-                CallbackCall::Added(_) => None,
-            })
-            .collect()
+        let mut removed = Vec::new();
+        for call in &self.calls {
+            if let CallbackCall::Removed(callback) = call {
+                removed.push(callback.clone());
+            }
+        }
+        removed
     }
 }
 
@@ -52,13 +53,13 @@ impl PromptCallbackManager for RecordingCallbacks {
 }
 
 pub(crate) fn prompt_spec(prompt_id: &str, environment: &str, integration: &str) -> PromptSpec {
-    let mut spec = crate::tests::prompt_spec(prompt_id, None, environment);
+    let mut spec = base_prompt_spec(prompt_id, None, environment);
     spec.litellm_params.prompt_integration = integration.to_owned();
     spec
 }
 
 pub(crate) fn params(integration: &str) -> PromptLiteLLMParams {
-    let mut params = crate::tests::prompt_params();
+    let mut params = prompt_params();
     params.prompt_integration = integration.to_owned();
     params
 }
@@ -73,8 +74,8 @@ pub(crate) fn client(prompt_id: Option<&str>) -> PromptManagementClient {
     }
 }
 
-pub(crate) fn api_key(secret: &str) -> Option<SecretString> {
-    Some(SecretString::from(secret.to_owned()))
+pub(crate) fn api_key(secret: &str) -> SecretString {
+    SecretString::from(secret.to_owned())
 }
 
 pub(crate) fn registry_with(

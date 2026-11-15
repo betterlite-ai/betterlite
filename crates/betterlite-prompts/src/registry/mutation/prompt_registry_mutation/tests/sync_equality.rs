@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_models::prompt_spec::{PromptInfo, PromptLiteLLMParams};
+use betterlite_models::prompt_spec::{PromptInfo, PromptLiteLLMParams, PromptSpec};
 use indexmap::IndexMap;
 use rstest::rstest;
 
@@ -22,7 +22,7 @@ fn change_api_base(params: &mut PromptLiteLLMParams) {
 }
 
 fn change_api_key(params: &mut PromptLiteLLMParams) {
-    params.api_key = api_key("secret");
+    params.api_key = Some(api_key("secret"));
 }
 
 fn change_query_params(params: &mut PromptLiteLLMParams) {
@@ -60,6 +60,19 @@ fn change_info_extra(info: &mut PromptInfo) {
     info.extra.insert("custom".to_owned(), json_value("1"));
 }
 
+fn assert_reload_of_changed_row(change: impl FnOnce(&mut PromptSpec)) {
+    let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
+    let mut callbacks = RecordingCallbacks::default();
+    let mut registry = registry_with(&prompt, &mut callbacks);
+    let mut row = prompt.clone();
+    change(&mut row);
+    registry
+        .sync_prompt_from_db(&row, &mut callbacks)
+        .expect("the differing row reloads");
+    assert_eq!(callbacks.removed().len(), 1);
+    assert_eq!(callbacks.added().len(), 1);
+}
+
 #[rstest]
 #[case::prompt_id(change_prompt_id)]
 #[case::integration(change_integration)]
@@ -71,16 +84,7 @@ fn change_info_extra(info: &mut PromptInfo) {
 #[case::dotprompt_content(change_dotprompt_content)]
 #[case::extra(change_extra)]
 fn a_differing_litellm_param_reloads_the_prompt(#[case] mutate: fn(&mut PromptLiteLLMParams)) {
-    let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    let mut callbacks = RecordingCallbacks::default();
-    let mut registry = registry_with(&prompt, &mut callbacks);
-    let mut row = prompt.clone();
-    mutate(&mut row.litellm_params);
-    registry
-        .sync_prompt_from_db(&row, &mut callbacks)
-        .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
-    assert_eq!(callbacks.added().len(), 1);
+    assert_reload_of_changed_row(|row| mutate(&mut row.litellm_params));
 }
 
 #[rstest]
@@ -88,22 +92,13 @@ fn a_differing_litellm_param_reloads_the_prompt(#[case] mutate: fn(&mut PromptLi
 #[case::environment(change_info_environment)]
 #[case::extra(change_info_extra)]
 fn a_differing_prompt_info_reloads_the_prompt(#[case] mutate: fn(&mut PromptInfo)) {
-    let prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    let mut callbacks = RecordingCallbacks::default();
-    let mut registry = registry_with(&prompt, &mut callbacks);
-    let mut row = prompt.clone();
-    mutate(&mut row.prompt_info);
-    registry
-        .sync_prompt_from_db(&row, &mut callbacks)
-        .expect("the differing row reloads");
-    assert_eq!(callbacks.removed().len(), 1);
-    assert_eq!(callbacks.added().len(), 1);
+    assert_reload_of_changed_row(|row| mutate(&mut row.prompt_info));
 }
 
 #[test]
 fn an_equal_row_returns_the_stored_prompt_without_reloading() {
     let mut prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.api_key = Some(api_key("secret"));
     prompt.litellm_params.dotprompt_content = Some("template".to_owned());
     prompt.litellm_params.provider_specific_query_params = Some(IndexMap::from([(
         "query".to_owned(),
@@ -136,11 +131,11 @@ fn an_equal_row_returns_the_stored_prompt_without_reloading() {
 #[test]
 fn the_same_api_key_value_counts_as_equal() {
     let mut prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.api_key = Some(api_key("secret"));
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
     let mut row = prompt.clone();
-    row.litellm_params.api_key = api_key("secret");
+    row.litellm_params.api_key = Some(api_key("secret"));
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the row matches");
@@ -150,11 +145,11 @@ fn the_same_api_key_value_counts_as_equal() {
 #[test]
 fn a_different_api_key_value_reloads_the_prompt() {
     let mut prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.api_key = Some(api_key("secret"));
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
     let mut row = prompt.clone();
-    row.litellm_params.api_key = api_key("other");
+    row.litellm_params.api_key = Some(api_key("other"));
     registry
         .sync_prompt_from_db(&row, &mut callbacks)
         .expect("the differing row reloads");
@@ -164,7 +159,7 @@ fn a_different_api_key_value_reloads_the_prompt() {
 #[test]
 fn a_disappearing_api_key_reloads_the_prompt() {
     let mut prompt = prompt_spec("greeting.v1", "development", "dotprompt");
-    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.api_key = Some(api_key("secret"));
     let mut callbacks = RecordingCallbacks::default();
     let mut registry = registry_with(&prompt, &mut callbacks);
     let mut row = prompt.clone();

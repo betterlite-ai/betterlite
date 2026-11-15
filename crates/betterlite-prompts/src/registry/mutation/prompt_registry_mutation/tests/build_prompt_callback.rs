@@ -27,7 +27,7 @@ fn returns_the_parsed_spec_and_the_initializer_client() {
 fn the_parsed_spec_copies_every_field_of_the_input() {
     let mut prompt = prompt_spec("greeting.v1", "production", "gitlab");
     prompt.litellm_params.api_base = Some("https://gitlab.example.test".to_owned());
-    prompt.litellm_params.api_key = api_key("secret");
+    prompt.litellm_params.api_key = Some(api_key("secret"));
     prompt.litellm_params.dotprompt_content = Some("template".to_owned());
     prompt.litellm_params.provider_specific_query_params = Some(IndexMap::from([(
         "query".to_owned(),
