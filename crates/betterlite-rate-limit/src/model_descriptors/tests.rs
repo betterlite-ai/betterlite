@@ -137,6 +137,19 @@ fn organization_descriptor_takes_either_limit_alone() {
 }
 
 #[test]
+fn organization_descriptors_add_the_global_one_before_the_model_one() {
+    let builder = builder(60, &[("gpt4", "gpt-4")]);
+    let auth = auth(
+        r#"{"org_id": "org-1", "organization_rpm_limit": 1,
+            "organization_metadata": {"model_tpm_limit": {"gpt-4": 2}}}"#,
+    );
+    let descriptors = builder.organization_descriptors(&auth, Some("gpt4"));
+    assert_eq!(descriptors.len(), 2);
+    assert_eq!(descriptors[0].key, "organization");
+    assert_eq!(descriptors[1].key, "model_per_organization");
+}
+
+#[test]
 fn model_per_organization_is_built_without_a_global_limit() {
     let builder = builder(45, &[("gpt4", "gpt-4")]);
     let auth =
