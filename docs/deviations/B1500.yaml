@@ -52,6 +52,17 @@ deviations:
       literals rather than from anything a request can observe: every use of the list is
       a membership test, so the same parameters are kept and dropped either way.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/chat/transformation.py#L18-L21
+  - what: >-
+      When no api_base resolves, the Responses, image generation and image edit
+      transformations return the typed ProxyError::MissingApiBase with one shared message.
+      LiteLLM's responses, image generation and image edit configs each raise ValueError
+      with their own endpoint text, and the proxy model listing raises a fourth
+      ValueError.
+    why: >-
+      Both sides fail before any request is sent, and a typed variant lets a caller branch
+      on the cause instead of parsing a message. No working setup can rely on the text of
+      an exception it cannot continue past.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/responses/transformation.py#L37-L41
 kept_bugs:
   - what: >-
       Image generation and image edit requests set Authorization to "Bearer None" when
