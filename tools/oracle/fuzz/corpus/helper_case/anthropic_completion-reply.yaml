@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-completion-reply
+call: {anthropic_completion: {function: reply, cases: [{model: claude-2, messages: [{role: user, content: Hi}], status: 200, body: '{"completion":" Hello","stop_reason":"stop_sequence"}', initial_content: initial}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,7 @@
+kind: helper
+name: foundry-vector-stores-unsupported-store-create-seed
+call:
+  foundry_vector_stores:
+    unsupported_store_create: {}
+env: {}
+compare: {ignore: []}

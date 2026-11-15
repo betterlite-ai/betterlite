@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-vector-stores-azure-search-endpoint-seed
+call:
+  foundry_vector_stores:
+    azure_search_endpoint:
+      scenarios:
+        - api_base: https://seed.search.example/
+          litellm_params: {}
+        - litellm_params: {azure_search_service_name: seed-service}
+        - litellm_params: {}
+env: {}
+compare: {ignore: []}
