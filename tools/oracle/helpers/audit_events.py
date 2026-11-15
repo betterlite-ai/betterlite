@@ -1,7 +1,7 @@
 import asyncio
 import os
 import sys
-from collections.abc import Awaitable, Callable
+from collections.abc import Callable
 from datetime import datetime
 from types import ModuleType
 from typing import Final, Literal, Protocol, TypedDict
@@ -118,11 +118,19 @@ class ProxyServer(ModuleType):
 
 
 class AuditLogWrites(Protocol):
-    create_audit_log_for_update: Callable[..., Awaitable[None]]
-    create_object_audit_log: Callable[..., Awaitable[None]]
+    async def create_audit_log_for_update(self, request_data: LiteLLM_AuditLogs) -> None: ...
+
+    async def create_object_audit_log(
+        self,
+        *args: *tuple[
+            str, AUDIT_ACTIONS, str | None, UserAPIKeyAuth,
+            str | None, LitellmTableNames, str | None, str | None,
+        ],
+    ) -> None: ...
 
 
 AUDIT_LOG_WRITES: AuditLogWrites = audit_logs
+CALLER: TypeAdapter[UserAPIKeyAuth] = TypeAdapter(UserAPIKeyAuth)
 
 
 class Recorder(CustomLogger):
@@ -161,13 +169,10 @@ def parsed(text: str | None) -> JsonValue:
 
 def audit_model(record: AuditRecord) -> LiteLLM_AuditLogs:
     return LiteLLM_AuditLogs(
-        id=record["id"],
-        updated_at=datetime.fromisoformat(record["updated_at"]),
-        changed_by=record["changed_by"],
-        changed_by_api_key=record["changed_by_api_key"],
-        action=ACTION.validate_python(record["action"]),
+        id=record["id"], updated_at=datetime.fromisoformat(record["updated_at"]),
+        changed_by=record["changed_by"], changed_by_api_key=record["changed_by_api_key"],
+        action=ACTION.validate_python(record["action"]), object_id=record["object_id"],
         table_name=LitellmTableNames(record["table_name"]),
-        object_id=record["object_id"],
         before_value=record["before_value"],
         updated_values=record["updated_values"],
     )
@@ -184,11 +189,12 @@ def policy_answer(call: PolicyCall) -> JsonValue:
 
 
 def identity_answer(call: IdentityCall) -> JsonValue:
-    caller = UserAPIKeyAuth(
-        user_id=call["user_id"],
-        metadata={} if call["metadata"] is None else call["metadata"],
-        team_metadata=call["team_metadata"],
-    )
+    values: dict[str, JsonValue] = {"user_id": call["user_id"]}
+    if call["metadata"] is not None:
+        values["metadata"] = call["metadata"]
+    if call["team_metadata"] is not None:
+        values["team_metadata"] = call["team_metadata"]
+    caller = CALLER.validate_python(values)
     changed_by = get_audit_log_changed_by(
         litellm_changed_by=call["litellm_changed_by"],
         user_api_key_dict=caller,
@@ -199,14 +205,10 @@ def identity_answer(call: IdentityCall) -> JsonValue:
 
 def stored_json(view: Stored) -> JsonValue:
     return {
-        "id": view["id"],
-        "updated_at": view["updated_at"],
-        "changed_by": view["changed_by"],
-        "changed_by_api_key": view["changed_by_api_key"],
-        "action": view["action"],
-        "table_name": view["table_name"],
-        "object_id": view["object_id"],
-        "before_value": parsed(view["before_value"]),
+        "id": view["id"], "updated_at": view["updated_at"],
+        "changed_by": view["changed_by"], "changed_by_api_key": view["changed_by_api_key"],
+        "action": view["action"], "table_name": view["table_name"],
+        "object_id": view["object_id"], "before_value": parsed(view["before_value"]),
         "updated_values": parsed(view["updated_values"]),
     }
 
@@ -217,14 +219,11 @@ def record_answer(call: RecordCall) -> JsonValue:
 
 
 def delivery_view(recorders: list[Recorder]) -> JsonValue:
-    delivered: list[JsonValue] = []
-    for recorder in recorders:
-        entries: list[JsonValue] = [
-            {"callback": recorder.label, "payload": stored_json(payload)}
-            for payload in recorder.delivered
-        ]
-        delivered.extend(entries)
-    return delivered
+    return [
+        {"callback": recorder.label, "payload": stored_json(payload)}
+        for recorder in recorders
+        for payload in recorder.delivered
+    ]
 
 
 def dispatch_entries(call: DispatchCall) -> tuple[list[Recorder], list[CallbackEntry]]:
@@ -252,7 +251,7 @@ async def dispatch_answer(call: DispatchCall) -> JsonValue:
         await asyncio.sleep(0)
     finally:
         restore_proxy(saved)
-    return delivery_view(recorders)
+    return {"delivered": delivery_view(recorders)}
 
 
 async def sink_answer(call: SinkCall) -> JsonValue:
@@ -268,14 +267,14 @@ async def sink_answer(call: SinkCall) -> JsonValue:
     try:
         await AUDIT_LOG_WRITES.create_audit_log_for_update(request_data=model)
         await AUDIT_LOG_WRITES.create_object_audit_log(
-            object_id=call["object_id"],
-            action=ACTION.validate_python(call["action"]),
-            litellm_changed_by=None,
-            user_api_key_dict=caller,
-            litellm_proxy_admin_name=None,
-            table_name=LitellmTableNames(call["table_name"]),
-            before_value=call["before_value"],
-            after_value=call["after_value"],
+            call["object_id"],
+            ACTION.validate_python(call["action"]),
+            None,
+            caller,
+            None,
+            LitellmTableNames(call["table_name"]),
+            call["before_value"],
+            call["after_value"],
         )
         await asyncio.sleep(0)
     finally:
