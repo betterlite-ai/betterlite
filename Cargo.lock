@@ -1457,6 +1457,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-cli",
  "libfuzzer-sys",
+ "serde_json",
 ]
 
 [[package]]
