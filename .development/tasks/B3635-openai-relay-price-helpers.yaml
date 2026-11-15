@@ -29,6 +29,8 @@ scope:
     - crates/betterlite-core/src/openai_pricing/**
     - tools/oracle/cases/openai-classification/**
     - tools/oracle/cases/openai-pricing/**
+    - crates/betterlite-models/src/image_cost/default_calculator.rs
+    - crates/betterlite-models/src/image_cost/default_calculator/tests.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L48-L55
