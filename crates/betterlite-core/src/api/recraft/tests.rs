@@ -720,7 +720,7 @@ fn cost_multiplies_the_returned_count_by_the_resolved_rate() {
 }
 
 #[rstest]
-#[case::empty_count(0, Some(0.25))]
+#[case::empty_count(0, Some(0.25_f64))]
 #[case::missing_rate(2, None)]
 fn cost_uses_the_rate_the_table_gives(#[case] image_count: i64, #[case] per_image: Option<f64>) {
     let image = billing(image_count);

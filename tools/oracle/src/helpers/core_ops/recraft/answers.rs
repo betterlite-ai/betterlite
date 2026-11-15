@@ -91,11 +91,10 @@ pub(super) fn url_answer(
     api_base: Option<&str>,
     environment: &BTreeMap<String, String>,
 ) -> Value {
-    let url = match endpoint {
-        Endpoint::Generation => generation_config(model, environment).get_complete_url(api_base),
-        Endpoint::Edit => edit_config(environment).get_complete_url(api_base),
-    };
-    json!({"url": url})
+    if matches!(endpoint, Endpoint::Edit) {
+        return json!({"url": edit_config(environment).get_complete_url(api_base)});
+    }
+    json!({"url": generation_config(model, environment).get_complete_url(api_base)})
 }
 
 fn edit_config(environment: &BTreeMap<String, String>) -> RecraftImageEditConfig {
@@ -120,10 +119,10 @@ pub(super) fn environment_answer(
             edit_config(environment).validate_environment(headers.clone(), explicit.as_ref())
         }
     };
-    match validated {
-        Ok(headers) => json!({"headers": headers}),
-        Err(_missing_key) => json!({"missing_key": true}),
-    }
+    validated.map_or_else(
+        |_missing_key| json!({"missing_key": true}),
+        |validated_headers| json!({"headers": validated_headers}),
+    )
 }
 
 pub(super) fn request_answer(
@@ -206,10 +205,9 @@ pub(super) fn edit_response_answer(
     body: &str,
 ) -> Result<Value, Box<HelperError>> {
     let upstream = upstream_response(status, headers, body);
-    match RecraftImageEditConfig::transform_image_edit_response(&upstream, 0) {
-        Ok(response) => Ok(json!({"data": response.data, "usage": response.usage})),
-        Err(error) => Err(reply_error(&error)),
-    }
+    RecraftImageEditConfig::transform_image_edit_response(&upstream, 0)
+        .map(|response| json!({"data": response.data, "usage": response.usage}))
+        .map_err(|error| reply_error(&error))
 }
 
 fn upstream_response(status: u16, headers: &ImageHeaders, body: &str) -> ImageHttpResponse {
