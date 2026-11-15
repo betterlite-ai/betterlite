@@ -93,13 +93,16 @@ fn caller_headers_are_discarded() {
 
 #[rstest::rstest]
 #[case::default(None, "https://api.voyageai.com/v1/rerank")]
-#[case::supplied("https://example.test", "https://example.test/v1/rerank")]
-#[case::v1("https://example.test/v1", "https://example.test/v1/rerank")]
-#[case::complete("https://example.test/v1/rerank", "https://example.test/v1/rerank")]
-#[case::trailing("https://example.test/v1/", "https://example.test/v1/rerank")]
-#[case::double_trailing("https://example.test/v1//", "https://example.test/v1/rerank")]
-#[case::empty("", "/v1/rerank")]
-#[case::slash("/", "/v1/rerank")]
+#[case::supplied(Some("https://example.test"), "https://example.test/v1/rerank")]
+#[case::v1(Some("https://example.test/v1"), "https://example.test/v1/rerank")]
+#[case::complete(
+    Some("https://example.test/v1/rerank"),
+    "https://example.test/v1/rerank"
+)]
+#[case::trailing(Some("https://example.test/v1/"), "https://example.test/v1/rerank")]
+#[case::double_trailing(Some("https://example.test/v1//"), "https://example.test/v1/rerank")]
+#[case::empty(Some(""), "/v1/rerank")]
+#[case::slash(Some("/"), "/v1/rerank")]
 fn endpoints_trim_and_select_the_suffix(#[case] base: Option<&str>, #[case] expected: &str) {
     assert_eq!(endpoint(base), expected);
 }
@@ -124,7 +127,8 @@ fn top_n_becomes_top_k_and_documents_are_kept() {
         max_tokens_per_doc: None,
         instruction: None,
     };
-    let body = request("m", "q", &documents(), &controls);
+    let docs = documents();
+    let body = request("m", "q", &docs, &controls);
     assert_eq!(
         serde_json::to_value(&body).expect("body"),
         json!({"model": "m", "query": "q", "documents": ["first", {"text": "second"}], "top_k": 3})
@@ -143,7 +147,8 @@ fn return_documents_is_kept_when_present(#[case] value: Option<bool>, #[case] ex
         max_tokens_per_doc: None,
         instruction: None,
     };
-    let body = request("m", "q", &documents(), &controls);
+    let docs = documents();
+    let body = request("m", "q", &docs, &controls);
     assert_eq!(
         serde_json::to_value(&body).expect("body")["return_documents"],
         expected
@@ -152,7 +157,8 @@ fn return_documents_is_kept_when_present(#[case] value: Option<bool>, #[case] ex
 
 #[test]
 fn none_controls_are_omitted() {
-    let body = request("m", "q", &documents(), &VoyageRerankControls::default());
+    let docs = documents();
+    let body = request("m", "q", &docs, &VoyageRerankControls::default());
     let value = serde_json::to_value(&body).expect("body");
     assert!(value.get("top_k").is_none());
     assert!(value.get("return_documents").is_none());
@@ -168,7 +174,8 @@ fn other_declared_controls_are_ignored() {
         max_tokens_per_doc: Some(8),
         instruction: Some("rank".to_owned()),
     };
-    let body = request("m", "q", &documents(), &controls);
+    let docs = documents();
+    let body = request("m", "q", &docs, &controls);
     let value = serde_json::to_value(&body).expect("body");
     assert_eq!(
         value.as_object().expect("object").len(),
@@ -235,6 +242,20 @@ fn results_keep_scores_and_convert_string_documents() {
             },
         ]
     );
+}
+
+#[test]
+fn scores_serialize_as_json_numbers() {
+    let body = r#"{"data":[
+        {"index":0,"relevance_score":0.25},
+        {"index":1,"relevance_score":0.875},
+        {"index":2,"relevance_score":1}
+    ]}"#;
+    let response = decode(body, 200).0.expect("response");
+    let encoded = serde_json::to_value(&response).expect("reply");
+    assert_eq!(encoded["results"][0]["relevance_score"], json!(0.25));
+    assert_eq!(encoded["results"][1]["relevance_score"], json!(0.875));
+    assert_eq!(encoded["results"][2]["relevance_score"], json!(1));
 }
 
 #[test]

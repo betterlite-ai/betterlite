@@ -74,6 +74,7 @@ pub struct VoyageRerankResponse {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct VoyageRerankResult {
     pub index: i64,
+    #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub relevance_score: Decimal,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub document: Option<Json>,
@@ -106,12 +107,14 @@ pub fn api_key<F>(explicit: Option<&str>, lookup: F) -> Result<String, VoyageRer
 where
     F: Fn(&str) -> Option<String>,
 {
-    let resolved = match explicit {
-        Some(key) => Some(key.to_owned()),
-        None => lookup("VOYAGE_API_KEY")
-            .filter(|value| !value.is_empty())
-            .or_else(|| lookup("VOYAGE_AI_API_KEY")),
-    };
+    let resolved = explicit.map_or_else(
+        || {
+            lookup("VOYAGE_API_KEY")
+                .filter(|value| !value.is_empty())
+                .or_else(|| lookup("VOYAGE_AI_API_KEY"))
+        },
+        |key| Some(key.to_owned()),
+    );
     resolved.ok_or(VoyageRerankError::MissingApiKey)
 }
 
@@ -131,10 +134,10 @@ pub fn headers(_supplied: Map<String, Value>, api_key: &str) -> Map<String, Valu
 
 #[must_use]
 pub fn endpoint(base: Option<&str>) -> String {
-    let Some(base) = base else {
+    let Some(supplied) = base else {
         return DEFAULT_COMPLETE_URL.to_owned();
     };
-    let trimmed = base.trim_end_matches('/');
+    let trimmed = supplied.trim_end_matches('/');
     if trimmed.ends_with("/v1/rerank") {
         return trimmed.to_owned();
     }
@@ -145,7 +148,7 @@ pub fn endpoint(base: Option<&str>) -> String {
 }
 
 #[must_use]
-pub fn request<'request>(
+pub const fn request<'request>(
     model: &'request str,
     query: &'request str,
     documents: &'request [RerankDocument],
@@ -210,7 +213,7 @@ pub fn calculate_rerank_cost(
 }
 
 fn response_id(root: &IndexMap<String, Json>, uuid: Uuid) -> Result<String, VoyageRerankError> {
-    let Some(value) = root.get("id").filter(|value| has_value(*value)) else {
+    let Some(value) = root.get("id").filter(|value| has_value(value)) else {
         return Ok(uuid.to_string());
     };
     let Json::Text(text) = value else {
@@ -237,14 +240,14 @@ fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
     let Some(index) = number.as_i64() else {
         return Err(VoyageRerankError::ResponseField { field: "index" });
     };
-    let Some(Json::Number(number)) = fields.get("relevance_score") else {
+    let Some(Json::Number(raw_score)) = fields.get("relevance_score") else {
         return Err(VoyageRerankError::ResponseField {
             field: "relevance_score",
         });
     };
-    let relevance_score = parse_decimal_lexeme(&number.to_string())
+    let relevance_score = parse_decimal_lexeme(&raw_score.to_string())
         .map(|score| score.normalize())
-        .map_err(|_| VoyageRerankError::ResponseField {
+        .map_err(|_error| VoyageRerankError::ResponseField {
             field: "relevance_score",
         })?;
     let document = fields.get("document").map(|value| match value {
@@ -252,7 +255,10 @@ fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
             "text".to_owned(),
             Json::Text(text.clone()),
         )])),
-        other => other.clone(),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            other.clone()
+        }
     });
     Ok(VoyageRerankResult {
         index,
