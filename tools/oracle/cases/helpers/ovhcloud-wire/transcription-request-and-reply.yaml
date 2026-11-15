@@ -1,0 +1,38 @@
+kind: helper
+name: ovhcloud-wire-transcription-request-and-reply
+call:
+  b6412:
+    function: transcription
+    provider: ovhcloud
+    requests:
+      - api_base: null
+        model: whisper-large-v3
+        optional_params:
+          temperature: 0.2
+          timestamp_granularities: [word]
+          response_format: verbose_json
+          top_p: 0.5
+          prompt: null
+          language: fr
+        filename: clip.wav
+        content: RIFF
+        env: {OVHCLOUD_API_KEY: env-key}
+      - {api_base: "https://proxy.example/v1//", model: m, optional_params: {}, filename: a.mp3, content: abc, env: {}}
+      - api_base: null
+        model: m
+        optional_params: {language: en, prompt: p, response_format: json, temperature: 0}
+        filename: ""
+        content: abc
+        env: {}
+      - {api_base: "", model: m, optional_params: {language: null}, filename: a.flac, content: "", env: {}}
+    replies:
+      - {body: '{"text":"hello","seconds":3,"duration":9}', status: 200, headers: {}}
+      - {body: '{"transcript":"hi","seconds":null,"duration":9}', status: 200, headers: {}}
+      - {body: '{"text":"","transcript":"two"}', status: 200, headers: {}}
+      - {body: '{"text":null,"transcript":"two"}', status: 200, headers: {}}
+      - {body: '{"seconds":0}', status: 200, headers: {}}
+      - {body: '{"duration":null}', status: 200, headers: {}}
+      - {body: '{}', status: 200, headers: {}}
+      - {body: oops, status: 503, headers: {X-Request-Id: req-1}}
+env: {}
+compare: {ignore: []}
