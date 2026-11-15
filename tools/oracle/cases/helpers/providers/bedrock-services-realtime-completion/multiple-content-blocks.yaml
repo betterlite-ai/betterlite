@@ -1,0 +1,29 @@
+kind: helper
+name: multiple-content-blocks
+call:
+  bedrock_services_realtime_completion:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-00000000000a
+      - 00000000-0000-4000-8000-00000000000b
+    steps:
+      - {op: usage, usage: {totalInputTokens: 10, totalOutputTokens: 20, totalTokens: 30}}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: text, delta_chunks: [one, two]}
+      - {op: content_end}
+      - {op: content_end}
+      - {op: set_state, output_item_id: item_1, response_id: resp_1, conversation_id: conv_1, delta_type: audio, delta_chunks: null}
+      - {op: content_end}
+      - {op: prompt_end}
+      - {op: content_end}
+      - {op: prompt_end}
+      - {op: tool_use, event: {toolUse: {toolUseId: call_1, toolName: get_weather, input: {a: 1}}}}
+env: {}
+compare: {ignore: []}

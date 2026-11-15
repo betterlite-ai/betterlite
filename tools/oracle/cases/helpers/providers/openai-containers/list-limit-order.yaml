@@ -1,0 +1,40 @@
+kind: helper
+name: list-limit-order
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    requests:
+      - kind: list
+        api_base: "https://api.openai.com/v1/containers?api-version=v1"
+        query: {after: cntr_a, limit: 0, order: "", extra_query: null}
+      - kind: list
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: null, limit: null, order: null, extra_query: null}
+      - kind: list
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: cntr_a, limit: 2, order: desc, extra_query: {limit: 5, after: other, api-version: v1}}
+      - kind: list
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: "", limit: -1, order: asc, extra_query: {}}
+      - kind: file_list
+        container_id: cntr_abc
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: cfile_0, limit: 1, order: asc, extra_query: null}
+      - kind: file_list
+        container_id: cntr/abc d
+        api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+        query: {after: null, limit: null, order: null, extra_query: {limit: "3"}}
+      - kind: file_list
+        container_id: cntr_abc
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: null, limit: null, order: null, extra_query: null}
+    headers: []
+    replies: []
+    content_replies: []
+    errors: []
+env: {}
+compare: {ignore: []}

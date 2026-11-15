@@ -1,7 +1,7 @@
 id: B8217
 milestone: M6 guardrails
 title: Hook initializer arguments A to L
-status: todo
+status: done
 depends_on: [B3662, B3766]
 file: tasks/B8217-hook-initializers-a-l.yaml
 covers:
@@ -19,7 +19,7 @@ covers:
   - "litellm/proxy/guardrails/guardrail_hooks/lasso/__init__.py"
 parent: B107
 split_from: B107
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1981

@@ -1,0 +1,8 @@
+kind: helper
+name: akto
+call:
+  b6562:
+    provider: akto
+env: {}
+compare:
+  ignore: []

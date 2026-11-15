@@ -1,0 +1,27 @@
+kind: helper
+name: openai-containers-container-auth-chain-seed
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    requests: []
+    headers:
+      - api_key: null
+        headers: {x-trace: seed}
+        globals: {api_base: null, api_key: sk-global-seed, openai_key: null}
+        environment: {}
+      - api_key: sk-explicit-seed
+        headers: {}
+        globals: {api_base: null, api_key: null, openai_key: null}
+        environment: {OPENAI_API_KEY: sk-env-seed}
+    replies: []
+    content_replies: []
+    errors:
+      - message: upstream unavailable
+        status: 503
+        headers: {retry-after: "1"}
+env: {}
+compare: {ignore: []}

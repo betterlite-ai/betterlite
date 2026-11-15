@@ -1,0 +1,8 @@
+kind: helper
+name: aporia-ai
+call:
+  b6562:
+    provider: aporia
+env: {}
+compare:
+  ignore: []
