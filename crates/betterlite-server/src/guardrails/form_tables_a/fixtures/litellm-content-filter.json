@@ -1,0 +1,47 @@
+{
+  "blocked_words": {
+    "description": "List of blocked keywords with actions",
+    "required": false,
+    "type": "array"
+  },
+  "blocked_words_file": {
+    "description": "Path to YAML file containing blocked words",
+    "required": false,
+    "type": "string"
+  },
+  "categories": {
+    "description": "List of prebuilt categories to enable (harmful_*, bias_*)",
+    "required": false,
+    "type": "array"
+  },
+  "competitor_intent_config": {
+    "description": "Optional config for intent-based competitor comparison detection. Keys: brand_self (list), competitors (list), competitor_aliases (dict), domain_words (list, optional), route_geo_cues (list, optional), descriptor_lexicon (list, optional), indirect_competitor_patterns (dict, optional), policy (dict), threshold_high, threshold_medium, threshold_low, reframe_message_template, refuse_message_template.",
+    "dict_value_type": "string",
+    "required": false,
+    "type": "dict"
+  },
+  "keyword_redaction_tag": {
+    "default_value": "[KEYWORD_REDACTED]",
+    "description": "Tag to use for keyword redaction",
+    "required": false,
+    "type": "string"
+  },
+  "pattern_redaction_format": {
+    "default_value": "[{pattern_name}_REDACTED]",
+    "description": "Format string for pattern redaction (use {pattern_name} placeholder)",
+    "required": false,
+    "type": "string"
+  },
+  "patterns": {
+    "description": "List of regex patterns to detect (prebuilt or custom)",
+    "required": false,
+    "type": "array"
+  },
+  "severity_threshold": {
+    "default_value": "medium",
+    "description": "Minimum severity to block (high, medium, low)",
+    "required": false,
+    "type": "string"
+  },
+  "ui_friendly_name": "LiteLLM Content Filter"
+}

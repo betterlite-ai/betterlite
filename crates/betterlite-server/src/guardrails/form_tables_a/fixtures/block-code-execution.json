@@ -1,0 +1,48 @@
+{
+  "action": {
+    "default_value": "block",
+    "description": "'block' raises an error; 'mask' replaces the code block with a placeholder.",
+    "options": [
+      "block",
+      "mask"
+    ],
+    "required": false,
+    "type": "select"
+  },
+  "blocked_languages": {
+    "description": "Language tags to block (e.g. python, javascript, bash). Empty or None = block all fenced code blocks.",
+    "options": [
+      "python",
+      "javascript",
+      "typescript",
+      "bash",
+      "ruby",
+      "go",
+      "java",
+      "csharp",
+      "php",
+      "c",
+      "cpp",
+      "rust",
+      "sql"
+    ],
+    "required": false,
+    "type": "multiselect"
+  },
+  "confidence_threshold": {
+    "default_value": 0.5,
+    "description": "Only block or mask when detection confidence >= this value; below threshold, allow or log_only.",
+    "max": 1.0,
+    "min": 0.0,
+    "required": false,
+    "step": 0.1,
+    "type": "percentage"
+  },
+  "detect_execution_intent": {
+    "default_value": true,
+    "description": "When True, block only when user intent is to run/execute; allow when intent is explain/refactor/don't run. Also block text-only execution requests (e.g. 'run `ls`', 'read /etc/passwd').",
+    "required": false,
+    "type": "boolean"
+  },
+  "ui_friendly_name": "Block Code Execution"
+}

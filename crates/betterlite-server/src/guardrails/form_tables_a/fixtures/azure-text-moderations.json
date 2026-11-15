@@ -1,0 +1,73 @@
+{
+  "api_base": {
+    "description": "Base URL for the Azure Content Safety Prompt Shield guardrail",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "API key for the Azure Content Safety Prompt Shield guardrail",
+    "required": false,
+    "type": "string"
+  },
+  "api_version": {
+    "default_value": "2024-09-01",
+    "description": "API version for the Azure Content Safety Prompt Shield guardrail. Default is 2024-09-01",
+    "required": false,
+    "type": "string"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the Azure Content Safety Text Moderation guardrail",
+    "fields": {
+      "blocklistNames": {
+        "description": "Blocklist names to scan for the Azure Content Safety Text Moderation guardrail. Learn more - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/quickstart-text",
+        "required": false,
+        "type": "array"
+      },
+      "categories": {
+        "description": "Categories to scan for the Azure Content Safety Text Moderation guardrail. See list of categories - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/harm-categories?tabs=warning",
+        "options": [
+          "Hate",
+          "SelfHarm",
+          "Sexual",
+          "Violence"
+        ],
+        "required": false,
+        "type": "multiselect"
+      },
+      "haltOnBlocklistHit": {
+        "description": "Whether to halt the request if a blocklist hit is detected",
+        "required": false,
+        "type": "boolean"
+      },
+      "outputType": {
+        "description": "Output type for the Azure Content Safety Text Moderation guardrail. Learn more - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/quickstart-text",
+        "options": [
+          "FourSeverityLevels",
+          "EightSeverityLevels"
+        ],
+        "required": false,
+        "type": "select"
+      },
+      "severity_threshold": {
+        "description": "Severity threshold for the Azure Content Safety Text Moderation guardrail across all categories",
+        "required": false,
+        "type": "number"
+      },
+      "severity_threshold_by_category": {
+        "description": "Severity threshold by category for the Azure Content Safety Text Moderation guardrail. See list of categories - https://learn.microsoft.com/en-us/azure/ai-services/content-safety/concepts/harm-categories?tabs=warning",
+        "dict_key_options": [
+          "Hate",
+          "SelfHarm",
+          "Sexual",
+          "Violence"
+        ],
+        "dict_value_type": "number",
+        "required": false,
+        "type": "dict"
+      }
+    },
+    "required": true,
+    "type": "nested"
+  },
+  "ui_friendly_name": "Azure Content Safety Text Moderation"
+}

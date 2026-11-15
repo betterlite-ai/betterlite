@@ -1,0 +1,24 @@
+{
+  "api_base": {
+    "description": "The Noma API base URL. Defaults to https://api.noma.security. Also checks if the NOMA_API_KEY env var is set.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The Noma API key. Reads from NOMA_API_KEY env var if None.",
+    "required": false,
+    "type": "string"
+  },
+  "application_id": {
+    "description": "The Noma Application ID. Reads from NOMA_APPLICATION_ID env var if None.",
+    "required": false,
+    "type": "string"
+  },
+  "ui_friendly_name": "Noma Security",
+  "use_v2": {
+    "default_value": false,
+    "description": "If True and guardrail='noma', route to the new Noma v2 implementation.",
+    "required": false,
+    "type": "boolean"
+  }
+}

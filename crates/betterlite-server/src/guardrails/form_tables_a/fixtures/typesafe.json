@@ -1,0 +1,50 @@
+{
+  "api_base": {
+    "description": "Base URL of the TypeSafe API. Falls back to the TYPESAFE_API_BASE env var, then https://api.typesafe.ai.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "TypeSafe API key, sent as a Bearer token. Falls back to the TYPESAFE_API_KEY env var.",
+    "required": false,
+    "type": "string"
+  },
+  "model": {
+    "description": "TypeSafe evaluation model (not the LLM). Defaults to 'jev-latest'.",
+    "required": false,
+    "type": "string"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the guardrail",
+    "fields": {
+      "max_result_chars_in_state": {
+        "description": "Tool result text is truncated to this many characters when sent to the Jev evaluator, keeping the head and tail. Defaults to 4000.",
+        "required": false,
+        "type": "number"
+      },
+      "min_chars_to_evaluate": {
+        "description": "Skip tool exchanges whose combined tool-result text is shorter than this many characters. Defaults to 200.",
+        "required": false,
+        "type": "number"
+      },
+      "relevance_threshold": {
+        "description": "Relevance cutoff in [0, 1]. A completed tool exchange is dropped when Jev scores the probability that it is still needed below this value. Defaults to 0.2.",
+        "required": false,
+        "type": "number"
+      }
+    },
+    "required": false,
+    "type": "nested"
+  },
+  "ui_friendly_name": "TypeSafe (Jev) Compaction",
+  "unreachable_fallback": {
+    "default_value": "fail_open",
+    "description": "Behavior when the TypeSafe evaluation service is unreachable or errors. 'fail_open' (default) forwards the request uncompacted. 'fail_closed' raises an error instead.",
+    "options": [
+      "fail_closed",
+      "fail_open"
+    ],
+    "required": false,
+    "type": "select"
+  }
+}

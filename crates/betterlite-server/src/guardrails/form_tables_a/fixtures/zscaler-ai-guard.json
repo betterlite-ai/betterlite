@@ -1,0 +1,41 @@
+{
+  "api_base": {
+    "description": "Zscaler AI Guard API endpoint. Determines policy resolution behavior:\n• /execute-policy (default) - Requires explicit policy_id in configuration\n• /resolve-and-execute-policy - Infers policy from user-api-key-alias header\nDefault: https://api.us1.zseclipse.net/v1/detection/execute-policy\nFalls back to ZSCALER_AI_GUARD_URL environment variable.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "API key for Zscaler AI Guard authentication. If not provided, falls back to ZSCALER_AI_GUARD_API_KEY environment variable.",
+    "required": false,
+    "type": "string"
+  },
+  "policy_id": {
+    "description": "Global policy ID for Zscaler AI Guard. Required when using /execute-policy endpoint.\n\nSet to 0 or leave empty when using /resolve-and-execute-policy with dynamic policy resolution.\nFalls back to ZSCALER_AI_GUARD_POLICY_ID environment variable.",
+    "required": false,
+    "type": "number"
+  },
+  "send_user_api_key_alias": {
+    "default_value": false,
+    "description": "Send user API key alias in request headers as 'user-api-key-alias'. CRITICAL when using /resolve-and-execute-policy endpoint - the policy is inferred from this value. Also useful for tracking/auditing with /execute-policy endpoint.",
+    "required": false,
+    "type": "bool"
+  },
+  "send_user_api_key_team_id": {
+    "default_value": false,
+    "description": "Send user API key team_id in request headers as 'user-api-key-team-id'. Enables team-level tracking and analytics in Zscaler AI Guard.",
+    "required": false,
+    "type": "bool"
+  },
+  "send_user_api_key_user_id": {
+    "default_value": false,
+    "description": "Send user API key user_id in request headers as 'user-api-key-user-id'. Enables user-level tracking and analytics in Zscaler AI Guard.",
+    "required": false,
+    "type": "bool"
+  },
+  "timeout": {
+    "description": "Timeout for each Zscaler AI Guard API call, in seconds. Must be positive. Raise it if scans fail under load with 'Connection timed out'. Defaults to 5 seconds.",
+    "required": false,
+    "type": "number"
+  },
+  "ui_friendly_name": "Zscaler AI Guard"
+}

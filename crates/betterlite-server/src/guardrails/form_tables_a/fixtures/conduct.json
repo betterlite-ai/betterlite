@@ -1,0 +1,49 @@
+{
+  "api_base": {
+    "default_value": "https://api.conductai.ai",
+    "description": "Conduct API base URL. The MCP endpoint is derived as <api_base>/mcp.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "default_value": null,
+    "description": "Conduct agent token. Env: CONDUCT_AGENT_TOKEN.",
+    "required": true,
+    "type": "string"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the guardrail",
+    "fields": {
+      "timeout": {
+        "default_value": 8.0,
+        "description": "Timeout in seconds for the Conduct check.",
+        "required": false,
+        "type": "number"
+      },
+      "tool_name": {
+        "default_value": "llm_call",
+        "description": "Conduct tool name the prompt is evaluated under. Match the tool your rules target.",
+        "required": false,
+        "type": "string"
+      },
+      "unreachable_fallback": {
+        "default_value": "fail_closed",
+        "description": "Behavior when Conduct is unreachable, times out, or rejects the token.",
+        "options": [
+          "fail_open",
+          "fail_closed"
+        ],
+        "required": false,
+        "type": "select"
+      },
+      "workspace_id": {
+        "description": "Conduct workspace id, sent as the X-Workspace-Id header. Env: CONDUCT_WORKSPACE_ID.",
+        "required": false,
+        "type": "string"
+      }
+    },
+    "required": false,
+    "type": "nested"
+  },
+  "ui_friendly_name": "Conduct Guard"
+}
