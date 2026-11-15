@@ -544,8 +544,8 @@ fn backend_frames_decode_from_their_streaming_kinds() {
     let events = transformer.transform(response).unwrap();
     assert_eq!(event_types(&wire_events(&events)), [STARTED, DELTA]);
     let configured: ChirpBackendEvent = serde_json::from_str(r#"{"kind":"configured"}"#).unwrap();
-    let events = transformer.transform(configured).unwrap();
-    assert_eq!(event_types(&wire_events(&events)), ["session.created"]);
+    let created = transformer.transform(configured).unwrap();
+    assert_eq!(event_types(&wire_events(&created)), ["session.created"]);
     let discarded: ChirpBackendEvent =
         serde_json::from_str(r#"{"kind":"turn_discarded","billed_seconds":1.5}"#).unwrap();
     assert!(transformer.transform(discarded).unwrap().is_empty());
@@ -565,31 +565,31 @@ fn an_unconfigured_transformer_rejects_backend_events() {
         .transform(ChirpBackendEvent::Configured)
         .unwrap_err();
     assert!(matches!(error, ChirpProtocolError::Unconfigured));
-    let error = transformer
+    let frame_error = transformer
         .transform(frame(ChirpSpeechEvent::Begin, &[], "0"))
         .unwrap_err();
-    assert!(matches!(error, ChirpProtocolError::Unconfigured));
+    assert!(matches!(frame_error, ChirpProtocolError::Unconfigured));
     assert_eq!(transformer.take_unbilled_usage().unwrap(), None);
 }
 
 #[test]
 fn vad_interims_emit_begin_and_deltas_then_a_final_completes() {
     let mut transformer = chirp_transformer(true);
-    let first = transformer
+    let first_events = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
         .unwrap();
-    let first = wire_events(&first);
+    let first = wire_events(&first_events);
     assert_eq!(event_types(&first), [STARTED, DELTA]);
     assert_eq!(first[0]["item_id"], "item_0");
     assert_eq!(first[1]["delta"], "hello");
-    let second = transformer
+    let second_events = transformer
         .transform(frame(
             ChirpSpeechEvent::Begin,
             &[("hello world", true)],
             "1.25",
         ))
         .unwrap();
-    let second = wire_events(&second);
+    let second = wire_events(&second_events);
     assert_eq!(second.len(), 3);
     assert_eq!(event_types(&second), [DELTA, STOPPED, COMPLETED]);
     assert_eq!(second[0]["delta"], " world");
@@ -630,10 +630,10 @@ fn a_final_matching_the_preview_emits_no_delta() {
     transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
         .unwrap();
-    let events = transformer
+    let transformed = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.5"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
     assert_eq!(events[1]["transcript"], "hello");
 }
@@ -648,10 +648,10 @@ fn a_final_before_any_interim_starts_a_new_turn() {
         event_types(&wire_events(&first)),
         [STARTED, DELTA, STOPPED, COMPLETED]
     );
-    let second = transformer
+    let second_events = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("two", false)], "1"))
         .unwrap();
-    let second = wire_events(&second);
+    let second = wire_events(&second_events);
     assert_eq!(event_types(&second), [STARTED, DELTA]);
     assert_eq!(second[0]["item_id"], "item_1");
     assert_eq!(second[1]["delta"], "two");
@@ -660,10 +660,10 @@ fn a_final_before_any_interim_starts_a_new_turn() {
 #[test]
 fn a_begin_frame_without_results_starts_the_turn() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(ChirpSpeechEvent::Begin, &[], "0.5"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(event_types(&events), [STARTED]);
     assert_eq!(events[0]["item_id"], "item_0");
 }
@@ -671,14 +671,14 @@ fn a_begin_frame_without_results_starts_the_turn() {
 #[test]
 fn one_frame_emits_begin_finals_interim_and_end_in_order() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(
             ChirpSpeechEvent::End,
             &[("hello", true), ("next", false)],
             "0.5",
         ))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(
         event_types(&events),
         [STARTED, DELTA, STOPPED, COMPLETED, STARTED, DELTA, STOPPED]
@@ -689,20 +689,20 @@ fn one_frame_emits_begin_finals_interim_and_end_in_order() {
 #[test]
 fn a_frame_with_an_interim_and_an_end_keeps_the_turn_open() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let begun = transformer
         .transform(frame(ChirpSpeechEvent::Begin, &[("he", false)], "0.5"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&begun);
     assert_eq!(event_types(&events), [STARTED, DELTA]);
-    let ended = transformer
+    let ended_events = transformer
         .transform(frame(ChirpSpeechEvent::End, &[("hello", false)], "0.5"))
         .unwrap();
-    let ended = wire_events(&ended);
+    let ended = wire_events(&ended_events);
     assert_eq!(event_types(&ended), [DELTA, STOPPED]);
-    let finished = transformer
+    let finished_events = transformer
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
-    let finished = wire_events(&finished);
+    let finished = wire_events(&finished_events);
     assert_eq!(event_types(&finished), [COMPLETED]);
     assert_eq!(finished[0]["transcript"], "hello");
 }
@@ -714,16 +714,16 @@ fn manual_mode_accumulates_finals_until_finish_turn() {
         .transform(frame(ChirpSpeechEvent::Begin, &[("hello", true)], "0.5"))
         .unwrap();
     assert_eq!(event_types(&wire_events(&first)), [DELTA]);
-    let second = transformer
+    let second_events = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("world", true)], "1.5"))
         .unwrap();
-    let second = wire_events(&second);
+    let second = wire_events(&second_events);
     assert_eq!(event_types(&second), [DELTA]);
     assert_eq!(second[0]["delta"], " world");
-    let finished = transformer
+    let finished_events = transformer
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
-    let finished = wire_events(&finished);
+    let finished = wire_events(&finished_events);
     assert_eq!(event_types(&finished), [COMPLETED]);
     assert_eq!(finished[0]["transcript"], "hello world");
     assert_eq!(finished[0]["usage"]["seconds"], 1.5);
@@ -735,10 +735,10 @@ fn a_turn_finished_without_committed_text_completes_the_preview() {
     transformer
         .transform(frame(ChirpSpeechEvent::None, &[("draft", false)], "0.5"))
         .unwrap();
-    let finished = transformer
+    let finished_events = transformer
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
-    let finished = wire_events(&finished);
+    let finished = wire_events(&finished_events);
     assert_eq!(finished[0]["transcript"], "draft");
     assert_eq!(finished[0]["usage"]["seconds"], 0.5);
 }
@@ -821,20 +821,20 @@ fn unbilled_seconds_are_reported_once_and_only_the_difference_afterwards() {
         Some(duration_usage(0.5))
     );
     assert_eq!(transformer.take_unbilled_usage().unwrap(), None);
-    let finished = transformer
+    let finished_events = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "1.5"))
         .unwrap();
-    let finished = wire_events(&finished);
+    let finished = wire_events(&finished_events);
     assert_eq!(finished[2]["usage"]["seconds"], 1.0);
 }
 
 #[test]
 fn usage_is_reported_once_per_completion() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "1.25"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(events[3]["usage"]["seconds"], 1.25);
     assert_eq!(transformer.take_unbilled_usage().unwrap(), None);
 }
@@ -849,10 +849,10 @@ fn billing_reports_exact_decimal_seconds() {
         transformer.take_unbilled_usage().unwrap(),
         Some(duration_usage(0.1))
     );
-    let events = transformer
+    let transformed = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.3"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
     assert_eq!(events[1]["usage"]["seconds"], 0.2);
 }
@@ -860,10 +860,10 @@ fn billing_reports_exact_decimal_seconds() {
 #[test]
 fn a_completion_without_billing_carries_no_usage() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0"))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert!(events[3].get("usage").is_none());
 }
 
@@ -876,10 +876,10 @@ fn billing_never_moves_backwards() {
     transformer
         .transform(frame(ChirpSpeechEvent::None, &[("there", true)], "1"))
         .unwrap();
-    let finished = transformer
+    let finished_events = transformer
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
-    let finished = wire_events(&finished);
+    let finished = wire_events(&finished_events);
     assert_eq!(finished[0]["transcript"], "hello there");
     assert_eq!(finished[0]["usage"]["seconds"], 2.0);
 }
@@ -887,14 +887,14 @@ fn billing_never_moves_backwards() {
 #[test]
 fn every_final_completes_in_vad_mode() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
             &[("one", true), ("two", true)],
             "1",
         ))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(
         event_types(&events),
         [
@@ -910,25 +910,25 @@ fn every_final_completes_in_vad_mode() {
 #[test]
 fn blank_results_are_skipped_and_transcripts_are_trimmed() {
     let mut transformer = chirp_transformer(true);
-    let events = transformer
+    let transformed = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
             &[("  hello  ", true), ("   ", false)],
             "1",
         ))
         .unwrap();
-    let events = wire_events(&events);
+    let events = wire_events(&transformed);
     assert_eq!(event_types(&events), [STARTED, DELTA, STOPPED, COMPLETED]);
     assert_eq!(events[1]["delta"], "hello");
     assert_eq!(events[3]["transcript"], "hello");
-    let interim = transformer
+    let interim_events = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
             &[("hello", false), ("   ", false)],
             "1",
         ))
         .unwrap();
-    let interim = wire_events(&interim);
+    let interim = wire_events(&interim_events);
     assert_eq!(event_types(&interim), [STARTED, DELTA]);
     assert_eq!(interim[1]["delta"], "hello");
 }
@@ -968,7 +968,12 @@ struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Captured {
     fn take(&self) -> String {
-        String::from_utf8_lossy(&self.0.lock().unwrap_or_else(PoisonError::into_inner)).into_owned()
+        let bytes = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(bytes).expect("captured logs are utf-8")
     }
 }
 
