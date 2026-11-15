@@ -41,8 +41,9 @@ pub fn decode_rerank_reply(
         Some(Json::Text(text)) => text.clone(),
         Some(_) => return Err(RerankDecodeError::Field { field: "id" }),
     };
+    // an absent or null usage takes the default, as docs/compatibility.md says for every key
     let usage = match root.get("usage") {
-        None => None,
+        None | Some(Json::Null) => None,
         Some(Json::Object(fields)) => Some(fields),
         Some(_) => return Err(RerankDecodeError::Field { field: "usage" }),
     };

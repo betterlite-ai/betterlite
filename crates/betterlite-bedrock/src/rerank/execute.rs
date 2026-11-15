@@ -10,7 +10,8 @@ use super::decode::decode_rerank_reply;
 use super::error::RerankCallError;
 use super::plan::{CredentialSource, LogContext, PreparedRequest, RerankCall, prepare_request};
 use super::transport::{
-    ClientFactory, ClientKind, RerankHttpReply, RerankHttpRequest, SuppliedClient, TransferError,
+    ClientFactory, ClientKind, RerankHttpReply, RerankHttpRequest, RerankTransport, SuppliedClient,
+    TransferError,
 };
 use crate::bedrock_settings::{
     BedrockError, ErrorHeaders, ErrorInput, ErrorReply, HeaderError, ResponseBody,
@@ -60,7 +61,29 @@ where
         body: prepared.signed.body.clone(),
         timeout: call.timeout,
     };
-    let sent = match (call.is_async, supplied) {
+    let reply = match send(call.is_async, request, supplied, factory, log).await {
+        Ok(reply) => reply,
+        Err(TransferError::Timeout) => return Err(timeout_error()?),
+        Err(error) => return Err(RerankCallError::Transport(error)),
+    };
+    // LiteLLM calls raise_for_status, which raises for every status outside 2xx
+    if !(200..=299).contains(&reply.status) {
+        return Err(provider_error(&prepared.endpoint_url, &reply)?);
+    }
+    Ok(reply)
+}
+
+async fn send<Factory>(
+    is_async: bool,
+    request: RerankHttpRequest,
+    supplied: Option<SuppliedClient<'_, Factory::Client>>,
+    factory: &Factory,
+    log: &mut LogContext<'_, '_>,
+) -> Result<RerankHttpReply, TransferError>
+where
+    Factory: ClientFactory + Sync,
+{
+    match (is_async, supplied) {
         (true, Some(client)) if client.kind == ClientKind::Async => {
             client.transport.post_with_logging(request, log.state).await
         }
@@ -74,17 +97,7 @@ where
             client.transport.post(request).await
         }
         (false, _) => factory.sync_client().post(request).await,
-    };
-    let reply = match sent {
-        Ok(reply) => reply,
-        Err(TransferError::Timeout) => return Err(timeout_error()?),
-        Err(error) => return Err(RerankCallError::Transport(error)),
-    };
-    // LiteLLM calls raise_for_status, which raises only for 4xx and 5xx
-    if (400..=599).contains(&reply.status) {
-        return Err(provider_error(&prepared.endpoint_url, &reply)?);
     }
-    Ok(reply)
 }
 
 pub fn transform_response(
