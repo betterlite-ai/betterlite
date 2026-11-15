@@ -38,7 +38,7 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
         return Err(key_error("model", chunk));
     }
     let mut reply =
-        base_chunk_parser(chunk, Uuid::nil, i64::default).map_err(|_| unexpected(chunk))?;
+        base_chunk_parser(chunk, Uuid::nil, i64::default).map_err(|_source| unexpected(chunk))?;
     // the override assigns delta["reasoning_content"] = delta.get("reasoning") on every choice,
     // so a chunk without the reasoning key clears whatever reasoning_content it carried
     for (choice, raw) in reply.choices.iter_mut().zip(raw_choices) {
