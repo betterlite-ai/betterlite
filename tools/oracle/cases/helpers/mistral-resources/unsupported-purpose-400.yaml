@@ -12,6 +12,7 @@ call:
         - {filename: null, content_type: null, content: [2], purpose: messages}
       list_purposes: [assistants, vision, evals]
       bodies: []
+      list_bodies: []
     creates: []
     jobs: []
     retrieve: []

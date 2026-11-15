@@ -17,6 +17,14 @@ call:
         - {id: file_fine, purpose: fine-tune}
         - {id: file_batch, purpose: batch}
         - {id: file_missing}
+      list_bodies:
+        - data:
+            - {id: file_ocr, bytes: 5, filename: scan.pdf, purpose: ocr}
+            - {id: file_user, purpose: user_data}
+            - {id: file_playground, purpose: playground}
+            - {id: file_fine, purpose: fine-tune}
+            - {id: file_batch, purpose: batch}
+            - {id: file_missing}
     creates: []
     jobs: []
     retrieve: []

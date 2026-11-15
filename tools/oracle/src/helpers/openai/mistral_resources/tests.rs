@@ -65,6 +65,22 @@ fn oracle_ocr_reads_back_as_user_data() {
     );
     assert_eq!(files["bodies"][0]["status"], "uploaded");
     assert_eq!(files["bodies"][0]["object"], "file");
+    let replies = files["list_bodies"][0].as_array().unwrap();
+    let list_purposes: Vec<&Value> = replies.iter().map(|reply| &reply["purpose"]).collect();
+    assert_eq!(
+        list_purposes,
+        [
+            &json!("user_data"),
+            &json!("user_data"),
+            &json!("user_data"),
+            &json!("fine-tune"),
+            &json!("batch"),
+            &json!("batch"),
+        ]
+    );
+    assert_eq!(replies[0]["bytes"], 5);
+    assert_eq!(replies[1]["bytes"], 0);
+    assert_eq!(replies[5]["created_at"], 1_704_153_600);
     assert_eq!(result["create"], json!([]));
 }
 
@@ -92,6 +108,7 @@ fn a_list_purpose_mistral_lacks_is_a_400() {
             "uploads": [],
             "list_purposes": ["vision"],
             "bodies": [],
+            "list_bodies": [],
         },
         "creates": [],
         "jobs": [],

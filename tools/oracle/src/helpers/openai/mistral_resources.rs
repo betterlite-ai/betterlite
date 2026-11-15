@@ -6,9 +6,9 @@ use betterlite_openai::mistral_batches::transformation::{
     create_batch, retrieve_batch, to_batch_object,
 };
 use betterlite_openai::mistral_files::error::MistralFilesError;
-use betterlite_openai::mistral_files::records::MistralFile;
+use betterlite_openai::mistral_files::records::{MistralFile, MistralFileList};
 use betterlite_openai::mistral_files::transformation::{
-    FileUploadRequest, create_upload, list_request, to_file_object,
+    FileUploadRequest, create_upload, list_request, to_file_list, to_file_object,
 };
 use betterlite_openai::mistral_identity::auth_headers;
 use betterlite_openai::openai_base_config::Headers;
@@ -40,6 +40,8 @@ struct FilesSection {
     list_purposes: Vec<Option<String>>,
     #[serde(default)]
     bodies: Vec<MistralFile>,
+    #[serde(default)]
+    list_bodies: Vec<MistralFileList>,
 }
 #[derive(Debug, Deserialize)]
 struct Upload {
@@ -124,7 +126,16 @@ fn files_outcome(section: &FilesSection, settings: &Settings) -> Result<Value, B
     for body in &section.bodies {
         bodies.push(json!(to_file_object(body, section.now)));
     }
-    Ok(json!({"uploads": uploads, "list": listed, "bodies": bodies}))
+    let mut list_bodies = Vec::with_capacity(section.list_bodies.len());
+    for list in &section.list_bodies {
+        list_bodies.push(json!(to_file_list(list, section.now)));
+    }
+    Ok(json!({
+        "uploads": uploads,
+        "list": listed,
+        "bodies": bodies,
+        "list_bodies": list_bodies,
+    }))
 }
 fn create_outcome(section: &CreateSection, settings: &Settings) -> Value {
     let key = section.api_key.as_deref().map(SecretString::from);

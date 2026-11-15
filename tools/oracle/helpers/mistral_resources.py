@@ -52,6 +52,7 @@ class Files(TypedDict):
     uploads: list[Upload]
     list_purposes: list[str | None]
     bodies: list[JsonValue]
+    list_bodies: list[JsonValue]
 
 
 class Create(TypedDict):
@@ -106,12 +107,19 @@ def file_response(body: JsonValue) -> JsonValue:
     return JSON.validate_json(file.model_dump_json(exclude_none=True))
 
 
+def list_response(body: JsonValue) -> JsonValue:
+    response = httpx.Response(200, content=json.dumps(body).encode())
+    files = FILES.transform_list_files_response(response, LOGGING, {})
+    return [JSON.validate_json(file.model_dump_json(exclude_none=True)) for file in files]
+
+
 def files_outcome(call: Files) -> JsonValue:
     time.time = partial(float, call["now"])
     return {
         "uploads": [upload_outcome(upload, call) for upload in call["uploads"]],
         "list": [list_outcome(purpose, call) for purpose in call["list_purposes"]],
         "bodies": [file_response(body) for body in call["bodies"]],
+        "list_bodies": [list_response(body) for body in call["list_bodies"]],
     }
 
 

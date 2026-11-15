@@ -13,6 +13,7 @@ call:
         - {filename: data.bin, content_type: application/x-custom, content: [5], purpose: fine-tune}
       list_purposes: [null, "", batch, fine-tune]
       bodies: []
+      list_bodies: []
     creates: []
     jobs: []
     retrieve: []
