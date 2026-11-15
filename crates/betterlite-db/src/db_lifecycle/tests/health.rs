@@ -205,6 +205,14 @@ async fn health_check_retries_just_under_the_budget() {
 }
 
 #[tokio::test]
+async fn the_health_check_trait_method_runs_the_probe() {
+    let harness = health_harness();
+    let outcome = harness.checker.health_check().await;
+    assert!(outcome.is_ok());
+    assert_eq!(harness.state.probe_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn spend_logs_row_count_reads_the_estimate() {
     let harness = health_harness();
     harness.state.script_row_count(Reply::Value(Ok(Some(42))));
