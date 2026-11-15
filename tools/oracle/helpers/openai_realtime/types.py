@@ -48,11 +48,6 @@ class CloseFrame(TypedDict):
     reason: str | None
 
 
-class StreamingRecord(TypedDict):
-    force_model: str | None
-    normalizer_none: bool
-
-
 class HeadersValidator(Protocol):
     def validate_environment(
         self, headers: dict[str, str], model: str, api_key: str | None = None
@@ -74,4 +69,3 @@ class RealtimeRunner(Protocol):
 QUERY: TypeAdapter[RealtimeQueryParams] = TypeAdapter(RealtimeQueryParams)
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 HEADERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
-FORCE_MODEL: TypeAdapter[str | None] = TypeAdapter(str | None)

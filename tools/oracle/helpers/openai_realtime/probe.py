@@ -1,15 +1,9 @@
+import asyncio
 import ssl as ssl_module
 import sys
 from types import ModuleType, TracebackType
 from typing import Protocol, Self
 
-from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.litellm_core_utils.realtime_streaming import (
-    RealtimeEventNormalizer,
-    RealTimeStreaming,
-)
-from litellm.llms.openai.realtime import handler as handler_module
-from pydantic import JsonValue
 from typing_extensions import override
 from websockets import exceptions as websockets_exceptions
 from websockets import frames as websockets_frames
@@ -18,21 +12,15 @@ from websockets.datastructures import Headers
 from websockets.exceptions import InvalidStatus
 from websockets.http11 import Response
 
-from .types import (
-    FORCE_MODEL,
-    CloseFrame,
-    FailMode,
-    FailureSetup,
-    SslKind,
-    StreamingRecord,
-)
+from .types import CloseFrame, FailMode, FailureSetup, SslKind
 
 REAL_WEBSOCKETS: ModuleType = sys.modules["websockets"]
-RECORDED: list[StreamingRecord] = []
 
 
 class ClientSocket(Protocol):
     async def send_text(self, data: str) -> None: ...
+
+    async def receive_text(self) -> str: ...
 
     async def close(self, code: int = 1000, reason: str | None = None) -> None: ...
 
@@ -53,6 +41,10 @@ class ProbeClient(ClientSocket):
     @override
     async def send_text(self, data: str) -> None:
         self.sent.append(data)
+
+    @override
+    async def receive_text(self) -> str:
+        raise ConnectionError("the probe client never sends a frame")
 
     @override
     async def close(self, code: int = 1000, reason: str | None = None) -> None:
@@ -83,6 +75,11 @@ class ProbeConnection:
         _value: BaseException | None,
         _traceback: TracebackType | None,
     ) -> None: ...
+
+    async def recv(self, _decode: bool = True) -> str:
+        # the relay task waits for the client loop to cancel it; no upstream frame is relayed
+        await asyncio.Future[None]()
+        return ""
 
 
 class ProbeServer:
@@ -140,24 +137,6 @@ class FakeWebsockets(ModuleType):
         )
 
 
-class RecordingStreaming(RealTimeStreaming):
-    def __new__(
-        cls,
-        *_args: ProbeClient | ProbeConnection | Logging,
-        **_kwargs: str | None | dict[str, JsonValue] | RealtimeEventNormalizer,
-    ) -> Self:
-        RECORDED.append(
-            StreamingRecord(
-                force_model=FORCE_MODEL.validate_python(_kwargs["force_transcription_model"]),
-                normalizer_none=_kwargs["event_normalizer"] is None,
-            )
-        )
-        return super().__new__(cls)
-
-    @override
-    async def bidirectional_forward(self) -> None: ...
-
-
 def ssl_kind(value: bool | str | ssl_module.SSLContext | None) -> SslKind:
     if value is None:
         return "none"
@@ -166,17 +145,9 @@ def ssl_kind(value: bool | str | ssl_module.SSLContext | None) -> SslKind:
     return "shared"
 
 
-def only_record() -> StreamingRecord:
-    if len(RECORDED) != 1:
-        raise RuntimeError("the handler constructed no realtime streaming object")
-    return RECORDED[0]
-
-
 def install(server: ProbeServer) -> None:
     sys.modules["websockets"] = FakeWebsockets(server)
-    handler_module.RealTimeStreaming = RecordingStreaming
 
 
 def restore() -> None:
     sys.modules["websockets"] = REAL_WEBSOCKETS
-    handler_module.RealTimeStreaming = RealTimeStreaming

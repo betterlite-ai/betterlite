@@ -161,8 +161,6 @@ fn connect_answer(input: &Input) -> HelperResult {
             "headers": plan.headers.iter().map(|(name, value)| (name.clone(), value.clone())).collect::<Vec<_>>(),
             "max_size": plan.max_message_size_bytes,
             "ssl": plan.ssl,
-            "force_transcription_model": plan.force_transcription_model,
-            "normalizer_none": plan.event_normalizer.is_none(),
             "pre_call": pre_call_json(call),
         }));
     }

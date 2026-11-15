@@ -8,7 +8,7 @@ from litellm.llms.openai.realtime.http_transformation import OpenAIRealtimeHTTPC
 from litellm.types.realtime import RealtimeQueryParams
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from .probe import RECORDED, ProbeServer, install, only_record, restore
+from .probe import ProbeServer, install, restore
 from .types import (
     HEADERS,
     JSON,
@@ -90,7 +90,6 @@ async def probe_call(
         function_id="fn-1",
         litellm_trace_id="trace-1",
     )
-    RECORDED.clear()
     install(server)
     try:
         await RUNNER.async_realtime(
@@ -110,15 +109,12 @@ async def connect_one(input_value: Input, setup: QuerySetup) -> JsonValue:
     server = ProbeServer(input_value["scope_headers"], None, "error")
     query_params = query_argument(setup["query_params"])
     logging_obj = await probe_call(input_value, server, setup["api_base"], query_params)
-    record = only_record()
     return JSON.validate_python(
         {
             "url": server.url,
             "headers": header_pairs(server.headers),
             "max_size": server.max_size,
             "ssl": server.ssl_kind,
-            "force_transcription_model": record["force_model"],
-            "normalizer_none": record["normalizer_none"],
             "pre_call": pre_call_view(logging_obj),
         }
     )
