@@ -114,15 +114,15 @@ impl Helper for Op {
             ),
         };
         let fail = |error: HostRerankError| failure(provider, &error);
-        let headers = headers.map_err(fail)?;
-        let url = url.map_err(fail)?;
+        let resolved_headers = headers.map_err(fail)?;
+        let resolved_url = url.map_err(fail)?;
         let request = transform_request(provider, &input.model, &mapped).map_err(fail)?;
         let mut hook = Vec::new();
         let response = decode_reply(provider, input.reply.as_ref(), &mut hook)?;
         Ok(json!({
             "mapped": mapped,
-            "headers": headers,
-            "url": url,
+            "headers": resolved_headers,
+            "url": resolved_url,
             "request": request,
             "response": response,
             "hook": hook,

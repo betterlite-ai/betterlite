@@ -22,7 +22,7 @@ fn load(variables: &[(&str, &str)], source: &str) -> Result<Settings, ConfigErro
 }
 
 fn revealed(key: Option<&SecretString>) -> Option<&str> {
-    key.map(|secret| secret.expose_secret())
+    key.map(|secret| secret.expose_secret().as_str())
 }
 
 #[rstest]

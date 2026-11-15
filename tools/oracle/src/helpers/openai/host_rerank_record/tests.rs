@@ -10,12 +10,16 @@ use crate::helpers::{Helper as _, HelperResult};
 
 const FIXED_ID: &str = "00000000-0000-4000-8000-000000000001";
 
-fn run_case(file: &str) -> HelperResult {
+fn parse_case(file: &str) -> HelperCase {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("cases/helpers/host-rerank-record")
         .join(file);
-    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    super::Op::decode_and_run(&case.call.input)
+    serde_saphyr::from_str(&fs::read_to_string(path).expect("the case is readable"))
+        .expect("the case parses as a helper case")
+}
+
+fn run_case(file: &str) -> HelperResult {
+    super::Op::decode_and_run(&parse_case(file).call.input)
 }
 
 fn answer(file: &str) -> Value {
@@ -121,9 +125,9 @@ fn the_output_counter_is_not_clamped_at_zero() {
         json!({"input_tokens": 10_i32, "output_tokens": -6_i32})
     );
     assert_eq!(result["response"]["id"], FIXED_ID);
-    assert_eq!(result["response"]["results"][0]["index"], 0);
+    assert_eq!(result["response"]["results"][0]["index"], 0_i32);
     assert!(result["response"]["results"][0].get("document").is_none());
-    assert_eq!(result["response"]["results"][1]["index"], 1);
+    assert_eq!(result["response"]["results"][1]["index"], 1_i32);
     assert_eq!(
         result["response"]["results"][1]["document"],
         json!({"text": "b"})
