@@ -43,3 +43,14 @@ deviations:
       stripped label keeps LiteLLM's exact bytes, and an id LiteLLM wrote decodes exactly as
       LiteLLM decoded it, its lossy answer for a ';' included.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L87-L100
+
+kept_bugs:
+  - what: >-
+      The ftyp check in _get_video_content_type never changes the answer: its matching branch and
+      the fall-through both return video/mp4, so the 64-byte probe only moves the stream cursor
+      and every BytesIO, BufferedReader, bytes or other body is uploaded as video/mp4.
+    why: >-
+      OpenAI's video endpoints accept video/mp4 for these uploads, and a caller who reuses the
+      stream after the transform sees the cursor restored; betterlite keeps both, probing and
+      restoring the cursor the way LiteLLM does and answering video/mp4 whatever the bytes say.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L610-L628
