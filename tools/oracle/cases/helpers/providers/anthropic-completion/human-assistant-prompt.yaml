@@ -1,0 +1,23 @@
+kind: helper
+name: human-assistant-prompt
+call:
+  anthropic_completion:
+    function: prompt
+    cases:
+      - model: claude-2
+        messages: [{role: system, content: Be brief.}, {role: user, content: Hi there}, {role: assistant, content: Hello}, {role: user, content: Name a color}]
+        custom_prompt: null
+      - model: claude-instant-1
+        messages: [{role: user, content: Hi there}]
+        custom_prompt: null
+      - model: claude-2
+        messages: [{role: system, content: Be brief.}, {role: user, content: Hi there}, {role: assistant, content: Hello}]
+        custom_prompt:
+          roles:
+            system: {pre_message: "<<SYS>>", post_message: "<</SYS>>"}
+            user: {pre_message: "[USER] ", post_message: " [/USER]"}
+            assistant: {pre_message: "[BOT] ", post_message: " [/BOT]"}
+          initial_prompt_value: "START "
+          final_prompt_value: " END"
+env: {}
+compare: {ignore: []}

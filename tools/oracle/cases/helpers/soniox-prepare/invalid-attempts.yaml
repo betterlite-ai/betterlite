@@ -1,0 +1,30 @@
+kind: helper
+name: soniox-prepare-invalid-attempts
+call:
+  soniox_prepare:
+    calls:
+    - {function: prepare, optional_params: {}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 0}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 1}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 6000}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 6001}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: -5}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "42"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "abc"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "1e5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "1.5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: " 12 "}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "1_0"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "007"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "+5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "-5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "_5"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "5_"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "1__0"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "inf"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 3.9}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: -2.7}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: 99999999999}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_max_polling_attempts: "999999999999999999999999"}, api_key: explicit, environment: {}}
+compare: {ignore: []}
+env: {}

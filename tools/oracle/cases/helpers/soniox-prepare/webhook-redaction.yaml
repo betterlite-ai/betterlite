@@ -1,0 +1,22 @@
+kind: helper
+name: soniox-prepare-webhook-redaction
+call:
+  soniox_prepare:
+    calls:
+    - {function: redact, body: {model: m, webhook_auth_header_value: secret, webhook_auth_header_name: X-Auth}}
+    - {function: redact, body: {model: m, webhook_auth_header_value: null}}
+    - {function: redact, body: {model: m}}
+    - {function: redact, body: {}}
+    - {function: redact, body: {webhook_auth_header_value: false}}
+    - {function: redact, body: {webhook_auth_header_value: 0}}
+    - {function: redact, body: {webhook_auth_header_value: ""}}
+    - {function: redact, body: {webhook_auth_header_value: [a]}}
+    - {function: redact, body: {webhook_auth_header_value: {k: v}}}
+    - {function: redact, body: {context: {webhook_auth_header_value: secret}}}
+    - {function: pre_call, api_base: "https://api.soniox.com", body: {model: m, webhook_auth_header_value: secret}, failing: false}
+    - {function: pre_call, api_base: "https://api.soniox.com/", body: {model: m}, failing: false}
+    - {function: post_call, audio: clip.wav, original_response: {transcription: {status: completed}}, body: {model: m, webhook_auth_header_value: secret}, failing: false}
+    - {function: post_call, audio: null, original_response: {}, body: {model: m}, failing: false}
+    - {function: post_call, original_response: {transcription: {}}, body: {model: m, webhook_auth_header_value: null}, failing: false}
+compare: {ignore: []}
+env: {}

@@ -1,0 +1,27 @@
+kind: helper
+name: rerank-response
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses:
+      - status: 200
+        headers: {}
+        body: '{"id":"body-1","data":[{"index":0,"relevance_score":0.95,"document":"first"},{"index":1,"relevance_score":0.75,"document":{"text":"second"}},{"index":2,"relevance_score":0.5}],"usage":{"total_tokens":100,"prompt_tokens":50,"completion_tokens":50}}'
+      - status: 200
+        headers: {}
+        body: '{"id":"body-2","data":[],"results":[{"index":4,"relevance_score":0.25,"document":""}],"usage":{"total_tokens":10}}'
+      - status: 200
+        headers: {}
+        body: '{"id":"body-3","data":[{"index":0,"relevance_score":1.0}]}'
+env: {}
+compare: {ignore: []}

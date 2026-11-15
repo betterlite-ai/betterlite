@@ -1,7 +1,7 @@
 id: B8171
 milestone: M3 providers
 title: DashScope embedding, rerank and shared errors
-status: todo
+status: done
 depends_on: [B2202, B1013]
 file: tasks/B8171-dashscope-embed-rerank.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/dashscope/rerank/transformation.py"
 parent: B043
 split_from: B043
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1893
