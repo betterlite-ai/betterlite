@@ -6,7 +6,7 @@ use rstest::rstest;
 use tokio::time::timeout;
 use uuid::Uuid;
 
-use super::support::{Call, FakeDatabase, RecordingIdentity, Step, capture_logs};
+use super::support::{Call, FakeDatabase, FakeError, RecordingIdentity, capture_logs};
 use crate::database_replica::pinned::WriterPinnedClient;
 use crate::worker_heartbeat::{
     HostnameError, ProxyWorkerHeartbeat, SystemWorkerIdentity, WorkerIdentity,
@@ -26,13 +26,8 @@ async fn provided_worker_id_preserved(#[case] supplied: &str) {
     assert_eq!(
         database.calls(),
         vec![
-            Call::Upsert {
-                worker_id: supplied.to_owned(),
-                hostname: "host-a".to_owned(),
-            },
-            Call::Prune {
-                seconds: "3600".to_owned(),
-            },
+            Call::Upsert(supplied.to_owned(), "host-a".to_owned()),
+            Call::Prune("3600".to_owned()),
         ]
     );
 }
@@ -50,14 +45,10 @@ async fn empty_id_generates_uuid_once(#[case] supplied: Option<&str>) {
     service.beat(&database).await;
     assert_eq!(identity.generated_calls(), 1);
     let calls = database.calls();
-    let Some(Call::Upsert { worker_id, .. }) = calls.first() else {
+    let Some(Call::Upsert(worker_id, _)) = calls.first() else {
         panic!("the first call is the upsert");
     };
-    let Some(Call::Upsert {
-        worker_id: repeated,
-        ..
-    }) = calls.get(2)
-    else {
+    let Some(Call::Upsert(repeated, _)) = calls.get(2) else {
         panic!("the third call is the second upsert");
     };
     assert_eq!(Uuid::parse_str(worker_id).unwrap().get_version_num(), 4);
@@ -84,16 +75,13 @@ fn hostname_error_propagates() {
 #[tokio::test]
 async fn upsert_failure_skips_prune() {
     let capture = capture_logs();
-    let database = FakeDatabase::default().failing(Step::Upsert);
+    let database = FakeDatabase::default().failing(FakeError::Upsert);
     let identity = RecordingIdentity::new("host-a");
     let service = ProxyWorkerHeartbeat::new(Some("worker-a"), &identity).unwrap();
     service.beat(&database).await;
     assert_eq!(
         database.calls(),
-        vec![Call::Upsert {
-            worker_id: "worker-a".to_owned(),
-            hostname: "host-a".to_owned(),
-        }]
+        vec![Call::Upsert("worker-a".to_owned(), "host-a".to_owned())]
     );
     assert!(capture.logs.has(
         "DEBUG",
@@ -104,20 +92,15 @@ async fn upsert_failure_skips_prune() {
 #[tokio::test]
 async fn prune_failure_debug_after_upsert() {
     let capture = capture_logs();
-    let database = FakeDatabase::default().failing(Step::Prune);
+    let database = FakeDatabase::default().failing(FakeError::Prune);
     let identity = RecordingIdentity::new("host-a");
     let service = ProxyWorkerHeartbeat::new(Some("worker-a"), &identity).unwrap();
     service.beat(&database).await;
     assert_eq!(
         database.calls(),
         vec![
-            Call::Upsert {
-                worker_id: "worker-a".to_owned(),
-                hostname: "host-a".to_owned(),
-            },
-            Call::Prune {
-                seconds: "3600".to_owned(),
-            },
+            Call::Upsert("worker-a".to_owned(), "host-a".to_owned()),
+            Call::Prune("3600".to_owned()),
         ]
     );
     assert!(
@@ -130,15 +113,13 @@ async fn prune_failure_debug_after_upsert() {
 #[tokio::test]
 async fn deregister_failure_debug() {
     let capture = capture_logs();
-    let database = FakeDatabase::default().failing(Step::Deregister);
+    let database = FakeDatabase::default().failing(FakeError::Deregister);
     let identity = RecordingIdentity::new("host-a");
     let service = ProxyWorkerHeartbeat::new(Some("worker-a"), &identity).unwrap();
     service.deregister(&database).await;
     assert_eq!(
         database.calls(),
-        vec![Call::Deregister {
-            worker_id: "worker-a".to_owned(),
-        }]
+        vec![Call::Deregister("worker-a".to_owned())]
     );
     assert!(capture.logs.has(
         "DEBUG",
@@ -156,10 +137,7 @@ async fn cancellation_propagates() {
     assert!(outcome.is_err());
     assert_eq!(
         database.calls(),
-        vec![Call::Upsert {
-            worker_id: "worker-a".to_owned(),
-            hostname: "host-a".to_owned(),
-        }]
+        vec![Call::Upsert("worker-a".to_owned(), "host-a".to_owned())]
     );
     assert!(!capture.logs.contents().contains("write failed"));
 }
@@ -169,12 +147,7 @@ async fn count_zero_is_known() {
     let database = FakeDatabase::default().with_counts(vec![Some(0)]);
     let count = count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await;
     assert_eq!(count, Some(0));
-    assert_eq!(
-        database.calls(),
-        vec![Call::Count {
-            seconds: "180".to_owned(),
-        }]
-    );
+    assert_eq!(database.calls(), vec![Call::Count("180".to_owned())]);
 }
 
 #[rstest]
@@ -213,15 +186,10 @@ async fn count_validates_all_rows_uses_first(
 #[tokio::test]
 async fn count_failure_debug_unknown() {
     let capture = capture_logs();
-    let database = FakeDatabase::default().failing(Step::Count);
+    let database = FakeDatabase::default().failing(FakeError::Count);
     let count = count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await;
     assert_eq!(count, None);
-    assert_eq!(
-        database.calls(),
-        vec![Call::Count {
-            seconds: "180".to_owned(),
-        }]
-    );
+    assert_eq!(database.calls(), vec![Call::Count("180".to_owned())]);
     assert!(
         capture
             .logs

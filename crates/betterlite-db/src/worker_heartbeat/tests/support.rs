@@ -18,21 +18,24 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum Call {
-    Upsert { worker_id: String, hostname: String },
-    Prune { seconds: String },
-    Deregister { worker_id: String },
-    Count { seconds: String },
+    Upsert(String, String),
+    Prune(String),
+    Deregister(String),
+    Count(String),
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Step {
-    Upsert,
-    Prune,
-    Deregister,
-    Count,
+impl Call {
+    fn failure(&self) -> FakeError {
+        match self {
+            Self::Upsert(..) => FakeError::Upsert,
+            Self::Prune(..) => FakeError::Prune,
+            Self::Deregister(..) => FakeError::Deregister,
+            Self::Count(..) => FakeError::Count,
+        }
+    }
 }
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub(crate) enum FakeError {
     #[error("upsert failed")]
     Upsert,
@@ -47,15 +50,15 @@ pub(crate) enum FakeError {
 #[derive(Default)]
 pub(crate) struct FakeDatabase {
     calls: Mutex<Vec<Call>>,
-    failing: Option<Step>,
+    failing: Option<FakeError>,
     counts: Vec<Option<i32>>,
     gate: Option<Arc<Notify>>,
 }
 
 impl FakeDatabase {
     #[must_use]
-    pub(crate) fn failing(mut self, step: Step) -> Self {
-        self.failing = Some(step);
+    pub(crate) fn failing(mut self, failure: FakeError) -> Self {
+        self.failing = Some(failure);
         self
     }
 
@@ -79,14 +82,20 @@ impl FakeDatabase {
         lock(&self.calls).push(call);
     }
 
-    async fn settle(&self, step: Step, error: FakeError) -> Result<(), FakeError> {
-        if self.failing == Some(step) {
-            return Err(error);
+    async fn settle(&self, failure: FakeError) -> Result<(), FakeError> {
+        if self.failing == Some(failure) {
+            return Err(failure);
         }
         if let Some(gate) = &self.gate {
             gate.notified().await;
         }
         Ok(())
+    }
+
+    fn answer(&self, call: Call) -> HeartbeatFuture<'_, (), FakeError> {
+        let failure = call.failure();
+        self.record(call);
+        Box::pin(self.settle(failure))
     }
 }
 
@@ -98,39 +107,27 @@ impl HeartbeatDatabase for FakeDatabase {
         worker_id: &'database str,
         hostname: &'database str,
     ) -> HeartbeatFuture<'database, (), FakeError> {
-        self.record(Call::Upsert {
-            worker_id: worker_id.to_owned(),
-            hostname: hostname.to_owned(),
-        });
-        Box::pin(self.settle(Step::Upsert, FakeError::Upsert))
+        self.answer(Call::Upsert(worker_id.to_owned(), hostname.to_owned()))
     }
 
     fn prune(&self, retention_seconds: f64) -> HeartbeatFuture<'_, (), FakeError> {
-        self.record(Call::Prune {
-            seconds: retention_seconds.to_string(),
-        });
-        Box::pin(self.settle(Step::Prune, FakeError::Prune))
+        self.answer(Call::Prune(retention_seconds.to_string()))
     }
 
     fn deregister<'database>(
         &'database self,
         worker_id: &'database str,
     ) -> HeartbeatFuture<'database, (), FakeError> {
-        self.record(Call::Deregister {
-            worker_id: worker_id.to_owned(),
-        });
-        Box::pin(self.settle(Step::Deregister, FakeError::Deregister))
+        self.answer(Call::Deregister(worker_id.to_owned()))
     }
 
     fn count_live_workers(
         &self,
         window_seconds: f64,
     ) -> HeartbeatFuture<'_, Vec<Option<i32>>, FakeError> {
-        self.record(Call::Count {
-            seconds: window_seconds.to_string(),
-        });
+        self.record(Call::Count(window_seconds.to_string()));
         let counts = self.counts.clone();
-        let failing = self.failing == Some(Step::Count);
+        let failing = self.failing == Some(FakeError::Count);
         Box::pin(async move {
             if failing {
                 return Err(FakeError::Count);

@@ -1,7 +1,9 @@
 use std::error::Error as StdError;
+use std::fmt::Display;
 use std::future::Future;
 use std::pin::Pin;
 
+use tokio_postgres::types::ToSql;
 use uuid::Uuid;
 
 use crate::database_replica::pinned::{WriterPinnedClient, writer_wrapper};
@@ -55,6 +57,22 @@ pub struct PostgresDatabase<Client> {
     pub client: Client,
 }
 
+impl<Client> PostgresDatabase<Client>
+where
+    Client: deadpool_postgres::GenericClient + Send + Sync,
+{
+    fn execute_statement<'database, const PARAMETER_COUNT: usize>(
+        &'database self,
+        sql: &'static str,
+        parameters: [&'database (dyn ToSql + Sync); PARAMETER_COUNT],
+    ) -> HeartbeatFuture<'database, (), tokio_postgres::Error> {
+        Box::pin(async move {
+            self.client.execute_raw(sql, parameters).await?;
+            Ok(())
+        })
+    }
+}
+
 impl<Client> HeartbeatDatabase for PostgresDatabase<Client>
 where
     Client: deadpool_postgres::GenericClient + Send + Sync,
@@ -67,19 +85,15 @@ where
         hostname: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
         Box::pin(async move {
-            self.client
-                .execute(BEAT_SQL, &[&worker_id, &hostname])
-                .await?;
-            Ok(())
+            self.execute_statement(BEAT_SQL, [&worker_id, &hostname])
+                .await
         })
     }
 
     fn prune(&self, retention_seconds: f64) -> HeartbeatFuture<'_, (), Self::Error> {
         Box::pin(async move {
-            self.client
-                .execute(PRUNE_SQL, &[&retention_seconds])
-                .await?;
-            Ok(())
+            self.execute_statement(PRUNE_SQL, [&retention_seconds])
+                .await
         })
     }
 
@@ -87,10 +101,7 @@ where
         &'database self,
         worker_id: &'database str,
     ) -> HeartbeatFuture<'database, (), Self::Error> {
-        Box::pin(async move {
-            self.client.execute(DEREGISTER_SQL, &[&worker_id]).await?;
-            Ok(())
-        })
+        Box::pin(async move { self.execute_statement(DEREGISTER_SQL, [&worker_id]).await })
     }
 
     fn count_live_workers(
@@ -155,15 +166,16 @@ impl ProxyWorkerHeartbeat {
         })
     }
 
-    pub async fn beat<Database: HeartbeatDatabase>(&self, database: &Database) {
+    pub async fn beat<Database>(&self, database: &Database)
+    where
+        Database: HeartbeatDatabase,
+    {
         let retention = f64::from(STALE_ROW_RETENTION_SECONDS);
-        match database.upsert(&self.worker_id, &self.hostname).await {
-            Ok(()) => {
-                if let Err(error) = database.prune(retention).await {
-                    tracing::debug!("Proxy worker heartbeat write failed: {error}");
-                }
-            }
-            Err(error) => tracing::debug!("Proxy worker heartbeat write failed: {error}"),
+        let outcome = database.upsert(&self.worker_id, &self.hostname).await;
+        report_failure(&outcome, "Proxy worker heartbeat write failed");
+        if outcome.is_ok() {
+            let pruned = database.prune(retention).await;
+            report_failure(&pruned, "Proxy worker heartbeat write failed");
         }
     }
 
@@ -171,9 +183,18 @@ impl ProxyWorkerHeartbeat {
     where
         Database: HeartbeatDatabase,
     {
-        if let Err(error) = database.deregister(&self.worker_id).await {
-            tracing::debug!("Proxy worker heartbeat deregister failed: {error}");
-        }
+        let outcome = database.deregister(&self.worker_id).await;
+        report_failure(&outcome, "Proxy worker heartbeat deregister failed");
+    }
+}
+
+// every heartbeat statement is best effort: its error is logged at DEBUG and never propagated
+fn report_failure<Value, Failure>(outcome: &Result<Value, Failure>, message: &str)
+where
+    Failure: Display,
+{
+    if let Err(error) = outcome {
+        tracing::debug!("{message}: {error}");
     }
 }
 
@@ -200,13 +221,9 @@ where
     Database: HeartbeatDatabase,
 {
     let writer = writer_wrapper(database);
-    match census(writer).await {
-        Ok(count) => Some(count),
-        Err(error) => {
-            tracing::debug!("Live proxy worker count unavailable: {error}");
-            None
-        }
-    }
+    let outcome = census(writer).await;
+    report_failure(&outcome, "Live proxy worker count unavailable");
+    outcome.ok()
 }
 
 async fn census<Database>(database: &Database) -> Result<i32, CensusError<Database::Error>>
