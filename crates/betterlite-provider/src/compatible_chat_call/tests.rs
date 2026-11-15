@@ -523,6 +523,29 @@ async fn a_nonstream_reply_is_decoded_with_the_provider_prefix_and_base_model() 
 }
 
 #[tokio::test]
+async fn execute_plans_sends_and_finishes_in_one_call() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Async);
+    call.api_base = Some(base(&listener).await);
+    let (request, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener, 200, REPLY.as_bytes()), async {
+            call.execution(None, None)
+                .execute(&client(), &mut state, &env)
+                .await
+        })
+    })
+    .await
+    .unwrap();
+    let CompatibleChatOutcome::Reply(reply) = answer.unwrap() else {
+        panic!("a buffered reply");
+    };
+    assert_eq!(reply.response.model, "openai_like/gpt-4o");
+    assert!(request.starts_with("POST /v1/chat/completions HTTP/1.1"));
+}
+
+#[tokio::test]
 async fn a_sync_fake_stream_buffers_and_replays_one_chunk() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
