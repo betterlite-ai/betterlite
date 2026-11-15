@@ -1,7 +1,7 @@
 id: B539
 milestone: M3 providers
 title: Azure native and OpenAI transcription
-status: todo
+status: done
 depends_on: [B531, B515, B173, B171, B002, B1001, B004, B668, B673, B8500, B249, B2202]
 file: tasks/B539-azure-transcription.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/azure/audio_transcriptions.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2001
