@@ -8,6 +8,7 @@ mod actions;
 mod constructor;
 mod inspection;
 mod redaction;
+mod wire;
 
 pub(super) fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
