@@ -4,13 +4,13 @@ use betterlite_openai::chat::{ChatMessage, Tool};
 
 use super::budget::{COMPACTOR_BUDGET_RATIO, budget};
 use super::contracts::{
-    Candidate, History, NativePrefix, OutputAllowance, ParentPayload, ResponsesPayload, Selection,
-    SummaryRequest,
+    Candidate, History, NativeCapability, NativePrefix, OutputAllowance, ParentPayload,
+    ParentTools, ResponsesPayload, Selection, SummaryRequest, SummaryTools,
 };
 use super::error::{CompactionError, ErrorKind};
 
-pub struct CompactorConfig<'a> {
-    pub model: Option<&'a str>,
+pub struct CompactorConfig<'config> {
+    pub model: Option<&'config str>,
     pub max_tokens: i64,
 }
 
@@ -26,23 +26,60 @@ pub trait ResponsesPrefix {
     fn tools(&self, tools: &[Json]) -> Result<Vec<Tool>, CompactionError>;
 }
 
-#[must_use]
+pub struct ResponsesInput<'params> {
+    pub payload: &'params ResponsesPayload<'params>,
+    pub converter: &'params dyn ResponsesPrefix,
+}
+
+pub enum ParentInput<'params> {
+    Chat(&'params ParentPayload<'params>),
+    Responses(&'params ResponsesInput<'params>),
+}
+
+fn parent_tools(tools: ParentTools<'_>) -> SummaryTools {
+    match tools {
+        ParentTools::Chat(chat) => SummaryTools::Chat(chat.to_vec()),
+        ParentTools::Anthropic(anthropic) => SummaryTools::Anthropic(anthropic.to_vec()),
+    }
+}
+
+fn older_items<'items, Entry>(conversation: &'items [Entry], history: &History) -> &'items [Entry] {
+    conversation
+        .get(
+            ..history
+                .instruction_count
+                .saturating_add(history.prefix_count),
+        )
+        .unwrap_or(conversation)
+}
+
 pub fn compactor_input(
-    payload: &ParentPayload<'_>,
+    parent: &ParentInput<'_>,
     history: &History,
     output: i64,
-) -> SummaryRequest {
-    let end = history
-        .instruction_count
-        .saturating_add(history.prefix_count);
-    let older = payload.messages.get(..end).unwrap_or(payload.messages);
-    SummaryRequest {
-        model: payload.model.to_owned(),
-        messages: older.to_vec(),
-        max_tokens: output,
-        tools: payload.tools.map(<[Tool]>::to_vec),
-        system: payload.system.cloned(),
-        user: payload.user.cloned(),
+) -> Result<SummaryRequest, CompactionError> {
+    match parent {
+        ParentInput::Chat(payload) => Ok(SummaryRequest {
+            model: payload.model.to_owned(),
+            messages: older_items(payload.messages, history).to_vec(),
+            max_tokens: output,
+            tools: payload.tools.map(parent_tools),
+            system: payload.system.cloned(),
+            user: payload.user.cloned(),
+        }),
+        ParentInput::Responses(input) => {
+            let payload = input.payload;
+            let older = older_items(payload.items, history);
+            let prefix = native_prefix(older, payload.tools, payload.request, input.converter)?;
+            Ok(SummaryRequest {
+                model: payload.model.to_owned(),
+                messages: prefix.messages,
+                max_tokens: output,
+                tools: Some(SummaryTools::Chat(prefix.tools)),
+                system: payload.system.cloned(),
+                user: payload.user.cloned(),
+            })
+        }
     }
 }
 
@@ -58,27 +95,6 @@ pub fn native_prefix(
     })
 }
 
-pub fn responses_compactor_input(
-    payload: &ResponsesPayload<'_>,
-    history: &History,
-    output: i64,
-    converter: &dyn ResponsesPrefix,
-) -> Result<SummaryRequest, CompactionError> {
-    let end = history
-        .instruction_count
-        .saturating_add(history.prefix_count);
-    let older = payload.items.get(..end).unwrap_or(payload.items);
-    let prefix = native_prefix(older, payload.tools, payload.request, converter)?;
-    Ok(SummaryRequest {
-        model: payload.model.to_owned(),
-        messages: prefix.messages,
-        max_tokens: output,
-        tools: Some(prefix.tools),
-        system: payload.system.cloned(),
-        user: payload.user.cloned(),
-    })
-}
-
 pub async fn compactor_model(
     config: &CompactorConfig<'_>,
     candidates: &[Candidate],
@@ -86,34 +102,38 @@ pub async fn compactor_model(
     counter: &dyn CompactionCounter,
 ) -> Result<Selection, CompactionError> {
     let needed = counter.count(request).await?;
-    let found = match config.model {
-        Some(model) => candidates
-            .iter()
-            .find(|candidate| candidate.model == model)
-            .map(|candidate| eligible(candidate, request, needed))
-            .transpose()?
-            .flatten(),
-        None => {
-            let mut chosen = None;
-            for candidate in candidates {
-                chosen = eligible(candidate, request, needed)?;
-                if chosen.is_some() {
-                    break;
-                }
-            }
-            chosen
+    let found = config.model.map_or_else(
+        || first_eligible(candidates, request, needed),
+        |model| {
+            candidates
+                .iter()
+                .find(|candidate| candidate.model == model)
+                .map(|candidate| eligible(candidate, request, needed))
+                .transpose()
+                .map(Option::flatten)
+        },
+    );
+    found?.ok_or_else(|| CompactionError {
+        kind: ErrorKind::Unavailable,
+        model: request.model.clone(),
+        reason:
+            "No configured compactor supports native compaction with enough context and compatible defaults"
+                .to_owned(),
+        source: None,
+    })
+}
+
+fn first_eligible(
+    candidates: &[Candidate],
+    request: &SummaryRequest,
+    needed: i64,
+) -> Result<Option<Selection>, CompactionError> {
+    for candidate in candidates {
+        if let Some(selection) = eligible(candidate, request, needed)? {
+            return Ok(Some(selection));
         }
-    };
-    match found {
-        Some(selection) => Ok(selection),
-        None => Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: request.model.clone(),
-            reason:
-                "No configured compactor supports native compaction with enough context and compatible defaults"
-                    .to_owned(),
-        }),
     }
+    Ok(None)
 }
 
 fn eligible(
@@ -128,7 +148,7 @@ fn eligible(
         return Ok(None);
     }
     for deployment in &candidate.deployments {
-        if !deployment.native.supports || !deployment.native.compatible_defaults {
+        if deployment.native.capability != NativeCapability::Supported {
             return Ok(None);
         }
         let allowance = OutputAllowance {

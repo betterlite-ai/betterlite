@@ -2,19 +2,19 @@ use betterlite_models::decisions::Json;
 
 use super::blocks::field_text;
 
-pub(crate) struct Block<'a> {
-    pub(crate) kind: Option<&'a str>,
-    pub(crate) id: Option<&'a str>,
-    pub(crate) tool_use_id: Option<&'a str>,
+pub(crate) struct Block<'source> {
+    pub(crate) kind: Option<&'source str>,
+    pub(crate) id: Option<&'source str>,
+    pub(crate) tool_use_id: Option<&'source str>,
 }
 
-pub(crate) struct Item<'a> {
-    pub(crate) role: Option<&'a str>,
-    pub(crate) kind: Option<&'a str>,
-    pub(crate) blocks: Vec<Block<'a>>,
-    pub(crate) tool_calls: Vec<Option<&'a str>>,
-    pub(crate) tool_call_id: Option<&'a str>,
-    pub(crate) call_id: Option<&'a str>,
+pub(crate) struct Item<'source> {
+    pub(crate) role: Option<&'source str>,
+    pub(crate) kind: Option<&'source str>,
+    pub(crate) blocks: Vec<Block<'source>>,
+    pub(crate) tool_calls: Vec<Option<&'source str>>,
+    pub(crate) tool_call_id: Option<&'source str>,
+    pub(crate) call_id: Option<&'source str>,
 }
 
 fn item_blocks(item: &Json) -> Vec<Block<'_>> {
@@ -76,31 +76,36 @@ pub(crate) fn json_item(item: &Json) -> Item<'_> {
 }
 
 pub(crate) fn tool_ids_of(items: &[Json], results: bool) -> Vec<String> {
+    let mut ids = Vec::new();
+    for raw in items {
+        ids.extend(item_tool_ids(&json_item(raw), results));
+    }
+    ids
+}
+
+fn item_tool_ids(item: &Item<'_>, results: bool) -> Vec<String> {
+    let mut ids = Vec::new();
+    if results && item.role == Some("tool") {
+        ids.push(item.tool_call_id.unwrap_or_default().to_owned());
+    }
     let function_kind = if results {
         "function_call_output"
     } else {
         "function_call"
     };
+    if item.kind == Some(function_kind) {
+        ids.push(item.call_id.unwrap_or_default().to_owned());
+    }
     let block_kind = if results { "tool_result" } else { "tool_use" };
-    let mut ids = Vec::new();
-    for raw in items {
-        let item = json_item(raw);
-        if results && item.role == Some("tool") {
-            ids.push(item.tool_call_id.unwrap_or_default().to_owned());
+    for block in &item.blocks {
+        if block.kind == Some(block_kind) {
+            let id = if results { block.tool_use_id } else { block.id };
+            ids.push(id.unwrap_or_default().to_owned());
         }
-        if item.kind == Some(function_kind) {
-            ids.push(item.call_id.unwrap_or_default().to_owned());
-        }
-        for block in &item.blocks {
-            if block.kind == Some(block_kind) {
-                let id = if results { block.tool_use_id } else { block.id };
-                ids.push(id.unwrap_or_default().to_owned());
-            }
-        }
-        if !results {
-            for call in &item.tool_calls {
-                ids.push(call.unwrap_or_default().to_owned());
-            }
+    }
+    if !results {
+        for call in &item.tool_calls {
+            ids.push(call.unwrap_or_default().to_owned());
         }
     }
     ids

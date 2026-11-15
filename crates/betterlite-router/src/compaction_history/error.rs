@@ -6,10 +6,12 @@ pub enum ErrorKind {
     Rejected,
 }
 
-#[derive(Debug, Error, Eq, PartialEq)]
+#[derive(Debug, Error)]
 #[error("Context compaction: {reason}")]
 pub struct CompactionError {
     pub kind: ErrorKind,
     pub model: String,
     pub reason: String,
+    #[source]
+    pub source: Option<serde_json::Error>,
 }

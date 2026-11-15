@@ -26,8 +26,18 @@ fn message_json(message: &ChatMessage, model: &str) -> Result<Json, CompactionEr
         .map_err(|source| CompactionError {
             kind: ErrorKind::Rejected,
             model: model.to_owned(),
-            reason: format!("the chat message cannot be read as history: {source}"),
+            reason: "the chat message cannot be read as history".to_owned(),
+            source: Some(source),
         })
+}
+
+fn unavailable(model: &str, reason: &str) -> CompactionError {
+    CompactionError {
+        kind: ErrorKind::Unavailable,
+        model: model.to_owned(),
+        reason: reason.to_owned(),
+        source: None,
+    }
 }
 
 fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
@@ -42,11 +52,10 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
         .map(json_item)
         .any(|item| matches!(item.role, Some("system" | "developer")))
     {
-        return Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason: "Mid-conversation instructions cannot be compacted".to_owned(),
-        });
+        return Err(unavailable(
+            model,
+            "Mid-conversation instructions cannot be compacted",
+        ));
     }
     let split = conversation
         .iter()
@@ -60,22 +69,7 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
         })
         .unwrap_or(0);
     let prefix = conversation.get(..split).unwrap_or(&[]);
-    let calls = tool_ids_of(prefix, false);
-    let results = tool_ids_of(prefix, true);
-    let mut sorted_calls = calls.clone();
-    sorted_calls.sort();
-    let mut sorted_results = results.clone();
-    sorted_results.sort();
-    let duplicated = calls.iter().collect::<BTreeSet<_>>().len() != calls.len();
-    let empty_id = calls.iter().chain(&results).any(String::is_empty);
-    if prefix.is_empty() || empty_id || duplicated || sorted_calls != sorted_results {
-        return Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason: "No closed older conversation is available without changing the latest request"
-                .to_owned(),
-        });
-    }
+    let (calls, results) = closed_ids(prefix, model)?;
     Ok(History {
         instruction_count,
         prefix_count: split,
@@ -85,12 +79,30 @@ fn partition(items: &[Json], model: &str) -> Result<History, CompactionError> {
     })
 }
 
+fn closed_ids(prefix: &[Json], model: &str) -> Result<(Vec<String>, Vec<String>), CompactionError> {
+    let calls = tool_ids_of(prefix, false);
+    let results = tool_ids_of(prefix, true);
+    let mut sorted_calls = calls.clone();
+    sorted_calls.sort();
+    let mut sorted_results = results.clone();
+    sorted_results.sort();
+    let duplicated = calls.iter().collect::<BTreeSet<_>>().len() != calls.len();
+    let empty_id = calls.iter().chain(&results).any(String::is_empty);
+    if prefix.is_empty() || empty_id || duplicated || sorted_calls != sorted_results {
+        return Err(unavailable(
+            model,
+            "No closed older conversation is available without changing the latest request",
+        ));
+    }
+    Ok((calls, results))
+}
+
 fn item_kind(item: &Json) -> Option<&str> {
     let Json::Object(fields) = item else {
         return None;
     };
     match fields.get("type") {
-        None | Some(Json::Null) => Some("message"),
+        None => Some("message"),
         Some(Json::Text(kind)) => Some(kind.as_str()),
         Some(_) => None,
     }
@@ -150,20 +162,16 @@ fn responses_checks(items: &[Json], tools: &[Json], model: &str) -> Result<(), C
             Some("message" | "function_call" | "function_call_output")
         )
     }) {
-        return Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason: "Opaque or provider-managed Responses items require client-managed native compaction"
-                .to_owned(),
-        });
+        return Err(unavailable(
+            model,
+            "Opaque or provider-managed Responses items require client-managed native compaction",
+        ));
     }
     if !items.iter().all(text_blocks_only) || !function_tools_only(tools) {
-        return Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason: "Only text history and ordinary function tools support portable Responses compaction"
-                .to_owned(),
-        });
+        return Err(unavailable(
+            model,
+            "Only text history and ordinary function tools support portable Responses compaction",
+        ));
     }
     Ok(())
 }
@@ -174,13 +182,10 @@ pub fn portable_history(
 ) -> Result<History, CompactionError> {
     let items: Vec<Json> = match conversation {
         Conversation::Text(_) => {
-            return Err(CompactionError {
-                kind: ErrorKind::Unavailable,
-                model: model.to_owned(),
-                reason:
-                    "A single user input cannot be compacted without changing the latest request"
-                        .to_owned(),
-            });
+            return Err(unavailable(
+                model,
+                "A single user input cannot be compacted without changing the latest request",
+            ));
         }
         Conversation::Messages(messages) => messages
             .iter()
@@ -192,13 +197,10 @@ pub fn portable_history(
         }
     };
     if items.iter().any(reasoning_present) {
-        return Err(CompactionError {
-            kind: ErrorKind::Unavailable,
-            model: model.to_owned(),
-            reason:
-                "Native reasoning or compaction blocks require client-managed native compaction"
-                    .to_owned(),
-        });
+        return Err(unavailable(
+            model,
+            "Native reasoning or compaction blocks require client-managed native compaction",
+        ));
     }
     partition(&items, model)
 }

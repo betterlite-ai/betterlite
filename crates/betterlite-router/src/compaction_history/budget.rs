@@ -21,16 +21,17 @@ pub fn budget(
             kind: ErrorKind::Rejected,
             model: model.to_owned(),
             reason: "The output allowance must be a positive integer".to_owned(),
+            source: None,
         });
     }
-    let available = match (limits.max_input_tokens, output) {
-        (Some(window), Some(reserved)) => {
+    let available = limits
+        .max_input_tokens
+        .zip(output)
+        .map(|(window, reserved)| {
             let scaled = window.to_f64().unwrap_or_default();
             let truncated = scaled.mul_add(ratio, 0.0).to_i64().unwrap_or(i64::MAX);
-            Some(truncated.saturating_sub(reserved))
-        }
-        (Some(_), None) | (None, Some(_)) | (None, None) => None,
-    };
+            truncated.saturating_sub(reserved)
+        });
     Ok(InputBudget {
         window: limits.max_input_tokens,
         available,

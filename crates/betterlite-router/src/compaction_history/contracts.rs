@@ -38,30 +38,44 @@ pub struct History {
     pub results: Vec<String>,
 }
 
-pub enum Conversation<'a> {
-    Messages(&'a [ChatMessage]),
+pub enum Conversation<'source> {
+    Messages(&'source [ChatMessage]),
     Responses {
-        items: &'a [Json],
-        tools: &'a [Json],
+        items: &'source [Json],
+        tools: &'source [Json],
     },
-    Text(&'a str),
+    Text(&'source str),
 }
 
-pub struct ParentPayload<'a> {
-    pub model: &'a str,
-    pub messages: &'a [ChatMessage],
-    pub tools: Option<&'a [Tool]>,
-    pub system: Option<&'a Json>,
-    pub user: Option<&'a Json>,
+// chat tools carry a type; the Messages surface sends Anthropic tool params verbatim, with name and input_schema
+#[derive(Clone, Copy)]
+pub enum ParentTools<'params> {
+    Chat(&'params [Tool]),
+    Anthropic(&'params [Json]),
 }
 
-pub struct ResponsesPayload<'a> {
-    pub model: &'a str,
-    pub items: &'a [Json],
-    pub tools: &'a [Json],
-    pub request: &'a Json,
-    pub system: Option<&'a Json>,
-    pub user: Option<&'a Json>,
+pub struct ParentPayload<'params> {
+    pub model: &'params str,
+    pub messages: &'params [ChatMessage],
+    pub tools: Option<ParentTools<'params>>,
+    pub system: Option<&'params Json>,
+    pub user: Option<&'params Json>,
+}
+
+pub struct ResponsesPayload<'params> {
+    pub model: &'params str,
+    pub items: &'params [Json],
+    pub tools: &'params [Json],
+    pub request: &'params Json,
+    pub system: Option<&'params Json>,
+    pub user: Option<&'params Json>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum SummaryTools {
+    Chat(Vec<Tool>),
+    Anthropic(Vec<Json>),
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -70,7 +84,7 @@ pub struct SummaryRequest {
     pub messages: Vec<ChatMessage>,
     pub max_tokens: i64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Tool>>,
+    pub tools: Option<SummaryTools>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system: Option<Json>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -82,11 +96,17 @@ pub struct NativePrefix {
     pub tools: Vec<Tool>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeCapability {
+    Unsupported,
+    IncompatibleDefaults,
+    Supported,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct NativeSupport {
     pub provider: bool,
-    pub supports: bool,
-    pub compatible_defaults: bool,
+    pub capability: NativeCapability,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
