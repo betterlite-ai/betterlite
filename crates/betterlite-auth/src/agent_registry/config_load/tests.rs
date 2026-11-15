@@ -54,7 +54,7 @@ fn entries_register_in_order_with_their_stable_ids() {
     registry.load_agents_from_config(Some(&config)).unwrap();
     assert_eq!(
         names(&registry),
-        vec![String::from("alpha"), String::from("béta")]
+        vec![String::from("alpha"), String::from("b\u{e9}ta")]
     );
     let agents = registry.get_agent_list(None);
     assert_eq!(agents[0].agent_id, ALPHA_STABLE);
@@ -72,7 +72,7 @@ fn incomplete_entries_are_skipped_without_error() {
         BETA_ENTRY,
     ]);
     registry.load_agents_from_config(Some(&config)).unwrap();
-    assert_eq!(names(&registry), vec![String::from("béta")]);
+    assert_eq!(names(&registry), vec![String::from("b\u{e9}ta")]);
     assert_eq!(registry.ids_for_agent(BETA_STABLE).len(), 2);
 }
 
@@ -84,7 +84,7 @@ fn a_name_already_registered_wins_and_still_enters_the_legacy_map() {
     registry.load_agents_from_config(Some(&config)).unwrap();
     assert_eq!(
         names(&registry),
-        vec![String::from("alpha"), String::from("béta")]
+        vec![String::from("alpha"), String::from("b\u{e9}ta")]
     );
     assert_eq!(registry.get_agent_list(None)[0].agent_id, "db-alpha");
     assert_eq!(
@@ -122,10 +122,10 @@ fn unknown_keys_are_rejected_by_name() {
     let registry = AgentRegistry::default();
     let config = entries(&[r#"{"agent_name":"gamma","agent_card_params":{"x":1},"team_id":"t"}"#]);
     let error = registry.load_agents_from_config(Some(&config)).unwrap_err();
-    match error {
-        AgentRegistryError::UnknownConfigKey { key } => assert_eq!(key, "team_id"),
-        other => panic!("unexpected error: {other}"),
-    }
+    let AgentRegistryError::UnknownConfigKey { key } = &error else {
+        panic!("unexpected error: {error}");
+    };
+    assert_eq!(key, "team_id");
 }
 
 #[test]
@@ -140,12 +140,16 @@ fn an_entry_cannot_set_agent_id() {
 #[test]
 fn wrongly_typed_name_and_card_fields_are_named() {
     let registry = AgentRegistry::default();
-    let config = entries(&[r#"{"agent_name":5,"agent_card_params":{"x":1}}"#]);
-    let error = registry.load_agents_from_config(Some(&config)).unwrap_err();
-    assert!(error.to_string().contains("agent_name"));
-    let config = entries(&[r#"{"agent_name":"gamma","agent_card_params":"x"}"#]);
-    let error = registry.load_agents_from_config(Some(&config)).unwrap_err();
-    assert!(error.to_string().contains("agent_card_params"));
+    let bad_name = entries(&[r#"{"agent_name":5,"agent_card_params":{"x":1}}"#]);
+    let name_error = registry
+        .load_agents_from_config(Some(&bad_name))
+        .unwrap_err();
+    assert!(name_error.to_string().contains("agent_name"));
+    let bad_card = entries(&[r#"{"agent_name":"gamma","agent_card_params":"x"}"#]);
+    let card_error = registry
+        .load_agents_from_config(Some(&bad_card))
+        .unwrap_err();
+    assert!(card_error.to_string().contains("agent_card_params"));
 }
 
 #[test]
@@ -154,10 +158,10 @@ fn a_wrongly_typed_field_is_reported_with_its_path() {
     let config =
         entries(&[r#"{"agent_name":"gamma","agent_card_params":{"x":1},"tpm_limit":"many"}"#]);
     let error = registry.load_agents_from_config(Some(&config)).unwrap_err();
-    match error {
-        AgentRegistryError::Record { path, .. } => assert_eq!(path, "tpm_limit"),
-        other => panic!("unexpected error: {other}"),
-    }
+    let AgentRegistryError::Record { path, .. } = &error else {
+        panic!("unexpected error: {error}");
+    };
+    assert_eq!(path, "tpm_limit");
 }
 
 #[test]

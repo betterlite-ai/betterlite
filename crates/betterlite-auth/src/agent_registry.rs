@@ -124,7 +124,7 @@ impl AgentRegistryApi for AgentRegistry {
     }
 
     fn get_public_agent_list(&self, public_agent_groups: Option<&[String]>) -> Vec<AgentResponse> {
-        registry_ops::get_public_agent_list(self, public_agent_groups)
+        registry_ops::get_public_agent_list(self, public_agent_groups.unwrap_or_default())
     }
 
     fn ids_for_agent(&self, agent_id: &str) -> BTreeSet<String> {

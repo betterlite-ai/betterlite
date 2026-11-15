@@ -16,7 +16,7 @@ fn set(ids: &[&str]) -> BTreeSet<String> {
 #[test]
 fn stable_ids_are_the_lowercase_sha256_of_the_name() {
     assert_eq!(stable_id("alpha"), ALPHA_STABLE);
-    assert_eq!(stable_id("béta"), BETA_STABLE);
+    assert_eq!(stable_id("b\u{e9}ta"), BETA_STABLE);
     assert_eq!(stable_id("floats"), FLOATS_STABLE);
 }
 

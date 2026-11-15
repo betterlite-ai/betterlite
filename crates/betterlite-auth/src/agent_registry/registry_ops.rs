@@ -9,30 +9,21 @@ pub(super) fn get_agent_list(
     registry: &AgentRegistry,
     agent_names: Option<&[String]>,
 ) -> Vec<AgentResponse> {
-    let state = registry.state();
-    let agents = state
-        .agent_list
-        .iter()
-        .filter(|agent| agent_names.is_none_or(|names| names.contains(&agent.agent_name)))
-        .cloned()
-        .collect();
-    drop(state);
+    let mut agents = registry.state().agent_list.clone();
+    if let Some(names) = agent_names {
+        agents.retain(|agent| names.contains(&agent.agent_name));
+    }
     agents
 }
 
 pub(super) fn get_public_agent_list(
     registry: &AgentRegistry,
-    public_agent_groups: Option<&[String]>,
+    groups: &[String],
 ) -> Vec<AgentResponse> {
-    let Some(groups) = public_agent_groups else {
-        return Vec::new();
-    };
-    let agents = registry.get_agent_list(None);
-    agents
-        .into_iter()
-        .filter(|agent| {
-            let ids = registry.ids_for_agent(&agent.agent_id);
-            groups.iter().any(|group| ids.contains(group))
-        })
-        .collect()
+    let mut public = registry.get_agent_list(None);
+    public.retain(|agent| {
+        let ids = registry.ids_for_agent(&agent.agent_id);
+        groups.iter().any(|group| ids.contains(group))
+    });
+    public
 }

@@ -33,36 +33,28 @@ async fn a_second_guard_waits_for_the_first() {
     assert!(matches!(second.as_mut().poll(&mut context), Poll::Ready(_)));
 }
 
+fn note(events: &Mutex<Vec<&'static str>>, label: &'static str) {
+    events
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .push(label);
+}
+
 async fn first_sequence(registry: &AgentRegistry, events: &Mutex<Vec<&'static str>>) {
     let guard = registry.reconcile().await;
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push("first-read");
+    note(events, "first-read");
     yield_now().await;
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push("first-register");
+    note(events, "first-register");
     registry.register_agent(agent("a1", "alpha"));
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push("first-release");
+    note(events, "first-release");
     drop(guard);
 }
 
 async fn second_sequence(registry: &AgentRegistry, events: &Mutex<Vec<&'static str>>) {
     let guard = registry.reconcile().await;
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push("second-read");
-    registry.register_agent(agent("b1", "béta"));
-    events
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .push("second-release");
+    note(events, "second-read");
+    registry.register_agent(agent("b1", "b\u{e9}ta"));
+    note(events, "second-release");
     drop(guard);
 }
 

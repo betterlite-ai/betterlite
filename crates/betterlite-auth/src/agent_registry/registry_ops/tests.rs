@@ -32,12 +32,12 @@ fn register_agent_allows_duplicates() {
 fn deregister_removes_every_agent_with_the_name() {
     let registry = AgentRegistry::default();
     registry.register_agent(agent("a1", "alpha"));
-    registry.register_agent(agent("b1", "béta"));
+    registry.register_agent(agent("b1", "b\u{e9}ta"));
     registry.register_agent(agent("a2", "alpha"));
     registry.deregister_agent("alpha");
     assert_eq!(
         names(&registry.get_agent_list(None)),
-        vec![String::from("béta")]
+        vec![String::from("b\u{e9}ta")]
     );
     registry.deregister_agent("absent");
     assert_eq!(registry.get_agent_list(None).len(), 1);
@@ -46,9 +46,9 @@ fn deregister_removes_every_agent_with_the_name() {
 #[test]
 fn get_agent_list_filters_by_name_in_list_order() {
     let registry = AgentRegistry::default();
-    registry.register_agent(agent("b1", "béta"));
+    registry.register_agent(agent("b1", "b\u{e9}ta"));
     registry.register_agent(agent("a1", "alpha"));
-    let wanted = vec![String::from("alpha"), String::from("béta")];
+    let wanted = vec![String::from("alpha"), String::from("b\u{e9}ta")];
     assert_eq!(
         ids(&registry.get_agent_list(Some(&wanted))),
         vec![String::from("b1"), String::from("a1")]

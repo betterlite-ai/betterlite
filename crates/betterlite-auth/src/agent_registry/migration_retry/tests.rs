@@ -125,7 +125,7 @@ async fn missed_rows_are_warned_three_times_with_a_pause_each() {
     assert_eq!(started.elapsed(), Duration::from_secs(10));
     let logged = messages(&logs);
     assert_eq!(logged.len(), 3);
-    assert!(logged.iter().zip(1..=3).all(|(entry, attempt)| {
+    assert!(logged.iter().zip(1_u32..=3_u32).all(|(entry, attempt)| {
         entry.level == Level::WARN
             && entry.message
                 == format!(
@@ -150,7 +150,7 @@ async fn database_errors_are_logged_and_swallowed_after_three_attempts() {
     let logged = messages(&logs);
     assert_eq!(logged.len(), 3);
     let failure = "No DB Connected. See - https://docs.litellm.ai/docs/proxy/virtual_keys";
-    assert!(logged.iter().zip(1..=3).all(|(entry, attempt)| {
+    assert!(logged.iter().zip(1_u32..=3_u32).all(|(entry, attempt)| {
         entry.level == Level::WARN
             && entry.message
                 == format!("Legacy agent grant id migration attempt {attempt}/3 failed: {failure}")

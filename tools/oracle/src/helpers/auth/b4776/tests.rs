@@ -54,7 +54,7 @@ fn an_entry_with_escapes_and_non_ascii_hides_the_legacy_id_from_a_legacy_lookup(
         json!([BETA_STABLE, BETA_LEGACY])
     );
     assert_eq!(output["stable_ids"], json!([BETA_STABLE]));
-    assert_eq!(output["agents"][0]["agent_name"], json!("béta"));
+    assert_eq!(output["agents"][0]["agent_name"], json!("b\u{e9}ta"));
 }
 
 #[test]

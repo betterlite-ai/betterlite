@@ -47,8 +47,8 @@ impl crate::helpers::Helper for Op {
         let agents = snapshots(&registry.get_agent_list(None));
         let ids = ids_for(&registry, &input.ids_for);
         let stable = stable_ids(&registry, &input.stable_ids);
-        let found_by_id = lookups_by_id(&registry, &input.by_id);
-        let found_by_name = lookups_by_name(&registry, &input.by_name);
+        let found_by_id = lookups(&input.by_id, |id| registry.get_agent_by_id(id));
+        let found_by_name = lookups(&input.by_name, |name| registry.get_agent_by_name(name));
         let public = snapshots(&registry.get_public_agent_list(input.public_groups.as_deref()));
         for agent_name in &input.deregister {
             registry.deregister_agent(agent_name);
@@ -81,13 +81,6 @@ fn snapshots(agents: &[AgentResponse]) -> Vec<Value> {
     values
 }
 
-fn lookup(agent: Option<AgentResponse>) -> Value {
-    match agent {
-        Some(agent) => snapshot(&agent),
-        None => Value::Null,
-    }
-}
-
 fn ids_for(registry: &AgentRegistry, agent_ids: &[String]) -> BTreeMap<String, Vec<String>> {
     agent_ids
         .iter()
@@ -105,22 +98,14 @@ fn stable_ids(registry: &AgentRegistry, agent_ids: &[String]) -> Vec<String> {
         .collect()
 }
 
-fn lookups_by_id(registry: &AgentRegistry, agent_ids: &[String]) -> BTreeMap<String, Value> {
-    agent_ids
-        .iter()
-        .map(|agent_id| {
-            let found = lookup(registry.get_agent_by_id(agent_id));
-            (agent_id.clone(), found)
-        })
-        .collect()
-}
-
-fn lookups_by_name(registry: &AgentRegistry, agent_names: &[String]) -> BTreeMap<String, Value> {
-    agent_names
-        .iter()
-        .map(|agent_name| {
-            let found = lookup(registry.get_agent_by_name(agent_name));
-            (agent_name.clone(), found)
+fn lookups(
+    keys: &[String],
+    find: impl Fn(&str) -> Option<AgentResponse>,
+) -> BTreeMap<String, Value> {
+    keys.iter()
+        .map(|key| {
+            let found = find(key);
+            (key.clone(), found.as_ref().map_or(Value::Null, snapshot))
         })
         .collect()
 }

@@ -144,8 +144,8 @@ async fn a_row_changed_between_the_read_and_the_write_is_missed() {
         .unwrap();
     let editor = edit_concurrently(transaction);
     let migration = registry.migrate_legacy_grant_ids(&store);
-    let (result, ()) = tokio::join!(migration, editor);
-    let result = result.unwrap();
+    let (outcome, ()) = tokio::join!(migration, editor);
+    let result = outcome.unwrap();
     assert_eq!(
         result,
         GrantMigrationResult {
@@ -174,7 +174,7 @@ async fn edit_concurrently(transaction: Transaction<'_>) {
 }
 
 async fn wait_for_blocked_update(transaction: &Transaction<'_>) {
-    for _ in 0..1000 {
+    for _ in 0_u32..1_000_u32 {
         let row = transaction
             .query_one(
                 "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND query LIKE 'UPDATE \"LiteLLM_ObjectPermissionTable\"%'",

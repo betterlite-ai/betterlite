@@ -10,10 +10,10 @@ use crate::agent_registry::tests::support::{
 fn an_exact_id_wins_over_the_legacy_translation() {
     let registry = loaded(&[ALPHA_ENTRY]);
     registry.register_agent(agent(ALPHA_LEGACY, "shadow"));
-    let found = registry.get_agent_by_id(ALPHA_LEGACY).unwrap();
-    assert_eq!(found.agent_name, "shadow");
-    let found = registry.get_agent_by_id(ALPHA_STABLE).unwrap();
-    assert_eq!(found.agent_name, "alpha");
+    let exact = registry.get_agent_by_id(ALPHA_LEGACY).unwrap();
+    assert_eq!(exact.agent_name, "shadow");
+    let stable = registry.get_agent_by_id(ALPHA_STABLE).unwrap();
+    assert_eq!(stable.agent_name, "alpha");
 }
 
 #[test]

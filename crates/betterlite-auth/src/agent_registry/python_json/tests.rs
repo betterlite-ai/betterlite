@@ -22,7 +22,7 @@ fn ascii_entries_render_like_python() {
 #[test]
 fn keys_sort_by_code_point_at_every_depth() {
     assert_eq!(
-        encoded(r#"{"b":1,"a":{"z":1,"A":2},"é":3}"#),
+        encoded(r#"{"b":1,"a":{"z":1,"A":2},"\u00e9":3}"#),
         "{\"a\": {\"A\": 2, \"z\": 1}, \"b\": 1, \"\\u00e9\": 3}"
     );
 }
