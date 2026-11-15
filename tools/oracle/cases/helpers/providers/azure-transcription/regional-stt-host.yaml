@@ -1,0 +1,14 @@
+kind: helper
+name: azure-transcription-regional-stt-host
+call:
+  azure_transcription:
+    function: native_config
+    probes:
+      - model: azure/speech/azure-stt
+        api_key: sk-fixture
+        optional_params: {language: 'de DE', response_format: verbose_json}
+        non_default_params: {language: fr, prompt: ignored, response_format: json}
+        existing_params: {language: en, temperature: 1}
+        bases: ['https://eastus.api.cognitive.microsoft.com']
+env: {}
+compare: {ignore: []}

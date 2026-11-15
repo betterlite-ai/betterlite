@@ -1,0 +1,34 @@
+kind: helper
+name: azure-transcription-async-version
+call:
+  azure_transcription:
+    function: exchange
+    probes:
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        atranscription: true
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: v1
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: v1
+        atranscription: true
+      - model: whisper
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        atranscription: true
+        client_kind: openai
+env: {}
+compare:
+  ignore:
+    - pointer: /value/4/post_call/input_names_file
+      why: LiteLLM logs the builtin input object on an async failure while betterlite logs the audio file name.

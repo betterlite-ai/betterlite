@@ -1,0 +1,20 @@
+kind: helper
+name: azure-transcription-native-json-text-extraction
+call:
+  azure_transcription:
+    function: native_response
+    probes:
+      - model: azure/speech/azure-stt
+        headers: {x-request-id: req-1}
+        bodies:
+          - {status: 200, body: '{"RecognitionStatus":"Success","DisplayText":"hello"}'}
+          - {status: 200, body: '{"DisplayText":""}'}
+          - {status: 200, body: '{"DisplayText":"","NBest":[{"Display":"best"}]}'}
+          - {status: 200, body: '{"NBest":[{"Display":"","Lexical":"lexical"}]}'}
+          - {status: 200, body: '{"NBest":[{"Display":null,"Lexical":"lexical"}]}'}
+          - {status: 200, body: '{}'}
+          - {status: 503, body: '{"RecognitionStatus":"Error","DisplayText":"ignored"}'}
+          - {status: 503, body: '{"DisplayText":"hello"}'}
+          - {status: 200, body: '{"RecognitionStatus":1}'}
+env: {}
+compare: {ignore: []}

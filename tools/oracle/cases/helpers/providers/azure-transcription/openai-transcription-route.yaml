@@ -1,0 +1,17 @@
+kind: helper
+name: azure-transcription-openai-route
+call:
+  azure_transcription:
+    function: exchange
+    probes:
+      - model: whisper
+        optional_params: {language: en, prompt: hello, response_format: json}
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+env: {}
+compare: {ignore: []}

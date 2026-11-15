@@ -1,0 +1,17 @@
+kind: helper
+name: azure-transcription-cognitive-stt-base
+call:
+  azure_transcription:
+    function: native_config
+    probes:
+      - model: azure/speech/azure-stt
+        api_key: sk-fixture
+        bases:
+          - null
+          - 'https://api.cognitive.microsoft.com'
+          - 'https://eastus.api.cognitive.microsoft.com/'
+          - 'https://eastus.stt.speech.microsoft.com:8443/path?query=1'
+          - 'https://speech.test/custom/'
+          - 'https://example.openai.azure.com'
+env: {}
+compare: {ignore: []}

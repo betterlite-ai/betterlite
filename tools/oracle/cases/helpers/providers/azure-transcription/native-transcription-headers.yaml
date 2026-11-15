@@ -1,0 +1,14 @@
+kind: helper
+name: azure-transcription-native-headers
+call:
+  azure_transcription:
+    function: native_config
+    probes:
+      - model: azure/speech/azure-stt
+        api_key: sk-explicit
+        headers: {Ocp-Apim-Subscription-Key: stale, Content-Type: 'audio/wav; codecs=1', X-Trace: '1'}
+      - model: azure/speech/azure-stt
+        environment_api_key: env-key
+        headers: {}
+env: {AZURE_SPEECH_API_KEY: env-key}
+compare: {ignore: []}

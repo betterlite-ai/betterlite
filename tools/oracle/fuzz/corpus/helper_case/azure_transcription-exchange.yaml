@@ -1,0 +1,14 @@
+kind: helper
+name: azure-transcription-seed-exchange
+call:
+  azure_transcription:
+    function: exchange
+    probes:
+      - model: whisper
+        api_key: sk-seed
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        optional_params: {language: en}
+        reply: {status: 200, headers: {content-type: application/json}, body: '{"text":"seed"}'}
+env: {}
+compare: {ignore: []}

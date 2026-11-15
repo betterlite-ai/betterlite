@@ -1,0 +1,10 @@
+kind: helper
+name: azure-transcription-seed-native-request
+call:
+  azure_transcription:
+    function: native_request
+    probes:
+      - model: azure/speech/azure-stt
+        audio: abc
+env: {}
+compare: {ignore: []}

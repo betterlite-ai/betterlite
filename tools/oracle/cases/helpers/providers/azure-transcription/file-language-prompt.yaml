@@ -1,0 +1,19 @@
+kind: helper
+name: azure-transcription-file-language-prompt
+call:
+  azure_transcription:
+    function: exchange
+    probes:
+      - model: whisper
+        optional_params: {model: whisper-override, language: fr, prompt: hello}
+        api_key: sk-fixture
+        api_base: 'https://example.openai.azure.com'
+        api_version: '2024-06-01'
+        azure_ad_token: unforwarded-token
+        max_retries: 7
+        reply:
+          status: 200
+          headers: {content-type: application/json}
+          body: '{"text":"hi"}'
+env: {}
+compare: {ignore: []}
