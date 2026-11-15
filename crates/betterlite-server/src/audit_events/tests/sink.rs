@@ -4,11 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use chrono::DateTime;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 
 use super::support::{
     CollectingSpawner, RecordingRepository, SAMPLE_TIMESTAMP, TestSettings, audit_sink, capture,
-    instance, plain_record, recorder, recording_repository, sample_record,
+    instance, parsed, plain_record, recorder, recording_repository, sample_record,
 };
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
@@ -32,7 +31,7 @@ fn caller() -> CallerIdentity {
     CallerIdentity {
         user_id: Some("user-1".to_owned()),
         api_key: Some(SecretString::from("sk-key".to_owned())),
-        metadata: Some(json!({"allow_litellm_changed_by_header": true})),
+        metadata: Some(parsed(r#"{"allow_litellm_changed_by_header": true}"#)),
         team_metadata: None,
     }
 }
@@ -75,9 +74,12 @@ async fn audit_object_projection() {
     assert_eq!(inserted[0].object_id, "team-1");
     assert_eq!(
         inserted[0].before_value,
-        Some(json!({"api_key": "sk-1*****7890"}))
+        Some(parsed(r#"{"api_key": "sk-1*****7890"}"#))
     );
-    assert_eq!(inserted[0].updated_values, Some(json!({"name": "team"})));
+    assert_eq!(
+        inserted[0].updated_values,
+        Some(parsed(r#"{"name": "team"}"#))
+    );
     let delivered = callback.delivered.lock().unwrap().clone();
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].changed_by, "ops");

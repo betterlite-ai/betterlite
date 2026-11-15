@@ -1,74 +1,54 @@
-pub trait AuditName: Copy + PartialEq {
-    const ENTRIES: &'static [(&'static str, Self)];
+macro_rules! audit_names {
+    ($name:ident { $($variant:ident => $text:literal),+ $(,)? }) => {
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub enum $name {
+            $($variant),+
+        }
 
-    #[must_use]
-    fn as_str(self) -> &'static str {
-        Self::ENTRIES
-            .iter()
-            .find_map(|(name, entry)| (*entry == self).then_some(*name))
-            .unwrap_or_default()
+        impl $name {
+            #[must_use]
+            pub const fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+
+            #[must_use]
+            pub fn parse(text: &str) -> Option<Self> {
+                match text {
+                    $($text => Some(Self::$variant),)+
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+audit_names! {
+    AuditAction {
+        Created => "created",
+        Updated => "updated",
+        Deleted => "deleted",
+        Blocked => "blocked",
+        Unblocked => "unblocked",
+        Rotated => "rotated",
+        KillSwitchFired => "kill_switch_fired",
     }
+}
 
-    #[must_use]
-    fn parse(text: &str) -> Option<Self> {
-        Self::ENTRIES
-            .iter()
-            .find_map(|(name, entry)| (*name == text).then_some(*entry))
+audit_names! {
+    AuditTable {
+        Team => "LiteLLM_TeamTable",
+        User => "LiteLLM_UserTable",
+        Key => "LiteLLM_VerificationToken",
+        ProxyModel => "LiteLLM_ProxyModelTable",
+        ManagedFile => "LiteLLM_ManagedFileTable",
+        Tool => "LiteLLM_ToolTable",
+        CacheConfig => "LiteLLM_CacheConfig",
+        ConfigOverrides => "LiteLLM_ConfigOverrides",
+        Config => "LiteLLM_Config",
+        SsoConfig => "LiteLLM_SSOConfig",
+        UiSettings => "LiteLLM_UISettings",
+        Agent => "LiteLLM_AgentsTable",
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AuditAction {
-    Created,
-    Updated,
-    Deleted,
-    Blocked,
-    Unblocked,
-    Rotated,
-    KillSwitchFired,
-}
-
-impl AuditName for AuditAction {
-    const ENTRIES: &'static [(&'static str, Self)] = &[
-        ("created", Self::Created),
-        ("updated", Self::Updated),
-        ("deleted", Self::Deleted),
-        ("blocked", Self::Blocked),
-        ("unblocked", Self::Unblocked),
-        ("rotated", Self::Rotated),
-        ("kill_switch_fired", Self::KillSwitchFired),
-    ];
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AuditTable {
-    Team,
-    User,
-    Key,
-    ProxyModel,
-    ManagedFile,
-    Tool,
-    CacheConfig,
-    ConfigOverrides,
-    Config,
-    SsoConfig,
-    UiSettings,
-    Agent,
-}
-
-impl AuditName for AuditTable {
-    const ENTRIES: &'static [(&'static str, Self)] = &[
-        ("LiteLLM_TeamTable", Self::Team),
-        ("LiteLLM_UserTable", Self::User),
-        ("LiteLLM_VerificationToken", Self::Key),
-        ("LiteLLM_ProxyModelTable", Self::ProxyModel),
-        ("LiteLLM_ManagedFileTable", Self::ManagedFile),
-        ("LiteLLM_ToolTable", Self::Tool),
-        ("LiteLLM_CacheConfig", Self::CacheConfig),
-        ("LiteLLM_ConfigOverrides", Self::ConfigOverrides),
-        ("LiteLLM_Config", Self::Config),
-        ("LiteLLM_SSOConfig", Self::SsoConfig),
-        ("LiteLLM_UISettings", Self::UiSettings),
-        ("LiteLLM_AgentsTable", Self::Agent),
-    ];
 }

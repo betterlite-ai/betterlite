@@ -3,11 +3,12 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use serde_json::json;
 
+use super::Settings;
 use crate::loader::{ConfigError, ConfigLoader};
+use crate::sections::settings::JsonValue;
 
-fn load(source: &str, lookup: BTreeMap<String, String>) -> crate::sections::audit_events::Settings {
+fn load(source: &str, lookup: BTreeMap<String, String>) -> Settings {
     ConfigLoader { lookup }
         .load(source)
         .expect("audit config should load")
@@ -74,7 +75,7 @@ fn audit_environment_flag_matches_get_secret_bool(
     #[case] expected: Option<bool>,
 ) {
     let lookup = value
-        .map(|value| BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), value.to_owned())]))
+        .map(|text| BTreeMap::from([("LITELLM_STORE_AUDIT_LOGS".to_owned(), text.to_owned())]))
         .unwrap_or_default();
     assert_eq!(load("{}", lookup).store_audit_logs_env, expected);
 }
@@ -139,7 +140,10 @@ fn audit_callbacks_and_s3_params_are_loaded() {
     assert_eq!(settings.audit_log_callbacks, ["s3_v2", "otel"]);
     assert_eq!(
         settings.s3_audit_callback_params,
-        Some(json!({"bucket_name": "audit-bucket"}))
+        Some(
+            serde_json::from_str::<JsonValue>(r#"{"bucket_name": "audit-bucket"}"#)
+                .expect("the s3 params fixture parses")
+        )
     );
     let default = load("{}", BTreeMap::new());
     assert!(default.audit_log_callbacks.is_empty());
@@ -152,5 +156,8 @@ fn audit_empty_s3_params_select_the_override() {
         "litellm_settings:\n  s3_audit_callback_params: {}\n",
         BTreeMap::new(),
     );
-    assert_eq!(settings.s3_audit_callback_params, Some(json!({})));
+    assert_eq!(
+        settings.s3_audit_callback_params,
+        Some(serde_json::from_str::<JsonValue>("{}").expect("the empty params object parses"))
+    );
 }

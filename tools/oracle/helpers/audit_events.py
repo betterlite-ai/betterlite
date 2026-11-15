@@ -1,7 +1,8 @@
 import asyncio
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
+from datetime import datetime
 from types import ModuleType
 from typing import Final, Literal, Protocol, TypedDict
 
@@ -26,8 +27,7 @@ from typing_extensions import override
 AUDIT_LOGS_ENV: Final = "LITELLM_STORE_AUDIT_LOGS"
 PROXY_MODULE: Final = "litellm.proxy.proxy_server"
 JSON: Final = TypeAdapter(JsonValue)
-OBJECT: Final = TypeAdapter(dict[str, JsonValue])
-# LiteLLM's CALLBACK_TYPES holds a bare Callable, whose Any strict mypy rejects; this names the same union
+# LiteLLM's CALLBACK_TYPES holds a bare Callable of Any, so this names the same union
 CallbackEntry = CustomLogger | str | Callable[[], None]
 ACTION: Final = TypeAdapter(AUDIT_ACTIONS)
 
@@ -118,19 +118,8 @@ class ProxyServer(ModuleType):
 
 
 class AuditLogWrites(Protocol):
-    async def create_audit_log_for_update(self, request_data: LiteLLM_AuditLogs) -> None: ...
-
-    async def create_object_audit_log(
-        self,
-        object_id: str,
-        action: AUDIT_ACTIONS,
-        litellm_changed_by: str | None,
-        user_api_key_dict: UserAPIKeyAuth,
-        litellm_proxy_admin_name: str | None,
-        table_name: LitellmTableNames,
-        before_value: str | None = None,
-        after_value: str | None = None,
-    ) -> None: ...
+    create_audit_log_for_update: Callable[..., Awaitable[None]]
+    create_object_audit_log: Callable[..., Awaitable[None]]
 
 
 AUDIT_LOG_WRITES: AuditLogWrites = audit_logs
@@ -146,7 +135,7 @@ class Recorder(CustomLogger):
     async def async_log_audit_log_event(self, audit_log: StandardAuditLogPayload) -> None:
         if self.fails:
             raise RuntimeError("the audit log callback failed")
-        self.delivered.append(audit_log)
+        self.delivered.append(STORED.validate_python(audit_log))
 
 
 def install_proxy(*, premium: bool) -> ModuleType | None:
@@ -170,6 +159,20 @@ def parsed(text: str | None) -> JsonValue:
     return JSON.validate_json(text)
 
 
+def audit_model(record: AuditRecord) -> LiteLLM_AuditLogs:
+    return LiteLLM_AuditLogs(
+        id=record["id"],
+        updated_at=datetime.fromisoformat(record["updated_at"]),
+        changed_by=record["changed_by"],
+        changed_by_api_key=record["changed_by_api_key"],
+        action=ACTION.validate_python(record["action"]),
+        table_name=LitellmTableNames(record["table_name"]),
+        object_id=record["object_id"],
+        before_value=record["before_value"],
+        updated_values=record["updated_values"],
+    )
+
+
 def policy_answer(call: PolicyCall) -> JsonValue:
     install_proxy(premium=True)
     litellm.store_audit_logs = call["store"]
@@ -183,7 +186,7 @@ def policy_answer(call: PolicyCall) -> JsonValue:
 def identity_answer(call: IdentityCall) -> JsonValue:
     caller = UserAPIKeyAuth(
         user_id=call["user_id"],
-        metadata=call["metadata"],
+        metadata={} if call["metadata"] is None else call["metadata"],
         team_metadata=call["team_metadata"],
     )
     changed_by = get_audit_log_changed_by(
@@ -209,15 +212,18 @@ def stored_json(view: Stored) -> JsonValue:
 
 
 def record_answer(call: RecordCall) -> JsonValue:
-    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
+    model = audit_model(call["record"])
     return stored_json(STORED.validate_json(model.model_dump_json()))
 
 
 def delivery_view(recorders: list[Recorder]) -> JsonValue:
     delivered: list[JsonValue] = []
     for recorder in recorders:
-        for payload in recorder.delivered:
-            delivered.append({"callback": recorder.label, "payload": stored_json(payload)})
+        entries: list[JsonValue] = [
+            {"callback": recorder.label, "payload": stored_json(payload)}
+            for payload in recorder.delivered
+        ]
+        delivered.extend(entries)
     return delivered
 
 
@@ -239,7 +245,7 @@ async def dispatch_answer(call: DispatchCall) -> JsonValue:
     litellm.audit_log_callbacks = callbacks
     reset_audit_log_callback_cache()
     saved = install_proxy(premium=True)
-    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
+    model = audit_model(call["record"])
     try:
         await AUDIT_LOG_WRITES.create_audit_log_for_update(request_data=model)
         await asyncio.sleep(0)
@@ -257,7 +263,7 @@ async def sink_answer(call: SinkCall) -> JsonValue:
     os.environ.pop(AUDIT_LOGS_ENV, None)
     reset_audit_log_callback_cache()
     saved = install_proxy(premium=False)
-    model = LiteLLM_AuditLogs(**OBJECT.validate_python(call["record"]))
+    model = audit_model(call["record"])
     caller = UserAPIKeyAuth(user_id=call["user_id"], api_key=call["api_key"])
     try:
         await AUDIT_LOG_WRITES.create_audit_log_for_update(request_data=model)

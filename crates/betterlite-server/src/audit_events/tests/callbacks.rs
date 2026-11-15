@@ -4,12 +4,11 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use serde_json::json;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
     CollectingSpawner, DroppingSpawner, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry, capture,
-    plain_record, recorder, sample_record,
+    parsed, plain_record, recorder, sample_record,
 };
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackFuture, AuditLogCallback,
@@ -125,10 +124,10 @@ async fn audit_s3_override_empty() {
     let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
     let configs = [AuditCallbackConfig::Named("s3_v2".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
-    dispatcher.dispatch(&configs, Some(&json!({})), payload.clone());
+    dispatcher.dispatch(&configs, Some(&parsed("{}")), payload.clone());
     spawner.run_all().await;
     assert!(registry.resolves.lock().unwrap().is_empty());
-    assert_eq!(*registry.s3_calls.lock().unwrap(), vec![json!({})]);
+    assert_eq!(*registry.s3_calls.lock().unwrap(), vec![parsed("{}")]);
     assert_eq!(registry.s3_logger.delivered.lock().unwrap().len(), 1);
     let factory = AuditCallbackDispatcher::new(registry.clone(), spawner);
     factory.dispatch(&configs, None, payload);
@@ -260,7 +259,7 @@ async fn audit_dispatch_exception_continues() {
     ];
     dispatcher.dispatch(
         &configs,
-        Some(&json!({"bucket_name": "audit"})),
+        Some(&parsed(r#"{"bucket_name": "audit"}"#)),
         build_audit_log_payload(&plain_record()),
     );
     spawner.run_all().await;

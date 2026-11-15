@@ -1,7 +1,5 @@
 #![cfg(test)]
 
-use serde_json::json;
-
 use crate::audit_events::record::{AuditRecordError, decode_audit_record};
 
 const NULL: &[u8] = include_bytes!("../../../fuzz/corpus/audit_record/null");
@@ -27,6 +25,9 @@ fn replays_the_audit_record_corpus() {
     assert_eq!(record.changed_by.as_deref(), Some("42"));
     assert_eq!(
         record.before_value,
-        Some(json!({"api_key": "sk-1*****7890", "nested": {"key": "********"}}))
+        Some(
+            serde_json::from_str(r#"{"api_key": "sk-1*****7890", "nested": {"key": "********"}}"#)
+                .unwrap()
+        )
     );
 }

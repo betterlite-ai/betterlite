@@ -20,17 +20,17 @@ use chrono::{DateTime, FixedOffset, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::json;
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 
 use self::support::{
     CollectingSpawner, FixedClock, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry, instance,
-    recorder,
+    parsed, recorder,
 };
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
 };
-use crate::audit_events::enums::{AuditAction, AuditName, AuditTable};
+use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::{AuditLogRecord, payload_text};
 use crate::audit_events::settings::{AuditSettings, ConfiguredAuditSettings};
@@ -95,7 +95,7 @@ impl AuditLogRepository for PostgresAuditRepository {
             .changed_by_api_key
             .as_ref()
             .map(|api_key| api_key.expose_secret());
-        let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> = vec![
+        let values: Vec<&(dyn ToSql + Sync)> = vec![
             &record.id,
             &record.updated_at,
             &record.changed_by,
@@ -184,8 +184,7 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
 }
 
 fn masked(text: Option<String>) -> JsonValue {
-    let text = text.unwrap();
-    serde_json::from_str(&text).unwrap()
+    serde_json::from_str(text.as_deref().unwrap()).unwrap()
 }
 
 #[test]
@@ -217,14 +216,14 @@ fn audit_configured_settings_expose_the_callbacks() {
             store_audit_logs: None,
             store_audit_logs_env: None,
             audit_log_callbacks: Vec::new(),
-            s3_audit_callback_params: Some(json!({"bucket_name": "audit-bucket"})),
+            s3_audit_callback_params: Some(parsed(r#"{"bucket_name": "audit-bucket"}"#)),
         },
         callbacks: vec![instance(callback)],
     };
     assert_eq!(settings.audit_log_callbacks().len(), 1);
     assert_eq!(
         settings.s3_audit_callback_params().cloned(),
-        Some(json!({"bucket_name": "audit-bucket"}))
+        Some(parsed(r#"{"bucket_name": "audit-bucket"}"#))
     );
 }
 
@@ -254,11 +253,11 @@ async fn audit_enabled_without_license() {
     assert_eq!(row.get::<_, String>(5), "team-1");
     assert_eq!(
         masked(row.get::<_, Option<String>>(6)),
-        json!({"api_key": "sk-1*****7890", "name": "team"})
+        parsed(r#"{"api_key": "sk-1*****7890", "name": "team"}"#)
     );
     assert_eq!(
         masked(row.get::<_, Option<String>>(7)),
-        json!({"api_key": "sk-1*****7890"})
+        parsed(r#"{"api_key": "sk-1*****7890"}"#)
     );
     drop(client);
     pool.close();

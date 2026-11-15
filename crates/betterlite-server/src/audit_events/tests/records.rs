@@ -6,22 +6,16 @@ use betterlite_logging::private_json::safe_json::{MAX_JSON_BYTES, MAX_JSON_DEPTH
 use chrono::DateTime;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
-use serde_json::json;
 
-use crate::audit_events::enums::AuditName;
+use super::support::parsed;
 use crate::audit_events::record::{AuditRecordError, decode_audit_record, timestamp_text};
 
 const RECORD: &str = r#"{"id": "audit-1", "updated_at": "2026-01-02T03:04:05.123456+00:00", "action": "updated", "table_name": "LiteLLM_TeamTable", "object_id": "team-1"}"#;
 
 fn record_text(action: &str, table_name: &str) -> String {
-    json!({
-        "id": "audit-1",
-        "updated_at": "2026-01-02T03:04:05Z",
-        "action": action,
-        "table_name": table_name,
-        "object_id": "team-1",
-    })
-    .to_string()
+    format!(
+        r#"{{"id": "audit-1", "updated_at": "2026-01-02T03:04:05Z", "action": "{action}", "table_name": "{table_name}", "object_id": "team-1"}}"#
+    )
 }
 
 #[rstest]
@@ -61,25 +55,25 @@ fn audit_record_defaults_and_enums(#[case] action: &str, #[case] table_name: &st
 }
 
 #[rstest]
-#[case::string(json!("text"), Some("text"))]
-#[case::integer(json!(42), Some("42"))]
-#[case::float(json!(1.5), Some("1.5"))]
-#[case::true_bool(json!(true), Some("True"))]
-#[case::false_bool(json!(false), Some("False"))]
-#[case::null(json!(null), None)]
-#[case::object(json!({"team": 1}), Some(r#"{"team":1}"#))]
-#[case::array(json!([1, 2]), Some("[1,2]"))]
-fn audit_changed_by_cast(#[case] value: JsonValue, #[case] expected: Option<&str>) {
-    let mut given: JsonValue = serde_json::from_str(RECORD).unwrap();
-    given["changed_by"] = value;
+#[case::string("text", Some("text"))]
+#[case::integer("42", Some("42"))]
+#[case::float("1.5", Some("1.5"))]
+#[case::true_bool("true", Some("True"))]
+#[case::false_bool("false", Some("False"))]
+#[case::null("null", None)]
+#[case::object(r#"{"team": 1}"#, Some(r#"{"team":1}"#))]
+#[case::array("[1, 2]", Some("[1,2]"))]
+fn audit_changed_by_cast(#[case] value: &str, #[case] expected: Option<&str>) {
+    let mut given = parsed(RECORD);
+    given["changed_by"] = parsed(value);
     let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
     assert_eq!(decoded.changed_by.as_deref(), expected);
 }
 
 #[test]
 fn audit_changed_by_api_key_field() {
-    let mut given: JsonValue = serde_json::from_str(RECORD).unwrap();
-    given["changed_by_api_key"] = json!("sk-key");
+    let mut given = parsed(RECORD);
+    given["changed_by_api_key"] = JsonValue::String("sk-key".to_owned());
     let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
     assert_eq!(
         decoded
@@ -88,7 +82,7 @@ fn audit_changed_by_api_key_field() {
             .map(|api_key| api_key.expose_secret()),
         Some("sk-key")
     );
-    given["changed_by_api_key"] = json!(7);
+    given["changed_by_api_key"] = parsed("7");
     let error = decode_audit_record(given.to_string().as_bytes()).unwrap_err();
     assert!(matches!(
         error,
@@ -112,54 +106,49 @@ fn audit_timestamp_text_formats_the_zone() {
     );
 }
 
-fn masked_record(before_value: JsonValue, updated_values: JsonValue) -> JsonValue {
-    let text = json!({
-        "id": "audit-1",
-        "updated_at": "2026-01-02T03:04:05Z",
-        "action": "updated",
-        "table_name": "LiteLLM_TeamTable",
-        "object_id": "team-1",
-        "before_value": before_value.to_string(),
-        "updated_values": updated_values.to_string(),
-    })
-    .to_string();
-    let record = decode_audit_record(text.as_bytes()).unwrap();
-    json!({"before": record.before_value, "updated": record.updated_values})
+fn masked_fields(before_text: &str, updated_text: &str) -> (Option<JsonValue>, Option<JsonValue>) {
+    let mut given = parsed(RECORD);
+    given["before_value"] = JsonValue::String(before_text.to_owned());
+    given["updated_values"] = JsonValue::String(updated_text.to_owned());
+    let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
+    (decoded.before_value, decoded.updated_values)
 }
 
 #[test]
 fn audit_json_masking() {
-    let masked = masked_record(
-        json!({
-            "api_key": "sk-1234567890",
-            "name": "team",
-            "input_cost_per_token": "0.0001",
-            "nested": {"key": "abcdefgh"},
-        }),
-        json!({"auth_token": "abcdefghijkl"}),
+    let (before, updated) = masked_fields(
+        r#"{"api_key": "sk-1234567890", "name": "team", "input_cost_per_token": "0.0001", "nested": {"key": "abcdefgh"}}"#,
+        r#"{"auth_token": "abcdefghijkl"}"#,
     );
     assert_eq!(
-        masked,
-        json!({
-            "before": {
-                "api_key": "sk-1*****7890",
-                "name": "team",
-                "input_cost_per_token": "0.0001",
-                "nested": {"key": "********"},
-            },
-            "updated": {"auth_token": "abcd****ijkl"},
-        })
+        before,
+        Some(parsed(
+            r#"{"api_key": "sk-1*****7890", "name": "team", "input_cost_per_token": "0.0001", "nested": {"key": "********"}}"#
+        ))
     );
-    let list = masked_record(json!([{"api_key": "sk-1234567890"}]), json!(null));
+    assert_eq!(updated, Some(parsed(r#"{"auth_token": "abcd****ijkl"}"#)));
+    let (list, null_text) = masked_fields(r#"[{"api_key": "sk-1234567890"}]"#, "null");
+    assert_eq!(list, Some(parsed(r#"[{"api_key": "sk-1*****7890"}]"#)));
+    assert_eq!(null_text, None);
+    let (quoted_null, _) = masked_fields(r#""null""#, "null");
+    assert_eq!(quoted_null, Some(JsonValue::String("null".to_owned())));
+    let (nulls, _) = masked_fields(r#"{"name": null, "key": null}"#, "null");
+    assert_eq!(nulls, Some(parsed(r#"{"name": "None", "key": ""}"#)));
+}
+
+#[test]
+fn audit_double_encoded_json_masking() {
+    let (before, updated) = masked_fields(
+        r#""{\"api_key\": \"sk-1234567890\", \"name\": \"team\"}""#,
+        r#""{\"key\": \"abcdefghijkl\"}""#,
+    );
     assert_eq!(
-        list,
-        json!({"before": [{"api_key": "sk-1*****7890"}], "updated": null})
+        before,
+        Some(parsed(r#"{"api_key": "sk-1*****7890", "name": "team"}"#))
     );
-    let nulls = masked_record(json!({"name": null, "key": null}), json!(null));
-    assert_eq!(
-        nulls,
-        json!({"before": {"name": "None", "key": ""}, "updated": null})
-    );
+    assert_eq!(updated, Some(parsed(r#"{"key": "abcd****ijkl"}"#)));
+    let (text, _) = masked_fields(r#""\"admin\"""#, "null");
+    assert_eq!(text, Some(JsonValue::String("admin".to_owned())));
 }
 
 #[test]
@@ -196,6 +185,13 @@ fn audit_invalid_record() {
     ));
     assert!(matches!(
         decode_audit_record(br#"{"id":"a","updated_at":"2026-01-02T03:04:05Z","action":"updated","table_name":"LiteLLM_TeamTable","object_id":"t","before_value":"{oops"}"#),
+        Err(AuditRecordError::JsonField {
+            field: "before_value",
+            ..
+        })
+    ));
+    assert!(matches!(
+        decode_audit_record(br#"{"id":"a","updated_at":"2026-01-02T03:04:05Z","action":"updated","table_name":"LiteLLM_TeamTable","object_id":"t","before_value":"\"{oops\""}"#),
         Err(AuditRecordError::JsonField {
             field: "before_value",
             ..

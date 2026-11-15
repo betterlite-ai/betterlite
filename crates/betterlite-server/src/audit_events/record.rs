@@ -5,7 +5,7 @@ use betterlite_redact::structured::SensitiveDataMasker;
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
 
-use super::enums::{AuditAction, AuditName, AuditTable};
+use super::enums::{AuditAction, AuditTable};
 
 const REQUIRED_FIELDS: [&str; 5] = ["id", "updated_at", "action", "table_name", "object_id"];
 const OPTIONAL_FIELDS: [&str; 4] = [
@@ -155,21 +155,39 @@ fn masked_audit_value(
     value: Option<JsonValue>,
     field: &'static str,
 ) -> Result<Option<JsonValue>, AuditRecordError> {
-    let Some(value) = value else {
+    let Some(given) = value else {
         return Ok(None);
     };
-    let value = match value {
+    let parsed = match given {
         JsonValue::Null => return Ok(None),
-        JsonValue::String(text) => safe_json_loads(text.as_bytes())
-            .map_err(|source| AuditRecordError::JsonField { field, source })?,
-        value @ (JsonValue::Bool(_)
+        JsonValue::String(text) => parse_json_field(&text, field)?,
+        other @ (JsonValue::Bool(_)
         | JsonValue::Number(_)
         | JsonValue::Array(_)
-        | JsonValue::Object(_)) => value,
+        | JsonValue::Object(_)) => other,
+    };
+    // pydantic's Json field turns the text null into the field default, so the field is absent
+    if parsed.is_null() {
+        return Ok(None);
+    }
+    // LiteLLM's second parse of a string field keeps the string when it yields null
+    let masked = match parsed {
+        JsonValue::String(text) => match parse_json_field(&text, field)? {
+            JsonValue::Null => JsonValue::String(text),
+            twice_parsed => twice_parsed,
+        },
+        other => other,
     };
     Ok(Some(
-        SensitiveDataMasker::with_patterns(["key"], ["cost"]).mask(&value),
+        SensitiveDataMasker::with_patterns(["key"], ["cost"]).mask(&masked),
     ))
+}
+
+fn parse_json_field(text: &str, field: &'static str) -> Result<JsonValue, AuditRecordError> {
+    match safe_json_loads(text.as_bytes()) {
+        Ok(value) => Ok(value),
+        Err(source) => Err(AuditRecordError::JsonField { field, source }),
+    }
 }
 
 #[must_use]

@@ -6,7 +6,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::audit_events::{LITELLM_STORE_AUDIT_LOGS_ENV, Settings};
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_server::audit_events::callbacks::{AuditCallbackConfig, AuditCallbackDispatcher};
-use betterlite_server::audit_events::enums::{AuditAction, AuditName, AuditTable};
+use betterlite_server::audit_events::enums::{AuditAction, AuditTable};
 use betterlite_server::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
 use betterlite_server::audit_events::payload::build_audit_log_payload;
 use betterlite_server::audit_events::record::{

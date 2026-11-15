@@ -30,4 +30,7 @@ deviations:
   - what: The record's debug line redacts changed_by_api_key; LiteLLM's verbose_proxy_logger.debug prints the whole LiteLLM_AuditLogs model, str and all, so the raw changed-by key reaches the proxy debug log.
     why: The key is a credential, and a debug sink that prints it leaks it wherever logs are shipped; the field holds a secrecy SecretString, exposed only when the row is inserted and the callback payload is built.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L219
+  - what: A before_value or updated_values that parses to a JSON string is stored as that string; LiteLLM passes a non-null parsed string to mask_dict and raises AttributeError out of the audit write.
+    why: The field declares Json, so a JSON string is a valid value, and the write never fails a completed mutation; B244's masker masks by key, and a bare string has none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3842-L3848
 kept_bugs: []

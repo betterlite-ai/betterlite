@@ -1,7 +1,6 @@
 use betterlite_logging::azure_sentinel_logging::audit::StandardAuditLogPayload;
 use secrecy::ExposeSecret as _;
 
-use super::enums::AuditName;
 use super::record::{AuditLogRecord, payload_text, timestamp_text};
 
 pub type AuditLogPayload = StandardAuditLogPayload;

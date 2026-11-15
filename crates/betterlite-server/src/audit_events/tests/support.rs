@@ -24,6 +24,10 @@ use crate::audit_events::sink::{
 
 pub(super) const SAMPLE_TIMESTAMP: &str = "2026-01-02T03:04:05.123456+00:00";
 
+pub(super) fn parsed(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
+}
+
 pub(super) struct TestSettings {
     pub(super) enabled: bool,
     pub(super) callbacks: Vec<AuditCallbackConfig>,
@@ -227,7 +231,7 @@ impl AuditClock for FixedClock {
 }
 
 pub(super) fn plain_record() -> AuditLogRecord {
-    let record = AuditLogRecord::masked(AuditLogRecord {
+    AuditLogRecord::masked(AuditLogRecord {
         id: "audit-1".to_owned(),
         updated_at: DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap(),
         changed_by: None,
@@ -237,15 +241,15 @@ pub(super) fn plain_record() -> AuditLogRecord {
         object_id: "team-1".to_owned(),
         before_value: None,
         updated_values: None,
-    });
-    record.unwrap()
+    })
+    .unwrap()
 }
 
 pub(super) fn sample_record(
     before_value: Option<&str>,
     updated_values: Option<&str>,
 ) -> AuditLogRecord {
-    let record = AuditLogRecord::masked(AuditLogRecord {
+    AuditLogRecord::masked(AuditLogRecord {
         id: "audit-1".to_owned(),
         updated_at: DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap(),
         changed_by: Some("admin".to_owned()),
@@ -255,8 +259,8 @@ pub(super) fn sample_record(
         object_id: "team-1".to_owned(),
         before_value: before_value.map(|text| JsonValue::String(text.to_owned())),
         updated_values: updated_values.map(|text| JsonValue::String(text.to_owned())),
-    });
-    record.unwrap()
+    })
+    .unwrap()
 }
 
 #[derive(Clone, Default)]

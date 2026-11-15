@@ -118,5 +118,29 @@ calls:
         before_value: null
         updated_values: null
       callbacks: []
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-10
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: admin
+        changed_by_api_key: sk-key
+        action: updated
+        table_name: LiteLLM_TeamTable
+        object_id: team-1
+        before_value: '"{\"api_key\": \"sk-1234567890\", \"name\": \"team\"}"'
+        updated_values: '"{\"key\": \"abcdefghijkl\", \"name\": \"team\"}"'
+  - audit_events:
+      aspect: record
+      record:
+        id: audit-11
+        updated_at: "2026-01-02T03:04:05+00:00"
+        changed_by: null
+        changed_by_api_key: null
+        action: created
+        table_name: LiteLLM_UserTable
+        object_id: user-1
+        before_value: 'null'
+        updated_values: 'null'
 env: {}
 compare: {ignore: []}

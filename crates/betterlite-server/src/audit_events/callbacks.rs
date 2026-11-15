@@ -55,9 +55,15 @@ impl AuditTaskSpawner for TrackerSpawner {
     }
 }
 
+async fn log_callback(callback: Arc<dyn AuditLogCallback>, payload: AuditLogPayload) {
+    if let Err(error) = callback.async_log_audit_log_event(payload).await {
+        tracing::error!("Audit log callback task failed: {error}");
+    }
+}
+
 pub struct AuditCallbackDispatcher {
-    pub registry: Arc<dyn AuditCallbackRegistry>,
-    pub spawner: Arc<dyn AuditTaskSpawner>,
+    registry: Arc<dyn AuditCallbackRegistry>,
+    spawner: Arc<dyn AuditTaskSpawner>,
     cache: Mutex<BTreeMap<String, Arc<dyn AuditLogCallback>>>,
 }
 
@@ -92,11 +98,7 @@ impl AuditCallbackDispatcher {
                 continue;
             };
             let payload = payload.clone();
-            let task: AuditCallbackFuture = Box::pin(async move {
-                if let Err(error) = callback.async_log_audit_log_event(payload).await {
-                    tracing::error!("Audit log callback task failed: {error}");
-                }
-            });
+            let task: AuditCallbackFuture = Box::pin(log_callback(callback, payload));
             self.spawner.spawn(task);
         }
     }
