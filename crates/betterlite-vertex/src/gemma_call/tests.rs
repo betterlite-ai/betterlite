@@ -3,4 +3,5 @@
 mod corpus;
 mod http;
 mod plans;
+mod status;
 mod support;
