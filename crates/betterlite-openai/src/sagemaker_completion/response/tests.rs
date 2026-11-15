@@ -59,6 +59,18 @@ fn an_echoed_prompt_is_stripped_when_the_template_has_a_bos_token() {
 }
 
 #[test]
+fn a_bos_prompt_keeps_text_that_does_not_start_with_it() {
+    let reply = json!({"generation": "other text"});
+    let response = transform_response(&input(&reply, "<s>[INST] hi [/INST]"), &WordCounter)
+        .expect("a response");
+    let choice = response.choices.first().expect("a choice");
+    assert_eq!(choice.message.content.as_deref(), Some("other text"));
+    assert_eq!(response.usage.prompt_tokens, 3);
+    assert_eq!(response.usage.completion_tokens, 2);
+    assert_eq!(response.usage.total_tokens, 5);
+}
+
+#[test]
 fn a_prompt_without_a_bos_token_leaves_the_echo_in_place() {
     let reply = json!({"generation": "hello there"});
     assert_eq!(content(&reply, "hello"), "hello there");
