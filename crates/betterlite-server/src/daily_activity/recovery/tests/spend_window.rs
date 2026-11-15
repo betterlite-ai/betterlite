@@ -72,6 +72,15 @@ fn spend_window_normalizes_an_offset_to_utc() {
 }
 
 #[test]
+fn spend_window_normalizes_a_mixed_naive_and_offset_set_to_utc() {
+    let computed = spend_logs_window(&dates(&["2026-01-05", "2026-01-05T10:30:00+02:00"])).unwrap();
+    assert_eq!(
+        computed,
+        window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 8, 30))
+    );
+}
+
+#[test]
 fn spend_window_accepts_a_z_suffixed_datetime() {
     let computed = spend_logs_window(&dates(&["2026-01-05T10:30:00Z"])).unwrap();
     assert_eq!(
