@@ -1,0 +1,20 @@
+task: B3694
+deviations:
+  - what: Conditional categories are tried in sorted category-name order instead of LiteLLM's configuration order, so when two categories match the same text a different category can be reported.
+    why: The loader from B3692 keeps conditional categories in a BTreeMap, and only one match is returned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L985
+  - what: Phrase-pattern categories are tried in sorted category-name order instead of LiteLLM's configuration order, so when two categories match the same text a different category can be reported.
+    why: The loader from B3692 keeps loaded categories in a BTreeMap, and only the first phrase-pattern match is returned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1068
+  - what: Always-block keywords are tried in sorted keyword order instead of the order the categories were loaded, so when two always-block keywords match the same text a different keyword can be reported.
+    why: The loader from B3692 keeps both keyword maps in a BTreeMap, and only the first match is returned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1117
+  - what: Regular keywords are tried in sorted keyword order instead of the order the categories were loaded, so when two keywords match the same text a different keyword can be reported.
+    why: The loader from B3692 keeps both keyword maps in a BTreeMap, and only the first match is returned.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1133
+  - what: The word boundaries around a single-word keyword count combining marks, connector punctuation and join controls as word characters, so a keyword followed by one of those matches in LiteLLM and not in betterlite, while a keyword followed by a numeric character such as U+00B2 matches in betterlite and not in LiteLLM.
+    why: Rust's regex \b uses alphabetic characters, marks, decimal numbers, connector punctuation and join controls, while Python's \b uses alphanumerics plus underscore; the regex crate has no look-around to express Python's set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1148
+  - what: The word boundaries around a single-word conditional block word count combining marks, connector punctuation and join controls as word characters, with the same match differences around those characters as single-word keywords.
+    why: This port shares the regex crate's \b word set rather than Python's alphanumeric-plus-underscore set.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1032

@@ -1,0 +1,17 @@
+kind: helper
+name: redundant-scan
+call:
+  b3679:
+    function: redundant_scan
+    chunks:
+      - {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {role: assistant}}]}
+      - {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: a}}]}
+      - {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {role: assistant}}]}
+      - {id: chunk-1, created: 7, model: gpt-4o, object: chat.completion.chunk, choices: [{index: 0, delta: {content: b}}]}
+    scan_keys:
+      - {texts: [], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+      - {texts: [a], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+      - {texts: [a], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+      - {texts: [ab], tool_calls: [], stream_ended: false, tool_calls_in_flight: false}
+env: {}
+compare: {ignore: []}

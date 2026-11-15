@@ -1,0 +1,14 @@
+task: B4119
+deviations:
+  - what: >-
+      The plan, patch and follow-up message records are typed Rust structs with JSON-valued fields
+      (FollowupMessage and JsonMap) instead of pydantic models and dicts.
+    why: >-
+      The rules forbid untyped dicts; the JSON a callback or provider observes is unchanged because
+      the structs serialize with LiteLLM's field names, null defaults and field order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py#L65-L88
+  - what: >-
+      The legacy chat rerun returns a ChatRerunRequest (model, messages, params, kwargs) instead of
+      calling litellm.acompletion itself.
+    why: Sending the follow-up call belongs to the core executor; the arguments and their merge order are LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/handler.py#L1802-L1834

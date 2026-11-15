@@ -1,0 +1,12 @@
+task: B8748
+deviations:
+  - what: >-
+      LANGSMITH_MOCK mock mode is not built; the logger always posts to the configured base URL.
+    why: >-
+      Mock mode intercepts httpx for LiteLLM's own tests; point LANGSMITH_BASE_URL at a test server instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L57-L61
+  - what: >-
+      The sync success event schedules a flush on the tracker, which takes the flush lock and removes the runs it sent; LiteLLM's _send_batch posts the queue without clearing it or taking the lock, so later flushes send those same runs again.
+    why: >-
+      The unsynchronized send duplicates every run in the queue and would keep duplicating it for the life of the process; no working setup can rely on duplicate runs, so betterlite clears the sent prefix instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langsmith.py#L509-L525
