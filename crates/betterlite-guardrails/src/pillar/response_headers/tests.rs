@@ -59,7 +59,10 @@ fn a_small_evidence_payload_is_only_encoded() {
     )]);
     let mut metadata = store(&[("pillar_evidence", evidence.clone())]);
     let headers = build_pillar_response_headers(&mut metadata);
-    assert!(headers.contains_key("x-pillar-evidence"));
+    assert_eq!(
+        headers.get("x-pillar-evidence"),
+        Some(&"%5B%7B%22evidence%22%3A%22abc%22%7D%5D".to_owned())
+    );
     assert_eq!(metadata.get("pillar_evidence"), Some(&evidence));
     assert!(!metadata.contains_key("pillar_evidence_truncated"));
 }
