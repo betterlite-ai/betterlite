@@ -6,8 +6,8 @@ deviations:
   - what: An update sends only the fields the caller set, never toolset_id, and a null toolset_name or tools is a no-op while an explicit null description clears it.
     why: The typed UpdateMCPToolsetRequest records absent, null and set for each optional field, which is what model_dump(exclude_unset=True) plus LiteLLM's own filtering expresses; a required name and tool list cannot be cleared, and description stays nullable.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L143-L150
-  - what: A tools column holding the empty JSON string reads as no tools under LiteLLM and is a typed storage error in betterlite.
-    why: LiteLLM's data.get("tools") or [] treats an empty string as absent through Python truthiness, which docs/compatibility.md does not port; a working setup writes json.dumps output, so the empty string only appears in a hand-edited row, and betterlite names the corrupt column instead of silently dropping the tools.
+  - what: A tools column that is empty or holds anything but a JSON list of tools is a typed storage error in betterlite, where LiteLLM reads the empty string as no tools and raises json.loads or pydantic errors for other text.
+    why: LiteLLM's data.get("tools") or [] treats an empty string as absent through Python truthiness, which docs/compatibility.md does not port, and its json.loads plus the MCPToolset validation decide the rest; a working setup writes json.dumps output, so only a hand-edited row reaches this, and betterlite names the corrupt column instead of silently dropping the tools.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L73-L80
   - what: Listing with use_writer=false answers an empty list after a warning on any storage error, while use_writer=true returns the error.
     why: This copies LiteLLM's graceful degradation for a read replica that is unreachable; the writer path stays fatal so a failed primary read is never mistaken for an empty table.
