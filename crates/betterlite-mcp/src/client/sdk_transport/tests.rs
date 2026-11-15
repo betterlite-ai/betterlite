@@ -272,7 +272,10 @@ async fn enter(transport: &mut SdkTransport) -> SdkStreams {
 }
 
 async fn send(streams: &mut SdkStreams, item: TxJsonRpcMessage<RoleClient>) {
-    streams.send(item).await.unwrap();
+    timeout(RECEIVE_TIMEOUT, streams.send(item))
+        .await
+        .expect("the send finishes")
+        .unwrap();
 }
 
 async fn receive(streams: &mut SdkStreams) -> RxJsonRpcMessage<RoleClient> {
@@ -806,6 +809,27 @@ async fn a_stdio_round_trip_through_the_async_rw_transport() {
     assert_eq!(response_id(&message), Some(RequestId::Number(1)));
     drop(streams);
     transport.exit().await.unwrap();
+}
+
+#[tokio::test]
+async fn exiting_the_stdio_context_terminates_the_child_gracefully() {
+    let script = r#"trap 'printf "%s\n" "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/message\",\"params\":{\"level\":\"info\",\"data\":\"stopped\"}}"; exit 0' TERM; while :; do sleep 0.05; done"#;
+    let runtime = StdioRuntime {
+        factory: Arc::new(UnusedFactory),
+    };
+    let stdio = runtime.stdio_client(StdioServerParameters {
+        command: "/bin/sh".to_owned(),
+        args: vec!["-c".to_owned(), script.to_owned()],
+        env: BTreeMap::new(),
+        defaults: BTreeMap::new(),
+    });
+    let mut transport = SdkTransport::Stdio(StdioContext(stdio));
+    let mut streams = enter(&mut transport).await;
+    transport.exit().await.unwrap();
+    assert!(matches!(
+        receive(&mut streams).await,
+        JsonRpcMessage::Notification(_)
+    ));
 }
 
 #[test]
