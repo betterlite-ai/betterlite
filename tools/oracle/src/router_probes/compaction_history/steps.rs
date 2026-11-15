@@ -5,7 +5,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use betterlite_anthropic::native_compaction::anthropic::ModelInfoLookup;
 use betterlite_anthropic::native_compaction::protocol::{
-    CompactionParams, NativeCompactionProvider, get_native_compaction_provider,
+    CompactionParams, NativeCompactionProvider as _, get_native_compaction_provider,
 };
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_router::compaction_history::blocks::field_text;
