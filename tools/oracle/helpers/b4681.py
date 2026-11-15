@@ -7,6 +7,7 @@ from types import ModuleType
 from typing import Final, Literal, NotRequired, TypedDict
 
 from litellm.proxy._experimental.mcp_server.toolset_db import (
+    MCPToolsetRow,
     MCPToolsetRowData,
     create_mcp_toolset,
     delete_mcp_toolset,
@@ -32,8 +33,6 @@ class RecordNotFoundError(Exception):
 
 
 class PrismaErrorsModule(ModuleType):
-    RecordNotFoundError: type[Exception]
-
     def __init__(self) -> None:
         super().__init__("prisma.errors")
         self.RecordNotFoundError = RecordNotFoundError
@@ -54,9 +53,6 @@ class IdWhere(TypedDict):
 
 class NameWhere(TypedDict):
     toolset_name: str
-
-
-InFilter = TypedDict("InFilter", {"in": list[str]})
 
 
 class CreatedRow(TypedDict):
@@ -93,70 +89,55 @@ class StoredRow(TypedDict):
     updated_by: str | None
 
 
-class CreateCall(TypedDict):
-    operation: Literal["create"]
+class Call(TypedDict):
     timestamp: str
-    touched_by: str
     rows: list[RowInput]
+
+
+class CreateCall(Call):
+    operation: Literal["create"]
+    touched_by: str
     request: dict[str, JsonValue]
 
 
-class GetCall(TypedDict):
+class GetCall(Call):
     operation: Literal["get"]
-    timestamp: str
-    rows: list[RowInput]
     toolset_id: str
 
 
-class GetByNameCall(TypedDict):
+class GetByNameCall(Call):
     operation: Literal["get_by_name"]
-    timestamp: str
-    rows: list[RowInput]
     toolset_name: str
 
 
-class ListCall(TypedDict):
+class ListCall(Call):
     operation: Literal["list"]
-    timestamp: str
-    rows: list[RowInput]
     toolset_ids: list[str] | None
     use_writer: bool
     fail: bool
 
 
-class UpdateCall(TypedDict):
+class UpdateCall(Call):
     operation: Literal["update"]
-    timestamp: str
     touched_by: str
-    rows: list[RowInput]
     request: dict[str, JsonValue]
 
 
-class DeleteCall(TypedDict):
+class DeleteCall(Call):
     operation: Literal["delete"]
-    timestamp: str
-    rows: list[RowInput]
     toolset_id: str
 
 
 Input = CreateCall | GetCall | GetByNameCall | ListCall | UpdateCall | DeleteCall
 
 
-class FakeRow:
+class FakeRow(MCPToolsetRow):
     def __init__(self, row: StoredRow) -> None:
         self.row = row
 
+    @override
     def model_dump(self) -> MCPToolsetRowData:
-        return {
-            "toolset_id": self.row["toolset_id"],
-            "toolset_name": self.row["toolset_name"],
-            "description": self.row["description"],
-            "tools": self.row["tools"],
-            "created_at": self.row["created_at"],
-            "created_by": self.row["created_by"],
-            "updated_at": self.row["updated_at"],
-            "updated_by": self.row["updated_by"],
-        }
+        return TypeAdapter(MCPToolsetRowData).validate_python(self.row)
 
 
 class State:
@@ -188,32 +169,25 @@ class FakeTable:
         return FakeRow(row)
 
     async def find_unique(self, where: Mapping[str, JsonValue]) -> FakeRow | None:
-        toolset_id = TypeAdapter(IdWhere).validate_python(where)["toolset_id"]
-        for row in self.state.rows:
-            if row["toolset_id"] == toolset_id:
-                return FakeRow(row)
-        return None
+        wanted = TypeAdapter(IdWhere).validate_python(where)["toolset_id"]
+        return next(
+            (FakeRow(row) for row in self.state.rows if row["toolset_id"] == wanted), None
+        )
 
     async def find_first(self, where: Mapping[str, JsonValue]) -> FakeRow | None:
-        toolset_name = TypeAdapter(NameWhere).validate_python(where)["toolset_name"]
-        for row in self.state.rows:
-            if row["toolset_name"] == toolset_name:
-                return FakeRow(row)
-        return None
+        wanted = TypeAdapter(NameWhere).validate_python(where)["toolset_name"]
+        return next(
+            (FakeRow(row) for row in self.state.rows if row["toolset_name"] == wanted), None
+        )
 
     async def find_many(self, where: Mapping[str, JsonValue]) -> list[FakeRow]:
         self.state.seen.append(self.label)
         if self.fail:
             raise DatabaseUnavailableError("the toolset table read failed")
-        wanted = where.get("toolset_id")
-        if wanted is None:
+        if where.get("toolset_id") is None:
             return [FakeRow(row) for row in self.state.rows]
-        identifier_filter = TypeAdapter(InFilter).validate_python(wanted)
-        return [
-            FakeRow(row)
-            for row in self.state.rows
-            if row["toolset_id"] in identifier_filter["in"]
-        ]
+        identifiers = TypeAdapter(dict[str, list[str]]).validate_python(where["toolset_id"])
+        return [FakeRow(row) for row in self.state.rows if row["toolset_id"] in identifiers["in"]]
 
     async def update(
         self, where: Mapping[str, JsonValue], data: Mapping[str, JsonValue]
@@ -285,63 +259,40 @@ def toolset_value(toolset: MCPToolset | None) -> JsonValue:
     return TypeAdapter(JsonValue).validate_json(toolset.model_dump_json())
 
 
-async def created(state: State, call: CreateCall) -> JsonValue:
-    request = TypeAdapter(NewMCPToolsetRequest).validate_python(call["request"])
-    toolset = await create_mcp_toolset(FakeClient(state, fail=False), request, call["touched_by"])
-    return toolset_value(toolset)
-
-
-async def fetched(state: State, call: GetCall) -> JsonValue:
-    toolset = await get_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
-    return toolset_value(toolset)
-
-
-async def fetched_by_name(state: State, call: GetByNameCall) -> JsonValue:
-    toolset = await get_mcp_toolset_by_name(FakeClient(state, fail=False), call["toolset_name"])
-    return toolset_value(toolset)
-
-
-async def listed(state: State, call: ListCall) -> JsonValue:
-    client = FakeClient(state, fail=call["fail"])
-    toolsets = await list_mcp_toolsets(client, call["toolset_ids"], use_writer=call["use_writer"])
-    view: dict[str, JsonValue] = {
-        "toolsets": [toolset_value(toolset) for toolset in toolsets],
-        "store": state.seen[0],
-    }
-    return view
-
-
-async def updated(state: State, call: UpdateCall) -> JsonValue:
-    request = TypeAdapter(UpdateMCPToolsetRequest).validate_python(call["request"])
-    toolset = await update_mcp_toolset(FakeClient(state, fail=False), request, call["touched_by"])
-    return toolset_value(toolset)
-
-
-async def removed(state: State, call: DeleteCall) -> JsonValue:
-    toolset = await delete_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
-    return toolset_value(toolset)
-
-
-async def dispatch(input_value: Input) -> JsonValue:
-    timestamp = TypeAdapter(datetime).validate_python(input_value["timestamp"])
-    state = State([stored_row(row, timestamp) for row in input_value["rows"]], timestamp)
-    answer: JsonValue = None
-    match input_value["operation"]:
+async def dispatch(call: Input, state: State) -> JsonValue:
+    match call["operation"]:
         case "create":
-            answer = await created(state, input_value)
+            client = FakeClient(state, fail=False)
+            request = TypeAdapter(NewMCPToolsetRequest).validate_python(call["request"])
+            toolset = await create_mcp_toolset(client, request, call["touched_by"])
+            return toolset_value(toolset)
         case "get":
-            answer = await fetched(state, input_value)
+            toolset = await get_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
+            return toolset_value(toolset)
         case "get_by_name":
-            answer = await fetched_by_name(state, input_value)
+            client = FakeClient(state, fail=False)
+            toolset = await get_mcp_toolset_by_name(client, call["toolset_name"])
+            return toolset_value(toolset)
         case "list":
-            answer = await listed(state, input_value)
+            client = FakeClient(state, fail=call["fail"])
+            toolsets = await list_mcp_toolsets(
+                client, call["toolset_ids"], use_writer=call["use_writer"]
+            )
+            return {
+                "toolsets": [toolset_value(toolset) for toolset in toolsets],
+                "store": state.seen[0],
+            }
         case "update":
-            answer = await updated(state, input_value)
+            client = FakeClient(state, fail=False)
+            request = TypeAdapter(UpdateMCPToolsetRequest).validate_python(call["request"])
+            toolset = await update_mcp_toolset(client, request, call["touched_by"])
+            return toolset_value(toolset)
         case "delete":
-            answer = await removed(state, input_value)
-    return answer
+            toolset = await delete_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
+            return toolset_value(toolset)
 
 
 def run(input_value: Input) -> JsonValue:
-    answer = asyncio.run(dispatch(input_value))
-    return TypeAdapter(JsonValue).validate_python(answer)
+    timestamp = TypeAdapter(datetime).validate_python(input_value["timestamp"])
+    state = State([stored_row(row, timestamp) for row in input_value["rows"]], timestamp)
+    return asyncio.run(dispatch(input_value, state))
