@@ -1,0 +1,9 @@
+task: B6414
+deviations:
+  - what: A transcript with no turn id in PUSH_TO_TALK mode gets an item_<32 hex> turn id from the platform random source, and nothing pins the value.
+    why: LiteLLM builds the id from uuid4, which no test can fix; the Rust test checks the item_ prefix and the 32 lowercase hex characters, and the oracle folds event and item ids before comparing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L426-L435
+  - what: An api_base that spells out the default port of its scheme loses the port, so wss://example.com:443/x becomes wss://example.com/v1/asr/realtime here and wss://example.com:443/v1/asr/realtime in LiteLLM.
+    why: betterlite parses the base with the url crate, which validates it and writes it back with the default port removed, while LiteLLM copies urllib.parse's netloc into the rebuilt URL and keeps the port text; both name the same endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/meta/realtime/transformation.py#L198-L208
+kept_bugs: []

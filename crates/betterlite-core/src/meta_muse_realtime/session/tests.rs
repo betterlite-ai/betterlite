@@ -124,6 +124,11 @@ fn builds_the_default_and_custom_realtime_urls() {
             "https://example.com:9443",
             "wss://example.com:9443/v1/asr/realtime",
         ),
+        // the url crate drops a port that is the scheme default, so the rebuilt URL keeps the endpoint without it
+        (
+            "wss://example.com:443/x",
+            "wss://example.com/v1/asr/realtime",
+        ),
     ];
     let built: Vec<String> = cases
         .iter()
