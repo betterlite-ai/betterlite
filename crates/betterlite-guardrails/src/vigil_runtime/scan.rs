@@ -52,8 +52,7 @@ pub(super) async fn apply(
         source,
         metadata,
     };
-    let rewritten = run.texts(&texts).await?;
-    run.tool_calls(&rewritten, &scanned).await
+    run.texts_then_tools(&texts, &scanned).await
 }
 
 struct Run<'run> {
@@ -68,6 +67,18 @@ enum ScanStop {
     Failed(VigilGuardError),
     Blocked(GuardrailFailure),
     Unrecognized,
+}
+
+// A text-stage stop carries the partial result its fail_open answer needs
+enum TextStop {
+    Blocked(GuardrailFailure),
+    Interrupted {
+        error: VigilGuardError,
+        partial: Vec<String>,
+    },
+    Unrecognized {
+        partial: Vec<String>,
+    },
 }
 
 impl Run<'_> {
@@ -99,7 +110,24 @@ impl Run<'_> {
         }
     }
 
-    async fn texts(&self, texts: &[String]) -> Result<Vec<String>, GuardrailFailure> {
+    async fn texts_then_tools(
+        &self,
+        texts: &[String],
+        scanned: &[(usize, String)],
+    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
+        match self.texts(texts).await {
+            Ok(rewritten) => self.tool_calls(&rewritten, scanned).await,
+            Err(TextStop::Blocked(failure)) => Err(failure),
+            Err(TextStop::Interrupted { error, partial }) => {
+                self.interrupted(error, &partial, self.bridged.tool_calls.as_deref())
+            }
+            Err(TextStop::Unrecognized { partial }) => {
+                self.unrecognized(&partial, self.bridged.tool_calls.as_deref())
+            }
+        }
+    }
+
+    async fn texts(&self, texts: &[String]) -> Result<Vec<String>, TextStop> {
         let mut rewritten = Vec::with_capacity(texts.len());
         for (index, text) in texts.iter().enumerate() {
             if text.trim().is_empty() {
@@ -108,14 +136,17 @@ impl Run<'_> {
             }
             match self.scan(text).await {
                 Ok(scanned) => rewritten.push(scanned),
-                Err(ScanStop::Blocked(failure)) => return Err(failure),
+                Err(ScanStop::Blocked(failure)) => return Err(TextStop::Blocked(failure)),
                 Err(ScanStop::Failed(error)) => {
-                    let partial = partial_texts(&rewritten, texts, index);
-                    return self.interrupted(error, &partial, self.bridged.tool_calls.as_deref());
+                    return Err(TextStop::Interrupted {
+                        error,
+                        partial: partial_texts(&rewritten, texts, index),
+                    });
                 }
                 Err(ScanStop::Unrecognized) => {
-                    let partial = partial_texts(&rewritten, texts, index);
-                    return self.unrecognized(&partial, self.bridged.tool_calls.as_deref());
+                    return Err(TextStop::Unrecognized {
+                        partial: partial_texts(&rewritten, texts, index),
+                    });
                 }
             }
         }
