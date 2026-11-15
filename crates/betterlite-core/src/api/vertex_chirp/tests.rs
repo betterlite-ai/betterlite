@@ -133,7 +133,7 @@ struct Fixture {
 
 fn fixture(location: Option<&str>) -> Fixture {
     let resolver = CountingResolver::tracking();
-    let token: Arc<dyn AccessTokenResolver> = Arc::clone(&resolver);
+    let token: Arc<dyn AccessTokenResolver> = Arc::<CountingResolver>::clone(&resolver);
     let factory = RecordingFactory::default();
     let targets = Arc::clone(&factory.targets);
     let config = VertexChirpRealtimeConfig::new(
