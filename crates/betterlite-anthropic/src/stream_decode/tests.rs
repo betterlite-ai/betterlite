@@ -209,7 +209,7 @@ fn drops_many_broken_tokens_in_one_line() {
 #[test]
 fn a_value_split_over_many_non_closing_data_lines_accumulates() {
     let steps: Vec<fixture::Source> = iter::once(Ok(TransportChunk::Text(
-        r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"#
+        r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""#
             .to_owned(),
     )))
     .chain(
