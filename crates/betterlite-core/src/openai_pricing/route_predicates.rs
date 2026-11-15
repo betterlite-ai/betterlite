@@ -35,6 +35,8 @@ pub fn is_openai_responses_route(url_route: &str) -> bool {
 #[must_use]
 pub fn is_openai_embeddings_route(url_route: &str) -> bool {
     let parsed = parse_route(url_route);
-    let compatible = is_openai_compatible_host(parsed.hostname.as_deref());
-    compatible && parsed.path.contains("/v1/embeddings")
+    if !is_openai_compatible_host(parsed.hostname.as_deref()) {
+        return false;
+    }
+    parsed.path.contains("/v1/embeddings")
 }
