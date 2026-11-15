@@ -206,7 +206,9 @@ pub(crate) struct ApiBaseContexts<'context> {
     pub(crate) hooks: NoHooks,
 }
 
-pub(crate) fn api_resolver<'a>(contexts: &'a ApiBaseContexts<'a>) -> SharedApiBase<'a> {
+pub(crate) fn api_resolver<'context>(
+    contexts: &'context ApiBaseContexts<'context>,
+) -> SharedApiBase<'context> {
     SharedApiBase {
         context: ApiBaseContext {
             model_alias_map: &contexts.aliases,

@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::fs;
+use std::mem;
 use std::path::Path;
 
 use betterlite_core::api::interactions::streaming::base::{ParsedStreamChunk, parse_stream_chunk};
@@ -60,10 +61,10 @@ fn replay(chunks: Vec<Vec<u8>>) -> Vec<ParsedStreamChunk> {
         decoder
             .push(&chunk, &mut pending)
             .expect("the corpus seed stays under the line cap");
-        lines.extend(pending.drain(..));
+        lines.extend(mem::take(&mut pending));
     }
     decoder.flush(&mut pending);
-    lines.extend(pending.drain(..));
+    lines.extend(mem::take(&mut pending));
     lines
         .iter()
         .map(|line| parse_stream_chunk(line.as_str()))

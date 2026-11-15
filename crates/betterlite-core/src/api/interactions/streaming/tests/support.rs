@@ -122,6 +122,20 @@ impl InteractionsApiBase for NoApiBase {
     }
 }
 
+struct ParamsApiBase;
+
+static PARAMS_API_BASE: ParamsApiBase = ParamsApiBase;
+
+impl InteractionsApiBase for ParamsApiBase {
+    fn resolve(
+        &self,
+        _model: &str,
+        params: &ApiBaseParams,
+    ) -> Result<Option<String>, ApiBaseError> {
+        Ok(params.api_base.clone())
+    }
+}
+
 struct FailingApiBase;
 
 impl InteractionsApiBase for FailingApiBase {
@@ -349,6 +363,11 @@ fn litellm_params(api_base: &str) -> Params {
         String::from("api_base"),
         JsonValue::Text(api_base.to_owned()),
     )]);
+    Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
+}
+
+fn stream_params(stream: bool) -> Params {
+    let fields = IndexMap::from([(String::from("stream"), JsonValue::Bool(stream))]);
     Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
 }
 

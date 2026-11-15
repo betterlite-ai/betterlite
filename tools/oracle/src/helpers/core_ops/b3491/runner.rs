@@ -63,7 +63,7 @@ fn async_output(
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(runtime_failure)?;
+        .map_err(|error| runtime_failure(&error))?;
     runtime.block_on(collect_async(input, logging, config, resolver))
 }
 
@@ -84,10 +84,10 @@ fn sync_output(
             api_base: resolver,
         },
     )
-    .map_err(failure)?;
+    .map_err(|error| failure(&error))?;
     let events = from_fn(|| iterator.next_chunk())
         .collect::<Result<Vec<_>, _>>()
-        .map_err(failure)?;
+        .map_err(|error| failure(&error))?;
     let finished = iterator.base.finished;
     let completed = iterator.base.completed_response;
     Ok(output(events, finished, completed, logging.records()))
@@ -110,10 +110,10 @@ async fn collect_async(
             api_base: resolver,
         },
     )
-    .map_err(failure)?;
+    .map_err(|error| failure(&error))?;
     let mut events = Vec::new();
     while let Some(item) = iterator.next_chunk().await {
-        events.push(item.map_err(failure)?);
+        events.push(item.map_err(|error| failure(&error))?);
     }
     let finished = iterator.base.finished;
     let completed = iterator.base.completed_response;
@@ -145,7 +145,7 @@ fn call_details(input: &Input) -> Params {
 }
 
 fn failure<SourceError, ConfigError>(
-    error: InteractionStreamError<SourceError, ConfigError>,
+    error: &InteractionStreamError<SourceError, ConfigError>,
 ) -> Box<crate::helpers::HelperError>
 where
     SourceError: Error + 'static,
@@ -161,7 +161,7 @@ where
     })
 }
 
-fn runtime_failure(source: io::Error) -> Box<crate::helpers::HelperError> {
+fn runtime_failure(source: &io::Error) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: String::from("RuntimeError"),
         status: None,

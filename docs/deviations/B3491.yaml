@@ -15,3 +15,6 @@ deviations:
   - what: "A response line whose unterminated part passes 16 MiB ends the stream with the line error after the events decoded before it, instead of being read on."
     why: "LiteLLM reads the body through httpx's line reader, whose buffer has no bound, while a provider line is untrusted input that a gateway bounds (rule bounded-inputs)."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/interactions/streaming_iterator.py#L141
+  - what: "The constructor fills the shared get_api_base's declared stream flag from litellm_params.stream, so a streaming interaction resolves the provider's streaming api base, a Gemini streamGenerateContent URL."
+    why: "LiteLLM reads that key with getattr on the dict the iterator passes, where the attribute lookup always falls back to False; betterlite's ApiBaseParams declares the field, so docs/compatibility.md gives it the value the params send instead of the runtime's fallback, and betterlite's get_api_base keeps the branch it declares."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_api_base.py#L92

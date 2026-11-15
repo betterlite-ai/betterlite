@@ -183,13 +183,7 @@ async fn async_iterator_construction_reads_the_stream_flag_into_the_api_base() {
         },
     };
     let config = FixtureConfig;
-    let mut logging = RecordingLogging::new(Params::from([(
-        String::from("litellm_params"),
-        JsonValue::Object(IndexMap::from([(
-            String::from("stream"),
-            JsonValue::Bool(true),
-        )])),
-    )]));
+    let mut logging = RecordingLogging::new(stream_params(true));
     let iterator = InteractionsStreamIterator::new(
         FakeAsyncResponse::new(&[]),
         InteractionsStreamSetup {
@@ -206,6 +200,44 @@ async fn async_iterator_construction_reads_the_stream_flag_into_the_api_base() {
         iterator.base.hidden_params.api_base.as_deref(),
         Some(
             "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+        )
+    );
+}
+
+#[tokio::test]
+async fn async_iterator_construction_treats_an_explicit_false_stream_as_no_stream() {
+    let catalog = ModelCatalog::default();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let resolution = resolution_context(&catalog, &known, &custom, &environment);
+    let aliases = BTreeMap::new();
+    let hooks = NoHooks;
+    let shared = SharedApiBase {
+        context: ApiBaseContext {
+            model_alias_map: &aliases,
+            hooks: &hooks,
+            resolution: &resolution,
+        },
+    };
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(stream_params(false));
+    let iterator = InteractionsStreamIterator::new(
+        FakeAsyncResponse::new(&[]),
+        InteractionsStreamSetup {
+            model: Some("gemini/gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: None,
+            custom_llm_provider: None,
+            api_base: &shared,
+        },
+    )
+    .expect("the fixture iterator builds");
+    assert_eq!(
+        iterator.base.hidden_params.api_base.as_deref(),
+        Some(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
         )
     );
 }
@@ -258,7 +290,7 @@ fn sync_iterator_construction_calls_iter_lines_once() {
             logging: &mut logging,
             litellm_metadata: Some(&model_metadata),
             custom_llm_provider: None,
-            api_base: &NO_API_BASE,
+            api_base: &PARAMS_API_BASE,
         },
     )
     .expect("the fixture iterator builds");
@@ -539,7 +571,7 @@ fn sync_iteration_dispatches_the_async_handler_then_the_sync_handler() {
     assert_eq!(records[1].prefer_async_handlers, None);
 }
 
-async fn serve_stream(listener: TcpListener, answer: &str) {
+async fn serve_stream(listener: &TcpListener, answer: &str) {
     let (mut stream, _) = listener.accept().await.expect("the client connects");
     let mut head = Vec::new();
     let mut byte = [0_u8; 1];
@@ -579,7 +611,7 @@ async fn async_iteration_reads_the_first_line_of_a_streamed_http_response() {
         deadline: Duration::from_secs(30),
     };
     let answer = format!("data: {COMPLETED_STATUS}\n\ndata: [DONE]\n");
-    let (response, _) = tokio::join!(client.send(request), serve_stream(listener, &answer));
+    let (response, _) = tokio::join!(client.send(request), serve_stream(&listener, &answer));
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
     let mut iterator = InteractionsStreamIterator::new(
