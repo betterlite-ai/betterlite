@@ -97,6 +97,7 @@ fn refuses_an_interval_from_an_integer_past_f64() {
 #[case::leading_underscore("{\"soniox_max_polling_attempts\": \"_5\"}", 1800)]
 #[case::trailing_underscore("{\"soniox_max_polling_attempts\": \"5_\"}", 1800)]
 #[case::double_underscore("{\"soniox_max_polling_attempts\": \"1__0\"}", 1800)]
+#[case::non_ascii_digits("{\"soniox_max_polling_attempts\": \"\u{661}\u{662}\"}", 1800)]
 #[case::infinite_text("{\"soniox_max_polling_attempts\": \"inf\"}", 1800)]
 #[case::fraction("{\"soniox_max_polling_attempts\": 3.9}", 3)]
 #[case::negative_fraction("{\"soniox_max_polling_attempts\": -2.7}", 1)]

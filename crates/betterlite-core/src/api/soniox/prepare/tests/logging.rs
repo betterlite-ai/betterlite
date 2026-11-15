@@ -330,6 +330,7 @@ fn records_the_pre_call_through_b249() {
         Some(&Json::Text(String::from(REDACTED_VALUE)))
     );
     assert_eq!(details.get("input"), Some(&Json::Null));
+    assert!(!details.contains_key("api_key"));
 }
 
 #[test]
@@ -377,4 +378,5 @@ fn records_the_post_call_through_b249() {
         recorded.get(SECRET_FIELD),
         Some(&Json::Text(String::from(REDACTED_VALUE)))
     );
+    assert!(!details.contains_key("api_key"));
 }
