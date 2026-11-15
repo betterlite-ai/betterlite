@@ -127,26 +127,23 @@ fn decrypted_env_vars(prepared: &PreparedServerData) -> Vec<JsonValue> {
     items
 }
 
-fn env_value(entry: &JsonValue) -> String {
+fn env_field(entry: &JsonValue, name: &str) -> Option<String> {
     let JsonValue::Object(fields) = entry else {
         panic!("the env var entry is not an object");
     };
-    match fields.get("value") {
-        Some(JsonValue::String(text)) => text.clone(),
-        Some(other) => panic!("the env var value is not a string: {other:?}"),
-        None => panic!("the env var entry carries no value"),
+    match fields.get(name) {
+        Some(JsonValue::String(text)) => Some(text.clone()),
+        Some(other) => panic!("the env var {name} is not a string: {other:?}"),
+        None => None,
     }
 }
 
+fn env_value(entry: &JsonValue) -> String {
+    env_field(entry, "value").unwrap_or_else(|| panic!("the env var entry carries no value"))
+}
+
 fn env_scope(entry: &JsonValue) -> Option<String> {
-    let JsonValue::Object(fields) = entry else {
-        panic!("the env var entry is not an object");
-    };
-    match fields.get("scope") {
-        Some(JsonValue::String(scope)) => Some(scope.clone()),
-        Some(other) => panic!("the env var scope is not a string: {other:?}"),
-        None => None,
-    }
+    env_field(entry, "scope")
 }
 
 fn decrypted_blob(prepared: &PreparedServerData) -> CredentialBlob {
@@ -896,6 +893,32 @@ fn prepare_update_keeps_env_var_entry_field_presence() {
         sealed("secret")
     ));
     assert_eq!(env_text(&prepared, "env_vars"), expected);
+}
+
+#[test]
+fn prepare_update_keeps_an_explicit_null_env_vars() {
+    let prepared = update(
+        &request(r#"{"server_id":"s1","env_vars":null}"#),
+        &["server_id", "env_vars"],
+        &["server_id", "env_vars"],
+    );
+    assert_eq!(prepared.get("env_vars"), Some(&JsonValue::Null));
+}
+
+#[test]
+fn prepare_update_drops_env_vars_the_caller_never_sent() {
+    let prepared = update(
+        &request(r#"{"server_id":"s1"}"#),
+        &["server_id"],
+        &["server_id"],
+    );
+    assert_eq!(prepared, payload(r#"{"server_id":"s1"}"#));
+}
+
+#[test]
+fn prepare_create_drops_a_null_env_vars() {
+    let prepared = create(&request(r#"{"server_name":"srv","env_vars":null}"#));
+    assert!(!prepared.contains_key("env_vars"));
 }
 
 #[test]

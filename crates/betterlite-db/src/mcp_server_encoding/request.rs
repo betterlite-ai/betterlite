@@ -26,7 +26,7 @@ pub enum PrepareMode<'fields> {
     },
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct McpServerRequest {
     pub server_id: Option<String>,
@@ -47,6 +47,7 @@ pub struct McpServerRequest {
     pub tool_name_to_description: Option<BTreeMap<String, String>>,
     pub extra_headers: Option<Vec<String>>,
     pub static_headers: Option<BTreeMap<String, String>>,
+    #[serde(skip_serializing)]
     pub env_vars: Option<Vec<EnvVarRequest>>,
     pub instructions: Option<String>,
     pub command: Option<String>,
