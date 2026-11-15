@@ -151,19 +151,11 @@ pub fn map_aspect_ratio(size: &str) -> &'static str {
     let Ok((width, height)) = parse_image_dimensions(size) else {
         return FALLBACK_ASPECT_RATIO;
     };
-    if height == 0 {
+    let horizontal = i128::from(width).saturating_mul(i128::from(height.signum()));
+    let vertical = i128::from(height).saturating_abs();
+    if vertical == 0 {
         return FALLBACK_ASPECT_RATIO;
     }
-    let scaled_width = i128::from(width);
-    let scaled_height = i128::from(height);
-    let (horizontal, vertical) = if scaled_height < 0 {
-        (
-            scaled_width.saturating_neg(),
-            scaled_height.saturating_neg(),
-        )
-    } else {
-        (scaled_width, scaled_height)
-    };
     ratio_interval(horizontal, vertical).unwrap_or(FALLBACK_ASPECT_RATIO)
 }
 
