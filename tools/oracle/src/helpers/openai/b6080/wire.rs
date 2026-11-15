@@ -1,11 +1,12 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::openrouter_chat::ChatRequest;
+use betterlite_openai::openrouter_chat::policy::ChatPolicy;
+use betterlite_openai::openrouter_chat::{ChatReply, ChatRequest, OpenrouterConfig};
 use betterlite_openai::openrouter_embedding::transform_embedding_response;
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
 use super::chat::{config, prompt_object};
 use super::input::{ReplyCase, RequestCase};
@@ -35,18 +36,22 @@ pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
 
 pub(super) fn responses(cases: &[ReplyCase]) -> HelperResult {
     let config = config();
-    let mut costs = Vec::with_capacity(cases.len());
-    for case in cases {
-        let reply = config
-            .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
-            .or_value_error()?;
-        let cost = match reply.additional_headers.get(COST_HEADER) {
-            Some(cost) => serde_json::to_value(cost).or_value_error()?,
-            None => Value::Null,
-        };
-        costs.push(json!({"cost": cost}));
-    }
+    let costs = cases
+        .iter()
+        .map(|case| cost_header(&config, case))
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
     Ok(Value::Array(costs))
+}
+
+fn cost_header<P: ChatPolicy>(config: &OpenrouterConfig<P>, case: &ReplyCase) -> HelperResult {
+    let reply = config
+        .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
+        .or_value_error()?;
+    let cost = match reply.additional_headers.get(COST_HEADER) {
+        Some(cost) => serde_json::to_value(cost).or_value_error()?,
+        None => Value::Null,
+    };
+    Ok(json!({"cost": cost}))
 }
 
 pub(super) fn embedding_replies(cases: &[ReplyCase]) -> HelperResult {

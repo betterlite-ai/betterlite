@@ -1,6 +1,7 @@
 use betterlite_models::decisions::ir::{DecisionResponse, DecisionUsage};
 use betterlite_models::decisions::{Extra, Json as ModelJson, TokenCount};
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::openrouter_chat::error::get_error_class;
 use betterlite_openai::openrouter_decisions::OpenRouterDecisionsConfig;
 use betterlite_openai::openrouter_embedding::{
     SUPPORTED_OPENAI_PARAMS, get_complete_url as embedding_url, map_openai_params,
@@ -15,9 +16,9 @@ use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
-use super::chat::{chat_params, chunks, config, error_class, prompt_object};
+use super::chat::{chat_params, chunk, config, prompt_object};
 use super::input::{DecisionsCase, EmbeddingCase, Input, ResponsesCase};
 use super::wire::{embedding_replies, requests, responses as chat_responses};
 
@@ -30,11 +31,19 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 .collect::<Vec<_>>()
         )),
         Input::ChatParams { cases } => chat_params(cases),
-        Input::Chunk { cases } => Ok(chunks(cases)),
+        Input::Chunk { cases } => Ok(Value::Array(cases.iter().map(chunk).collect())),
         Input::Embedding { cases } => embedding(cases),
         Input::Responses { cases } => responses(cases),
-        Input::Decisions { cases } => Ok(decisions(cases)),
-        Input::ErrorClass { cases } => Ok(Value::Array(cases.iter().map(error_class).collect())),
+        Input::Decisions { cases } => decisions(cases),
+        Input::ErrorClass { cases } => Ok(Value::Array(
+            cases
+                .iter()
+                .map(|case| {
+                    let error = get_error_class(&case.message, case.status, case.headers.clone());
+                    json!({"message": error.message, "status": error.status_code})
+                })
+                .collect(),
+        )),
         Input::Request { cases } => requests(cases),
         Input::Response { cases } => chat_responses(cases),
         Input::EmbeddingReply { cases } => embedding_replies(cases),
@@ -93,21 +102,30 @@ fn responses(cases: &[ResponsesCase]) -> HelperResult {
     Ok(Value::Array(results))
 }
 
-fn decisions(cases: &[DecisionsCase]) -> Value {
+fn decisions(cases: &[DecisionsCase]) -> HelperResult {
     let decisions = OpenRouterDecisionsConfig;
-    json!({
+    Ok(json!({
         "path": OpenRouterDecisionsConfig::PATH,
         "api_key_env": OpenRouterDecisionsConfig::API_KEY_ENV,
         "api_base_env": OpenRouterDecisionsConfig::API_BASE_ENV,
         "default_api_base": decisions.get_default_api_base(),
         "complete_url": decisions.get_complete_url("https://openrouter.ai/api/v1", "m"),
-        "costs": cases.iter().map(|case| cost(&decisions, &case.cost)).collect::<Vec<_>>(),
-    })
+        "costs": reported_costs(&decisions, cases)?,
+    }))
 }
 
-fn cost(decisions: &OpenRouterDecisionsConfig, cost: &Value) -> Value {
+fn reported_costs(decisions: &OpenRouterDecisionsConfig, cases: &[DecisionsCase]) -> HelperResult {
+    let costs = cases
+        .iter()
+        .map(|case| cost(decisions, &case.cost))
+        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
+    Ok(Value::Array(costs))
+}
+
+fn cost(decisions: &OpenRouterDecisionsConfig, cost: &Value) -> HelperResult {
+    let value = serde_json::from_value::<ModelJson>(cost.clone()).or_value_error()?;
     let mut extra = Extra::new();
-    extra.insert(String::from("cost"), model_json(cost));
+    extra.insert(String::from("cost"), value);
     let response = DecisionResponse {
         model: None,
         answers: Vec::new(),
@@ -121,25 +139,9 @@ fn cost(decisions: &OpenRouterDecisionsConfig, cost: &Value) -> Value {
         },
         extra: Extra::new(),
     };
-    decisions
+    Ok(decisions
         .provider_reported_cost(&response)
         .and_then(|amount| amount.to_f64())
         .and_then(Number::from_f64)
-        .map_or(Value::Null, Value::Number)
-}
-
-fn model_json(value: &Value) -> ModelJson {
-    match value {
-        Value::Null => ModelJson::Null,
-        Value::Bool(flag) => ModelJson::Bool(*flag),
-        Value::Number(number) => ModelJson::Number(number.clone()),
-        Value::String(text) => ModelJson::Text(text.clone()),
-        Value::Array(items) => ModelJson::List(items.iter().map(model_json).collect()),
-        Value::Object(fields) => ModelJson::Object(
-            fields
-                .iter()
-                .map(|(name, field)| (name.clone(), model_json(field)))
-                .collect(),
-        ),
-    }
+        .map_or(Value::Null, Value::Number))
 }

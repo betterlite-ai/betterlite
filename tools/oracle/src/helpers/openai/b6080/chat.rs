@@ -5,7 +5,7 @@ use betterlite_openai::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
 use betterlite_openai::openrouter_chat::OpenrouterConfig;
-use betterlite_openai::openrouter_chat::error::{OpenRouterError, get_error_class};
+use betterlite_openai::openrouter_chat::error::OpenRouterError;
 use betterlite_openai::openrouter_chat::policy::{BaseRequest, ChatPolicy};
 use betterlite_openai::openrouter_chat::stream::chunk_parser;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -13,7 +13,7 @@ use serde_json::{Map, Value, json};
 
 use crate::helpers::{HelperResult, OrHelperError as _};
 
-use super::input::{ChatParamsCase, ChunkCase, ErrorCase};
+use super::input::{ChatParamsCase, ChunkCase};
 
 // B668, B503 and B504 supply these calls at composition; the helper keeps the supported list, the base request fields and the parsed body
 struct OpenAiPolicy;
@@ -117,11 +117,7 @@ pub(super) fn chat_params(cases: &[ChatParamsCase]) -> HelperResult {
     Ok(Value::Array(mapped))
 }
 
-pub(super) fn chunks(cases: &[ChunkCase]) -> Value {
-    Value::Array(cases.iter().map(chunk).collect())
-}
-
-fn chunk(case: &ChunkCase) -> Value {
+pub(super) fn chunk(case: &ChunkCase) -> Value {
     let reply = match chunk_parser(&case.chunk) {
         Ok(reply) => reply,
         Err(error) => {
@@ -147,9 +143,4 @@ fn chunk(case: &ChunkCase) -> Value {
         "model": reply.model,
         "choices": choices,
     })
-}
-
-pub(super) fn error_class(case: &ErrorCase) -> Value {
-    let error = get_error_class(&case.message, case.status, case.headers.clone());
-    json!({"message": error.message, "status": error.status_code})
 }
