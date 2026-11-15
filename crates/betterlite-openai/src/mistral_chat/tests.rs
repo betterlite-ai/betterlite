@@ -1,4 +1,13 @@
 #![cfg(test)]
+#![cfg_attr(
+    test,
+    expect(
+        clippy::default_numeric_fallback,
+        clippy::disallowed_methods,
+        clippy::too_many_lines,
+        reason = "json! fixtures state the provider wire the transforms read, numbers included, and each test reads as one scenario"
+    )
+)]
 
 use std::fs;
 use std::path::PathBuf;
@@ -15,6 +24,7 @@ use betterlite_logging::logging_state::correlation::{
 use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json as LoggedJson;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::message_content::Message;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
 use indexmap::IndexMap;
@@ -36,7 +46,7 @@ use super::request::{
     transform_request,
 };
 use super::stream::chunk_parser;
-use crate::chat::ChatMessage;
+use crate::chat::{ChatMessage, MessageContent, Role};
 use crate::chat_choices::stream::StreamError;
 use crate::chat_content::{Mode, RefuseDownloads};
 use crate::compatible_wire::{LogInput, ReplyOptions, decode_compatible_chat_reply};
@@ -47,17 +57,17 @@ fn message(value: Value) -> ChatMessage {
     serde_json::from_value(value).expect("a chat message")
 }
 
-fn prompt(value: Value) -> betterlite_prompts::message_content::Message {
+fn prompt(value: Value) -> Message {
     serde_json::from_value(value).expect("a prompt message")
 }
 
 fn request_body(model: &str, messages: Value, optional: Value) -> Value {
-    let messages: Vec<ChatMessage> = serde_json::from_value(messages).expect("messages");
-    let optional: Object = serde_json::from_value(optional).expect("optional params");
+    let parsed_messages: Vec<ChatMessage> = serde_json::from_value(messages).expect("messages");
+    let parsed_optional: Object = serde_json::from_value(optional).expect("optional params");
     let body = transform_request(&RequestTransform {
         model,
-        messages: &messages,
-        optional_params: &optional,
+        messages: &parsed_messages,
+        optional_params: &parsed_optional,
         downloads: &RefuseDownloads,
     })
     .expect("a transformed request");
@@ -209,7 +219,7 @@ fn empty_file_ids_stay_on_the_file_object() {
     }))];
     handle_message_with_file(&mut messages).expect("a lifted conversation");
     let part = &messages[0].content.as_ref().expect("content");
-    let crate::chat::MessageContent::Parts(parts) = part else {
+    let MessageContent::Parts(parts) = part else {
         panic!("parts");
     };
     assert!(parts[0].fields.get("file").is_some());
@@ -224,7 +234,7 @@ fn a_file_block_without_a_file_object_is_left_alone() {
     }))];
     handle_message_with_file(&mut messages).expect("a conversation");
     let part = &messages[0].content.as_ref().expect("content");
-    let crate::chat::MessageContent::Parts(parts) = part else {
+    let MessageContent::Parts(parts) = part else {
         panic!("parts");
     };
     assert!(parts[0].fields.get("file").is_none());
@@ -253,22 +263,22 @@ fn the_reasoning_prompt_prepends_to_a_string_or_list_system_message() {
     );
     assert_eq!(
         updated[0].content,
-        Some(crate::chat::MessageContent::Text(format!(
+        Some(MessageContent::Text(format!(
             "{REASONING_SYSTEM_PROMPT}\n\nbe brief"
         )))
     );
     assert!(params.get("_add_reasoning_prompt").is_none());
 
-    let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = maybe_add_reasoning_prompt(
+    let mut list_params =
+        Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
+    let list_updated = maybe_add_reasoning_prompt(
         "magistral-medium",
         &[message(
             json!({"role": "system", "content": [{"type": "text", "text": "be brief"}]}),
         )],
-        &mut params,
+        &mut list_params,
     );
-    let crate::chat::MessageContent::Parts(parts) = updated[0].content.clone().expect("content")
-    else {
+    let MessageContent::Parts(parts) = list_updated[0].content.clone().expect("content") else {
         panic!("parts");
     };
     assert_eq!(parts[0].kind, "text");
@@ -284,17 +294,21 @@ fn the_reasoning_prompt_inserts_a_system_message_and_consumes_the_flag() {
         &mut params,
     );
     assert_eq!(updated.len(), 2);
-    assert_eq!(updated[0].role, crate::chat::Role::System);
+    assert_eq!(updated[0].role, Role::System);
     assert!(params.get("_add_reasoning_prompt").is_none());
 
-    let mut params = Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
-    let updated = maybe_add_reasoning_prompt(
+    let mut forwarded_params =
+        Object::from_iter([(String::from("_add_reasoning_prompt"), Json::Bool(true))]);
+    let unchanged = maybe_add_reasoning_prompt(
         "mistral-small-latest",
         &[message(json!({"role": "user", "content": "hi"}))],
-        &mut params,
+        &mut forwarded_params,
     );
-    assert_eq!(updated.len(), 1);
-    assert_eq!(params.get("_add_reasoning_prompt"), Some(&Json::Bool(true)));
+    assert_eq!(unchanged.len(), 1);
+    assert_eq!(
+        forwarded_params.get("_add_reasoning_prompt"),
+        Some(&Json::Bool(true))
+    );
 }
 
 #[test]
