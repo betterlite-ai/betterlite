@@ -507,6 +507,19 @@ fn stable_diffusion_reply_rejects_a_non_object_root() {
 }
 
 #[test]
+fn stable_diffusion_reply_rejects_a_repeated_top_level_field() {
+    let mut response = response(Some(Vec::new()));
+    let mut hidden_params = hidden(&[]);
+    let repeated = reply(500, r#"{"images": [], "images": []}"#);
+    match transform_reply(&mut response, &mut hidden_params, &repeated) {
+        Err(error @ StableDiffusionError::Fal(FalImageError::ReplyDecode { .. })) => {
+            assert_eq!(error.status(), Some(500));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+#[test]
 fn stable_diffusion_reply_rejects_an_oversized_reply() {
     let mut response = response(Some(Vec::new()));
     let mut hidden_params = hidden(&[]);
