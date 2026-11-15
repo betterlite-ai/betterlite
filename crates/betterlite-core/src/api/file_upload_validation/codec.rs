@@ -134,11 +134,8 @@ fn decode_units(bytes: &[u8], width: usize, little_endian: bool) -> Option<Vec<u
         if code_point > MAX_CODE_POINT {
             return None;
         }
-        decoded.push(scalar_to_json_byte(code_point));
+        // the JSON grammar only distinguishes ASCII, so every non-ASCII scalar folds to one placeholder
+        decoded.push(u8::try_from(code_point).unwrap_or(NON_ASCII).min(NON_ASCII));
     }
     Some(decoded)
-}
-// the JSON grammar only distinguishes ASCII, so every non-ASCII scalar folds to one placeholder
-fn scalar_to_json_byte(code_point: u32) -> u8 {
-    u8::try_from(code_point).unwrap_or(NON_ASCII).min(NON_ASCII)
 }

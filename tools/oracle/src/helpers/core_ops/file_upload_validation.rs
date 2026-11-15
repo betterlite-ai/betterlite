@@ -181,64 +181,31 @@ fn settings_answer(
 }
 fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::UnsafeFilename { filename } => {
-            let failure = check_unsafe_filename(filename.as_deref());
-            Ok(
-                json!({ "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)) }),
-            )
-        }
+        Call::UnsafeFilename { filename } => Ok(unsafe_filename_answer(filename.as_deref())),
         Call::Extensions {
             filename,
             allowed,
             blocked,
-        } => {
-            let allow_failure = check_extension(
-                filename.as_deref(),
-                allowed.as_deref(),
-                ExtensionRule::Allowed,
-            );
-            let block_failure = check_extension(
-                filename.as_deref(),
-                blocked.as_deref(),
-                ExtensionRule::Blocked,
-            );
-            Ok(json!({
-                "allowed": failure_json(allow_failure.as_ref().map(UploadValidationFailure::fields)),
-                "blocked": failure_json(block_failure.as_ref().map(UploadValidationFailure::fields)),
-            }))
-        }
+        } => Ok(extensions_answer(
+            filename.as_deref(),
+            allowed.as_deref(),
+            blocked.as_deref(),
+        )),
         Call::UploadSize {
             source,
             max_file_size_mb,
-        } => {
-            let (failure, position) = with_source(source, |body| {
-                check_upload_file_size(body, *max_file_size_mb)
-            })?;
-            Ok(json!({
-                "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)),
-                "position": position,
-            }))
-        }
+        } => upload_size_answer(source, *max_file_size_mb),
         Call::Batch {
             filename,
             source,
             max_batch_file_size_mb,
             line_shape,
-        } => {
-            let (failure, position) = with_source(source, |body| {
-                check_batch_file_upload(
-                    filename.as_deref(),
-                    body,
-                    *max_batch_file_size_mb,
-                    line_shape.shape(),
-                    ApiLimits::default(),
-                )
-            })?;
-            Ok(json!({
-                "failure": failure_json(failure.as_ref().map(BatchValidationFailure::fields)),
-                "position": position,
-            }))
-        }
+        } => batch_answer(
+            filename.as_deref(),
+            source,
+            *max_batch_file_size_mb,
+            line_shape.shape(),
+        ),
         Call::Settings {
             max_file_size_mb,
             max_batch_file_size_mb,
@@ -251,4 +218,52 @@ fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
             blocked_file_extensions,
         )),
     }
+}
+fn unsafe_filename_answer(filename: Option<&str>) -> Value {
+    let failure = check_unsafe_filename(filename);
+    json!({ "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)) })
+}
+fn extensions_answer(
+    filename: Option<&str>,
+    allowed: Option<&[String]>,
+    blocked: Option<&[String]>,
+) -> Value {
+    let allow_failure = check_extension(filename, allowed, ExtensionRule::Allowed);
+    let block_failure = check_extension(filename, blocked, ExtensionRule::Blocked);
+    json!({
+        "allowed": failure_json(allow_failure.as_ref().map(UploadValidationFailure::fields)),
+        "blocked": failure_json(block_failure.as_ref().map(UploadValidationFailure::fields)),
+    })
+}
+fn upload_size_answer(
+    source: &Source,
+    max_file_size_mb: Option<i64>,
+) -> Result<Value, Box<HelperError>> {
+    let (failure, position) = with_source(source, |body| {
+        check_upload_file_size(body, max_file_size_mb)
+    })?;
+    Ok(json!({
+        "failure": failure_json(failure.as_ref().map(UploadValidationFailure::fields)),
+        "position": position,
+    }))
+}
+fn batch_answer(
+    filename: Option<&str>,
+    source: &Source,
+    max_batch_file_size_mb: Option<i64>,
+    line_shape: LineShape,
+) -> Result<Value, Box<HelperError>> {
+    let (failure, position) = with_source(source, |body| {
+        check_batch_file_upload(
+            filename,
+            body,
+            max_batch_file_size_mb,
+            line_shape,
+            ApiLimits::default(),
+        )
+    })?;
+    Ok(json!({
+        "failure": failure_json(failure.as_ref().map(BatchValidationFailure::fields)),
+        "position": position,
+    }))
 }

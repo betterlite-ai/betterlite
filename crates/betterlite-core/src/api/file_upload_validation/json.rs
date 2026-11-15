@@ -19,7 +19,7 @@ pub(super) fn scan(text: &[u8], shape: LineShape) -> Scan {
         seen: 0,
     };
     parser.skip_whitespace();
-    let object = parser.peek() == Some(b'{');
+    let object = parser.rest.first().copied() == Some(b'{');
     let parsed = if object {
         parser.object(0, true)
     } else {
@@ -45,16 +45,16 @@ struct Parser<'text> {
     seen: u8,
 }
 impl Parser<'_> {
-    const fn peek(&self) -> Option<u8> {
-        self.rest.first().copied()
-    }
     fn next_unit(&mut self) -> Option<u8> {
         let (unit, rest) = self.rest.split_first()?;
         self.rest = rest;
         Some(*unit)
     }
     fn skip_whitespace(&mut self) {
-        while matches!(self.peek(), Some(b' ' | b'\t' | b'\n' | b'\r')) {
+        while matches!(
+            self.rest.first().copied(),
+            Some(b' ' | b'\t' | b'\n' | b'\r')
+        ) {
             _ = self.next_unit();
         }
     }
@@ -62,7 +62,7 @@ impl Parser<'_> {
         if depth > MAX_DEPTH {
             return None;
         }
-        match self.peek()? {
+        match self.rest.first().copied()? {
             b'"' => self.string(false).map(drop),
             b'{' => self.object(depth, false),
             b'[' => self.array(depth),
@@ -91,7 +91,7 @@ impl Parser<'_> {
             return None;
         }
         self.skip_whitespace();
-        if self.peek() == Some(b'}') {
+        if self.rest.first().copied() == Some(b'}') {
             _ = self.next_unit()?;
             return Some(());
         }
@@ -112,7 +112,7 @@ impl Parser<'_> {
     fn array(&mut self, depth: usize) -> Option<()> {
         _ = self.next_unit()?;
         self.skip_whitespace();
-        if self.peek() == Some(b']') {
+        if self.rest.first().copied() == Some(b']') {
             _ = self.next_unit()?;
             return Some(());
         }
@@ -136,13 +136,13 @@ impl Parser<'_> {
     }
     fn number(&mut self) -> Option<()> {
         self.integer()?;
-        if self.peek() == Some(b'.') {
+        if self.rest.first().copied() == Some(b'.') {
             _ = self.next_unit()?;
             self.digits()?;
         }
-        if matches!(self.peek(), Some(b'e' | b'E')) {
+        if matches!(self.rest.first().copied(), Some(b'e' | b'E')) {
             _ = self.next_unit()?;
-            if matches!(self.peek(), Some(b'+' | b'-')) {
+            if matches!(self.rest.first().copied(), Some(b'+' | b'-')) {
                 _ = self.next_unit()?;
             }
             self.digits()?;
@@ -150,7 +150,7 @@ impl Parser<'_> {
         Some(())
     }
     fn integer(&mut self) -> Option<()> {
-        if self.peek() == Some(b'-') {
+        if self.rest.first().copied() == Some(b'-') {
             _ = self.next_unit()?;
         }
         match self.next_unit()? {
@@ -163,7 +163,7 @@ impl Parser<'_> {
         }
     }
     fn digits_optional(&mut self) {
-        while matches!(self.peek(), Some(b'0'..=b'9')) {
+        while matches!(self.rest.first().copied(), Some(b'0'..=b'9')) {
             _ = self.next_unit();
         }
     }
