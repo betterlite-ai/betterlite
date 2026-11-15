@@ -70,12 +70,15 @@ impl Agent365Poster for HttpPoster {
                 source,
             })?;
         let status = response.status();
-        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+        let bytes = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
             .map_err(|source| Agent365PosterError::Body {
                 url: url.to_owned(),
                 source,
             })?;
-        Ok(PostReply { status, body })
+        Ok(PostReply {
+            status,
+            body: bytes,
+        })
     }
 }

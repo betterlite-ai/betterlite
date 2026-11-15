@@ -35,7 +35,7 @@ fn defaults() {
 
 fn explicit_values() {
     let parsed = model(
-        r#"{"tenant_id":"tenant-explicit","client_id":"client-explicit","client_secret":"secret-explicit","unreachable_fallback":"fail_open","optional_params":{"temperature":0.5}}"#,
+        r#"{"tenant_id":"tenant-explicit","client_id":"client-explicit","client_secret":"secret-explicit","unreachable_fallback":"fail_open","optional_params":{"max_tokens":5,"mode":"strict"}}"#,
     );
     assert_eq!(parsed.tenant_id.as_deref(), Some("tenant-explicit"));
     assert_eq!(parsed.client_id.as_deref(), Some("client-explicit"));
@@ -53,10 +53,10 @@ fn explicit_values() {
     );
     assert_eq!(
         parsed.optional_params,
-        Some(GuardrailValue::Object(BTreeMap::from([(
-            "temperature".to_owned(),
-            GuardrailValue::Decimal(0.5),
-        )])))
+        Some(GuardrailValue::Object(BTreeMap::from([
+            ("max_tokens".to_owned(), GuardrailValue::SignedInteger(5)),
+            ("mode".to_owned(), GuardrailValue::Text("strict".to_owned())),
+        ])))
     );
 }
 
@@ -64,14 +64,16 @@ fn unknown_keys_are_rejected() {
     let parsed = serde_json::from_str::<Agent365GuardrailConfigModel>(
         r#"{"tenant_id":"tenant","unknown_key":true}"#,
     );
-    assert!(parsed.is_err());
+    let error = parsed.unwrap_err().to_string();
+    assert!(error.contains("unknown field `unknown_key`"), "{error}");
 }
 
 fn unknown_unreachable_fallback_is_rejected() {
     let parsed = serde_json::from_str::<Agent365GuardrailConfigModel>(
         r#"{"unreachable_fallback": "fail_sideways"}"#,
     );
-    assert!(parsed.is_err());
+    let error = parsed.unwrap_err().to_string();
+    assert!(error.contains("unknown variant `fail_sideways`"), "{error}");
 }
 
 #[rstest]

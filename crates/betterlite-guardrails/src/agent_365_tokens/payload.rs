@@ -10,7 +10,7 @@ use crate::guardrail_metadata::RequestData;
 pub const MCP_SESSION_ID_HEADER: &str = "mcp-session-id";
 pub const DEFAULT_SERVER_NAME: &str = "litellm";
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct EvaluateTool {
     pub name: String,
 }
@@ -39,10 +39,8 @@ pub fn build_evaluate_payload(
     key_alias: Option<&str>,
 ) -> Result<EvaluatePayload, Agent365PayloadError> {
     let tool_name = text_field(data, "mcp_tool_name")?.unwrap_or_default();
-    let server_name = match text_field(data, "mcp_server_name")? {
-        Some(name) => name,
-        None => DEFAULT_SERVER_NAME.to_owned(),
-    };
+    let server_name =
+        text_field(data, "mcp_server_name")?.unwrap_or_else(|| DEFAULT_SERVER_NAME.to_owned());
     // LiteLLM includes the arguments only when they are a dict and omits any other shape
     let arguments = match data.get("mcp_arguments") {
         Some(GuardrailValue::Object(arguments)) => Some(arguments.clone()),
@@ -94,9 +92,8 @@ fn tool_metadata_session(data: &RequestData) -> Option<String> {
 }
 
 fn session_in(metadata: Option<&GuardrailValue>) -> Option<String> {
-    let fields = match metadata {
-        Some(GuardrailValue::Object(fields)) => fields,
-        _ => return None,
+    let Some(GuardrailValue::Object(fields)) = metadata else {
+        return None;
     };
     match fields.get("mcp_session_id") {
         Some(GuardrailValue::Text(session)) if !session.is_empty() => Some(session.clone()),
@@ -106,18 +103,17 @@ fn session_in(metadata: Option<&GuardrailValue>) -> Option<String> {
 
 fn header_session(data: &RequestData) -> Option<String> {
     let metadata = metadata_object(data)?;
-    let headers = match metadata.get("headers") {
-        Some(GuardrailValue::Object(headers)) => headers,
-        _ => return None,
+    let Some(GuardrailValue::Object(headers)) = metadata.get("headers") else {
+        return None;
     };
     let session = headers
         .iter()
         .find(|(name, _value)| name.eq_ignore_ascii_case(MCP_SESSION_ID_HEADER))
         .map(|(_name, value)| value)?;
-    match session {
-        GuardrailValue::Text(text) if !text.is_empty() => Some(text.clone()),
-        _ => None,
-    }
+    let GuardrailValue::Text(text) = session else {
+        return None;
+    };
+    (!text.is_empty()).then(|| text.clone())
 }
 
 fn metadata_object(data: &RequestData) -> Option<&RequestData> {

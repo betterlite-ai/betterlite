@@ -1,15 +1,20 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use lru::LruCache;
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::SecretString;
+use sha2::{Digest as _, Sha256};
 
-use crate::agent_365_tokens::cache::{CachedOboToken, OBO_CACHE_CAPACITY};
-use crate::agent_365_tokens::error::Agent365Error;
-use crate::agent_365_tokens::poster::Agent365Poster;
+use crate::agent_365_tokens::cache::{CachedOboToken, OBO_CACHE_CAPACITY, TOKEN_EXPIRY_MARGIN};
+use crate::agent_365_tokens::error::{Agent365Error, Agent365TokenError};
+use crate::agent_365_tokens::exchange::{
+    FORM_CONTENT_TYPE, TOKEN_ENDPOINT_TEMPLATE, parse_token_reply, token_form,
+};
+use crate::agent_365_tokens::poster::{Agent365Poster, PostReply};
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 
@@ -101,5 +106,64 @@ impl Agent365Guardrail {
             cache: Mutex::new(LruCache::new(OBO_CACHE_CAPACITY)),
             clock,
         })
+    }
+
+    pub async fn get_obo_token(&self, assertion: &str) -> Result<SecretString, Agent365TokenError> {
+        let cache_key = hex::encode(Sha256::digest(assertion.as_bytes()));
+        let threshold = (self.clock)().checked_add(TOKEN_EXPIRY_MARGIN);
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let fresh = cache
+            .peek(&cache_key)
+            .filter(|entry| threshold.is_some_and(|limit| entry.expires_at > limit))
+            .map(|entry| entry.access_token.clone());
+        if fresh.is_some() {
+            let _promoted = cache.promote(&cache_key);
+        }
+        drop(cache);
+        if let Some(token) = fresh {
+            return Ok(token);
+        }
+        let url = TOKEN_ENDPOINT_TEMPLATE.replace("{tenant_id}", &self.settings.tenant_id);
+        let headers =
+            HeaderMap::from_iter([(CONTENT_TYPE, HeaderValue::from_static(FORM_CONTENT_TYPE))]);
+        let form = token_form(&self.settings, assertion);
+        let reply = self
+            .post_allowing_error_status(&url, &headers, form.as_bytes())
+            .await?;
+        let grant = parse_token_reply(&reply)?;
+        let Some(expires_at) = (self.clock)().checked_add(grant.expires_in) else {
+            return Err(Agent365TokenError::TokenExpiry);
+        };
+        let entry = CachedOboToken {
+            access_token: grant.access_token.clone(),
+            expires_at,
+        };
+        let _evicted = self
+            .cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(cache_key, entry);
+        Ok(grant.access_token)
+    }
+
+    pub async fn post_allowing_error_status(
+        &self,
+        url: &str,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result<PostReply, Agent365TokenError> {
+        self.poster
+            .post(url, headers, body, self.request_timeout)
+            .await
+            .map_err(Agent365TokenError::Poster)
+    }
+
+    pub fn evict_obo_token(&self, assertion: &str) {
+        let cache_key = hex::encode(Sha256::digest(assertion.as_bytes()));
+        let _removed = self
+            .cache
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .pop(&cache_key);
     }
 }

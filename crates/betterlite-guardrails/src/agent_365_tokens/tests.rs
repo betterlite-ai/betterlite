@@ -34,7 +34,9 @@ use crate::agent_365_config::{
     AGENT_365_PROD_API_BASE, AGENT_365_PROD_RESOURCE_APP_ID, AGENT_365_SCOPE_NAME,
 };
 use crate::agent_365_tokens::cache::{OBO_CACHE_MAX_ENTRIES, TOKEN_EXPIRY_MARGIN};
-use crate::agent_365_tokens::error::{Agent365Error, Agent365TokenError};
+use crate::agent_365_tokens::error::{
+    Agent365Error, Agent365TokenError, Agent365TokenExchangeError,
+};
 use crate::agent_365_tokens::exchange::{OBO_SCOPE, entra_assertion};
 use crate::agent_365_tokens::wire::{DEFAULT_TOKEN_TTL, MAX_DESCRIPTION_CHARS};
 
@@ -62,8 +64,18 @@ impl TestClock {
 
     fn handle(&self) -> Arc<dyn Fn() -> SystemTime + Send + Sync> {
         let now = Arc::clone(&self.now);
-        Arc::new(move || UNIX_EPOCH + Duration::from_secs(now.load(Ordering::Relaxed)))
+        Arc::new(move || {
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(now.load(Ordering::Relaxed)))
+                .unwrap()
+        })
     }
+}
+
+fn start_time() -> SystemTime {
+    UNIX_EPOCH
+        .checked_add(Duration::from_secs(START_SECONDS))
+        .unwrap()
 }
 
 fn settings() -> Agent365Settings {
@@ -171,9 +183,7 @@ fn expiry_offset(guardrail: &Agent365Guardrail, assertion: &str) -> Duration {
         .peek(&cache_key(assertion))
         .unwrap()
         .expires_at;
-    expires_at
-        .duration_since(UNIX_EPOCH + Duration::from_secs(START_SECONDS))
-        .unwrap()
+    expires_at.duration_since(start_time()).unwrap()
 }
 
 async fn fetch(guardrail: &Agent365Guardrail, assertion: &str) -> String {
@@ -208,6 +218,15 @@ fn token_error(result: Result<SecretString, Agent365TokenError>) -> Agent365Toke
     result.unwrap_err()
 }
 
+fn exchange_failure(
+    result: Result<SecretString, Agent365TokenError>,
+) -> Agent365TokenExchangeError {
+    let Agent365TokenError::Exchange(failure) = result.unwrap_err() else {
+        panic!("expected a token exchange failure");
+    };
+    failure
+}
+
 fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
 }
@@ -226,7 +245,7 @@ fn test_token_is_cached_per_assertion() -> ScenarioFuture {
             200,
             r#"{"access_token":"tok-1","expires_in":3600}"#,
         )]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
         let first = fetch(&guardrail, ASSERTION).await;
         let second = fetch(&guardrail, ASSERTION).await;
@@ -261,7 +280,7 @@ fn test_token_within_the_margin_is_reused() -> ScenarioFuture {
             reply(200, r#"{"access_token":"tok-1","expires_in":62}"#),
             reply(200, r#"{"access_token":"tok-2","expires_in":62}"#),
         ]);
-        let (guardrail, clock) = guardrail(poster.clone());
+        let (guardrail, clock) = guardrail(Arc::clone(&poster));
 
         let first = fetch(&guardrail, ASSERTION).await;
         clock.advance(1);
@@ -280,7 +299,7 @@ fn test_token_at_the_margin_is_refetched() -> ScenarioFuture {
             reply(200, r#"{"access_token":"tok-1","expires_in":61}"#),
             reply(200, r#"{"access_token":"tok-2","expires_in":61}"#),
         ]);
-        let (guardrail, clock) = guardrail(poster.clone());
+        let (guardrail, clock) = guardrail(Arc::clone(&poster));
 
         let first = fetch(&guardrail, ASSERTION).await;
         clock.advance(1);
@@ -299,7 +318,7 @@ fn test_expired_token_is_refetched() -> ScenarioFuture {
             reply(200, r#"{"access_token":"tok-1","expires_in":60}"#),
             reply(200, r#"{"access_token":"tok-2","expires_in":60}"#),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
         let first = fetch(&guardrail, ASSERTION).await;
         let second = fetch(&guardrail, ASSERTION).await;
@@ -322,7 +341,7 @@ fn test_expires_in_forms_are_parsed() -> ScenarioFuture {
             let poster = Arc::new(FakePoster::default());
             let body = format!(r#"{{"access_token":"tok-1","expires_in":{ttl}}}"#);
             poster.queue(vec![reply(200, &body)]);
-            let (guardrail, _clock) = guardrail(poster.clone());
+            let (guardrail, _clock) = guardrail(Arc::clone(&poster));
             let _token = fetch(&guardrail, ASSERTION).await;
             assert_eq!(expiry_offset(&guardrail, ASSERTION), expected);
         }
@@ -340,7 +359,7 @@ fn test_default_ttl_applies_until_the_margin() -> ScenarioFuture {
         ] {
             let poster = Arc::new(FakePoster::default());
             poster.queue(vec![reply(200, body), reply(200, body)]);
-            let (guardrail, clock) = guardrail(poster.clone());
+            let (guardrail, clock) = guardrail(Arc::clone(&poster));
             let _first = fetch(&guardrail, ASSERTION).await;
             assert_eq!(expiry_offset(&guardrail, ASSERTION), DEFAULT_TOKEN_TTL);
             clock.advance(3538);
@@ -362,7 +381,7 @@ fn test_throttled_and_server_errors() -> ScenarioFuture {
             reply(500, "not json"),
             reply(503, "{}"),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
         assert!(matches!(
             token_error(guardrail.get_obo_token(ASSERTION).await),
@@ -390,7 +409,11 @@ fn malformed_variant(error: &Agent365TokenError) -> &'static str {
         Agent365TokenError::NonObjectBody { .. } => "non_object_body",
         Agent365TokenError::MissingAccessToken => "missing_access_token",
         Agent365TokenError::BadAccessToken => "bad_access_token",
-        _ => "other",
+        Agent365TokenError::Exchange(_)
+        | Agent365TokenError::Throttled { .. }
+        | Agent365TokenError::HttpStatus { .. }
+        | Agent365TokenError::TokenExpiry
+        | Agent365TokenError::Poster(_) => "other",
     }
 }
 
@@ -406,7 +429,7 @@ fn test_malformed_bodies() -> ScenarioFuture {
             reply(200, r#"{"access_token":""}"#),
             reply(200, r#"{"access_token":null}"#),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
         let cases = [
             ("first.assertion.value", "non_json_body"),
             ("second.assertion.value", "non_object_body"),
@@ -437,25 +460,17 @@ fn test_exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
                 r#"{"error":"invalid_client","error_description":"AADSTS50027: invalid jwt token","error_codes":[50027]}"#,
             ),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
-        match token_error(guardrail.get_obo_token(ASSERTION).await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert_eq!(failure.status_code, 401);
-                assert_eq!(failure.error_code, "invalid_client");
-                assert_eq!(failure.description, "AADSTS700016: application not found");
-                assert_eq!(failure.aadsts_codes, vec![700_016]);
-                assert!(failure.gateway_owned());
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
-        match token_error(guardrail.get_obo_token("assertion.50027.value").await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert!(!failure.gateway_owned());
-                assert_eq!(failure.aadsts_codes, vec![50027]);
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
+        let client = exchange_failure(guardrail.get_obo_token(ASSERTION).await);
+        assert_eq!(client.status_code, 401);
+        assert_eq!(client.error_code, "invalid_client");
+        assert_eq!(client.description, "AADSTS700016: application not found");
+        assert_eq!(client.aadsts_codes, vec![700_016]);
+        assert!(client.gateway_owned());
+        let assertion = exchange_failure(guardrail.get_obo_token("assertion.50027.value").await);
+        assert!(!assertion.gateway_owned());
+        assert_eq!(assertion.aadsts_codes, vec![50027]);
         assert!(cached_tokens(&guardrail).is_empty());
     })
 }
@@ -471,31 +486,19 @@ fn test_exchange_errors_fall_back_to_defaults() -> ScenarioFuture {
                 r#"{"error":null,"error_description":null,"error_codes":null}"#,
             ),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
-        match token_error(guardrail.get_obo_token(ASSERTION).await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert_eq!(failure.error_code, "invalid_grant");
-                assert_eq!(failure.description, "no code");
-                assert!(failure.aadsts_codes.is_empty());
-                assert!(!failure.gateway_owned());
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
-        match token_error(guardrail.get_obo_token("second.assertion.value").await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert_eq!(failure.description, "");
-                assert!(failure.gateway_owned());
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
-        match token_error(guardrail.get_obo_token("third.assertion.value").await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert_eq!(failure.error_code, "invalid_grant");
-                assert_eq!(failure.description, "");
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
+        let no_code = exchange_failure(guardrail.get_obo_token(ASSERTION).await);
+        assert_eq!(no_code.error_code, "invalid_grant");
+        assert_eq!(no_code.description, "no code");
+        assert!(no_code.aadsts_codes.is_empty());
+        assert!(!no_code.gateway_owned());
+        let scope = exchange_failure(guardrail.get_obo_token("second.assertion.value").await);
+        assert_eq!(scope.description, "");
+        assert!(scope.gateway_owned());
+        let nulls = exchange_failure(guardrail.get_obo_token("third.assertion.value").await);
+        assert_eq!(nulls.error_code, "invalid_grant");
+        assert_eq!(nulls.description, "");
     })
 }
 
@@ -516,7 +519,7 @@ fn test_aadsts_codes_tolerate_invalid_input() -> ScenarioFuture {
             ),
             reply(400, r#"{"error":"invalid_client","error_codes":[]}"#),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
         let cases = [
             ("first.assertion.value", Vec::new()),
             ("second.assertion.value", Vec::new()),
@@ -526,10 +529,8 @@ fn test_aadsts_codes_tolerate_invalid_input() -> ScenarioFuture {
             ("sixth.assertion.value", Vec::new()),
         ];
         for (assertion, codes) in cases {
-            match token_error(guardrail.get_obo_token(assertion).await) {
-                Agent365TokenError::Exchange(failure) => assert_eq!(failure.aadsts_codes, codes),
-                other => panic!("expected a token exchange failure, got {other}"),
-            }
+            let failure = exchange_failure(guardrail.get_obo_token(assertion).await);
+            assert_eq!(failure.aadsts_codes, codes);
         }
     })
 }
@@ -540,14 +541,10 @@ fn test_long_description_is_truncated() -> ScenarioFuture {
         let description = "d".repeat(600);
         let body = format!(r#"{{"error":"invalid_grant","error_description":"{description}"}}"#);
         poster.queue(vec![reply(400, &body)]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
-        match token_error(guardrail.get_obo_token(ASSERTION).await) {
-            Agent365TokenError::Exchange(failure) => {
-                assert_eq!(failure.description.chars().count(), MAX_DESCRIPTION_CHARS);
-            }
-            other => panic!("expected a token exchange failure, got {other}"),
-        }
+        let failure = exchange_failure(guardrail.get_obo_token(ASSERTION).await);
+        assert_eq!(failure.description.chars().count(), MAX_DESCRIPTION_CHARS);
     })
 }
 
@@ -558,7 +555,7 @@ fn test_eviction_removes_only_the_named_token() -> ScenarioFuture {
             reply(200, r#"{"access_token":"tok-1","expires_in":3600}"#),
             reply(200, r#"{"access_token":"tok-2","expires_in":3600}"#),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
         let _first = fetch(&guardrail, ASSERTION).await;
         guardrail.evict_obo_token(ASSERTION);
@@ -576,7 +573,7 @@ fn test_capacity_evicts_the_least_recently_used_token() -> ScenarioFuture {
     Box::pin(async {
         let poster = Arc::new(FakePoster::default());
         queue_series(&poster, OBO_CACHE_MAX_ENTRIES + 1);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
         fetch_many(&guardrail, OBO_CACHE_MAX_ENTRIES).await;
         let promoted = fetch(&guardrail, "assertion-0").await;
@@ -603,7 +600,7 @@ fn test_assertion_shapes() -> ScenarioFuture {
             GuardrailValue::Text("sk-virtual-key".to_owned()),
             GuardrailValue::Text("a.b".to_owned()),
             GuardrailValue::Text("a.b.c.d".to_owned()),
-            GuardrailValue::Text("".to_owned()),
+            GuardrailValue::Text(String::new()),
             GuardrailValue::Null,
             GuardrailValue::SignedInteger(3),
         ] {
@@ -619,7 +616,7 @@ fn test_post_returns_the_reply() -> ScenarioFuture {
             reply(503, r#"{"error":"unavailable"}"#),
             reply(404, ""),
         ]);
-        let (guardrail, _clock) = guardrail(poster.clone());
+        let (guardrail, _clock) = guardrail(Arc::clone(&poster));
         let headers =
             HeaderMap::from_iter([(CONTENT_TYPE, HeaderValue::from_static("application/json"))]);
 
@@ -906,10 +903,9 @@ fn test_wiring() -> ScenarioFuture {
         let poster = Arc::new(FakePoster::default());
         let clock = TestClock::new();
         let guardrail =
-            Agent365Guardrail::new(settings(), poster.clone(), true, clock.handle()).unwrap();
+            Agent365Guardrail::new(settings(), Arc::clone(&poster), true, clock.handle()).unwrap();
         assert_eq!(guardrail.request_timeout, Duration::from_secs(10));
-        let expected_now = UNIX_EPOCH + Duration::from_secs(START_SECONDS);
-        assert_eq!((guardrail.clock)(), expected_now);
+        assert_eq!((guardrail.clock)(), start_time());
         assert_eq!(
             guardrail.base.settings.supported_event_hooks,
             Some(vec![GuardrailEventHooks::PreMcpCall])
@@ -919,36 +915,36 @@ fn test_wiring() -> ScenarioFuture {
         assert!(guardrail.base.settings.run_in_parallel);
         assert!(guardrail.base.settings.switches.records_own_information);
         assert!(!guardrail.base.settings.switches.use_native_lifecycle_hooks);
-        let fallback = guardrail.settings.unreachable_fallback;
-        assert_eq!(fallback, UnreachableFallback::FailClosed);
+        let default_fallback = guardrail.settings.unreachable_fallback;
+        assert_eq!(default_fallback, UnreachableFallback::FailClosed);
 
-        let mut configured = settings();
-        configured.request_timeout = Some(2.5);
-        configured.event_hook = Some(LitellmParamsMode::One("pre_mcp_call".to_owned()));
-        configured.default_on = true;
-        configured.unreachable_fallback = UnreachableFallback::FailOpen;
-        let configured = Agent365Guardrail::new(configured, poster, true, clock.handle()).unwrap();
+        let mut explicit = settings();
+        explicit.request_timeout = Some(2.5_f64);
+        explicit.event_hook = Some(LitellmParamsMode::One("pre_mcp_call".to_owned()));
+        explicit.default_on = true;
+        explicit.unreachable_fallback = UnreachableFallback::FailOpen;
+        let configured = Agent365Guardrail::new(explicit, poster, true, clock.handle()).unwrap();
         assert_eq!(configured.request_timeout, Duration::from_millis(2500));
         assert_eq!(
             configured.base.settings.event_hook,
             Some(LitellmParamsMode::One("pre_mcp_call".to_owned()))
         );
         assert!(configured.base.settings.default_on);
-        let fallback = configured.settings.unreachable_fallback;
-        assert_eq!(fallback, UnreachableFallback::FailOpen);
+        let configured_fallback = configured.settings.unreachable_fallback;
+        assert_eq!(configured_fallback, UnreachableFallback::FailOpen);
     })
 }
 
 fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
     Box::pin(async {
-        for seconds in [-1.0, f64::NAN, f64::INFINITY] {
+        for seconds in [-1.0_f64, f64::NAN, f64::INFINITY] {
             let mut invalid = settings();
             invalid.request_timeout = Some(seconds);
             let poster = Arc::new(FakePoster::default());
             let result = Agent365Guardrail::new(invalid, poster, true, TestClock::new().handle());
             match result {
                 Err(Agent365Error::Timeout { source, .. }) => {
-                    assert!(!source.to_string().is_empty())
+                    assert!(!source.to_string().is_empty());
                 }
                 Err(other) => panic!("expected a timeout error, got {other:?}"),
                 Ok(_) => panic!("expected a timeout error"),

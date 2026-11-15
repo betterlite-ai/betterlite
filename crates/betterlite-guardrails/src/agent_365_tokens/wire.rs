@@ -1,8 +1,9 @@
 use std::time::Duration;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::IgnoredAny;
+use serde_json::Number;
 use serde_json::error::Category;
 
 use crate::agent_365_tokens::error::{Agent365TokenError, Agent365TokenExchangeError};
@@ -31,7 +32,7 @@ pub struct TokenGrant {
 #[serde(untagged)]
 enum AccessTokenField {
     Token(SecretString),
-    Other(GuardrailValue),
+    Other(IgnoredAny),
     #[default]
     Missing,
 }
@@ -39,30 +40,31 @@ enum AccessTokenField {
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum ExpiresInField {
-    Number(f64),
+    // serde_json::Number rather than f64: with arbitrary_precision a float reaches an untagged enum as a map that f64 rejects
+    Number(Number),
     Text(String),
-    Other(GuardrailValue),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum TextField {
     Text(String),
-    Other(GuardrailValue),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum CodesField {
     Codes(Vec<CodeItem>),
-    Other(GuardrailValue),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum CodeItem {
     Integer(i64),
-    Other(GuardrailValue),
+    Other(IgnoredAny),
 }
 
 pub fn decode_token_reply(body: &[u8]) -> Result<TokenReply, Agent365TokenError> {
@@ -131,20 +133,19 @@ impl TokenReply {
 impl TextField {
     fn text(&self) -> Option<&str> {
         match self {
-            TextField::Text(text) => Some(text),
-            TextField::Other(_) => None,
+            Self::Text(text) => Some(text),
+            Self::Other(_) => None,
         }
     }
 }
 
 fn parse_expires_in(raw: Option<ExpiresInField>) -> Duration {
     let seconds = match raw {
-        Some(ExpiresInField::Number(seconds)) => seconds,
-        Some(ExpiresInField::Text(text)) => match text.trim().parse::<f64>() {
-            Ok(seconds) => seconds,
-            Err(_parse) => return DEFAULT_TOKEN_TTL,
-        },
-        Some(ExpiresInField::Other(_)) | None => return DEFAULT_TOKEN_TTL,
+        Some(ExpiresInField::Number(number)) => number.as_f64(),
+        Some(ExpiresInField::Text(text)) => text.trim().parse::<f64>().ok(),
+        Some(ExpiresInField::Other(_)) | None => None,
     };
-    Duration::try_from_secs_f64(seconds).unwrap_or(DEFAULT_TOKEN_TTL)
+    seconds
+        .and_then(|value| Duration::try_from_secs_f64(value).ok())
+        .unwrap_or(DEFAULT_TOKEN_TTL)
 }
