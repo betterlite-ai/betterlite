@@ -5,14 +5,14 @@ use crate::video_edits::character::{
     CharacterPart, CreateCharacter, transform_video_create_character_request,
 };
 
-fn part(created: &CreateCharacter<'_>) -> (&str, &'static str) {
+fn part<'a>(created: &'a CreateCharacter<'_>) -> (&'a str, &'static str) {
     match created.files.get(1) {
         Some(CharacterPart::File(file)) => (file.filename.as_str(), file.content_type),
         _ => panic!("the second part is the video file"),
     }
 }
 
-fn created<'media>(video: MediaBody<'media>) -> CreateCharacter<'media> {
+fn created(video: MediaBody<'_>) -> CreateCharacter<'_> {
     transform_video_create_character_request("hero", video, "https://mock.example/v1")
 }
 

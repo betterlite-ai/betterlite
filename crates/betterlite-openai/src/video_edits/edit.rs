@@ -22,9 +22,7 @@ pub struct VideoEdit<'media> {
 }
 
 #[must_use]
-pub fn transform_video_edit_request<'media>(
-    request: VideoEditRequest<'media>,
-) -> VideoEdit<'media> {
+pub fn transform_video_edit_request(request: VideoEditRequest<'_>) -> VideoEdit<'_> {
     let url = format!("{}/edits", request.api_base.trim_end_matches('/'));
     let mut body = IndexMap::new();
     body.insert(String::from("prompt"), Json::Text(request.prompt));

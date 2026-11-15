@@ -92,19 +92,23 @@ pub(super) fn part_value(
     })
 }
 
-pub(super) fn file_part_value(file: &mut MultipartPart<'_>) -> Result<Value, Box<HelperError>> {
-    let (kind, body) = match &mut file.body {
-        MediaBody::Bytes(bytes) => ("bytes", STANDARD.encode(bytes)),
-        MediaBody::Text(text) => ("text", (*text).to_owned()),
+fn rendered_body(body: &mut MediaBody<'_>) -> Result<(&'static str, String), Box<HelperError>> {
+    match body {
+        MediaBody::Bytes(bytes) => Ok(("bytes", STANDARD.encode(bytes))),
+        MediaBody::Text(text) => Ok(("text", (*text).to_owned())),
         MediaBody::Stream { reader, .. } => {
             let mut data = Vec::new();
             reader
                 .seek(SeekFrom::Start(0))
                 .and_then(|_| reader.read_to_end(&mut data))
                 .map_err(|error| helper_error("IoError", error.to_string()))?;
-            ("stream", STANDARD.encode(data))
+            Ok(("stream", STANDARD.encode(data)))
         }
-    };
+    }
+}
+
+pub(super) fn file_part_value(file: &mut MultipartPart<'_>) -> Result<Value, Box<HelperError>> {
+    let (kind, body) = rendered_body(&mut file.body)?;
     Ok(part_value(
         file.field.as_str(),
         Some(file.filename.as_str()),

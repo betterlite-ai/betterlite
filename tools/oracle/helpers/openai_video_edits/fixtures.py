@@ -181,7 +181,6 @@ def file_part_value(
             )
         case str():
             return part_value(field, filename, content_type, "text", content)
-        case _:
-            content.seek(0)
-            data = base64.b64encode(content.read()).decode("ascii")
-            return part_value(field, filename, content_type, "stream", data)
+    content.seek(0)
+    data = base64.b64encode(content.read()).decode("ascii")
+    return part_value(field, filename, content_type, "stream", data)

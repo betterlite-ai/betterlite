@@ -142,9 +142,10 @@ def edit_value(call: EditRequest) -> JsonValue:
         call["prefetched_source_data"],
     )
     rendered_files = None if files is None else edit_files(files)
+    form: EditBody = dict(data)
     rendered: dict[str, JsonValue] = {
         "url": url,
-        "body": JSON.validate_python(dict(data)),
+        "body": JSON.validate_python(form),
         "files": rendered_files,
     }
     return rendered
@@ -200,22 +201,21 @@ def extension_reply(call: ExtensionResponse) -> JsonValue:
 def call_value(call: Call) -> JsonValue:
     match call["op"]:
         case "create_character_request":
-            value = create_character_value(call)
+            return create_character_value(call)
         case "create_character_response":
-            value = create_character_reply(call)
+            return create_character_reply(call)
         case "get_character_request":
-            value = get_character_value(call)
+            return get_character_value(call)
         case "get_character_response":
-            value = get_character_reply(call)
+            return get_character_reply(call)
         case "edit_request":
-            value = edit_value(call)
+            return edit_value(call)
         case "edit_response":
-            value = edit_reply(call)
+            return edit_reply(call)
         case "extension_request":
-            value = extension_value(call)
+            return extension_value(call)
         case "extension_response":
-            value = extension_reply(call)
-    return value
+            return extension_reply(call)
 
 
 def run(raw: dict[str, JsonValue]) -> JsonValue:
