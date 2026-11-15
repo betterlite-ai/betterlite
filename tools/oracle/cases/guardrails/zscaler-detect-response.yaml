@@ -1,0 +1,18 @@
+kind: helper
+name: zscaler-detect-response
+call:
+  b8216:
+    settings:
+      api_base: "http://zscaler.test/v1/detection/execute-policy"
+      api_key: oracle-key
+      policy_id: 42
+      send_user_api_key_alias: false
+      send_user_api_key_user_id: false
+      send_user_api_key_team_id: false
+      timeout: 5.0
+    inputs: {texts: [model answer]}
+    request_data: {metadata: {}}
+    input_type: response
+    answer: {status: 200, headers: {}, body: {statusCode: 200, action: DETECT}}
+env: {}
+compare: {ignore: []}

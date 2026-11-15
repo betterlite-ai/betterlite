@@ -1,0 +1,10 @@
+kind: helper
+name: openai-evals-seed-eval-auth-required
+call:
+  openai_evals:
+    eval_auth_required:
+      probes:
+        - headers: {}
+          env: {OPENAI_API_KEY: sk-seed}
+env: {}
+compare: {ignore: []}

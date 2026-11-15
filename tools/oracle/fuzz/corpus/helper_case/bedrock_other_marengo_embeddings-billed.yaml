@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-other-marengo-embeddings-billed
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_billed_units:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: [one, two]
+      inference:
+        input_type: text
+      replies:
+        - data:
+            - embedding: [1.0]
+        - data: []
+env: {}
+compare:
+  ignore: []
