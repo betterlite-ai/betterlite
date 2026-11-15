@@ -113,12 +113,13 @@ pub(super) fn single_choice() -> PegasusResponse {
 }
 
 pub(super) fn context<'request>(
+    status: u16,
     headers: &'request [(String, String)],
     messages: &'request [Message],
     now: f64,
 ) -> ReplyContext<'request> {
     ReplyContext {
-        status: 200,
+        status,
         headers,
         model: "twelvelabs.pegasus-1-2-v1:0",
         messages,

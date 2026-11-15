@@ -35,7 +35,7 @@ fn replay_bedrock_pegasus_corpus() -> usize {
         let mut response = single_choice();
         let outcome = block_on(decode_pegasus_reply(
             &bytes,
-            &context(&headers, &[], 0.0),
+            &context(200, &headers, &[], 0.0),
             &mut response,
             &FixtureCounter::counting(0, 0),
         ));

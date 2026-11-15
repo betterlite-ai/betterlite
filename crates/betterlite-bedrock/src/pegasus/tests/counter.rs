@@ -107,8 +107,9 @@ fn pegasus_counter_counts_with_b196() {
     let token_counter = counter();
     let messages: Vec<Message> =
         serde_json::from_str(r#"[{"role":"user","content":"hello world"}]"#).unwrap();
+    // the message count adds the three reply priming tokens, which token_counter(messages=...) includes
     let prompt = block_on(TokenCounter::count_messages(&token_counter, &messages)).unwrap();
-    assert!(prompt > 1, "{prompt}");
+    assert_eq!(prompt, 9);
     let completion = block_on(TokenCounter::count_text(&token_counter, "hello world")).unwrap();
-    assert!(completion > 1, "{completion}");
+    assert_eq!(completion, 2);
 }

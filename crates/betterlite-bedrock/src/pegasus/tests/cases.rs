@@ -186,7 +186,7 @@ fn segments_and_response() {
     ]);
     block_on(decode_pegasus_reply(
         br#"{"message":"visible","finishReason":"tool_use","segments":[{"text":"x"}],"response":"alias","usage":{"prompt_tokens":99}}"#,
-        &context(&headers, &given, 10.0),
+        &context(200, &headers, &given, 10.0),
         &mut full,
         &FixtureCounter::counting(0, 0),
     ))
@@ -199,7 +199,7 @@ fn segments_and_response() {
     let mut missing = single_choice();
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
-        &context(&headers, &given, 10.0),
+        &context(200, &headers, &given, 10.0),
         &mut missing,
         &FixtureCounter::counting(0, 0),
     ))
@@ -213,7 +213,7 @@ fn usage_and_finish_reason() {
     let mut counted = single_choice();
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
-        &context(&header_counts("0", "-3"), &given, 1_700_000_000.9),
+        &context(200, &header_counts("0", "-3"), &given, 1_700_000_000.9),
         &mut counted,
         &fixture,
     ))
@@ -228,7 +228,7 @@ fn usage_and_finish_reason() {
     let mut counted_fallback = single_choice();
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
-        &context(&[], &given, 5.5),
+        &context(200, &[], &given, 5.5),
         &mut counted_fallback,
         &fallback,
     ))
@@ -244,12 +244,38 @@ fn usage_and_finish_reason() {
     let mut empty_headers = single_choice();
     block_on(decode_pegasus_reply(
         br#"{"message":"visible"}"#,
-        &context(&header_counts("", ""), &given, 5.5),
+        &context(200, &header_counts("", ""), &given, 5.5),
         &mut empty_headers,
         &FixtureCounter::counting(11, 7),
     ))
     .unwrap();
     assert_eq!(empty_headers.usage.total_tokens, 18);
+    let mixed = vec![
+        (
+            "X-Amzn-Bedrock-Input-Token-Count".to_owned(),
+            "3".to_owned(),
+        ),
+        (
+            "X-Amzn-Bedrock-Output-Token-Count".to_owned(),
+            "5".to_owned(),
+        ),
+    ];
+    let mut mixed_case = single_choice();
+    block_on(decode_pegasus_reply(
+        br#"{"message":"visible"}"#,
+        &context(200, &mixed, &given, 5.5),
+        &mut mixed_case,
+        &FixtureCounter::counting(11, 7),
+    ))
+    .unwrap();
+    assert_eq!(
+        (
+            mixed_case.usage.prompt_tokens,
+            mixed_case.usage.completion_tokens
+        ),
+        (3, 5)
+    );
+    assert_eq!(mixed_case.usage.total_tokens, 8);
 }
 
 fn pegasus_options() {
@@ -323,7 +349,7 @@ fn pegasus_reply_errors() {
     let counter = FixtureCounter::counting(0, 0);
     let failure = block_on(decode_pegasus_reply(
         b"{not json",
-        &context(&headers, &given, 10.0),
+        &context(200, &headers, &given, 10.0),
         &mut single_choice(),
         &counter,
     ))
@@ -338,7 +364,7 @@ fn pegasus_reply_errors() {
     }
     let not_utf8 = block_on(decode_pegasus_reply(
         &[0xff, 0xfe],
-        &context(&headers, &given, 10.0),
+        &context(200, &headers, &given, 10.0),
         &mut single_choice(),
         &counter,
     ))
@@ -359,7 +385,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             b"[1,2]",
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut single_choice(),
             &counter,
         )),
@@ -368,7 +394,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible","finishReason":[]}"#,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut single_choice(),
             &counter,
         )),
@@ -381,7 +407,7 @@ fn pegasus_reply_errors() {
         let mut response = single_choice();
         let failure = block_on(decode_pegasus_reply(
             body,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut response,
             &counter,
         ))
@@ -389,10 +415,34 @@ fn pegasus_reply_errors() {
         assert!(matches!(failure, PegasusError::Bedrock { status: 200, .. }));
         assert_eq!(response.choices[0].message.content, None);
     }
+    let content_failure = block_on(decode_pegasus_reply(
+        br#"{"finishReason":"stop"}"#,
+        &context(418, &headers, &given, 10.0),
+        &mut single_choice(),
+        &counter,
+    ))
+    .unwrap_err();
+    match content_failure {
+        PegasusError::Bedrock { status, error } => {
+            assert_eq!(status, 418);
+            assert_eq!(
+                error.cause.headers,
+                Some(ErrorHeaders::Http(headers.clone()))
+            );
+            assert!(
+                error
+                    .cause
+                    .error
+                    .message
+                    .contains("Error setting response content")
+            );
+        }
+        other => panic!("expected a content error, got {other:?}"),
+    }
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":{"a":1},"finishReason":"stop"}"#,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut single_choice(),
             &counter,
         )),
@@ -401,7 +451,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":0,"finishReason":"stop"}"#,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut single_choice(),
             &counter,
         )),
@@ -411,7 +461,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible"}"#,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut without_choices,
             &counter,
         )),
@@ -422,7 +472,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible"}"#,
-            &context(&headers, &given, 10.0),
+            &context(200, &headers, &given, 10.0),
             &mut with_calls,
             &counter,
         )),
@@ -431,7 +481,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible"}"#,
-            &context(&header_counts("abc", "2"), &given, 10.0),
+            &context(200, &header_counts("abc", "2"), &given, 10.0),
             &mut single_choice(),
             &counter,
         )),
@@ -440,7 +490,7 @@ fn pegasus_reply_errors() {
     assert!(matches!(
         block_on(decode_pegasus_reply(
             br#"{"message":"visible"}"#,
-            &context(&[], &given, 10.0),
+            &context(200, &[], &given, 10.0),
             &mut single_choice(),
             &FixtureCounter::failing(),
         )),
