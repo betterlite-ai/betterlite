@@ -1,7 +1,7 @@
 use betterlite_bedrock::invoke_primitives::environment::error_class;
 use betterlite_bedrock::realtime_session::records::{SessionEvent, SessionEventType, UpdateFrame};
 use betterlite_bedrock::realtime_session::{
-    REQUIRES_SESSION_CONFIGURATION, RealtimeSession, complete_url,
+    REQUIRES_SESSION_CONFIGURATION, RealtimeSession, complete_url, validate_environment,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -22,14 +22,17 @@ pub(super) fn update_values(input: &super::Input, ids: &[Uuid], summary: Summary
     let mut results: Vec<Value> = Vec::new();
     for update in &input.updates {
         let frames = session.apply_update(update, &source);
-        results.push(summarize(&frames, summary)?);
+        results.push(summarize(&session, &frames, summary)?);
     }
     Ok(update_body(&session, results))
 }
 
-fn summarize(frames: &[UpdateFrame], summary: Summary) -> HelperResult {
+fn summarize(session: &RealtimeSession, frames: &[UpdateFrame], summary: Summary) -> HelperResult {
     match summary {
-        Summary::Frames => Ok(json!({ "frames": serde_json::to_value(frames).map_err(failure)? })),
+        Summary::Frames => Ok(json!({
+            "frames": serde_json::to_value(frames).map_err(failure)?,
+            "input_audio": input_audio_summary(session),
+        })),
         Summary::PromptStart => {
             let Some(UpdateFrame::PromptStart(frame)) = frames.get(1) else {
                 return Err(failure("the second frame is promptStart"));
@@ -37,6 +40,18 @@ fn summarize(frames: &[UpdateFrame], summary: Summary) -> HelperResult {
             Ok(json!({ "prompt_start": prompt_start_summary(&frame.event.prompt_start)? }))
         }
     }
+}
+
+fn input_audio_summary(session: &RealtimeSession) -> Value {
+    let audio = &session.input_audio;
+    json!({
+        "sample_rate_hertz": audio.sample_rate_hertz,
+        "sample_size_bits": audio.sample_size_bits,
+        "channel_count": audio.channel_count,
+        "encoding": audio.encoding,
+        "audio_type": audio.audio_type,
+        "media_type": audio.media_type,
+    })
 }
 
 fn update_body(session: &RealtimeSession, results: Vec<Value>) -> Value {
@@ -60,6 +75,7 @@ pub(super) fn default_case(ids: &[Uuid]) -> HelperResult {
         "client_audio_streamed": session.client_audio_streamed,
         "configuration": serde_json::to_value(&configuration).map_err(failure)?,
         "prompt_started_after": session.prompt_started,
+        "input_audio": input_audio_summary(&session),
     }))
 }
 
@@ -137,10 +153,14 @@ fn complete_urls(input: &super::Input) -> Vec<String> {
 }
 
 fn validated_headers(input: &super::Input) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut validated: Vec<Value> = Vec::new();
+    let mut caller: Vec<(String, String)> = Vec::new();
     for header in &input.headers {
-        let pair = header_pair(header)?;
-        validated.push(json!([pair.0, pair.1]));
+        caller.push(header_pair(header)?);
+    }
+    let echoed = validate_environment(&caller);
+    let mut validated: Vec<Value> = Vec::new();
+    for (name, value) in echoed {
+        validated.push(json!([name, value]));
     }
     Ok(validated)
 }

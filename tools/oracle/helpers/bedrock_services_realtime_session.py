@@ -70,16 +70,7 @@ class ErrorRun(TypedDict):
 
 
 class Input(TypedDict):
-    case: Literal[
-        "default_session_configuration",
-        "session_update_options",
-        "pcm16_input_output_rates",
-        "g711_rates",
-        "explicit_sample_rate",
-        "tool_configuration",
-        "system_instructions",
-        "created_updated_events",
-    ]
+    case: str
     ids: list[str]
     model: str
     trace_id: str
@@ -97,6 +88,12 @@ class RealtimeConfig(Protocol):
     audio_content_name: str
     prompt_started: bool
     client_audio_streamed: bool
+    input_sample_rate_hertz: int
+    input_sample_size_bits: int
+    input_channel_count: int
+    input_encoding: str
+    input_audio_type: str
+    input_media_type: str
 
     def session_configuration_request(
         self, model: str, tools: list[dict[str, JsonValue]] | None = None
@@ -123,9 +120,6 @@ class RealtimeConfig(Protocol):
     def get_error_class(
         self, error_message: str, status_code: int, headers: httpx.Headers
     ) -> BedrockError: ...
-
-
-CONFIG_TYPE: type[RealtimeConfig] = BedrockRealtimeConfig
 
 
 class FixedStd:
@@ -158,16 +152,23 @@ def make_logging(trace_id: str) -> Logging:
     )
 
 
-def frame_list(messages: list[str]) -> list[JsonValue]:
-    parsed = map(JsonAdapter.validate_json, messages)
-    return list(parsed)
+def input_audio_view(config: RealtimeConfig) -> JsonObject:
+    return {
+        "sample_rate_hertz": config.input_sample_rate_hertz,
+        "sample_size_bits": config.input_sample_size_bits,
+        "channel_count": config.input_channel_count,
+        "encoding": config.input_encoding,
+        "audio_type": config.input_audio_type,
+        "media_type": config.input_media_type,
+    }
 
 
 def apply_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[JsonValue]:
     results: list[JsonValue] = []
     for message in updates:
-        frames = frame_list(config.transform_session_update_event(message))
-        results.append({"frames": frames})
+        messages = config.transform_session_update_event(message)
+        frames = list(map(JsonAdapter.validate_json, messages))
+        results.append({"frames": frames, "input_audio": input_audio_view(config)})
     return results
 
 
@@ -192,7 +193,8 @@ def prompt_start_tools(frame: JsonValue) -> JsonObject:
 def tool_updates(config: RealtimeConfig, updates: list[JsonObject]) -> list[JsonValue]:
     results: list[JsonValue] = []
     for message in updates:
-        frames = frame_list(config.transform_session_update_event(message))
+        messages = config.transform_session_update_event(message)
+        frames = list(map(JsonAdapter.validate_json, messages))
         results.append({"prompt_start": prompt_start_tools(frames[1])})
     return results
 
@@ -230,7 +232,7 @@ def validated_headers(
 
 def run_default(input_value: Input) -> JsonValue:
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config = CONFIG_TYPE()
+    config = BedrockRealtimeConfig()
     marker = config.session_configuration_request(input_value["model"])
     configuration = JsonAdapter.validate_json(marker)
     return {
@@ -241,11 +243,12 @@ def run_default(input_value: Input) -> JsonValue:
         "client_audio_streamed": config.client_audio_streamed,
         "configuration": configuration,
         "prompt_started_after": config.prompt_started,
+        "input_audio": input_audio_view(config),
     }
 
 
 def run_created_updated(input_value: Input) -> JsonValue:
-    config = CONFIG_TYPE()
+    config = BedrockRealtimeConfig()
     model = input_value["model"]
     logging_obj = make_logging(input_value["trace_id"])
     fastuuid.uuid4 = FixedFast(input_value["ids"])
@@ -284,7 +287,7 @@ def run(input_value: Input) -> JsonValue:
     if case == "default_session_configuration":
         return run_default(input_value)
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config = CONFIG_TYPE()
+    config = BedrockRealtimeConfig()
     if case == "tool_configuration":
         results = tool_updates(config, input_value["updates"])
     else:
