@@ -125,10 +125,10 @@ pub(super) fn mapping_steps(runtime: &Runtime, call: &MappingCall) -> Vec<Value>
 fn mapping_row(runtime: &Runtime, install: &Install, step: &MapStep) -> Value {
     let (mut fixture, catalog) = fixture_with_catalog(install);
     let (mapped, existing) = apply_mapping(runtime, &mut fixture, &catalog, step);
-    mapping_value(mapped, existing)
+    mapping_value(mapped, &existing)
 }
 
-fn mapping_value(mapped: Result<(), ChatParamsError>, existing: ParamsObject) -> Value {
+fn mapping_value(mapped: Result<(), ChatParamsError>, existing: &ParamsObject) -> Value {
     match mapped {
         Ok(()) => json!({"ok": true, "value": existing, "status": Value::Null}),
         Err(error) => json!({"ok": false, "value": Value::Null, "status": error.status_code()}),

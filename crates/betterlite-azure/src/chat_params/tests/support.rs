@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::{Future, ready};
+use std::io::Error as IoError;
 
 use betterlite_models::decisions::Json as StreamingAnswer;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
@@ -142,12 +143,12 @@ pub(super) struct StreamFixture {
 }
 
 impl NativeStreamingSupport for StreamFixture {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn supports_native_streaming(
         &mut self,
         request: &CapabilityRequest<'_>,
-    ) -> impl Future<Output = Result<StreamingAnswer, std::io::Error>> + Send {
+    ) -> impl Future<Output = Result<StreamingAnswer, IoError>> + Send {
         let key = request.custom_llm_provider.map_or_else(
             || request.model.to_owned(),
             |provider| format!("{provider}/{}", request.model),
@@ -159,7 +160,7 @@ impl NativeStreamingSupport for StreamFixture {
                 .and_then(as_bool)
         });
         ready(streaming.map_or_else(
-            || Err(std::io::Error::other("the model map has no such entry")),
+            || Err(IoError::other("the model map has no such entry")),
             |answer| Ok(answer.map_or(StreamingAnswer::Null, StreamingAnswer::Bool)),
         ))
     }
@@ -271,6 +272,10 @@ fn messages(text: &str) -> Vec<Message> {
     serde_json::from_str(text).unwrap()
 }
 
+fn params_object(text: &str) -> ParamsObject {
+    serde_json::from_str(text).unwrap()
+}
+
 fn prompt_object(values: ParamsObject) -> Object {
     values
         .into_iter()
@@ -289,8 +294,8 @@ pub(super) fn mapped(
 ) -> Result<Object, ChatParamsError> {
     let mut capabilities = fixture();
     let catalog = capabilities.catalog.clone();
-    let mut requested: ParamsObject = serde_json::from_str(non_default).unwrap();
-    let mut existing: ParamsObject = serde_json::from_str(optional).unwrap();
+    let mut requested = params_object(non_default);
+    let mut existing = params_object(optional);
     let mut mapping = Gpt5Mapping {
         model,
         non_default_params: &mut requested,
@@ -320,13 +325,8 @@ pub(super) fn o_series_body(
 ) -> Object {
     let mut capabilities = fixture();
     let converted = messages(messages_text);
-    let optional = object(optional);
-    let request = o_series::transform_request(
-        &mut capabilities,
-        model,
-        &converted,
-        &optional,
-        system_first,
-    );
+    let options = object(optional);
+    let request =
+        o_series::transform_request(&mut capabilities, model, &converted, &options, system_first);
     runtime().block_on(request).unwrap()
 }
