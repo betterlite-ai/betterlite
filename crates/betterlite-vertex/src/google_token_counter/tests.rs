@@ -658,6 +658,37 @@ fn selection_provider_predicates() {
 }
 
 #[test]
+fn selection_location_alias_precedence() {
+    let pinned = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        params(Some("proj"), Some("us-east5"), None),
+        Some("asia-southeast1"),
+    );
+    assert_eq!(pinned.explicit_location(), Some("asia-southeast1"));
+    let plain = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        params(Some("proj"), Some("us-east5"), None),
+        Some(""),
+    );
+    assert_eq!(plain.explicit_location(), Some("us-east5"));
+    let aliased = deployment(
+        "vertex_ai/claude-sonnet-4-6@default",
+        VertexParams {
+            project: Some("proj"),
+            ai_project: None,
+            location: Some(""),
+            ai_location: Some("europe-west1"),
+            credentials: None,
+            ai_credentials: None,
+        },
+        None,
+    );
+    assert_eq!(aliased.explicit_location(), Some("europe-west1"));
+    let missing = deployment("m", params(None, None, None), None);
+    assert_eq!(missing.explicit_location(), None);
+}
+
+#[test]
 fn selection_source_credentials_are_named() {
     let document = concat!(
         r#"{"type":"service_account","project_id":"proj","#,
