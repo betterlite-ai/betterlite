@@ -289,11 +289,10 @@ fn padding_in_the_middle() {
     assert_eq!(decoded.model_id.as_deref(), Some("b"));
     assert_eq!(decoded.video_id, "c\0\0");
     assert!(capture.events().is_empty());
-    let capture = Capture::default();
-    let trailing = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AAAA"));
-    assert_eq!(trailing.video_id, "video_YWJjO2I7Yw==AAAA");
-    assert!(trailing.custom_llm_provider.is_none());
-    assert!(trailing.model_id.is_none());
+    let failed = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AAAA"));
+    assert_eq!(failed.video_id, "video_YWJjO2I7Yw==AAAA");
+    assert!(failed.custom_llm_provider.is_none());
+    assert!(failed.model_id.is_none());
     assert_eq!(capture.events().len(), 1);
 }
 
