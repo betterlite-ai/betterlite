@@ -170,6 +170,22 @@ fn a_fragment_that_cannot_close_is_not_scanned() {
 }
 
 #[test]
+fn an_unfinished_value_is_kept_while_it_can_still_complete() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let outcomes = fixture::drive_sync(vec![
+        Ok(TransportChunk::Text(
+            r#"data:{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a"#.to_owned(),
+        )),
+        Ok(TransportChunk::Text("data:}".to_owned())),
+        Ok(TransportChunk::Text(r#"data:"}}"#.to_owned())),
+    ]);
+    drop(guard);
+    assert_eq!(outcomes.len(), 1);
+    assert_text(&outcomes[0], "a}");
+    assert!(warnings.messages().is_empty());
+}
+
+#[test]
 fn drops_many_broken_tokens_in_one_line() {
     let (guard, warnings) = fixture::capture_warnings();
     let tokens = "nope ".repeat(64);
