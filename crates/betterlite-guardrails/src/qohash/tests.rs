@@ -26,8 +26,8 @@ use super::{
 };
 use crate::generic_guardrail_api::DEFAULT_TIMEOUT;
 use crate::generic_guardrail_contracts::{
-    GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailOptions,
-    GuardrailToolParam, UnreachableFallback,
+    GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailMessage,
+    GuardrailOptions, GuardrailToolParam, UnreachableFallback,
 };
 use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -604,6 +604,54 @@ async fn apply_guardrail_reports_a_scan_error_as_an_other_failure() {
         .await
         .expect_err("fails closed");
     assert!(matches!(failure, GuardrailFailure::Other(_)));
+}
+
+#[tokio::test]
+async fn apply_guardrail_fails_open_with_the_request_fields_but_drops_tool_calls_and_model() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let mut params = nexus_params();
+    params.api_base = Some(base);
+    params.settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
+        provider_params: None,
+        unreachable_fallback: Some(UnreachableFallback::FailOpen),
+        fail_on_error: Some(true),
+        streaming_end_of_stream_only: None,
+        streaming_sampling_rate: None,
+        streaming_transform_mode: None,
+    }));
+    let nexus = build(params, &[]);
+    let mut inputs = text_inputs(&["hello"]);
+    inputs.images = Some(vec!["data:image/png;base64,AA".to_owned()]);
+    inputs.tools = Some(vec![GuardrailToolParam {
+        tool_type: "function".to_owned(),
+        extra: BTreeMap::new(),
+    }]);
+    inputs.tool_calls = Some(vec![GuardrailExtraValue::Object(BTreeMap::new())]);
+    inputs.structured_messages = Some(vec![GuardrailMessage {
+        role: "user".to_owned(),
+        extra: BTreeMap::new(),
+    }]);
+    inputs.model = Some("gpt-4o".to_owned());
+    inputs.stream_holdback_chars = Some(vec![2]);
+    let mut request_data = BTreeMap::new();
+    let result = nexus
+        .apply_guardrail(
+            inputs.clone(),
+            &mut request_data,
+            GuardrailInputType::Request,
+            None,
+        )
+        .await
+        .expect("fails open");
+    assert_eq!(result.texts, inputs.texts);
+    assert_eq!(result.images, inputs.images);
+    assert_eq!(result.tools, inputs.tools);
+    assert_eq!(result.structured_messages, inputs.structured_messages);
+    assert_eq!(result.tool_calls, None);
+    assert_eq!(result.model, None);
+    assert_eq!(result.stream_holdback_chars, None);
 }
 
 #[tokio::test]
