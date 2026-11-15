@@ -5,8 +5,9 @@ use betterlite_openai::api::rerank_contracts::records::{RerankDocument, RerankRe
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::{Mode, RefuseDownloads};
 use betterlite_openai::deepinfra::chat::{self, ChatTransform, MapRequest};
+use betterlite_openai::deepinfra::rerank::response::error::get_error_class;
 use betterlite_openai::deepinfra::rerank::response::{
-    LoggingFailure, RerankLogging, ResponseRequest, get_error_class, transform_rerank_response,
+    LoggingFailure, RerankLogging, ResponseRequest, transform_rerank_response,
 };
 use betterlite_openai::deepinfra::rerank::{
     EnvironmentRequest, HeaderMap, Headers, MapRequest as RerankMapRequest, Params, RerankLimits,
@@ -224,7 +225,7 @@ fn tool_content_case(case: &ToolContentCase) -> Result<MessageJson, String> {
         Mode::Sync,
     )
     .map_err(|error| error.to_string())?;
-    body.get("messages").cloned().unwrap_or(MessageJson::Null)
+    Ok(body.get("messages").cloned().unwrap_or(MessageJson::Null))
 }
 
 fn rerank_request_case(case: &RerankRequestCase) -> Result<RerankRequestReply, String> {
