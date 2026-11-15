@@ -5,9 +5,10 @@ call:
     operation: prepare
     model: openai/gpt-image-2/edit
     prompt: generated prompt
-    image:
-      kind: bytes
-      content: [137, 80, 78, 71, 13, 10, 26, 10]
+    images:
+      - kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+    mask: []
     params:
       prompt: overridden prompt
       image_urls: ["https://override.test/replacement.png"]
@@ -19,9 +20,10 @@ calls:
       operation: prepare
       model: fal-ai/flux-lora-depth
       prompt: depth prompt
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         prompt: overridden depth prompt
         image_url: "https://override.test/depth.png"

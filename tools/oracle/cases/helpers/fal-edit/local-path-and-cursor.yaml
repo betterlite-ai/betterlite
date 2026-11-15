@@ -20,19 +20,33 @@ calls:
   - fal_edit:
       operation: prepare
       model: openai/gpt-image-2/edit
-      image:
-        kind: reader
-        content: [255, 216, 255, 1, 2, 3]
-        position: 2
+      images:
+        - kind: reader
+          content: [255, 216, 255, 1, 2, 3]
+          position: 2
+      mask: []
       params: {}
   - fal_edit:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: local file
-      image:
-        kind: path
-        name: fal-edit-local-png.bin
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: path
+          name: fal-edit-local-png.bin
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: null and url entries
+      images:
+        - null
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+        - kind: text
+          text: "https://x.test/a.png"
+      mask: []
       params: {}
 env: {}
 compare:

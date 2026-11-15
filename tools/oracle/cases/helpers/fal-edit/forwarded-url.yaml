@@ -29,9 +29,10 @@ calls:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: "forwarded prompt"
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         background: transparent
         quality: low

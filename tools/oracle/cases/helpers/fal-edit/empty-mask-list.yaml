@@ -5,9 +5,10 @@ call:
     operation: prepare
     model: openai/gpt-image-2/edit
     prompt: empty mask list
-    image:
-      kind: bytes
-      content: [137, 80, 78, 71, 13, 10, 26, 10]
+    images:
+      - kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+    mask: []
     params:
       mask: []
 calls:
@@ -15,38 +16,86 @@ calls:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: null mask
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         mask: null
   - fal_edit:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: null first entry
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         mask: [null, "https://mask.test/second.png"]
   - fal_edit:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: first entry
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         mask: ["https://mask.test/first.png", "https://mask.test/second.png"]
   - fal_edit:
       operation: prepare
       model: openai/gpt-image-2/edit
       prompt: nested list
-      image:
-        kind: bytes
-        content: [137, 80, 78, 71, 13, 10, 26, 10]
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask: []
       params:
         mask: [["https://mask.test/nested.png"]]
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: uploaded reader mask
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask:
+        - kind: reader
+          content: [255, 216, 255, 1, 2, 3]
+          position: 2
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: uploaded bytes mask
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask:
+        - kind: bytes
+          content: [71, 73, 70, 56, 57, 97]
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: uploaded text mask
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask:
+        - kind: text
+          text: "https://mask.test/uploaded.png"
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: openai/gpt-image-2/edit
+      prompt: uploaded null mask
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+      mask:
+        - null
+      params: {}
 env: {}
 compare:
   ignore: []

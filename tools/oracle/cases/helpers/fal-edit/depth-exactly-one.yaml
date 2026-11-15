@@ -5,9 +5,10 @@ call:
     operation: prepare
     model: fal-ai/flux-lora-depth
     prompt: depth edit
-    image:
-      kind: bytes
-      content: [137, 80, 78, 71, 13, 10, 26, 10]
+    images:
+      - kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+    mask: []
     params:
       mask: "https://mask.test/dropped.png"
       n: 1
@@ -17,20 +18,46 @@ calls:
       operation: prepare
       model: fal-ai/flux-lora-depth
       prompt: null control image
-      image: null
+      images:
+        - null
+      mask: []
       params: {}
   - fal_edit:
       operation: prepare
       model: fal-ai/flux-lora-depth
       prompt: absent control image
+      images: []
+      mask: []
       params: {}
   - fal_edit:
       operation: prepare
       model: fal-ai/flux-lora-depth
       prompt: tuple control image
-      image:
-        kind: tuple
-        content: [255, 216, 255, 1, 2, 3]
+      images:
+        - kind: tuple
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: two control images
+      images:
+        - kind: bytes
+          content: [137, 80, 78, 71, 13, 10, 26, 10]
+        - kind: bytes
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
+      params: {}
+  - fal_edit:
+      operation: prepare
+      model: fal-ai/flux-lora-depth
+      prompt: null then a control image
+      images:
+        - null
+        - kind: bytes
+          content: [255, 216, 255, 1, 2, 3]
+      mask: []
       params: {}
   - fal_edit:
       operation: url
