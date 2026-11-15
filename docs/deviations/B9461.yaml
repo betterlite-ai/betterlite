@@ -35,6 +35,16 @@ deviations:
       config model, so the constructor is where an out-of-range TypeSafeArgs meets the check. No config that reaches
       the constructor in LiteLLM can carry one of these values past the model.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/typesafe.py#L11-L34
+  - what: >-
+      A timeout that is negative, NaN or outside Duration's range fails TypeSafeGuard::new with the typed error
+      that names the value. LiteLLM's constructor stores the float it is handed as self.timeout and passes it to
+      the POST on every request (typesafe.py L276), where the call fails and unreachable_fallback decides the
+      outcome: fail_open forwards the request uncompacted, fail_closed answers 502.
+    why: >-
+      Duration cannot represent a negative or NaN number of seconds, so such a value can never reach a request;
+      refusing it when the guard is built reports the invalid configuration once instead of turning every
+      request into an unreachable-service record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L164-L193
 kept_bugs:
   - what: >-
       chars_removed subtracts DROPPED_RESULT_TEXT's length once per dropped message, so it goes negative for a tool
