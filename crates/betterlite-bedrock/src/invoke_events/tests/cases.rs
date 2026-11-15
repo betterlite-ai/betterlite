@@ -659,6 +659,10 @@ fn frames_and_split() {
     ];
     assert_eq!(frame_texts(&frames), ["a", "b"]);
 
+    let mut combined = chunk_frame(r#"{"outputText":"a"}"#);
+    combined.extend(chunk_frame(r#"{"outputText":"b"}"#));
+    assert_eq!(frame_texts(&[combined]), ["a", "b"]);
+
     let mut split = frames[0].clone();
     let tail = split.split_off(split.len().saturating_sub(3));
     assert_eq!(frame_texts(&[split, tail]), ["a"]);
