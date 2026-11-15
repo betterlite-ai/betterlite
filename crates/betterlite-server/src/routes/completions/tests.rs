@@ -554,16 +554,14 @@ async fn auth_required() {
         .await
         .expect("response");
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
-    let authorized = application()
-        .oneshot(
-            Request::post("/v1/completions")
-                .header("content-type", "application/json")
-                .header("authorization", "Bearer oracle-master")
-                .body(Body::from(body))
-                .expect("request"),
-        )
-        .await
-        .expect("response");
+    // the authorized call reaches the provider, so its future runs beside the fake provider
+    let authorized = application().oneshot(
+        Request::post("/v1/completions")
+            .header("content-type", "application/json")
+            .header("authorization", "Bearer oracle-master")
+            .body(Body::from(body))
+            .expect("request"),
+    );
     let (response, sent) = tokio::join!(authorized, serve(listener, 200, ANSWER));
     assert_eq!(response.expect("response").status(), StatusCode::OK);
     assert!(sent.starts_with("POST /v1/completions "), "{sent}");
