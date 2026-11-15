@@ -367,6 +367,21 @@ def groups_results():
                 model_group="g", providers=["p"], supports_vision=value
             ).supports_vision
         )
+    for bool_name in (
+        "supports_parallel_function_calling",
+        "supports_vision",
+        "supports_web_search",
+        "supports_url_context",
+        "supports_reasoning",
+        "supports_function_calling",
+        "supports_fast_mode",
+    ):
+        result["null_" + bool_name] = outcome(
+            lambda: getattr(
+                module.ModelGroupInfo(model_group="g", providers=["p"], **{bool_name: None}),
+                bool_name,
+            )
+        )
     result["limits"] = outcome(
         lambda: module.ModelGroupInfo(
             model_group="g", providers=["p"], max_input_tokens=1.5, max_output_tokens=2
@@ -826,6 +841,16 @@ def test_behavior_model_group_info() -> None:
     result = run_probe(OURS_PREFIX, OURS_MODULE, "groups")
     assert result["vision_0"] == {"ok": False}
     assert result["shared_default"] == {"first": ["temperature"], "second": []}
+    for bool_name in (
+        "supports_parallel_function_calling",
+        "supports_vision",
+        "supports_web_search",
+        "supports_url_context",
+        "supports_reasoning",
+        "supports_function_calling",
+        "supports_fast_mode",
+    ):
+        assert result["null_" + bool_name] == {"ok": False}, bool_name
     assert OBJECT.validate_python(result["mode_invalid"])["validation"] != []
     assert_same("groups")
 
