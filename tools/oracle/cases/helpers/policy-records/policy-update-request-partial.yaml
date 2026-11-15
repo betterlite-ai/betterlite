@@ -1,0 +1,20 @@
+kind: helper
+name: policy-update-request-partial
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyUpdateRequest
+    value:
+      description: Updated description
+      guardrails_add: [phi]
+      condition:
+        model: gpt-4
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyUpdateRequest
+      value: {}
+env: {}
+compare: {ignore: []}
