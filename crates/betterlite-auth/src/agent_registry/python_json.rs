@@ -88,11 +88,6 @@ pub(crate) fn float_text(value: f64) -> String {
         }
         return String::from("Infinity");
     }
-    match value.to_bits() {
-        0 => return String::from("0.0"),
-        0x8000_0000_0000_0000 => return String::from("-0.0"),
-        _ => {}
-    }
     let rendered = format!("{value:e}");
     let Some((mantissa, exponent)) = rendered.split_once('e') else {
         return rendered;
@@ -156,7 +151,7 @@ fn push_exponential(out: &mut String, digits: &str, exponent: i32) {
         out.push_str(rest);
     }
     out.push('e');
-    if exponent < 0 {
+    if exponent.is_negative() {
         out.push('-');
     } else {
         out.push('+');
