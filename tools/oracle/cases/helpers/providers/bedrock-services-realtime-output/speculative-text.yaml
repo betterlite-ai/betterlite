@@ -1,0 +1,36 @@
+kind: helper
+name: speculative-text
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+    calls:
+      - method: content_start
+        event:
+          role: USER
+          type: TEXT
+          additionalModelFields: '{"generationStage":"SPECULATIVE"}'
+        ids: {response: null, item: null, conversation: null}
+      - {method: user_transcript, text: draft}
+      - {method: user_transcript, text: " more"}
+      - {method: user_completed}
+      - method: text_output
+        event: {content: visible assistant text}
+        ids: {response: resp_a, item: item_a}
+      - method: content_start
+        event:
+          role: USER
+          type: TEXT
+          additionalModelFields: '{"generationStage":"FINAL"}'
+        ids: {response: null, item: null, conversation: null}
+      - {method: user_transcript, text: settled}
+      - {method: user_completed}
+env: {}
+compare: {ignore: []}

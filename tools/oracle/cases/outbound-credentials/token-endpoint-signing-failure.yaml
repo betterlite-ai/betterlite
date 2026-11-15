@@ -1,0 +1,29 @@
+{
+  "kind": "helper",
+  "name": "token-endpoint-signing-failure",
+  "call": {
+    "b4657": {
+      "function": "fetch",
+      "endpoint": "https://idp.example/token",
+      "client_id": "client-1",
+      "grant": {
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange"
+      },
+      "client_auth": {
+        "source": "private_key_jwt",
+        "private_key": "not a private key",
+        "key_id": null,
+        "signing_alg": "RS256"
+      },
+      "response": {
+        "kind": "answered",
+        "status": 200,
+        "body": "{\"access_token\":\"unused\"}"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

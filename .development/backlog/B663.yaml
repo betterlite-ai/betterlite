@@ -1,14 +1,14 @@
 id: B663
 milestone: M3 providers
 title: Bedrock realtime content and audio output
-status: todo
+status: done
 depends_on: [B661, B1004, B171]
 file: tasks/B663-bedrock-services-realtime-output.yaml
 covers:
   - "litellm/llms/bedrock/realtime/transformation.py"
 parent: B030
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1951

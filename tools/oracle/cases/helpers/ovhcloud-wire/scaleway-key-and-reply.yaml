@@ -1,0 +1,24 @@
+kind: helper
+name: ovhcloud-wire-scaleway-key-and-reply
+call:
+  b6412:
+    function: scaleway_key
+    calls:
+      - {api_key: null, headers: {}, env: {}}
+      - {api_key: "", headers: {}, env: {SCW_SECRET_KEY: env-key}}
+      - {api_key: explicit, headers: {}, env: {SCW_SECRET_KEY: env-key}}
+      - {api_key: null, headers: {}, env: {SCW_SECRET_KEY: env-key}}
+      - {api_key: null, headers: {}, env: {SCW_SECRET_KEY: ""}}
+      - {api_key: null, headers: {Authorization: "Bearer caller", x-extra: "1"}, env: {}}
+    replies:
+      - body: '{"text":"hello","segments":[{"id":0}],"language":"fr","duration":2}'
+        status: 200
+        headers: {content-type: application/json}
+      - {body: '{"language":"fr"}', status: 200, headers: {Content-Type: "Application/JSON; charset=utf-8"}}
+      - {body: '{"text":null,"segments":[]}', status: 200, headers: {content-type: application/json}}
+      - {body: raw text, status: 200, headers: {}}
+      - {body: raw text, status: 200, headers: {content-type: text/plain}}
+      - {body: raw text, status: 200, headers: {Content-Type: application/json}}
+      - {body: oops, status: 502, headers: {Content-Type: application/json, x-request-id: req-1}}
+env: {}
+compare: {ignore: []}
