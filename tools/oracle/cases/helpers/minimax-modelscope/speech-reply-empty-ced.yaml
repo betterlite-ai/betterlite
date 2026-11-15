@@ -1,0 +1,10 @@
+kind: helper
+name: minimax-speech-reply-empty-ced
+call:
+  b8174:
+    steps:
+      - kind: speech_reply
+        status: 400
+        body: '{"status": 2, "ced": ""}'
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-headers-response-headers
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: response_headers
+        headers:
+          - {name: anthropic-ratelimit-requests-limit, value: "5"}
+          - {name: request-id, value: seed}
+env: {}
+compare: {ignore: []}
