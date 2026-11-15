@@ -75,7 +75,7 @@ description: >-
   already committed before best-effort Redis publication. Other UI-setting ids remain untouched.
 
   These standalone MIT repository services do not construct the enterprise-only managed_files hook.
-  Keep the current no-hook behavior while Max decides whether to build a native managed service:
+  Keep open-source LiteLLM's no-hook behavior, since betterlite builds no managed service:
   the existing LiteLLM-executed batch caller still returns 400 invalid_request_error, param null,
   code '400', with 'LiteLLM-executed batches need a database: set DATABASE_URL so LiteLLM can keep
   the batch and its files' when that hook is unavailable, even if DATABASE_URL is configured.
@@ -123,7 +123,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_sync_pubsub.py#L101-L160
     why: B4144's best-effort production publisher differs from an injected raising publisher.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
-    why: Current missing-managed-hook error remains with the batch route owner pending Max's decision.
+    why: The missing-managed-hook error stays with the batch route owner, and betterlite builds no managed files (decision 2026-10-31).
 dod:
   - text: 'Every listed table has its table_binding_<suffix> case. Tests also name
       missing_client_is_lazy_exact_error, default_read_and_explicit_writer,
@@ -173,7 +173,7 @@ deviations:
     why: Bound the database-record parser; native_managed_batch_record_limits tests both boundaries.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_batch_repository.py#L11-L20
   - what: Repository availability does not enable managed files/batches; without the enterprise-created hook, the executed-batch route retains 400 invalid_request_error with param null and code '400', even with a configured database.
-    why: Keep the current missing-hook behavior while Max decides whether betterlite should build a native managed service. B086/B087 route parts own its HTTP equality cases.
+    why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31). B086/B087 route parts own its HTTP equality cases.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
 out_of_scope:
   - B2311 owns every function/dataclass in unit_of_work.py and the narrow reset-data helper;
