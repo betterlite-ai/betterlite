@@ -9,7 +9,7 @@ use crate::gcs_mock::settings::{ENABLE_ENV, LATENCY_ENV};
 
 use super::CatalogEnvironment;
 
-fn environment(pairs: &[(&str, &str)]) -> CatalogEnvironment {
+fn catalog_environment(pairs: &[(&str, &str)]) -> CatalogEnvironment {
     let lookup: BTreeMap<String, String> = pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
@@ -19,14 +19,14 @@ fn environment(pairs: &[(&str, &str)]) -> CatalogEnvironment {
 
 #[test]
 fn the_lookup_reads_the_named_setting() {
-    let environment = environment(&[(BUCKET_NAME_ENV, "logs")]);
+    let environment = catalog_environment(&[(BUCKET_NAME_ENV, "logs")]);
     assert_eq!(environment.get(BUCKET_NAME_ENV).as_deref(), Some("logs"));
     assert_eq!(environment.get("GCS_OTHER"), None);
 }
 
 #[test]
 fn the_snapshot_holds_the_bucket_credentials_and_mock_settings() {
-    let environment = environment(&[
+    let environment = catalog_environment(&[
         (BUCKET_NAME_ENV, "logs"),
         (SERVICE_ACCOUNT_ENV, "/creds/service.json"),
         (ENABLE_ENV, "true"),
@@ -47,7 +47,7 @@ fn the_snapshot_holds_the_bucket_credentials_and_mock_settings() {
 
 #[test]
 fn the_snapshot_leaves_out_settings_the_environment_lacks() {
-    let environment = environment(&[(BUCKET_NAME_ENV, "logs")]);
+    let environment = catalog_environment(&[(BUCKET_NAME_ENV, "logs")]);
     let snapshot = environment.snapshot();
     assert_eq!(snapshot.len(), 1);
     assert_eq!(
