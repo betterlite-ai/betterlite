@@ -92,13 +92,15 @@ fn a_blank_marker_is_rejected() {
 #[test]
 fn a_blank_close_is_rejected() {
     let source = markers("          - open: \"<open>\"\n            close: \"   \"\n");
-    assert!(settings(&source, &[]).is_err());
+    let error = settings(&source, &[]).unwrap_err();
+    assert!(error.contains("reminder_markers.0"), "{error}");
 }
 
 #[test]
 fn equal_markers_are_rejected_after_normalizing() {
     let source = markers("          - open: \"<same>\"\n            close: \" <SAME> \"\n");
-    assert!(settings(&source, &[]).is_err());
+    let error = settings(&source, &[]).unwrap_err();
+    assert!(error.contains("reminder_markers.0"), "{error}");
 }
 
 #[test]
@@ -106,5 +108,13 @@ fn pair_siblings_do_not_become_unsupported_keys() {
     let source = markers(
         "          - open: \"<open>\"\n            close: \"</close>\"\n            label: probe\n",
     );
-    assert!(settings(&source, &[]).is_ok());
+    assert_eq!(
+        settings(&source, &[]).unwrap(),
+        Settings {
+            deployments: vec![Some(vec![MarkerPair {
+                open: "<open>".to_owned(),
+                close: "</close>".to_owned(),
+            }])],
+        }
+    );
 }
