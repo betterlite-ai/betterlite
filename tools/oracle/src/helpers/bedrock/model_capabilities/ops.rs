@@ -57,7 +57,7 @@ fn mantle_api_base(region: &str, cases: &[MantleCase]) -> HelperResult {
     Ok(json!({ "urls": urls }))
 }
 
-fn flag_results<Model, Gate>(model_cost: &ParamMap, models: &[Model], gate: Gate) -> HelperResult
+fn flag_results<Model, Gate>(model_cost: &ParamMap, models: &[Model], gate: Gate) -> Value
 where
     Gate: Fn(&Model, &ParamMap) -> Result<bool, CapabilityError>,
 {
@@ -67,7 +67,7 @@ where
             gate(model, model_cost).map_or_else(|_| json!({"raised": true}), |value| json!(value))
         })
         .collect();
-    Ok(json!({ "results": results }))
+    json!({ "results": results })
 }
 
 fn strict_tools(model_cost: &ParamMap, models: &[String]) -> HelperResult {
@@ -139,27 +139,27 @@ pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::MantleApiBase { region, cases } => mantle_api_base(region, cases),
         Input::NativeResponses { model_cost, models } => {
-            flag_results(model_cost, models, |model, cost| {
+            Ok(flag_results(model_cost, models, |model, cost| {
                 supports_openai_responses(model.as_deref(), cost)
-            })
+            }))
         }
         Input::CachePointUnknownModel { model_cost, models } => {
-            flag_results(model_cost, models, |model, cost| {
+            Ok(flag_results(model_cost, models, |model, cost| {
                 accepts_cache_points(model.as_deref(), cost)
-            })
+            }))
         }
         Input::StrictToolsFallback { model_cost, models } => strict_tools(model_cost, models),
         Input::ToolSearch { model_cost, models } => tool_search(model_cost, models),
         Input::EffortCeiling { model_cost, cases } => effort_ceiling(model_cost, cases),
         Input::ParallelTools { model_cost, models } => {
-            flag_results(model_cost, models, |model, cost| {
+            Ok(flag_results(model_cost, models, |model, cost| {
                 supports_parallel_tools(model, cost)
-            })
+            }))
         }
         Input::ExtendedCacheTtl { model_cost, models } => {
-            flag_results(model_cost, models, |model, cost| {
+            Ok(flag_results(model_cost, models, |model, cost| {
                 is_claude_4_5_on_bedrock(model, cost)
-            })
+            }))
         }
     }
 }

@@ -175,49 +175,44 @@ pub(super) struct CachedModelInfo<'fixture> {
 impl ModelInfoLookup for CachedModelInfo<'_> {
     type Error = FullMetadataError<Infallible>;
 
-    fn bedrock_model_info(
-        &self,
-        model: &str,
-    ) -> impl Future<Output = Result<ModelInfo, Self::Error>> + Send {
-        async move {
-            let request = MetadataRequest {
-                model,
-                custom_llm_provider: Some("bedrock"),
-                api_base: None,
-                api_key: None,
-            };
-            let parameters = ProviderParameterSource {
-                resolution: self.resolution,
-                call_type: CallType::ChatCompletion,
-                config: OpenAiConfigTag::UnknownModel,
-                capabilities: &self.capabilities,
-                base_model: None,
-            };
-            let environment = self.fixture.metadata_environment(self.resolution);
-            let dynamic = NoDynamicMetadata;
-            let sources = FullMetadataSources {
-                helper: HelperSources {
-                    environment: &environment,
-                    dynamic: &dynamic,
-                    hf: &self.fixture.hf,
-                },
-                provider_query: MetadataQuery {
-                    catalog: &self.fixture.provider_catalog,
-                    generation: 0,
-                },
-                parameters: &parameters,
-            };
-            let mut keys = ModelCostKeys::default();
-            let caches = MetadataCaches {
-                full: ModelInfoCache::new(METADATA_CACHE_SIZE),
-                helper: ModelInfoCache::new(METADATA_CACHE_SIZE),
-            };
-            let handle = get_model_info(&request, &sources, &mut keys, &caches).await?;
-            let info = handle
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            Ok(info)
-        }
+    async fn bedrock_model_info(&self, model: &str) -> Result<ModelInfo, Self::Error> {
+        let request = MetadataRequest {
+            model,
+            custom_llm_provider: Some("bedrock"),
+            api_base: None,
+            api_key: None,
+        };
+        let parameters = ProviderParameterSource {
+            resolution: self.resolution,
+            call_type: CallType::ChatCompletion,
+            config: OpenAiConfigTag::UnknownModel,
+            capabilities: &self.capabilities,
+            base_model: None,
+        };
+        let environment = self.fixture.metadata_environment(self.resolution);
+        let dynamic = NoDynamicMetadata;
+        let sources = FullMetadataSources {
+            helper: HelperSources {
+                environment: &environment,
+                dynamic: &dynamic,
+                hf: &self.fixture.hf,
+            },
+            provider_query: MetadataQuery {
+                catalog: &self.fixture.provider_catalog,
+                generation: 0,
+            },
+            parameters: &parameters,
+        };
+        let mut keys = ModelCostKeys::default();
+        let caches = MetadataCaches {
+            full: ModelInfoCache::new(METADATA_CACHE_SIZE),
+            helper: ModelInfoCache::new(METADATA_CACHE_SIZE),
+        };
+        let handle = get_model_info(&request, &sources, &mut keys, &caches).await?;
+        let info = handle
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        Ok(info)
     }
 }

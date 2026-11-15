@@ -30,14 +30,17 @@ fn helper_seeds_select_bedrock_model_capabilities() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no {SEED_PREFIX} seed exists");
-    seeds.iter().for_each(|(path, source)| {
-        let case: HelperCase = serde_saphyr::from_str(source).expect("a seed parses");
-        validate_helper(path, &case).expect("a seed validates");
-        assert_eq!(case.call.operation, OPERATION);
-        serde_json::from_value::<Input>(case.call.input.clone())
-            .map(drop)
-            .expect("a seed names a capability");
-    });
+    assert!(
+        seeds.iter().all(|(path, source)| {
+            let case: HelperCase = serde_saphyr::from_str(source).expect("a seed parses");
+            validate_helper(path, &case).expect("a seed validates");
+            assert_eq!(case.call.operation, OPERATION);
+            serde_json::from_value::<Input>(case.call.input)
+                .map(drop)
+                .is_ok()
+        }),
+        "a seed names a capability"
+    );
 }
 
 #[test]
