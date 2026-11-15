@@ -45,8 +45,8 @@ impl MarengoInvokeResponse {
         if !self.data.is_empty() {
             return Ok(data);
         }
-        if let Some(direct) = direct {
-            return Ok(vec![direct]);
+        if let Some(vector) = direct {
+            return Ok(vec![vector]);
         }
         Ok(embeddings)
     }
