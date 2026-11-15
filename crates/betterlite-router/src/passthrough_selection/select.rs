@@ -68,21 +68,29 @@ where
     }
     if resolved.deployments.is_empty() {
         // async_get_healthy_deployments raises its no-deployments error before the pass-through filter runs
-        return empty_candidates(resolved.group, &resolved.causes);
+        return empty_candidates(
+            request.specific_deployment,
+            resolved.group,
+            &resolved.causes,
+        );
     }
     let pool = pass_through_pool(request.model, &resolved.routing_model, resolved.deployments)?;
     let outcome = select_outcome(dispatch, request, &scope, &pool, random)?;
     chosen_deployment(dispatch, picker, outcome, &pool, request)
 }
 
-// The two no-deployment errors differ: the environment gate runs at construction, so a group it empties is missing.
+// The two no-deployment errors differ: the specific-deployment arm skips the model-name search, and the
+// environment gate runs at construction, so a group it empties is missing from LiteLLM and takes the 400.
 fn empty_candidates(
+    specific_deployment: bool,
     group: String,
     causes: &[Cause],
 ) -> Result<Selected, PassthroughSelectionError> {
-    let unregistered = causes
-        .iter()
-        .all(|cause| matches!(cause, Cause::Environment { .. }));
+    let unregistered = !specific_deployment
+        && !causes.is_empty()
+        && causes
+            .iter()
+            .all(|cause| matches!(cause, Cause::Environment { .. }));
     if unregistered {
         return Err(PassthroughSelectionError::Catalog(
             CatalogLookupError::NoHealthyDeployments { model: group },
@@ -212,7 +220,7 @@ where
 }
 
 fn chosen_deployment(
-    dispatch: &mut StrategyDispatch,
+    dispatch: &StrategyDispatch,
     picker: &mut (dyn SelectorCaller + '_),
     outcome: SelectionOutcome,
     pool: &Pool,

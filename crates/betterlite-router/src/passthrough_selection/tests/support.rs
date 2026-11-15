@@ -226,18 +226,30 @@ impl SelectorCaller for Picker {
     }
 }
 
-// Python's sample 0: the 53-bit draw becomes 1 as u32 and 2047 as u64, both inside every range.
-struct SampleZero;
+// Python's 53-bit random() draw scaled the way the oracle's injected random scales one.
+const SAMPLE_BITS: u32 = 53;
+// The middle draw, where a uniform pick over two deployments lands on the second.
+pub(super) const SAMPLE_MIDPOINT: u64 = 1 << (SAMPLE_BITS - 1);
 
-impl TryRng for SampleZero {
+// Sample 0 becomes 1 as u32 and 2047 as u64, both inside every range.
+struct Sample(u64);
+
+impl Sample {
+    const fn scaled(&self) -> u64 {
+        (self.0 << (u64::BITS - SAMPLE_BITS)) | ((1_u64 << (u64::BITS - SAMPLE_BITS)) - 1)
+    }
+}
+
+impl TryRng for Sample {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
-        Ok(1)
+        let [_, _, _, _, fifth, sixth, seventh, eighth] = self.scaled().to_le_bytes();
+        Ok(u32::from_le_bytes([fifth, sixth, seventh, eighth]).max(1))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
-        Ok(2047)
+        Ok(self.scaled())
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
@@ -286,6 +298,7 @@ pub(super) struct World {
     pub(super) environment: &'static str,
     pub(super) enable_pre_call_checks: bool,
     pub(super) drop_params: bool,
+    pub(super) sample: u64,
 }
 
 pub(super) fn world_with(strategy: RoutingStrategy, deployments: Vec<DeploymentSpec>) -> World {
@@ -298,6 +311,7 @@ pub(super) fn world_with(strategy: RoutingStrategy, deployments: Vec<DeploymentS
         environment: "production",
         enable_pre_call_checks: false,
         drop_params: false,
+        sample: 0,
     }
 }
 
@@ -344,7 +358,7 @@ impl World {
         };
         let mut bindings = RequestBindings::default();
         let mut request = selection_request(lookup, &mut bindings);
-        let mut random = SampleZero;
+        let mut random = Sample(self.sample);
         select(
             &mut self.dispatch,
             picker,

@@ -12,10 +12,10 @@ use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{ResolutionSource, StrategyOverride};
 
 use self::support::{
-    LITELLM_MODEL, MODEL, Metric, Picker, Recorded, aliased, ask, assert_invalid_field,
-    assert_not_configured, assert_rate_limited, assert_selected, facts, flag, flagged, gpt,
-    json_mode, metric_setting, number, shuffle, signed, spec, supported_in, text, weighted,
-    with_param, world_with,
+    LITELLM_MODEL, MODEL, Metric, Picker, Recorded, SAMPLE_MIDPOINT, aliased, ask,
+    assert_invalid_field, assert_not_configured, assert_rate_limited, assert_selected, facts, flag,
+    flagged, gpt, json_mode, metric_setting, number, shuffle, signed, spec, supported_in, text,
+    weighted, with_param, world_with,
 };
 
 mod support;
@@ -79,27 +79,29 @@ fn metric_decides(metric: Metric) {
     assert_selected(&selected, MODEL, "second");
 }
 
-// The metric on the first deployment is what the draw reads: without it the draw is uniform and lands on the second.
+// The weight on the first deployment is what the draw reads: at the middle draw its larger weight wins where a uniform pick takes the second.
 fn weight_decides_first() {
     let mut world = shuffle(vec![
-        metric_setting(Metric::Weight, "first", 5),
-        metric_setting(Metric::Weight, "second", 0),
+        metric_setting(Metric::Weight, "first", 15),
+        metric_setting(Metric::Weight, "second", 5),
     ]);
+    world.sample = SAMPLE_MIDPOINT;
     let selected = world
         .call(&mut Picker::default(), &ask(MODEL, &facts()))
         .unwrap();
     assert_selected(&selected, MODEL, "first");
 }
 
+// The pre-call provider check drops the legacy model, so the draw over the survivors has one candidate.
 fn provider_filter() {
     let mut world = shuffle(vec![
         with_param(
-            flagged(spec(MODEL, "modern", "openai/gpt-4o")),
+            flagged(spec(MODEL, "legacy", "openai/gpt-4")),
             "weight",
             number(1),
         ),
         with_param(
-            flagged(spec(MODEL, "legacy", "openai/gpt-4")),
+            flagged(spec(MODEL, "modern", "openai/gpt-4o")),
             "weight",
             number(1),
         ),
@@ -274,10 +276,10 @@ enum Behavior {
 }
 
 fn flag_value(value: Option<Json>) {
-    let deployment = match value {
-        Some(setting) => with_param(gpt("only"), "use_in_pass_through", setting),
-        None => gpt("only"),
-    };
+    let deployment = value.map_or_else(
+        || gpt("only"),
+        |setting| with_param(gpt("only"), "use_in_pass_through", setting),
+    );
     let mut world = shuffle(vec![deployment]);
     assert_not_configured(
         world.call(&mut Picker::default(), &ask(MODEL, &facts())),
@@ -623,6 +625,35 @@ fn mixed_pool_is_not_configured() {
     );
 }
 
+// A specific-deployment lookup that matches nothing skips LiteLLM's model-name search, which raises the 400.
+fn specific_unmatched_is_rate_limited() {
+    let mut world = shuffle(vec![weighted("only", 1)]);
+    assert_rate_limited(
+        world.call(
+            &mut Picker::default(),
+            &ask("missing", &facts()).with_specific(),
+        ),
+        "missing",
+    );
+}
+
+// The environment gate runs at construction, so LiteLLM never registers this deployment; a specific lookup still gets the rate-limit error.
+fn specific_without_active_environment() {
+    let deployment = supported_in(
+        flagged(spec(MODEL, "paused", LITELLM_MODEL)),
+        &["production"],
+    );
+    let mut world = shuffle(vec![deployment]);
+    world.environment = "development";
+    assert_rate_limited(
+        world.call(
+            &mut Picker::default(),
+            &ask(LITELLM_MODEL, &facts()).with_specific(),
+        ),
+        LITELLM_MODEL,
+    );
+}
+
 #[rstest]
 #[case::flag_absent(Boundary::FlagAbsent)]
 #[case::flag_null(Boundary::FlagNull)]
@@ -654,6 +685,8 @@ fn mixed_pool_is_not_configured() {
 #[case::alias_empty_target(Boundary::AliasEmptyTarget)]
 #[case::single_without_active_environment(Boundary::SingleWithoutActiveEnvironment)]
 #[case::mixed_pool_is_not_configured(Boundary::MixedPoolIsNotConfigured)]
+#[case::specific_unmatched_is_rate_limited(Boundary::SpecificUnmatchedIsRateLimited)]
+#[case::specific_without_active_environment(Boundary::SpecificWithoutActiveEnvironment)]
 fn passthrough_selection_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::FlagAbsent => flag_value(None),
@@ -690,6 +723,8 @@ fn passthrough_selection_boundaries(#[case] boundary: Boundary) {
         Boundary::AliasEmptyTarget => alias_empty_target_keeps_the_model(),
         Boundary::SingleWithoutActiveEnvironment => single_without_active_environment(),
         Boundary::MixedPoolIsNotConfigured => mixed_pool_is_not_configured(),
+        Boundary::SpecificUnmatchedIsRateLimited => specific_unmatched_is_rate_limited(),
+        Boundary::SpecificWithoutActiveEnvironment => specific_without_active_environment(),
     }
 }
 
@@ -725,4 +760,6 @@ enum Boundary {
     AliasEmptyTarget,
     SingleWithoutActiveEnvironment,
     MixedPoolIsNotConfigured,
+    SpecificUnmatchedIsRateLimited,
+    SpecificWithoutActiveEnvironment,
 }
