@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
@@ -249,7 +251,8 @@ fn write_request_rebuilds_the_texts_and_messages() {
             {"role": "system", "content": "a"},
             {"content": [{"type": "text", "text": "b"}, {"type": "text", "text": "c"}]},
             {"role": "user", "content": ""},
-            {"role": "user", "content": [{"type": "image_url"}]}
+            {"role": "user", "content": [{"type": "image_url"}]},
+            {"role": "user", "content": [{"type": "text"}]}
         ]}"#,
     );
     write_request(&mut inputs, &output).expect("written");
@@ -259,6 +262,7 @@ fn write_request_rebuilds_the_texts_and_messages() {
     assert_eq!(messages[1].role, "user");
     assert_eq!(messages[2].role, "user");
     assert_eq!(messages[3].role, "user");
+    assert_eq!(messages.len(), 5);
     assert_eq!(
         messages[1].extra.get("content"),
         Some(&json(

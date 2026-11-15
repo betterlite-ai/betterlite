@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -589,6 +591,17 @@ fn redacted_texts_read_content_parts() {
         redacted_texts(&object(vec![("content", text("plain"))])).expect("texts"),
         vec!["plain".to_owned()]
     );
+    assert_eq!(
+        redacted_texts(&object(vec![(
+            "content",
+            GuardrailValue::Array(vec![
+                object(vec![("type", text("text")), ("text", text("a"))]),
+                object(vec![("type", text("text"))])
+            ])
+        )]))
+        .expect("texts"),
+        vec!["a".to_owned()]
+    );
 }
 
 #[test]
@@ -874,6 +887,35 @@ async fn other_status_codes_are_not_retried() {
             ..
         }))
     ));
+    assert_eq!(server.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn the_configured_timeout_stops_the_single_attempt() {
+    let server = server::start(vec![server::stall(Duration::from_secs(1))]);
+    let args = EvaluationArgs {
+        timeout: Some(0.5),
+        ..fixtures::args(&server.base)
+    };
+    let guardrail = build(
+        &args,
+        &fixtures::environment(),
+        fixtures::client(),
+        Arc::new(tokens::ScriptedTokens::new(&[])),
+    );
+    let result = guardrail
+        .evaluate(
+            text_inputs(&["hello"]),
+            &BTreeMap::new(),
+            GuardrailInputType::Request,
+            None,
+        )
+        .await;
+    let Err(EvaluationError::Auth(HiddenlayerError::Transport { source })) = result else {
+        panic!("a detection call that timed out");
+    };
+    assert!(source.is_timeout(), "{source}");
+    tokio::time::sleep(Duration::from_millis(100)).await;
     assert_eq!(server.requests().len(), 1);
 }
 

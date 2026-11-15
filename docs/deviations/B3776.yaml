@@ -12,3 +12,6 @@ deviations:
   - what: V1 scans a structured message whose content is a list of parts as the text parts' texts joined by two newlines, where LiteLLM sends str() of the list of non-image parts, the Python repr of those mappings.
     why: The repr is a Python runtime detail no working setup can rely on and carries no text the scanner reads; docs/compatibility.md stops parity at the declared types, so betterlite sends the type's text instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L176-L181
+  - what: A content part that names type text without a string text is skipped in both redaction paths, where LiteLLM's item["text"] raises KeyError and fails the request.
+    why: docs/compatibility.md reads an absent field as unset, and the part carries no text to redact or write back; the other parts are still read instead of failing the whole call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/hiddenlayer/hiddenlayer.py#L337-L342

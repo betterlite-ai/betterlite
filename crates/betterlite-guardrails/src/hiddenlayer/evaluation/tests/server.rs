@@ -3,6 +3,7 @@ use std::io;
 use std::net::TcpListener;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{Builder as ThreadBuilder, JoinHandle};
+use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
@@ -10,6 +11,7 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, Method, StatusCode, Uri};
 use tokio::net::TcpListener as TokioListener;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tokio::sync::oneshot;
+use tokio::time::sleep;
 
 // One call the guardrail made, with every request header lowered, as the server saw it
 #[derive(Clone, Debug)]
@@ -25,6 +27,7 @@ pub(crate) struct Reply {
     pub(crate) status: u16,
     pub(crate) headers: Vec<(&'static str, &'static str)>,
     pub(crate) body: String,
+    pub(crate) after: Option<Duration>,
 }
 
 pub(crate) fn reply(body: &str) -> Reply {
@@ -32,6 +35,7 @@ pub(crate) fn reply(body: &str) -> Reply {
         status: 200,
         headers: Vec::new(),
         body: body.to_owned(),
+        after: None,
     }
 }
 
@@ -44,6 +48,15 @@ pub(crate) fn reply_with(
         status,
         headers: headers.to_vec(),
         body: body.to_owned(),
+        after: None,
+    }
+}
+
+// answers only after the delay, so a caller with a shorter timeout has already stopped waiting
+pub(crate) fn stall(delay: Duration) -> Reply {
+    Reply {
+        after: Some(delay),
+        ..reply("{}")
     }
 }
 
@@ -94,6 +107,9 @@ pub(crate) fn start(replies: Vec<Reply>) -> Server {
                 .unwrap_or_else(PoisonError::into_inner)
                 .pop_front()
                 .unwrap_or_else(|| reply("{}"));
+            if let Some(delay) = next.after {
+                sleep(delay).await;
+            }
             (
                 StatusCode::from_u16(next.status).expect("a status"),
                 response_headers(&next.headers),
