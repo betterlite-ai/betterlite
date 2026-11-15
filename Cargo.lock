@@ -1614,6 +1614,7 @@ dependencies = [
  "jsonschema",
  "lopdf",
  "lru",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",

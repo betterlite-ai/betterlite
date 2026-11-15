@@ -21,6 +21,8 @@ struct NoReasoningCounter;
 impl ReasoningTokenCounter for NoReasoningCounter {
     type Failure = Infallible;
 
+    // The batch path always passes reasoning_content None, so no value reaches this body; a mutant of it never runs.
+    #[cfg_attr(test, mutants::skip)]
     fn count_reasoning_tokens(&self, _text: &str) -> Result<usize, Infallible> {
         Ok(0)
     }

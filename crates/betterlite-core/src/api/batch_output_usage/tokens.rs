@@ -29,6 +29,8 @@ pub trait BatchTokenCounter: Send + Sync {
 
 #[async_trait]
 impl BatchTokenCounter for Counter {
+    // No test builds B013's Counter, whose fetcher and selector need a network client; a mutant of this body never runs.
+    #[cfg_attr(test, mutants::skip)]
     async fn count_tokens(&self, request: &TokenRequest<'_>) -> Result<usize, CountError> {
         self.count(request).await
     }
