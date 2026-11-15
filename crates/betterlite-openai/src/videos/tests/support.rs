@@ -47,6 +47,10 @@ pub(super) fn body(value: &Value) -> Vec<u8> {
     serde_json::to_vec(value).unwrap()
 }
 
+pub(super) fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
+}
+
 pub(super) fn headers(pairs: &[(&str, &str)]) -> Headers {
     pairs
         .iter()

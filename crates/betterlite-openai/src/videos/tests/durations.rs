@@ -20,6 +20,14 @@ const INVALID_TEXTS: [&str; 10] = [
     "\u{664}",
 ];
 
+const CREATE_FIXTURE: &str = r#"{
+    "id": "vid-8",
+    "object": "video",
+    "status": "completed",
+    "seconds": "4",
+    "usage": {"duration_seconds": 99, "other": true}
+}"#;
+
 fn seconds_video(seconds: Option<Value>) -> VideoObject {
     create_response(MODEL, &video_body("vid-7", seconds), Some("openai")).unwrap()
 }
@@ -53,7 +61,10 @@ fn invalid_type_case() {
     assert_eq!(absent.seconds, None);
     assert_no_duration(&absent);
     let null = seconds_video(Some(Value::Null));
-    assert_eq!(null.seconds, Some(Value::Null));
+    assert_eq!(
+        serde_json::to_value(&null).unwrap().get("seconds"),
+        Some(&Value::Null)
+    );
     assert_no_duration(&null);
 }
 
@@ -66,15 +77,7 @@ pub(super) fn invalid_seconds_case() {
 }
 
 fn create_wrapped_case() {
-    let reply = json!({
-        "id": "vid-8",
-        "object": "video",
-        "status": "completed",
-        "seconds": "4",
-        "usage": {"duration_seconds": 99_i64, "other": true}
-    });
-    let bytes = serde_json::to_vec(&reply).unwrap();
-    let created = create_response(MODEL, &bytes, Some("openai")).unwrap();
+    let created = create_response(MODEL, CREATE_FIXTURE.as_bytes(), Some("openai")).unwrap();
     assert_eq!(video_of(&created.id), "vid-8");
     assert_eq!(model_of(&created.id).as_deref(), Some(MODEL));
     assert_duration(&created, "4.0");

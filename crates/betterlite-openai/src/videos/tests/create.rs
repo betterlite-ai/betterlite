@@ -6,25 +6,32 @@ use crate::videos::VideoOptions;
 use crate::videos::config::{MULTIPART_FORM_DATA, SUPPORTED_PARAMS, map_params};
 use crate::videos::create::{CreateVideoForm, VideoCreate, create_request};
 
-use super::support::{API_BASE, MODEL, PROMPT, video_create};
+use super::support::{API_BASE, MODEL, PROMPT, fixture, options, video_create};
 
 const REFERENCE_URL: &str = "https://example.invalid/a.png";
 const PNG_HEAD: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR";
 const JPEG_HEAD: &[u8] = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00";
 
-fn option_fixture() -> Value {
+fn option_fields() -> VideoOptions {
     let character = encode_character_id("char-1", "openai", Some(MODEL));
-    json!({
-        "model": "option-model",
-        "prompt": "option-prompt",
-        "extra_headers": {"x-option": "1"},
-        "input_reference": "option-reference",
-        "seconds": "4",
-        "size": "720x1280",
-        "user": "user-1",
-        "characters": [{"id": character, "role": "hero"}],
-        "vendor_flag": true,
-    })
+    let characters = Value::Array(vec![Value::Object(options(&[
+        ("id", Value::String(character)),
+        ("role", json!("hero")),
+    ]))]);
+    options(&[
+        ("model", json!("option-model")),
+        ("prompt", json!("option-prompt")),
+        (
+            "extra_headers",
+            Value::Object(options(&[("x-option", json!("1"))])),
+        ),
+        ("input_reference", json!("option-reference")),
+        ("seconds", json!("4")),
+        ("size", json!("720x1280")),
+        ("user", json!("user-1")),
+        ("characters", characters),
+        ("vendor_flag", json!(true)),
+    ])
 }
 
 fn plain_form(media: Option<MediaBody<'_>>) -> CreateVideoForm<'_> {
@@ -32,21 +39,21 @@ fn plain_form(media: Option<MediaBody<'_>>) -> CreateVideoForm<'_> {
 }
 
 fn create_form_case() {
-    let given = video_create(option_fixture());
+    let given = video_create(Value::Object(option_fields()));
     let media = Some(MediaBody::Text(REFERENCE_URL));
     let form = create_request(MODEL, PROMPT, API_BASE, &given, media);
-    assert_eq!(
-        Value::Object(form.fields),
-        json!({
-            "model": MODEL,
-            "prompt": PROMPT,
-            "seconds": "4",
-            "size": "720x1280",
-            "user": "user-1",
-            "characters": [{"id": "char-1", "role": "hero"}],
-            "vendor_flag": true,
-        })
-    );
+    let mut expected = option_fields();
+    for name in ["model", "prompt", "extra_headers", "input_reference"] {
+        expected.remove(name);
+    }
+    expected.insert("model".to_owned(), json!(MODEL));
+    expected.insert("prompt".to_owned(), json!(PROMPT));
+    let characters = vec![Value::Object(options(&[
+        ("id", json!("char-1")),
+        ("role", json!("hero")),
+    ]))];
+    expected.insert("characters".to_owned(), Value::Array(characters));
+    assert_eq!(form.fields, expected);
     assert_eq!(form.api_base, API_BASE);
     assert_eq!(form.files.len(), 1);
     let part = form.files.first().unwrap();
@@ -71,14 +78,15 @@ fn create_options_case() {
         ]
     );
     assert_eq!(MULTIPART_FORM_DATA.to_string(), "true");
-    let given_json = option_fixture();
+    let given = option_fields();
     let mut mapped = VideoOptions::new();
-    map_params(&video_create(given_json.clone()), &mut mapped);
-    assert_eq!(Value::Object(mapped), given_json);
-    let number_seconds = json!({"seconds": 4_i64});
-    assert!(serde_json::from_value::<VideoCreate>(number_seconds).is_err());
-    let number_character = json!({"characters": [{"id": 1_i64}]});
-    assert!(serde_json::from_value::<VideoCreate>(number_character).is_err());
+    map_params(&video_create(Value::Object(given.clone())), &mut mapped);
+    assert_eq!(mapped, given);
+    let number_seconds = serde_json::from_value::<VideoCreate>(fixture(r#"{"seconds": 4}"#));
+    assert!(number_seconds.unwrap_err().is_data());
+    let number_character =
+        serde_json::from_value::<VideoCreate>(fixture(r#"{"characters": [{"id": 1}]}"#));
+    assert!(number_character.unwrap_err().is_data());
 }
 
 pub(super) fn create_multipart_case() {
@@ -103,7 +111,7 @@ pub(super) fn input_reference_case() {
     assert!(matches!(&blank_part.body, MediaBody::Text(text) if text.is_empty()));
 
     assert!(plain_form(None).files.is_empty());
-    let given = video_create(json!({"input_reference": "option-reference"}));
+    let given = video_create(fixture(r#"{"input_reference": "option-reference"}"#));
     let dropped = create_request(MODEL, PROMPT, API_BASE, &given, None);
     assert!(!dropped.fields.contains_key("input_reference"));
     assert!(dropped.files.is_empty());

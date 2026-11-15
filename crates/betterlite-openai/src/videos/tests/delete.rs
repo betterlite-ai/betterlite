@@ -1,12 +1,20 @@
 use betterlite_http::error::HttpError;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::openai_video_identifiers::ids::encode_video_id_with_provider;
 use crate::videos::error::{VideoError, get_error_class};
 use crate::videos::reply::decode_video;
 use crate::videos::segment::path_url;
 
-use super::support::{API_BASE, MODEL, SLASH_BASE, body, headers};
+use super::support::{API_BASE, MODEL, SLASH_BASE, headers, options};
+
+const DELETE_FIXTURE: &str = r#"{
+    "id": "vid-5",
+    "object": "video",
+    "status": "deleted",
+    "seconds": "4",
+    "usage": {"duration_seconds": 99}
+}"#;
 
 fn delete_url_case() {
     let encoded = encode_video_id_with_provider("vid-5", "openai", Some(MODEL));
@@ -39,21 +47,14 @@ fn delete_path_errors_case() {
 }
 
 fn delete_reply_case() {
-    let reply = json!({
-        "id": "vid-5",
-        "object": "video",
-        "status": "deleted",
-        "seconds": "4",
-        "usage": {"duration_seconds": 99_i64}
-    });
-    let deleted = decode_video(&body(&reply)).unwrap();
+    let deleted = decode_video(DELETE_FIXTURE.as_bytes()).unwrap();
     assert_eq!(deleted.id, "vid-5");
     assert_eq!(deleted.seconds, Some(json!("4")));
     assert_eq!(
-        Value::Object(deleted.usage.unwrap()),
-        json!({"duration_seconds": 99_i64})
+        deleted.usage,
+        Some(options(&[("duration_seconds", json!(99_i64))]))
     );
-    let list_shape = decode_video(&body(&json!({"data": []})));
+    let list_shape = decode_video(br#"{"data": []}"#);
     assert!(matches!(list_shape, Err(VideoError::ExpectedVideo)));
 }
 
