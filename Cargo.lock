@@ -2653,6 +2653,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
