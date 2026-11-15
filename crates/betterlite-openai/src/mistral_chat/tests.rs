@@ -23,8 +23,8 @@ use uuid::Uuid;
 
 use super::MistralChatError;
 use super::messages::{
-    handle_message_with_file, handle_name_in_message, handle_tool_call_message,
-    is_empty_assistant_message, strip_output_only_fields,
+    handle_message_with_file, handle_name_in_message, is_empty_assistant_message,
+    strip_output_only_fields,
 };
 use super::reply::{ResponseReply, transform_response};
 use super::reply::{
@@ -337,7 +337,9 @@ fn cache_control_leaves_messages_and_tools() {
 
 #[test]
 fn transform_messages_returns_the_conversation_only() {
-    let messages = [message(json!({"role": "user", "content": "hi"}))];
+    let messages = [message(json!({"role": "user", "name": "ada", "content": [
+        {"type": "text", "text": "hi"}
+    ]}))];
     let transformed = transform_messages(&MessageTransform {
         model: "mistral-small-latest",
         messages: &messages,
@@ -345,7 +347,10 @@ fn transform_messages_returns_the_conversation_only() {
         downloads: &RefuseDownloads,
     })
     .expect("messages");
-    assert_eq!(transformed.len(), 1);
+    assert_eq!(
+        serde_json::to_value(&transformed).expect("a message list"),
+        json!([{"role": "user", "content": "hi"}])
+    );
 }
 
 #[rstest]
@@ -360,6 +365,14 @@ fn async_modes_transform_messages_like_the_sync_mode(#[case] mode: Mode) {
         ]})),
         message(json!({"role": "assistant", "content": ""})),
     ];
+    let expected = json!([
+        {"role": "user", "name": "ada", "content": [
+            {"type": "text", "text": "look"},
+            {"type": "image_url", "image_url": {"url": "https://example.test/a.png"}},
+            {"type": "file", "file_id": "file-1"}
+        ]},
+        {"role": "assistant", "content": ""},
+    ]);
     let sync = transform_messages(&MessageTransform {
         model: "mistral-small-latest",
         messages: &messages,
@@ -367,7 +380,10 @@ fn async_modes_transform_messages_like_the_sync_mode(#[case] mode: Mode) {
         downloads: &RefuseDownloads,
     })
     .expect("sync messages");
-    assert_eq!(sync.len(), 2);
+    assert_eq!(
+        serde_json::to_value(&sync).expect("a message list"),
+        expected
+    );
     let asynchronous = transform_messages(&MessageTransform {
         model: "mistral-small-latest",
         messages: &messages,
@@ -375,7 +391,10 @@ fn async_modes_transform_messages_like_the_sync_mode(#[case] mode: Mode) {
         downloads: &RefuseDownloads,
     })
     .expect("async messages");
-    assert_eq!(asynchronous, sync);
+    assert_eq!(
+        serde_json::to_value(&asynchronous).expect("a message list"),
+        expected
+    );
 }
 
 #[test]
