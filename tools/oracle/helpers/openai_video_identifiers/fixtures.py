@@ -1,8 +1,10 @@
 import base64
 import io
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import IO, Annotated, Literal, Protocol, TypeAlias, TypedDict
 
+from litellm.llms.openai.videos.transformation import OpenAIVideoConfig
+from litellm.types.router import GenericLiteLLMParams
 from pydantic import Field, JsonValue
 from typing_extensions import override
 
@@ -18,6 +20,43 @@ StoredFiles: TypeAlias = (
 )
 Parts: TypeAlias = Mapping[str, StoredFiles] | Sequence[tuple[str, StoredFiles]]
 Part: TypeAlias = tuple[str, tuple[str | None, Content, str | None]]
+# LiteLLM declares the edit form data as Mapping[str, object]; the helper never reads it
+EditForm: TypeAlias = Mapping[str, object]
+EditResult: TypeAlias = tuple[str, EditForm, Parts | None]
+
+
+class VideoConfig(Protocol):
+    @property
+    def transform_video_create_request(
+        self,
+    ) -> Callable[
+        [
+            str,
+            str,
+            str,
+            dict[str, JsonValue] | dict[str, StoredFiles],
+            GenericLiteLLMParams,
+            dict[str, str],
+        ],
+        tuple[dict[str, JsonValue], Parts, str],
+    ]: ...
+
+    @property
+    def transform_video_edit_request(
+        self,
+    ) -> Callable[
+        [str, str, str, GenericLiteLLMParams, dict[str, str], Content | None],
+        EditResult,
+    ]: ...
+
+
+class VideoConfigImpl(OpenAIVideoConfig):
+    # OpenAIVideoConfig.__init__ carries no annotations; this subclass states the one mypy needs
+    def __init__(self) -> None:
+        pass
+
+
+CONFIG: VideoConfig = VideoConfigImpl()
 
 
 class BytesFixture(TypedDict):

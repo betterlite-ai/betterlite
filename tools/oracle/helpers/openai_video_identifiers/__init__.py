@@ -1,9 +1,7 @@
 import logging
-from collections.abc import Callable, Mapping
 from types import TracebackType
-from typing import Annotated, Final, Literal, Protocol, Self, TypeAlias, TypedDict
+from typing import Annotated, Final, Literal, Self, TypeAlias, TypedDict
 
-from litellm.llms.openai.videos.transformation import OpenAIVideoConfig
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.utils import (
     decode_character_id_with_provider,
@@ -16,7 +14,7 @@ from litellm.types.videos.utils import (
 from pydantic import Field, JsonValue, TypeAdapter
 from typing_extensions import override
 
-from .fixtures import Content, Fixture, FixtureState, Part, Parts, StoredFiles, fixtures
+from .fixtures import CONFIG, Fixture, FixtureState, Part, Parts, StoredFiles, fixtures
 
 LOGGER_NAME: Final = "LiteLLM"
 API_BASE: Final = "https://mock.example/v1"
@@ -24,43 +22,6 @@ MODEL: Final = "sora-2"
 PROMPT: Final = "make a video"
 VIDEO_ID: Final = "vid-1"
 DEFAULT_FIELD: Final = "input_reference"
-# LiteLLM declares the edit form data as Mapping[str, object]; the helper never reads it
-EditForm: TypeAlias = Mapping[str, object]
-EditResult: TypeAlias = tuple[str, EditForm, Parts | None]
-
-
-class VideoConfig(Protocol):
-    @property
-    def transform_video_create_request(
-        self,
-    ) -> Callable[
-        [
-            str,
-            str,
-            str,
-            dict[str, JsonValue] | dict[str, StoredFiles],
-            GenericLiteLLMParams,
-            dict[str, str],
-        ],
-        tuple[dict[str, JsonValue], Parts, str],
-    ]: ...
-
-    @property
-    def transform_video_edit_request(
-        self,
-    ) -> Callable[
-        [str, str, str, GenericLiteLLMParams, dict[str, str], Content | None],
-        EditResult,
-    ]: ...
-
-
-class VideoConfigImpl(OpenAIVideoConfig):
-    # OpenAIVideoConfig.__init__ carries no annotations; this subclass states the one mypy needs
-    def __init__(self) -> None:
-        pass
-
-
-CONFIG: VideoConfig = VideoConfigImpl()
 
 
 class Decoded(TypedDict):
