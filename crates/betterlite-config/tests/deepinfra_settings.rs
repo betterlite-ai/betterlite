@@ -25,10 +25,6 @@ fn secret(text: &str) -> SecretString {
     SecretString::from(text.to_owned())
 }
 
-fn exposed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|value| value.expose_secret().to_owned())
-}
-
 #[rstest]
 #[case::both_keys(
     &[("DEEPINFRA_API_BASE", "https://env.example"), ("DEEPINFRA_API_KEY", "env-key")],
@@ -49,19 +45,26 @@ fn deepinfra_environment_aliases_load(
     #[case] expected_key: Option<&str>,
 ) {
     let loaded = settings("", environment);
+    let api_key = loaded
+        .api_key
+        .as_ref()
+        .map(|value| value.expose_secret().to_owned());
     assert_eq!(loaded.api_base.as_deref(), expected_base);
-    assert_eq!(exposed(loaded.api_key.as_ref()).as_deref(), expected_key);
+    assert_eq!(api_key.as_deref(), expected_key);
 }
 
 #[rstest]
 #[case::unset("", DEFAULT_MINIMUM_TEMPERATURE)]
-#[case::value("0.5", 0.5)]
-#[case::integer_text("2", 2.0)]
-#[case::padded("  0.25  ", 0.25)]
+#[case::value("0.5", 0.5_f64)]
+#[case::integer_text("2", 2.0_f64)]
+#[case::padded("  0.25  ", 0.25_f64)]
 #[case::empty("", DEFAULT_MINIMUM_TEMPERATURE)]
 fn deepinfra_minimum_temperature_reads_the_environment(#[case] text: &str, #[case] expected: f64) {
     let loaded = settings("", &[("MIN_NON_ZERO_TEMPERATURE", text)]);
-    assert!((loaded.min_non_zero_temperature - expected).abs() < f64::EPSILON);
+    assert_eq!(
+        loaded.min_non_zero_temperature.to_bits(),
+        expected.to_bits()
+    );
 }
 
 #[test]
@@ -70,8 +73,13 @@ fn deepinfra_minimum_temperature_rejects_a_non_number() {
         String::from("MIN_NON_ZERO_TEMPERATURE"),
         String::from("warm"),
     )]);
-    let loaded = ConfigLoader { lookup }.load("");
-    assert!(loaded.is_err());
+    let error = ConfigLoader { lookup }
+        .load("")
+        .expect_err("a non-number is rejected");
+    assert_eq!(
+        error.to_string(),
+        "environment variable MIN_NON_ZERO_TEMPERATURE must be a number"
+    );
 }
 
 #[rstest]
@@ -133,6 +141,7 @@ fn deepinfra_chat_identity_follows_the_pinned_fallbacks(
 ) {
     let supplied = explicit_key.map(secret);
     let (base, key) = settings("", environment).resolve(explicit_base, supplied.as_ref());
+    let key_text = key.map(|value| value.expose_secret().to_owned());
     assert_eq!(base, expected_base);
-    assert_eq!(exposed(key.as_ref()).as_deref(), expected_key);
+    assert_eq!(key_text.as_deref(), expected_key);
 }
