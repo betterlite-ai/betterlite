@@ -5,7 +5,7 @@ from types import TracebackType
 from typing import Final, Literal, Self, TypedDict
 
 from litellm.proxy._experimental.mcp_server import db as mcp_db
-from litellm.proxy._types import NewMCPServerRequest
+from litellm.proxy._types import LiteLLM_MCPServerTable, NewMCPServerRequest
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.utils import PrismaClient
 from litellm.types.mcp_server.mcp_server_manager import PinnedMCPTool
@@ -238,7 +238,7 @@ def create_call(client: FakeClient, call: CreateIfFree) -> CreateOutput:
         match asyncio.run(mcp_db.create_mcp_server_if_identifier_free(client, req, "tester")):
             case mcp_db.McpIdentifierConflict() as found:
                 conflict = found
-            case _:
+            case LiteLLM_MCPServerTable():
                 pass
     table = client.fake_table
     return {"conflict": conflict_view(conflict), "lock_keys": table.locks, "written": table.created}
