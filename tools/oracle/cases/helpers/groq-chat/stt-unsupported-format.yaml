@@ -1,0 +1,20 @@
+kind: helper
+name: groq-stt-unsupported-format
+call:
+  b5833:
+    stt:
+      - non_default:
+          response_format: srt
+        optional_params: {}
+      - non_default:
+          response_format: srt
+          temperature: 1
+        optional_params: {}
+        drop_params: true
+      - non_default:
+          response_format: srt
+          temperature: 1
+        optional_params: {}
+        global_drop_params: true
+env: {}
+compare: {ignore: []}

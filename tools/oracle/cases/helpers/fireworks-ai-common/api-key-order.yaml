@@ -1,0 +1,22 @@
+kind: helper
+name: api-key-order
+call:
+  b6070:
+    model_cost: {}
+    api_keys:
+      - argument: null
+        env: {fireworks_ai_api_key: env-second}
+      - argument: direct-key
+        env: {}
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {FIREWORKS_AI_API_KEY: env-second}
+compare: {ignore: []}

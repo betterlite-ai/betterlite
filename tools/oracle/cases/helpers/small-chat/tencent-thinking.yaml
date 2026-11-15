@@ -1,0 +1,83 @@
+kind: helper
+name: tencent-thinking
+call:
+  b8173:
+    steps:
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {thinking: {type: enabled, budget_tokens: 5}, temperature: 0.2}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {reasoning_effort: none}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {reasoning_effort: high}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {reasoning_effort: ""}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {thinking: {type: disabled}, reasoning_effort: high}
+      - kind: tencent_map
+        model: "b8173-tencent-plain"
+        supports_reasoning: false
+        params: {thinking: {type: enabled}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {thinking: {type: enabled, budget_tokens: 7}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {thinking: {type: enabled, budget_tokens: 7.5}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {thinking: {type: enabled, budget_tokens: "7"}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {thinking: {type: enabled}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {thinking: {type: disabled, budget_tokens: 7}}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {reasoning_effort: none}
+      - kind: tencent_map
+        model: "b8173-tencent-adaptive"
+        supports_reasoning: true
+        supports_adaptive_thinking: true
+        params: {reasoning_effort: high}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {thinking: {type: enabled, budget_tokens: 7}, reasoning_effort: none}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {thinking: true, reasoning_effort: high}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {}
+        optional_params: {extra_body: {keep: 1}, thinking: {type: auto}}
+      - kind: tencent_map
+        model: "b8173-tencent-reasons"
+        supports_reasoning: true
+        params: {tools: [], tool_choice: auto, temperature: 0, stream: false, seed: 4}
+env: {}
+compare: {ignore: []}

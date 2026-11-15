@@ -1,0 +1,20 @@
+kind: helper
+name: breakdown-lookup-error-versus-setter-error
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-breakdown
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-breakdown: {litellm_provider: openai, mode: chat, input_cost_per_token: 0.25, output_cost_per_token: 0.5}
+    usage: {prompt_tokens: 8, completion_tokens: 4, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {}
+    margin: {}
+    logging_model: oracle-breakdown
+    refuse_breakdown: true
+compare: {ignore: []}
+env: {}
