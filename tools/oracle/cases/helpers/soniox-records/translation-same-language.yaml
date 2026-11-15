@@ -1,0 +1,40 @@
+kind: helper
+name: soniox-records-translation-same-language
+call:
+  soniox_records:
+    calls:
+    - function: response
+      payload:
+        tokens:
+        - {text: hola, language: es}
+        - {text: hello, language: es, translation_status: translation}
+    - function: response
+      payload:
+        tokens:
+        - {text: hello, language: en, translation_status: translation}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, language: es}
+        - {text: b, language: fr, translation_status: translation}
+    - function: response
+      payload:
+        tokens:
+        - {text: "  b", language: fr, translation_status: translation}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, language: es, translation_status: original}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, language: es, translation_status: translation}
+        - {text: b, language: es, translation_status: translation}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, speaker: 1, language: es}
+        - {text: b, speaker: 1, language: es, translation_status: translation}
+        - {text: c, speaker: 2, language: es, translation_status: translation}
+compare: {ignore: []}
+env: {}

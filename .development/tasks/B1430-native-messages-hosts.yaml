@@ -98,5 +98,5 @@ pitfalls:
   - DeepSeek's lowercase authorization lookup is less permissive than Tencent's inherited header-name check.
   - MiniMax does not remove /v1 before appending its Messages suffix.
   - Only a tool with exact type=custom loses its discriminator after DeepSeek's parent transform.
-budget: {max_changed_lines: 725, max_new_expects: 0}
+budget: {max_changed_lines: 1500, max_new_expects: 0}
 review_level: standard

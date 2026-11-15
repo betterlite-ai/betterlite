@@ -1,0 +1,21 @@
+kind: helper
+name: soniox-records-hints-override
+call:
+  soniox_records:
+    calls:
+    - {function: supported_params}
+    - {function: map_params, non_default_params: {language: es}, optional_params: {}}
+    - {function: map_params, non_default_params: {language: es, language_hints: [en, de]}, optional_params: {}}
+    - {function: map_params, non_default_params: {language: fr}, optional_params: {language_hints: [en, fr]}}
+    - {function: map_params, non_default_params: {language: fr}, optional_params: {language_hints: [en]}}
+    - {function: map_params, non_default_params: {language: fr}, optional_params: {language_hints: []}}
+    - {function: map_params, non_default_params: {language: fr}, optional_params: {language_hints: null}}
+    - {function: map_params, non_default_params: {language: null}, optional_params: {}}
+    - {function: map_params, non_default_params: {language: ""}, optional_params: {}}
+    - {function: map_params, non_default_params: {response_format: null}, optional_params: {}}
+    - {function: map_params, non_default_params: {response_format: vtt, filename: a.wav, soniox_polling_interval: 0.5, webhook_url: null, language_hints_strict: false, enable_speaker_diarization: true}, optional_params: {existing: kept}}
+    - {function: map_params, non_default_params: {temperature: 0.2}, optional_params: {}}
+    - {function: map_params, non_default_params: {language: es, language_hints: []}, optional_params: {language_hints: [de]}}
+    - {function: map_params, non_default_params: {language: es}, optional_params: {context: {terms: [Soniox]}, soniox_cleanup: [file]}}
+compare: {ignore: []}
+env: {}

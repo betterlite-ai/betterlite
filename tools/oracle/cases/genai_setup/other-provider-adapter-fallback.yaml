@@ -1,0 +1,15 @@
+kind: helper
+name: genai-setup-other-provider-adapter-fallback
+call:
+  b3483:
+    setups:
+      - model: anthropic/claude-sonnet-4
+        contents: [{role: user, parts: [{text: hi}]}]
+        config: null
+        custom_llm_provider: null
+        tools: null
+        kwargs: {}
+        extra_body: null
+        with_logging: true
+env: {}
+compare: {ignore: []}

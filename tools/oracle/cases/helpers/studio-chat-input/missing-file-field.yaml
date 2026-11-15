@@ -1,0 +1,13 @@
+kind: helper
+name: studio-chat-input-missing-file-field
+call:
+  studio_chat_input:
+    steps:
+      - op: messages
+        model: gemini-2.5-flash
+        messages:
+          - role: user
+            content:
+              - {type: file}
+env: {}
+compare: {ignore: []}

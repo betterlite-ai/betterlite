@@ -1,0 +1,30 @@
+kind: helper
+name: strip-assistant-internal-fields
+call:
+  b5831:
+    model_cost: {}
+    chat_supported: []
+    chat_map: []
+    chat_messages:
+    - messages:
+      - role: assistant
+        content: hi
+        thinking_blocks:
+        - {type: thinking}
+        provider_specific_fields: {cached: true}
+        reasoning_content: kept
+      - {role: assistant, content: plain}
+      - role: user
+        content: u
+        thinking_blocks: []
+      - role: tool
+        content: t
+        provider_specific_fields: {cached: false}
+    completion: []
+    rerank_requests: []
+    rerank_responses: []
+    cost_categories: []
+    cost_registry: []
+env: {}
+compare:
+  ignore: []
