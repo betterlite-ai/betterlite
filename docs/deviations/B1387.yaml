@@ -1,0 +1,33 @@
+task: B1387
+deviations:
+  - what: A token count in usage_metadata that is negative, larger than u64, or written as a float ends the stream with an error naming the field, where LiteLLM's Usage carries a negative int of any size and reads 4.0 as 4.
+    why: betterlite's usage counts are u64, and docs/compatibility.md makes a value outside the declared type an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L65-L73
+  - what: A failing response body larger than 16 MiB is refused instead of becoming the error message.
+    why: The body is read into memory to build the message, so an unbounded one is a memory-exhaustion input; betterlite caps it at the same 16 MiB its transport caps a body at.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L394-L395
+  - what: The error message is the failing body decoded as text, where LiteLLM raises with str(response.read()), which is Python's repr of the bytes and wraps the text in b'...'.
+    why: betterlite has no bytes repr, and docs/compatibility.md keeps output standard JSON and plain text; the status code and the body text are what a caller acts on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L394-L395
+  - what: A stream line longer than the transport body cap ends the stream with an error naming the limit, where httpx's iter_lines buffers a line of any length.
+    why: An unterminated line grows with the provider's output, so an unbounded one is a memory-exhaustion input; B010's LineDecoder already caps a line for every provider it reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L353
+  - what: A read that waits more than ten minutes for the next body frame ends the stream with a timeout, where LiteLLM's iterator waits on the response for as long as the client does.
+    why: A stalled provider connection would otherwise hold the call and its task forever; betterlite bounds each read and ends the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L135-L143
+  - what: A 3xx, 4xx or 5xx reply at stream open becomes a VertexAgentEngineError carrying the provider's status, where LiteLLM's HTTP handler raises MaskedHTTPStatusError from raise_for_status first, so the wrapper's own status check at https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/transformation.py#L394-L395 only ever sees other 2xx statuses such as 201 and 204.
+    why: A caller that should get the provider's 401 or 400 must not get a status-less error, so betterlite maps the status its transport reports instead of losing it; docs/compatibility.md keeps the status and message a caller acts on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514
+  - what: A read or protocol error after a finish reason ends the stream cleanly for a call made with the synchronous client too, where LiteLLM's synchronous CustomStreamWrapper hands every exception to its fallback handler and raises, and only its asynchronous wrapper finalizes a stream that already saw a finish reason (https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2081-L2097).
+    why: betterlite reads every stream asynchronously and its one reader follows the asynchronous rule, so a call made with the sync client sees the completed stream instead of a wrapped failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1956-L1960
+  - what: Every chunk carries created 0, where LiteLLM's ModelResponseStream stamps the current Unix second when chunk_parser builds the chunk.
+    why: The chunk id is random in both implementations and the creation second comes from the clock, so the tests and oracle cases compare only the projected text, finish reason and usage, with the creation time fixed at 0.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2134-L2135
+kept_bugs:
+  - what: chunk_parser lowercases finish_reason before StreamingChoices maps it, so an uppercase provider reason such as SAFETY reaches the map as "safety" and becomes "stop" instead of "content_filter".
+    why: A working Agent Engine setup sees "stop" for those reasons, so changing it would change what clients receive; rule owned-behavior-is-built keeps the observed answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/agent_engine/sse_iterator.py#L57-L63
+  - what: A line carrying the substring [DONE] becomes the finished chunk whatever else it holds, so a text part whose content is that literal loses its text.
+    why: The generic iterator checks the raw line before the parsed chunk, and a working setup of this adapter relies on the marker ending the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/base_model_iterator.py#L111-L122
