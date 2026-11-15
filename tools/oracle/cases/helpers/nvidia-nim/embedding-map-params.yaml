@@ -1,0 +1,23 @@
+kind: helper
+name: nvidia-nim-embedding-map-params
+call:
+  b5837:
+    kind: embedding_map
+    cases:
+      - non_default: {}
+        optional: {}
+        kwargs: null
+      - non_default: {input_type: query, truncate: END, dimensions: 3}
+        optional: {}
+        kwargs: {other: 1}
+      - non_default: {extra_body: {only: replacement}, user: someone}
+        optional: {}
+        kwargs: {}
+      - non_default: {input_type: query}
+        optional: {extra_body: {mode: kept}}
+        kwargs: null
+      - non_default: {extra_body: 5}
+        optional: {}
+        kwargs: {truncate: END}
+env: {}
+compare: {ignore: []}

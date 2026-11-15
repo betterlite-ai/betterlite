@@ -1,7 +1,7 @@
 id: B8146
 milestone: M11 distribution
 title: "GCP Terraform module: Cloud Run service, load balancer and outputs"
-status: blocked
+status: todo
 depends_on: [B8145, B5071]
 file: tasks/B8146-gcp-service-lb.yaml
 covers:
@@ -16,5 +16,5 @@ parent: B154
 split_from: B154
 resolution: null
 superseded_by: null
-blocked_reason: "waits for Max: the gate has no pinned terraform 1.13.x, and terraform init needs registry network for the aws, google and random providers"
+blocked_reason: null
 pr: null

@@ -12,9 +12,12 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-bedrock = { path = ".." }
+betterlite-tokenizer = { path = "../../betterlite-tokenizer" }
 bytes = "1.12.1"
 libfuzzer-sys = "0.4.9"
+tokio = { version = "=1.53.3", default-features = false, features = ["rt"] }
 
 [[bin]]
 name = "nova_data_url"
@@ -94,6 +97,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bedrock_invoke_events"
+path = "fuzz_targets/bedrock_invoke_events.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "bedrock_other_count_call"
 path = "fuzz_targets/bedrock_other_count_call.rs"
 test = false
@@ -110,6 +120,13 @@ bench = false
 [[bin]]
 name = "bedrock_other_rerank"
 path = "fuzz_targets/bedrock_other_rerank.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_pegasus"
+path = "fuzz_targets/bedrock_pegasus.rs"
 test = false
 doc = false
 bench = false

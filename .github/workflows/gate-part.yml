@@ -208,6 +208,48 @@ jobs:
           node-version: 24.19.0
           package-manager-cache: false
 
+      # the Helm, Terraform and Go tasks check with those toolchains at the versions LiteLLM's own CI pins (Max, 11-15); only a task whose file names one downloads it
+      - name: Find the toolchains the task needs
+        if: matrix.part == 'task' && inputs.task != ''
+        id: toolchains
+        env:
+          TASK: ${{ inputs.task }}
+        run: |
+          file=$(ls .development/tasks/"$TASK"-*.yaml)
+          if grep -q -w helm "$file"; then echo "helm=true" >> "$GITHUB_OUTPUT"; fi
+          if grep -q -w terraform "$file"; then echo "terraform=true" >> "$GITHUB_OUTPUT"; fi
+          if grep -q -E '\bgo (vet|build|test|run)\b|\bgofmt\b' "$file"; then echo "go=true" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Set up Helm
+        if: steps.toolchains.outputs.helm == 'true'
+        uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: "3.11.1"
+
+      # the plugin's release archive with its published checksum, as LiteLLM's helm_unit_test.yml installs it
+      - name: Install helm-unittest
+        if: steps.toolchains.outputs.helm == 'true'
+        run: |
+          curl -fsSLo "$RUNNER_TEMP/helm-unittest.tgz" https://github.com/helm-unittest/helm-unittest/releases/download/v0.8.2/helm-unittest-linux-amd64-0.8.2.tgz
+          echo "56ab3091e6fa52a7c92ee951def9bed957f295d9ce98483aed404e748d7b3a94  $RUNNER_TEMP/helm-unittest.tgz" | sha256sum -c -
+          plugin="$(helm env HELM_PLUGINS)/helm-unittest"
+          mkdir -p "$plugin"
+          tar -xzf "$RUNNER_TEMP/helm-unittest.tgz" -C "$plugin"
+
+      - name: Set up Terraform
+        if: steps.toolchains.outputs.terraform == 'true'
+        uses: hashicorp/setup-terraform@b9cd54a3c349d3f38e8881555d616ced269862dd # v3.1.2
+        with:
+          terraform_version: 1.13.3
+          terraform_wrapper: false
+
+      - name: Set up Go
+        if: steps.toolchains.outputs.go == 'true'
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version: 1.25.0
+          cache: false
+
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
         if: github.event_name != 'pull_request' || inputs.task != ''

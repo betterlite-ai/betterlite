@@ -1,0 +1,21 @@
+task: B1436
+deviations:
+  - what: A tool content list part carrying cache_control is dumped after the parent transform strips that key, while LiteLLM dumps it as sent.
+    why: betterlite applies the cleanup to the body the shared parent request transform already stripped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/chat/transformation.py#L147-L188
+  - what: A rerank score outside exact decimal representation falls back to the supplied response instead of returning a rounded float.
+    why: The B1013 rerank records keep scores as exact decimals, so the conversion refuses the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L196-L211
+  - what: A non-string detail.error in an error body keeps the original message instead of being stored in the typed message field.
+    why: LiteLLM's BaseLLMException.message is declared str, so the selection failure is swallowed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L252-L270
+  - what: A rerank body or error message past max_body_bytes is left unparsed, so the response keeps the supplied model_response and the error keeps the original message, while LiteLLM parses any length.
+    why: The bounded-inputs rule caps untrusted JSON parsing, and both decoders take the limit from their caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L183-L184
+  - what: A tool content part whose caller put another key before type is dumped with type first and its other keys sorted, while LiteLLM's json.dumps keeps the caller's exact order.
+    why: betterlite parses messages into typed parts with type as a named field, and the parent transform passes them through serde_json::Value, whose maps sort keys, so neither the position of type nor the order of the other keys is kept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/chat/transformation.py#L150-L150
+kept_bugs:
+  - what: A malformed rerank body, or a post_call hook that raises, returns the supplied model_response with null id, results and meta instead of an error.
+    why: LiteLLM swallows every exception in that block and falls back, and a working setup relies on a provider body quirk never failing the call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/deepinfra/rerank/transformation.py#L227-L241

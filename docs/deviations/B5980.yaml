@@ -1,0 +1,11 @@
+task: B5980
+deviations:
+  - what: When no key, headers or base resolve, betterlite does not try Databricks unified auth (profiles, ~/.databrickscfg, Azure CLI, cloud metadata). It raises the same 400 DatabricksError that LiteLLM raises when databricks-sdk is not installed.
+    why: There is no Databricks SDK for Rust that passes deny.toml. A user who runs LiteLLM with the SDK installed and relies on it must set DATABRICKS_API_BASE and a key, or the OAuth M2M variables, in betterlite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L297-L306
+  - what: An OAuth token reply with status 200 whose body has no access_token (or is not JSON) becomes DatabricksError 500 with a message that names the missing field.
+    why: LiteLLM lets a raw KeyError or JSON error escape from response.json()["access_token"], which the proxy turns into a generic 500. A typed error carries the same status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/common_utils.py#L261-L262
+  - what: The embedding config holds its instruction on the value, not on the class.
+    why: LiteLLM writes constructor arguments onto the class, so one call changes every later instance. Rust has no shared class state, and the config sections own settings.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/embed/transformation.py#L18-L22

@@ -1,0 +1,11 @@
+kind: helper
+name: get-query-help-no-master-key-503
+call:
+  b3867:
+    request:
+      method: GET
+      path: /v1/traces/query/help
+    auth: {user_role: proxy_admin, team_id: team-1, token: hash-1, org_id: org-1}
+    tracing: true
+env: {}
+compare: {ignore: []}

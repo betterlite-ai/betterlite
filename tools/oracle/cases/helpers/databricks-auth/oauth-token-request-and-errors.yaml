@@ -1,0 +1,32 @@
+kind: helper
+name: databricks-oauth-token-request-and-errors
+call:
+  b5980:
+    function: validate
+    env:
+      client_id: client-id
+      client_secret: client-secret
+    cases:
+      - api_base: https://adb-1.databricks.net/serving-endpoints?q=1
+        oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+      - api_base: https://adb-1.databricks.net/x
+        oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+      - api_base: https://adb-1.databricks.net:8443/base
+        oauth:
+          status: 200
+          body: '{"access_token":"oauth-token"}'
+      - api_base: https://adb-1.databricks.net/x
+        oauth:
+          status: 401
+          body: denied
+      - api_base: https://adb-1.databricks.net/x
+        oauth:
+          transport: connection refused
+env:
+  DATABRICKS_CLIENT_ID: client-id
+  DATABRICKS_CLIENT_SECRET: client-secret
+compare: {ignore: []}

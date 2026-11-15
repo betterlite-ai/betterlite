@@ -1,0 +1,7 @@
+kind: helper
+name: store-type-endpoints
+call:
+  foundry_vector_stores:
+    store_type_endpoints: {}
+env: {}
+compare: {ignore: []}
