@@ -16,7 +16,7 @@ use betterlite_config::sections::settings::JsonValue;
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::errors::backend;
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use chrono::{DateTime, FixedOffset};
+use chrono::{DateTime, FixedOffset, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -24,7 +24,8 @@ use serde_json::json;
 use tokio_postgres::NoTls;
 
 use self::support::{
-    CollectingSpawner, FixedClock, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry,
+    CollectingSpawner, FixedClock, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry, instance,
+    recorder,
 };
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
@@ -32,9 +33,10 @@ use crate::audit_events::callbacks::{
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::{AuditLogRecord, payload_text};
-use crate::audit_events::settings::ConfiguredAuditSettings;
+use crate::audit_events::settings::{AuditSettings, ConfiguredAuditSettings};
 use crate::audit_events::sink::{
-    AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
+    AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
+    SystemAuditClock,
 };
 
 const SCHEMA: &str = r#"
@@ -180,6 +182,49 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
 fn masked(text: Option<String>) -> JsonValue {
     let text = text.unwrap();
     serde_json::from_str(&text).unwrap()
+}
+
+#[test]
+fn audit_configured_settings_forward_the_policy() {
+    let disabled = ConfiguredAuditSettings {
+        config: Settings {
+            store_audit_logs: Some(false),
+            ..Settings::default()
+        },
+        callbacks: Vec::new(),
+    };
+    assert!(!disabled.is_audit_logging_enabled(None));
+    assert!(!disabled.is_audit_logging_enabled(Some(false)));
+    let enabled = ConfiguredAuditSettings {
+        config: Settings::default(),
+        callbacks: Vec::new(),
+    };
+    assert!(enabled.is_audit_logging_enabled(None));
+    assert!(enabled.is_audit_logging_enabled(Some(true)));
+}
+
+#[test]
+fn audit_configured_settings_expose_the_callbacks() {
+    let callback = recorder("configured", false);
+    let settings = ConfiguredAuditSettings {
+        config: Settings {
+            s3_audit_callback_params: Some(json!({"bucket_name": "audit-bucket"})),
+            ..Settings::default()
+        },
+        callbacks: vec![instance(callback)],
+    };
+    assert_eq!(settings.audit_log_callbacks().len(), 1);
+    assert_eq!(
+        settings.s3_audit_callback_params().cloned(),
+        Some(json!({"bucket_name": "audit-bucket"}))
+    );
+}
+
+#[test]
+fn audit_system_clock_is_current() {
+    let before = Utc::now().fixed_offset();
+    let now = SystemAuditClock.now();
+    assert!((now - before).num_seconds().abs() < 60);
 }
 
 #[tokio::test]

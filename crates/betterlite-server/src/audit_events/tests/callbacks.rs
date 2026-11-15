@@ -1,16 +1,19 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::json;
+use tokio_util::task::TaskTracker;
 
 use super::support::{
     CollectingSpawner, DroppingSpawner, RecordingCallback, SAMPLE_TIMESTAMP, TestRegistry, capture,
     plain_record, recorder, sample_record,
 };
 use crate::audit_events::callbacks::{
-    AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
+    AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackFuture, AuditLogCallback,
+    AuditTaskSpawner, TrackerSpawner,
 };
 use crate::audit_events::payload::build_audit_log_payload;
 
@@ -33,6 +36,23 @@ fn register(registry: &TestRegistry, name: &str, callback: Arc<RecordingCallback
         .lock()
         .unwrap()
         .insert(name.to_owned(), erased);
+}
+
+#[tokio::test]
+async fn audit_tracker_spawner_runs_the_task() {
+    let tracker = TaskTracker::new();
+    let spawner = TrackerSpawner {
+        tasks: tracker.clone(),
+    };
+    let ran = Arc::new(AtomicBool::new(false));
+    let flag = ran.clone();
+    let task: AuditCallbackFuture = Box::pin(async move {
+        flag.store(true, Ordering::SeqCst);
+    });
+    spawner.spawn(task);
+    tracker.close();
+    tracker.wait().await;
+    assert!(ran.load(Ordering::SeqCst));
 }
 
 #[tokio::test]

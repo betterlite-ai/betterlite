@@ -1,10 +1,12 @@
 #![cfg(test)]
 
 use betterlite_config::sections::settings::JsonValue;
+use chrono::DateTime;
 use serde_json::json;
 
 use crate::audit_events::record::{
     AuditRecordError, MAX_AUDIT_RECORD_BYTES, MAX_AUDIT_RECORD_DEPTH, decode_audit_record,
+    json_timestamp,
 };
 
 const RECORD: &str = r#"{"id": "audit-1", "updated_at": "2026-01-02T03:04:05.123456+00:00", "action": "updated", "table_name": "LiteLLM_TeamTable", "object_id": "team-1"}"#;
@@ -81,6 +83,32 @@ fn audit_changed_by_cast() {
         let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
         assert_eq!(decoded.changed_by.as_deref(), expected);
     }
+}
+
+#[test]
+fn audit_changed_by_api_key_field() {
+    let mut given: JsonValue = serde_json::from_str(RECORD).unwrap();
+    given["changed_by_api_key"] = json!("sk-key");
+    let decoded = decode_audit_record(given.to_string().as_bytes()).unwrap();
+    assert_eq!(decoded.changed_by_api_key.as_deref(), Some("sk-key"));
+    given["changed_by_api_key"] = json!(7);
+    let error = decode_audit_record(given.to_string().as_bytes()).unwrap_err();
+    assert!(matches!(
+        error,
+        AuditRecordError::FieldType {
+            field: "changed_by_api_key"
+        }
+    ));
+}
+
+#[test]
+fn audit_json_timestamp_formats_the_zone() {
+    let utc = DateTime::parse_from_rfc3339("2026-01-02T03:04:05+00:00").unwrap();
+    assert_eq!(json_timestamp(utc), "2026-01-02T03:04:05Z");
+    let micros = DateTime::parse_from_rfc3339("2026-01-02T03:04:05.123456Z").unwrap();
+    assert_eq!(json_timestamp(micros), "2026-01-02T03:04:05.123456Z");
+    let offset = DateTime::parse_from_rfc3339("2026-01-02T05:04:05.100000+02:00").unwrap();
+    assert_eq!(json_timestamp(offset), "2026-01-02T05:04:05.100000+02:00");
 }
 
 fn masked_record(before_value: JsonValue, updated_values: JsonValue) -> JsonValue {
@@ -185,6 +213,19 @@ fn audit_invalid_record_bounds() {
         decode_audit_record(deep.as_bytes()),
         Err(AuditRecordError::TooDeep)
     ));
+    let nested = format!(
+        "{}{}{}",
+        "{\"k\":".repeat(MAX_AUDIT_RECORD_DEPTH - 1),
+        "null",
+        "}".repeat(MAX_AUDIT_RECORD_DEPTH - 1)
+    );
+    let at_depth = format!(
+        "{{\"id\":\"a\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"action\":\"updated\",\"table_name\":\"LiteLLM_TeamTable\",\"object_id\":\"t\",\"before_value\":{nested}}}"
+    );
+    assert!(decode_audit_record(at_depth.as_bytes()).is_ok());
+    let mut at_size = record_text("updated", "LiteLLM_TeamTable").into_bytes();
+    at_size.resize(MAX_AUDIT_RECORD_BYTES, b' ');
+    assert!(decode_audit_record(&at_size).is_ok());
     let oversized = vec![b' '; MAX_AUDIT_RECORD_BYTES + 1];
     assert!(matches!(
         decode_audit_record(&oversized),
