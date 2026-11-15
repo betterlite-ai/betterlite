@@ -23,7 +23,7 @@ pub(super) fn parsed_chunks() {
     };
     assert_eq!(parsed, expected);
     let other = chunk(r#"{"completion":5,"index":3,"stop_reason":"max_tokens"}"#);
-    let expected = GenericChunk {
+    let expected_other = GenericChunk {
         text: String::new(),
         tool_use: None,
         is_finished: true,
@@ -32,7 +32,7 @@ pub(super) fn parsed_chunks() {
         index: Some(3),
         provider_specific_fields: None,
     };
-    assert_eq!(chunk_parser(&other).unwrap(), expected);
+    assert_eq!(chunk_parser(&other).unwrap(), expected_other);
     assert_eq!(chunk_parser(&chunk("{}")).unwrap().text, "");
     let null_text = chunk(r#"{"completion":null}"#);
     assert_eq!(chunk_parser(&null_text).unwrap().text, "");

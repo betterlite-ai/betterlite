@@ -45,6 +45,7 @@ pub(super) fn custom_entries_require_every_key() {
         r#"{"roles":{},"final_prompt_value":""}"#,
         r#"{"initial_prompt_value":"","final_prompt_value":""}"#,
     ] {
-        assert!(serde_json::from_str::<CustomPromptEntry>(incomplete).is_err());
+        let error = serde_json::from_str::<CustomPromptEntry>(incomplete).unwrap_err();
+        assert!(error.to_string().contains("missing field"), "{incomplete}");
     }
 }

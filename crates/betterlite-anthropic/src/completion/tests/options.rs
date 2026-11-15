@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::anthropic_completion::OptionValues;
 use indexmap::IndexMap;
 
+use crate::completion::error::CompletionError;
 use crate::completion::options::{SUPPORTED_OPENAI_PARAMS, map_openai_params, resolve_defaults};
 use crate::completion::prompt::PromptSource;
 use crate::completion::request::transform_request;
@@ -56,7 +57,8 @@ pub(super) fn stop_params() {
     let stops = map_openai_params(&listed, IndexMap::new(), false).unwrap();
     assert_eq!(stops, object(r#"{"stop_sequences":["a","b"]}"#));
     let invalid = object(r#"{"stop":["a",1]}"#);
-    assert!(map_openai_params(&invalid, IndexMap::new(), false).is_err());
+    let error = map_openai_params(&invalid, IndexMap::new(), false).unwrap_err();
+    assert!(matches!(error, CompletionError::Options(_)));
 }
 
 pub(super) async fn request_body() {
@@ -69,8 +71,9 @@ pub(super) async fn request_body() {
     };
     let unset = resolve_defaults(&OptionValues::default(), &OptionValues::default(), 4096);
     let messages = user_messages();
-    let body = transform_request(&source, "claude-2", &messages, IndexMap::new(), &unset).await;
-    let body = body.unwrap();
+    let body = transform_request(&source, "claude-2", &messages, IndexMap::new(), &unset)
+        .await
+        .unwrap();
     let keys = body.keys().map(String::as_str).collect::<Vec<_>>();
     assert_eq!(keys, ["model", "prompt", "max_tokens_to_sample"]);
     let prompt = serde_json::to_string(USER_PROMPT).unwrap();
@@ -89,15 +92,15 @@ pub(super) async fn request_defaults() {
     let deployment = OptionValues {
         max_tokens_to_sample: Some(256),
         stop_sequences: None,
-        temperature: Some(0.25),
+        temperature: Some(0.25_f64),
         top_p: None,
         top_k: None,
         metadata: None,
     };
     let global = OptionValues {
         max_tokens_to_sample: Some(512),
-        temperature: Some(0.75),
-        top_p: Some(0.5),
+        temperature: Some(0.75_f64),
+        top_p: Some(0.5_f64),
         top_k: Some(40),
         stop_sequences: Some(vec!["STOP".to_owned()]),
         metadata: Some(object(r#"{"user_id":"configured"}"#)),
@@ -105,8 +108,9 @@ pub(super) async fn request_defaults() {
     let defaults = resolve_defaults(&deployment, &global, 4096);
     let own = object(r#"{"top_k":7,"model":"override"}"#);
     let messages = user_messages();
-    let body = transform_request(&source, "claude-2", &messages, own, &defaults).await;
-    let body = body.unwrap();
+    let body = transform_request(&source, "claude-2", &messages, own, &defaults)
+        .await
+        .unwrap();
     let prompt = serde_json::to_string(USER_PROMPT).unwrap();
     let sent = format!(
         r#"{{"model":"override","prompt":{prompt},"top_k":7,"max_tokens_to_sample":256,"stop_sequences":["STOP"],"temperature":0.25,"top_p":0.5,"metadata":{{"user_id":"configured"}}}}"#

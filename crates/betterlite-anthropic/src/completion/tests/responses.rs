@@ -52,8 +52,9 @@ fn failure(result: Result<ChatResponse, CompletionError>) -> (u16, String) {
 
 pub(super) async fn completion_replaces_content() {
     let none = BTreeMap::new();
-    let done = answer(&none, 200, HELLO_WORLD, blank_response(Some("old"))).await;
-    let done = done.unwrap();
+    let done = answer(&none, 200, HELLO_WORLD, blank_response(Some("old")))
+        .await
+        .unwrap();
     let choice = &done.choices[0];
     assert_eq!(choice.message.content.as_deref(), Some("hello world"));
     assert_eq!(choice.finish_reason.as_deref(), Some("stop_sequence"));
@@ -77,16 +78,17 @@ pub(super) async fn empty_completion_keeps_content() {
         EMPTY_COMPLETION,
         blank_response(Some("hello world")),
     )
-    .await;
-    let kept = kept.unwrap();
+    .await
+    .unwrap();
     assert_eq!(
         kept.choices[0].message.content.as_deref(),
         Some("hello world")
     );
     assert_eq!(kept.choices[0].finish_reason, None);
     assert_eq!(kept.usage.completion_tokens, 2);
-    let unset = answer(&none, 200, EMPTY_COMPLETION, blank_response(None)).await;
-    let unset = unset.unwrap();
+    let unset = answer(&none, 200, EMPTY_COMPLETION, blank_response(None))
+        .await
+        .unwrap();
     assert_eq!(unset.choices[0].message.content, None);
     assert_eq!(unset.usage.completion_tokens, 0);
 }
@@ -121,11 +123,11 @@ pub(super) async fn failures() {
     let html = "<html>bad gateway</html>";
     let broken = answer(&none, 502, html, blank_response(None)).await;
     assert_eq!(failure(broken), (502, html.to_owned()));
-    let text = r#"{"type":"error","error":"overloaded"}"#;
-    let text = answer(&none, 529, text, blank_response(None)).await;
+    let overloaded = r#"{"type":"error","error":"overloaded"}"#;
+    let text = answer(&none, 529, overloaded, blank_response(None)).await;
     assert_eq!(failure(text), (529, "overloaded".to_owned()));
-    let object = r#"{"error":{"message":"bad"}}"#;
-    let object = answer(&none, 400, object, blank_response(None)).await;
+    let payload = r#"{"error":{"message":"bad"}}"#;
+    let object = answer(&none, 400, payload, blank_response(None)).await;
     assert_eq!(failure(object), (400, r#"{"message":"bad"}"#.to_owned()));
     let missing = answer(&none, 200, "{}", blank_response(None)).await;
     assert!(matches!(missing, Err(CompletionError::MissingField { .. })));

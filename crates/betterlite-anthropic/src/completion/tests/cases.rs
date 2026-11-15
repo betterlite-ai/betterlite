@@ -89,8 +89,8 @@ fn legacy_auth() {
     ]);
     assert_eq!(seen, expected);
     let empty = SecretString::from("");
-    let headers = validate_environment(HeaderMap::new(), Some(&empty)).unwrap();
-    assert_eq!(headers["x-api-key"], "");
+    let empty_headers = validate_environment(HeaderMap::new(), Some(&empty)).unwrap();
+    assert_eq!(empty_headers["x-api-key"], "");
     let missing = validate_environment(HeaderMap::new(), None).unwrap_err();
     assert!(matches!(missing, CompletionError::MissingApiKey));
     assert_eq!(
