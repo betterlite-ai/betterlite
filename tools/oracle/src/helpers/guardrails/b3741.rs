@@ -68,10 +68,13 @@ pub(crate) struct PayloadAssemblyArgs {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case")]
+#[serde(tag = "function")]
 pub(crate) enum Input {
+    #[serde(rename = "agent_365_token_exchange")]
     Agent365TokenExchange(Box<TokenExchangeArgs>),
+    #[serde(rename = "agent_365_assertion")]
     Agent365Assertion(AssertionArgs),
+    #[serde(rename = "agent_365_payload_assembly")]
     Agent365PayloadAssembly(Box<PayloadAssemblyArgs>),
 }
 
