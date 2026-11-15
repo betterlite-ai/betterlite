@@ -140,60 +140,101 @@ fn replays_the_soniox_reply_corpus(#[files("fuzz/corpus/soniox_reply/*")] path: 
     let reply = decode_soniox_reply(200, Headers::new(), &bytes, &ApiLimits::default())
         .expect("a bounded reply decodes");
 
-    match name.as_str() {
+    expect_corpus(&name, &reply);
+}
+
+fn expect_corpus(name: &str, reply: &SonioxReply) {
+    if name.starts_with("resource-") || name == "bom.json" {
+        expect_resource(name, reply);
+        return;
+    }
+    if name.starts_with("transcript-") {
+        expect_transcript(name, reply);
+        return;
+    }
+    if name.starts_with("status-") {
+        expect_status(name, reply);
+        return;
+    }
+    expect_text(name, reply);
+}
+
+fn expect_resource(name: &str, reply: &SonioxReply) {
+    match name {
         "resource-ok.json" => {
-            assert_eq!(identified_resource(&reply).expect("the id").id, "tx_1");
+            assert_eq!(identified_resource(reply).expect("the id").id, "tx_1");
         }
         "resource-missing-id.json" => {
             assert!(matches!(
-                identified_resource(&reply),
+                identified_resource(reply),
                 Err(ReplyError::Missing { .. })
             ));
         }
         "resource-malformed-id.json" => {
             assert!(matches!(
-                identified_resource(&reply),
+                identified_resource(reply),
                 Err(ReplyError::Shape { .. })
             ));
         }
+        "bom.json" => {
+            assert_eq!(identified_resource(reply).expect("the id").id, "tx_bom");
+        }
+        other => panic!("the seed {other} has no expected reply"),
+    }
+}
+
+fn expect_transcript(name: &str, reply: &SonioxReply) {
+    match name {
         "transcript-ok.json" => {
-            let decoded = transcript(&reply, &ApiLimits::default()).expect("the transcript");
+            let decoded = transcript(reply, &ApiLimits::default()).expect("the transcript");
             assert_eq!(decoded.text.as_deref(), Some("hello"));
             assert_eq!(decoded.tokens.len(), 1);
         }
         "transcript-null-tokens.json" => {
-            let decoded = transcript(&reply, &ApiLimits::default()).expect("the transcript");
+            let decoded = transcript(reply, &ApiLimits::default()).expect("the transcript");
             assert!(decoded.tokens.is_empty());
             assert_eq!(decoded.text.as_deref(), Some("hello"));
         }
         "transcript-malformed-tokens.json" => {
             assert!(matches!(
-                transcript(&reply, &ApiLimits::default()),
+                transcript(reply, &ApiLimits::default()),
                 Err(ReplyError::Field { .. })
             ));
         }
         "transcript-tokens-not-a-list.json" => {
             assert!(matches!(
-                transcript(&reply, &ApiLimits::default()),
+                transcript(reply, &ApiLimits::default()),
                 Err(ReplyError::Shape { .. })
             ));
         }
+        other => panic!("the seed {other} has no expected reply"),
+    }
+}
+
+fn expect_status(name: &str, reply: &SonioxReply) {
+    match name {
         "status-fields.json" => {
-            let meta = transcription_meta(&reply).expect("the meta");
+            let meta = transcription_meta(reply).expect("the meta");
             assert_eq!(meta.status.as_deref(), Some("completed"));
             assert_eq!(meta.audio_duration_ms, Some(json!(1500)));
         }
         "status-wrong-typed.json" => {
             assert!(matches!(
-                transcription_meta(&reply),
+                transcription_meta(reply),
                 Err(ReplyError::Shape { .. })
             ));
         }
+        other => panic!("the seed {other} has no expected reply"),
+    }
+}
+
+fn expect_text(name: &str, reply: &SonioxReply) {
+    match name {
         "error-object.json" => {
-            assert_eq!(provider_message(&reply), "quota");
+            assert_eq!(provider_message(reply), "quota");
         }
         "error-non-object.json" => {
-            assert_eq!(provider_message(&reply), reply.text);
+            assert_eq!(provider_message(reply), reply.text);
         }
         "scalar.json" => {
             assert!(reply.payload.is_none());
@@ -201,9 +242,6 @@ fn replays_the_soniox_reply_corpus(#[files("fuzz/corpus/soniox_reply/*")] path: 
         }
         "array.json" => {
             assert!(reply.payload.is_none());
-        }
-        "bom.json" => {
-            assert_eq!(identified_resource(&reply).expect("the id").id, "tx_bom");
         }
         "invalid-utf8.bin" => {
             assert!(reply.payload.is_none());

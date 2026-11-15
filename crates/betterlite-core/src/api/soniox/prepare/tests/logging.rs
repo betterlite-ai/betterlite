@@ -16,6 +16,7 @@ use betterlite_openai::api::audio_file_input::AudioFile;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::DateTime;
+use indexmap::IndexMap;
 use rstest::rstest;
 
 use super::super::logging::{
@@ -357,7 +358,10 @@ fn records_the_post_call_through_b249() {
         );
     }
 
-    let details = &state.model_call_details;
+    assert_post_call_details(&state.model_call_details);
+}
+
+fn assert_post_call_details(details: &IndexMap<String, Json>) {
     assert_eq!(
         details.get("log_event_type"),
         Some(&Json::Text(String::from("post_api_call")))
