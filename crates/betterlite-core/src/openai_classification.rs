@@ -49,16 +49,16 @@ pub(crate) fn parse_route(route: &str) -> ParsedRoute {
         Ok(url) => netloc_after_scheme(&cleaned, &url).then_some(url),
         Err(_failure) => scheme_relative(&cleaned),
     };
-    match parsed {
-        Some(url) => ParsedRoute {
-            hostname: url.host_str().map(str::to_owned),
-            path: url.path().to_owned(),
-        },
-        None => ParsedRoute {
+    parsed.map_or_else(
+        || ParsedRoute {
             hostname: None,
             path: String::new(),
         },
-    }
+        |url| ParsedRoute {
+            hostname: url.host_str().map(str::to_owned),
+            path: url.path().to_owned(),
+        },
+    )
 }
 
 // The source compares hostnames as given; urlparse has already lowercased the one it reads off a URL
@@ -73,14 +73,13 @@ fn hostname_matches(hostname: &str, suffixes: &[&str]) -> bool {
 
 #[must_use]
 pub fn is_openai_compatible_host(hostname: Option<&str>) -> bool {
-    let Some(hostname) = hostname else {
+    let Some(name) = hostname else {
         return false;
     };
-    if hostname.is_empty() {
+    if name.is_empty() {
         return false;
     }
-    hostname_matches(hostname, &OPENAI_HOSTNAMES)
-        || hostname_matches(hostname, &AZURE_OPENAI_HOSTNAMES)
+    hostname_matches(name, &OPENAI_HOSTNAMES) || hostname_matches(name, &AZURE_OPENAI_HOSTNAMES)
 }
 
 #[must_use]

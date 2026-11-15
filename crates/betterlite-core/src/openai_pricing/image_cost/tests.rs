@@ -67,7 +67,9 @@ fn catalog() -> Catalog {
 fn body(json: &str) -> IndexMap<String, Json> {
     match serde_json::from_str::<Json>(json).unwrap() {
         Json::Object(fields) => fields,
-        _ => panic!("the fixture body must be an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the fixture body must be an object")
+        }
     }
 }
 
@@ -86,25 +88,25 @@ fn decimal(text: &str) -> Decimal {
 }
 
 #[rstest]
-#[case::string_count(r#"{"n":"2"}"#, 2)]
-#[case::integer_count(r#"{"n":2}"#, 2)]
-#[case::float_count(r#"{"n":2.9}"#, 2)]
-#[case::negative_float(r#"{"n":-2.9}"#, -2)]
-#[case::huge_number(r#"{"n":1e300}"#, 1)]
-#[case::padded_string(r#"{"n":" 2 "}"#, 2)]
-#[case::negative(r#"{"n":-1}"#, -1)]
-#[case::absent("{}", 1)]
-#[case::null(r#"{"n":null}"#, 1)]
-#[case::unparsable(r#"{"n":"two"}"#, 1)]
-#[case::float_string(r#"{"n":"2.0"}"#, 1)]
-#[case::empty_string(r#"{"n":""}"#, 1)]
-#[case::bool_true(r#"{"n":true}"#, 1)]
-#[case::bool_false(r#"{"n":false}"#, 0)]
-#[case::list(r#"{"n":[2]}"#, 1)]
+#[case::string_count(r#"{"n":"2"}"#, 2_i32)]
+#[case::integer_count(r#"{"n":2}"#, 2_i32)]
+#[case::float_count(r#"{"n":2.9}"#, 2_i32)]
+#[case::negative_float(r#"{"n":-2.9}"#, -2_i32)]
+#[case::huge_number(r#"{"n":1e300}"#, 1_i32)]
+#[case::padded_string(r#"{"n":" 2 "}"#, 2_i32)]
+#[case::negative(r#"{"n":-1}"#, -1_i32)]
+#[case::absent("{}", 1_i32)]
+#[case::null(r#"{"n":null}"#, 1_i32)]
+#[case::unparsable(r#"{"n":"two"}"#, 1_i32)]
+#[case::float_string(r#"{"n":"2.0"}"#, 1_i32)]
+#[case::empty_string(r#"{"n":""}"#, 1_i32)]
+#[case::bool_true(r#"{"n":true}"#, 1_i32)]
+#[case::bool_false(r#"{"n":false}"#, 0_i32)]
+#[case::list(r#"{"n":[2]}"#, 1_i32)]
 fn generation_count(#[case] body_json: &str, #[case] images: i32) {
     let request_body = body(body_json);
     let cost = image_generation_cost(&request(MODEL, &request_body), &catalog());
-    let expected = decimal("0.04") * Decimal::from(images);
+    let expected = decimal("0.04").checked_mul(Decimal::from(images)).unwrap();
     assert_eq!(cost, expected);
 }
 

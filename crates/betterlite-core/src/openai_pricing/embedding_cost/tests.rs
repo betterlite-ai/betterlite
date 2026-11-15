@@ -58,12 +58,15 @@ impl RecordingCost {
 
 impl CompletionCost for RecordingCost {
     fn completion_cost(&self, request: &CompletionCostRequest<'_>) -> Result<Decimal, CostError> {
-        self.observed.lock().unwrap().push(Observed {
-            model: request.model.to_owned(),
-            provider: request.custom_llm_provider.to_owned(),
-            call_type: request.call_type,
-            embedding: matches!(request.response, CostedResponse::Embedding(_)),
-        });
+        self.observed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(Observed {
+                model: request.model.to_owned(),
+                provider: request.custom_llm_provider.to_owned(),
+                call_type: request.call_type,
+                embedding: matches!(request.response, CostedResponse::Embedding(_)),
+            });
         if self.fails {
             return Err(CostError::UnknownModel(TokenCostError::UnknownModel));
         }

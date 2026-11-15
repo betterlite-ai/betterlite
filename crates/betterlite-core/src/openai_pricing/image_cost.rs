@@ -58,7 +58,10 @@ fn calculated_cost(
     let image_count = match request.request_body.get("n") {
         Some(Json::Number(number)) => number
             .as_i64()
-            .or_else(|| number.as_f64().and_then(|float| float.trunc().to_i64()))
+            .or_else(|| {
+                let float = number.as_f64()?;
+                float.trunc().to_i64()
+            })
             .unwrap_or(1),
         Some(Json::Bool(false)) => 0,
         Some(Json::Text(text)) => text.trim().parse::<i64>().unwrap_or(1),
