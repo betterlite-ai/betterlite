@@ -127,7 +127,10 @@ fn ceiling_validation_rejects_a_bool(#[case] value: &str) {
 #[case::negative("-2", "below the minimum")]
 #[case::fraction("1.5", "max_agentic_loops")]
 #[case::text("five", "max_agentic_loops")]
-#[case::empty_text("\"\"", "max_agentic_loops")]
+#[case::empty_text(
+    "\"\"",
+    "litellm_settings.websearch_interception_params.max_agentic_loops"
+)]
 fn ceiling_validation_rejects_a_value(#[case] value: &str, #[case] expected: &str) {
     let error = load_error(&params(&format!("    max_agentic_loops: {value}\n")), &[]);
     assert!(error.contains(expected), "{error}");
