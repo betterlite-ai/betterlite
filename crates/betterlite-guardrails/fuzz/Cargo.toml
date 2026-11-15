@@ -150,3 +150,31 @@ path = "fuzz_targets/zscaler_policy_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "akto_response"
+path = "fuzz_targets/akto_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "compresr_response"
+path = "fuzz_targets/compresr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "singulr_response"
+path = "fuzz_targets/singulr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "cato_response"
+path = "fuzz_targets/cato_response.rs"
+test = false
+doc = false
+bench = false

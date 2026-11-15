@@ -1,0 +1,19 @@
+kind: helper
+name: openai-realtime-handshake-seed
+call:
+  openai_realtime:
+    kind: handshake
+    api_key: sk-realtime-1234567890
+    model: gpt-4o-realtime-preview
+    scope_headers: []
+    ssl_verification: enabled
+    max_message_size_bytes: 4096
+    openai_api_base: null
+    openai_api_key: null
+    queries: []
+    failures:
+      - {status_code: 401, message: "", close_error: null}
+      - {status_code: 429, message: "", close_error: null}
+    http_setups: []
+env: {}
+compare: {ignore: []}
