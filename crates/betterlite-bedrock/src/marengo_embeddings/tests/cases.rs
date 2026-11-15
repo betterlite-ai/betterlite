@@ -216,6 +216,8 @@ const WRAPPED_VIDEO: &str = r#"{
         "startSec": 1,
         "lengthSec": 2,
         "textTruncate": "none",
+        "useFixedLengthSec": 5,
+        "minClipSec": 6,
         "segmentation": {"method": "fixed", "fixed": {"durationSec": 4}},
         "endSec": 3,
         "embeddingType": ["fused_embedding"],
@@ -231,6 +233,8 @@ const WRAPPED_VIDEO: &str = r#"{
         "startSec": 1,
         "lengthSec": 2,
         "textTruncate": "none",
+        "useFixedLengthSec": 5,
+        "minClipSec": 6,
         "segmentation": {"method": "fixed", "fixed": {"durationSec": 4}},
         "endSec": 3,
         "embeddingType": ["fused_embedding"],
@@ -547,7 +551,35 @@ const WRAPPED_VIDEO: &str = r#"{
     r#"{"model": "amazon.marengo-embed-3-0-v1:0", "input": "hello", "inference": {"textTruncate": "none"}, "drop_params": true}"#,
     Check::Request(r#"{"inputType": "text", "text": {"inputText": "hello"}}"#)
 )]
+#[case::marengo_s3_video_owner(
+    r#"{"input": "s3://bucket/key.png", "inference": {"inputType": "image", "bucketOwner": null}}"#,
+    Check::Request(
+        r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#
+    )
+)]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
     let scenario: Scenario = serde_json::from_str(scenario).unwrap();
     verify(&scenario, &check);
+}
+
+#[test]
+fn billed_usage_without_batch_is_empty() {
+    let usage = billed_usage(None).unwrap();
+    assert_eq!(
+        to_field(&usage),
+        expected_value(
+            r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": null}"#
+        )
+    );
+}
+
+#[test]
+fn async_response_without_invocation_arn_is_empty() {
+    let response = transform_async_response(&Params::new(), "");
+    assert_eq!(
+        to_field(&response),
+        expected_value(
+            r#"{"data": [{"embedding": [], "index": 0, "object": "embedding"}], "model": "", "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": null}, "invocation_arn": ""}"#
+        )
+    );
 }
