@@ -11,6 +11,7 @@ use crate::limiter_records::{
     RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitedModel,
 };
 
+use super::key_owns_tpm::key_owns_tpm_from_request_metadata;
 use super::{ModelDescriptorBuilder, ModelDescriptorsError};
 
 struct Aliases(BTreeMap<String, String>);
@@ -420,11 +421,8 @@ fn key_owns_tpm_reads_the_key_metadata() {
     let request_metadata =
         metadata(r#"{"user_api_key_metadata": {"model_tpm_limit": {"gpt-4": 0}}}"#);
     assert!(
-        ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
-            &request_metadata,
-            Some(&model("gpt4", "gpt-4"))
-        )
-        .expect("the key view builds")
+        key_owns_tpm_from_request_metadata(&request_metadata, Some(&model("gpt4", "gpt-4")))
+            .expect("the key view builds")
     );
 }
 
@@ -434,11 +432,8 @@ fn key_owns_tpm_reads_the_model_max_budget() {
         r#"{"user_api_key_model_max_budget": {"gpt-4": {"tpm_limit": 3, "rpm_limit": 1}}}"#,
     );
     assert!(
-        ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
-            &request_metadata,
-            Some(&model("gpt4", "gpt-4"))
-        )
-        .expect("the key view builds")
+        key_owns_tpm_from_request_metadata(&request_metadata, Some(&model("gpt4", "gpt-4")))
+            .expect("the key view builds")
     );
 }
 
@@ -447,8 +442,7 @@ fn key_owns_tpm_is_false_without_a_model() {
     let request_metadata =
         metadata(r#"{"user_api_key_metadata": {"model_tpm_limit": {"gpt-4": 1}}}"#);
     assert!(
-        !ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(&request_metadata, None)
-            .expect("no key view is built")
+        !key_owns_tpm_from_request_metadata(&request_metadata, None).expect("no key view is built")
     );
 }
 
@@ -462,21 +456,16 @@ fn key_owns_tpm_is_false_without_a_model() {
 fn key_owns_tpm_treats_missing_none_and_empty_values_as_empty(#[case] fields: &str) {
     let request_metadata = metadata(fields);
     assert!(
-        !ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
-            &request_metadata,
-            Some(&model("gpt4", "gpt-4"))
-        )
-        .expect("the key view builds")
+        !key_owns_tpm_from_request_metadata(&request_metadata, Some(&model("gpt4", "gpt-4")))
+            .expect("the key view builds")
     );
 }
 
 #[test]
 fn key_owns_tpm_rejects_a_value_of_the_wrong_shape() {
     let request_metadata = metadata(r#"{"user_api_key_metadata": "nope"}"#);
-    let outcome = ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
-        &request_metadata,
-        Some(&model("gpt4", "gpt-4")),
-    );
+    let outcome =
+        key_owns_tpm_from_request_metadata(&request_metadata, Some(&model("gpt4", "gpt-4")));
     assert!(matches!(
         outcome,
         Err(ModelDescriptorsError::RequestMetadata(_))

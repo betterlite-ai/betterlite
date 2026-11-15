@@ -4,6 +4,8 @@ use betterlite_auth::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_rate_limit::limiter_records::{ModelGroupResolver, RateLimitedModel};
 use betterlite_rate_limit::model_descriptors::ModelDescriptorBuilder;
+// ast-grep-ignore: no-long-names
+use betterlite_rate_limit::model_descriptors::key_owns_tpm::key_owns_tpm_from_request_metadata;
 use serde::Deserialize;
 use serde_json::json;
 
@@ -108,11 +110,8 @@ fn key_owns_tpm_answer(input: &RequestMetadataInput) -> crate::helpers::HelperRe
         group: entry.group.clone(),
     });
     // ast-grep-ignore: no-long-names
-    let owned = ModelDescriptorBuilder::key_owns_tpm_from_request_metadata(
-        &input.request_metadata,
-        model.as_ref(),
-    )
-    .or_value_error()?;
+    let owned = key_owns_tpm_from_request_metadata(&input.request_metadata, model.as_ref())
+        .or_value_error()?;
     Ok(json!({"owned": owned}))
 }
 

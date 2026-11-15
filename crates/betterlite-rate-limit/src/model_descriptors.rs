@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_auth::auth_limit_inputs::account::account_limits;
 use betterlite_auth::auth_limit_inputs::error::AuthLimitInputsError;
 use betterlite_auth::auth_limit_inputs::key_limits::{
@@ -9,14 +7,14 @@ use betterlite_auth::auth_limit_inputs::key_limits::{
 use betterlite_auth::auth_limit_inputs::metadata_limits::{
     MetadataAccessor, model_limit_from_metadata,
 };
-use betterlite_auth::resolved_key::auth::{AuthError, AuthInput, UserAPIKeyAuth};
-use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_auth::resolved_key::auth::{AuthError, UserAPIKeyAuth};
 
 use crate::limiter_records::{
     ModelGroupResolver, PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY,
     RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitedModel,
 };
 
+pub mod key_owns_tpm;
 mod tests;
 
 // LiteLLM builds descriptor values with an f-string, so an absent id lands in the counter name as this text
@@ -60,11 +58,25 @@ fn inherited_team_limit(
     if key_owns_limit { None } else { team_limit }
 }
 
+fn key_model_limits(
+    auth: &UserAPIKeyAuth,
+    model: &RateLimitedModel,
+) -> Result<(Option<i64>, Option<i64>), ModelDescriptorsError> {
+    let query = LimitQuery {
+        model_name: Some(model.group.as_str()),
+        catalog: None,
+    };
+    let tokens = model.limit_in(get_key_model_tpm_limit(auth, &query)?.as_ref());
+    let requests = model.limit_in(get_key_model_rpm_limit(auth, &query)?.as_ref());
+    Ok((requests, tokens))
+}
+
 #[derive(Clone, Copy)]
 struct ScopeDescriptor<'scope> {
     key: &'scope str,
     id: Option<&'scope str>,
-    limits: (Option<i64>, Option<i64>),
+    requests: Option<i64>,
+    tokens: Option<i64>,
 }
 
 impl ModelDescriptorBuilder {
@@ -107,15 +119,15 @@ impl ModelDescriptorBuilder {
         model: &RateLimitedModel,
         descriptor: ScopeDescriptor<'_>,
     ) {
-        if descriptor.limits.0.is_none() && descriptor.limits.1.is_none() {
+        if descriptor.requests.is_none() && descriptor.tokens.is_none() {
             return;
         }
         let value = format!("{}:{}", descriptor.id.unwrap_or(NONE_TEXT), model.group);
         out.push(self.descriptor(
             descriptor.key,
             value,
-            descriptor.limits.0,
-            descriptor.limits.1,
+            descriptor.requests,
+            descriptor.tokens,
         ));
     }
 
@@ -151,7 +163,8 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key: "model_per_organization",
                     id: account.org_id,
-                    limits: (requests, tokens),
+                    requests,
+                    tokens,
                 },
             );
         }
@@ -167,19 +180,15 @@ impl ModelDescriptorBuilder {
         let Some(model) = self.rated_model(requested_model) else {
             return Ok(());
         };
-        let query = LimitQuery {
-            model_name: Some(model.group.as_str()),
-            catalog: None,
-        };
-        let tokens = model.limit_in(get_key_model_tpm_limit(auth, &query)?.as_ref());
-        let requests = model.limit_in(get_key_model_rpm_limit(auth, &query)?.as_ref());
+        let (requests, tokens) = key_model_limits(auth, &model)?;
         self.push_model_descriptor(
             out,
             &model,
             ScopeDescriptor {
                 key: "model_per_key",
                 id: account_limits(auth).hashed_api_key,
-                limits: (requests, tokens),
+                requests,
+                tokens,
             },
         );
         Ok(())
@@ -194,21 +203,16 @@ impl ModelDescriptorBuilder {
         let Some(model) = self.rated_model(requested_model) else {
             return;
         };
-        let mut limits = [None, None];
-        for (slot, kind) in limits
-            .iter_mut()
-            .zip([ModelRateLimitKey::Rpm, ModelRateLimitKey::Tpm])
-        {
-            *slot = inherited_team_limit(auth, &model, kind);
-        }
-        let [requests, tokens] = limits;
+        let requests = inherited_team_limit(auth, &model, ModelRateLimitKey::Rpm);
+        let tokens = inherited_team_limit(auth, &model, ModelRateLimitKey::Tpm);
         self.push_model_descriptor(
             out,
             &model,
             ScopeDescriptor {
                 key: "model_per_team",
                 id: account_limits(auth).team_id,
-                limits: (requests, tokens),
+                requests,
+                tokens,
             },
         );
     }
@@ -232,7 +236,8 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key: "model_per_project",
                     id: account_limits(auth).project_id,
-                    limits: (requests, tokens),
+                    requests,
+                    tokens,
                 },
             );
         }
@@ -266,34 +271,10 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key,
                     id: Some(project_id),
-                    limits: (None, limit),
+                    requests: None,
+                    tokens: limit,
                 },
             );
         }
-    }
-
-    // ast-grep-ignore: no-long-names
-    pub fn key_owns_tpm_from_request_metadata(
-        request_metadata: &BTreeMap<String, JsonData>,
-        model: Option<&RateLimitedModel>,
-    ) -> Result<bool, ModelDescriptorsError> {
-        let Some(rated) = model else {
-            return Ok(false);
-        };
-        let mut fields = BTreeMap::new();
-        for (field, source) in [
-            ("metadata", "user_api_key_metadata"),
-            ("model_max_budget", "user_api_key_model_max_budget"),
-        ] {
-            let value = match request_metadata.get(source) {
-                None | Some(JsonData::Null) => JsonData::Object(BTreeMap::new()),
-                Some(present) => present.clone(),
-            };
-            fields.insert(field.to_owned(), value);
-        }
-        let key_view = UserAPIKeyAuth::construct(AuthInput::Dict(fields))?;
-        Ok(rated
-            .limit_in(get_key_own_model_rate_limit(&key_view, ModelRateLimitKey::Tpm).as_ref())
-            .is_some())
     }
 }
