@@ -688,6 +688,50 @@ pub(super) fn clear_thinking_injection_limit() {
         ]
     );
 
+    let other = clearing(
+        r#""thinking": {"type": "disabled", "budget_tokens": 5, "display": "summarized"}, "max_tokens": 5000"#,
+    );
+    let (result, request, messages) = ensure(&mut session, &budgets, "fixture-opus-4-5", other);
+    assert_eq!(result.ok(), Some(true));
+    assert_eq!(
+        request,
+        clearing(r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#)
+    );
+    assert_eq!(
+        messages,
+        vec![
+            (
+                Level::DEBUG,
+                format!(
+                    "{PREFIX} replacing thinking={{\"type\":\"disabled\",\"budget_tokens\":5,\"display\":\"summarized\"}} with minimal thinking config"
+                )
+            ),
+            (
+                Level::DEBUG,
+                format!("{PREFIX} injected thinking with budget_tokens=1024")
+            ),
+        ]
+    );
+
+    let (result, request, messages) = ensure(
+        &mut session,
+        &budgets,
+        "fixture-opus-4-5",
+        clearing(r#""thinking": "adaptive", "max_tokens": 5000"#),
+    );
+    assert_eq!(result.ok(), Some(true));
+    assert_eq!(
+        request,
+        clearing(r#""thinking": {"type": "enabled", "budget_tokens": 1024}, "max_tokens": 5000"#)
+    );
+    assert_eq!(
+        messages,
+        vec![(
+            Level::DEBUG,
+            format!("{PREFIX} injected thinking with budget_tokens=1024")
+        )]
+    );
+
     let tight = Settings {
         bedrock_min: 5,
         ..Settings::default()
