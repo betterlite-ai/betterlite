@@ -133,6 +133,29 @@ fn upload_rejects_a_bare_string_body() {
     assert_eq!(error.status_code(), None);
 }
 
+#[test]
+fn uploads_and_lists_resolve_the_api_base_from_the_request_or_settings() {
+    let created = create_upload(
+        &upload(FileData::Direct(FileBody::Bytes(vec![1])), Some("batch")),
+        5,
+        Some("https://mistral.example/v1/"),
+        &settings(None, None),
+    )
+    .expect("an upload");
+    assert_eq!(created.url, "https://mistral.example/v1/files");
+    let (url, query) = list_request(
+        Some("batch"),
+        None,
+        &settings(Some("https://proxy.example/v1"), None),
+    )
+    .expect("a request");
+    assert_eq!(url, "https://proxy.example/v1/files");
+    assert_eq!(
+        query,
+        vec![(String::from("purpose"), String::from("batch"))]
+    );
+}
+
 #[rstest]
 #[case(None, "https://api.mistral.ai/v1/files/file-1", "")]
 #[case(None, "https://api.mistral.ai/v1/files/file-1/content", "/content")]
