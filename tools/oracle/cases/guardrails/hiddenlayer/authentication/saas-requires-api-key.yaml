@@ -1,0 +1,16 @@
+kind: helper
+name: saas-requires-api-key
+call:
+  b3775: {
+      "kind": "hiddenlayer",
+      "version": 1,
+      "saas": true,
+      "api_id": "id",
+      "api_key": null,
+      "timeout": null,
+      "env": {},
+      "tokens": [],
+      "detection": null
+    }
+env: {}
+compare: {ignore: []}
