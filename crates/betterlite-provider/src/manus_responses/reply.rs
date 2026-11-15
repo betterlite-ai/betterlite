@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
@@ -168,10 +170,16 @@ pub(super) fn transform(
     upstream: &ResponsesUpstream,
     logging: &mut ResponsesLogging,
 ) -> Result<ResponsesApiResponse, ManusResponsesError> {
-    let text = String::from_utf8_lossy(&upstream.body).into_owned();
-    record_post_call(logging, &text);
-    let mut fields = parse_fields(upstream, &text)?;
-    convert_created_at_fields(config, &mut fields, upstream, &text)?;
+    let text = from_utf8(&upstream.body).map_err(|source| {
+        ManusResponsesError::Contract(ResponsesContractError::BaseLlm(BaseLlmException {
+            status_code: upstream.status_code,
+            message: format!("the response body is not UTF-8: {source}"),
+            headers: Headers::new(),
+        }))
+    })?;
+    record_post_call(logging, text);
+    let mut fields = parse_fields(upstream, text)?;
+    convert_created_at_fields(config, &mut fields, upstream, text)?;
     insert_defaults(config, &mut fields);
     finish(config, upstream, logging, &fields)
 }

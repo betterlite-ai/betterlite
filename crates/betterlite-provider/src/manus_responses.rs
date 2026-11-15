@@ -80,7 +80,19 @@ macro_rules! unsupported_request {
 }
 
 macro_rules! unsupported_response {
-    ($($name:ident => $result:ty, $operation:literal;)*) => {
+    (
+        streaming => $stream_result:ty, $stream_operation:literal;
+        $($name:ident => $result:ty, $operation:literal;)*
+    ) => {
+        // Manus fakes streaming, so the real chunk transform has no owner until B509 provides it.
+        fn transform_streaming_response(
+            &self,
+            _model: &str,
+            _chunk: &Json,
+            _logging: &mut ResponsesLogging,
+        ) -> Result<$stream_result, Self::Error> {
+            Err(error::ManusResponsesError::UnsupportedOperation { operation: $stream_operation })
+        }
         $(
             fn $name(
                 &self,
@@ -177,20 +189,10 @@ impl ResponsesProviderConfig for ManusResponsesConfig {
     );
 
     unsupported_response!(
+        streaming => ResponsesAPIStreamingResponse, "streaming response";
         transform_delete_response => DeleteResponseResult, "delete response";
         transform_input_items_response => Params, "input items response";
         transform_cancel_response => ResponsesApiResponse, "cancel response";
         transform_compact_response => ResponsesApiResponse, "compact response";
     );
-
-    fn transform_streaming_response(
-        &self,
-        _model: &str,
-        _chunk: &Json,
-        _logging: &mut ResponsesLogging,
-    ) -> Result<ResponsesAPIStreamingResponse, Self::Error> {
-        Err(error::ManusResponsesError::UnsupportedOperation {
-            operation: "streaming response",
-        })
-    }
 }

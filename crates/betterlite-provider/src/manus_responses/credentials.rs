@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_secret_managers::secret_lookup::SecretLookup;
 use secrecy::{ExposeSecret as _, SecretString};
 
@@ -12,7 +14,7 @@ use super::{
 // An empty environment value counts as unset, as docs/compatibility.md requires of every env read.
 pub(super) fn secret_text(
     secrets: &SecretLookup,
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &BTreeMap<String, String>,
     name: &'static str,
 ) -> Result<Option<SecretString>, ManusResponsesError> {
     let value = secrets

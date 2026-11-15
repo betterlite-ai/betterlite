@@ -56,10 +56,9 @@ fn missing_fields_get_the_manus_defaults() {
     assert_eq!(reply.get("reasoning"), Some(&Json::Object(IndexMap::new())));
     assert_eq!(reply.get("text"), Some(&Json::Object(IndexMap::new())));
     assert_eq!(reply.get("output"), Some(&Json::List(Vec::new())));
-    let usage = reply
-        .get("usage")
-        .and_then(Json::as_object)
-        .expect("the default usage stays an object");
+    let Some(Json::Object(usage)) = reply.get("usage") else {
+        panic!("the default usage stays an object");
+    };
     assert_eq!(usage.get("input_tokens"), Some(&Json::Number(0.into())));
     assert_eq!(usage.get("output_tokens"), Some(&Json::Number(0.into())));
     assert_eq!(usage.get("total_tokens"), Some(&Json::Number(0.into())));
@@ -134,6 +133,22 @@ fn a_non_object_body_raises_the_same_error() {
     };
     assert_eq!(inner.status_code, 400);
     assert_eq!(inner.message, "[]");
+}
+
+#[test]
+fn a_body_that_is_not_utf8_raises_the_openai_error_with_the_status() {
+    let upstream = ResponsesUpstream {
+        status_code: 502,
+        headers: Headers::new(),
+        body: vec![0xff, 0xfe, 0x7b],
+    };
+    let error = plain_config()
+        .transform_get_response(&upstream, &mut ResponsesLogging::default())
+        .expect_err("invalid UTF-8 is refused");
+    let ManusResponsesError::Contract(ResponsesContractError::BaseLlm(inner)) = error else {
+        panic!("the failure should be the base exception");
+    };
+    assert_eq!(inner.status_code, 502);
 }
 
 #[test]
@@ -260,10 +275,9 @@ fn a_usage_object_is_kept_as_sent() {
         r#"{"id":"resp_1","created_at":5,"output":[],"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7}}"#,
     );
     let (reply, _logging) = created(&upstream);
-    let usage = reply
-        .get("usage")
-        .and_then(Json::as_object)
-        .expect("the usage stays an object");
+    let Some(Json::Object(usage)) = reply.get("usage") else {
+        panic!("the usage stays an object");
+    };
     assert_eq!(usage.get("input_tokens"), Some(&Json::Number(3.into())));
     assert_eq!(usage.get("output_tokens"), Some(&Json::Number(4.into())));
 }

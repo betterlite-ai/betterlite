@@ -26,7 +26,7 @@ pub(super) fn create_body(request: &CreateRequest) -> Result<Params, ManusRespon
     let options = json::to_prompts_object(&request.optional_params);
     let base =
         transform_responses_request(&request.model, &input, &options, ProviderId::Manus, None)?;
-    let mut body = json::from_prompts_object(&base);
+    let mut body = json::from_prompts_object(&base)?;
     body.insert(
         String::from(TASK_MODE_FIELD),
         Json::Text(String::from(TASK_MODE)),

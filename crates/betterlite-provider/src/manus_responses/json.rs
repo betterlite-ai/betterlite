@@ -19,23 +19,7 @@ pub(super) fn to_prompts(value: &Json) -> prompts::Json {
         Json::Object(fields) => prompts::Json::Object(
             fields
                 .iter()
-                .map(|(name, value)| (name.clone(), to_prompts(value)))
-                .collect(),
-        ),
-    }
-}
-
-pub(super) fn from_prompts(value: &prompts::Json) -> Json {
-    match value {
-        prompts::Json::Null => Json::Null,
-        prompts::Json::Bool(flag) => Json::Bool(*flag),
-        prompts::Json::Number(number) => Json::Number(number.clone()),
-        prompts::Json::Text(text) => Json::Text(text.clone()),
-        prompts::Json::List(items) => Json::List(items.iter().map(from_prompts).collect()),
-        prompts::Json::Object(fields) => Json::Object(
-            fields
-                .iter()
-                .map(|(name, value)| (name.clone(), from_prompts(value)))
+                .map(|(name, entry)| (name.clone(), to_prompts(entry)))
                 .collect(),
         ),
     }
@@ -48,11 +32,10 @@ pub(super) fn to_prompts_object(params: &Params) -> prompts::Object {
         .collect()
 }
 
-pub(super) fn from_prompts_object(object: &prompts::Object) -> Params {
-    object
-        .iter()
-        .map(|(name, value)| (name.clone(), from_prompts(value)))
-        .collect()
+pub(super) fn from_prompts_object(object: &prompts::Object) -> Result<Params, ManusResponsesError> {
+    let raw = serde_json::to_value(object)?;
+    let params: Params = serde_json::from_value(raw)?;
+    Ok(params)
 }
 
 pub(super) fn responses_input(value: &Json) -> Result<ResponsesInput, ManusResponsesError> {
@@ -94,13 +77,16 @@ pub(super) fn text<'params>(
     params: &'params Params,
     field: &'static str,
 ) -> Result<Option<&'params str>, ManusResponsesError> {
-    match params.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text)),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ManusResponsesError::ParamNotText { field })
-        }
+    let Some(value) = params.get(field) else {
+        return Ok(None);
+    };
+    if let Json::Text(text) = value {
+        return Ok(Some(text.as_str()));
     }
+    if matches!(value, Json::Null) {
+        return Ok(None);
+    }
+    Err(ManusResponsesError::ParamNotText { field })
 }
 
 pub(super) fn object_of(params: &Params) -> Json {

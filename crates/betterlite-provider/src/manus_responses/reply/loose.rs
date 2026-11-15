@@ -3,6 +3,7 @@ use betterlite_openai::api::responses_objects::{
     ResponseApiUsage, ResponseOutputItem, ResponsesApiResponse,
 };
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde_json::Number;
 
 use crate::api::responses_provider_contract::records::Params;
@@ -16,9 +17,18 @@ use super::{
 
 pub(super) fn zero_usage() -> Json {
     Json::Object(IndexMap::from([
-        (String::from("input_tokens"), Json::Number(Number::from(0))),
-        (String::from("output_tokens"), Json::Number(Number::from(0))),
-        (String::from("total_tokens"), Json::Number(Number::from(0))),
+        (
+            String::from("input_tokens"),
+            Json::Number(Number::from(0_i32)),
+        ),
+        (
+            String::from("output_tokens"),
+            Json::Number(Number::from(0_i32)),
+        ),
+        (
+            String::from("total_tokens"),
+            Json::Number(Number::from(0_i32)),
+        ),
     ]))
 }
 
@@ -30,7 +40,10 @@ fn fallback_id(config: &ManusResponsesConfig, fields: &Params) -> String {
     }
 }
 
-fn parseable<T: serde::de::DeserializeOwned>(value: &Json) -> bool {
+fn parseable<T>(value: &Json) -> bool
+where
+    T: DeserializeOwned,
+{
     serde_json::to_value(value)
         .ok()
         .and_then(|raw| serde_json::from_value::<T>(raw).ok())
@@ -59,7 +72,7 @@ pub(super) fn construct_loose(
         fields
             .get(CREATED_AT_FIELD)
             .cloned()
-            .unwrap_or_else(|| Json::Number(Number::from(0))),
+            .unwrap_or_else(|| Json::Number(Number::from(0_i32))),
     );
     let output = fields
         .get(OUTPUT_FIELD)
