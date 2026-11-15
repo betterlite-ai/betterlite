@@ -1,0 +1,46 @@
+kind: helper
+name: rate-limit-model-descriptors-team-model-key-owned
+call:
+  b3038:
+    function: team_model
+    auth:
+      team_id: team-1
+      metadata:
+        model_tpm_limit:
+          gpt-4: 0
+      team_metadata:
+        model_rpm_limit:
+          gpt-4: 9
+        model_tpm_limit:
+          gpt-4: 11
+    requested: gpt4
+    groups:
+      gpt4: gpt-4
+    window_size: 30
+calls:
+  - b3038:
+      function: team_model
+      auth:
+        team_id: team-1
+        team_metadata:
+          model_rpm_limit:
+            gpt-4: 9
+          model_tpm_limit:
+            gpt-4: 11
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 30
+  - b3038:
+      function: team_model
+      auth:
+        team_metadata:
+          model_rpm_limit:
+            gpt-4: 9
+      requested: gpt4
+      groups:
+        gpt4: gpt-4
+      window_size: 30
+env:
+  LITELLM_RATE_LIMIT_WINDOW_SIZE: "30"
+compare: {ignore: []}

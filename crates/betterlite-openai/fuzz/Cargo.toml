@@ -324,6 +324,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_containers"
+path = "fuzz_targets/openai_containers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_evals"
 path = "fuzz_targets/openai_evals.rs"
 test = false
@@ -583,6 +590,41 @@ bench = false
 [[bin]]
 name = "fireworks_ai_rerank_response"
 path = "fuzz_targets/fireworks_ai_rerank_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "dashscope_embedding_reply"
+path = "fuzz_targets/dashscope_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mistral_resource"
+path = "fuzz_targets/mistral_resource.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_video_identifiers"
+path = "fuzz_targets/openai_video_identifiers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ovhcloud_reply"
+path = "fuzz_targets/ovhcloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "host_rerank"
+path = "fuzz_targets/host_rerank.rs"
 test = false
 doc = false
 bench = false

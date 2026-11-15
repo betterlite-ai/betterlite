@@ -1,0 +1,11 @@
+kind: helper
+name: vertex-batch-upload-combined-inner-input
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"c","url":"/v1/embeddings","body":{"model":"text-embedding-005","input":[["x","y"],"z",["w"]]}}
+          {"custom_id":"d","url":"/v1/embeddings","body":{"model":"text-embedding-005","input":[["only","inner"]]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

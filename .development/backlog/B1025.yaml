@@ -1,7 +1,7 @@
 id: B1025
 milestone: M5 api families
 title: File storage contracts
-status: todo
+status: done
 depends_on: [B171, B908, B726]
 file: tasks/B1025-file-storage-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/base_llm/files/batch_records.py"
 parent: B087
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1931
