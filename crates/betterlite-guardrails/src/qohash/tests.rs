@@ -619,11 +619,7 @@ async fn apply_guardrail_fails_open_with_the_request_fields_but_drops_tool_calls
     let base = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
     let mut nexus = build_with_base(&base);
-    nexus.generic.settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
-        unreachable_fallback: Some(UnreachableFallback::FailOpen),
-        fail_on_error: Some(true),
-        ..GuardrailOptions::default()
-    }));
+    nexus.generic.settings.unreachable_fallback = UnreachableFallback::FailOpen;
     let mut inputs = text_inputs(&["hello"]);
     inputs.images = Some(vec!["data:image/png;base64,AA".to_owned()]);
     inputs.tools = Some(vec![GuardrailToolParam {

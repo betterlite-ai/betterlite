@@ -90,13 +90,13 @@ fn call(input: &QohashCall) -> HelperResult {
         Some(&mut log_target),
     ));
     let recorded = finish(mock)?;
-    collect(result, recorded.as_ref(), nexus.guardrail_name)
+    collect(result, recorded.as_ref(), &nexus.guardrail_name)
 }
 
 fn collect(
     result: Result<GuardrailApiInputs, GuardrailFailure>,
     recorded: Option<&ProviderCall>,
-    guardrail_name: String,
+    guardrail_name: &str,
 ) -> HelperResult {
     let path = recorded.map(|provider_call| provider_call.request.path.clone());
     let content_type = recorded
