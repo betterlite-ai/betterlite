@@ -21,6 +21,40 @@ PROTOCOLS: Final = (
 GENERATED_ID_LENGTH: Final = 36
 MOCK_INT_MARKER: Final = 1
 EXTRA_MODELS: Final = 19
+FORBIDDEN_HEADERS: Final = (
+    "api-key",
+    "authorization",
+    "connection",
+    "content-length",
+    "content-type",
+    "cookie",
+    "host",
+    "keep-alive",
+    "proxy-authenticate",
+    "proxy-authorization",
+    "proxy-connection",
+    "set-cookie",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+    "www-authenticate",
+    "x-api-key",
+    "x-goog-api-key",
+)
+FORBIDDEN_HEADER_MESSAGE: Final = (
+    "Value error, provider_affinity_header cannot be an authentication, cookie, "
+    "or transport header"
+)
+HEADER_NAME_MESSAGE: Final = (
+    "Value error, provider_affinity_header must be a valid HTTP header name"
+)
+SIBLING_TYPES: Final = (
+    "SearchProviders",
+    "StandardLoggingRoutingDecision",
+    "MirroredPricingParams",
+    "CustomPricingLiteLLMParams",
+)
 
 PROBE: Final = """
 import ast, dataclasses, datetime, enum, importlib, inspect, json, sys, typing
@@ -237,13 +271,23 @@ def params_results():
     for index, value in enumerate(drop_values):
         dropped = module.GenericLiteLLMParams(drop_params=value).drop_params
         result["drop_" + str(index)] = {"value": plain(dropped), "type": type(dropped).__name__}
-    headers = ["X-Session", "x-api-key", "bad header", "Authorization", "", None]
-    for index, header in enumerate(headers):
-        result["header_" + str(index)] = outcome(
+    headers = [
+        "api-key", "authorization", "connection", "content-length", "content-type", "cookie",
+        "host", "keep-alive", "proxy-authenticate", "proxy-authorization", "proxy-connection",
+        "set-cookie", "te", "trailer", "transfer-encoding", "upgrade", "www-authenticate",
+        "x-api-key", "x-goog-api-key", "X-Session", "X-Api-Key", "bad header", "",
+    ]
+    result["headers"] = {
+        header: outcome(
             lambda: module.GenericLiteLLMParams(
                 provider_affinity_header=header
             ).provider_affinity_header
         )
+        for header in headers
+    }
+    result["header_none"] = outcome(
+        lambda: module.GenericLiteLLMParams(provider_affinity_header=None).provider_affinity_header
+    )
     result["params_requires_model"] = outcome(lambda: module.LiteLLM_Params(api_key="k"))
     result["params_dump"] = outcome(
         lambda: module.LiteLLM_Params(model="m", api_key="k").model_dump()
@@ -801,6 +845,14 @@ def test_names_class_names() -> None:
     }
 
 
+def test_names_sibling_types() -> None:
+    spec = list(SIBLING_TYPES)
+    theirs = run_probe(LITELLM_PREFIX, "utils", "describe", spec)
+    ours = run_probe(OURS_PREFIX + ".types", "utils", "describe", spec)
+    assert all(item != {"kind": "missing"} for item in ours.values())
+    assert ours == theirs
+
+
 def test_behavior_model_info() -> None:
     result = run_probe(OURS_PREFIX, OURS_MODULE, "model_info")
     assert result["generated_id"] == {"str": True, "length": GENERATED_ID_LENGTH}
@@ -815,6 +867,20 @@ def test_behavior_params() -> None:
     assert result["drop_3"] == {"value": True, "type": "bool"}
     assert result["drop_9"] == {"value": "bogus", "type": "str"}
     assert result["drop_10"] == {"value": None, "type": "NoneType"}
+    headers = OBJECT.validate_python(result["headers"])
+    for header in FORBIDDEN_HEADERS:
+        assert headers[header] == {
+            "validation": [["value_error", ["provider_affinity_header"], FORBIDDEN_HEADER_MESSAGE]]
+        }, header
+    assert headers["X-Api-Key"] == {
+        "validation": [["value_error", ["provider_affinity_header"], FORBIDDEN_HEADER_MESSAGE]]
+    }
+    assert headers["X-Session"] == {"ok": "X-Session"}
+    for header in ("bad header", ""):
+        assert headers[header] == {
+            "validation": [["value_error", ["provider_affinity_header"], HEADER_NAME_MESSAGE]]
+        }, header
+    assert result["header_none"] == {"ok": None}
     assert_same("params")
 
 
