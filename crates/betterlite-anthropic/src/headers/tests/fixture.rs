@@ -53,54 +53,9 @@ pub(super) fn params() -> HeaderParams {
     HeaderParams::default()
 }
 
-pub(super) fn params_thinking(thinking: &str) -> HeaderParams {
-    HeaderParams {
-        tools: None,
-        mcp_servers: None,
-        thinking: Some(json(thinking)),
-        is_vertex_request: false,
-        container: None,
-    }
-}
-
-pub(super) fn params_tools(tools: &[&str]) -> HeaderParams {
-    HeaderParams {
-        tools: Some(tools.iter().copied().map(json).collect()),
-        mcp_servers: None,
-        thinking: None,
-        is_vertex_request: false,
-        container: None,
-    }
-}
-
-pub(super) fn params_mcp(servers: &[&str]) -> HeaderParams {
-    HeaderParams {
-        tools: None,
-        mcp_servers: Some(servers.iter().copied().map(json).collect()),
-        thinking: None,
-        is_vertex_request: false,
-        container: None,
-    }
-}
-
-pub(super) fn params_vertex(tools: &[&str]) -> HeaderParams {
-    HeaderParams {
-        tools: Some(tools.iter().copied().map(json).collect()),
-        mcp_servers: None,
-        thinking: None,
-        is_vertex_request: true,
-        container: None,
-    }
-}
-
-pub(super) fn params_container(container: &str) -> HeaderParams {
-    HeaderParams {
-        tools: None,
-        mcp_servers: None,
-        thinking: None,
-        is_vertex_request: false,
-        container: Some(serde_json::from_str(container).unwrap()),
-    }
+// the optional params decode through the production type, so a fixture spells them like a request body
+pub(super) fn params_from(text: &str) -> HeaderParams {
+    serde_json::from_str(text).unwrap()
 }
 
 pub(super) fn litellm_params() -> HeaderLiteLlmParams {

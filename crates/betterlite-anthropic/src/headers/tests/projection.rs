@@ -4,9 +4,7 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::anthropic_headers::Settings as HeaderConfig;
 use http::{HeaderMap, HeaderValue};
 
-use crate::headers::catalog::{
-    ModelRecord, create_anthropic_model_list_response, model_created_at,
-};
+use crate::headers::catalog::{ModelRecord, anthropic_model_list_response, model_created_at};
 use crate::headers::response::process_anthropic_headers;
 
 pub(super) fn response_header_prefixes_case() {
@@ -110,7 +108,7 @@ pub(super) fn catalog_created_at_default_case() {
     assert_eq!(settings.default_model_created_at_time, 1_677_610_602);
     assert_eq!(
         model_created_at(settings.default_model_created_at_time).unwrap(),
-        "2023-02-28T20:16:42Z"
+        "2023-02-28T18:56:42Z"
     );
 
     let lookup = BTreeMap::from([("DEFAULT_MODEL_CREATED_AT_TIME".to_owned(), "42".to_owned())]);
@@ -146,7 +144,7 @@ pub(super) fn catalog_created_at_default_case() {
         max_input_tokens: None,
         max_output_tokens: None,
     }];
-    let response = create_anthropic_model_list_response(
+    let response = anthropic_model_list_response(
         &models,
         &BTreeMap::new(),
         &BTreeMap::new(),
@@ -154,6 +152,6 @@ pub(super) fn catalog_created_at_default_case() {
     );
     assert_eq!(
         response.data.first().map(|entry| entry.created_at.as_str()),
-        Some("2023-02-28T20:16:42Z")
+        Some("2023-02-28T18:56:42Z")
     );
 }

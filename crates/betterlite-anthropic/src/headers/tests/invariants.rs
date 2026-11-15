@@ -5,7 +5,7 @@ use indexmap::IndexMap;
 
 use crate::credentials::AnthropicSettings;
 use crate::headers::AnthropicHeaders;
-use crate::headers::environment::{EnvironmentRequest, HeaderParams, validate_environment};
+use crate::headers::environment::{EnvironmentRequest, validate_environment};
 use crate::headers::request::{HeaderFeature, get_anthropic_headers};
 use crate::headers::tests::fixture;
 

@@ -12,9 +12,7 @@ use crate::feature_flags::beta::{
     EFFORT_BETA, FILE_CODE_EXECUTION_BETA, FILES_API_BETA, MCP_CLIENT_BETA, OUTPUT_CONFIG_BETA,
     THINKING_DISPLAY_BETA, TOOL_CHANGES_BETA,
 };
-use crate::headers::catalog::{
-    ModelRecord, anthropic_model_entry, create_anthropic_model_list_response,
-};
+use crate::headers::catalog::{ModelRecord, anthropic_model_list_response};
 use crate::headers::environment::{
     EnvironmentRequest, HeaderLiteLlmParams, HeaderParams, validate_environment,
 };
@@ -164,25 +162,27 @@ fn api_key_and_bearer_case() {
     );
     assert!(!both.values.contains_key(AUTHORIZATION_HEADER));
 
+    // the bearer policy only applies to a key without the sk-ant- prefix
+    let custom_key = fixture::secret("sk-custom-key");
     let custom_base = get_anthropic_headers(&HeaderRequest {
         api_base: Some("https://anthropic-proxy.example"),
         use_bearer_for_custom_base: true,
-        ..fixture::request(Some(&key), None, &features)
+        ..fixture::request(Some(&custom_key), None, &features)
     });
     assert_eq!(
         fixture::header(&custom_base, AUTHORIZATION_HEADER),
-        Some("Bearer sk-ant-api03-fixture")
+        Some("Bearer sk-custom-key")
     );
     assert!(!custom_base.values.contains_key(X_API_KEY));
 
     let official_base = get_anthropic_headers(&HeaderRequest {
         api_base: Some("https://api.anthropic.com"),
         use_bearer_for_custom_base: true,
-        ..fixture::request(Some(&key), None, &features)
+        ..fixture::request(Some(&custom_key), None, &features)
     });
     assert_eq!(
         fixture::header(&official_base, X_API_KEY),
-        Some("sk-ant-api03-fixture")
+        Some("sk-custom-key")
     );
 
     let bearer_off = get_anthropic_headers(&HeaderRequest {
@@ -398,7 +398,7 @@ fn derived_beta_union_case() {
     );
 
     // the message- and tool-derived flags reach get_anthropic_headers through validate_environment
-    let params = fixture::params_tools(&["code_execution_20250825"]);
+    let params = fixture::params_from(r#"{"tools":[{"type":"code_execution_20250825"}]}"#);
     let messages = Vec::new();
     let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
     let detected = validated(&messages, &params, &settings);
@@ -407,7 +407,7 @@ fn derived_beta_union_case() {
         BTreeSet::from([CODE_EXECUTION_BETA])
     );
 
-    let params = fixture::params_container(r#"{"skills":["xlsx"]}"#);
+    let params = fixture::params_from(r#"{"container":{"skills":["xlsx"]}}"#);
     let detected = validated(&messages, &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
@@ -487,7 +487,9 @@ fn vertex_web_search_beta_case() {
     // the vertex flag and the web search flag come from optional_params and tools
     let settings = fixture::settings(Some("sk-ant-api03-fixture"), None);
     let messages = Vec::new();
-    let params = fixture::params_vertex(&["web_search_20250305"]);
+    let params = fixture::params_from(
+        r#"{"tools":[{"type":"web_search_20250305"}],"is_vertex_request":true}"#,
+    );
     let detected = validated(&messages, &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
@@ -548,7 +550,7 @@ fn user_beta_preserved_case() {
 
     // the user betas join the derived ones
     let messages = vec![fixture::json(
-        r#"{"role":"user","content":[{"type":"file","file_id":"file_1"}]}"#,
+        r#"{"role":"user","content":[{"type":"file","file":{"file_id":"file_1"}}]}"#,
     )];
     let caller_headers = fixture::headers(&[(OAUTH_BETA_HEADER_NAME, "custom-beta")]);
     let combined = validate_environment(
@@ -614,12 +616,8 @@ fn catalog_model_list_case() {
         ),
         ("anthropic/claude-opus-4".to_owned(), String::new()),
     ]);
-    let response = create_anthropic_model_list_response(
-        &models,
-        &display_names,
-        &listed_ids,
-        "2023-02-28T20:16:42Z",
-    );
+    let response =
+        anthropic_model_list_response(&models, &display_names, &listed_ids, "2023-02-28T18:56:42Z");
     assert!(!response.has_more);
     assert_eq!(response.first_id.as_deref(), Some("sonnet-listed"));
     assert_eq!(response.last_id.as_deref(), Some("anthropic/claude-opus-4"));
@@ -632,7 +630,7 @@ fn catalog_model_list_case() {
         Some("anthropic/claude-sonnet-4")
     );
     assert_eq!(listed.display_name, "Claude Sonnet 4");
-    assert_eq!(listed.created_at, "2023-02-28T20:16:42Z");
+    assert_eq!(listed.created_at, "2023-02-28T18:56:42Z");
     assert_eq!(listed.max_input_tokens, Some(200_000));
     assert_eq!(listed.max_output_tokens, Some(64_000));
 
@@ -649,19 +647,21 @@ fn catalog_model_list_case() {
 
     // display_names are keyed by the source id, not by the listed id
     let listed_display = BTreeMap::from([("sonnet-listed".to_owned(), "Wrong name".to_owned())]);
-    let entry = anthropic_model_entry(
-        &models.first().unwrap().clone(),
-        "2023-02-28T20:16:42Z",
+    let keyed = anthropic_model_list_response(
+        &models[..1],
         &listed_display,
         &BTreeMap::from([(
             "anthropic/claude-sonnet-4".to_owned(),
             "sonnet-listed".to_owned(),
         )]),
+        "2023-02-28T18:56:42Z",
     );
-    assert_eq!(entry.display_name, "anthropic/claude-sonnet-4");
+    assert_eq!(
+        keyed.data.first().unwrap().display_name,
+        "anthropic/claude-sonnet-4"
+    );
 
-    let empty =
-        create_anthropic_model_list_response(&[], &BTreeMap::new(), &BTreeMap::new(), "now");
+    let empty = anthropic_model_list_response(&[], &BTreeMap::new(), &BTreeMap::new(), "now");
     assert!(empty.data.is_empty());
     assert!(!empty.has_more);
     assert!(empty.first_id.is_none());
@@ -732,21 +732,21 @@ fn conversation_betas_case() {
         BTreeSet::from([OUTPUT_CONFIG_BETA])
     );
 
-    let params = fixture::params_thinking(r#"{"type":"adaptive","display":"updates"}"#);
+    let params = fixture::params_from(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#);
     let detected = validated(&[], &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
         BTreeSet::from([THINKING_DISPLAY_BETA])
     );
 
-    let params = fixture::params_thinking(r#"{"type":"enabled","display":"updates"}"#);
+    let params = fixture::params_from(r#"{"thinking":{"type":"enabled","display":"updates"}}"#);
     let detected = validated(&[], &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
         BTreeSet::from([THINKING_DISPLAY_BETA])
     );
 
-    let params = fixture::params_thinking(r#"{"type":"disabled","display":"updates"}"#);
+    let params = fixture::params_from(r#"{"thinking":{"type":"disabled","display":"updates"}}"#);
     let detected = validated(&[], &params, &settings);
     assert!(!detected.values.contains_key(OAUTH_BETA_HEADER_NAME));
 
@@ -759,39 +759,39 @@ fn conversation_betas_case() {
         BTreeSet::from([TOOL_CHANGES_BETA])
     );
 
-    let params = fixture::params_tools(&["computer_20250124"]);
+    let params = fixture::params_from(r#"{"tools":[{"type":"computer_20250124"}]}"#);
     let detected = validated(&[], &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
         BTreeSet::from(["computer-use-2025-01-24"])
     );
 
-    let params = fixture::params_tools(&["computer_20241022"]);
+    let params = fixture::params_from(r#"{"tools":[{"type":"computer_20241022"}]}"#);
     let detected = validated(&[], &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
         BTreeSet::from(["computer-use-2024-10-22"])
     );
 
-    let params = fixture::params_tools(&["custom_20250101"]);
+    let params = fixture::params_from(r#"{"tools":[{"type":"custom_20250101"}]}"#);
     let detected = validated(&[], &params, &settings);
     assert!(!detected.values.contains_key(OAUTH_BETA_HEADER_NAME));
 
-    let params = fixture::params_mcp(&[r#"{"type":"url","name":"docs"}"#]);
+    let params = fixture::params_from(r#"{"mcp_servers":[{"type":"url","name":"docs"}]}"#);
     let detected = validated(&[], &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&detected),
         BTreeSet::from([MCP_CLIENT_BETA])
     );
 
-    let params = fixture::params_mcp(&[]);
+    let params = fixture::params_from(r#"{"mcp_servers":[]}"#);
     let detected = validated(&[], &params, &settings);
     assert!(!detected.values.contains_key(OAUTH_BETA_HEADER_NAME));
 
     let messages = vec![fixture::json(
         r#"{"role":"user","content":"hi","output_config":{"effort":"high"}}"#,
     )];
-    let params = fixture::params_thinking(r#"{"type":"adaptive","display":"updates"}"#);
+    let params = fixture::params_from(r#"{"thinking":{"type":"adaptive","display":"updates"}}"#);
     let combined = validated(&messages, &params, &settings);
     assert_eq!(
         fixture::beta_tokens(&combined),
@@ -814,6 +814,7 @@ fn header_merge_precedence_case() {
         api_base: Some("https://anthropic-proxy.example".to_owned()),
         use_bearer_for_custom_base: true,
     };
+    let custom_settings = fixture::settings(Some("sk-custom-key"), None);
     let merged = validate_environment(
         &EnvironmentRequest {
             model: MODEL,
@@ -825,7 +826,7 @@ fn header_merge_precedence_case() {
             optional_params: &params,
             effort_used: false,
         },
-        &settings,
+        &custom_settings,
     )
     .unwrap();
     assert_eq!(
@@ -845,10 +846,10 @@ fn header_merge_precedence_case() {
         fixture::beta_tokens(&merged),
         BTreeSet::from(["caller-beta"])
     );
-    // the custom base from litellm_params applies the bearer policy
+    // the custom base from litellm_params applies the bearer policy to a key without the sk-ant- prefix
     assert_eq!(
         fixture::header(&merged, AUTHORIZATION_HEADER),
-        Some("Bearer sk-ant-api03-fixture")
+        Some("Bearer sk-custom-key")
     );
     assert!(!merged.values.contains_key(X_API_KEY));
 
