@@ -1,0 +1,40 @@
+
+                    <img src="https://cdn.example/logo.png" alt="LiteLLM Logo" width="150" height="50" />
+
+                    <p> Hi alice@example.com, <br/>
+        
+                    I'm happy to provide you with an OpenAI Proxy API Key, loaded with $10.0 per month. <br /> <br />
+
+                    <b>
+                    Key: <pre>sk-test-token</pre> <br>
+                    </b>
+
+                    <h2>Usage Example</h2>
+
+                    Detailed Documentation on <a href="https://docs.litellm.ai/docs/proxy/user_keys">Usage with OpenAI Python SDK, Langchain, LlamaIndex, Curl</a>
+
+                    <pre>
+
+                    import openai
+                    client = openai.OpenAI(
+                        api_key="sk-test-token",
+                        base_url={base_url}
+                    )
+
+                    response = client.chat.completions.create(
+                        model="gpt-3.5-turbo", # model to send to the proxy
+                        messages = [
+                            {
+                                "role": "user",
+                                "content": "this is a test request, write a short poem"
+                            }
+                        ]
+                    )
+
+                    </pre>
+
+
+                    If you have any questions, please send an email to help@example.com <br /> <br />
+
+                    Best, <br />
+                    The LiteLLM team <br />
