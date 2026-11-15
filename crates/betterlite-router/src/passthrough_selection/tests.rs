@@ -6,25 +6,22 @@ use rstest::rstest;
 use super::error::PassthroughSelectionError;
 use crate::deployment_catalog::error::CatalogLookupError;
 use crate::static_eligibility::error::EligibilityError;
-use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroupRoute, RoutingGroups};
 use crate::strategy_dispatch::selection::SelectorCall;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{ResolutionSource, StrategyOverride};
 
 use self::support::{
     LITELLM_MODEL, MODEL, Metric, Picker, Recorded, SAMPLE_MIDPOINT, aliased, ask,
-    assert_invalid_field, assert_not_configured, assert_rate_limited, assert_selected, facts, flag,
-    flagged, gpt, json_mode, metric_setting, number, shuffle, signed, spec, supported_in, text,
-    weighted, with_param, world_with,
+    assert_invalid_field, assert_not_configured, assert_rate_limited, assert_selected,
+    chosen_by_id, facts, flag, flagged, gpt, grouped, json_mode, metric_setting, number, shuffle,
+    signed, spec, supported_in, text, weighted, with_param, world_with,
 };
 
 mod support;
 
 // The id arm returns the one deployment it names without a draw.
 fn deployment_id() {
-    let mut world = shuffle(vec![weighted("chosen", 1)]);
-    let mut picker = Picker::default();
-    let selected = world.call(&mut picker, &ask("chosen", &facts())).unwrap();
+    let (selected, picker) = chosen_by_id(&ask("chosen", &facts()));
     assert_selected(&selected, MODEL, "chosen");
     assert_eq!(selected.resolution.strategy, RoutingStrategy::SimpleShuffle);
     assert_eq!(selected.resolution.source, ResolutionSource::Default);
@@ -34,14 +31,8 @@ fn deployment_id() {
 
 // The dict arm still resolves the routing context, so an override selector's pre-call check runs for it.
 fn deployment_id_override_pre_call() {
-    let mut world = shuffle(vec![weighted("chosen", 1)]);
-    let mut picker = Picker::default();
-    let selected = world
-        .call(
-            &mut picker,
-            &ask("chosen", &facts()).with_strategy(StrategyOverride::Text("least-busy")),
-        )
-        .unwrap();
+    let lookup = ask("chosen", &facts()).with_strategy(StrategyOverride::Text("least-busy"));
+    let (selected, picker) = chosen_by_id(&lookup);
     assert_selected(&selected, MODEL, "chosen");
     assert_eq!(selected.resolution.strategy, RoutingStrategy::LeastBusy);
     let selector = selected.resolution.selector.unwrap();
@@ -198,25 +189,16 @@ fn ignored_override() {
 }
 
 fn alias_routing_model() {
-    let mut world = shuffle(vec![with_param(
-        flagged(spec("target", "only", LITELLM_MODEL)),
-        "weight",
-        number(1),
-    )]);
-    world
-        .model_group_alias
-        .insert("alias".to_owned(), "target".to_owned());
-    world.groups = RoutingGroups::new(vec![RoutingGroupRoute {
-        name: "shuffle-group".to_owned(),
-        models: vec!["target".to_owned()],
-        strategy: GroupStrategy::Routing(RoutingStrategy::SimpleShuffle),
-        selector: None,
-    }])
-    .unwrap();
+    let mut world = grouped(
+        aliased(vec![weighted("only", 1)], RoutingStrategy::SimpleShuffle),
+        "shuffle-group",
+        &[MODEL],
+        RoutingStrategy::SimpleShuffle,
+    );
     let selected = world
         .call(&mut Picker::default(), &ask("alias", &facts()))
         .unwrap();
-    assert_selected(&selected, "target", "only");
+    assert_selected(&selected, MODEL, "only");
     assert_eq!(
         selected.resolution.source,
         ResolutionSource::RoutingGroup("shuffle-group".to_owned())
@@ -545,21 +527,19 @@ fn specific_unflagged() {
 }
 
 fn alias_map_does_not_steer_routing() {
-    let mut world = shuffle(vec![with_param(
-        flagged(spec("public", "only", LITELLM_MODEL)),
-        "weight",
-        number(1),
-    )]);
+    let mut world = grouped(
+        shuffle(vec![with_param(
+            flagged(spec("public", "only", LITELLM_MODEL)),
+            "weight",
+            number(1),
+        )]),
+        "cost-group",
+        &["target"],
+        RoutingStrategy::CostBasedRouting,
+    );
     world
         .model_alias_map
         .insert("public".to_owned(), "target".to_owned());
-    world.groups = RoutingGroups::new(vec![RoutingGroupRoute {
-        name: "cost-group".to_owned(),
-        models: vec!["target".to_owned()],
-        strategy: GroupStrategy::Routing(RoutingStrategy::CostBasedRouting),
-        selector: None,
-    }])
-    .unwrap();
     let selected = world
         .call(&mut Picker::default(), &ask("public", &facts()))
         .unwrap();
@@ -568,17 +548,15 @@ fn alias_map_does_not_steer_routing() {
 }
 
 fn alias_empty_target_keeps_the_model() {
-    let mut world = shuffle(vec![weighted("only", 1)]);
+    let mut world = grouped(
+        shuffle(vec![weighted("only", 1)]),
+        "gpt-group",
+        &[MODEL],
+        RoutingStrategy::SimpleShuffle,
+    );
     world
         .model_group_alias
         .insert(MODEL.to_owned(), String::new());
-    world.groups = RoutingGroups::new(vec![RoutingGroupRoute {
-        name: "gpt-group".to_owned(),
-        models: vec![MODEL.to_owned()],
-        strategy: GroupStrategy::Routing(RoutingStrategy::SimpleShuffle),
-        selector: None,
-    }])
-    .unwrap();
     let selected = world
         .call(&mut Picker::default(), &ask(MODEL, &facts()))
         .unwrap();

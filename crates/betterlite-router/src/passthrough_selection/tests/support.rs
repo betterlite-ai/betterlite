@@ -18,7 +18,7 @@ use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
 use crate::static_eligibility::filter::EligibilityServices;
 use crate::static_eligibility::request::RequestFacts;
 use crate::static_eligibility::tokens::TokenLimits;
-use crate::strategy_dispatch::groups::RoutingGroups;
+use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroupRoute, RoutingGroups};
 use crate::strategy_dispatch::selection::SelectorCall;
 use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
@@ -102,8 +102,14 @@ pub(super) fn facts() -> RequestFacts {
 pub(super) fn json_mode() -> RequestFacts {
     RequestFacts {
         messages: Some(vec![message("hi")]),
+        input: None,
+        instructions: None,
+        system: None,
+        tools: Vec::new(),
         response_format: true,
-        ..RequestFacts::default()
+        target_order: None,
+        input_token_count: None,
+        compaction_pending: false,
     }
 }
 
@@ -319,12 +325,37 @@ pub(super) fn shuffle(deployments: Vec<DeploymentSpec>) -> World {
     world_with(RoutingStrategy::SimpleShuffle, deployments)
 }
 
+// The id arm's world: one flagged deployment named "chosen", called through a fresh picker.
+pub(super) fn chosen_by_id(lookup: &Lookup<'_>) -> (Selected, Picker) {
+    let mut world = shuffle(vec![weighted("chosen", 1)]);
+    let mut picker = Picker::default();
+    let selected = world.call(&mut picker, lookup).unwrap();
+    (selected, picker)
+}
+
 // The MODEL group reachable as the group alias "alias".
 pub(super) fn aliased(deployments: Vec<DeploymentSpec>, strategy: RoutingStrategy) -> World {
     let mut world = world_with(strategy, deployments);
     world
         .model_group_alias
         .insert("alias".to_owned(), MODEL.to_owned());
+    world
+}
+
+// One routing group over the given models, replacing the world's own groups.
+pub(super) fn grouped(
+    mut world: World,
+    name: &str,
+    models: &[&str],
+    strategy: RoutingStrategy,
+) -> World {
+    world.groups = RoutingGroups::new(vec![RoutingGroupRoute {
+        name: name.to_owned(),
+        models: models.iter().map(|model| (*model).to_owned()).collect(),
+        strategy: GroupStrategy::Routing(strategy),
+        selector: None,
+    }])
+    .unwrap();
     world
 }
 
@@ -402,10 +433,6 @@ pub(super) fn assert_not_configured(
     let Err(error) = result else {
         panic!("the selection should fail");
     };
-    let PassthroughSelectionError::NotConfigured { model: named } = &error else {
-        panic!("unexpected error: {error}");
-    };
-    assert_eq!(named, model);
     assert_eq!(
         error.to_string(),
         format!(
@@ -418,13 +445,11 @@ pub(super) fn assert_rate_limited(
     result: Result<Selected, PassthroughSelectionError>,
     model: &str,
 ) {
-    let Err(error) = result else {
-        panic!("the selection should fail");
-    };
-    let PassthroughSelectionError::NoDeployment { model: named } = &error else {
-        panic!("unexpected error: {error}");
-    };
-    assert_eq!(named, model);
+    match result {
+        Err(PassthroughSelectionError::NoDeployment { model: named }) => assert_eq!(named, model),
+        Err(error) => panic!("unexpected error: {error}"),
+        Ok(_) => panic!("the selection should fail"),
+    }
 }
 
 pub(super) fn assert_invalid_field(
