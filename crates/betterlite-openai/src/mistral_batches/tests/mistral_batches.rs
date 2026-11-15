@@ -215,6 +215,7 @@ fn the_job_record_counts_succeeded_requests_not_completed_requests() {
     assert_eq!(counts.failed, 1);
     assert_eq!(counts.total, 9);
     assert_eq!(record.input_file_id, "");
+    assert_eq!(record.completion_window, "24h");
 }
 
 #[test]
