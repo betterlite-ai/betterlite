@@ -1,0 +1,33 @@
+kind: helper
+name: petals-request
+call:
+  b8153:
+    op: petals_request
+    env: {DEFAULT_MAX_TOKENS: "77"}
+    custom_prompt_dict:
+      m:
+        roles:
+          user: {pre_message: "U:", post_message: "!"}
+        initial_prompt_value: "I"
+        final_prompt_value: "F"
+    requests:
+      - model: "meta-llama/llama-2-7b-chat"
+        messages: [{role: "user", content: "hi"}]
+        api_base: "http://petals.test/v1/generate"
+      - model: "meta-llama/llama-2-7b-chat"
+        messages: [{role: "user", content: "hi"}]
+        api_base: "http://petals.test/v1/generate"
+        max_tokens: 8
+        temperature: 0.5
+        top_p: 0.9
+        stream: true
+      - model: "meta-llama/llama-2-7b-chat"
+        messages: [{role: "user", content: "hi"}]
+        api_base: "http://petals.test/v1/generate"
+        stream: false
+      - model: "m"
+        messages: [{role: "user", content: "hi"}]
+        api_base: "http://petals.test/v1/generate"
+# LiteLLM reads DEFAULT_MAX_TOKENS when its process imports; the op env above is the value both helpers resolve
+env: {HF_HUB_OFFLINE: "1", DEFAULT_MAX_TOKENS: "77"}
+compare: {ignore: []}

@@ -3537,6 +3537,7 @@ dependencies = [
  "betterlite-streaming",
  "betterlite-tokenizer",
  "data-encoding",
+ "futures-util",
  "google-cloud-auth",
  "google-cloud-gax",
  "google-cloud-speech-v2",

@@ -1,0 +1,8 @@
+kind: helper
+name: legacy-prediction-result-unicode-whitespace
+call:
+  legacy_prediction_result:
+    text: "a b c　d"
+    steps: [sync, async, sync, async, sync]
+env: {}
+compare: {ignore: []}
