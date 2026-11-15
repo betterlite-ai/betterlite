@@ -1,39 +1,18 @@
 task: B600
 deviations: []
 kept_bugs:
-  - what: >-
-      get_config keeps the custom_llm_provider entry even though its value is a property descriptor rather than a
-      config value; betterlite carries the member as {kind: property} so the same names come back.
-    why: >-
-      LiteLLM's filter drops functions, classmethods, staticmethods and None but not properties, so a caller of
-      get_config sees custom_llm_provider among the config members; dropping it here would change that member list.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L299-L314
-  - what: >-
-      A reasoning_effort outside low, medium and high on a Nova 2 model raises the rejection tagged with the fixed
-      model amazon.nova-2-lite-v1:0 and provider bedrock_converse, not the model the caller named.
-    why: >-
-      The raised error's model field is what a caller can match on, and LiteLLM always writes that fixed id, so the
-      same value is carried here.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L505-L517
-  - what: >-
-      A thinking budget_tokens of true or false counts as the integers 1 and 0 and is clamped to the Bedrock
-      minimum, where a float, text, null, list or mapping budget is left alone.
-    why: >-
-      Python's isinstance(budget, int) accepts JSON booleans, so LiteLLM rewrites them; betterlite keeps that rule
-      instead of rejecting a request LiteLLM would have clamped.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L594-L610
-  - what: >-
-      web_search_options maps to the nova_grounding systemTool for any model whose name contains nova in any case,
-      including names that are not Amazon Nova models, and only a non-Nova name logs the debug line and returns
-      nothing.
-    why: >-
-      LiteLLM tests the name for the nova substring rather than a model family, and a setup that uses a Nova alias
-      can rely on the mapping, so the same test is carried.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L446-L478
-  - what: >-
-      The OpenAI GPT reasoning detector matches openai.gpt- followed by a decimal digit anywhere in the name, so a
-      name such as myopenai.gpt-5 or openai.gpt-5x counts as a reasoning model.
-    why: >-
-      LiteLLM uses re.search rather than an anchored prefix test, and the same detector also gates reasoning_effort
-      in the supported-parameter list, so the loose match is carried as it stands.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L387-L389
+- what: get_config keeps the custom_llm_provider entry even though its value is a property descriptor rather than a config value; betterlite carries the member as {kind: property} so the same names come back.
+  why: LiteLLM's filter drops functions, classmethods, staticmethods and None but not properties, so a caller of get_config sees custom_llm_provider among the config members; dropping it here would change that member list.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L299-L314
+- what: A reasoning_effort outside low, medium and high on a Nova 2 model raises the rejection tagged with the fixed model amazon.nova-2-lite-v1:0 and provider bedrock_converse, not the model the caller named.
+  why: The raised error's model field is what a caller can match on, and LiteLLM always writes that fixed id, so the same value is carried here.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L505-L517
+- what: A thinking budget_tokens of true or false counts as the integers 1 and 0 and is clamped to the Bedrock minimum, where a float, text, null, list or mapping budget is left alone.
+  why: Python's isinstance(budget, int) accepts JSON booleans, so LiteLLM rewrites them; betterlite keeps that rule instead of rejecting a request LiteLLM would have clamped.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L594-L610
+- what: web_search_options maps to the nova_grounding systemTool for any model whose name contains nova in any case, including names that are not Amazon Nova models, and only a non-Nova name logs the debug line and returns nothing.
+  why: LiteLLM tests the name for the nova substring rather than a model family, and a setup that uses a Nova alias can rely on the mapping, so the same test is carried.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L446-L478
+- what: The OpenAI GPT reasoning detector matches openai.gpt- followed by a decimal digit anywhere in the name, so a name such as myopenai.gpt-5 or openai.gpt-5x counts as a reasoning model.
+  why: LiteLLM uses re.search rather than an anchored prefix test, and the same detector also gates reasoning_effort in the supported-parameter list, so the loose match is carried as it stands.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L387-L389
