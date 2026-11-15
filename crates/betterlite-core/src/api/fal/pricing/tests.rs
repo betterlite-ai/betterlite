@@ -402,11 +402,11 @@ fn tie_fixture() -> Fixture {
         ),
         (
             "fal_ai/high/1000-x-1000/fal-ai/tie",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.1}"#,
+            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.2}"#,
         ),
         (
-            "fal_ai/high/1100-x-1000/fal-ai/tie",
-            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.2}"#,
+            "fal_ai/high/900-x-1000/fal-ai/tie",
+            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.1}"#,
         ),
     ])
 }
@@ -419,7 +419,7 @@ fn the_closest_area_wins_and_a_tie_goes_to_the_smaller_area() {
     let tied = object(&[(
         "image_size",
         Json::Object(object(&[
-            ("width", integer(1050)),
+            ("width", integer(950)),
             ("height", integer(1000)),
         ])),
     )]);
@@ -681,6 +681,55 @@ fn a_zero_resolution_price_is_used_as_zero() {
     )
     .expect("the zero resolution price prices the images");
     assert_eq!(cost, Decimal::ZERO);
+}
+
+fn dev_keyed_fixture() -> Fixture {
+    fixture(&[
+        (FLUX_DEV, FLAT_DEV),
+        (
+            "fal_ai/high/1024-x-768/fal-ai/flux/dev",
+            r#"{"litellm_provider": "fal_ai", "output_cost_per_image": 0.3}"#,
+        ),
+    ])
+}
+
+#[test]
+fn a_zero_deployment_price_outranks_a_matching_resolution_price() {
+    let fixture = dev_keyed_fixture();
+    let image = object(&[("width", integer(1024)), ("height", integer(768))]);
+    let images = [Some(&image), Some(&image)];
+    let params = object(&[("resolution", integer(1024))]);
+    let zero = record(&[("output_cost_per_image", "0")]);
+    let cost = cost_calculator(
+        &request(FLUX_DEV, &images, Some(&params), Some(&zero)),
+        &fixture.catalog,
+        &fixture.lookup,
+    )
+    .expect("the deployment price prices the images");
+    assert_eq!(cost, Decimal::ZERO);
+}
+
+#[test]
+fn a_resolution_price_outranks_the_keyed_rows_of_the_same_model() {
+    let fixture = dev_keyed_fixture();
+    let image = object(&[("width", integer(1024)), ("height", integer(768))]);
+    let images = [Some(&image), Some(&image)];
+    let resolved = object(&[("resolution", integer(1024))]);
+    let cost = cost_calculator(
+        &request(FLUX_DEV, &images, Some(&resolved), None),
+        &fixture.catalog,
+        &fixture.lookup,
+    )
+    .expect("the resolution price prices the images");
+    assert_eq!(cost, decimal("0.25"));
+    let unresolved = object(&[("resolution", text("1k"))]);
+    let keyed = cost_calculator(
+        &request(FLUX_DEV, &images, Some(&unresolved), None),
+        &fixture.catalog,
+        &fixture.lookup,
+    )
+    .expect("the keyed rows price the images");
+    assert_eq!(keyed, decimal("0.6"));
 }
 
 #[test]

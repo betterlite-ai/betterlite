@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
+
 use rust_decimal::Decimal;
 use serde::Serialize;
 
 use super::rates::cost_per_unit;
 use super::{ModelInfo, TokenRateError};
+use crate::price_lookup::PriceRecord;
 use crate::tiered_pricing::Scalar;
 
 // Short idents reuse the names crate::price_fields::values already gave these wire keys.
@@ -15,6 +18,19 @@ macro_rules! deployment_pricing {
                 #[serde(rename = $wire, skip_serializing_if = "Option::is_none")]
                 pub $field: Option<Decimal>,
             )+
+        }
+
+        impl DeploymentPricing {
+            // The valid prices as the catalog-shaped record the provider calculators read, each an exact JSON number.
+            pub fn price_record(&self) -> Result<PriceRecord, serde_json::Error> {
+                let text = serde_json::to_string(self)?;
+                let fields: BTreeMap<String, String> = serde_json::from_str(&text)?;
+                let mut record = PriceRecord::new();
+                for (key, price) in fields {
+                    record.insert(key, Scalar::Number(price.parse()?));
+                }
+                Ok(record)
+            }
         }
 
         fn fill_deployment_pricing(

@@ -1,7 +1,5 @@
 mod keyed;
 
-use std::collections::BTreeMap;
-
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::error::ImageCostError;
@@ -13,7 +11,6 @@ use betterlite_models::token_rates::deployment::{DeploymentPricing, deployment_p
 use betterlite_models::token_rates::{ModelInfo, TokenRateError};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::Number;
 
 use crate::cost::image_dispatch::options::OptionalParams;
 
@@ -138,7 +135,9 @@ fn fallback_cost(
     images: &[Option<&IndexMap<String, Json>>],
     keyed_costs: &[Option<Decimal>],
 ) -> Result<Decimal, FalPricingError> {
-    let deployment_record = deployment.map(deployment_price_record).transpose()?;
+    let deployment_record = deployment
+        .map(DeploymentPricing::price_record)
+        .transpose()?;
     let resolved = resolve_image_model_info(
         model,
         Some(FAL_AI_PROVIDER),
@@ -236,20 +235,6 @@ fn image_price(value: Option<&Scalar>) -> Result<Option<Decimal>, ImageCostError
             Ok(None)
         }
     }
-}
-
-fn deployment_price_record(pricing: &DeploymentPricing) -> Result<PriceRecord, FalPricingError> {
-    let text = serde_json::to_string(pricing)?;
-    let fields: BTreeMap<String, String> = serde_json::from_str(&text)?;
-    fields
-        .into_iter()
-        .map(|(key, price)| {
-            price
-                .parse::<Number>()
-                .map(|number| (key, Scalar::Number(number)))
-                .map_err(FalPricingError::Prices)
-        })
-        .collect()
 }
 
 fn positive_integer(value: Option<&Json>) -> Option<u64> {

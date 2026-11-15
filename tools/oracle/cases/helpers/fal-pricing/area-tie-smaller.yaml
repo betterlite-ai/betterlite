@@ -6,11 +6,11 @@ call:
     model: fal_ai/fal-ai/tie
     catalog:
       fal_ai/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.75}
-      fal_ai/high/1000-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.1}
-      fal_ai/high/1100-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.2}
+      fal_ai/high/1000-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.2}
+      fal_ai/high/900-x-1000/fal-ai/tie: {litellm_provider: fal_ai, output_cost_per_image: 0.1}
     cases:
       - images: [{}]
-        optional_params: {image_size: {width: 1050, height: 1000}}
+        optional_params: {image_size: {width: 950, height: 1000}}
         model_info: null
       - images: [{}]
         optional_params: {image_size: {width: 1150, height: 1000}}

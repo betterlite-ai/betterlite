@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
 use std::error::Error;
 
 use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::price_lookup::PriceRecord;
-use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
 use betterlite_models::token_rates::deployment::deployment_pricing;
 use rust_decimal::Decimal;
@@ -46,18 +44,10 @@ where
     else {
         return Ok(None);
     };
-    let text =
-        serde_json::to_string(&pricing).map_err(|source| ImageDispatchError::Prices { source })?;
-    let fields: BTreeMap<String, String> =
-        serde_json::from_str(&text).map_err(|source| ImageDispatchError::Prices { source })?;
-    let mut record = PriceRecord::new();
-    for (key, price) in fields {
-        let number = price
-            .parse()
-            .map_err(|source| ImageDispatchError::Prices { source })?;
-        record.insert(key, Scalar::Number(number));
-    }
-    Ok(Some(record))
+    pricing
+        .price_record()
+        .map(Some)
+        .map_err(|source| ImageDispatchError::Prices { source })
 }
 
 // Explicit arguments beat the response, which beats the request options, which beat the defaults; an empty text is skipped.
