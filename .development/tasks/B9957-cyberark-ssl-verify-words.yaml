@@ -1,0 +1,63 @@
+id: B9957
+title: CyberArk TLS verification turns off only on false
+description: >-
+  The CyberArk secret manager in crates/betterlite-secret-managers/src/cyberark.rs reads CYBERARK_SSL_VERIFY with
+  read_boolean_text from secret_helpers.rs, which goes through betterlite_env::flag. That parser takes true, 1, yes and
+  on and their opposites, so CYBERARK_SSL_VERIFY=0, no or off turns TLS verification off for the Conjur client. LiteLLM
+  reads the variable with str_to_bool, which knows only "true" and "false" after trimming and lowercasing, and any other
+  value leaves ssl_verify on. A user who moves from LiteLLM with one of those words set gets no TLS verification in
+  betterlite where LiteLLM verified, so this task brings the parse back to LiteLLM's.
+
+
+  Read the variable with secret_lookup::text_to_bool, the crate's port of str_to_bool, and keep verification on unless
+  it returns Some(false). Unset, empty and every word other than "false" (any case, surrounding spaces trimmed) keep it
+  on. compatibility.md's shared env parser doesn't apply here, since LiteLLM reads this variable with str_to_bool;
+  guardrail_modes.rs and user_url_policy.rs in betterlite-config read str_to_bool variables the same way. read_boolean_text
+  then has no caller left, so remove it and its tests from secret_helpers.rs. betterlite now matches LiteLLM, so the
+  task adds no deviation row.
+scope:
+  paths:
+  - "crates/betterlite-secret-managers/src/cyberark/cyberark_auth/tests.rs"
+  - crates/betterlite-secret-managers/src/cyberark.rs
+  - crates/betterlite-secret-managers/src/cyberark/tests.rs
+  - crates/betterlite-secret-managers/src/secret_helpers.rs
+  - crates/betterlite-secret-managers/src/secret_helpers/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/cyberark_secret_manager.py#L45-L47
+  why: LiteLLM reads CYBERARK_SSL_VERIFY with str_to_bool and keeps verification on for None.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+  why: str_to_bool knows only true and false after strip and lower.
+- url: https://github.com/betterlite-ai/betterlite/blob/da88751516/crates/betterlite-secret-managers/src/secret_lookup.rs#L95-L102
+  why: text_to_bool, the crate's str_to_bool.
+dod:
+- text: CYBERARK_SSL_VERIFY set to false, FALSE or " false " turns TLS verification off.
+  proof: [cyberark-tests]
+- text: CYBERARK_SSL_VERIFY unset, empty, 0, no, off, true or any other word keeps TLS verification on.
+  proof: [cyberark-tests]
+- text: read_boolean_text is gone and nothing in the crate calls betterlite_env::flag for CYBERARK_SSL_VERIFY.
+  proof: [no-flag-parse, secret-helper-tests]
+checks:
+  optional: []
+  commands:
+  - id: cyberark-tests
+    why: A word other than false turns TLS verification off, or false leaves it on.
+    run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^cyberark::tests::/)'
+  - id: secret-helper-tests
+    why: Removing read_boolean_text broke the other secret helpers.
+    run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^secret_helpers::tests::/)'
+  - id: no-flag-parse
+    why: The CyberArk TLS flag still goes through the shared env flag parser.
+    run: '! grep -r -q -F read_boolean_text crates/betterlite-secret-managers/src'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Other variables that betterlite reads with betterlite_env::flag. A port that stands in for str_to_bool elsewhere is its owner's to check.
+- The Conjur client and its TLS setup (B4418).
+pitfalls:
+- The test sets the variable through the lookup closure the constructor takes, not through std::env, so tests stay parallel safe.
+- Keep the default on when the variable is unset. An Option<bool> that falls back to false would turn TLS off for everyone.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

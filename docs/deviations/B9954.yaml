@@ -1,0 +1,5 @@
+task: B9954
+deviations:
+  - what: The prompt cache keeps at most 1000 entries and drops the least recently used one.
+    why: LiteLLM's dict grows with every label and version a client sends and never shrinks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L225-L231

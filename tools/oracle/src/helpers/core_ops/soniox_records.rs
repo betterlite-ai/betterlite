@@ -1,9 +1,22 @@
+mod answers;
+mod input;
+mod tests;
+
+use serde_json::json;
+
+use crate::helpers::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+impl Helper for Op {
+    type Input = input::Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("soniox_records")
+    fn run(input: &Self::Input) -> HelperResult {
+        let answers = input
+            .calls
+            .iter()
+            .map(answers::answer)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(json!({ "calls": answers }))
     }
 }

@@ -1,0 +1,15 @@
+kind: helper
+name: responses_hook_policy-safety-seed
+call:
+  responses_hook_policy:
+    operation: safety
+    tool_calls: [{name: lookup, id: call-a}]
+    fingerprints: []
+    depth: 3
+    max_loops: 3
+    model: gpt-4o
+    blocks: [{type: tool_use, id: call-a, name: lookup}]
+    stream: true
+    api_surface: responses
+env: {}
+compare: {ignore: []}

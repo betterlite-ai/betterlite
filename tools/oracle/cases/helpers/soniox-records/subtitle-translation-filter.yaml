@@ -1,0 +1,49 @@
+kind: helper
+name: soniox-records-subtitle-translation-filter
+call:
+  soniox_records:
+    calls:
+    - function: response
+      payload:
+        tokens:
+        - {text: "Hello ", start_ms: 0, end_ms: 500, speaker: 1}
+        - {text: world, start_ms: 500, end_ms: 1000, speaker: 1}
+        - {text: "Hola ", translation_status: translation}
+      response_format: srt
+    - function: response
+      payload:
+        tokens:
+        - {text: "Hello ", start_ms: 0, end_ms: 500, speaker: 1}
+        - {text: world, start_ms: 500, end_ms: 1000, speaker: 1}
+        - {text: "Hola ", translation_status: translation}
+      response_format: vtt
+    - function: response
+      payload:
+        tokens:
+        - {text: Hola, start_ms: 0, end_ms: 10, translation_status: translation}
+      response_format: srt
+    - function: response
+      payload:
+        tokens:
+        - {text: Hola, start_ms: 0, end_ms: 10, translation_status: translation}
+      response_format: vtt
+    - function: response
+      payload:
+        tokens:
+        - {text: x, start_ms: true, end_ms: false}
+        - {text: y, start_ms: 1, end_ms: 0}
+      response_format: srt
+    - function: response
+      payload:
+        tokens:
+        - {text: "a ", start_ms: 0, end_ms: 5, translation_status: null}
+        - {text: b, start_ms: 5, end_ms: 10, translation_status: ""}
+      response_format: vtt
+    - function: response
+      payload:
+        tokens:
+        - {text: "a ", start_ms: 0, end_ms: 5, speaker: true}
+        - {text: b, start_ms: 5, end_ms: 10, speaker: 1}
+      response_format: srt
+compare: {ignore: []}
+env: {}

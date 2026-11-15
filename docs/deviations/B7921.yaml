@@ -1,0 +1,29 @@
+task: B7921
+deviations:
+  - what: "Names imported from the openai package are not exported by betterlite, where `from litellm.types.llms.openai import Response` and the like resolve in LiteLLM."
+    why: "The wheel has no openai dependency, so the openai types LiteLLM re-exports (Response, ToolParam, ResponseInputParam, ResponseIncludable, ChatCompletionChunk and the rest) have no source in this package."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L15-L91
+  - what: "A field or alias LiteLLM declares with an openai model type, a bare dict/list or object-typed values is declared here as dict[str, JsonValue], list[JsonValue], Mapping[str, JsonValue] or str. That covers ChatCompletionRequest's dict fields, functions and output_config, the tool and usage token details, provider_specific_fields, the logprobs byte lists, ShellToolParam's environment, the Responses API request and event dict fields (input, metadata, reasoning, text, tool_choice, tools, part, annotation) and OpenAIChatCompletionChunk's choices, moderation, service_tier and usage."
+    why: "The openai classes those fields name live outside the wheel, object and Any say nothing about the value, and docs/compatibility.md types the Python boundary at JSON values; the Literal members and required keys are kept, so a request or reply built from JSON validates the same."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1053-L1072
+  - what: "OpenAIChatCompletionChunk extends BaseLiteLLMOpenAIResponseObject and declares the fields of openai's ChatCompletionChunk itself (id, choices, created, model, object, moderation, service_tier, system_fingerprint and usage), where LiteLLM extends ChatCompletionChunk."
+    why: "The wheel has no openai dependency, so that base class has no source here; the field names, required keys, defaults, extra-key handling and the object value forced in __init__ match the openai model."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1111-L1116
+  - what: "ALL_RESPONSES_API_TOOL_PARAMS is dict[str, JsonValue] | ComputerToolParam | ShellToolParam, where LiteLLM's ToolParam | ComputerToolParam | ShellToolParam flattens into the 17 openai tool parameter TypedDicts plus those two."
+    why: "ToolParam comes from openai, which the wheel does not depend on; a tool parameter mapping validates as JSON, and the two LiteLLM-defined members stay named."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1244
+  - what: "ResponsesAPIStreamEvents is a StrEnum, where LiteLLM declares class ResponsesAPIStreamEvents(str, Enum)."
+    why: "ruff's UP042 rewrites the `str, Enum` mixin pair on the Python 3.11 target and the budgets allow no suppression; members keep their names, values, str-ness and equality with the raw strings, and only str()/repr() text differs, which docs/compatibility.md leaves to Python's runtime."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1509-L1570
+  - what: "ErrorEventError.param is str | dict[str, JsonValue] | None, where LiteLLM declares str | dict[str, object] | None."
+    why: "object admits values that have no JSON form, and the field arrives over the wire as JSON; a nested non-JSON Python object now fails validation naming param, where LiteLLM only fails at serialization."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1867-L1873
+  - what: "ComputerToolParam.environment and ComputerToolParam.type are typed str here, where LiteLLM writes Literal[...] | str for each."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1218-L1228
+  - what: "ShellToolParam.type is typed str here, where LiteLLM writes Literal[\"shell\"] | str."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1231-L1237
+  - what: "OpenAIChatCompletionToolParam.type is typed str here, where LiteLLM writes Literal[\"function\"] | str."
+    why: "The str arm already accepts every string, so ruff PYI051 reports the Literal as redundant and the budgets allow no suppression; the accepted values and required keys are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1030-L1032
