@@ -33,3 +33,4 @@ deviations:
       bridges, and the counters a client reads (prompt, completion, total, cached and reasoning
       tokens) stay identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1193-L1239
+kept_bugs: []
