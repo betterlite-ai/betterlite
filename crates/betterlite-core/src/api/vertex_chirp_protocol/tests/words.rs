@@ -13,7 +13,7 @@ use crate::api::vertex_chirp_protocol::words::{join_transcript, new_words};
 #[case::empty_current("hello", "", "")]
 #[case::several_words("a b", "a b c d", " c d")]
 #[case::punctuation_between_words("um", "um, hello", " hello")]
-#[case::accents_are_kept("caf\u{e9}", "cafe", "cafe")]
+#[case::accents_are_kept("r\u{e9}sum\u{e9}", "resume", "resume")]
 #[case::vowel_signs_are_kept(
     "\u{939}\u{93f}\u{902}\u{926}\u{940} \u{915}\u{93e}",
     "\u{939}\u{93f}\u{902}\u{926}\u{940} \u{915}\u{940}",
