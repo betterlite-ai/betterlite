@@ -102,7 +102,7 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         }));
     }
     let mut request_data = args.request_data.clone();
-    let outcome = <AliceGuardrail as GuardrailContract>::apply_guardrail(
+    let applied = <AliceGuardrail as GuardrailContract>::apply_guardrail(
         &guardrail,
         state_inputs(args),
         &mut request_data,
@@ -110,7 +110,7 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         None,
     )
     .await;
-    let outcome = outcome_of(outcome)?;
+    let outcome = outcome_of(applied)?;
     Ok(json!({
         "texts": outcome.texts,
         "requests": endpoint.recorded(),
