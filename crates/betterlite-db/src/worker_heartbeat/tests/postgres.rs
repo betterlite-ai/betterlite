@@ -58,7 +58,7 @@ fn heartbeat(worker_id: Option<&str>, hostname: &'static str) -> ProxyWorkerHear
 async fn postgres_clock_ignores_process_skew() {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
-    {
+    let committed = {
         let transaction = client.transaction().await.unwrap();
         transaction
             .batch_execute(
@@ -86,8 +86,9 @@ async fn postgres_clock_ignores_process_skew() {
             count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
             Some(2_i32)
         );
-        database.client.commit().await.unwrap()
+        database.client.commit().await
     };
+    committed.unwrap();
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
@@ -206,7 +207,7 @@ async fn heartbeat_exists(client: &Client, worker_id: &str) -> bool {
 async fn postgres_live_and_prune_strict_boundaries() {
     let (fixture, pool) = database().await;
     let mut client = pool.get().await.unwrap();
-    {
+    let committed = {
         let transaction = client.transaction().await.unwrap();
         transaction.batch_execute(BOUNDARY_ROWS).await.unwrap();
         let database = PostgresDatabase {
@@ -234,8 +235,9 @@ async fn postgres_live_and_prune_strict_boundaries() {
             count_live_proxy_workers(WriterPinnedClient::Writer(&database)).await,
             Some(2_i32)
         );
-        database.client.commit().await.unwrap()
+        database.client.commit().await
     };
+    committed.unwrap();
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
