@@ -755,8 +755,15 @@ fn selection_source_credentials_are_named() {
 #[test]
 fn selection_model_info_stubs_stay_unsupported() {
     let vertex = VertexModelInfo {
-        settings: VertexSettings::default(),
+        settings: VertexSettings {
+            project: Some("model-info-project".to_owned()),
+            ..VertexSettings::default()
+        },
     };
+    assert_eq!(
+        vertex.get_token_counter().settings.project.as_deref(),
+        Some("model-info-project")
+    );
     assert!(matches!(
         vertex.validate_environment(),
         Err(ModelInfoError::NotSupported)
