@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-gemini-images-usage-details
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings: []
+    target: null
+    response:
+      candidates:
+        - content:
+            parts:
+              - inlineData: {data: AAA}
+      usageMetadata:
+        promptTokenCount: 9
+        promptTokensDetails:
+          - {modality: TEXT, tokenCount: 4}
+          - {modality: IMAGE, tokenCount: 5}
+          - {modality: AUDIO, tokenCount: 7}
+          - {modality: "", tokenCount: 8}
+          - {tokenCount: 6}
+        candidatesTokenCount: 132
+        totalTokenCount: 141
+env: {}
+compare: {ignore: []}
