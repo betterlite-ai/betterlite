@@ -1,0 +1,10 @@
+kind: helper
+name: dashscope-rerank-base-resolver
+call:
+  b8171:
+    function: rerank_base
+    api_base: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    env_value: ''
+    default_rerank_base: https://dashscope.aliyuncs.com/compatible-api/v1/reranks
+env: {}
+compare: {ignore: []}
