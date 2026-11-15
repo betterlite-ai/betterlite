@@ -1,0 +1,14 @@
+task: B3751
+deviations:
+  - what: Akto guardrail errors carry betterlite's own wording, with LiteLLM's status codes and the 503 for a fail-closed unreachable service unchanged.
+    why: Error messages are betterlite's own per rule errors-match-litellm; clients branch on the status and code, not the wording.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L375-L379
+  - what: An Akto response body larger than 1 MiB is refused as an unreachable service instead of being parsed.
+    why: Every inbound body has a size cap, and an unbounded read is a free denial of service; the response is treated like the other malformed answers that reach handle_unreachable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L336-L347
+  - what: LiteLLM keeps a negative guardrail_timeout as configured and passes it to every request (akto.py L323), so the failure surfaces per request and unreachable_fallback decides; betterlite rejects a timeout u64 cannot represent while loading config.
+    why: Duration cannot represent a negative number of seconds, so betterlite reports the invalid configuration at its boundary instead of turning every call into an unreachable one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L118
+  - what: The injected client gives the Akto request one total deadline, where LiteLLM's scalar httpx timeout applies the configured seconds to connect, read, write and pool separately.
+    why: The request builder sets a single timeout for the whole call, so an Akto service that spends most of the configured seconds connecting and the rest answering times out here and follows unreachable_fallback, while a working LiteLLM setup still gets the verdict.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/akto.py#L323

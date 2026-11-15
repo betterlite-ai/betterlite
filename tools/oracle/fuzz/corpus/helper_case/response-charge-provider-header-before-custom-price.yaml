@@ -1,0 +1,18 @@
+kind: helper
+name: provider-header-before-custom-price-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-chat-header
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-chat-header: {litellm_provider: openai, mode: chat, input_cost_per_token: 2, output_cost_per_token: 4}
+    usage: {prompt_tokens: 10, completion_tokens: 5, cached_tokens: null}
+    custom_price: {input_cost_per_token: 1, output_cost_per_token: 0.5}
+    cache_hit: null
+    header_cost: 0.25
+    discount: {}
+    margin: {}
+compare: {ignore: []}
+env: {}
