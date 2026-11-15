@@ -28,11 +28,13 @@ impl TransformError {
     #[must_use]
     pub const fn status_code(&self) -> u16 {
         match self {
+            // LiteLLM's unguarded int() escapes as a 500; a malformed request value is a 400.
             Self::MissingMaxTokens
             | Self::IntegerField { .. }
             | Self::Reasoning(_)
-            | Self::Anthropic { .. } => 400,
-            Self::Thinking(_) | Self::ContextManagement(_) | Self::Json(_) => 500,
+            | Self::Anthropic { .. }
+            | Self::Thinking(_) => 400,
+            Self::ContextManagement(_) | Self::Json(_) => 500,
         }
     }
 }

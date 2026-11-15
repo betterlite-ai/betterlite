@@ -133,6 +133,7 @@ fn adaptive_output_effort() {
     adaptive_effort_top_levels();
     adaptive_effort_existing_config();
     adaptive_effort_gate();
+    budget_tokens_not_an_integer();
 }
 
 #[test]
@@ -587,6 +588,33 @@ fn no_reasoning_support_drops_adaptive_effort() {
             .all(|line| line.contains(DROPPED_EFFORT_WARNING)),
         "{warnings:?}"
     );
+}
+
+// claude-opus-4-7 is the pinned adaptive family without legacy thinking support; the false is spelled out.
+const NO_LEGACY_THINKING_RECORD: &str = r#"{"claude-opus-4-7": {"litellm_provider": "anthropic", "supports_reasoning": true, "supports_adaptive_thinking": true, "supports_legacy_thinking": false, "supports_output_config": true, "supports_xhigh_reasoning_effort": true, "supports_max_reasoning_effort": true, "thinking_always_on": false}}"#;
+
+#[test]
+fn budget_tokens_not_an_integer() {
+    let world = World::load(NO_LEGACY_THINKING_RECORD);
+    let text = failure(transform(
+        &world,
+        "claude-opus-4-7",
+        USER,
+        r#"{"max_tokens":32768,"thinking":{"type":"enabled","budget_tokens":"abc"}}"#,
+        false,
+    ));
+    assert_eq!(text.status_code(), 400);
+    assert_eq!(text.to_string(), "thinking budget_tokens is not an integer");
+
+    let list = failure(transform(
+        &world,
+        "claude-opus-4-7",
+        USER,
+        r#"{"max_tokens":32768,"thinking":{"type":"enabled","budget_tokens":[1024]}}"#,
+        false,
+    ));
+    assert_eq!(list.status_code(), 400);
+    assert_eq!(list.to_string(), "thinking budget_tokens is not an integer");
 }
 
 #[test]
