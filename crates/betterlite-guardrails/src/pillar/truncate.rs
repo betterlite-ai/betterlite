@@ -52,11 +52,8 @@ fn shorten_entry(kept: &mut [GuardrailValue], encoded: &mut String, max_bytes: u
     while encoded.len() > max_bytes && !text.is_empty() {
         let characters = text.chars().count();
         // LiteLLM drops `step` characters while the text is longer than the step, else only the last one
-        let dropped = characters.saturating_sub(step).max(1);
-        text = text
-            .chars()
-            .take(characters.saturating_sub(dropped))
-            .collect();
+        let dropped = if characters > step { step } else { 1 };
+        text = text.chars().take(characters - dropped).collect();
         step = step.checked_div(2).unwrap_or(0).max(1);
         let replaced = if text.is_empty() {
             TRUNCATED_VALUE.to_owned()
