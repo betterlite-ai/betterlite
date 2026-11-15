@@ -1,0 +1,34 @@
+kind: helper
+name: batch-provider-cancel-unsupported-provider
+call:
+  batch_provider_cancel:
+    input:
+      cancel:
+        batch_id: batch_1
+        model: null
+        provider: mistral
+        extra_headers: null
+        extra_body: null
+        params:
+          api_base: null
+          api_key: null
+          api_version: null
+          organization: null
+          vertex_project: null
+          vertex_location: null
+          vertex_credentials: null
+          azure_ad_token: null
+          aws_region_name: null
+          aws_access_key_id: null
+          aws_secret_access_key: null
+          aws_session_token: null
+          timeout: null
+          request_timeout: null
+          max_retries: null
+        call: {async: {model_in_kwargs: null}}
+    settings: null
+    env: {}
+    now: 0
+    script: {batch: null, error: null}
+env: {}
+compare: {ignore: []}

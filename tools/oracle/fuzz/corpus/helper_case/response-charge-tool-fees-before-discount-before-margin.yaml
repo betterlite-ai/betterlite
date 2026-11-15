@@ -1,0 +1,20 @@
+kind: helper
+name: tool-fees-before-discount-before-margin-seed
+call:
+  response_charge:
+    function: completion_cost
+    model: oracle-tool-chat
+    custom_llm_provider: openai
+    region_name: null
+    catalog:
+      oracle-tool-chat: {litellm_provider: openai, mode: chat, input_cost_per_token: 0.25, output_cost_per_token: 0.5, search_context_cost_per_query: {search_context_size_medium: 2.0}}
+    usage: {prompt_tokens: 8, completion_tokens: 4, cached_tokens: null}
+    custom_price: null
+    cache_hit: null
+    header_cost: null
+    discount: {openai: 0.5}
+    margin: {openai: {percentage: 0.5, fixed_amount: 0.25}}
+    standard_tools: {web_search_options: {}}
+    annotations: true
+compare: {ignore: []}
+env: {}

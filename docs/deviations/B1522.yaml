@@ -1,0 +1,8 @@
+task: B1522
+deviations:
+  - what: A reply whose JSON root is not an object fails with a typed NotObject error that carries the upstream status and headers, where LiteLLM calls .get on the parsed list or string and the uncaught AttributeError surfaces as a 500.
+    why: A body outside the reply object LiteLLM declares cannot be read as a generation reply, and a 500 hides the upstream status a caller needs; keeping that status and the headers is what the task asks for a reply the declared type cannot hold, and no working Stability setup sends a bare list or string as the reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_generation/transformation.py#L229-L256
+  - what: A reply whose image is not a string fails with a typed Malformed error that carries the upstream status and headers, where LiteLLM passes the value into ImageObject and the uncaught validation error surfaces as a 500.
+    why: The image field is declared as text, so a number or an object there is not a generation result; naming the failure while keeping the upstream status and headers beats a 500, and no working Stability setup sends a non-string image.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_generation/transformation.py#L229-L256

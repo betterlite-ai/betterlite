@@ -1,0 +1,85 @@
+import asyncio
+import os
+
+from litellm.proxy.db.prisma_client import PrismaWrapper
+from litellm.proxy.db.routing_prisma_wrapper import RoutingPrismaWrapper
+from litellm.proxy.utils import _StaleReadEngine  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4351-L4392
+from pydantic import JsonValue as Json
+
+from .client import FakeClient, wrapper_for
+from .contracts import DATABASE_URL_ENV, Scenario, Target, scripted_proxy
+from .fakes import FakeRouting, FakeWrapper, Recorder, ScriptedTime
+
+
+def stale_for(
+    stale: Target | None,
+    writer: FakeWrapper,
+    reader: FakeWrapper,
+    *,
+    routing: bool,
+) -> _StaleReadEngine | None:
+    if stale is None:
+        return None
+    wrapper = wrapper_for(stale["target"], writer, reader, routing=routing)
+    return _StaleReadEngine(wrapper=wrapper, generation=stale["generation"])
+
+
+def seconds(value: int | None) -> float | None:
+    if value is None:
+        return None
+    return value / 1000
+
+
+def set_database_url(url: str | None) -> None:
+    if url is None:
+        os.environ.pop(DATABASE_URL_ENV, None)
+    else:
+        os.environ[DATABASE_URL_ENV] = url
+
+
+async def attempt(
+    client: FakeClient,
+    entry: Scenario,
+    stale: _StaleReadEngine | None,
+) -> bool:
+    request = entry["request"]
+    set_database_url(entry["database_url"])
+    return await client.attempt_db_reconnect(
+        reason=request["reason"],
+        force=request["force"],
+        timeout_seconds=seconds(request["timeout_ms"]),
+        lock_timeout_seconds=seconds(request["lock_timeout_ms"]),
+        force_recreate=request["force_recreate"],
+        stale_read_engine=stale,
+    )
+
+
+def scenario(entry: Scenario) -> Json:
+    effects: list[Json] = []
+    recreation = entry["recreate"]
+    selection = entry["select_one"]
+    writer = FakeWrapper(entry["generations"]["writer"], recreation, selection, effects)
+    reader = FakeWrapper(entry["generations"]["reader"], recreation, selection, effects)
+    routing = entry["routing"]
+    db: PrismaWrapper | RoutingPrismaWrapper
+    if routing:
+        db = FakeRouting(
+            writer,
+            reader,
+            reader_unavailable=entry["reader_unavailable"],
+        )
+    else:
+        db = writer
+    client = FakeClient(entry, db, writer, reader, effects)
+    stale = stale_for(entry["stale"], writer, reader, routing=routing)
+    with scripted_proxy(Recorder(effects), ScriptedTime(entry["clock"])):
+        result = asyncio.run(attempt(client, entry, stale))
+    return {
+        "name": entry["name"],
+        "result": result,
+        "effects": effects,
+        "failures": client.failure_count(),
+        "dead": client.engine_dead(),
+        "failed_writer": client.failed_for(writer),
+        "failed_reader": client.failed_for(reader if routing else writer),
+    }

@@ -1,0 +1,404 @@
+use std::collections::BTreeMap;
+use std::fs;
+use std::future::IntoFuture as _;
+use std::io;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use axum::Router;
+use axum::body::to_bytes;
+use axum::extract::{Request, State};
+use axum::http::{HeaderMap, StatusCode as AxumStatus};
+use axum::routing::post;
+use reqwest::StatusCode;
+use tokio::io::AsyncWriteExt as _;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use tokio::time::sleep;
+
+use super::{fixed_clock, guardrail, guardrail_at, inputs, log_path, log_to};
+use crate::akto::error::AktoError;
+use crate::akto::payload::{AktoPayload, build_akto_payload};
+use crate::akto::transport::{
+    AktoAnswer, AktoCallFlags, fire_and_forget_request, handle_guardrail_response, parse_verdict,
+    send_request,
+};
+
+struct Recorded {
+    path: String,
+    query: Option<String>,
+    content_type: Option<String>,
+    authorization: Option<String>,
+    body: Vec<u8>,
+}
+
+type Captures = Arc<Mutex<Vec<Recorded>>>;
+
+fn header_text(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned)
+}
+
+async fn capture(State(captures): State<Captures>, request: Request) -> (AxumStatus, &'static str) {
+    let (parts, body) = request.into_parts();
+    let bytes = to_bytes(body, 1024 * 1024).await.expect("body bytes");
+    captures.lock().expect("captures").push(Recorded {
+        path: parts.uri.path().to_owned(),
+        query: parts.uri.query().map(str::to_owned),
+        content_type: header_text(&parts.headers, "content-type"),
+        authorization: header_text(&parts.headers, "authorization"),
+        body: bytes.to_vec(),
+    });
+    (
+        AxumStatus::OK,
+        "{\"data\":{\"guardrailsResult\":{\"Allowed\":true}}}",
+    )
+}
+
+async fn serve_router(router: Router) -> (String, JoinSet<io::Result<()>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, server)
+}
+
+async fn serve(captures: Captures) -> (String, JoinSet<io::Result<()>>) {
+    let router = Router::new()
+        .route("/api/http-proxy", post(capture))
+        .with_state(captures);
+    serve_router(router).await
+}
+
+// Hardcoded independently of MAX_RESPONSE_BYTES, so a mutation of that constant can't move this boundary too.
+const SPEC_MAX_RESPONSE_BYTES: usize = 0x0010_0000;
+
+fn padded_body(size: usize) -> String {
+    let base = "{\"data\":{\"guardrailsResult\":{\"Allowed\":true}}}";
+    let mut body = base.to_owned();
+    body.push_str(&" ".repeat(size.saturating_sub(base.len())));
+    body
+}
+
+async fn serve_fixed_body(body: String) -> (String, JoinSet<io::Result<()>>) {
+    let router = Router::new().route(
+        "/api/http-proxy",
+        post(move || {
+            let answer = body.clone();
+            async move { (AxumStatus::OK, answer) }
+        }),
+    );
+    serve_router(router).await
+}
+
+async fn send_to_body(body: String) -> AktoAnswer {
+    let (base, _server) = serve_fixed_body(body).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer")
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_accepts_a_body_at_the_limit() {
+    let answer = send_to_body(padded_body(SPEC_MAX_RESPONSE_BYTES)).await;
+    assert_eq!(answer.body.len(), SPEC_MAX_RESPONSE_BYTES);
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
+    assert!(verdict.allowed);
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_accepts_a_body_over_2048_bytes() {
+    let answer = send_to_body(padded_body(3000)).await;
+    assert_eq!(answer.body.len(), 3000);
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
+    assert!(verdict.allowed);
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_refuses_a_body_over_the_limit() {
+    let (base, _server) = serve_fixed_body(padded_body(SPEC_MAX_RESPONSE_BYTES + 1)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("response too large");
+    assert!(
+        matches!(error, AktoError::ResponseTooLarge { limit } if limit == SPEC_MAX_RESPONSE_BYTES)
+    );
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_posts_the_mirroring_payload() {
+    let captures: Captures = Arc::new(Mutex::new(Vec::new()));
+    let (base, _server) = serve(Arc::clone(&captures)).await;
+    let mut guardrail = guardrail_at(fixed_clock);
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let answer = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer");
+    assert_eq!(answer.status, StatusCode::OK);
+    let recorded = captures.lock().expect("captures").pop().expect("request");
+    assert_eq!(recorded.path, "/api/http-proxy");
+    assert_eq!(
+        recorded.query.as_deref(),
+        Some("akto_connector=litellm&guardrails=true")
+    );
+    assert_eq!(recorded.content_type.as_deref(), Some("application/json"));
+    assert_eq!(recorded.authorization.as_deref(), Some("secret"));
+    let sent: AktoPayload = serde_json::from_slice(&recorded.body).expect("sent payload");
+    assert_eq!(sent, payload);
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_parses_the_verdict_after_sending() {
+    let captures: Captures = Arc::new(Mutex::new(Vec::new()));
+    let (base, _server) = serve(Arc::clone(&captures)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let answer = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: false,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await
+    .expect("answer");
+    let verdict = handle_guardrail_response(&answer).expect("verdict");
+    assert!(verdict.allowed);
+    assert!(verdict.reason.is_empty());
+    let recorded = captures.lock().expect("captures").pop().expect("request");
+    assert_eq!(
+        recorded.query.as_deref(),
+        Some("akto_connector=litellm&ingest_data=true")
+    );
+}
+
+#[tokio::test]
+async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let router = Router::new().route(
+        "/api/http-proxy",
+        post(|| async {
+            sleep(Duration::from_secs(30)).await;
+            (AxumStatus::OK, "{}")
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    guardrail.timeout = Duration::from_millis(100);
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("timeout");
+    assert!(matches!(error, AktoError::Transport { .. }));
+}
+
+// httpx applies a scalar timeout to each phase, so a body that trickles in under the read timeout still completes
+#[tokio::test]
+async fn akto_guardrail_send_request_applies_one_total_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let mut server = JoinSet::new();
+    server.spawn(async move {
+        let (mut stream, _) = listener.accept().await?;
+        stream
+            .write_all(
+                b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 12\r\n\r\n",
+            )
+            .await?;
+        stream.write_all(b"  ").await?;
+        sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        sleep(Duration::from_millis(60)).await;
+        stream.write_all(b"  ").await?;
+        Ok::<(), io::Error>(())
+    });
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    guardrail.timeout = Duration::from_millis(150);
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let error = send_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: false,
+        },
+        &payload,
+    )
+    .await
+    .expect_err("total deadline");
+    assert!(matches!(error, AktoError::Transport { .. }));
+}
+
+#[test]
+fn replays_the_akto_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/akto_response");
+    let paths: Vec<_> = fs::read_dir(corpus).expect("corpus").collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.expect("corpus entry").path()).expect("corpus file");
+        parse_verdict(&bytes).is_ok()
+    }));
+}
+
+#[tokio::test]
+async fn akto_guardrail_fire_and_forget_swallows_an_error_status() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let router = Router::new().route(
+        "/api/http-proxy",
+        post(|| async { (AxumStatus::INTERNAL_SERVER_ERROR, "oops") }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let path = log_path("fire-and-forget-error");
+    let guard = log_to(&path);
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
+    drop(guard);
+    let written = fs::read_to_string(&path).expect("log contents");
+    fs::remove_file(&path).expect("remove log");
+    assert!(written.contains("non-200"));
+}
+
+#[tokio::test]
+async fn akto_guardrail_fire_and_forget_sends_the_request() {
+    let captures: Captures = Arc::new(Mutex::new(Vec::new()));
+    let (base, _server) = serve(Arc::clone(&captures)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    let path = log_path("fire-and-forget-success");
+    let guard = log_to(&path);
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
+    drop(guard);
+    let recorded = captures.lock().expect("captures").pop().expect("request");
+    assert_eq!(
+        recorded.query.as_deref(),
+        Some("akto_connector=litellm&guardrails=true&ingest_data=true")
+    );
+    let written = fs::read_to_string(&path).expect("log contents");
+    fs::remove_file(&path).expect("remove log");
+    assert!(!written.contains("non-200"));
+}
+
+#[tokio::test]
+async fn akto_guardrail_fire_and_forget_swallows_a_transport_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    drop(listener);
+    let mut guardrail = guardrail();
+    guardrail.base_url = format!("http://{address}");
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, false).expect("payload");
+    fire_and_forget_request(
+        &guardrail,
+        AktoCallFlags {
+            guardrails: true,
+            ingest_data: true,
+        },
+        &payload,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn akto_guardrail_tracks_background_ingest_tasks_until_they_finish() {
+    let captures: Captures = Arc::new(Mutex::new(Vec::new()));
+    let (base, _server) = serve(Arc::clone(&captures)).await;
+    let mut guardrail = guardrail();
+    guardrail.base_url = base;
+    let payload =
+        build_akto_payload(&guardrail, &inputs(), &BTreeMap::new(), 200, true).expect("payload");
+    let background = guardrail.clone();
+    guardrail.tasks.spawn(async move {
+        fire_and_forget_request(
+            &background,
+            AktoCallFlags {
+                guardrails: true,
+                ingest_data: true,
+            },
+            &payload,
+        )
+        .await;
+    });
+    assert_eq!(guardrail.tasks.len(), 1);
+    guardrail.tasks.close();
+    guardrail.tasks.wait().await;
+    assert!(guardrail.tasks.is_empty());
+    assert_eq!(captures.lock().expect("captures").len(), 1);
+}

@@ -1,9 +1,194 @@
+mod wire;
+
+use std::collections::BTreeMap;
+
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::akto_mirroring::UnreachableFallback;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_guardrails::akto::AktoMirroring;
+use betterlite_guardrails::akto::payload::AktoInputs;
+use betterlite_guardrails::akto::transport::{AktoAnswer, handle_guardrail_response};
+use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+
+use crate::helpers::HelperError;
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
-        Self::not_built("b3751")
+    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        match input.op.as_str() {
+            "init" => {
+                let guardrail = settings(input)?;
+                Ok(json!({
+                    "base_url": guardrail.base_url,
+                    "account_id": guardrail.account_id,
+                    "vxlan_id": guardrail.vxlan_id,
+                    "unreachable_fallback": fallback_name(guardrail.unreachable_fallback),
+                    "timeout": guardrail.timeout.as_secs(),
+                }))
+            }
+            "payload" => wire::build_payload(input),
+            "response" => parse_response(input),
+            "unreachable" => wire::unreachable(input),
+            "send" => wire::send(input, false),
+            "fire_and_forget" => wire::send(input, true),
+            _ => Self::not_built("b3751"),
+        }
     }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(crate) struct Input {
+    pub(super) op: String,
+    pub(super) settings: SettingsInput,
+    pub(super) env: BTreeMap<String, String>,
+    pub(super) inputs: Option<InputsInput>,
+    pub(super) request_data: BTreeMap<String, GuardrailValue>,
+    pub(super) status_code: Option<u16>,
+    pub(super) include_response: bool,
+    pub(super) answer: AnswerInput,
+    pub(super) guardrails: Option<bool>,
+    pub(super) ingest_data: Option<bool>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(super) struct SettingsInput {
+    pub(super) akto_base_url: Option<String>,
+    pub(super) akto_api_key: Option<String>,
+    pub(super) akto_account_id: Option<String>,
+    pub(super) akto_vxlan_id: Option<String>,
+    pub(super) unreachable_fallback: Option<String>,
+    pub(super) guardrail_timeout: Option<i64>,
+}
+
+#[derive(Debug, Default, Deserialize, Serialize)]
+#[serde(default)]
+pub(super) struct InputsInput {
+    pub(super) texts: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) model: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub(super) struct AnswerInput {
+    pub(super) status: Option<u16>,
+    pub(super) body: Option<Value>,
+    pub(super) raw_body: Option<String>,
+}
+
+pub(super) fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
+        message,
+    })
+}
+
+pub(super) fn akto_inputs(input: &Input) -> AktoInputs {
+    let Some(inputs) = &input.inputs else {
+        return AktoInputs {
+            texts: vec!["hello".to_owned()],
+            model: None,
+            tools: None,
+            tool_calls: None,
+            structured_messages: None,
+        };
+    };
+    AktoInputs {
+        texts: inputs.texts.clone(),
+        model: inputs.model.clone(),
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+    }
+}
+
+pub(super) fn inputs_json(input: &Input) -> Value {
+    let Some(inputs) = &input.inputs else {
+        return json!({"texts": ["hello"]});
+    };
+    json!(inputs)
+}
+
+fn settings(input: &Input) -> Result<AktoMirroring, Box<HelperError>> {
+    let loader = ConfigLoader {
+        lookup: input.env.clone(),
+    };
+    let config = loader
+        .load(&source(&input.settings))
+        .map_err(|error| failure("ConfigError", None, error.to_string()))?;
+    let configured = config
+        .sections
+        .akto_mirroring
+        .guardrails
+        .first()
+        .ok_or_else(|| failure("ConfigError", None, "no akto guardrail entry".to_owned()))?
+        .clone();
+    AktoMirroring::new(configured, reqwest::Client::default())
+        .map_err(|error| failure("AktoError", None, error.to_string()))
+}
+
+fn source(settings: &SettingsInput) -> String {
+    let mut parameters = vec!["guardrail: akto".to_owned()];
+    for (name, configured) in [
+        ("akto_base_url", settings.akto_base_url.as_deref()),
+        ("akto_api_key", settings.akto_api_key.as_deref()),
+        ("akto_account_id", settings.akto_account_id.as_deref()),
+        ("akto_vxlan_id", settings.akto_vxlan_id.as_deref()),
+        (
+            "unreachable_fallback",
+            settings.unreachable_fallback.as_deref(),
+        ),
+    ] {
+        if let Some(value) = configured {
+            parameters.push(format!("{name}: {value:?}"));
+        }
+    }
+    if let Some(value) = settings.guardrail_timeout {
+        parameters.push(format!("guardrail_timeout: {value}"));
+    }
+    format!(
+        "guardrails:\n  - guardrail_name: akto\n    litellm_params:\n      {}\n",
+        parameters.join("\n      ")
+    )
+}
+
+const fn fallback_name(fallback: UnreachableFallback) -> &'static str {
+    match fallback {
+        UnreachableFallback::FailClosed => "fail_closed",
+        UnreachableFallback::FailOpen => "fail_open",
+    }
+}
+
+fn parse_response(input: &Input) -> crate::helpers::HelperResult {
+    let _guardrail = settings(input)?;
+    let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
+        .map_err(|error| failure("AktoError", None, error.to_string()))?;
+    let body = answer_body(input)?.into_bytes();
+    let verdict = handle_guardrail_response(&AktoAnswer { status, body })
+        .map_err(|error| failure("AktoError", None, error.to_string()))?;
+    Ok(json!({"allowed": verdict.allowed, "reason": verdict.reason}))
+}
+
+fn answer_body(input: &Input) -> Result<String, Box<HelperError>> {
+    if let Some(raw) = &input.answer.raw_body {
+        return Ok(raw.clone());
+    }
+    input.answer.body.as_ref().map_or_else(
+        || Ok::<String, Box<HelperError>>(String::new()),
+        |body| {
+            serde_json::to_string(body)
+                .map_err(|error| failure("JsonError", None, error.to_string()))
+        },
+    )
 }
