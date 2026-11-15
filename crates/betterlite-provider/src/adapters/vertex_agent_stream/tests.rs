@@ -944,7 +944,7 @@ async fn an_invalid_url_is_refused() {
     assert!(matches!(error, VertexAgentStreamError::Url { .. }));
 }
 
-async fn serve_once(listener: TcpListener, reply: String) -> String {
+async fn serve_once(listener: &TcpListener, reply: &str) -> String {
     let (mut socket, _) = listener.accept().await.unwrap();
     let mut head = Vec::new();
     while !head.ends_with(b"\r\n\r\n") {
@@ -981,7 +981,7 @@ async fn the_proxied_client_posts_and_streams_the_reply_body() {
         body: RequestBody::Json(b"{}".to_vec()),
         deadline: Duration::from_secs(5),
     };
-    let (head_text, head) = tokio::join!(serve_once(listener, reply), client.post(request));
+    let (head_text, head) = tokio::join!(serve_once(&listener, &reply), client.post(request));
     let head = head.unwrap();
     assert_eq!(head.status, 200);
     let received: Vec<u8> = head.chunks.map(|frame| frame.unwrap()).concat().await;
