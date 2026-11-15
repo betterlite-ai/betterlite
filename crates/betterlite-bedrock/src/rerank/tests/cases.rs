@@ -20,8 +20,8 @@ use super::fixture::{
     prepost_env,
 };
 use crate::rerank::error::RerankCallError;
-use crate::rerank::execute::{dispatch_request, resolve_and_prepare, transform_response};
-use crate::rerank::plan::{LogContext, ParamMap, RerankCall, RerankEnvironment};
+use crate::rerank::execute::{dispatch_request, resolve_target, transform_response};
+use crate::rerank::plan::{LogContext, ParamMap, RerankCall, RerankEnvironment, prepare_request};
 use crate::rerank::transport::{ClientKind, RerankHttpRequest, SuppliedClient};
 
 pub(super) const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
@@ -78,10 +78,7 @@ pub(super) fn auth_params() -> ParamMap {
     ])
 }
 
-pub(super) fn call<'text>(
-    request: &'text RerankRequest,
-    optional_params: ParamMap,
-) -> RerankCall<'text> {
+pub(super) fn call(request: &RerankRequest, optional_params: ParamMap) -> RerankCall<'_> {
     RerankCall {
         request,
         optional_params,
@@ -221,29 +218,7 @@ pub(super) fn run_with_source(
         source,
         factory: &factory,
     };
-    let result = {
-        let redactor = super::fixture::redactor();
-        let sink = DiscardingSink;
-        let logger = |details: &Json| -> Result<(), PrePostError> {
-            let Json::Object(fields) = details else {
-                return Ok(());
-            };
-            let pre_call = matches!(
-                fields.get("log_event_type"),
-                Some(Json::Text(event)) if event == "pre_api_call"
-            );
-            if pre_call {
-                *captured.lock().unwrap() = Some(details.clone());
-            }
-            Ok(())
-        };
-        let env = prepost_env(&state, &redactor, &sink, Some(&logger));
-        let mut log = LogContext {
-            state: &mut state,
-            env: &env,
-        };
-        drive(&mut call, &stages, &mut log, supplied_ref)
-    };
+    let result = run_logged(&mut call, &stages, supplied_ref, &mut state, &captured);
     Run {
         result,
         supplied_seen: client.requests(),
@@ -255,21 +230,49 @@ pub(super) fn run_with_source(
     }
 }
 
+fn run_logged(
+    call: &mut RerankCall<'_>,
+    stages: &Stages<'_>,
+    supplied: Option<SuppliedClient<'_, FixtureClient>>,
+    state: &mut LoggingState,
+    captured: &Captured,
+) -> Result<RerankResponse, RerankCallError> {
+    let redactor = super::fixture::redactor();
+    let sink = DiscardingSink;
+    let logger = |details: &Json| -> Result<(), PrePostError> {
+        let Json::Object(fields) = details else {
+            return Ok(());
+        };
+        let pre_call = matches!(
+            fields.get("log_event_type"),
+            Some(Json::Text(event)) if event == "pre_api_call"
+        );
+        if pre_call {
+            *captured.lock().unwrap() = Some(details.clone());
+        }
+        Ok(())
+    };
+    let env = prepost_env(state, &redactor, &sink, Some(&logger));
+    let mut log = LogContext { state, env: &env };
+    drive(call, stages, &mut log, supplied)
+}
+
 fn drive(
     call: &mut RerankCall<'_>,
     stages: &Stages<'_>,
     log: &mut LogContext<'_, '_>,
     supplied: Option<SuppliedClient<'_, FixtureClient>>,
 ) -> Result<RerankResponse, RerankCallError> {
-    let prepared = stages
+    let target = stages
         .runtime
-        .block_on(resolve_and_prepare(call, stages.source, log))?;
+        .block_on(resolve_target(call, stages.source))?;
+    let prepared = prepare_request(call, &target, log)?;
     let reply = stages.runtime.block_on(dispatch_request(
         call,
         &prepared,
         supplied,
         stages.factory,
-        log,
+        log.state,
     ))?;
     transform_response(call, &reply, GENERATED_ID, log)
 }
@@ -348,9 +351,9 @@ fn assert_source_shapes(body: &IndexMap<String, Json>) {
     let Json::Object(second) = &sources[1] else {
         panic!("a source is an object");
     };
-    let inline = object_field(second, "inlineDocumentSource");
-    assert_eq!(field(inline, "type"), &Json::Text("JSON".to_owned()));
-    let document = object_field(inline, "jsonDocument");
+    let inline_json = object_field(second, "inlineDocumentSource");
+    assert_eq!(field(inline_json, "type"), &Json::Text("JSON".to_owned()));
+    let document = object_field(inline_json, "jsonDocument");
     assert_eq!(field(document, "title"), &Json::Text("second".to_owned()));
 }
 
@@ -392,9 +395,9 @@ fn model_arn_endpoint_rewrites() {
     let documented = request(MODEL_ARN, "q", vec![text("doc")]);
     let mut trailing = call(&documented, auth_params());
     trailing.api_base = Some("https://bedrock-runtime.us-west-2.amazonaws.com/");
-    let run = run_case(trailing, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let trailing_run = run_case(trailing, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
     assert_eq!(
-        run.posted().url,
+        trailing_run.posted().url,
         "https://bedrock-agent-runtime.us-west-2.amazonaws.com//rerank"
     );
 
@@ -407,13 +410,13 @@ fn model_arn_endpoint_rewrites() {
         ),
         ("aws_region_name", Json::Text("eu-west-1".to_owned())),
     ]);
-    let run = run_case(
+    let configured_run = run_case(
         call(&documented, configured),
         Reply::ok(VALID_REPLY),
         Some(ClientKind::Sync),
     );
     assert_eq!(
-        run.posted().url,
+        configured_run.posted().url,
         "https://bedrock-agent-runtime.eu-west-1.amazonaws.com/rerank"
     );
 }
@@ -443,18 +446,18 @@ fn model_arn_session_region_and_endpoint() {
     let documented = request("rerank-model", "q", vec![text("doc")]);
     let mut environment = call(&documented, ParamMap::new());
     environment.environment.session_region = Some("ap-south-1");
-    let run = run_case(environment, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let session_run = run_case(environment, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
     assert_eq!(
-        run.posted().url,
+        session_run.posted().url,
         "https://bedrock-agent-runtime.ap-south-1.amazonaws.com/rerank"
     );
 
     let mut endpoint = call(&documented, ParamMap::new());
     endpoint.environment.runtime_endpoint =
         Some("https://bedrock-runtime.ca-central-1.amazonaws.com");
-    let run = run_case(endpoint, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
+    let endpoint_run = run_case(endpoint, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
     assert_eq!(
-        run.posted().url,
+        endpoint_run.posted().url,
         "https://bedrock-agent-runtime.ca-central-1.amazonaws.com/rerank"
     );
 }
@@ -546,6 +549,7 @@ fn results_index_score() {
     results_index_score_values();
     results_index_score_ids();
     results_index_score_usage();
+    results_index_score_usage_nulls();
     results_index_score_failures();
 }
 
@@ -599,40 +603,56 @@ fn results_index_score_ids() {
 
 fn results_index_score_usage() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
+    let filled_run = run_case(
         call(&documented, auth_params()),
         Reply::ok(
             r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":5,"total_tokens":9,"input_tokens":1,"output_tokens":2}}"#,
         ),
         Some(ClientKind::Sync),
     );
-    let response = run.response();
+    let response = filled_run.response();
     assert_eq!(billed_units(response).search_units, Some(Some(5)));
     assert_eq!(billed_units(response).total_tokens, Some(Some(9)));
     assert_eq!(tokens(response).input_tokens, Some(Some(1)));
     assert_eq!(tokens(response).output_tokens, Some(Some(2)));
 
-    let run = run_case(
+    let empty_run = run_case(
         call(&documented, auth_params()),
         Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{}}"#),
         Some(ClientKind::Sync),
     );
     assert_eq!(
-        billed_units(run.response()).search_units,
+        billed_units(empty_run.response()).search_units,
         None,
         "an empty usage keeps no search unit"
     );
 
-    let run = run_case(
+    let null_run = run_case(
         call(&documented, auth_params()),
         Reply::ok(r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":null}"#),
         Some(ClientKind::Sync),
     );
     assert_eq!(
-        billed_units(run.response()).search_units,
+        billed_units(null_run.response()).search_units,
         Some(Some(1)),
         "a null usage takes the default of one search unit"
     );
+}
+
+fn results_index_score_usage_nulls() {
+    let documented = request(MODEL_ARN, "q", vec![text("a")]);
+    let run = run_case(
+        call(&documented, auth_params()),
+        Reply::ok(
+            r#"{"results":[{"index":0,"relevanceScore":0.5}],"usage":{"search_units":null,"total_tokens":null,"input_tokens":null,"output_tokens":null}}"#,
+        ),
+        Some(ClientKind::Sync),
+    );
+    let response = run.response();
+    assert_eq!(billed_units(response).search_units, Some(None));
+    assert_eq!(billed_units(response).total_tokens, Some(None));
+    assert_eq!(tokens(response).input_tokens, Some(None));
+    assert_eq!(tokens(response).output_tokens, Some(None));
 }
 
 fn results_index_score_failures() {
@@ -730,63 +750,73 @@ fn rerank_error_status() {
 
 fn rerank_error_transport() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
+    let timeout_run = run_case(
         call(&documented, auth_params()),
         Reply::Timeout,
         Some(ClientKind::Sync),
     );
-    let Err(RerankCallError::Provider { status, error }) = &run.result else {
+    let Err(RerankCallError::Provider { status, error }) = &timeout_run.result else {
         panic!("a timeout is a provider error");
     };
     assert_eq!(*status, 408);
-    assert_eq!(run.result.as_ref().unwrap_err().status(), Some(408));
+    assert_eq!(timeout_run.result.as_ref().unwrap_err().status(), Some(408));
     assert_eq!(error.error.message, "Timeout error occurred.");
 
-    let run = run_case(
+    let failed_run = run_case(
         call(&documented, auth_params()),
         Reply::Failed,
         Some(ClientKind::Sync),
     );
-    assert!(matches!(run.result, Err(RerankCallError::Transport(_))));
-    assert_eq!(run.result.as_ref().unwrap_err().status(), None);
+    assert!(matches!(
+        failed_run.result,
+        Err(RerankCallError::Transport(_))
+    ));
+    assert_eq!(failed_run.result.as_ref().unwrap_err().status(), None);
 
-    let run = run_case(
+    let redirect_run = run_case(
         call(&documented, auth_params()),
         Reply::status(302, &[], VALID_REPLY),
         Some(ClientKind::Sync),
     );
-    let Err(RerankCallError::Provider { status, .. }) = &run.result else {
+    let Err(RerankCallError::Provider {
+        status: redirect_status,
+        ..
+    }) = &redirect_run.result
+    else {
         panic!("raise_for_status raises for a redirect");
     };
-    assert_eq!(*status, 302);
+    assert_eq!(*redirect_status, 302);
     assert!(
-        run.post_call().is_none(),
+        redirect_run.post_call().is_none(),
         "a redirect logs no post_call of the body it did not decode"
     );
 }
 
 fn rerank_error_decode() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let run = run_case(
+    let sync_run = run_case(
         call(&documented, auth_params()),
         Reply::ok("{not json"),
         Some(ClientKind::Sync),
     );
-    assert!(matches!(run.result, Err(RerankCallError::Decode(_))));
+    assert!(matches!(sync_run.result, Err(RerankCallError::Decode(_))));
     assert!(
-        run.post_call().is_some(),
+        sync_run.post_call().is_some(),
         "the sync path logs the text before decoding it"
     );
 
     let mut asynchronous = call(&documented, auth_params());
     asynchronous.is_async = true;
-    let run = run_case(
+    let async_run = run_case(
         asynchronous,
         Reply::ok("{not json"),
         Some(ClientKind::Async),
     );
-    assert!(matches!(run.result, Err(RerankCallError::Decode(_))));
-    assert!(run.post_call().is_none(), "the async path has no post_call");
+    assert!(matches!(async_run.result, Err(RerankCallError::Decode(_))));
+    assert!(
+        async_run.post_call().is_none(),
+        "the async path has no post_call"
+    );
 }
 
 fn transport_logging() {
@@ -810,15 +840,15 @@ fn transport_logging_sync() {
         "pre_call receives the request body"
     );
     let arguments = run.pre_call_args().expect("pre_call records its arguments");
-    let Json::Object(arguments) = arguments else {
+    let Json::Object(recorded) = arguments else {
         panic!("pre_call records an object");
     };
     assert_eq!(
-        arguments["api_base"],
+        recorded["api_base"],
         Json::Text("https://bedrock-agent-runtime.us-east-1.amazonaws.com/rerank".to_owned())
     );
-    assert_eq!(arguments["complete_input_dict"], Json::Object(run.body()));
-    let Json::Object(headers) = &arguments["headers"] else {
+    assert_eq!(recorded["complete_input_dict"], Json::Object(run.body()));
+    let Json::Object(headers) = &recorded["headers"] else {
         panic!("pre_call records the prepared headers");
     };
     assert_eq!(
@@ -852,25 +882,33 @@ fn transport_logging_async() {
 
 fn transport_logging_fallback() {
     let documented = request(MODEL_ARN, "q", vec![text("a")]);
-    let mut mismatched = call(&documented, auth_params());
-    mismatched.is_async = true;
-    let run = run_case(mismatched, Reply::ok(VALID_REPLY), Some(ClientKind::Sync));
-    assert!(run.supplied_seen.is_empty());
-    assert_eq!(run.async_calls, 1);
-    assert!(run.with_logging());
+    let mut mismatched_async = call(&documented, auth_params());
+    mismatched_async.is_async = true;
+    let async_fallback_run = run_case(
+        mismatched_async,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Sync),
+    );
+    assert!(async_fallback_run.supplied_seen.is_empty());
+    assert_eq!(async_fallback_run.async_calls, 1);
+    assert!(async_fallback_run.with_logging());
 
-    let mut mismatched = call(&documented, auth_params());
-    mismatched.is_async = false;
-    let run = run_case(mismatched, Reply::ok(VALID_REPLY), Some(ClientKind::Async));
-    assert!(run.supplied_seen.is_empty());
-    assert_eq!(run.sync_calls, 1);
-    assert!(!run.with_logging());
+    let mut mismatched_sync = call(&documented, auth_params());
+    mismatched_sync.is_async = false;
+    let sync_fallback_run = run_case(
+        mismatched_sync,
+        Reply::ok(VALID_REPLY),
+        Some(ClientKind::Async),
+    );
+    assert!(sync_fallback_run.supplied_seen.is_empty());
+    assert_eq!(sync_fallback_run.sync_calls, 1);
+    assert!(!sync_fallback_run.with_logging());
 
-    let run = run_case(
+    let default_run = run_case(
         call(&documented, auth_params()),
         Reply::ok(VALID_REPLY),
         None,
     );
-    assert_eq!(run.sync_calls, 1);
-    assert!(!run.with_logging());
+    assert_eq!(default_run.sync_calls, 1);
+    assert!(!default_run.with_logging());
 }
