@@ -25,17 +25,17 @@ fn inputs(source: &str, variables: &[(&str, &str)]) -> CatalogInputs {
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
+    let config = ConfigLoader {
+        lookup: lookup.clone(),
+    }
+    .load(source)
+    .expect("valid config");
+    let callback_settings = config.sections.callback_settings.callback_settings.clone();
     CatalogInputs {
-        config: Arc::new(
-            ConfigLoader {
-                lookup: lookup.clone(),
-            }
-            .load(source)
-            .expect("valid config"),
-        ),
+        config: Arc::new(config),
         http: ProxiedClient::outbound(&policy).expect("http client"),
         env: Arc::new(lookup),
-        callback_settings: BTreeMap::new(),
+        callback_settings,
         tracker: TaskTracker::new(),
         shutdown: CancellationToken::new(),
     }
@@ -53,6 +53,9 @@ fn event() -> LoggerEvent {
 
 const CONFIGURED: &str = "litellm_settings:\n  success_callback: [langfuse]\n";
 
+const CALLBACK_SETTINGS_ONLY: &str =
+    "callback_settings:\n  langfuse:\n    langfuse_secret: sk-secret\n";
+
 #[tokio::test]
 async fn callback_logger_resolves_when_the_config_lists_langfuse() {
     let catalog = LoggerCatalog::new(inputs(CONFIGURED, &[("LANGFUSE_MOCK", "true")]));
@@ -66,6 +69,16 @@ async fn callback_logger_resolves_when_the_config_lists_langfuse() {
 #[tokio::test]
 async fn callback_logger_is_unavailable_without_a_config_entry() {
     let catalog = LoggerCatalog::new(inputs("", &[("LANGFUSE_MOCK", "true")]));
+    assert!(matches!(
+        catalog.resolve_logger("langfuse"),
+        Err(RegistryError::UnavailableAdapter { name }) if name == "langfuse"
+    ));
+}
+
+// set_callbacks only builds a callback named in one of the three lists, so parameters alone enable nothing
+#[tokio::test]
+async fn callback_logger_is_unavailable_when_only_callback_settings_lists_it() {
+    let catalog = LoggerCatalog::new(inputs(CALLBACK_SETTINGS_ONLY, &[("LANGFUSE_MOCK", "true")]));
     assert!(matches!(
         catalog.resolve_logger("langfuse"),
         Err(RegistryError::UnavailableAdapter { name }) if name == "langfuse"
