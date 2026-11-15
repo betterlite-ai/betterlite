@@ -99,11 +99,11 @@ impl<Client: GcsBucketClient> FocusGcsDestination<Client> {
 impl<Client: GcsBucketClient> FocusDestination for FocusGcsDestination<Client> {
     type Error = GcsDeliveryError<Client::Error>;
 
-    async fn deliver(
-        &self,
-        content: &[u8],
-        time_window: &FocusTimeWindow,
-        filename: &str,
+    async fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
     ) -> Result<(), Self::Error> {
         let object_name = object_key::build(&self.prefix, time_window, filename);
         let mut headers = self

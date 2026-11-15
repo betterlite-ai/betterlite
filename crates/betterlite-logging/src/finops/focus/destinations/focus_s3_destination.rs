@@ -106,11 +106,11 @@ impl<Client: S3Client> FocusS3Destination<Client> {
 impl<Client: S3Client> FocusDestination for FocusS3Destination<Client> {
     type Error = S3DeliveryError<Client::Error>;
 
-    async fn deliver(
-        &self,
-        content: &[u8],
-        time_window: &FocusTimeWindow,
-        filename: &str,
+    async fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
     ) -> Result<(), Self::Error> {
         let object = S3PutObject {
             bucket_name: self.bucket_name.clone(),
