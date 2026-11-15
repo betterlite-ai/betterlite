@@ -44,11 +44,19 @@ fn usage(prompt_tokens: i64, completion_tokens: i64) -> PerplexityUsage {
     }
 }
 
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("the JSON fixture")
+}
+
+fn json_object(value: Value) -> Object {
+    serde_json::from_value(value).expect("the model info fixture")
+}
+
 fn run(
     model_info: Value,
     usage: &PerplexityUsage,
 ) -> Result<GenericCostResult, PerplexityCostError> {
-    let info: Object = serde_json::from_value(model_info).expect("the model info fixture");
+    let info = json_object(model_info);
     cost_per_token(&info, usage, moment(), &database())
 }
 
@@ -57,19 +65,21 @@ fn cost_value(value: Value) -> Json {
 }
 
 fn rates() -> Value {
-    json!({
-        "input_cost_per_token": 0.1,
-        "output_cost_per_token": 0.2
-    })
+    fixture(
+        r#"{
+            "input_cost_per_token": 0.1,
+            "output_cost_per_token": 0.2
+        }"#,
+    )
 }
 
 #[rstest]
-#[case::number(json!(1.25), Ok((0, "1.25")))]
-#[case::zero_number(json!(0), Ok((0, "0")))]
-#[case::total_in_an_object(json!({"total_cost": 0.5}), Ok((0, "0.5")))]
-#[case::zero_total_in_an_object(json!({"total_cost": 0}), Ok((0, "0")))]
-#[case::object_without_a_total(json!({"other": 2}), Err("manual"))]
-#[case::null_total(json!({"total_cost": null}), Err("manual"))]
+#[case::number(fixture("1.25"), Ok((0, "1.25")))]
+#[case::zero_number(fixture("0"), Ok((0, "0")))]
+#[case::total_in_an_object(fixture(r#"{"total_cost": 0.5}"#), Ok((0, "0.5")))]
+#[case::zero_total_in_an_object(fixture(r#"{"total_cost": 0}"#), Ok((0, "0")))]
+#[case::object_without_a_total(fixture(r#"{"other": 2}"#), Err("manual"))]
+#[case::null_total(fixture(r#"{"total_cost": null}"#), Err("manual"))]
 #[case::boolean_cost(json!(true), Err("manual"))]
 #[case::text_cost(json!("0.5"), Err("manual"))]
 fn reported_cost_bypasses_token_pricing(
@@ -79,22 +89,19 @@ fn reported_cost_bypasses_token_pricing(
     let mut usage = usage(10, 2);
     usage.cost = Some(serde_json::from_value(cost).expect("the cost fixture"));
     let result = run(rates(), &usage).expect("the reported cost path");
-    match expected {
-        Ok((prompt, completion)) => {
-            assert_eq!(result.prompt_cost, dec(&prompt.to_string()));
-            assert_eq!(result.completion_cost, dec(completion));
-        }
-        Err(_) => {
-            assert_eq!(result.prompt_cost, dec("1"));
-            assert_eq!(result.completion_cost, dec("0.4"));
-        }
+    if let Ok((prompt, completion)) = expected {
+        assert_eq!(result.prompt_cost, dec(&prompt.to_string()));
+        assert_eq!(result.completion_cost, dec(completion));
+    } else {
+        assert_eq!(result.prompt_cost, dec("1"));
+        assert_eq!(result.completion_cost, dec("0.4"));
     }
 }
 
 #[test]
 fn an_unparsable_reported_total_is_an_error() {
     let mut usage = usage(10, 2);
-    usage.cost = Some(cost_value(json!({"total_cost": "not a price"})));
+    usage.cost = Some(cost_value(fixture(r#"{"total_cost": "not a price"}"#)));
     let error = run(rates(), &usage).expect_err("the invalid total");
     assert!(matches!(error, PerplexityCostError::ReportedCost));
 }
@@ -102,10 +109,12 @@ fn an_unparsable_reported_total_is_an_error() {
 #[test]
 fn manual_prompt_and_completion_costs_use_the_token_rates() {
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002"
+            }"#,
+        ),
         &usage(100, 50),
     )
     .expect("the manual path");
@@ -118,11 +127,13 @@ fn citation_tokens_add_to_the_prompt_cost() {
     let mut usage = usage(100, 50);
     usage.citation_tokens = Some(8);
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002",
-            "citation_cost_per_token": "0.0000002"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002",
+                "citation_cost_per_token": "0.0000002"
+            }"#,
+        ),
         &usage,
     )
     .expect("the citation charge");
@@ -135,11 +146,13 @@ fn one_citation_token_adds_its_rate() {
     let mut usage = usage(100, 50);
     usage.citation_tokens = Some(1);
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002",
-            "citation_cost_per_token": "0.0000002"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002",
+                "citation_cost_per_token": "0.0000002"
+            }"#,
+        ),
         &usage,
     )
     .expect("the citation charge");
@@ -151,10 +164,12 @@ fn a_missing_citation_rate_adds_nothing_to_the_prompt_cost() {
     let mut usage = usage(100, 50);
     usage.citation_tokens = Some(8);
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002"
+            }"#,
+        ),
         &usage,
     )
     .expect("the manual path");
@@ -166,11 +181,13 @@ fn zero_citation_tokens_are_never_charged() {
     let mut usage = usage(100, 50);
     usage.citation_tokens = Some(0);
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002",
-            "citation_cost_per_token": "0.0000002"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002",
+                "citation_cost_per_token": "0.0000002"
+            }"#,
+        ),
         &usage,
     )
     .expect("the manual path");
@@ -182,11 +199,13 @@ fn top_level_reasoning_tokens_are_split_at_the_reasoning_rate() {
     let mut usage = usage(10, 10);
     usage.reasoning_tokens = Some(4);
     let result = run(
-        json!({
-            "input_cost_per_token": "0",
-            "output_cost_per_token": "0.5",
-            "output_cost_per_reasoning_token": "2"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0",
+                "output_cost_per_token": "0.5",
+                "output_cost_per_reasoning_token": "2"
+            }"#,
+        ),
         &usage,
     )
     .expect("the reasoning split");
@@ -198,10 +217,12 @@ fn one_reasoning_token_is_split_at_the_reasoning_rate() {
     let mut usage = usage(10, 10);
     usage.reasoning_tokens = Some(1);
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "output_cost_per_reasoning_token": "2"
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "output_cost_per_reasoning_token": "2"
+            }"#,
+        ),
         &usage,
     )
     .expect("the reasoning split");
@@ -220,10 +241,12 @@ fn top_level_reasoning_tokens_win_over_the_completion_details() {
         reasoning_tokens: Some(4),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "output_cost_per_reasoning_token": "2"
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "output_cost_per_reasoning_token": "2"
+            }"#,
+        ),
         &usage,
     )
     .expect("the reasoning split");
@@ -241,10 +264,12 @@ fn reasoning_tokens_fall_back_to_the_completion_details() {
         reasoning_tokens: Some(4),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "output_cost_per_reasoning_token": "2"
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "output_cost_per_reasoning_token": "2"
+            }"#,
+        ),
         &usage,
     )
     .expect("the reasoning split");
@@ -261,7 +286,8 @@ fn a_missing_reasoning_rate_charges_every_completion_token_at_the_output_rate() 
         video_tokens: None,
         reasoning_tokens: Some(4),
     });
-    let result = run(json!({"output_cost_per_token": "0.5"}), &usage).expect("the output rate");
+    let result =
+        run(fixture(r#"{"output_cost_per_token": "0.5"}"#), &usage).expect("the output rate");
     assert_eq!(result.completion_cost, dec("5"));
 }
 
@@ -270,10 +296,12 @@ fn reasoning_tokens_above_the_completion_count_leave_no_plain_tokens() {
     let mut usage = usage(10, 3);
     usage.reasoning_tokens = Some(5);
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "output_cost_per_reasoning_token": "2"
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "output_cost_per_reasoning_token": "2"
+            }"#,
+        ),
         &usage,
     )
     .expect("the reasoning split");
@@ -291,11 +319,13 @@ fn the_search_charge_is_added_to_the_completion_cost() {
         web_search_requests: Some(2),
     });
     let result = run(
-        json!({
-            "input_cost_per_token": "0.1",
-            "output_cost_per_token": "0.5",
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.1",
+                "output_cost_per_token": "0.5",
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -314,10 +344,12 @@ fn one_search_request_adds_its_rate() {
         web_search_requests: Some(1),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -335,11 +367,13 @@ fn search_queries_cost_per_query_wins_over_the_context_object() {
         web_search_requests: Some(3),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_queries_cost_per_query": "0.01",
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_queries_cost_per_query": "0.01",
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -357,11 +391,13 @@ fn a_zero_search_queries_rate_falls_through_to_the_context_object() {
         web_search_requests: Some(3),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_queries_cost_per_query": 0,
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_queries_cost_per_query": 0,
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -379,10 +415,12 @@ fn a_context_object_without_the_low_size_charges_nothing() {
         web_search_requests: Some(3),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_context_cost_per_query": {"search_context_size_medium": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_context_cost_per_query": {"search_context_size_medium": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -400,10 +438,12 @@ fn an_unparsable_search_rate_charges_nothing() {
         web_search_requests: Some(3),
     });
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_queries_cost_per_query": "not a price"
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_queries_cost_per_query": "not a price"
+            }"#,
+        ),
         &usage,
     )
     .expect("the search charge");
@@ -413,10 +453,12 @@ fn an_unparsable_search_rate_charges_nothing() {
 #[test]
 fn an_absent_search_count_is_never_charged() {
     let result = run(
-        json!({
-            "output_cost_per_token": "0.5",
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "output_cost_per_token": "0.5",
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage(10, 10),
     )
     .expect("the manual path");
@@ -426,15 +468,17 @@ fn an_absent_search_count_is_never_charged() {
 #[test]
 fn off_peak_rates_replace_the_manual_rates_at_the_supplied_instant() {
     let result = run(
-        json!({
-            "input_cost_per_token": "0.000001",
-            "output_cost_per_token": "0.000002",
-            "off_peak_pricing": {
-                "hours_utc": "00:00-23:59",
-                "input_cost_per_token": "0.5",
-                "output_cost_per_token": "1.5"
-            }
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.000001",
+                "output_cost_per_token": "0.000002",
+                "off_peak_pricing": {
+                    "hours_utc": "00:00-23:59",
+                    "input_cost_per_token": "0.5",
+                    "output_cost_per_token": "1.5"
+                }
+            }"#,
+        ),
         &usage(100, 10),
     )
     .expect("the off-peak rates");
@@ -445,15 +489,17 @@ fn off_peak_rates_replace_the_manual_rates_at_the_supplied_instant() {
 #[test]
 fn off_peak_rates_stay_base_outside_the_window() {
     let result = run(
-        json!({
-            "input_cost_per_token": "0.5",
-            "output_cost_per_token": "1.5",
-            "off_peak_pricing": {
-                "hours_utc": "00:00-06:00",
-                "input_cost_per_token": "1",
-                "output_cost_per_token": "2"
-            }
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.5",
+                "output_cost_per_token": "1.5",
+                "off_peak_pricing": {
+                    "hours_utc": "00:00-06:00",
+                    "input_cost_per_token": "1",
+                    "output_cost_per_token": "2"
+                }
+            }"#,
+        ),
         &usage(100, 10),
     )
     .expect("the base rates");
@@ -464,10 +510,12 @@ fn off_peak_rates_stay_base_outside_the_window() {
 #[test]
 fn a_missing_off_peak_block_keeps_the_manual_rates() {
     let result = run(
-        json!({
-            "input_cost_per_token": "0.5",
-            "output_cost_per_token": "1.5"
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.5",
+                "output_cost_per_token": "1.5"
+            }"#,
+        ),
         &usage(100, 10),
     )
     .expect("the base rates");
@@ -478,17 +526,19 @@ fn a_missing_off_peak_block_keeps_the_manual_rates() {
 #[test]
 fn a_reported_zero_wins_over_every_other_charge() {
     let mut usage = usage(100, 10);
-    usage.cost = Some(cost_value(json!(0)));
+    usage.cost = Some(cost_value(fixture("0")));
     usage.citation_tokens = Some(8);
     usage.reasoning_tokens = Some(4);
     let result = run(
-        json!({
-            "input_cost_per_token": "0.5",
-            "output_cost_per_token": "1.5",
-            "citation_cost_per_token": "2",
-            "output_cost_per_reasoning_token": "3",
-            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": "0.5",
+                "output_cost_per_token": "1.5",
+                "citation_cost_per_token": "2",
+                "output_cost_per_reasoning_token": "3",
+                "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+            }"#,
+        ),
         &usage,
     )
     .expect("the reported cost");
@@ -498,11 +548,11 @@ fn a_reported_zero_wins_over_every_other_charge() {
 
 #[test]
 fn missing_or_unparsable_token_rates_charge_nothing() {
-    let missing = run(json!({}), &usage(100, 50)).expect("the missing rates");
+    let missing = run(fixture("{}"), &usage(100, 50)).expect("the missing rates");
     assert_eq!(missing.prompt_cost, Decimal::ZERO);
     assert_eq!(missing.completion_cost, Decimal::ZERO);
     let unparsable = run(
-        json!({"input_cost_per_token": "not a price", "output_cost_per_token": null}),
+        fixture(r#"{"input_cost_per_token": "not a price", "output_cost_per_token": null}"#),
         &usage(100, 50),
     )
     .expect("the unparsable rates");
@@ -523,18 +573,20 @@ fn catalog_number_rates_are_read_with_their_exponents() {
         web_search_requests: Some(2),
     });
     let result = run(
-        json!({
-            "input_cost_per_token": 1e-6,
-            "output_cost_per_token": 2e-6,
-            "citation_cost_per_token": 2e-6,
-            "output_cost_per_reasoning_token": 3e-6,
-            "search_context_cost_per_query": {"search_context_size_low": 0.005},
-            "off_peak_pricing": {
-                "hours_utc": "00:00-23:59",
-                "input_cost_per_token": 5e-6,
-                "output_cost_per_token": 7e-6
-            }
-        }),
+        fixture(
+            r#"{
+                "input_cost_per_token": 1e-6,
+                "output_cost_per_token": 2e-6,
+                "citation_cost_per_token": 2e-6,
+                "output_cost_per_reasoning_token": 3e-6,
+                "search_context_cost_per_query": {"search_context_size_low": 0.005},
+                "off_peak_pricing": {
+                    "hours_utc": "00:00-23:59",
+                    "input_cost_per_token": 5e-6,
+                    "output_cost_per_token": 7e-6
+                }
+            }"#,
+        ),
         &usage,
     )
     .expect("the catalog numbers");

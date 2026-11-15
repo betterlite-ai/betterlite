@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
+use std::io::Error as IoError;
 use std::path::PathBuf;
 
 use rstest::rstest;
@@ -26,16 +27,19 @@ fn secret(text: &str) -> SecretString {
 }
 
 fn key_text(key: Option<&SecretString>) -> Option<String> {
-    key.map(|key| key.expose_secret().to_owned())
+    let Some(secret) = key else {
+        return None;
+    };
+    Some(secret.expose_secret().to_owned())
+}
+
+fn fixture(text: &str) -> Value {
+    serde_json::from_str(text).expect("the JSON fixture")
 }
 
 fn enhanced_reply(reply_text: &str, raw: &str) -> Value {
     let parsed: Value = serde_json::from_str(reply_text).expect("the reply fixture");
     with_perplexity_fields(parsed, raw.as_bytes())
-}
-
-fn reply_json(reply: &str) -> Value {
-    serde_json::from_str(reply).expect("the reply fixture")
 }
 
 #[test]
@@ -127,16 +131,16 @@ struct Lookup {
 }
 
 impl CapabilityLookup for Lookup {
-    type Error = std::io::Error;
+    type Error = IoError;
 
     fn supports_reasoning(&self, _model: &str) -> Result<bool, Self::Error> {
         self.reasoning
-            .ok_or_else(|| std::io::Error::other("the reasoning lookup failed"))
+            .ok_or_else(|| IoError::other("the reasoning lookup failed"))
     }
 
     fn supports_web_search(&self, _model: &str) -> Result<bool, Self::Error> {
         self.web_search
-            .ok_or_else(|| std::io::Error::other("the web search lookup failed"))
+            .ok_or_else(|| IoError::other("the web search lookup failed"))
     }
 }
 
@@ -181,31 +185,30 @@ fn supported_openai_params_never_lists_tools(#[case] unsupported: &'static str) 
 }
 
 #[rstest]
-#[case::four_characters(json!(["abcd"]), Some(1))]
-#[case::five_characters(json!(["abcde"]), Some(1))]
-#[case::eight_characters(json!(["abcdefgh"]), Some(2))]
-#[case::two_entries(json!(["abcd", "abcdefgh"]), Some(3))]
-#[case::unicode_counts_scalars(json!(["éééé"]), Some(1))]
-#[case::empty_list(json!([]), None)]
-#[case::empty_entry(json!([""]), None)]
+#[case::four_characters(fixture(r#"["abcd"]"#), Some(1))]
+#[case::five_characters(fixture(r#"["abcde"]"#), Some(1))]
+#[case::eight_characters(fixture(r#"["abcdefgh"]"#), Some(2))]
+#[case::two_entries(fixture(r#"["abcd", "abcdefgh"]"#), Some(3))]
+#[case::unicode_counts_scalars(fixture(r#"["\u00e9\u00e9\u00e9\u00e9"]"#), Some(1))]
+#[case::empty_list(fixture("[]"), None)]
+#[case::empty_entry(fixture(r#"[""]"#), None)]
 #[case::absent_citations(Value::Null, None)]
-#[case::null_entry(json!([null]), None)]
-#[case::zero_entry(json!([0]), None)]
-#[case::zero_float_entry(json!([0.0]), None)]
-#[case::false_entry(json!([false]), None)]
-#[case::empty_object_entry(json!([{}]), None)]
-#[case::number_entry(json!([12_345_678]), Some(2))]
-#[case::true_entry(json!([true]), Some(1))]
-#[case::list_entry(json!([[12_345_678]]), Some(2))]
-#[case::object_entry(json!([{"a": 1}]), Some(1))]
-#[case::empty_array_entry(json!([[]]), None)]
-#[case::three_characters(json!(["abc"]), Some(1))]
+#[case::null_entry(fixture("[null]"), None)]
+#[case::zero_entry(fixture("[0]"), None)]
+#[case::zero_float_entry(fixture("[0.0]"), None)]
+#[case::false_entry(fixture("[false]"), None)]
+#[case::empty_object_entry(fixture("[{}]"), None)]
+#[case::number_entry(fixture("[12345678]"), Some(2))]
+#[case::true_entry(fixture("[true]"), Some(1))]
+#[case::list_entry(fixture("[[12345678]]"), Some(2))]
+#[case::object_entry(fixture(r#"[{"a": 1}]"#), Some(1))]
+#[case::empty_array_entry(fixture("[[]]"), None)]
+#[case::three_characters(fixture(r#"["abc"]"#), Some(1))]
 fn citation_tokens_are_quarter_characters(#[case] citations: Value, #[case] expected: Option<i64>) {
-    let raw = if citations.is_null() {
-        json!({"usage": {}})
-    } else {
-        json!({"usage": {}, "citations": citations})
-    };
+    let mut raw = fixture(r#"{"usage": {}}"#);
+    if !citations.is_null() {
+        raw["citations"] = citations;
+    }
     let enhanced = enhanced_reply(
         r#"{"object":"chat.completion","choices":[]}"#,
         &raw.to_string(),
@@ -218,94 +221,98 @@ fn usage_is_created_when_the_reply_has_none() {
     let enhanced = enhanced_reply(r#"{"object":"chat.completion","choices":[]}"#, "{}");
     assert_eq!(
         enhanced["usage"],
-        json!({"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0})
+        fixture(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}"#)
     );
 }
 
 #[rstest]
 #[case::usage_key_wins(
-    json!({"usage": {"num_search_queries": 2}, "num_search_queries": 9}),
+    fixture(r#"{"usage": {"num_search_queries": 2}, "num_search_queries": 9}"#),
     Some(2)
 )]
 #[case::usage_null_falls_to_root(
-    json!({"usage": {"num_search_queries": null}, "num_search_queries": 3}),
+    fixture(r#"{"usage": {"num_search_queries": null}, "num_search_queries": 3}"#),
     Some(3)
 )]
 #[case::present_zero_stops_the_search(
-    json!({"usage": {"num_search_queries": 0}, "num_search_queries": 9, "search_queries": 8}),
+    fixture(
+        r#"{"usage": {"num_search_queries": 0}, "num_search_queries": 9, "search_queries": 8}"#
+    ),
     Some(0)
 )]
 #[case::usage_search_queries(
-    json!({"usage": {"search_queries": 4}, "search_queries": 7}),
+    fixture(r#"{"usage": {"search_queries": 4}, "search_queries": 7}"#),
     Some(4)
 )]
-#[case::root_search_queries(
-    json!({"usage": {}, "search_queries": 5}),
-    Some(5)
-)]
+#[case::root_search_queries(fixture(r#"{"usage": {}, "search_queries": 5}"#), Some(5))]
 #[case::root_null_falls_to_usage_search_queries(
-    json!({"usage": {"search_queries": 6}, "num_search_queries": null}),
+    fixture(r#"{"usage": {"search_queries": 6}, "num_search_queries": null}"#),
     Some(6)
 )]
-#[case::no_count_anywhere(json!({"usage": {}}), None)]
+#[case::no_count_anywhere(fixture(r#"{"usage": {}}"#), None)]
 fn search_count_follows_the_key_order(#[case] raw: Value, #[case] expected: Option<i64>) {
     let enhanced = enhanced_reply(
         r#"{"object":"chat.completion","choices":[]}"#,
         &raw.to_string(),
     );
     let details = &enhanced["usage"]["prompt_tokens_details"];
-    assert_eq!(details["web_search_requests"], json!(expected));
-    if expected.is_some_and(|count| count > 0) {
-        assert!(details.is_object());
-    } else {
+    let count = expected.filter(|count| *count > 0);
+    assert_eq!(details["web_search_requests"], json!(count));
+    if count.is_none() {
         assert_eq!(details, &Value::Null);
     }
 }
 
 #[test]
 fn annotations_become_url_citations_with_character_offsets() {
-    let raw = json!({
-        "citations": ["https://a.example", "https://b.example"],
-        "search_results": [
-            {"url": "https://a.example", "title": "A"},
-            {"url": "https://b.example", "title": "B"}
-        ]
-    });
+    let raw = fixture(
+        r#"{
+            "citations": ["https://a.example", "https://b.example"],
+            "search_results": [
+                {"url": "https://a.example", "title": "A"},
+                {"url": "https://b.example", "title": "B"}
+            ]
+        }"#,
+    );
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"See [1] and [2][1]."}}]}"#,
         &raw.to_string(),
     );
     assert_eq!(
         enhanced["choices"][0]["message"]["annotations"],
-        json!([
-            {"type": "url_citation", "url_citation": {"url": "https://a.example", "title": "A", "start_index": 4, "end_index": 7}},
-            {"type": "url_citation", "url_citation": {"url": "https://b.example", "title": "B", "start_index": 12, "end_index": 15}},
-            {"type": "url_citation", "url_citation": {"url": "https://a.example", "title": "A", "start_index": 15, "end_index": 18}}
-        ])
+        fixture(
+            r#"[
+                {"type": "url_citation", "url_citation": {"url": "https://a.example", "title": "A", "start_index": 4, "end_index": 7}},
+                {"type": "url_citation", "url_citation": {"url": "https://b.example", "title": "B", "start_index": 12, "end_index": 15}},
+                {"type": "url_citation", "url_citation": {"url": "https://a.example", "title": "A", "start_index": 15, "end_index": 18}}
+            ]"#,
+        )
     );
 }
 
 #[test]
 fn annotation_offsets_count_scalars_not_bytes() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
-        r#"{"choices":[{"message":{"role":"assistant","content":"🙂[1]"}}]}"#,
+        r#"{"choices":[{"message":{"role":"assistant","content":"\ud83d\ude42[1]"}}]}"#,
         &raw.to_string(),
     );
     let citation = &enhanced["choices"][0]["message"]["annotations"][0]["url_citation"];
-    assert_eq!(citation["start_index"], json!(1));
-    assert_eq!(citation["end_index"], json!(4));
+    assert_eq!(citation["start_index"], json!(1_i64));
+    assert_eq!(citation["end_index"], json!(4_i64));
 }
 
 #[test]
 fn the_last_matching_search_result_sets_the_title() {
-    let raw = json!({
-        "citations": ["https://a.example"],
-        "search_results": [
-            {"url": "https://a.example", "title": "old"},
-            {"url": "https://a.example", "title": "new"}
-        ]
-    });
+    let raw = fixture(
+        r#"{
+            "citations": ["https://a.example"],
+            "search_results": [
+                {"url": "https://a.example", "title": "old"},
+                {"url": "https://a.example", "title": "new"}
+            ]
+        }"#,
+    );
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#,
         &raw.to_string(),
@@ -318,7 +325,7 @@ fn the_last_matching_search_result_sets_the_title() {
 
 #[test]
 fn a_missing_search_result_title_is_empty() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#,
         &raw.to_string(),
@@ -331,7 +338,7 @@ fn a_missing_search_result_title_is_empty() {
 
 #[test]
 fn a_non_string_citation_uses_up_its_number() {
-    let raw = json!({"citations": [7, "https://b.example"]});
+    let raw = fixture(r#"{"citations": [7, "https://b.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1][2]"}}]}"#,
         &raw.to_string(),
@@ -346,7 +353,7 @@ fn a_non_string_citation_uses_up_its_number() {
 
 #[test]
 fn leading_zero_markers_name_the_same_citation() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[01]"}}]}"#,
         &raw.to_string(),
@@ -359,9 +366,9 @@ fn leading_zero_markers_name_the_same_citation() {
 
 #[test]
 fn markers_in_non_ascii_digits_are_not_citations() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
-        r#"{"choices":[{"message":{"role":"assistant","content":"[١]"}}]}"#,
+        r#"{"choices":[{"message":{"role":"assistant","content":"[\u0661]"}}]}"#,
         &raw.to_string(),
     );
     assert_eq!(
@@ -372,7 +379,7 @@ fn markers_in_non_ascii_digits_are_not_citations() {
 
 #[test]
 fn markers_past_the_citation_list_are_ignored() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[0][3]"}}]}"#,
         &raw.to_string(),
@@ -383,18 +390,21 @@ fn markers_past_the_citation_list_are_ignored() {
     );
     assert_eq!(
         enhanced["citations"],
-        json!(["https://a.example"]),
+        fixture(r#"["https://a.example"]"#),
         "a marker that resolves to nothing still copies the citations"
     );
 }
 
 #[test]
 fn annotations_are_appended_to_the_existing_list() {
-    let raw = json!({"citations": ["https://a.example"]});
-    let existing = json!([{"type": "url_citation", "url_citation": {"url": "x", "title": "x", "start_index": 0, "end_index": 1}}]);
-    let reply = json!({
-        "choices": [{"message": {"role": "assistant", "content": "[1]", "annotations": existing}}]
-    });
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
+    let existing = fixture(
+        r#"[{"type": "url_citation", "url_citation": {"url": "x", "title": "x", "start_index": 0, "end_index": 1}}]"#,
+    );
+    let mut reply = fixture(
+        r#"{"choices": [{"message": {"role": "assistant", "content": "[1]", "annotations": null}}]}"#,
+    );
+    reply["choices"][0]["message"]["annotations"] = existing;
     let enhanced = enhanced_reply(&reply.to_string(), &raw.to_string());
     let annotations = &enhanced["choices"][0]["message"]["annotations"];
     assert_eq!(annotations.as_array().map(Vec::len), Some(2));
@@ -406,7 +416,7 @@ fn annotations_are_appended_to_the_existing_list() {
 
 #[test]
 fn null_annotations_are_replaced() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]","annotations":null}}]}"#,
         &raw.to_string(),
@@ -419,10 +429,12 @@ fn null_annotations_are_replaced() {
 
 #[test]
 fn citations_and_search_results_are_copied_onto_the_reply() {
-    let raw = json!({
-        "citations": ["https://a.example"],
-        "search_results": [{"url": "https://a.example", "title": "A"}]
-    });
+    let raw = fixture(
+        r#"{
+            "citations": ["https://a.example"],
+            "search_results": [{"url": "https://a.example", "title": "A"}]
+        }"#,
+    );
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#,
         &raw.to_string(),
@@ -433,38 +445,50 @@ fn citations_and_search_results_are_copied_onto_the_reply() {
 
 #[test]
 fn empty_content_skips_the_citation_copies_but_still_enhances_usage() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":""}}]}"#,
         &raw.to_string(),
     );
     assert_eq!(enhanced["citations"], Value::Null);
     assert_eq!(enhanced["search_results"], Value::Null);
-    assert_eq!(enhanced["usage"]["citation_tokens"], json!(1));
+    assert_eq!(
+        enhanced["usage"]["citation_tokens"],
+        json!(4_i64),
+        "the 17-character citation counts four tokens"
+    );
 }
 
 #[test]
 fn no_choices_skips_the_citation_copies_but_still_enhances_usage() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(r#"{"choices":[]}"#, &raw.to_string());
     assert_eq!(enhanced["citations"], Value::Null);
-    assert_eq!(enhanced["usage"]["citation_tokens"], json!(1));
+    assert_eq!(
+        enhanced["usage"]["citation_tokens"],
+        json!(4_i64),
+        "the 17-character citation counts four tokens"
+    );
 }
 
 #[test]
 fn a_missing_message_skips_the_citation_copies() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(
         r#"{"choices":[{"finish_reason":"stop"}]}"#,
         &raw.to_string(),
     );
     assert_eq!(enhanced["citations"], Value::Null);
-    assert_eq!(enhanced["usage"]["citation_tokens"], json!(1));
+    assert_eq!(
+        enhanced["usage"]["citation_tokens"],
+        json!(4_i64),
+        "the 17-character citation counts four tokens"
+    );
 }
 
 #[test]
 fn a_non_object_choice_skips_the_citation_copies() {
-    let raw = json!({"citations": ["https://a.example"]});
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(r#"{"choices":[7]}"#, &raw.to_string());
     assert_eq!(enhanced["citations"], Value::Null);
 }
@@ -482,89 +506,96 @@ fn replays_the_perplexity_chat_reply_corpus(
 fn invalid_raw_json_returns_the_reply_unchanged() {
     let reply = r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#;
     let enhanced = enhanced_reply(reply, "{not json");
-    assert_eq!(enhanced, reply_json(reply));
+    assert_eq!(enhanced, fixture(reply));
 }
 
 #[test]
 fn a_usage_shape_failure_skips_the_annotations_too() {
     let reply = r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#;
-    let raw = json!({"usage": null, "citations": ["https://a.example"]});
+    let raw = fixture(r#"{"usage": null, "citations": ["https://a.example"]}"#);
     let enhanced = enhanced_reply(reply, &raw.to_string());
-    assert_eq!(enhanced, reply_json(reply));
+    assert_eq!(enhanced, fixture(reply));
 }
 
 #[test]
 fn a_null_search_results_fails_the_step_and_leaves_the_reply_unchanged() {
     let reply = r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#;
-    let raw = json!({"citations": ["https://a.example"], "search_results": null});
+    let raw = fixture(r#"{"citations": ["https://a.example"], "search_results": null}"#);
     let enhanced = enhanced_reply(reply, &raw.to_string());
-    assert_eq!(enhanced, reply_json(reply));
+    assert_eq!(enhanced, fixture(reply));
 }
 
 #[test]
 fn an_existing_usage_is_kept_and_extended() {
-    let raw = json!({"citations": ["abcdefgh"], "usage": {"num_search_queries": 3}});
-    let reply = json!({
-        "choices": [],
-        "usage": {
-            "prompt_tokens": 5,
-            "completion_tokens": 6,
-            "total_tokens": 11,
-            "prompt_tokens_details": {"cached_tokens": 2}
-        }
-    });
+    let raw = fixture(r#"{"citations": ["abcdefgh"], "usage": {"num_search_queries": 3}}"#);
+    let reply = fixture(
+        r#"{
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 5,
+                "completion_tokens": 6,
+                "total_tokens": 11,
+                "prompt_tokens_details": {"cached_tokens": 2}
+            }
+        }"#,
+    );
     let enhanced = enhanced_reply(&reply.to_string(), &raw.to_string());
     assert_eq!(
         enhanced["usage"],
-        json!({
-            "prompt_tokens": 5,
-            "completion_tokens": 6,
-            "total_tokens": 11,
-            "citation_tokens": 2,
-            "prompt_tokens_details": {"cached_tokens": 2, "web_search_requests": 3}
-        })
+        fixture(
+            r#"{
+                "prompt_tokens": 5,
+                "completion_tokens": 6,
+                "total_tokens": 11,
+                "citation_tokens": 2,
+                "prompt_tokens_details": {"cached_tokens": 2, "web_search_requests": 3}
+            }"#,
+        )
     );
 }
 
 #[test]
 fn a_null_reply_usage_is_replaced_by_a_zero_usage() {
-    let raw = json!({"citations": ["abcd"]});
+    let raw = fixture(r#"{"citations": ["abcd"]}"#);
     let enhanced = enhanced_reply(r#"{"choices":[],"usage":null}"#, &raw.to_string());
     assert_eq!(
         enhanced["usage"],
-        json!({
-            "prompt_tokens": 0,
-            "completion_tokens": 0,
-            "total_tokens": 0,
-            "citation_tokens": 1,
-            "prompt_tokens_details": {}
-        })
+        fixture(
+            r#"{
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "total_tokens": 0,
+                "citation_tokens": 1,
+                "prompt_tokens_details": {}
+            }"#,
+        )
     );
 }
 
 #[test]
 fn a_non_object_reply_usage_leaves_the_reply_unchanged() {
     let reply = r#"{"choices":[],"usage":5}"#;
-    let raw = json!({"citations": ["abcd"]});
-    assert_eq!(enhanced_reply(reply, &raw.to_string()), reply_json(reply));
+    let raw = fixture(r#"{"citations": ["abcd"]}"#);
+    assert_eq!(enhanced_reply(reply, &raw.to_string()), fixture(reply));
 }
 
 #[test]
 fn citation_tokens_alone_create_empty_prompt_token_details() {
-    let raw = json!({"citations": ["abcd"], "usage": {"num_search_queries": 0}});
+    let raw = fixture(r#"{"citations": ["abcd"], "usage": {"num_search_queries": 0}}"#);
     let enhanced = enhanced_reply(r#"{"choices":[]}"#, &raw.to_string());
-    assert_eq!(enhanced["usage"]["prompt_tokens_details"], json!({}));
+    assert_eq!(enhanced["usage"]["prompt_tokens_details"], fixture("{}"));
 }
 
 #[rstest]
-#[case::zero(json!(0))]
+#[case::zero(json!(0_i64))]
 #[case::empty_text(json!(""))]
 #[case::empty_object(json!({}))]
 #[case::false_flag(json!(false))]
-#[case::number(json!(5))]
+#[case::number(json!(5_i64))]
 #[case::text(json!("x"))]
 fn non_list_choices_fail_with_the_field_and_leave_the_reply_unchanged(#[case] choices: Value) {
-    let mut reply = json!({"choices": choices});
+    let mut reply = fixture(r#"{"choices": null}"#);
+    reply["choices"] = choices;
     let original = reply.clone();
     let error =
         apply(&mut reply, br#"{"citations": ["abcd"]}"#).expect_err("the choices shape failure");
@@ -577,10 +608,12 @@ fn non_list_choices_fail_with_the_field_and_leave_the_reply_unchanged(#[case] ch
 
 #[test]
 fn a_search_result_without_a_title_is_ignored() {
-    let raw = json!({
-        "citations": ["https://a.example"],
-        "search_results": [{"url": "https://a.example"}]
-    });
+    let raw = fixture(
+        r#"{
+            "citations": ["https://a.example"],
+            "search_results": [{"url": "https://a.example"}]
+        }"#,
+    );
     let enhanced = enhanced_reply(
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]"}}]}"#,
         &raw.to_string(),
@@ -595,6 +628,6 @@ fn a_search_result_without_a_title_is_ignored() {
 fn non_list_existing_annotations_leave_the_reply_unchanged() {
     let reply =
         r#"{"choices":[{"message":{"role":"assistant","content":"[1]","annotations":"x"}}]}"#;
-    let raw = json!({"citations": ["https://a.example"]});
-    assert_eq!(enhanced_reply(reply, &raw.to_string()), reply_json(reply));
+    let raw = fixture(r#"{"citations": ["https://a.example"]}"#);
+    assert_eq!(enhanced_reply(reply, &raw.to_string()), fixture(reply));
 }
