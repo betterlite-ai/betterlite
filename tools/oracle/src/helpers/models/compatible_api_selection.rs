@@ -13,7 +13,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 mod tests;
 
 #[derive(Debug, Deserialize)]
-struct Input {
+pub(crate) struct Input {
     calls: Vec<Call>,
 }
 
