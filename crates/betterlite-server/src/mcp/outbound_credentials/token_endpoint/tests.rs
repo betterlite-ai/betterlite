@@ -39,32 +39,32 @@ const NOW: i64 = 1_700_000_000;
 const SIGNING_FAILED: &str = "token exchange failed: could not sign the client assertion; check client_private_key and client_assertion_signing_alg";
 
 const RSA_KEY: &str = "-----BEGIN PRIVATE KEY-----
-MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDAPlal9kzPrjXD
-X39vm6fF9+CAoqqAjScmU3VVk8GAipNUKxXhd2sQpl7NwlKdIYxsyklYXT7tInxM
-K3tcoyZ6xOZ9QMmklL91rfrlEpNP55OVIvpBng5xmgpCEQc9c0n76jhv/4vFKgtS
-VqbIGTfk93MXcZTi6RDalwLqJ5RndVsHphoPZX8TJtm/K+myIZixVQ1d/hs+udE8
-wqwyWym7bkw1Vu91tsQbtWvcLqkDAT1dC+Nl0fxOMr/0ZP045+FN2kc2lYyiniKj
-2KT394N2yLx/+MmXGVrdymVVkdL8GUqJ1oeCd04+D4ADcpmaLtXfQEni4sahCRJB
-hkkLCsCtAgMBAAECggEAH5tAK19gB+G9pMZIe+TXWRokrCbSVHn13qcTCpj/09k0
-rr5ksGHYqu9HdURxHl9mfc5mRPkTqvDOscaRAiKFZY2GKD/6HFfOVek0ROw1vF83
-qZSLbjVabOf6rsZWQ+P2sncIL2Blg5V4MLc0CtWb6xuZ2FgMC/XDQm+t2CneDCzQ
-L9yZKhoFTNRfYRePaYka2H2eMXLBCXLLvoKwSl1uYSh7+iWi9c6OX13IonqQVMmr
-HcqGTd68aLKFnb5zQfsPL4m1d3KrAA4MnZJFOdECLYPjvLNl2/g0ofLVi6ZuJC74
-TK+QDJ90jclUHrSVwKVWAyu9xnGPpF/qAhLAVze02wKBgQD7/ax6Tke0foWsmegn
-KN5q1WTnHxId343BS1WsTHXyljgAK2yHXLdwH+iJ3+eaeJNHcHwXk9yJuXFjXq1z
-DPJuQVQJ79iOU7B7LYrD0rrf/lE9EdUpPhm9r4hIvnk6evIw9K0tgdmm6gi0xwE9
-DD+7z1YqUF/oq56exZV5twP99wKBgQDDTVJBsgRdERRW6jN6F66JjRATxIAiw4O8
-kLJACMvPqBqiYUlzxcns4AKoTNT5ZxR7eIXk8KB3dhBvr0zIQ4MoCw7KYLEccwZt
-RfcTmouwZyIIzI725aylF79QbtEuUIn+VdG06oEDB02qW1EbC5HhHIxgEuOo0KrJ
-GKY5astdewKBgQCjt41erQszPlx05k2JW6kdueTjsDEiDYNYySwxVD/xSx25Jn1N
-eLSJeYGoSjt8BciSSoek/eDz7fK4P+Pq8sdzUKhcCGMnHUJ01QLp9TiKnP2E8tgO
-ApXQwoGF2ZKDpytBGUaGYW3aXwUnBoBMfG/QAoYV2cBmN1JID1DtEjXawwKBgQCX
-7wcW5I5QeIECPKBfUx0NFRh0yGGGqeNKRqbk+fLUUUqnGFg0IKK+DGcE1wC4JWDh
-zRkcybWMOeT/fbiV8y+Nb0zKU/50y2csi0lzjr8tNI5dmgV+PZ7ZsGe9Avjotu8j
-VVAXFnfXC094QCIQkCekoLjz5L4HDo5Oc0adVF9xEQKBgBCfRL90hRwwO39OO3H9
-FbOAICm0i58R5B84kvuHO3GPRMXH2jJLbZKOutIKi/ujSKN62pGaEOocLXl0gyl0
-TTklJP+NswyLej5ku0ZdLeRpLQ6BrT0rgMJYhE4Pak9N8KPr9mSqENWc6jMMr11C
-jt9qIV2fBaVbYdTslNxPSHdj
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDe9+NL4PTL2Kbj
+xmHLDgquf7uAVwEVSrqJqd2PR5RJrPmaR8qXlw4l+1FFtekhI6YWdLiv/nGzwO17
+dBkTxJy+9JBsOHny+chNU7npRQKlm4QuRmMzEb8nCrdr9uH6BF9rec51EFF7GgnI
+fgN6HAgg4rRP7W7HmuV4VcBd5Gs/BRLJZpObbhVaOVBaIUZlxyP3L9exGbbKLFur
+mgbRjrusO84+zDAH1w3wj7Z774RHyS4l978rnpcOt/3I5S2UNl0Q1Cy5mtPQLJaT
+wWrEPSnC+peH2LA9YlcmBpdt5J3l6tNQ3CYR0KCEKaePK1zxaMfLenoYU6q1xXs/
+I67i/3I9AgMBAAECggEAB0VddQKloPi6vbThFZ83c6gB/CYTyJ2EMAvCyDkZybET
+GHgGXOnY+4QysVU32fP0AG/3SAzCKVrQs753uEh1VX6bfHf3NbH12VwYjpX74RAm
++ZMjvLOm5uKt1BHvN3ki7nONd/PobR006MP/oFQF/NW/v3Dn9HWyTXmh/6Q8muFJ
+637cGzae2w1aHt8kMPPu5OIkHwdGNH7n//jSN//5Bh9dMoHwBnretcP37d7TPiIJ
+PztKcnSjQyr8pC6+wzuc1Jq13WJn+Tc4sexyuif/LYP5/JBTLWSYwkYHemBYaQbZ
+ea2dgLoTeDhazJDIvpPilIyJ/V/bENmk3NUGlaiUAQKBgQD74zPJWvZdLm8Zg2ga
+DMqj39D8MF19jC/1nOkh12azyegn9EH+66KdKsBB2lGKvMbSibCY1gvpFMuxz2gN
+grqRQRf4azNahSSIkyeRs/I1omRYbQzXy/04caIy8+MhsxtkD95kE5CiugC4/QQx
+NIaJrWlXleyWRJpyNgQ+JXwEAQKBgQDim9BcprCGh3YCFRICwLGg8McBKsogcCgl
+GaekYVW1Tez6mABEQwWfnFM+lFB6VGIrvGlyaqUkdKM4bFdGB/CLLdcEHHHvppWT
+AEEg55Mjbd9C+ZQM5Rxwk2SDF9g4eBAvOyinwtOp4Vj1Ky5mEnFyC+SkSiJFJvc2
+54lLAnp+PQKBgBONNDTZ8auT8h253HfBLG2B7vfUTT10hzh6YII29QrZjkKjrAe8
+hJfMfLXf21p4grpO471JSA1khtcbcUkzL4Yc1l56+7Z4BTjwqy6dGBzfqQhQFqId
+fF9IOr3XvnacL3EZ5jpAZoarB2lUgmHLYPII2tdolL+pPY/F75hfUnwBAoGBAL8Z
+76ly2UNaUWaIJlwz7Jhw9SJC15prey9uZzX077aqNMNQFEl8y+1Cg+Euan//UZrY
+lYRr80C/LDaVBzSD1ZNJ4R4SbvNPZKxHdqUtJaSnL7TnjLcjL8ywP/9dyHY2qk9q
+cGqpnp6Q79gxxjtGKm2nIfZ6nlP6/FhNAjdDq9FxAoGBAOEuaHfXOhVl8ZySu/bT
+Rz6ipz3PkrNa9Z+MQpcGIIjg/v1m+J0hhQLcfmyyhxbNKEfUiqORTIvI5NuJSiAv
+/SxOXdO8VY9NdxzwyYbw/e33DwI0ZAFBY6ecQKFLRbobnRM+S0rA6IllSorj2eVj
+dLmbwV/RiHkRQXNe1Tbuldnp
 -----END PRIVATE KEY-----
 ";
 
@@ -165,7 +165,10 @@ fn answered(status: u16, body: &str) -> PostedForm {
     }
 }
 
-fn unreadable<T: DeserializeOwned>(part: &str) -> T {
+fn unreadable<T>(part: &str) -> T
+where
+    T: DeserializeOwned,
+{
     serde_json::from_slice(&URL_SAFE_NO_PAD.decode(part).unwrap()).unwrap()
 }
 
@@ -465,6 +468,36 @@ async fn maps_a_non_string_access_token_to_upstream_unavailable() {
 #[tokio::test]
 async fn maps_a_non_object_body_to_upstream_unavailable() {
     let (client, _post) = client(vec![answered(200, "[1,2]")]);
+    let error = client
+        .fetch(ENDPOINT, CLIENT_ID, &grant(), &client_secret_auth())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        CredError::UpstreamUnavailable(
+            "token exchange failed: token endpoint response missing access_token".to_owned()
+        )
+    );
+}
+
+#[tokio::test]
+async fn maps_a_sequence_body_to_upstream_unavailable() {
+    let (client, _post) = client(vec![answered(200, r#"["minted"]"#)]);
+    let error = client
+        .fetch(ENDPOINT, CLIENT_ID, &grant(), &client_secret_auth())
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error,
+        CredError::UpstreamUnavailable(
+            "token exchange failed: token endpoint response missing access_token".to_owned()
+        )
+    );
+}
+
+#[tokio::test]
+async fn maps_a_sequence_body_with_an_expiry_to_upstream_unavailable() {
+    let (client, _post) = client(vec![answered(200, r#"["minted", 3600]"#)]);
     let error = client
         .fetch(ENDPOINT, CLIENT_ID, &grant(), &client_secret_auth())
         .await

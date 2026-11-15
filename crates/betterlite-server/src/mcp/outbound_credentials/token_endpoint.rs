@@ -21,8 +21,7 @@ pub const CLIENT_ASSERTION_TYPE: &str = "urn:ietf:params:oauth:client-assertion-
 pub const ASSERTION_LIFETIME_SECONDS: i64 = 60;
 
 const NON_JSON_DETAIL: &str = "token exchange failed: token endpoint returned a non-JSON response";
-const MISSING_TOKEN_DETAIL: &str =
-    "token exchange failed: token endpoint response missing access_token";
+const NO_ACCESS_TOKEN: &str = "token exchange failed: token endpoint response missing access_token";
 const INVALID_EXPIRY_DETAIL: &str =
     "token exchange failed: token endpoint response has an invalid expires_in";
 
@@ -136,21 +135,18 @@ fn parse_response(status: u16, body: &[u8]) -> CredResult<ExchangedToken> {
             "token exchange failed with status {status}"
         )));
     }
+    let object = body.trim_ascii_start().starts_with(b"{");
     let response = match serde_json::from_slice::<TokenEndpointResponse>(body) {
-        Ok(response) => response,
+        Ok(response) if object => response,
         Err(error) if matches!(error.classify(), Category::Syntax | Category::Eof) => {
             return Err(CredError::UpstreamUnavailable(NON_JSON_DETAIL.to_owned()));
         }
-        Err(_error) => {
-            return Err(CredError::UpstreamUnavailable(
-                MISSING_TOKEN_DETAIL.to_owned(),
-            ));
+        Ok(_response) | Err(_error) => {
+            return Err(CredError::UpstreamUnavailable(NO_ACCESS_TOKEN.to_owned()));
         }
     };
     let Some(access_token) = response.access_token else {
-        return Err(CredError::UpstreamUnavailable(
-            MISSING_TOKEN_DETAIL.to_owned(),
-        ));
+        return Err(CredError::UpstreamUnavailable(NO_ACCESS_TOKEN.to_owned()));
     };
     let expires_in = match response.expires_in {
         None => None,

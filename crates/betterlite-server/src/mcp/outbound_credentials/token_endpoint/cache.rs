@@ -54,42 +54,35 @@ impl ExchangedTokenCache {
         if let Some(token) = self.get(cache_key, fingerprint) {
             return Ok(token);
         }
-        let generation = Self::generation(&guard);
+        let generation = *guard
+            .generation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         let token = compute.await?;
-        if Self::generation(&guard) == generation {
-            self.store(cache_key, fingerprint, &token);
-        }
+        self.store(&guard, cache_key, fingerprint, &token, generation);
         Ok(token.access_token)
     }
 
     // An invalidate that lands while a compute awaits the endpoint wins over that compute's write.
     pub fn invalidate(&self, cache_key: &str) {
-        drop(
-            self.entries
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .shift_remove(cache_key),
-        );
         let guard = self
             .guards
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .get(cache_key)
             .and_then(Weak::upgrade);
-        if let Some(guard) = guard {
-            let mut generation = guard
+        let generation = guard.as_ref().map(|guard| {
+            guard
                 .generation
                 .lock()
-                .unwrap_or_else(PoisonError::into_inner);
+                .unwrap_or_else(PoisonError::into_inner)
+        });
+        let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
+        drop(entries.shift_remove(cache_key));
+        drop(entries);
+        if let Some(mut generation) = generation {
             *generation = generation.saturating_add(1);
         }
-    }
-
-    fn generation(guard: &KeyGuard) -> u64 {
-        *guard
-            .generation
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
     }
 
     fn get(&self, cache_key: &str, fingerprint: &str) -> Option<String> {
@@ -103,7 +96,14 @@ impl ExchangedTokenCache {
         None
     }
 
-    fn store(&self, cache_key: &str, fingerprint: &str, token: &ExchangedToken) {
+    fn store(
+        &self,
+        guard: &KeyGuard,
+        cache_key: &str,
+        fingerprint: &str,
+        token: &ExchangedToken,
+        generation: u64,
+    ) {
         if self.tunables.cache_max_size == 0 {
             return;
         }
@@ -114,6 +114,14 @@ impl ExchangedTokenCache {
             .now()
             .checked_add_signed(lifetime)
             .unwrap_or(DateTime::<Utc>::MAX_UTC);
+        // Held across the insert, so an invalidate cancels this store or removes the entry.
+        let current = guard
+            .generation
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *current != generation {
+            return;
+        }
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         // LiteLLM's InMemoryCache evicts the soonest-expiring entry, so a live token is what leaves the cache.
         if entries.len() >= self.tunables.cache_max_size {
@@ -133,6 +141,8 @@ impl ExchangedTokenCache {
                 valid_until,
             },
         );
+        drop(entries);
+        drop(current);
     }
 
     fn guard(&self, cache_key: &str) -> Arc<KeyGuard> {
