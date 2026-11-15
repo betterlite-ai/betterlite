@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::database_diagnostics::initialization::DiagnosticSettings;
-use betterlite_db::database_diagnostics::level::{LogLevel, parse_level};
+use betterlite_db::database_diagnostics::level::{LevelError, LogLevel, parse_level};
 use rstest::rstest;
 
 use crate::loader::ConfigLoader;
@@ -48,7 +48,7 @@ fn tool_level_casefold_aliases(#[case] environment: &[(&str, &str)], #[case] exp
 #[case::untrimmed(&[("LITELLM_LOG", " info ")])]
 fn tool_level_invalid_empty_numeric_fail(#[case] environment: &[(&str, &str)]) {
     let settings = convert(environment);
-    assert!(parse_level(&settings.level).is_err());
+    assert_eq!(parse_level(&settings.level), Err(LevelError::Unknown));
 }
 
 #[rstest]
