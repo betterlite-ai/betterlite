@@ -1,0 +1,3 @@
+data: {"content":{"parts":[{"text":"sse"}]}}
+data: [DONE]
+{"content":{"parts":[{"text":"real"}]}}
