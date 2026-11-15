@@ -1,0 +1,13 @@
+kind: helper
+name: vertex-environment-only
+call:
+  batch_provider_list:
+    request:
+      provider: vertex_ai
+    litellm_settings: {}
+    environment:
+      VERTEXAI_PROJECT: env-project
+      VERTEXAI_LOCATION: env-location
+      VERTEXAI_CREDENTIALS: env-credentials
+env: {}
+compare: {ignore: []}
