@@ -3,7 +3,7 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::image_edits::request::ImageEditForm;
 
 use crate::api::fal::edit::error::FalEditError;
-use crate::api::fal::edit::image_input::{EditImage, to_data_url};
+use crate::api::fal::edit::image_input::to_data_url;
 use crate::api::fal::edit::transformation::{EditRequest, overlay_provider_options, request_body};
 use crate::api::fal::gpt_image::size::map_gpt_image_size;
 
@@ -35,13 +35,13 @@ pub fn map_openai_params(options: &ImageParams) -> ImageParams {
 }
 
 pub fn transform_image_edit_request(
-    request: &EditRequest<'_>,
+    request: &mut EditRequest<'_>,
 ) -> Result<ImageEditForm, FalEditError> {
-    let images: Vec<&EditImage<'_>> = request.images.iter().flatten().collect();
-    let Some(control) = images.first().copied() else {
+    let mut controls = request.images.iter_mut().flatten();
+    let Some(control) = controls.next() else {
         return Err(FalEditError::MissingImages);
     };
-    if images.len() > 1 {
+    if controls.next().is_some() {
         return Err(FalEditError::ControlImages {
             endpoint: DEPTH_ENDPOINT.to_owned(),
         });

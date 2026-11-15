@@ -6,6 +6,7 @@ use std::path::Path;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_models::decisions::Json;
+use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
 
 use crate::api::fal::edit::error::FalEditError;
 use crate::api::image_input_options::mime::image_content_type_stream;
@@ -14,26 +15,27 @@ pub enum EditImage<'value> {
     Text(&'value str),
     Bytes(&'value [u8]),
     Path(&'value Path),
-    Reader(&'value mut (dyn Read + Seek)),
-    Tuple(&'value EditImage<'value>),
+    Reader(&'value mut dyn ReadSeek),
+    Tuple(&'value mut EditImage<'value>),
     Other(&'value Json),
 }
 
 pub fn read_image_bytes<'image>(
-    image: &'image EditImage<'_>,
+    image: &'image mut EditImage<'_>,
 ) -> Result<Cow<'image, [u8]>, FalEditError> {
     match image {
         EditImage::Bytes(bytes) => Ok(Cow::Borrowed(*bytes)),
         EditImage::Path(path) => {
-            fs::read(path)
+            let file: &Path = path;
+            fs::read(file)
                 .map(Cow::Owned)
                 .map_err(|source| FalEditError::ReadPath {
-                    path: path.to_path_buf(),
+                    path: file.to_path_buf(),
                     source,
                 })
         }
-        EditImage::Reader(reader) => read_reader(reader).map(Cow::Owned),
-        EditImage::Tuple(inner) => read_image_bytes(*inner),
+        EditImage::Reader(reader) => read_reader(&mut **reader).map(Cow::Owned),
+        EditImage::Tuple(inner) => read_image_bytes(&mut **inner),
         EditImage::Text(_) => Err(FalEditError::UnsupportedImage { kind: "str" }),
         EditImage::Other(value) => Err(FalEditError::UnsupportedImage {
             kind: json_kind(value),
@@ -41,7 +43,7 @@ pub fn read_image_bytes<'image>(
     }
 }
 
-fn read_reader(reader: &mut (dyn Read + Seek)) -> Result<Vec<u8>, FalEditError> {
+fn read_reader(reader: &mut dyn ReadSeek) -> Result<Vec<u8>, FalEditError> {
     let position = reader
         .stream_position()
         .map_err(|source| FalEditError::Reader { source })?;
@@ -58,7 +60,7 @@ fn read_reader(reader: &mut (dyn Read + Seek)) -> Result<Vec<u8>, FalEditError> 
     Ok(data)
 }
 
-pub fn to_data_url(image: &EditImage<'_>) -> Result<String, FalEditError> {
+pub fn to_data_url(image: &mut EditImage<'_>) -> Result<String, FalEditError> {
     if let EditImage::Text(text) = image {
         return Ok((*text).to_owned());
     }

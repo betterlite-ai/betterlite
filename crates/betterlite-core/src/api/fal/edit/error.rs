@@ -13,7 +13,7 @@ pub enum FalEditError {
     MissingImages,
     #[error("{endpoint} accepts exactly one control image")]
     ControlImages { endpoint: String },
-    #[error("failed to read the image file {path}: {source}")]
+    #[error("failed to read the image file {}: {source}", path.display())]
     ReadPath { path: PathBuf, source: io::Error },
     #[error("the image reader failed: {source}")]
     Reader { source: io::Error },
