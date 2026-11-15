@@ -1,0 +1,13 @@
+kind: helper
+name: aim-anonymize-multimodal-rejection
+call:
+  b3750:
+    function: request
+    settings: {api_key: aim-oracle-key, api_base: "http://aim.test", litellm_version: "1.105.1"}
+    request_data: {messages: [{role: user, content: [{type: text, text: "what is in this image"}, {type: image_url, image_url: {url: "http://image.test/cat.png"}}]}]}
+    hook: pre_call
+    key_alias: null
+    answer: {required_action: {action_type: anonymize_action}, analysis_result: {policy_drill_down: {}}, redacted_chat: {all_redacted_messages: [{role: user, content: "what is in this image"}]}}
+    answer_status: 200
+env: {}
+compare: {ignore: []}

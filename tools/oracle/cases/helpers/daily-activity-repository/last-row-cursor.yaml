@@ -1,0 +1,19 @@
+kind: helper
+name: last-row-cursor
+call:
+  daily_activity_repository:
+    cases:
+      cursor_uses_last_row:
+        function: "next_cursor"
+        export_type: "daily_with_keys"
+        last: {"date": "2026-08-02", "entity_id": "entity", "entity_alias": null, "api_key": "last", "key_alias": null, "user_id": "u2", "user_email": null, "model": "m2", "spend": 1.25, "flat_cost": 0.0, "prompt_tokens": 1, "completion_tokens": 2, "api_requests": 3, "successful_requests": 4, "failed_requests": 5, "cache_read_input_tokens": 6, "cache_creation_input_tokens": 7}
+      cursor_each_export_group:
+        function: "next_cursor"
+        export_type: "daily_with_models"
+        last: {"date": "2026-08-02", "entity_id": "entity", "entity_alias": null, "api_key": "key", "key_alias": null, "user_id": "user", "user_email": null, "model": "model", "spend": 1.25, "flat_cost": 0.0, "prompt_tokens": 1, "completion_tokens": 2, "api_requests": 3, "successful_requests": 4, "failed_requests": 5, "cache_read_input_tokens": 6, "cache_creation_input_tokens": 7}
+      cursor_null_group_becomes_empty:
+        function: "next_cursor"
+        export_type: "daily_with_users"
+        last: {"date": "2026-08-02", "entity_id": "entity", "entity_alias": null, "api_key": null, "key_alias": null, "user_id": null, "user_email": null, "model": null, "spend": 1.25, "flat_cost": 0.0, "prompt_tokens": 1, "completion_tokens": 2, "api_requests": 3, "successful_requests": 4, "failed_requests": 5, "cache_read_input_tokens": 6, "cache_creation_input_tokens": 7}
+env: {}
+compare: {ignore: []}

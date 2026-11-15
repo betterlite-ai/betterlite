@@ -1,0 +1,15 @@
+kind: helper
+name: soniox-prepare-cleanup-shapes
+call:
+  soniox_prepare:
+    calls:
+    - {function: prepare, optional_params: {}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: null}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: file}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: transcription}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: [file, transcription]}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: []}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: [custom]}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {soniox_cleanup: [file, file]}, api_key: explicit, environment: {}}
+compare: {ignore: []}
+env: {}

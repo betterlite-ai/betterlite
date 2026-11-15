@@ -1,0 +1,13 @@
+kind: helper
+name: soniox-prepare-retained-options
+call:
+  soniox_prepare:
+    calls:
+    - {function: prepare, optional_params: {language: en, language_hints: [en], client_reference_id: null, context: {terms: [Soniox]}, webhook_auth_header_name: X-Auth, soniox_polling_interval: 2, soniox_max_polling_attempts: 5, soniox_cleanup: [file], filename: clip.wav, audio_url: "https://a.test/clip.wav", file_id: file_1, response_format: verbose_json}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {language: es, language_hints: [es, de], enable_speaker_diarization: true, enable_language_identification: false, translation: one_way, webhook_url: "https://hook.test/a"}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {language: null, language_hints: null, client_reference_id: ref, webhook_auth_header_value: null}, api_key: explicit, environment: {}}
+    - {function: prepare, optional_params: {temperature: 0.2, response_format: srt, filename: "clip two.wav"}, api_key: explicit, environment: {}}
+    - {function: create_body, prepare: {optional_params: {language: en, language_hints: [en], client_reference_id: null, context: {terms: [Soniox]}, webhook_auth_header_name: X-Auth, soniox_polling_interval: 2, filename: clip.wav, response_format: verbose_json}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+    - {function: create_body, prepare: {optional_params: {model: soniox/override, temperature: 0, client_reference_id: null}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4}
+compare: {ignore: []}
+env: {}
