@@ -1,0 +1,7 @@
+kind: helper
+name: legacy-vertex-plan-none-fields-seed
+call:
+  legacy_vertex_plan:
+    model: "text-bison"
+env: {}
+compare: {ignore: []}
