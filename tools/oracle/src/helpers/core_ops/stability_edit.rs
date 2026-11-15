@@ -122,11 +122,11 @@ impl Helper for Op {
 
 fn run_call(call: &Call) -> Result<Value, Box<HelperError>> {
     match call {
-        Call::Map(call) => Ok(map_answer(call)),
-        Call::Url(call) => Ok(url_answer(call)),
-        Call::Environment(call) => Ok(environment_answer(call)),
-        Call::Request(call) => request_answer(call),
-        Call::Response(call) => response_answer(call),
+        Call::Map(mapping) => Ok(map_answer(mapping)),
+        Call::Url(url) => Ok(url_answer(url)),
+        Call::Environment(environment) => Ok(environment_answer(environment)),
+        Call::Request(request) => request_answer(request),
+        Call::Response(response) => response_answer(response),
     }
 }
 
@@ -156,13 +156,10 @@ fn environment_answer(call: &EnvironmentCall) -> Value {
 
 fn request_answer(call: &RequestCall) -> Result<Value, Box<HelperError>> {
     let options = json_options(&call.options);
-    let mut mapped = match StabilityImageEditConfig::map_openai_params(
-        &options,
-        &call.model,
-        call.drop_params,
-    ) {
-        Ok(mapped) => mapped,
-        Err(_) => return Ok(json!({"unsupported": true})),
+    let Ok(mut mapped) =
+        StabilityImageEditConfig::map_openai_params(&options, &call.model, call.drop_params)
+    else {
+        return Ok(json!({"unsupported": true}));
     };
     for (name, specs) in &call.files {
         let parts = specs.iter().map(file_of).collect::<Result<Vec<_>, _>>()?;
@@ -230,7 +227,7 @@ fn file_of(spec: &FileSpec) -> Result<ImageFile, Box<HelperError>> {
 
 fn image_files(specs: Option<&[FileSpec]>) -> Result<Option<Vec<ImageFile>>, Box<HelperError>> {
     specs
-        .map(|specs| specs.iter().map(file_of).collect())
+        .map(|given| given.iter().map(file_of).collect())
         .transpose()
 }
 
@@ -271,7 +268,7 @@ fn price_record(model: &str) -> Option<JsonObject> {
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let canonical = catalog.lookup.get(model)?;
-    let entry = catalog.entries.get(canonical.as_ref())?;
+    let entry = catalog.entries.get(&**canonical)?;
     let prices = serde_json::to_value(&entry.prices).ok()?;
     serde_json::from_value(prices).ok()
 }

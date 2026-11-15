@@ -20,9 +20,7 @@ use super::request::{
 use super::types::{
     DEFAULT_API_BASE, DEFAULT_EDIT_ENDPOINT, EditOptions, EditValue, model_endpoint,
 };
-use super::{
-    StabilityImageEditConfig, StabilityImageEditSettings, get_stability_image_edit_config,
-};
+use super::{StabilityEditSettings, StabilityImageEditConfig, get_stability_image_edit_config};
 use crate::api::stability::generation::reply::StabilityReplyError;
 
 const NOW: i64 = 1_700_000_000;
@@ -345,7 +343,7 @@ fn an_empty_explicit_key_falls_through_to_the_environment_key() {
 
 #[test]
 fn debug_never_shows_the_key() {
-    let settings = StabilityImageEditSettings::from_environment(&lookup(&[
+    let settings = StabilityEditSettings::from_environment(&lookup(&[
         ("STABILITY_API_KEY", "server-key"),
         ("STABILITY_API_BASE", "https://env.test"),
     ]));
@@ -400,7 +398,7 @@ fn a_known_size_maps_to_its_aspect_ratio(#[case] size: &str, #[case] expected: &
 
 #[rstest]
 #[case::unknown_size(Json::Text(String::from("999x999")))]
-#[case::wrong_typed_size(Json::Number(Number::from(1024)))]
+#[case::wrong_typed_size(Json::Number(Number::from(1024_i64)))]
 #[case::null_size(Json::Null)]
 fn a_size_outside_the_table_is_dropped(#[case] size: Json) {
     let input = options(&[("size", size)]);

@@ -7,6 +7,7 @@ from typing import Final, Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
+import typing_extensions
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.stability.image_edit import get_stability_image_edit_config as edit_config
 from litellm.router_utils.add_retry_fallback_headers import get_hidden_params_dict
@@ -22,7 +23,8 @@ ENVIRONMENT: Final[tuple[str, ...]] = ("STABILITY_API_KEY", "STABILITY_API_BASE"
 NO_HEADERS: Final[dict[str, JsonValue]] = {}
 
 
-class EditOptions(ImageEditOptionalRequestParams, total=False):
+# the base LiteLLM's TypedDict uses, named so pep8-naming reads imageConfig as a key
+class EditOptions(ImageEditOptionalRequestParams, typing_extensions.TypedDict, total=False):
     # LiteLLM keeps unmapped keys, and imageConfig loses its Any so no value here carries one
     imageConfig: dict[str, JsonValue] | None
     negative_prompt: str | None

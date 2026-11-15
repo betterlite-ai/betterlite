@@ -3,7 +3,7 @@ use betterlite_openai::api::image_contracts::records::{ImageFile, ImageFiles, Im
 use serde_json::Number;
 
 use super::error::StabilityEditError;
-use super::types::EditOptions;
+use super::types::{EditOptions, EditValue};
 use crate::api::stability::generation::types::DEFAULT_OUTPUT_FORMAT;
 
 // the declared type of each option Stability sends as a normal form field; output_format is absent
@@ -63,8 +63,8 @@ pub fn transform_image_edit_request(
         "output_format".to_owned(),
         Json::Text(DEFAULT_OUTPUT_FORMAT.to_owned()),
     );
-    if let Some(prompt) = prompt.filter(|prompt| !prompt.is_empty()) {
-        data.insert("prompt".to_owned(), Json::Text(prompt.to_owned()));
+    if let Some(text) = prompt.filter(|given| !given.is_empty()) {
+        data.insert("prompt".to_owned(), Json::Text(text.to_owned()));
     }
     let mut files = ImageFiles::new();
     if let Some(images) = image {
@@ -87,6 +87,7 @@ pub fn transform_image_edit_request(
         }
         if let Some((field, kind)) = EDIT_TEXT_FIELDS
             .iter()
+            .copied()
             .find(|(field, _kind)| *field == name)
         {
             let EditValue::Json(json) = value else {
@@ -115,11 +116,11 @@ fn read_text(value: &Json) -> Option<String> {
     Some(text.clone())
 }
 
-fn read_integer(value: &Json) -> Option<i64> {
+fn read_integer(value: &Json) -> Option<Number> {
     let Json::Number(number) = value else {
         return None;
     };
-    number.as_i64()
+    number.as_i64().map(Number::from)
 }
 
 fn read_number(value: &Json) -> Option<Number> {

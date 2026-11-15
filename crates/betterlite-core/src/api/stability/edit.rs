@@ -100,15 +100,18 @@ impl StabilityImageEditConfig {
     ) -> Result<EditOptions, StabilityEditError> {
         let mut mapped = image_edit_optional_params.clone();
         for (name, value) in image_edit_optional_params {
-            if name == "size" {
-                map_size(value, &mut mapped);
-            } else if name == "n" || name == "response_format" {
-                mapped.insert(format!("_{name}"), value.clone());
-            } else if !Self::SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) && !drop_params {
-                return Err(StabilityEditError::UnsupportedParameter {
-                    parameter: name.clone(),
-                    model: model.to_owned(),
-                });
+            match name.as_str() {
+                "size" => map_size(value, &mut mapped),
+                "n" | "response_format" => {
+                    mapped.insert(format!("_{name}"), value.clone());
+                }
+                _ if drop_params || Self::SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) => {}
+                _ => {
+                    return Err(StabilityEditError::UnsupportedParameter {
+                        parameter: name.clone(),
+                        model: model.to_owned(),
+                    });
+                }
             }
         }
         for removed in ["size", "n", "response_format"] {

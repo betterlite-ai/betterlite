@@ -38,7 +38,7 @@ pub const STABILITY_EDIT_ENDPOINTS: [(&str, &str); 14] = [
     ),
 ];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditValue {
     Json(Json),
     Files(Vec<ImageFile>),
