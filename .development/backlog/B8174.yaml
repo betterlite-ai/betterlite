@@ -1,7 +1,7 @@
 id: B8174
 milestone: M3 providers
 title: MiniMax text to speech and ModelScope images
-status: todo
+status: done
 depends_on: [B1135, B2202, B511]
 file: tasks/B8174-minimax-speech-modelscope-image.yaml
 covers:
@@ -12,7 +12,7 @@ covers:
   - "litellm/llms/modelscope/image_generation/transformation.py"
 parent: B043
 split_from: B043
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1667

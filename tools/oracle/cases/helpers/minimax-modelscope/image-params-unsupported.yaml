@@ -1,0 +1,10 @@
+kind: helper
+name: modelscope-image-params-unsupported
+call:
+  b8174:
+    steps:
+      - kind: image_params
+        model: Qwen/Qwen-Image
+        params: {n: 1, quality: hd}
+env: {}
+compare: {ignore: []}
