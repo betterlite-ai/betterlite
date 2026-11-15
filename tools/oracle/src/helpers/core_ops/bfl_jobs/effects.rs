@@ -1,0 +1,163 @@
+use std::collections::VecDeque;
+use std::future::{Future, ready};
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
+
+use betterlite_core::api::bfl::generation_call::submit::{
+    SubmitError, SubmitRequest, SubmitTransport,
+};
+use betterlite_core::api::bfl::poll::{PollClock, PollSleeper, PollTransport};
+use betterlite_http::proxy::UpstreamResponse;
+use betterlite_http::proxy::transport_error::TransportError;
+use http::header::{HeaderMap, HeaderValue};
+use serde_json::{Map, Value, json};
+use url::Url;
+
+use super::input::{ClockSettings, Reply};
+
+// httpx fills these from its own client defaults and from the encoded body, so both sides record them as plumbing
+const TRANSPORT_HEADERS: [&str; 6] = [
+    "accept",
+    "accept-encoding",
+    "connection",
+    "content-length",
+    "host",
+    "user-agent",
+];
+
+#[derive(Default)]
+pub(super) struct Effects(Mutex<Vec<Value>>);
+
+impl Effects {
+    pub(super) fn record(&self, effect: Value) {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(effect);
+    }
+
+    pub(super) fn take(&self) -> Vec<Value> {
+        std::mem::take(&mut *self.0.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+}
+
+pub(super) struct Script<'effects> {
+    submission: Reply,
+    polls: Mutex<VecDeque<Reply>>,
+    effects: &'effects Effects,
+}
+
+impl<'effects> Script<'effects> {
+    pub(super) fn new(submission: Reply, polls: Vec<Reply>, effects: &'effects Effects) -> Self {
+        Self {
+            submission,
+            polls: Mutex::new(polls.into()),
+            effects,
+        }
+    }
+
+    // the last scripted poll repeats, so a job that stays Pending only needs one reply
+    fn next_reply(&self) -> Reply {
+        let mut polls = self.polls.lock().unwrap_or_else(PoisonError::into_inner);
+        let reply = if polls.len() > 1 {
+            polls.pop_front()
+        } else {
+            polls.front().cloned()
+        };
+        reply.unwrap_or_else(|| self.submission.clone())
+    }
+}
+
+impl SubmitTransport for Script<'_> {
+    async fn post(&self, request: SubmitRequest) -> Result<UpstreamResponse, SubmitError> {
+        self.effects.record(json!({
+            "effect": "post",
+            "url": request.url.to_string(),
+            "headers": header_object(&request.headers),
+            "body": request.body.clone(),
+            "timeout_millis": request.timeout.map(timeout_millis),
+        }));
+        Ok(response(&self.submission))
+    }
+}
+
+impl PollTransport for Script<'_> {
+    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+        self.effects.record(json!({
+            "effect": "get",
+            "url": url.to_string(),
+            "headers": header_object(&headers),
+        }));
+        Ok(response(&self.next_reply()))
+    }
+}
+
+pub(super) struct Timeline<'effects> {
+    millis: Mutex<u64>,
+    tick: u64,
+    advance: u64,
+    effects: &'effects Effects,
+}
+
+impl<'effects> Timeline<'effects> {
+    pub(super) fn new(settings: &ClockSettings, effects: &'effects Effects) -> Self {
+        Self {
+            millis: Mutex::new(settings.start),
+            tick: settings.tick,
+            advance: settings.sleep_advance,
+            effects,
+        }
+    }
+}
+
+impl PollClock for Timeline<'_> {
+    fn now(&self) -> Duration {
+        let mut millis = self.millis.lock().unwrap_or_else(PoisonError::into_inner);
+        let moment = *millis;
+        *millis = millis.saturating_add(self.tick);
+        Duration::from_millis(moment)
+    }
+}
+
+// a scripted sleep records itself and moves the fake clock, so the poll's next deadline check sees the advance
+impl PollSleeper for Timeline<'_> {
+    fn sleep(&self, duration: Duration) -> impl Future<Output = ()> + Send {
+        self.effects.record(json!({
+            "effect": "sleep",
+            "millis": timeout_millis(duration),
+        }));
+        let mut current = self.millis.lock().unwrap_or_else(PoisonError::into_inner);
+        *current = current.saturating_add(self.advance);
+        ready(())
+    }
+}
+
+fn timeout_millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+fn header_object(headers: &HeaderMap) -> Value {
+    let mut fields = Map::new();
+    for (name, value) in headers {
+        if TRANSPORT_HEADERS.contains(&name.as_str()) {
+            continue;
+        }
+        fields.insert(name.as_str().to_owned(), Value::String(header_text(value)));
+    }
+    Value::Object(fields)
+}
+
+fn header_text(value: &HeaderValue) -> String {
+    value.to_str().map_or_else(
+        |_| format!("{} bytes that are not UTF-8", value.as_bytes().len()),
+        str::to_owned,
+    )
+}
+
+fn response(reply: &Reply) -> UpstreamResponse {
+    UpstreamResponse {
+        status: reply.status,
+        headers: HeaderMap::new(),
+        body: reply.body.as_bytes().to_vec(),
+    }
+}
