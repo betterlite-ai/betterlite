@@ -13,7 +13,7 @@ use crate::database_views::contracts::SupportsRawQueries;
 use crate::database_views::definitions::{
     DAILY_TAG_SPEND, LAST_30D_KEYS_BY_SPEND, LAST_30D_MODELS_BY_SPEND,
     LAST_30D_TOP_END_USERS_SPEND, MONTHLY_GLOBAL_SPEND, MONTHLY_GLOBAL_SPEND_PER_KEY,
-    MONTHLY_USER_KEY_SPEND, OFFLINE_VERIFICATION_VIEW_SQL, VERIFICATION_TOKEN_VIEW,
+    MONTHLY_USER_KEY_SPEND, VERIFICATION_TOKEN_VIEW,
 };
 use crate::database_views::estimate::should_create_missing_views;
 use crate::database_views::runtime::{create_missing_views, create_view_tolerating_race};
@@ -31,6 +31,10 @@ pub const EXPECTED_VIEWS: [&str; 8] = [
     LAST_30D_TOP_END_USERS_SPEND,
     DAILY_TAG_SPEND,
 ];
+pub const TOKEN_VIEW_REPAIR_SQL: &str = r#"CREATE VIEW "LiteLLM_VerificationTokenView" AS
+SELECT v.*, t.spend AS team_spend, t.max_budget AS team_max_budget, t.model_max_budget AS team_model_max_budget, t.tpm_limit AS team_tpm_limit, t.rpm_limit AS team_rpm_limit, t.tpd_limit AS team_tpd_limit
+FROM "LiteLLM_VerificationToken" v
+LEFT JOIN "LiteLLM_TeamTable" t ON v.team_id = t.team_id;"#;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewSetupOutcome {
@@ -191,13 +195,9 @@ where
         .health_check()
         .await
         .map_err(|source| ViewsError::Health { source })?;
-    create_view_tolerating_race(
-        database,
-        VERIFICATION_TOKEN_VIEW,
-        OFFLINE_VERIFICATION_VIEW_SQL,
-    )
-    .await
-    .map_err(|source| ViewsError::Database { source })?;
+    create_view_tolerating_race(database, VERIFICATION_TOKEN_VIEW, TOKEN_VIEW_REPAIR_SQL)
+        .await
+        .map_err(|source| ViewsError::Database { source })?;
     Ok(())
 }
 

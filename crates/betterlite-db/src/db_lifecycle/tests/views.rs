@@ -1,14 +1,15 @@
 use std::time::Duration;
 
+use rstest::rstest;
 use tokio::task::yield_now;
 use tokio::time::{Instant, advance, sleep};
 use tokio_util::task::TaskTracker;
 
 use super::support::{FakeFailure, capture_logs, views_harness, views_harness_with_deadline};
-use crate::database_views::definitions::{
-    OFFLINE_VERIFICATION_VIEW_SQL, RUNTIME_VIEWS, VERIFICATION_TOKEN_VIEW,
+use crate::database_views::definitions::{RUNTIME_VIEWS, VERIFICATION_TOKEN_VIEW};
+use crate::db_lifecycle::views::{
+    EXPECTED_VIEWS, TOKEN_VIEW_REPAIR_SQL, ViewSetupOutcome, ViewsError, check_view_exists,
 };
-use crate::db_lifecycle::views::{EXPECTED_VIEWS, ViewSetupOutcome, ViewsError, check_view_exists};
 
 fn known(views: &[&str]) -> Vec<String> {
     views.iter().map(|view| String::from(*view)).collect()
@@ -65,9 +66,39 @@ async fn token_view_missing_with_other_views_checks_health_and_creates_it() {
     );
     assert_eq!(
         harness.catalog.state.created(),
-        vec![OFFLINE_VERIFICATION_VIEW_SQL.to_owned()]
+        vec![TOKEN_VIEW_REPAIR_SQL.to_owned()]
     );
     assert!(harness.catalog.state.queries.lock().unwrap().is_empty());
+}
+
+#[rstest]
+#[case::team_spend("t.spend AS team_spend")]
+#[case::team_max_budget("t.max_budget AS team_max_budget")]
+#[case::team_model_max_budget("t.model_max_budget AS team_model_max_budget")]
+#[case::team_tpm_limit("t.tpm_limit AS team_tpm_limit")]
+#[case::team_rpm_limit("t.rpm_limit AS team_rpm_limit")]
+#[case::team_tpd_limit("t.tpd_limit AS team_tpd_limit")]
+#[tokio::test]
+async fn the_repaired_token_view_projects_every_team_alias(#[case] expected: &str) {
+    let harness = views_harness();
+    *harness.catalog.state.known_views.lock().unwrap() = known(&others());
+    let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
+    assert!(outcome.is_ok());
+    let created = harness.catalog.state.created();
+    let ddl = created.first().expect("the repair DDL was not executed");
+    assert!(ddl.contains(expected), "{ddl}");
+}
+
+#[tokio::test]
+async fn the_repaired_token_view_ignores_the_project_table() {
+    let harness = views_harness();
+    *harness.catalog.state.known_views.lock().unwrap() = known(&others());
+    let outcome = check_view_exists(&harness.catalog, &harness.health, "public").await;
+    assert!(outcome.is_ok());
+    let created = harness.catalog.state.created();
+    let ddl = created.first().expect("the repair DDL was not executed");
+    assert!(!ddl.contains("LiteLLM_ProjectTable"), "{ddl}");
+    assert!(!ddl.contains("project_alias"), "{ddl}");
 }
 
 #[tokio::test]
