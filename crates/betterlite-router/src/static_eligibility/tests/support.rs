@@ -24,6 +24,11 @@ pub(crate) fn facts() -> RequestFacts {
     }
 }
 
+pub(crate) fn message(content: &str) -> Json {
+    serde_json::from_str(&format!(r#"{{"role":"user","content":"{content}"}}"#))
+        .unwrap_or(Json::Null)
+}
+
 pub(crate) fn spec(name: &str, id: &str, model: &str, info: &str) -> DeploymentSpec {
     let params = format!(r#"{{"model":"{model}"}}"#);
     let mut model_info: JsonObject = if info.is_empty() {
