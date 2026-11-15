@@ -20,7 +20,9 @@ fn ratio_for(size: &Json) -> Result<&'static str, RunwayImageError> {
             .find(|(preset, _)| *preset == text.as_str())
             .map_or(DEFAULT_RATIO, |(_, ratio)| *ratio)),
         Json::Null => Ok(DEFAULT_RATIO),
-        _ => Err(RunwayImageError::InvalidSize),
+        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            Err(RunwayImageError::InvalidSize)
+        }
     }
 }
 
