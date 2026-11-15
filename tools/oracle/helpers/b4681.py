@@ -2,7 +2,7 @@ import asyncio
 import json
 import sys
 from collections.abc import Mapping
-from datetime import datetime
+from datetime import UTC, datetime
 from types import ModuleType
 from typing import Final, Literal, NotRequired, TypedDict
 
@@ -264,15 +264,15 @@ async def dispatch(call: Input, state: State) -> JsonValue:
         case "create":
             client = FakeClient(state, fail=False)
             request = TypeAdapter(NewMCPToolsetRequest).validate_python(call["request"])
-            toolset = await create_mcp_toolset(client, request, call["touched_by"])
-            return toolset_value(toolset)
+            created = await create_mcp_toolset(client, request, call["touched_by"])
+            return toolset_value(created)
         case "get":
-            toolset = await get_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
-            return toolset_value(toolset)
+            found = await get_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
+            return toolset_value(found)
         case "get_by_name":
             client = FakeClient(state, fail=False)
-            toolset = await get_mcp_toolset_by_name(client, call["toolset_name"])
-            return toolset_value(toolset)
+            named = await get_mcp_toolset_by_name(client, call["toolset_name"])
+            return toolset_value(named)
         case "list":
             client = FakeClient(state, fail=call["fail"])
             toolsets = await list_mcp_toolsets(
@@ -284,15 +284,16 @@ async def dispatch(call: Input, state: State) -> JsonValue:
             }
         case "update":
             client = FakeClient(state, fail=False)
-            request = TypeAdapter(UpdateMCPToolsetRequest).validate_python(call["request"])
-            toolset = await update_mcp_toolset(client, request, call["touched_by"])
-            return toolset_value(toolset)
+            changes = TypeAdapter(UpdateMCPToolsetRequest).validate_python(call["request"])
+            updated = await update_mcp_toolset(client, changes, call["touched_by"])
+            return toolset_value(updated)
         case "delete":
-            toolset = await delete_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
-            return toolset_value(toolset)
+            removed = await delete_mcp_toolset(FakeClient(state, fail=False), call["toolset_id"])
+            return toolset_value(removed)
 
 
 def run(input_value: Input) -> JsonValue:
-    timestamp = TypeAdapter(datetime).validate_python(input_value["timestamp"])
+    parsed = TypeAdapter(datetime).validate_python(input_value["timestamp"])
+    timestamp = parsed.replace(tzinfo=UTC)
     state = State([stored_row(row, timestamp) for row in input_value["rows"]], timestamp)
     return asyncio.run(dispatch(input_value, state))
