@@ -16,7 +16,10 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_guardrails::{guardrail_translation, passthrough_policy};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 struct LoggingSpec {
@@ -59,7 +62,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(failure)?;
@@ -281,19 +284,19 @@ impl PassthroughPolicy for Policy {
         config: &Json,
         guardrail_name: &str,
     ) -> Option<PassThroughGuardrailSettings> {
-        betterlite_guardrails::passthrough_policy::get_settings(Some(config), guardrail_name).map(
-            |settings| PassThroughGuardrailSettings {
+        passthrough_policy::get_settings(Some(config), guardrail_name).map(|settings| {
+            PassThroughGuardrailSettings {
                 request_fields: settings.request_fields,
                 response_fields: settings.response_fields,
-            },
-        )
+            }
+        })
     }
 
     fn extract_fields(&self, data: &Json, expressions: &[String]) -> String {
-        betterlite_guardrails::passthrough_policy::extract_fields(data, expressions)
+        passthrough_policy::extract_fields(data, expressions)
     }
 
     fn user_key_metadata(&self, user_api_key_dict: Option<&RequestData>) -> RequestData {
-        betterlite_guardrails::guardrail_translation::transform_user_key_metadata(user_api_key_dict)
+        guardrail_translation::transform_user_key_metadata(user_api_key_dict)
     }
 }

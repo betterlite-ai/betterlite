@@ -13,7 +13,8 @@ use betterlite_core::api::vertex_chirp_protocol::{ChirpSessionConfig, parse_chir
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

@@ -1,0 +1,51 @@
+[package]
+name = "betterlite-oracle-logging"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "tokio"] }
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-error = { path = "../../../../../crates/betterlite-error" }
+betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-server = { path = "../../../../../crates/betterlite-server" }
+chrono.workspace = true
+flate2 = "1.1.5"
+http = "1.5.0"
+indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+opentelemetry = { version = "0.33.1", default-features = false }
+opentelemetry-http = { version = "0.33.1", default-features = false }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["trace", "testing"] }
+rust_decimal.workspace = true
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde-saphyr = "2.0.0"
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
+tempfile = "3.27.0"
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+url = "2.5.8"
+uuid = { version = "1.28.0", default-features = false }
+
+[dev-dependencies]
+rstest = "=0.27.0"
+
+[lints]
+workspace = true

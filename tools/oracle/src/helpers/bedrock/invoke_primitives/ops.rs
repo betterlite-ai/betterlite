@@ -34,7 +34,8 @@ use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use super::input::{ErrorCase, Input, MergeCase, PromptCase, SigningCase, UrlCase};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {

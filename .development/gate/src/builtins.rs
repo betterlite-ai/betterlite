@@ -7,6 +7,7 @@ pub(crate) mod globs;
 mod lint_table;
 pub(crate) mod module_tree;
 mod scope;
+pub(crate) mod shared_names;
 mod tests;
 mod tools;
 mod workspace;
@@ -40,5 +41,6 @@ pub(crate) fn run_builtin(id: BuiltinId, context: &Context<'_>) -> Result<Vec<St
         BuiltinId::Crates => crates::check(&context.development.root),
         BuiltinId::ModuleTree => module_tree::check(context),
         BuiltinId::CaseIgnores => case_ignores::check(context),
+        BuiltinId::SharedNames => shared_names::check(context),
     }
 }

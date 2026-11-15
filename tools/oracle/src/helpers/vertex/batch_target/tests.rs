@@ -5,7 +5,8 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn run(value: Value) -> Result<Value, String> {
     let input = serde_json::from_value(value).map_err(|error| error.to_string())?;
@@ -14,7 +15,7 @@ fn run(value: Value) -> Result<Value, String> {
 
 #[test]
 fn helper_seeds_select_vertex_batch_target() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<HelperCase> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())

@@ -4,7 +4,9 @@ use betterlite_http::user_url::error::UserUrlError;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -56,7 +58,7 @@ impl Helper for Op {
                 };
                 let validator =
                     UrlValidator::new(SystemResolver, user_url_allowed_hosts, &verification);
-                let runtime = tokio::runtime::Builder::new_current_thread()
+                let runtime = Builder::new_current_thread()
                     .enable_all()
                     .build()
                     .map_err(|error| failure("RuntimeError", error.to_string()))?;

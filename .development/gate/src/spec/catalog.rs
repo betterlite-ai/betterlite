@@ -91,4 +91,5 @@ pub(crate) enum BuiltinId {
     Crates,
     ModuleTree,
     CaseIgnores,
+    SharedNames,
 }

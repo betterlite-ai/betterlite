@@ -11,7 +11,9 @@ use betterlite_guardrails::tool_policy::{RequestToolNames, ToolPolicyGuardrail, 
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -138,7 +140,7 @@ impl Helper for Op {
             }),
         )
         .map_err(|error| failure("ValueError", error.to_string()))?;
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure("RuntimeError", error.to_string()))?;

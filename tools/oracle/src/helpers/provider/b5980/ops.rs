@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 use std::sync::Mutex;
 
 use async_trait::async_trait;
@@ -22,12 +21,15 @@ use betterlite_provider::databricks_responses::DatabricksResponsesAPIConfig;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::{
     ApiBaseCase, DEFAULT_VERSION, EmbeddingCase, EnvInput, UrlCase, UserAgentCase, ValidateCase,
     ValidateInput,
 };
+use betterlite_provider::databricks_auth::error::DatabricksError;
+use tokio::runtime::Builder;
 
 const WATCHED_HEADERS: [&str; 3] = ["authorization", "content-type", "user-agent"];
 
@@ -72,21 +74,8 @@ impl OauthTokenSource for ScriptedTokens {
     }
 }
 
-fn run_async<F>(future: F) -> Result<F::Output, Box<HelperError>>
-where
-    F: Future,
-{
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_config_error()?;
-    Ok(runtime.block_on(future))
-}
-
 fn configure<T, F>(
-    outcome: Result<
-        Result<T, betterlite_provider::databricks_auth::error::DatabricksError>,
-        Box<HelperError>,
-    >,
+    outcome: Result<Result<T, DatabricksError>, Box<HelperError>>,
     render: F,
 ) -> Result<serde_json::Value, Box<HelperError>>
 where
@@ -127,11 +116,16 @@ fn validate_case(
 ) -> Result<serde_json::Value, Box<HelperError>> {
     let key = case.api_key.clone().map(SecretString::from);
     let tokens = ScriptedTokens::new(case.oauth.reply());
-    let outcome = run_async(validate_environment(
-        case.request(key.as_ref()),
-        env,
-        &tokens,
-    ));
+    let outcome = Builder::new_current_thread()
+        .build()
+        .or_config_error()
+        .map(|runtime| {
+            runtime.block_on(validate_environment(
+                case.request(key.as_ref()),
+                env,
+                &tokens,
+            ))
+        });
     let rendered = configure(
         outcome,
         |(url, headers)| json!({"url": url, "headers": headers}),
@@ -183,7 +177,12 @@ fn embedding_case(case: &EmbeddingCase) -> Result<serde_json::Value, Box<HelperE
         body: SecretString::default(),
     });
     configure(
-        run_async(prepare_embedding(preparation, &case.env.build(), &tokens)),
+        Builder::new_current_thread()
+            .build()
+            .or_config_error()
+            .map(|runtime| {
+                runtime.block_on(prepare_embedding(preparation, &case.env.build(), &tokens))
+            }),
         |prepared| render_embedding(&prepared),
     )
 }

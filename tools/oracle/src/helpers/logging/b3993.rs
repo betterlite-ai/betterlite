@@ -15,10 +15,12 @@ use betterlite_models::decisions::Json;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::{Input, Operation};
 use recording::{FixedClock, Recorded, RecordingSink, ScriptedS3};
+use tokio::runtime::Builder;
 
 mod input;
 mod recording;
@@ -40,7 +42,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()

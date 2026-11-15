@@ -3,13 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 // Each seed is named after the variant it selects: openai_image_edits-<variant with hyphens>.yaml.
 #[test]
 fn helper_seeds_select_openai_image_edits() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, String)> = fs::read_dir(corpus)
         .expect("helper corpus should exist")
         .filter_map(Result::ok)

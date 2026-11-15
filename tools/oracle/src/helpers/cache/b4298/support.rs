@@ -14,8 +14,11 @@ use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
 use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_context::local_ttl_cache::CacheValue;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
+use std::fmt::Display;
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) const NOW: f64 = 1_700_000_000.0;
 
@@ -240,7 +243,7 @@ pub(crate) fn cache(
     cache_type: Option<LiteLlmCacheType>,
     mode: Option<CacheMode>,
     settings: &EnvelopeSettings,
-) -> Result<HelperCache, Box<crate::helpers::HelperError>> {
+) -> Result<HelperCache, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(failure)?;
     Ok(ResponseCache {
         backend: Arc::new(StoredBackend { backend }),
@@ -262,8 +265,8 @@ pub(crate) fn cache(
     })
 }
 
-pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(crate) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_time()
         .build()
         .map_err(failure)
@@ -283,11 +286,11 @@ pub(crate) fn rebuild(request: &EnvelopeRequest) -> EnvelopeRequest {
     }
 }
 
-pub(crate) fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+pub(crate) fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

@@ -11,6 +11,7 @@ use betterlite_openai::cohere_embedding::{
     SUPPORTED_OPENAI_PARAMS, TextEncoding,
 };
 use betterlite_openai::embedding::EmbeddingInput;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_tokenizer::engine::error::EngineError;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -167,10 +168,10 @@ fn reply(model: &str, entry: &Reply) -> Value {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(match input.function {
             Function::Request => request(input),
             Function::Response => {

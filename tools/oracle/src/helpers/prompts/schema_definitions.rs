@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::definitions::error::DefinitionsError;
 use betterlite_prompts::definitions::estimate::estimate_json_bytes;
@@ -6,7 +7,7 @@ use betterlite_prompts::definitions::expand::unpack_defs;
 use betterlite_prompts::definitions::legacy::{
     DEFS_MAX_INLINED_BYTES, has_legacy_defs, unpack_legacy_defs,
 };
-use betterlite_prompts::definitions::sanitize::sanitize_for_anthropic;
+use betterlite_prompts::definitions::sanitize::{AnthropicInputSchema, sanitize_for_anthropic};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -87,9 +88,7 @@ fn object_to_value(object: Object) -> Value {
     Value::Object(entries)
 }
 
-fn anthropic_schema_to_value(
-    schema: betterlite_prompts::definitions::sanitize::AnthropicInputSchema,
-) -> Value {
+fn anthropic_schema_to_value(schema: AnthropicInputSchema) -> Value {
     let mut entries = Map::new();
     entries.insert("type".to_owned(), json_to_value(schema.schema_type));
     entries.insert("properties".to_owned(), json_to_value(schema.properties));

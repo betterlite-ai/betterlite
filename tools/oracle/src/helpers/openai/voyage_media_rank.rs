@@ -12,7 +12,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use uuid::Uuid;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -105,27 +106,27 @@ impl RerankLogging for Recorder {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let multimodal = input
             .multimodal
             .iter()
             .map(multimodal_call)
-            .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
+            .collect::<Result<Vec<_>, Box<HelperError>>>()?;
         let rerank = input
             .rerank
             .iter()
             .map(rerank_call)
-            .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
+            .collect::<Result<Vec<_>, Box<HelperError>>>()?;
         Ok(json!({"multimodal": multimodal, "rerank": rerank}))
     }
 }
 
 // a reply transform that raises is the whole call's failure, as dispatch.py reports it
-fn top_error(failure: &Failure) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn top_error(failure: &Failure) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: failure.status,
         error_type: None,
@@ -135,7 +136,7 @@ fn top_error(failure: &Failure) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn outcome<T, E>(result: Result<T, E>) -> crate::helpers::HelperResult
+fn outcome<T, E>(result: Result<T, E>) -> HelperResult
 where
     T: serde::Serialize,
     E: Into<Failure>,
@@ -146,7 +147,7 @@ where
     }
 }
 
-fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
+fn multimodal_call(call: &MultimodalCall) -> HelperResult {
     let request = voyage_multimodal::request(&call.model, call.input.clone(), &call.options);
     let response = decode_voyage_embedding_reply(
         call.reply.body.as_bytes(),
@@ -164,7 +165,7 @@ fn multimodal_call(call: &MultimodalCall) -> crate::helpers::HelperResult {
     }))
 }
 
-fn rerank_call(call: &RerankCall) -> crate::helpers::HelperResult {
+fn rerank_call(call: &RerankCall) -> HelperResult {
     let uuid = Uuid::parse_str(&call.uuid).or_value_error()?;
     let headers =
         voyage_rerank::api_key(call.api_key.as_deref(), |name| call.env.get(name).cloned())

@@ -7,7 +7,8 @@ use serde::{Deserialize, Serialize};
 use betterlite_models::decisions::Json;
 use betterlite_provider::api::vector_store_contracts::config::Params;
 
-use crate::case::{Compare, UpstreamAnswer};
+use crate::case::Compare;
+use betterlite_oracle_runner::case::UpstreamAnswer;
 use error::SdkHttpError;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;

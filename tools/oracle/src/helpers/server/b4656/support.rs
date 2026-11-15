@@ -15,7 +15,7 @@ use serde_json::Value;
 use thiserror::Error;
 
 use super::{StoreResult, outcomes, value_error};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug)]
 pub(super) struct ManualClock(Mutex<DateTime<Utc>>);

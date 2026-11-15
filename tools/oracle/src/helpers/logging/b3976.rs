@@ -19,11 +19,14 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod scripted;
 
 use scripted::{Reply, ScriptedClock, ScriptedTransport, WarningCount};
+use tokio::runtime::Builder;
+use tracing::subscriber;
 
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -195,12 +198,10 @@ impl Helper for Op {
         let transport = Arc::new(ScriptedTransport::new(&input.replies));
         let init = rubrik_init(&input.init)?;
         let environment = input.environment.clone();
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
+        let runtime = Builder::new_current_thread().build().map_err(failure)?;
         let warnings = WarningCount::default();
         let subscriber = tracing_subscriber::registry().with(warnings.clone());
-        tracing::subscriber::with_default(subscriber, || {
+        subscriber::with_default(subscriber, || {
             let logger = Arc::new(
                 RubrikLogger::new(
                     &init,
