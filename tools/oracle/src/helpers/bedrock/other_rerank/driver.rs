@@ -141,7 +141,7 @@ impl<'probe> Harness<'probe> {
         }
     }
 
-    fn call(&self, request: &RerankRequest) -> RerankCall<'_> {
+    fn call<'request>(&'request self, request: &'request RerankRequest) -> RerankCall<'request> {
         RerankCall {
             request,
             optional_params: self.params.clone(),
