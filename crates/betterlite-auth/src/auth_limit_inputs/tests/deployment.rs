@@ -5,7 +5,6 @@ use rstest::rstest;
 use serde_json::Number;
 
 use crate::auth_limit_inputs::deployment::DeploymentLimitValue;
-use crate::auth_limit_inputs::key_limits::get_key_model_rpm_limit;
 use crate::auth_limit_inputs::tests::support;
 
 fn float_number(value: f64) -> Json {
@@ -33,13 +32,7 @@ fn json_value_reads_as_int_input(#[case] value: Json, #[case] expected: Deployme
 }
 
 fn text_limit(text: &str) -> Option<BTreeMap<String, i64>> {
-    let value = DeploymentLimitValue::Text(text.to_owned());
-    let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
-    get_key_model_rpm_limit(
-        &support::auth(&[]),
-        &support::query(Some("gpt-4"), Some(&catalog)),
-    )
-    .unwrap()
+    support::deployment_rpm_limits(Some(DeploymentLimitValue::Text(text.to_owned()))).unwrap()
 }
 
 #[rstest]

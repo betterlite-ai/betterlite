@@ -14,7 +14,7 @@ fn per_model_metadata(value: JsonData) -> JsonData {
     support::object(&[(ESTIMATE_PER_MODEL_FIELD, value)])
 }
 
-fn estimate(
+fn lookup_estimate(
     auth: &crate::resolved_key::auth::UserAPIKeyAuth,
     model: Option<&str>,
 ) -> (Option<i64>, Vec<String>) {
@@ -32,7 +32,7 @@ fn estimate(
 #[case::underscored_with_zero_fraction(support::text("1_0.00"), 10)]
 fn positive_int_coercion(#[case] value: JsonData, #[case] expected: i64) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
-    let (estimate, warnings) = estimate(&auth, None);
+    let (estimate, warnings) = lookup_estimate(&auth, None);
     assert_eq!(estimate, Some(expected));
     assert!(warnings.is_empty());
 }
@@ -43,7 +43,7 @@ fn positive_int_coercion(#[case] value: JsonData, #[case] expected: i64) {
 #[case::bool_false(JsonData::Bool(false))]
 fn zero_negative_invalid_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
-    let (estimate, warnings) = estimate(&auth, None);
+    let (estimate, warnings) = lookup_estimate(&auth, None);
     assert_eq!(estimate, None);
     assert_eq!(warnings, vec![ESTIMATED_OUTPUT_TOKENS_FIELD.to_owned()]);
 }
@@ -62,7 +62,7 @@ fn zero_negative_invalid_warn(#[case] value: JsonData) {
 #[case::map(JsonData::Object(std::collections::BTreeMap::new()))]
 fn malformed_scalar_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
-    let (estimate, warnings) = estimate(&auth, None);
+    let (estimate, warnings) = lookup_estimate(&auth, None);
     assert_eq!(estimate, None);
     assert_eq!(warnings, vec![ESTIMATED_OUTPUT_TOKENS_FIELD.to_owned()]);
 }
@@ -82,7 +82,7 @@ fn any_bad_map_entry_drops_map() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
         ]),
     )]);
-    let (estimate, warnings) = estimate(&auth, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&auth, Some("gpt-4"));
     assert_eq!(estimate, Some(2002));
     assert_eq!(warnings, vec![ESTIMATE_PER_MODEL_FIELD.to_owned()]);
 }
@@ -99,7 +99,7 @@ fn map_before_global() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
         ]),
     )]);
-    let (estimate, warnings) = estimate(&auth, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&auth, Some("gpt-4"));
     assert_eq!(estimate, Some(3001));
     assert!(warnings.is_empty());
 }
@@ -116,7 +116,7 @@ fn no_model_skips_map_validation() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
         ]),
     )]);
-    let (estimate, warnings) = estimate(&auth, None);
+    let (estimate, warnings) = lookup_estimate(&auth, None);
     assert_eq!(estimate, Some(2002));
     assert!(warnings.is_empty());
 }
@@ -133,7 +133,7 @@ fn malformed_fields_independent() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(2002)),
         ]),
     )]);
-    let (estimate, warnings) = estimate(&broken_map, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&broken_map, Some("gpt-4"));
     assert_eq!(estimate, Some(2002));
     assert_eq!(warnings, vec![ESTIMATE_PER_MODEL_FIELD.to_owned()]);
     let broken_global = support::auth(&[(
@@ -146,7 +146,7 @@ fn malformed_fields_independent() {
             (ESTIMATED_OUTPUT_TOKENS_FIELD, support::number(-5)),
         ]),
     )]);
-    let (estimate, warnings) = estimate(&broken_global, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&broken_global, Some("gpt-4"));
     assert_eq!(estimate, Some(3001));
     assert!(warnings.is_empty());
 }
@@ -160,7 +160,7 @@ fn key_global_before_team_map() {
             per_model_metadata(support::number_object(&[("gpt-4", 1503)])),
         ),
     ]);
-    let (estimate, warnings) = estimate(&auth, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&auth, Some("gpt-4"));
     assert_eq!(estimate, Some(2002));
     assert!(warnings.is_empty());
 }
@@ -168,14 +168,14 @@ fn key_global_before_team_map() {
 #[test]
 fn missing_estimate_none() {
     let auth = support::auth(&[]);
-    let (estimate, warnings) = estimate(&auth, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&auth, Some("gpt-4"));
     assert_eq!(estimate, None);
     assert!(warnings.is_empty());
     let unrelated = support::auth(&[(
         "metadata",
         support::object(&[("unrelated", support::text("value"))]),
     )]);
-    let (estimate, warnings) = estimate(&unrelated, Some("gpt-4"));
+    let (estimate, warnings) = lookup_estimate(&unrelated, Some("gpt-4"));
     assert_eq!(estimate, None);
     assert!(warnings.is_empty());
 }

@@ -224,7 +224,7 @@ fn estimate_removed_403() {
 
 #[test]
 fn batch_omitted_preserves() {
-    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
     let set = batch_fields(&[]);
     let request = BatchLimitRequest {
         metadata: None,
@@ -243,8 +243,8 @@ fn batch_omitted_preserves() {
 
 #[test]
 fn batch_identical_allowed() {
-    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
-    let metadata = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
+    let metadata = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
     let set = batch_fields(&[BatchEnqueuedTokenLimitField::Metadata]);
     let request = BatchLimitRequest {
         metadata: Some(&metadata),
@@ -263,8 +263,8 @@ fn batch_identical_allowed() {
 
 #[test]
 fn batch_changed_403() {
-    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
-    let metadata = support::fields(&[(BATCH_LIMIT_KEY, support::number(200000))]);
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
+    let metadata = support::fields(&[(BATCH_LIMIT_KEY, support::number(200_000))]);
     let set = batch_fields(&[BatchEnqueuedTokenLimitField::Metadata]);
     let request = BatchLimitRequest {
         metadata: Some(&metadata),
@@ -283,7 +283,7 @@ fn batch_changed_403() {
 
 #[test]
 fn batch_removed_403() {
-    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
     let metadata = support::fields(&[]);
     let set = batch_fields(&[BatchEnqueuedTokenLimitField::Metadata]);
     let request = BatchLimitRequest {
@@ -438,7 +438,7 @@ fn batch_unsigned_values_compare_exactly() {
 
 #[test]
 fn batch_admin_bypass() {
-    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100000))]);
+    let stored = support::fields(&[(BATCH_LIMIT_KEY, support::number(100_000))]);
     let metadata = support::fields(&[]);
     let set = batch_fields(&[BatchEnqueuedTokenLimitField::Metadata]);
     let request = BatchLimitRequest {

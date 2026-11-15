@@ -13,7 +13,8 @@ use tracing_subscriber::registry;
 use crate::auth_limit_inputs::deployment::{
     DeploymentLimitCatalog, DeploymentLimitValue, DeploymentLimits,
 };
-use crate::auth_limit_inputs::key_limits::LimitQuery;
+use crate::auth_limit_inputs::error::AuthLimitInputsError;
+use crate::auth_limit_inputs::key_limits::{LimitQuery, get_key_model_rpm_limit};
 use crate::resolved_key::auth::{AuthInput, UserAPIKeyAuth};
 
 pub(crate) fn query<'query>(
@@ -105,6 +106,13 @@ pub(crate) fn deployment(
         default_api_key_rpm_limit: rpm,
         default_api_key_tpm_limit: tpm,
     }
+}
+
+pub(crate) fn deployment_rpm_limits(
+    value: Option<DeploymentLimitValue>,
+) -> Result<Option<BTreeMap<String, i64>>, AuthLimitInputsError> {
+    let catalog = catalog("gpt-4", vec![deployment(value, None)]);
+    get_key_model_rpm_limit(&auth(&[]), &query(Some("gpt-4"), Some(&catalog)))
 }
 
 #[derive(Clone, Default)]
