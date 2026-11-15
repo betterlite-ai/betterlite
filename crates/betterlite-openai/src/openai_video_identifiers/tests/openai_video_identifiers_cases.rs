@@ -31,7 +31,12 @@ fn openai_video_identifiers_cases(#[case] case: u8) {
         3 => input_reference_string_png(),
         4 => multipart_input_file(),
         5 => encode_identity_guards(),
-        6 => decode_permissive_fields(),
+        6 => {
+            decode_permissive_fields();
+            embedded_field_labels();
+            plus_in_base64_payload();
+            padding_in_the_middle();
+        }
         7 => character_list_rewrite(),
         8 => video_filename_mime(),
         _ => video_probe_cursor(),
@@ -245,24 +250,6 @@ fn decode_permissive_fields() {
     assert_eq!(bare.custom_llm_provider.as_deref(), Some("x"));
     assert_eq!(bare.model_id.as_deref(), Some("y"));
     assert_eq!(bare.video_id, "z");
-    let embedded =
-        "pre litellm:custom_llm_provider:mid;mo del model_id: del;video_id:one video_id:two";
-    let embedded_decoded =
-        decode_video_id_with_provider(&format!("video_{}", STANDARD.encode(embedded)));
-    assert_eq!(
-        embedded_decoded.custom_llm_provider.as_deref(),
-        Some("pre mid")
-    );
-    assert_eq!(embedded_decoded.model_id.as_deref(), Some("mo del  del"));
-    assert_eq!(embedded_decoded.video_id, "one two");
-    let plus = format!(
-        "video_{}",
-        STANDARD.encode("litellm:custom_llm_provider:openai;model_id:m;video_id:vid0>")
-    );
-    let plus_decoded = decode_video_id_with_provider(&plus);
-    assert_eq!(plus_decoded.custom_llm_provider.as_deref(), Some("openai"));
-    assert_eq!(plus_decoded.model_id.as_deref(), Some("m"));
-    assert_eq!(plus_decoded.video_id, "vid0>");
     let extra = decode_video_id_with_provider(&format!("video_{}", STANDARD.encode("a;b;c;d;e")));
     assert_eq!(extra.video_id, "c");
     let character = decode_character_id(&format!(
@@ -273,6 +260,41 @@ fn decode_permissive_fields() {
     ));
     assert_eq!(character.custom_llm_provider.as_deref(), Some("p"));
     assert_eq!(character.character_id, "one two");
+}
+
+fn embedded_field_labels() {
+    let embedded =
+        "pre litellm:custom_llm_provider:mid;mo del model_id: del;video_id:one video_id:two";
+    let decoded = decode_video_id_with_provider(&format!("video_{}", STANDARD.encode(embedded)));
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("pre mid"));
+    assert_eq!(decoded.model_id.as_deref(), Some("mo del  del"));
+    assert_eq!(decoded.video_id, "one two");
+}
+
+fn plus_in_base64_payload() {
+    let plus = format!(
+        "video_{}",
+        STANDARD.encode("litellm:custom_llm_provider:openai;model_id:m;video_id:vid0>")
+    );
+    let decoded = decode_video_id_with_provider(&plus);
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(decoded.model_id.as_deref(), Some("m"));
+    assert_eq!(decoded.video_id, "vid0>");
+}
+
+fn padding_in_the_middle() {
+    let capture = Capture::default();
+    let decoded = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AA"));
+    assert_eq!(decoded.custom_llm_provider.as_deref(), Some("abc"));
+    assert_eq!(decoded.model_id.as_deref(), Some("b"));
+    assert_eq!(decoded.video_id, "c\0\0");
+    assert!(capture.events().is_empty());
+    let capture = Capture::default();
+    let trailing = capture.captured(|| decode_video_id_with_provider("video_YWJjO2I7Yw==AAAA"));
+    assert_eq!(trailing.video_id, "video_YWJjO2I7Yw==AAAA");
+    assert!(trailing.custom_llm_provider.is_none());
+    assert!(trailing.model_id.is_none());
+    assert_eq!(capture.events().len(), 1);
 }
 
 fn character_list_rewrite() {

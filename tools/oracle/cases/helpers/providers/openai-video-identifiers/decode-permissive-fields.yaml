@@ -18,6 +18,12 @@ call:
       - op: decode_video_id
         encoded: video_YTtiO2M7ZDtl
         capture_debug: true
+      - op: decode_video_id
+        encoded: video_YWJjO2I7Yw==AA
+        capture_debug: true
+      - op: decode_video_id
+        encoded: video_YWJjO2I7Yw==AAAA
+        capture_debug: true
       - op: decode_character_id
         encoded: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnA7bW9kZWxfaWQ6bTtjaGFyYWN0ZXJfaWQ6b25lIGNoYXJhY3Rlcl9pZDp0d287ZXh0cmE=
         capture_debug: true
