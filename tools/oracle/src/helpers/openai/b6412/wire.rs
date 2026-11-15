@@ -40,7 +40,7 @@ pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
     let url = chat_url(call.api_base.as_deref());
     match transform_request(&transform) {
         Ok(body) => json!({"url": url, "ok": true, "value": body}),
-        Err(_) => json!({"url": url, "ok": false}),
+        Err(_) => json!({"raised": null}),
     }
 }
 
