@@ -122,12 +122,10 @@ async fn the_hf_model_name_entry_builds_the_prompt_when_the_model_has_none() {
 #[tokio::test]
 async fn the_model_entry_wins_over_the_hf_model_name_entry() {
     let mut fixture = Fixture::new();
-    fixture
-        .custom
-        .insert(String::from("endpoint"), entry("[", "]"));
-    fixture
-        .custom
-        .insert(String::from("hf-endpoint"), entry("<h>", "</h>"));
+    fixture.custom = BTreeMap::from([
+        (String::from("hf-endpoint"), entry("<h>", "</h>")),
+        (String::from("endpoint"), entry("[", "]")),
+    ]);
     let built = body(&fixture.request("endpoint", Some("hf-endpoint"))).await;
     assert_eq!(built.get("inputs"), Some(&json!("[U: hi]")));
 }
