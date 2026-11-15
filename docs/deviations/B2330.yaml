@@ -24,4 +24,7 @@ deviations:
   - what: LITELLM_STORE_AUDIT_LOGS is read when the configuration loads; LiteLLM calls get_secret_bool on every audit decision.
     why: B002 resolves the environment and secret value once through the production loader, and the sink reads that snapshot.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/audit_logs.py#L34
+  - what: decode_audit_record rejects a record with an unknown field, over 1 MiB or deeper than 64 JSON levels; LiteLLM's LiteLLM_AuditLogs ignores unknown keys, because its pydantic base leaves extra at ignore, and parses a record of any size or depth.
+    why: Audit JSON is an external stored-data boundary, and the B003 bounded decoder accepts only the nine fields and values LiteLLM declares, so anything else is rejected before it reaches storage.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3815-L3826
 kept_bugs: []
