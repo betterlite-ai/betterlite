@@ -28,5 +28,12 @@ fuzz_target!(|data: &[u8]| {
         counter: NoFailures,
         json_could_close: false,
     };
-    let _outcome = decode_anthropic_event(&mut converter, data, MAX_EVENT_BYTES);
+    // One fuzz input is one payload, and the converter starts empty, so its buffer count starts at zero.
+    let mut accumulated_bytes = 0usize;
+    let _outcome = decode_anthropic_event(
+        &mut converter,
+        data,
+        MAX_EVENT_BYTES,
+        &mut accumulated_bytes,
+    );
 });

@@ -39,16 +39,18 @@ pub struct ChunkStream<Source, Counter> {
     pub converter: StreamEventConverter<Counter>,
     pub source: Source,
     pub source_ended: bool,
-    // Bytes appended since the decoder last produced a value; the event bound reads this, not the buffer.
+    // Bytes currently buffered; the event bound reads this instead of copying the buffer to measure it.
     pub accumulated_bytes: usize,
     pub max_event_bytes: usize,
 }
 
-// The shared framing parser hands over one event payload, so this path decodes and parses without a data: prefix.
+// The shared framing parser hands over one event payload per call, so this path decodes and parses without a
+// data: prefix; the caller owns the buffered byte count because the converter's buffer outlives one payload.
 pub fn decode_anthropic_event<Counter>(
     converter: &mut StreamEventConverter<Counter>,
     payload: &[u8],
     max_event_bytes: usize,
+    accumulated_bytes: &mut usize,
 ) -> Result<Option<StreamEventChunk>, DecodeError<Infallible, Counter::Failure>>
 where
     Counter: ReasoningTokenCounter,
@@ -57,10 +59,7 @@ where
         source,
         chunk: payload.to_vec(),
     })?;
-    // The shared framing parser hands over one payload per call and owns no running count, so the bound
-    // covers the payload; the iterator's accumulated count covers a value split across its fragments.
-    let mut accumulated_bytes = 0usize;
-    parse_data::<Infallible, Counter>(converter, text, max_event_bytes, &mut accumulated_bytes)
+    parse_data::<Infallible, Counter>(converter, text, max_event_bytes, accumulated_bytes)
 }
 
 // LiteLLM tries one JSON value first and keeps accumulating after the first failure, permanently.
@@ -95,8 +94,8 @@ where
         .handle_accumulated_json_chunk(data, false)
         .map_err(DecodeError::Event)?;
     if parsed.is_some() {
-        // A produced value drained the front, so the next bound counts from an empty buffer.
-        *accumulated_bytes = 0;
+        // A line can carry several values, so the pop leaves the rest buffered; the bound counts what is there.
+        *accumulated_bytes = converter.state.json_buffer.snapshot().len();
         return Ok(parsed);
     }
     *accumulated_bytes = appended;
@@ -144,8 +143,8 @@ where
     converter.state.json_buffer.set(rest.to_owned());
     converter.json_could_close = true;
     let parsed = converter.handle_accumulated_json_chunk("", false);
-    // The tail the pop leaves is at most the scanned remainder, so the count stays an upper bound.
-    *accumulated_bytes = rest.len();
+    // A pop here can leave the next value behind, so the count continues from the rest of the buffer.
+    *accumulated_bytes = converter.state.json_buffer.snapshot().len();
     parsed
 }
 

@@ -44,7 +44,14 @@ fn corpus_outcomes() -> Vec<(String, Category)> {
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
         let payload = fs::read(&path).unwrap();
-        let category = match decode_anthropic_event(&mut converter(), &payload, MAX_EVENT_BYTES) {
+        // A fresh converter starts with an empty buffer, so its count starts at zero.
+        let mut accumulated_bytes = 0usize;
+        let category = match decode_anthropic_event(
+            &mut converter(),
+            &payload,
+            MAX_EVENT_BYTES,
+            &mut accumulated_bytes,
+        ) {
             Ok(Some(_)) => Category::Value,
             Ok(None) => Category::Pending,
             Err(_) => Category::Failed,
@@ -215,13 +222,14 @@ fn a_value_split_over_many_non_closing_data_lines_accumulates() {
     assert_text(&outcomes[0], &"x".repeat(512));
 }
 
-// The buffer stays empty on the error, so a materialized length would be 64 and pass the 100-byte limit; only
-// the running count trips it, on the first fragment.
+// The count is the caller's, so a check that materializes the empty buffer reads 0 and passes where the count
+// trips; the first fragment errors.
 #[test]
 fn the_event_bound_reads_the_count_instead_of_materializing_the_buffer() {
-    let steps: Vec<fixture::Source> = (0..2)
-        .map(|_| Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64)))))
-        .collect();
+    let steps: Vec<fixture::Source> = vec![
+        Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64)))),
+        Ok(TransportChunk::Text(format!("data:{}", "x".repeat(64)))),
+    ];
     let outcomes = ChunkStream {
         converter: converter(),
         source: steps.into_iter(),
@@ -237,14 +245,14 @@ fn the_event_bound_reads_the_count_instead_of_materializing_the_buffer() {
     ));
 }
 
+// A data line can carry several values; the pop leaves the rest buffered, so the bound counts them instead of
+// restarting at zero, and the next line trips it.
 #[test]
-fn a_produced_value_resets_the_running_byte_count() {
+fn the_count_after_a_produced_value_is_the_bytes_still_buffered() {
+    let line = r#"data:{"type":"ping"}{"type":"ping"}{"type":"ping"}"#;
     let steps: Vec<fixture::Source> = vec![
-        Ok(TransportChunk::Text(
-            r#"data: {"type":"ping"}{"type":"message_stop"}"#.to_owned(),
-        )),
-        // The produced ping released its 40 counted bytes, so this 11-byte fragment stays under the limit.
-        Ok(TransportChunk::Text("data: 1234567890".to_owned())),
+        Ok(TransportChunk::Text(line.to_owned())),
+        Ok(TransportChunk::Text(line.to_owned())),
     ];
     let outcomes = ChunkStream {
         converter: converter(),
@@ -254,9 +262,28 @@ fn a_produced_value_resets_the_running_byte_count() {
         max_event_bytes: 48,
     }
     .collect::<Vec<_>>();
-    assert_eq!(outcomes.len(), 2);
+    // The error ends the second line, then the two values the first line left buffered drain one per pull.
+    assert_eq!(outcomes.len(), 4);
     assert_text(&outcomes[0], "");
-    assert_text(&outcomes[1], "");
+    assert!(matches!(
+        &outcomes[1],
+        Err(DecodeError::TooLarge { limit: 48 })
+    ));
+    assert_text(&outcomes[2], "");
+    assert_text(&outcomes[3], "");
+}
+
+// The converter's buffer outlives one payload, so the caller's count does too: the first payload is deferred and
+// its bytes count against the second, which trips the bound.
+#[test]
+fn the_entry_bound_carries_the_count_across_calls_on_one_converter() {
+    let mut converter = converter();
+    let mut accumulated_bytes = 0usize;
+    let first = decode_anthropic_event(&mut converter, br#"{"a":"#, 8, &mut accumulated_bytes);
+    assert!(matches!(first, Ok(None)));
+    assert_eq!(accumulated_bytes, 5);
+    let second = decode_anthropic_event(&mut converter, b"12345", 8, &mut accumulated_bytes);
+    assert!(matches!(second, Err(DecodeError::TooLarge { limit: 8 })));
 }
 
 #[test]
