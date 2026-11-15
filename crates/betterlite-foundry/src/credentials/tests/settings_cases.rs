@@ -135,12 +135,12 @@ fn deployment_environment_precedence() {
     assert_eq!(settings.tenant_id.as_deref(), Some("env-tenant"));
     assert_eq!(settings.azure_scope, "");
     let absent = object([("tenant_id", Json::Null), ("client_id", Json::Null)]);
-    let settings = EntraParams::from_mapping(Some(&absent))
+    let from_absent = EntraParams::from_mapping(Some(&absent))
         .unwrap()
         .deployment_settings(&env);
-    assert_eq!(settings.tenant_id.as_deref(), Some("env-tenant"));
-    assert!(settings.client_id.is_none());
-    assert_eq!(settings.azure_scope, "");
+    assert_eq!(from_absent.tenant_id.as_deref(), Some("env-tenant"));
+    assert!(from_absent.client_id.is_none());
+    assert_eq!(from_absent.azure_scope, "");
     let bare = EntraParams::default().deployment_settings(&environment(&[]));
     assert_eq!(bare.azure_scope, DEFAULT_SCOPE);
 }

@@ -127,14 +127,14 @@ fn static_token() {
         ("tenant_id", Json::Text("tenant".to_owned())),
         ("client_id", Json::Text("client".to_owned())),
     ]);
-    let token = get_azure_ai_agent_entra_token(&agent_request(
+    let pinned = get_azure_ai_agent_entra_token(&agent_request(
         &with_identity,
         &environment,
         &secrets,
         &sources,
     ))
     .unwrap();
-    assert_eq!(token.expose_secret(), "static-token");
+    assert_eq!(pinned.expose_secret(), "static-token");
     assert!(sources.calls().is_empty());
 }
 

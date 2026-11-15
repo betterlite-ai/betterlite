@@ -10,7 +10,10 @@ pub const API_BASE_VAR: &str = "AZURE_AI_API_BASE";
 pub const API_KEY_VAR: &str = "AZURE_AI_API_KEY";
 
 #[derive(Debug, Default, Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct Settings {

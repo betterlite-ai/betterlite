@@ -104,9 +104,9 @@ fn username_call(record: &UsernamePasswordRecord) -> String {
         tenant_id,
         scope,
     } = record;
-    let password = password.expose_secret();
+    let password_text = password.expose_secret();
     format!(
-        "username_password client={client_id} user={username} password={password} scope={scope} tenant={tenant_id:?}"
+        "username_password client={client_id} user={username} password={password_text} scope={scope} tenant={tenant_id:?}"
     )
 }
 

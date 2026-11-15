@@ -38,8 +38,8 @@ pub fn get_azure_ai_auth_headers(
         environment: request.environment,
         refresh_enabled: request.refresh_enabled,
         sources: request.sources,
-    })?;
-    let token = token.filter(|token| !token.expose_secret().is_empty());
+    })?
+    .filter(|value| !value.expose_secret().is_empty());
     match token {
         Some(token) => Ok(BTreeMap::from([(
             "Authorization".to_owned(),
