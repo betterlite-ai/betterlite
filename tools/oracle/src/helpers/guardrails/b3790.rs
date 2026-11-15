@@ -22,7 +22,7 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ResolveBool(case) => resolve_bool(case),
+            Input::ResolveBool(case) => Ok(resolve_bool(case)),
             Input::Protect(case) => protect::run(case),
         }
     }
@@ -39,7 +39,7 @@ pub(super) fn fail(class: &str, message: String, status: Option<u16>) -> Box<Hel
     })
 }
 
-fn resolve_bool(case: &BoolCase) -> HelperResult {
+fn resolve_bool(case: &BoolCase) -> serde_json::Value {
     let (env_var, default) = case.setting.config();
     let provided = case.provided.map(BoolSetting::Boolean);
     let environment = case.environment.clone();
@@ -50,5 +50,5 @@ fn resolve_bool(case: &BoolCase) -> HelperResult {
         &environment,
         env_var,
     );
-    Ok(json!({"value": value}))
+    json!({"value": value})
 }

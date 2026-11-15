@@ -64,7 +64,7 @@ impl Setting {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct BoolCase {
+pub(crate) struct BoolCase {
     pub(super) setting: Setting,
     #[serde(default)]
     pub(super) provided: Option<bool>,
@@ -74,7 +74,7 @@ pub(super) struct BoolCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct ProtectInput {
+pub(crate) struct ProtectInput {
     settings: SettingsInput,
     #[serde(default)]
     key: KeyContext,
@@ -133,7 +133,7 @@ async fn call_and_process(
     client: &reqwest::Client,
     settings: &PillarSettings,
     key: &KeyContext,
-    resolver: &dyn ModelProviderResolver,
+    resolver: &(dyn ModelProviderResolver + Sync),
     data: &mut BTreeMap<String, GuardrailValue>,
 ) -> Option<u16> {
     let result = async {
@@ -220,7 +220,7 @@ pub(super) fn run(input: &ProtectInput) -> HelperResult {
         .map_err(|error| fail("MockError", error.to_string(), None))?;
     let mock =
         MockProvider::start(script).map_err(|error| fail("MockError", error.to_string(), None))?;
-    settings.api_base = mock.base_url.clone();
+    settings.api_base.clone_from(&mock.base_url);
     let (outcome, calls) = deliver(input, &settings, &mut data, mock)?;
     Ok(json!({
         "request": captured_request(&calls),
