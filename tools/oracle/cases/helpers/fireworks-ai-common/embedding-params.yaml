@@ -1,0 +1,24 @@
+kind: helper
+name: embedding-params
+call:
+  b6070:
+    model_cost: {}
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params:
+      - model: fireworks_ai/nomic-ai/nomic-embed-text-v1.5
+        non_default_params: {dimensions: 256, encoding_format: float, input: text}
+        optional_params: {user: caller}
+      - model: fireworks_ai/accounts/fireworks/models/bge-base
+        non_default_params: {dimensions: 256}
+        optional_params: {}
+    pricing: []
+    costs: []
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

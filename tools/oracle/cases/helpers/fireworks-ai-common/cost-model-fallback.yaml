@@ -1,0 +1,39 @@
+kind: helper
+name: cost-model-fallback
+call:
+  b6070:
+    model_cost:
+      accounts/fireworks/models/x:
+        input_cost_per_token: 0.000001
+        output_cost_per_token: 0.000002
+        litellm_provider: fireworks_ai
+      accounts/fireworks/models/y:
+        input_cost_per_token: 0.000001
+        output_cost_per_token: 0.000002
+        litellm_provider: fireworks_ai
+      fireworks-ai-above-16b:
+        input_cost_per_token: 0.0000009
+        output_cost_per_token: 0.0000009
+        litellm_provider: fireworks_ai
+    api_keys: []
+    sessions: []
+    affinity: []
+    mixin_headers: []
+    embedding_params: []
+    pricing: []
+    costs:
+      - model: accounts/fireworks/models/x
+        usage: {prompt_tokens: 8, completion_tokens: 8, total_tokens: 16}
+        instant: "2024-01-01T00:00:00Z"
+      - model: fireworks_ai/accounts/fireworks/models/y
+        usage: {prompt_tokens: 8, completion_tokens: 8, total_tokens: 16}
+        instant: "2024-01-01T00:00:00Z"
+      - model: accounts/fireworks/models/llama-v3p1-70b
+        usage: {prompt_tokens: 8, completion_tokens: 8, total_tokens: 16}
+        instant: "2024-01-01T00:00:00Z"
+    rerank_urls: []
+    rerank_headers: []
+    rerank_requests: []
+    rerank_responses: []
+env: {}
+compare: {ignore: []}

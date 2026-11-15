@@ -1,0 +1,42 @@
+kind: helper
+name: singulr-request-blocked
+call:
+  b8215:
+    scenarios:
+      - name: blocked-with-reason
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["attack prompt"]
+        request_data:
+          litellm_call_id: call-2
+          metadata:
+            user_api_key_alias: alias-2
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: true, blocking_due_to: prompt_injection}
+      - name: blocked-without-a-reason
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: null
+          guardrail_id: null
+          block_on_error: true
+          timeout: null
+        inputs:
+          texts: ["attack prompt"]
+        request_data: {}
+        input_type: request
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: true}
+env: {}
+compare: {ignore: []}
