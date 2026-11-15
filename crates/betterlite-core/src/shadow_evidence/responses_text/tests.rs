@@ -111,6 +111,10 @@ const MESSAGE: &str = r#"{"type":"message","id":"msg_1","role":"assistant","stat
     )),
     ""
 )]
+#[case::a_partial_type_is_not_a_call(
+    &response(r#"[{"type":"function_call_extra","call_id":"c1","name":"search","arguments":"{}"}]"#),
+    ""
+)]
 fn final_text_reads_messages_and_calls(#[case] response: &str, #[case] expected: &str) {
     assert_eq!(final_text(&json(response)), expected);
 }

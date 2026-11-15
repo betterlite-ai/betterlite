@@ -69,6 +69,7 @@ fn decision_is_empty_without_a_mapping(#[case] metadata: &str) {
 #[case::true_tier_is_stringified(r#"{"routing_decision":{"tier":true}}"#, Some("True"))]
 #[case::list_tier_keeps_its_text(r#"{"routing_decision":{"tier":["low"]}}"#, Some(r#"["low"]"#))]
 #[case::empty_object_tier_is_stringified(r#"{"routing_decision":{"tier":{}}}"#, Some("{}"))]
+#[case::empty_label_without_a_tier(r#"{"routing_decision":{"tier_label":""}}"#, None)]
 fn routed_tier_prefers_the_label(#[case] metadata: &str, #[case] expected: Option<&str>) {
     assert_eq!(routed_tier(&json(metadata)).as_deref(), expected);
 }
