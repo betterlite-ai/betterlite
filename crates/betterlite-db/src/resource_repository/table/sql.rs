@@ -81,7 +81,7 @@ where
     let values = value_list(document);
     format!(
         "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
-         jsonb_populate_record(NULL::{table}, $1::jsonb) AS r RETURNING row_to_json(t)::text"
+         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r RETURNING row_to_json(t)::text"
     )
 }
 
@@ -113,7 +113,7 @@ where
     let assignments = update_assignments::<B>(document).join(", ");
     format!(
         "UPDATE {table} AS t SET {assignments} FROM \
-         jsonb_populate_record(NULL::{table}, $1::jsonb) AS r WHERE t.{key} = $2 \
+         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r WHERE t.{key} = $2 \
          RETURNING row_to_json(t)::text"
     )
 }
@@ -142,7 +142,7 @@ where
     let assignment_clause = assignments.join(", ");
     format!(
         "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
-         jsonb_populate_record(NULL::{table}, $1::jsonb) AS r \
+         jsonb_populate_record(NULL::{table}, $1::text::jsonb) AS r \
          ON CONFLICT ({key}) DO UPDATE SET {assignment_clause} RETURNING row_to_json(t)::text"
     )
 }
