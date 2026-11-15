@@ -45,8 +45,8 @@ fn an_absent_environment_leaves_the_sources_false() {
     let settings = loaded("model_list: []", &[]);
     assert_eq!(settings.api_base, None);
     assert!(settings.api_key.is_none());
-    assert_eq!(settings.environment_use_litellm_proxy, None);
-    assert_eq!(settings.global_use_litellm_proxy, None);
+    assert!(!settings.environment_use_litellm_proxy);
+    assert!(!settings.global_use_litellm_proxy);
     assert!(!settings.should_use_litellm_proxy(0));
 }
 
@@ -76,7 +76,7 @@ fn an_empty_environment_counts_as_unset() {
     );
     assert_eq!(settings.api_base, None);
     assert!(settings.api_key.is_none());
-    assert_eq!(settings.environment_use_litellm_proxy, None);
+    assert!(!settings.environment_use_litellm_proxy);
     assert!(!settings.should_use_litellm_proxy(0));
 }
 
@@ -90,7 +90,7 @@ fn the_environment_flag_enables_forcing() {
 
 fn a_numeric_environment_flag_enables_forcing() {
     let settings = loaded("model_list: []", &[("USE_LITELLM_PROXY", "1")]);
-    assert_eq!(settings.environment_use_litellm_proxy, Some(true));
+    assert!(settings.environment_use_litellm_proxy);
     assert!(settings.should_use_litellm_proxy(0));
 }
 
@@ -127,7 +127,7 @@ fn a_null_deployment_flag_is_unset() {
         "model_list:\n  - litellm_params:\n      use_litellm_proxy: null",
         &[],
     );
-    assert_eq!(settings.deployment_use_litellm_proxy, [None]);
+    assert_eq!(settings.deployment_use_litellm_proxy, [false]);
     assert!(!settings.should_use_litellm_proxy(0));
 }
 

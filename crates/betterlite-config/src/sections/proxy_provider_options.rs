@@ -30,23 +30,22 @@ pub struct Settings {
     // neither variable has a default in LiteLLM, so an unset one stays None
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
-    pub environment_use_litellm_proxy: Option<bool>,
-    pub global_use_litellm_proxy: Option<bool>,
-    pub deployment_use_litellm_proxy: Vec<Option<bool>>,
+    pub environment_use_litellm_proxy: bool,
+    pub global_use_litellm_proxy: bool,
+    pub deployment_use_litellm_proxy: Vec<bool>,
 }
 
 impl Settings {
     // LiteLLM ORs the three sources, so a false deployment flag never vetoes a true environment or global one
     #[must_use]
     pub fn should_use_litellm_proxy(&self, deployment: usize) -> bool {
-        let deployment_flag = self
-            .deployment_use_litellm_proxy
-            .get(deployment)
-            .copied()
-            .flatten();
-        self.environment_use_litellm_proxy.unwrap_or(false)
-            || self.global_use_litellm_proxy.unwrap_or(false)
-            || deployment_flag.unwrap_or(false)
+        self.environment_use_litellm_proxy
+            || self.global_use_litellm_proxy
+            || self
+                .deployment_use_litellm_proxy
+                .get(deployment)
+                .copied()
+                .unwrap_or(false)
     }
 }
 
@@ -68,12 +67,13 @@ impl Section for Raw {
             .lookup("USE_LITELLM_PROXY")
             .map(|text| betterlite_env::flag("USE_LITELLM_PROXY", &text))
             .transpose()?
-            .flatten();
-        let global_use_litellm_proxy = self.litellm_settings.use_litellm_proxy;
+            .flatten()
+            .unwrap_or(false);
+        let global_use_litellm_proxy = self.litellm_settings.use_litellm_proxy.unwrap_or(false);
         let deployment_use_litellm_proxy = self
             .model_list
             .into_iter()
-            .map(|deployment| deployment.litellm_params.use_litellm_proxy)
+            .map(|deployment| deployment.litellm_params.use_litellm_proxy.unwrap_or(false))
             .collect();
         Ok(Settings {
             api_base,
