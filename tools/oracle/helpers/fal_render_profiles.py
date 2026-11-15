@@ -1,5 +1,4 @@
 import os
-from collections.abc import Callable
 from typing import Literal, Protocol, TypeAlias, TypedDict
 
 import httpx
@@ -29,31 +28,43 @@ class Recorder(Logging):
 
 
 class RenderConfig(Protocol):
-    map_openai_params: Callable[
-        [dict[str, JsonValue], dict[str, JsonValue], str, bool],
-        dict[str, JsonValue],
-    ]
-    get_complete_url: Callable[
-        [str | None, str | None, str, dict[str, JsonValue], dict[str, JsonValue]],
-        str,
-    ]
-    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
-        [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, JsonValue]],
-        dict[str, JsonValue],
-    ]
-    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
-        [
-            str,
-            httpx.Response,
-            ImageResponse,
-            Recorder,
-            dict[str, JsonValue],
-            dict[str, JsonValue],
-            dict[str, JsonValue],
-            None,
-        ],
-        ImageResponse,
-    ]
+    def map_openai_params(
+        self,
+        non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        model: str,
+        drop_params: bool,
+    ) -> dict[str, JsonValue]: ...
+
+    def get_complete_url(
+        self,
+        api_base: str | None,
+        api_key: str | None,
+        model: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+    ) -> str: ...
+
+    def transform_image_generation_request(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        prompt: str,
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        headers: dict[str, JsonValue],
+    ) -> dict[str, JsonValue]: ...
+
+    def transform_image_generation_response(  # ast-grep-ignore: no-long-names
+        self,
+        model: str,
+        raw_response: httpx.Response,
+        model_response: ImageResponse,
+        logging_obj: Recorder,
+        request_data: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue],
+        encoding: None,
+    ) -> ImageResponse: ...
 
 
 class HiddenRecord(BaseModel):
@@ -104,6 +115,8 @@ Input: TypeAlias = SizeCases | CustomDiffusionPathInput | ReplyCases
 
 IDEOGRAM: RenderConfig = FalAIIdeogramV3Config()
 DIFFUSION: RenderConfig = FalAIStableDiffusionConfig()
+# LiteLLM leaves BaseLLMException.__init__ untyped, so mypy reads the class itself as Any
+REPLY_ERROR: type[BaseLLMException] = BaseLLMException
 
 
 def apply_environment(environment: dict[str, str]) -> None:
@@ -139,7 +152,7 @@ def size_entry(size: JsonValue) -> JsonValue:
 
 def size_outcomes(call: SizeCases) -> JsonValue:
     sizes = [size_entry(size) for size in call["sizes"]]
-    return JSON.validate_python({"sizes": sizes})
+    return {"sizes": sizes}
 
 
 def url_entry(api_base: str | None, model: str) -> JsonValue:
@@ -166,7 +179,7 @@ def custom_diffusion_path(call: CustomDiffusionPathInput) -> JsonValue:
         for model in call["models"]
     ]
     cases = [case_entry(call, case) for case in call["cases"]]
-    return JSON.validate_python({"urls": urls, "cases": cases})
+    return {"urls": urls, "cases": cases}
 
 
 def seeded_images(seeds: list[ImageSeed]) -> list[Image]:
@@ -202,7 +215,8 @@ def hidden_value(response: ImageResponse) -> JsonValue:
 
 
 def reply_entry(config: RenderConfig, case: ReplyCase) -> JsonValue:
-    model_response = ImageResponse(created=1, hidden_params=dict(case["hidden_params"]))
+    seeded: dict[str, JsonValue] = dict(case["hidden_params"])
+    model_response = ImageResponse(created=1, hidden_params=seeded)
     if case["data"]:
         model_response.data = seeded_images(case["data"])
     raw_response = httpx.Response(
@@ -212,7 +226,7 @@ def reply_entry(config: RenderConfig, case: ReplyCase) -> JsonValue:
         finished = config.transform_image_generation_response(
             REPLY_MODEL, raw_response, model_response, Recorder(), {}, {}, {}, None
         )
-    except BaseLLMException as error:
+    except REPLY_ERROR as error:
         return {"error": {"status": error.status_code}}
     except ValidationError:
         return {"error": {"status": None}}
@@ -233,7 +247,7 @@ def reply_pair(case: ReplyCase) -> JsonValue:
 
 def reply_cases(call: ReplyCases) -> JsonValue:
     cases = [reply_pair(case) for case in call["replies"]]
-    return JSON.validate_python({"cases": cases})
+    return {"cases": cases}
 
 
 def run(input_value: Input) -> JsonValue:
