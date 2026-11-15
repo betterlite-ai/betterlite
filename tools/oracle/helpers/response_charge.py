@@ -14,7 +14,6 @@ from litellm.types.utils import (
     Choices,
     CostPerToken,
     ImageResponse,
-    LiteLLMRealtimeStreamLoggingObject,
     Message,
     ModelResponse,
     PromptTokensDetailsWrapper,
@@ -24,6 +23,7 @@ from litellm.types.utils import (
     TranscriptionUsageTokensObject,
     Usage,
 )
+from litellm.types.utils import LiteLLMRealtimeStreamLoggingObject as RealtimeLogging
 from pydantic import JsonValue, TypeAdapter
 
 CallKind = Literal[
@@ -95,7 +95,7 @@ class Input(TypedDict):
     events: NotRequired[list[JsonValue] | None]
 
 
-WrapperResponse = ModelResponse | ImageResponse | TranscriptionResponse | LiteLLMRealtimeStreamLoggingObject
+WrapperResponse = ModelResponse | ImageResponse | TranscriptionResponse | RealtimeLogging
 
 CompletionResponse = WrapperResponse | OCRResponse | None
 
@@ -179,7 +179,7 @@ def ocr_response(input_value: Input) -> OCRResponse:
     return OCRResponse(pages=[], model=input_value["model"], usage_info=usage)
 
 
-def realtime_response(input_value: Input) -> LiteLLMRealtimeStreamLoggingObject:
+def realtime_response(input_value: Input) -> RealtimeLogging:
     events = input_value.get("events")
     if events is None:
         raise ValueError("a realtime stream response needs its events")
@@ -192,7 +192,7 @@ def realtime_response(input_value: Input) -> LiteLLMRealtimeStreamLoggingObject:
         "total_tokens": prompt + completion,
     }
     document: dict[str, JsonValue] = {"results": events, "usage": usage}
-    return TypeAdapter(LiteLLMRealtimeStreamLoggingObject).validate_json(json.dumps(document))
+    return TypeAdapter(RealtimeLogging).validate_json(json.dumps(document))
 
 
 def wrapper_response(input_value: Input, usage: Usage) -> WrapperResponse:
