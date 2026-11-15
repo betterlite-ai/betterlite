@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import TypeVar
 
+import litellm
 from pydantic import JsonValue
 
 from .capabilities import install
@@ -11,13 +12,13 @@ from .replies import reply_value
 from .stt import stt_value
 from .wire import Capabilities, Input, Object
 
+litellm.suppress_debug_info = True
+
 CallT = TypeVar("CallT")
 
 
 def project(calls: list[CallT] | None, value: Callable[[CallT], JsonValue]) -> list[JsonValue]:
-    if calls is None:
-        return []
-    return [value(call) for call in calls]
+    return [] if calls is None else [value(call) for call in calls]
 
 
 def run(input_value: Input) -> JsonValue:

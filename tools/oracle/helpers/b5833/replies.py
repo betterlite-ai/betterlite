@@ -41,14 +41,9 @@ def reply_value(call: Call) -> JsonValue:
     )
     record = REPLY_RECORD.validate_json(response.model_dump_json())
     usage = record.get("usage")
-    server: ServerUse | None = None
-    if usage is not None:
-        server = usage.get("server_tool_use")
-    searches: int | None = None
-    opens: int | None = None
-    if server is not None:
-        searches = server.get("web_search_requests")
-        opens = server.get("browser_open_requests")
+    server: ServerUse | None = None if usage is None else usage.get("server_tool_use")
+    searches: int | None = server.get("web_search_requests") if server is not None else None
+    opens: int | None = server.get("browser_open_requests") if server is not None else None
     value: Object = {
         "service_tier": record.get("service_tier"),
         "web_search_requests": searches,

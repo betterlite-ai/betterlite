@@ -1,6 +1,5 @@
 from typing import Literal, Required, TypedDict
 
-from litellm.types.llms.openai import AllMessageValues
 from pydantic import JsonValue
 
 Answer = Literal["yes", "no", "fail"]
@@ -18,7 +17,7 @@ class Capabilities(TypedDict, total=False):
 
 class Call(TypedDict, total=False):
     model: Required[str]
-    messages: Required[list[AllMessageValues]]
+    messages: Required[list[Object]]
     reply: Required[Object]
     chunk: Required[Object]
     non_default: Object

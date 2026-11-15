@@ -1,16 +1,19 @@
 import datetime as dt
-from typing import Protocol
+from typing import Protocol, runtime_checkable
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.groq.chat.transformation import GroqChatConfig
 from litellm.llms.groq.stt.transformation import GroqSTTConfig
-from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
+from pydantic import ConfigDict, TypeAdapter
 
 from .wire import MODEL, Object
 
+ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
 
+
+@runtime_checkable
 class ChatConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
@@ -26,7 +29,7 @@ class ChatConfig(Protocol):
     def transform_request(
         self,
         model: str,
-        messages: list[AllMessageValues],
+        messages: list[Object],
         optional_params: Object,
         litellm_params: Object,
         headers: Object,
@@ -39,7 +42,7 @@ class ChatConfig(Protocol):
         model_response: ModelResponse,
         logging_obj: Logging,
         _request_data: Object,
-        _messages: list[AllMessageValues],
+        _messages: list[Object],
         _optional_params: Object,
         _litellm_params: Object,
         _encoding: None,
@@ -49,10 +52,12 @@ class ChatConfig(Protocol):
     ) -> ModelResponse: ...
 
 
+@runtime_checkable
 class ChunkParser(Protocol):
     def chunk_parser(self, chunk: Object) -> ModelResponseStream: ...
 
 
+@runtime_checkable
 class SttConfig(Protocol):
     def map_openai_params_stt(
         self,
@@ -64,8 +69,8 @@ class SttConfig(Protocol):
     ) -> Object: ...
 
 
-CHAT: ChatConfig = GroqChatConfig()
-STT: SttConfig = GroqSTTConfig()
+CHAT: ChatConfig = TypeAdapter(ChatConfig, config=ARBITRARY).validate_python(GroqChatConfig())
+STT: SttConfig = TypeAdapter(SttConfig, config=ARBITRARY).validate_python(GroqSTTConfig())
 
 
 def logging_object() -> Logging:

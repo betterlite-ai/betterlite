@@ -1,5 +1,5 @@
 from litellm.litellm_core_utils.llm_cost_calc.tool_call_cost_tracking import (
-    StandardBuiltInToolCostTracking,
+    StandardBuiltInToolCostTracking as ToolCostTracking,
 )
 from litellm.types.utils import ModelResponse, ServerToolUse, Usage
 from pydantic import JsonValue
@@ -15,7 +15,7 @@ def cost_value(call: Call) -> JsonValue:
         )
     )
     # the public entry resolves the model's model_info and calls cost_per_web_search_request
-    cost = StandardBuiltInToolCostTracking.get_cost_for_built_in_tools(
+    cost = ToolCostTracking.get_cost_for_built_in_tools(
         model=call["model"],
         response_object=ModelResponse(),
         usage=usage,
