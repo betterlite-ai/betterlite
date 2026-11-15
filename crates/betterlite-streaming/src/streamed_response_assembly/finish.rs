@@ -33,7 +33,16 @@ where
     let mut usage = estimate_usage(request, streamed, &draft, mode, hooks).await?;
     propagate_hidden_fields(&mut draft.base.hidden_params, &streamed.chunks)?;
     apply_costs(request, &mut draft.base, &mut usage)?;
-    apply_metadata(request, streamed, &mut draft.base);
+    if let Some(services) = request.metadata {
+        let context = ProviderMetadataContext {
+            custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
+            redactor: services.redactor,
+            resolver: services.resolver,
+            selector: services.selector,
+            projection: services.projection,
+        };
+        apply_provider_metadata(&mut draft.base, &streamed.base.chunks, &context);
+    }
     build_response(draft, usage)
 }
 
@@ -107,19 +116,6 @@ fn apply_costs(
             .insert(RESPONSE_COST_KEY.to_owned(), value);
     }
     Ok(())
-}
-
-fn apply_metadata(request: &Request<'_>, streamed: &Streamed, base: &mut BaseResponse) {
-    if let Some(services) = request.metadata {
-        let context = ProviderMetadataContext {
-            custom_llm_provider: request.logging.and_then(|logging| logging.provider()),
-            redactor: services.redactor,
-            resolver: services.resolver,
-            selector: services.selector,
-            projection: services.projection,
-        };
-        apply_provider_metadata(base, &streamed.base.chunks, &context);
-    }
 }
 
 async fn reasoning_tokens(

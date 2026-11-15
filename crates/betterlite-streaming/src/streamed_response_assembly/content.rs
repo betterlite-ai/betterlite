@@ -38,7 +38,7 @@ struct CustomJson<'call> {
 }
 
 // B218 get_content_from_model_response: the message text, then the function call, then each tool call.
-pub fn completion_output(
+pub(super) fn completion_output(
     content: Option<&str>,
     function_call: Option<&FunctionOutput>,
     tool_calls: Option<&[ToolOutput]>,
@@ -84,7 +84,7 @@ fn tool_json(call: &ToolOutput) -> Result<String, serde_json::Error> {
 
 // provider_fields_citations: generated citations first, then every first-choice map in stream order.
 #[must_use]
-pub fn combined_provider_fields(choices: &[&Choice]) -> Option<JsonObject> {
+pub(super) fn combined_provider_fields(choices: &[&Choice]) -> Option<JsonObject> {
     let maps: Vec<&JsonObject> = choices
         .iter()
         .filter_map(|choice| choice.provider_fields())

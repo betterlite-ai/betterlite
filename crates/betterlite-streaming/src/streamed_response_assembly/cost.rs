@@ -83,21 +83,18 @@ pub fn stream_builder_response_cost(
         .and_then(JsonValue::as_str);
     match costs.completion_cost(input, provider) {
         Ok(price) => Ok(price),
-        Err(_error) => model_map_cost(input, costs),
+        Err(_error) => Ok(model_map_cost(input, costs)),
     }
 }
 
-fn model_map_cost(
-    input: &CostInput<'_>,
-    costs: &dyn StreamCostCalculator,
-) -> Result<Option<Decimal>, CostError> {
+fn model_map_cost(input: &CostInput<'_>, costs: &dyn StreamCostCalculator) -> Option<Decimal> {
     if input.model.is_empty() {
-        return Ok(None);
+        return None;
     }
     let Ok((prompt, completion)) = costs.prompt_completion_cost(input.model, input.usage) else {
-        return Ok(None);
+        return None;
     };
-    Ok(prompt.checked_add(completion))
+    prompt.checked_add(completion)
 }
 
 #[must_use]

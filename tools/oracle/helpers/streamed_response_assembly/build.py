@@ -49,6 +49,7 @@ class Input(TypedDict):
 
 INPUT: Final[TypeAdapter[Input]] = TypeAdapter(Input)
 FUNCTION_CALL: Final[TypeAdapter[FunctionCallSpec]] = TypeAdapter(FunctionCallSpec)
+DELTA: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 
 ChoiceWire = TextChoices | StreamingChoices | dict[str, Json]
 ChunkWire = dict[str, Json | list[ChoiceWire]]
@@ -88,14 +89,20 @@ def build_choice(spec: ChoiceSpec) -> ChoiceWire:
         )
     delta = spec.get("delta")
     match delta:
-        case dict() as mapping:
-            call = mapping.get("function_call")
-            match call:
-                case dict() as fields:
-                    return function_choice(spec, FUNCTION_CALL.validate_python(fields))
-                case None | bool() | int() | float() | str() | list():
-                    return mapping_choice(spec, delta)
-    return mapping_choice(spec, delta)
+        case dict():
+            return dict_choice(spec, DELTA.validate_python(delta))
+        case list() | str() | bool() | int() | float() | None:
+            return mapping_choice(spec, delta)
+
+
+# Only a function_call mapping becomes a LiteLLM record, since the join reads its attributes.
+def dict_choice(spec: ChoiceSpec, delta: dict[str, Json]) -> ChoiceWire:
+    call = delta.get("function_call")
+    match call:
+        case dict():
+            return function_choice(spec, FUNCTION_CALL.validate_python(call))
+        case list() | str() | bool() | int() | float() | None:
+            return mapping_choice(spec, delta)
 
 
 def function_choice(spec: ChoiceSpec, call: FunctionCallSpec) -> StreamingChoices:

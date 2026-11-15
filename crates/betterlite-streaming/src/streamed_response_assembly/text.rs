@@ -22,12 +22,11 @@ where
     L: LoggerSink + Sync,
     C: ConsoleSink + Sync,
 {
-    let Some(first) = chunks.first() else {
-        return Err(AssemblyError::MissingChunks);
-    };
-    let Some(last_choice) = chunks.last().and_then(|chunk| chunk.choices.first()) else {
-        return Err(AssemblyError::MissingLastChoice);
-    };
+    let first = chunks.first().ok_or(AssemblyError::MissingChunks)?;
+    let last_choice = chunks
+        .last()
+        .and_then(|chunk| chunk.choices.first())
+        .ok_or(AssemblyError::MissingLastChoice)?;
     let text = joined_text(chunks);
     let model = first.model.clone().unwrap_or_default();
     let prompt_tokens = count_prompt(&model, request, hooks).await;

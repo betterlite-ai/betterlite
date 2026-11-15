@@ -52,6 +52,15 @@ impl Choice {
         };
         value.as_str()
     }
+
+    #[must_use]
+    pub fn provider_fields(&self) -> Option<&JsonObject> {
+        let delta = self.delta.as_ref()?;
+        let JsonValue::Object(fields) = delta.provider_specific_fields.as_ref()? else {
+            return None;
+        };
+        Some(fields)
+    }
 }
 
 // A missing text key and a null text value stay distinguishable, since only the key makes a text choice.
@@ -90,16 +99,5 @@ impl Delta {
             || self.audio.is_some()
             || self.images.is_some()
             || self.provider_specific_fields.is_some()
-    }
-}
-
-impl Choice {
-    #[must_use]
-    pub fn provider_fields(&self) -> Option<&JsonObject> {
-        let delta = self.delta.as_ref()?;
-        let JsonValue::Object(fields) = delta.provider_specific_fields.as_ref()? else {
-            return None;
-        };
-        Some(fields)
     }
 }

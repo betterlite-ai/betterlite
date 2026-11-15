@@ -41,16 +41,19 @@ pub(super) async fn empty_input_boundary() {
 }
 
 pub(super) async fn base_metadata_boundary() {
-    let (result, logs) = Harness::new(Some(chunks(r#"[{"choices": []}]"#)))
-        .run()
-        .await;
-    assert!(matches!(failed(result), AssemblyError::Base(_)));
-    assert_eq!(logs.len(), 1);
-    assert!(logs[0].ends_with("Exception occurred - the first chunk has no object"));
-    let source = r#"[{"object": "chat.completion.chunk", "model": "gpt-4o", "choices": []}]"#;
-    let (result, logs) = Harness::new(Some(chunks(source))).run().await;
-    assert!(matches!(failed(result), AssemblyError::Base(_)));
-    assert!(logs[0].ends_with("Exception occurred - the first chunk has no created timestamp"));
+    let cases = [
+        (r#"[{"choices": []}]"#, "the first chunk has no object"),
+        (
+            r#"[{"object": "chat.completion.chunk", "model": "gpt-4o", "choices": []}]"#,
+            "the first chunk has no created timestamp",
+        ),
+    ];
+    for (source, message) in cases {
+        let (result, logs) = Harness::new(Some(chunks(source))).run().await;
+        assert!(matches!(failed(result), AssemblyError::Base(_)));
+        assert_eq!(logs.len(), 1);
+        assert!(logs[0].ends_with(&format!("Exception occurred - {message}")));
+    }
 }
 
 pub(super) async fn text_error_boundary() {

@@ -24,9 +24,9 @@ class FailingPrompt:
 
 
 def prompt_callback(prompt: int | Literal["raise"] | None) -> FixedPrompt | FailingPrompt | None:
+    if prompt is None:
+        return None
     match prompt:
-        case None:
-            return None
         case "raise":
             return FailingPrompt()
         case int() as count:

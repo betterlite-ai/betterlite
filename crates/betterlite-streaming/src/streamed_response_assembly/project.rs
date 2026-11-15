@@ -67,27 +67,20 @@ pub(crate) fn content_chunks(
 }
 
 pub(crate) fn tool_chunks(chunks: &[&Chunk]) -> Result<Vec<ToolWireChunk>, serde_json::Error> {
-    project_chunks(chunks.iter().map(|chunk| {
-        ToolProjection {
-            choices: chunk
-                .choices
-                .iter()
-                .map(|choice| ToolChoice {
-                    index: choice.index,
-                    delta: ToolDelta {
-                        tool_calls: choice
-                            .delta
-                            .as_ref()
-                            .and_then(|delta| delta.tool_calls.as_ref()),
-                        function_call: choice
-                            .delta
-                            .as_ref()
-                            .and_then(|delta| delta.function_call.as_ref()),
-                    },
-                })
-                .collect(),
-        }
+    project_chunks(chunks.iter().map(|chunk| ToolProjection {
+        choices: chunk.choices.iter().map(tool_choice).collect(),
     }))
+}
+
+fn tool_choice(choice: &Choice) -> ToolChoice<'_> {
+    let delta = choice.delta.as_ref();
+    ToolChoice {
+        index: choice.index,
+        delta: ToolDelta {
+            tool_calls: delta.and_then(|fields| fields.tool_calls.as_ref()),
+            function_call: delta.and_then(|fields| fields.function_call.as_ref()),
+        },
+    }
 }
 
 pub(crate) fn usage_chunks(chunks: &[Chunk]) -> Result<Vec<UsageWireChunk>, serde_json::Error> {

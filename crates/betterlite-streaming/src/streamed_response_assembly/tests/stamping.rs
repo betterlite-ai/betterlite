@@ -2,31 +2,71 @@ use rust_decimal::Decimal;
 
 use crate::streamed_response_assembly::AssemblyError;
 
-use super::support::FixtureLogging;
+use super::support::{FixtureLogging, priced_logging};
 use super::{Harness, chat_of, cost_stream, failed, value};
 
 pub(super) async fn usage_cost_stamping() {
-    stamping_from_logging().await;
+    stamping_calculator_results().await;
     stamping_requires_logging().await;
-    stamping_skips_existing().await;
-    stamping_zero_calculator().await;
-    stamping_still_applies_to_xai().await;
     stamping_error().await;
 }
 
-pub(super) async fn stamping_from_logging() {
-    let mut logging = FixtureLogging::default();
-    logging.provider = Some("openai");
-    logging.cost = Some(Decimal::new(75, 6));
-    let mut harness = Harness::new(Some(cost_stream(None)));
-    harness.logging = Some(&logging);
-    let response = chat_of(&harness).await;
-    assert_eq!(response.usage.cost, Some(Decimal::new(75, 6)));
-    assert_eq!(
-        response.hidden_params.get("response_cost"),
-        Some(&value("0.000075"))
-    );
-    assert_eq!(logging.calls(), 1);
+// The stream's own cost, the logging provider, the calculator's price, the stamped cost, the response cost and the calculator calls.
+type StampCase = (
+    Option<&'static str>,
+    &'static str,
+    Decimal,
+    Option<Decimal>,
+    Option<&'static str>,
+    usize,
+);
+
+fn stamp_cases() -> [StampCase; 6] {
+    let price = Decimal::new(75, 6);
+    [
+        (None, "openai", price, Some(price), Some("0.000075"), 1),
+        (None, "openai", Decimal::ZERO, None, None, 1),
+        (None, "xai", price, Some(price), None, 1),
+        (
+            Some("0"),
+            "openai",
+            price,
+            Some(Decimal::ZERO),
+            Some("0"),
+            0,
+        ),
+        (
+            Some("-0.5"),
+            "openai",
+            price,
+            Some(Decimal::new(-5, 1)),
+            Some("-0.5"),
+            0,
+        ),
+        (
+            Some("true"),
+            "openai",
+            price,
+            Some(Decimal::ONE),
+            Some("1"),
+            0,
+        ),
+    ]
+}
+
+pub(super) async fn stamping_calculator_results() {
+    for (reported, provider, price, stamped, response_cost, calls) in stamp_cases() {
+        let logging = priced_logging(provider, Some(price));
+        let mut harness = Harness::new(Some(cost_stream(reported)));
+        harness.logging = Some(&logging);
+        let response = chat_of(&harness).await;
+        assert_eq!(response.usage.cost, stamped, "{reported:?} {provider}");
+        assert_eq!(
+            response.hidden_params.get("response_cost"),
+            response_cost.map(value).as_ref()
+        );
+        assert_eq!(logging.calls(), calls);
+    }
 }
 
 pub(super) async fn stamping_requires_logging() {
@@ -36,56 +76,12 @@ pub(super) async fn stamping_requires_logging() {
     assert_eq!(response.hidden_params.get("response_cost"), None);
 }
 
-pub(super) async fn stamping_skips_existing() {
-    let existing = [
-        ("0", Decimal::ZERO),
-        ("-0.5", Decimal::new(-5, 1)),
-        ("true", Decimal::ONE),
-    ];
-    for (reported, expected) in existing {
-        let mut logging = FixtureLogging::default();
-        logging.provider = Some("openai");
-        logging.cost = Some(Decimal::new(75, 6));
-        let mut harness = Harness::new(Some(cost_stream(Some(reported))));
-        harness.logging = Some(&logging);
-        let response = chat_of(&harness).await;
-        assert_eq!(response.usage.cost, Some(expected));
-        assert_eq!(
-            response.hidden_params.get("response_cost"),
-            Some(&value(&expected.to_string()))
-        );
-        assert_eq!(logging.calls(), 0);
-    }
-}
-
-pub(super) async fn stamping_zero_calculator() {
-    let mut logging = FixtureLogging::default();
-    logging.provider = Some("openai");
-    logging.cost = Some(Decimal::ZERO);
-    let mut harness = Harness::new(Some(cost_stream(None)));
-    harness.logging = Some(&logging);
-    let response = chat_of(&harness).await;
-    assert_eq!(response.usage.cost, None);
-    assert_eq!(response.hidden_params.get("response_cost"), None);
-    assert_eq!(logging.calls(), 1);
-}
-
-pub(super) async fn stamping_still_applies_to_xai() {
-    let mut logging = FixtureLogging::default();
-    logging.provider = Some("xai");
-    logging.cost = Some(Decimal::new(75, 6));
-    let mut harness = Harness::new(Some(cost_stream(None)));
-    harness.logging = Some(&logging);
-    let response = chat_of(&harness).await;
-    assert_eq!(response.usage.cost, Some(Decimal::new(75, 6)));
-    assert_eq!(response.hidden_params.get("response_cost"), None);
-    assert_eq!(logging.calls(), 1);
-}
-
 pub(super) async fn stamping_error() {
-    let mut logging = FixtureLogging::default();
-    logging.provider = Some("openai");
-    logging.fail = true;
+    let logging = FixtureLogging {
+        provider: Some("openai"),
+        fail: true,
+        ..FixtureLogging::default()
+    };
     let mut harness = Harness::new(Some(cost_stream(None)));
     harness.logging = Some(&logging);
     let (result, logs) = harness.run().await;

@@ -1,5 +1,5 @@
-use std::sync::Arc;
-use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_context::chat_config_selection::selection::ChatConfigError;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
@@ -87,7 +87,7 @@ pub(super) fn hooks() -> VerboseHooks<RecordingLogger, RecordingConsole> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("fixture redactor compiles");
     VerboseHooks {
         logger: RecordingLogger::default(),
-        console: RecordingConsole::default(),
+        console: RecordingConsole,
         set_verbose: Payload::Bool(false),
         redactor: Arc::new(redactor),
     }
@@ -166,8 +166,9 @@ impl UsageTokenCounter for FixtureCounter {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(super) enum ProviderSeen {
+    #[default]
     NotCalled,
     Named(Option<String>),
 }
@@ -179,35 +180,34 @@ pub(super) struct FixtureCosts {
     pub(super) prompt: Option<Decimal>,
     pub(super) completion_tokens: Option<Decimal>,
     pub(super) per_token_error: bool,
-    pub(super) seen_provider: Mutex<Option<Option<String>>>,
-    pub(super) completion_calls: Mutex<usize>,
+    pub(super) seen_provider: Mutex<ProviderSeen>,
+    pub(super) completion_calls: AtomicUsize,
 }
 
 impl FixtureCosts {
     pub(super) fn seen_provider(&self) -> ProviderSeen {
         self.seen_provider
             .lock()
-            .expect("fixture cost provider")
+            .unwrap_or_else(PoisonError::into_inner)
             .clone()
-            .map_or(ProviderSeen::NotCalled, ProviderSeen::Named)
     }
 
     pub(super) fn completion_calls(&self) -> usize {
-        *self
-            .completion_calls
-            .lock()
-            .expect("fixture completion cost calls")
+        self.completion_calls.load(Ordering::SeqCst)
     }
 }
 
+const COMPLETION_FAILURE: &str = "fixture completion cost failure";
+const LOGGING_FAILURE: &str = "fixture logging cost failure";
+
 // Both price fixtures count the call, then fail or answer with the fixed price.
 fn priced(
-    calls: &Mutex<usize>,
+    calls: &AtomicUsize,
     fail: bool,
     message: &str,
     price: Option<Decimal>,
 ) -> Result<Option<Decimal>, CostError> {
-    *calls.lock().expect("fixture cost calls") += 1;
+    calls.fetch_add(1, Ordering::SeqCst);
     if fail {
         return Err(CostError {
             message: message.to_owned(),
@@ -222,12 +222,15 @@ impl StreamCostCalculator for FixtureCosts {
         _input: &CostInput<'_>,
         provider: Option<&str>,
     ) -> Result<Option<Decimal>, CostError> {
-        *self.seen_provider.lock().expect("fixture cost provider") =
-            Some(provider.map(str::to_owned));
+        *self
+            .seen_provider
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
+            ProviderSeen::Named(provider.map(str::to_owned));
         priced(
             &self.completion_calls,
             self.completion_error,
-            "fixture completion cost failure",
+            COMPLETION_FAILURE,
             self.completion,
         )
     }
@@ -254,12 +257,12 @@ pub(super) struct FixtureLogging {
     pub(super) provider: Option<&'static str>,
     pub(super) cost: Option<Decimal>,
     pub(super) fail: bool,
-    pub(super) calls: Mutex<usize>,
+    pub(super) calls: AtomicUsize,
 }
 
 impl FixtureLogging {
     pub(super) fn calls(&self) -> usize {
-        *self.calls.lock().expect("fixture logging cost calls")
+        self.calls.load(Ordering::SeqCst)
     }
 }
 
@@ -269,12 +272,16 @@ impl StreamLogging for FixtureLogging {
     }
 
     fn response_cost(&self, _input: &CostInput<'_>) -> Result<Option<Decimal>, CostError> {
-        priced(
-            &self.calls,
-            self.fail,
-            "fixture logging cost failure",
-            self.cost,
-        )
+        priced(&self.calls, self.fail, LOGGING_FAILURE, self.cost)
+    }
+}
+
+// A logging fixture that names its provider and answers every cost call with the same price.
+pub(super) fn priced_logging(provider: &'static str, cost: Option<Decimal>) -> FixtureLogging {
+    FixtureLogging {
+        provider: Some(provider),
+        cost,
+        ..FixtureLogging::default()
     }
 }
 
@@ -319,7 +326,10 @@ impl ProviderMetadataProjection for RecordingProjection {
         response: &mut BaseResponse,
         _chunks: &[BaseChunk],
     ) -> Result<(), ProjectionError> {
-        *self.seen_cost.lock().expect("fixture projection cost") =
+        *self
+            .seen_cost
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) =
             response.hidden_params.get("response_cost").cloned();
         response.hidden_params.insert(
             "projected".to_owned(),

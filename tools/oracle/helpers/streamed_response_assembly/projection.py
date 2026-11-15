@@ -59,13 +59,18 @@ class ResponseDump(TypedDict, total=False):
 
 
 DUMP: Final[TypeAdapter[ResponseDump]] = TypeAdapter(ResponseDump)
+FIELDS: Final[TypeAdapter[dict[str, Json]]] = TypeAdapter(dict[str, Json])
 
 
+# The typed dumps keep only the fields both sides compare, so a validated copy is the view.
 def response_view(response: ModelResponse | TextCompletionResponse) -> Json:
     dump = DUMP.validate_json(response.model_dump_json())
+    fields = FIELDS.validate_python(dump)
+    usage = dump.get("usage")
     if dump.get("object") == TEXT_OBJECT:
-        return clean_value(text_view(dump))
-    return clean_value(chat_view(dump, hidden_view(response)))
+        return clean_value({**fields, "kind": "text", "usage": usage_view(usage, priced=False)})
+    chat = {**fields, "kind": "chat", "usage": usage_view(usage, priced=True)}
+    return clean_value({**chat, "hidden_params": hidden_view(response)})
 
 
 # model_dump_json leaves the private _hidden_params map out, so it is read as an attribute.
@@ -78,100 +83,18 @@ def hidden_view(response: ModelResponse | TextCompletionResponse) -> Json:
     }
 
 
-def chat_view(dump: ResponseDump, hidden: Json) -> Json:
-    return {
-        "kind": "chat",
-        "id": dump.get("id"),
-        "object": dump.get("object"),
-        "created": dump.get("created"),
-        "model": dump.get("model"),
-        "system_fingerprint": dump.get("system_fingerprint"),
-        "service_tier": dump.get("service_tier"),
-        "choices": chat_choices(dump.get("choices")),
-        "usage": usage_view(dump.get("usage")),
-        "hidden_params": hidden,
-    }
-
-
-def chat_choices(choices: list[ChoiceDump] | None) -> Json:
-    if choices is None:
-        return []
-    return [chat_choice(choice) for choice in choices]
-
-
-def chat_choice(choice: ChoiceDump) -> Json:
-    message = choice.get("message")
-    return {
-        "index": choice.get("index"),
-        "finish_reason": choice.get("finish_reason"),
-        "provider_specific_fields": choice.get("provider_specific_fields"),
-        "message": None if message is None else message_view(message),
-    }
-
-
-def message_view(message: MessageDump) -> Json:
-    return {
-        "content": message.get("content"),
-        "role": message.get("role"),
-        "tool_calls": message.get("tool_calls"),
-        "function_call": message.get("function_call"),
-        "provider_specific_fields": message.get("provider_specific_fields"),
-        "reasoning_content": message.get("reasoning_content"),
-        "thinking_blocks": message.get("thinking_blocks"),
-        "annotations": message.get("annotations"),
-        "audio": message.get("audio"),
-        "images": message.get("images"),
-    }
-
-
-def usage_view(usage: UsageDump | None) -> Json:
+def usage_view(usage: UsageDump | None, *, priced: bool) -> Json:
     if usage is None:
         return None
+    view: dict[str, Json] = {
+        "prompt_tokens": usage.get("prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "total_tokens": usage.get("total_tokens"),
+    }
     cost = usage.get("cost")
-    return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-        "cost": None if cost is None else f"{cost:.12f}",
-    }
-
-
-def text_view(dump: ResponseDump) -> Json:
-    return {
-        "kind": "text",
-        "id": dump.get("id"),
-        "object": dump.get("object"),
-        "created": dump.get("created"),
-        "model": dump.get("model"),
-        "system_fingerprint": dump.get("system_fingerprint"),
-        "choices": text_choices(dump.get("choices")),
-        "usage": text_usage_view(dump.get("usage")),
-    }
-
-
-def text_choices(choices: list[ChoiceDump] | None) -> Json:
-    if choices is None:
-        return []
-    return [text_choice(choice) for choice in choices]
-
-
-def text_choice(choice: ChoiceDump) -> Json:
-    return {
-        "index": choice.get("index"),
-        "finish_reason": choice.get("finish_reason"),
-        "text": choice.get("text"),
-        "logprobs": choice.get("logprobs"),
-    }
-
-
-def text_usage_view(usage: UsageDump | None) -> Json:
-    if usage is None:
-        return None
-    return {
-        "prompt_tokens": usage.get("prompt_tokens"),
-        "completion_tokens": usage.get("completion_tokens"),
-        "total_tokens": usage.get("total_tokens"),
-    }
+    if priced and cost is not None:
+        view["cost"] = f"{cost:.12f}"
+    return view
 
 
 def clean_value(value: Json) -> Json | None:

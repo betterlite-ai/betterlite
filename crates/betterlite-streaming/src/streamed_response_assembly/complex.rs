@@ -91,10 +91,8 @@ fn set_content(draft: &mut Draft, content: Option<String>) {
 }
 
 fn first_delta(chunk: &Chunk) -> Option<&Delta> {
-    chunk
-        .choices
-        .first()
-        .and_then(|choice| choice.delta.as_ref())
+    let choice = chunk.choices.first()?;
+    choice.delta.as_ref()
 }
 
 fn has_tool_calls(chunk: &Chunk) -> bool {

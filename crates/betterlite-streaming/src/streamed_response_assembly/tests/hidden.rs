@@ -6,7 +6,7 @@ use crate::stream_chunk_shaping::records::JsonValue;
 use crate::streamed_response_assembly::{AssemblyError, MetadataServices};
 
 use super::support::{
-    FixtureLogging, FixtureResolver, FixtureSelector, RecordingProjection, chunks,
+    FixtureResolver, FixtureSelector, RecordingProjection, chunks, priced_logging,
 };
 use super::{
     Harness, chat, chat_of, cost_stream, failed, hidden_stream, object, ok, plain_stream, value,
@@ -14,10 +14,8 @@ use super::{
 
 pub(super) async fn usage_hidden_metadata() {
     usage_reasoning_and_hidden().await;
-    hidden_provider_fields_scan().await;
-    hidden_provider_fields_stop().await;
+    hidden_provider_fields().await;
     hidden_provider_fields_error().await;
-    hidden_non_object_skipped().await;
     prompt_callback_failure().await;
     usage_first_chunk_model().await;
     metadata_after_cost().await;
@@ -57,40 +55,32 @@ pub(super) async fn usage_reasoning_and_hidden() {
     );
 }
 
-pub(super) async fn hidden_provider_fields_scan() {
-    let stream = chunks(
-        r#"[
-        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
-         "choices": [{"index": 0, "delta": {"content": "A"}}],
-         "_hidden_params": {"provider_specific_fields": {"a": 1}}},
-        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-         "_hidden_params": {"other": "x"},
-         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-    ]"#,
-    );
-    let response = chat_of(&Harness::new(Some(stream))).await;
-    assert_eq!(
-        response.hidden_params,
-        object(r#"{"other": "x", "provider_specific_fields": {"a": 1}}"#)
-    );
-}
+const HIDDEN_STREAM: &str = r#"[
+    {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+     "choices": [{"index": 0, "delta": {"content": "A"}}],
+     "_hidden_params": {"provider_specific_fields": {"a": 1}}},
+    {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}], "_hidden_params": LATER,
+     "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
+]"#;
 
-pub(super) async fn hidden_provider_fields_stop() {
-    let stream = chunks(
-        r#"[
-        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
-         "choices": [{"index": 0, "delta": {"content": "A"}}],
-         "_hidden_params": {"provider_specific_fields": {"a": 1}}},
-        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-         "_hidden_params": {"provider_specific_fields": {}},
-         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-    ]"#,
-    );
-    let response = chat_of(&Harness::new(Some(stream))).await;
-    assert_eq!(
-        response.hidden_params,
-        object(r#"{"provider_specific_fields": {}}"#)
-    );
+// The nearest later chunk with provider_specific_fields wins and stops the scan, even when its map is empty.
+pub(super) async fn hidden_provider_fields() {
+    let cases = [
+        (
+            r#"{"other": "x"}"#,
+            r#"{"other": "x", "provider_specific_fields": {"a": 1}}"#,
+        ),
+        (
+            r#"{"provider_specific_fields": {}}"#,
+            r#"{"provider_specific_fields": {}}"#,
+        ),
+        (r#""nope""#, r#"{"provider_specific_fields": {"a": 1}}"#),
+    ];
+    for (later, expected) in cases {
+        let stream = chunks(&HIDDEN_STREAM.replace("LATER", later));
+        let response = chat_of(&Harness::new(Some(stream))).await;
+        assert_eq!(response.hidden_params, object(expected), "{later}");
+    }
 }
 
 pub(super) async fn hidden_provider_fields_error() {
@@ -102,24 +92,6 @@ pub(super) async fn hidden_provider_fields_error() {
     ));
     assert!(
         logs[0].ends_with("Exception occurred - provider_specific_fields is not a JSON object")
-    );
-}
-
-pub(super) async fn hidden_non_object_skipped() {
-    let stream = chunks(
-        r#"[
-        {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
-         "choices": [{"index": 0, "delta": {"content": "A"}}],
-         "_hidden_params": {"provider_specific_fields": {"a": 1}}},
-        {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-         "_hidden_params": "nope",
-         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}
-    ]"#,
-    );
-    let response = chat_of(&Harness::new(Some(stream))).await;
-    assert_eq!(
-        response.hidden_params,
-        object(r#"{"provider_specific_fields": {"a": 1}}"#)
     );
 }
 
@@ -168,9 +140,7 @@ pub(super) async fn metadata_after_cost() {
         selector: &selector,
         projection: Some(&projection),
     };
-    let mut logging = FixtureLogging::default();
-    logging.provider = Some("openai");
-    logging.cost = Some(Decimal::new(75, 6));
+    let logging = priced_logging("openai", Some(Decimal::new(75, 6)));
     let mut harness = Harness::new(Some(cost_stream(None)));
     harness.logging = Some(&logging);
     harness.metadata = Some(&services);

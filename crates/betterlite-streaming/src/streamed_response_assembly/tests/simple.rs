@@ -1,5 +1,5 @@
 use super::support::chunks;
-use super::{Harness, chat_of, object, value};
+use super::{Harness, chat_of, object, response_of, value};
 
 pub(super) async fn simple_text_path() {
     simple_text_join().await;
@@ -59,10 +59,7 @@ pub(super) async fn simple_delta_shapes() {
         (later_choice_tools, "AB", 2, Some(0)),
     ];
     for (source, content, text_tokens, tool_calls) in cases {
-        let mut harness = Harness::new(Some(chunks(source)));
-        harness.messages = true;
-        harness.counter.response_text = text_tokens;
-        let response = chat_of(&harness).await;
+        let response = response_of(source, text_tokens).await;
         let message = &response.choices[0].message;
         assert_eq!(message.content.as_deref(), Some(content));
         assert_eq!(message.tool_calls.as_ref().map(Vec::len), tool_calls);
@@ -109,11 +106,7 @@ pub(super) async fn simple_disabled_by_fields() {
         );
         source.push_str(&serde_json::to_string(&delta).expect("fixture delta serializes"));
         source.push_str("}]}]");
-        let stream = chunks(&source);
-        let mut harness = Harness::new(Some(stream));
-        harness.messages = true;
-        harness.counter.response_text = 2;
-        let response = chat_of(&harness).await;
+        let response = response_of(&source, 2).await;
         assert_eq!(
             response.choices[0].message.content.as_deref(),
             Some("AB"),

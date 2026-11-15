@@ -7,12 +7,12 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
 use thiserror::Error;
 
-use crate::stream_base_assembly::StreamedChunks;
 use crate::stream_base_assembly::provider_metadata::{
     ChatConfigSelection, ProviderMetadataProjection, ProviderResolution,
 };
 use crate::stream_base_assembly::records::Chunk as BaseChunk;
 use crate::stream_base_assembly::response::build_base_response;
+use crate::stream_base_assembly::{StreamBaseAssemblyError, StreamedChunks};
 use crate::stream_content_assembly::AssemblyError as ContentAssemblyError;
 use crate::stream_tool_assembly::AssemblyError as ToolAssemblyError;
 use crate::stream_usage_assembly::{UsageAssemblyError, UsageTokenCounter};
@@ -52,7 +52,7 @@ pub enum AssemblyError {
     #[error("provider_specific_fields is not a JSON object")]
     InvalidProviderFields,
     #[error(transparent)]
-    Base(#[from] crate::stream_base_assembly::StreamBaseAssemblyError),
+    Base(#[from] StreamBaseAssemblyError),
     #[error(transparent)]
     Tool(#[from] ToolAssemblyError),
     #[error(transparent)]

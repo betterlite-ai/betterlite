@@ -51,7 +51,7 @@ impl Harness<'_> {
 
     async fn run(&self) -> (Result<Option<Response>, AssemblyError>, Vec<String>) {
         let hooks = hooks();
-        let messages: Option<&[Message]> = if self.messages { Some(&[]) } else { None };
+        let messages: Option<&[Message]> = self.messages.then_some(&[]);
         let request = Request {
             chunks: self.chunks.as_deref(),
             messages,
@@ -101,6 +101,13 @@ async fn chat_of(harness: &Harness<'_>) -> ChatResponse {
     chat(ok(result))
 }
 
+async fn response_of(source: &str, response_text: i64) -> ChatResponse {
+    let mut harness = Harness::new(Some(chunks(source)));
+    harness.messages = true;
+    harness.counter.response_text = response_text;
+    chat_of(&harness).await
+}
+
 fn value(source: &str) -> JsonValue {
     serde_json::from_str(source).expect("fixture value parses")
 }
@@ -120,9 +127,9 @@ fn plain_stream() -> Vec<Chunk> {
     chunks(PLAIN_STREAM)
 }
 
-fn cost_stream(cost: Option<&str>) -> Vec<Chunk> {
+fn cost_stream(reported: Option<&str>) -> Vec<Chunk> {
     let mut stream = COST_STREAM_HEAD.to_owned();
-    if let Some(cost) = cost {
+    if let Some(cost) = reported {
         stream.push_str(r#", "cost": "#);
         stream.push_str(cost);
     }

@@ -31,19 +31,43 @@ pub(super) async fn text_completion_join() {
     harness.now = 1_800_000_000;
     let (result, logs) = harness.run().await;
     let response = text(ok(result));
-    assert_eq!(response.id, "chatcmpl-text");
-    assert_eq!(response.object, "text_completion");
-    assert_eq!(response.created, 1_700_000_000);
-    assert_eq!(response.model.as_deref(), Some("gpt-4o"));
-    assert_eq!(response.system_fingerprint.as_deref(), Some("fp_1"));
+    let metadata = (
+        response.id.as_str(),
+        response.object.as_str(),
+        response.created,
+        response.model.as_deref(),
+        response.system_fingerprint.as_deref(),
+    );
+    assert_eq!(
+        metadata,
+        (
+            "chatcmpl-text",
+            "text_completion",
+            1_700_000_000,
+            Some("gpt-4o"),
+            Some("fp_1")
+        )
+    );
+    let choice = &response.choices[0];
     assert_eq!(response.choices.len(), 1);
-    assert_eq!(response.choices[0].text, "Hey you!");
-    assert_eq!(response.choices[0].index, 0);
-    assert_eq!(response.choices[0].finish_reason.as_deref(), Some("stop"));
-    assert_eq!(response.choices[0].logprobs, Some(logprobs));
-    assert_eq!(response.usage.prompt_tokens, 3);
-    assert_eq!(response.usage.completion_tokens, 2);
-    assert_eq!(response.usage.total_tokens, 5);
+    assert_eq!(
+        (
+            choice.text.as_str(),
+            choice.index,
+            choice.finish_reason.as_deref()
+        ),
+        ("Hey you!", 0, Some("stop"))
+    );
+    assert_eq!(choice.logprobs, Some(logprobs));
+    let usage = &response.usage;
+    assert_eq!(
+        (
+            usage.prompt_tokens,
+            usage.completion_tokens,
+            usage.total_tokens
+        ),
+        (3, 2, 5)
+    );
     assert!(logs.is_empty());
 }
 
