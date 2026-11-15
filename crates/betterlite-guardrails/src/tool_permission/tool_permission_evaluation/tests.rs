@@ -12,7 +12,7 @@ use tracing::subscriber::with_default;
 use super::super::ToolPermissionGuardrail;
 use super::super::matching::CompiledRules;
 use super::super::rule::{ToolDecision, ToolPermissionRule};
-use super::get_permission_for_tool_call;
+use super::{ToolCallPermission, get_permission_for_tool_call};
 use crate::guardrail_initializers::tool_permission::{
     ToolDefaultAction, ToolDisallowedAction, ToolPermissionArgs,
 };
@@ -21,12 +21,12 @@ use crate::guardrail_initializers::tool_permission::{
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -81,43 +81,19 @@ fn pattern_map(patterns: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn named_rule(id: &str, decision: ToolDecision, tool_name: &str) -> ToolPermissionRule {
-    ToolPermissionRule {
-        id: id.to_owned(),
-        tool_name: Some(tool_name.to_owned()),
-        tool_type: None,
-        decision,
-        allowed_param_patterns: None,
-    }
-}
-
-fn pattern_rule(
+fn rule(
     id: &str,
     decision: ToolDecision,
-    tool_name: &str,
-    patterns: &[(&str, &str)],
+    tool_name: Option<&str>,
+    tool_type: Option<&str>,
+    patterns: Option<&[(&str, &str)]>,
 ) -> ToolPermissionRule {
     ToolPermissionRule {
         id: id.to_owned(),
-        tool_name: Some(tool_name.to_owned()),
-        tool_type: None,
+        tool_name: tool_name.map(str::to_owned),
+        tool_type: tool_type.map(str::to_owned),
         decision,
-        allowed_param_patterns: Some(pattern_map(patterns)),
-    }
-}
-
-fn type_pattern_rule(
-    id: &str,
-    decision: ToolDecision,
-    tool_type: &str,
-    patterns: &[(&str, &str)],
-) -> ToolPermissionRule {
-    ToolPermissionRule {
-        id: id.to_owned(),
-        tool_name: None,
-        tool_type: Some(tool_type.to_owned()),
-        decision,
-        allowed_param_patterns: Some(pattern_map(patterns)),
+        allowed_param_patterns: patterns.map(pattern_map),
     }
 }
 
@@ -147,7 +123,7 @@ fn a_tool_without_a_name_or_type_short_circuits_to_the_default_action(
     parameters.violation_message_template = Some("rendered: {default_message}".to_owned());
     let guardrail = build(
         parameters,
-        vec![named_rule("deny-any", ToolDecision::Deny, ".*")],
+        vec![rule("deny-any", ToolDecision::Deny, Some(".*"), None, None)],
     );
     let result = get_permission_for_tool_call(&guardrail, None, None, None);
     assert_eq!(result.is_allowed, expected_allowed);
@@ -159,7 +135,13 @@ fn a_tool_without_a_name_or_type_short_circuits_to_the_default_action(
 fn an_empty_tool_name_is_used_as_given() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![named_rule("empty-name", ToolDecision::Allow, "^$")],
+        vec![rule(
+            "empty-name",
+            ToolDecision::Allow,
+            Some("^$"),
+            None,
+            None,
+        )],
     );
     let result = get_permission_for_tool_call(&guardrail, Some(""), Some("function"), None);
     assert!(result.is_allowed);
@@ -176,14 +158,18 @@ fn a_matching_rule_decides_the_tool(
 ) {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![named_rule("read", decision, "^read_file$")],
+        vec![rule("read", decision, Some("^read_file$"), None, None)],
     );
     let result =
         get_permission_for_tool_call(&guardrail, Some("read_file"), Some("function"), None);
-    assert_eq!(result.is_allowed, expected_allowed);
-    assert_eq!(result.rule_id.as_deref(), Some("read"));
-    let expected = format!("Tool 'read_file' {verdict} by rule 'read'");
-    assert_eq!(result.message.as_deref(), Some(expected.as_str()));
+    assert_eq!(
+        result,
+        ToolCallPermission {
+            is_allowed: expected_allowed,
+            rule_id: Some("read".to_owned()),
+            message: Some(format!("Tool 'read_file' {verdict} by rule 'read'")),
+        }
+    );
 }
 
 #[rstest]
@@ -196,7 +182,13 @@ fn a_tool_without_a_matching_rule_uses_the_default_action(
 ) {
     let guardrail = build(
         args(default_action),
-        vec![named_rule("write", ToolDecision::Allow, "^write$")],
+        vec![rule(
+            "write",
+            ToolDecision::Allow,
+            Some("^write$"),
+            None,
+            None,
+        )],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), None);
     assert_eq!(result.is_allowed, expected_allowed);
@@ -210,8 +202,14 @@ fn the_first_matching_rule_wins() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            named_rule("allow-read", ToolDecision::Allow, "^read$"),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule(
+                "allow-read",
+                ToolDecision::Allow,
+                Some("^read$"),
+                None,
+                None,
+            ),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), None);
@@ -221,14 +219,16 @@ fn the_first_matching_rule_wins() {
 
 #[test]
 fn a_rule_with_a_name_and_a_type_requires_both_to_match() {
-    let rule = ToolPermissionRule {
-        id: "both".to_owned(),
-        tool_name: Some("^read$".to_owned()),
-        tool_type: Some("^function$".to_owned()),
-        decision: ToolDecision::Deny,
-        allowed_param_patterns: None,
-    };
-    let guardrail = build(args(ToolDefaultAction::Allow), vec![rule]);
+    let guardrail = build(
+        args(ToolDefaultAction::Allow),
+        vec![rule(
+            "both",
+            ToolDecision::Deny,
+            Some("^read$"),
+            Some("^function$"),
+            None,
+        )],
+    );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("mcp"), None);
     assert!(result.is_allowed);
     assert_eq!(result.rule_id, None);
@@ -242,13 +242,16 @@ fn a_type_only_rule_matches_on_the_tool_type(
     #[case] expected_allowed: bool,
     #[case] expected_rule: Option<&str>,
 ) {
-    let rule = type_pattern_rule(
-        "typed",
-        ToolDecision::Deny,
-        "^function$",
-        &[("path", "^/safe$")],
+    let guardrail = build(
+        args(ToolDefaultAction::Allow),
+        vec![rule(
+            "typed",
+            ToolDecision::Deny,
+            None,
+            Some("^function$"),
+            Some(&[("path", "^/safe$")]),
+        )],
     );
-    let guardrail = build(args(ToolDefaultAction::Allow), vec![rule]);
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some(tool_type), None);
     assert_eq!(result.is_allowed, expected_allowed);
     assert_eq!(result.rule_id.as_deref(), expected_rule);
@@ -258,7 +261,13 @@ fn a_type_only_rule_matches_on_the_tool_type(
 fn a_tool_with_a_name_but_no_type_still_evaluates_rules() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![named_rule("read", ToolDecision::Allow, "^read$")],
+        vec![rule(
+            "read",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            None,
+        )],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), None, None);
     assert!(result.is_allowed);
@@ -269,11 +278,12 @@ fn a_tool_with_a_name_but_no_type_still_evaluates_rules() {
 fn a_tool_with_a_type_but_no_name_still_evaluates_rules() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![type_pattern_rule(
+        vec![rule(
             "typed",
             ToolDecision::Allow,
-            "^function$",
-            &[],
+            None,
+            Some("^function$"),
+            Some(&[]),
         )],
     );
     let result = get_permission_for_tool_call(&guardrail, None, Some("function"), None);
@@ -289,15 +299,16 @@ fn a_tool_with_a_type_but_no_name_still_evaluates_rules() {
 fn nested_dot_and_array_paths_are_collected() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "nested",
             ToolDecision::Allow,
-            "^read$",
-            &[
+            Some("^read$"),
+            None,
+            Some(&[
                 ("user.role", "^admin$"),
                 ("files[]", "^(a|b)$"),
                 ("matrix[][]", "^[0-9]$"),
-            ],
+            ]),
         )],
     );
     let arguments =
@@ -312,11 +323,12 @@ fn nested_dot_and_array_paths_are_collected() {
 fn a_mismatched_array_item_fails_the_rule() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "only-a",
             ToolDecision::Allow,
-            "^read$",
-            &[("files[]", "^a$")],
+            Some("^read$"),
+            None,
+            Some(&[("files[]", "^a$")]),
         )],
     );
     let arguments = json_arguments(r#"{"files": ["a", "b"]}"#);
@@ -335,13 +347,14 @@ fn a_missing_path_fails_the_rule_and_the_next_rule_decides() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule(
+            rule(
                 "needs-path",
                 ToolDecision::Allow,
-                "^read$",
-                &[("user.role", "^admin$")],
+                Some("^read$"),
+                None,
+                Some(&[("user.role", "^admin$")]),
             ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let arguments = json_arguments(r#"{"user": {"name": "sam"}}"#);
@@ -356,8 +369,20 @@ fn the_last_pattern_failure_message_is_kept_when_denying_by_default() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule("first", ToolDecision::Allow, "^read$", &[("a", "^x$")]),
-            pattern_rule("second", ToolDecision::Allow, "^read$", &[("b", "^y$")]),
+            rule(
+                "first",
+                ToolDecision::Allow,
+                Some("^read$"),
+                None,
+                Some(&[("a", "^x$")]),
+            ),
+            rule(
+                "second",
+                ToolDecision::Allow,
+                Some("^read$"),
+                None,
+                Some(&[("b", "^y$")]),
+            ),
         ],
     );
     let arguments = json_arguments(r#"{"a": "1", "b": "2"}"#);
@@ -375,11 +400,12 @@ fn the_last_pattern_failure_message_is_kept_when_denying_by_default() {
 fn a_missing_path_message_is_kept_when_denying_by_default() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "needs-path",
             ToolDecision::Allow,
-            "^read$",
-            &[("user.role", "^admin$")],
+            Some("^read$"),
+            None,
+            Some(&[("user.role", "^admin$")]),
         )],
     );
     let arguments = json_arguments(r#"{"user": {"name": "sam"}}"#);
@@ -397,11 +423,12 @@ fn a_missing_path_message_is_kept_when_denying_by_default() {
 fn a_default_allow_drops_the_pattern_failure_message() {
     let guardrail = build(
         args(ToolDefaultAction::Allow),
-        vec![pattern_rule(
+        vec![rule(
             "first",
             ToolDecision::Allow,
-            "^read$",
-            &[("a", "^x$")],
+            Some("^read$"),
+            None,
+            Some(&[("a", "^x$")]),
         )],
     );
     let arguments = json_arguments(r#"{"a": "1"}"#);
@@ -420,13 +447,14 @@ fn a_rule_with_patterns_skips_a_tool_without_arguments() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule(
+            rule(
                 "needs-args",
                 ToolDecision::Allow,
-                "^read$",
-                &[("path", "^/safe$")],
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/safe$")]),
             ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), None);
@@ -435,14 +463,15 @@ fn a_rule_with_patterns_skips_a_tool_without_arguments() {
 }
 
 #[test]
-fn a_missing_argument_failure_is_not_the_default_message() {
+fn a_missing_argument_does_not_supply_the_fallback_message() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "needs-args",
             ToolDecision::Allow,
-            "^read$",
-            &[("path", "^/safe$")],
+            Some("^read$"),
+            None,
+            Some(&[("path", "^/safe$")]),
         )],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), None);
@@ -459,13 +488,14 @@ fn malformed_json_arguments_log_a_warning_and_skip_the_rule() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule(
+            rule(
                 "needs-args",
                 ToolDecision::Allow,
-                "^read$",
-                &[("path", "^/safe$")],
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/safe$")]),
             ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let arguments = GuardrailValue::Text("{not json".to_owned());
@@ -484,11 +514,12 @@ fn malformed_json_arguments_log_a_warning_and_skip_the_rule() {
 fn non_object_json_arguments_log_a_debug_rejection() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "needs-args",
             ToolDecision::Allow,
-            "^read$",
-            &[("path", "^/safe$")],
+            Some("^read$"),
+            None,
+            Some(&[("path", "^/safe$")]),
         )],
     );
     let arguments = GuardrailValue::Text("[1, 2]".to_owned());
@@ -507,7 +538,13 @@ fn non_object_json_arguments_log_a_debug_rejection() {
 fn arguments_are_not_parsed_for_a_rule_without_patterns() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![named_rule("allow-read", ToolDecision::Allow, "^read$")],
+        vec![rule(
+            "allow-read",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            None,
+        )],
     );
     let arguments = GuardrailValue::Text("{not json".to_owned());
     let (result, output) = captured_logs(tracing::Level::WARN, || {
@@ -525,20 +562,24 @@ fn arguments_are_not_parsed_for_a_rule_without_patterns() {
 fn arguments_that_are_not_an_object_skip_the_rule(#[case] arguments: GuardrailValue) {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![
-            pattern_rule(
-                "needs-args",
-                ToolDecision::Allow,
-                "^read$",
-                &[("path", "^/safe$")],
-            ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
-        ],
+        vec![rule(
+            "needs-args",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("path", "^/safe$")]),
+        )],
     );
     let result =
         get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
-    assert!(!result.is_allowed);
-    assert_eq!(result.rule_id.as_deref(), Some("deny-read"));
+    assert_eq!(
+        result,
+        ToolCallPermission {
+            is_allowed: false,
+            rule_id: None,
+            message: Some("Tool 'read' denied by default action".to_owned()),
+        }
+    );
 }
 
 #[rstest]
@@ -550,13 +591,14 @@ fn missing_arguments_skip_a_rule_that_requires_patterns(#[case] arguments: Optio
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule(
+            rule(
                 "needs-args",
                 ToolDecision::Allow,
-                "^read$",
-                &[("path", "^/safe$")],
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/safe$")]),
             ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let result = get_permission_for_tool_call(
@@ -574,13 +616,14 @@ fn empty_argument_text_is_missing_not_malformed() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule(
+            rule(
                 "needs-args",
                 ToolDecision::Allow,
-                "^read$",
-                &[("path", "^/safe$")],
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/safe$")]),
             ),
-            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+            rule("deny-read", ToolDecision::Deny, Some("^read$"), None, None),
         ],
     );
     let arguments = GuardrailValue::Text(String::new());
@@ -596,11 +639,12 @@ fn empty_argument_text_is_missing_not_malformed() {
 fn an_object_argument_is_used_as_given() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "safe",
             ToolDecision::Allow,
-            "^read$",
-            &[("path", "^/safe$")],
+            Some("^read$"),
+            None,
+            Some(&[("path", "^/safe$")]),
         )],
     );
     let arguments = GuardrailValue::Object(BTreeMap::from([(
@@ -617,11 +661,12 @@ fn an_object_argument_is_used_as_given() {
 fn arguments_parse_from_the_json_string_form() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "safe",
             ToolDecision::Allow,
-            "^read$",
-            &[("path", "^/safe$")],
+            Some("^read$"),
+            None,
+            Some(&[("path", "^/safe$")]),
         )],
     );
     let arguments = GuardrailValue::Text(r#"{"path": "/safe"}"#.to_owned());
@@ -633,14 +678,16 @@ fn arguments_parse_from_the_json_string_form() {
 
 #[test]
 fn an_empty_pattern_map_imposes_no_argument_constraint() {
-    let rule = ToolPermissionRule {
-        id: "empty".to_owned(),
-        tool_name: Some("^read$".to_owned()),
-        tool_type: None,
-        decision: ToolDecision::Allow,
-        allowed_param_patterns: Some(BTreeMap::new()),
-    };
-    let guardrail = build(args(ToolDefaultAction::Deny), vec![rule]);
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "empty",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[]),
+        )],
+    );
     let result = get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), None);
     assert!(result.is_allowed);
     assert_eq!(result.rule_id.as_deref(), Some("empty"));
@@ -651,8 +698,20 @@ fn a_duplicate_rule_id_uses_the_compiled_patterns_of_that_id() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
         vec![
-            pattern_rule("dup", ToolDecision::Allow, "^read$", &[("path", "^/safe$")]),
-            pattern_rule("dup", ToolDecision::Deny, "^read$", &[("path", "^/other$")]),
+            rule(
+                "dup",
+                ToolDecision::Allow,
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/safe$")]),
+            ),
+            rule(
+                "dup",
+                ToolDecision::Deny,
+                Some("^read$"),
+                None,
+                Some(&[("path", "^/other$")]),
+            ),
         ],
     );
     let arguments = json_arguments(r#"{"path": "/other"}"#);
@@ -668,6 +727,7 @@ fn a_duplicate_rule_id_uses_the_compiled_patterns_of_that_id() {
 #[case::integer(r#"{"count": 3}"#, "count", "^3$")]
 #[case::decimal(r#"{"ratio": 1.5}"#, "ratio", r"^1\.5$")]
 #[case::whole_decimal(r#"{"ratio": 1.0}"#, "ratio", r"^1\.0$")]
+#[case::decimal_array(r#"{"scores": [1.5]}"#, "scores[]", r"^1\.5$")]
 #[case::boolean(r#"{"flag": true}"#, "flag", "^true$")]
 #[case::null(r#"{"value": null}"#, "value", "^null$")]
 fn scalar_argument_values_match_their_json_text(
@@ -675,8 +735,16 @@ fn scalar_argument_values_match_their_json_text(
     #[case] path: &str,
     #[case] pattern: &str,
 ) {
-    let rule = pattern_rule("scalar", ToolDecision::Allow, "^read$", &[(path, pattern)]);
-    let guardrail = build(args(ToolDefaultAction::Deny), vec![rule]);
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "scalar",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[(path, pattern)]),
+        )],
+    );
     let arguments = json_arguments(json);
     let result =
         get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
@@ -684,14 +752,54 @@ fn scalar_argument_values_match_their_json_text(
 }
 
 #[test]
-fn a_non_finite_decimal_argument_matches_as_json_null() {
-    let rule = pattern_rule(
-        "finite",
-        ToolDecision::Allow,
-        "^read$",
-        &[("value", "^null$")],
+fn a_json_string_argument_restores_decimal_values() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "decimals",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("ratio", r"^1\.5$"), ("scores[]", r"^1\.25$")]),
+        )],
     );
-    let guardrail = build(args(ToolDefaultAction::Deny), vec![rule]);
+    let arguments = GuardrailValue::Text(r#"{"ratio": 1.5, "scores": [1.25]}"#.to_owned());
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(result.is_allowed, "unexpected denial: {:?}", result.message);
+}
+
+#[test]
+fn a_private_number_key_with_siblings_stays_an_object() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "sibling",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("other", "^x$")]),
+        )],
+    );
+    let arguments =
+        GuardrailValue::Text(r#"{"$serde_json::private::Number": "1.5", "other": "x"}"#.to_owned());
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(result.is_allowed, "unexpected denial: {:?}", result.message);
+}
+
+#[test]
+fn a_non_finite_decimal_argument_matches_as_json_null() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "finite",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("value", "^null$")]),
+        )],
+    );
     let arguments = GuardrailValue::Object(BTreeMap::from([(
         "value".to_owned(),
         GuardrailValue::Decimal(f64::NAN),
@@ -735,7 +843,13 @@ fn a_rule_decision_renders_the_violation_message_template() {
         Some("blocked {tool_name} by {rule_id}: {default_message}".to_owned());
     let guardrail = build(
         parameters,
-        vec![named_rule("deny-bash", ToolDecision::Deny, "^Bash$")],
+        vec![rule(
+            "deny-bash",
+            ToolDecision::Deny,
+            Some("^Bash$"),
+            None,
+            None,
+        )],
     );
     let result = get_permission_for_tool_call(&guardrail, Some("Bash"), Some("function"), None);
     assert_eq!(
@@ -757,11 +871,12 @@ fn a_default_decision_renders_the_violation_message_template() {
 fn the_first_failing_path_in_sorted_order_is_reported() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
-        vec![pattern_rule(
+        vec![rule(
             "both-paths",
             ToolDecision::Allow,
-            "^read$",
-            &[("b", "^y$"), ("a", "^x$")],
+            Some("^read$"),
+            None,
+            Some(&[("b", "^y$"), ("a", "^x$")]),
         )],
     );
     let arguments = json_arguments(r#"{"a": "1", "b": "2"}"#);
