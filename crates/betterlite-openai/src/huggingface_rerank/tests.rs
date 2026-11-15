@@ -144,8 +144,20 @@ fn tokens(response: &RerankResponse) -> (i64, i64) {
 
 #[rstest]
 #[case::given(Some("https://given.example"), None, None, "https://given.example")]
+#[case::given_wins(
+    Some("https://given.example"),
+    Some("https://hf.example"),
+    Some("https://huggingface.example"),
+    "https://given.example"
+)]
 #[case::hf(None, Some("https://hf.example"), None, "https://hf.example")]
-#[case::huggingface(None, Some("https://other.example"), None, "https://other.example")]
+#[case::hf_wins(
+    None,
+    Some("https://hf.example"),
+    Some("https://huggingface.example"),
+    "https://hf.example"
+)]
+#[case::huggingface(None, None, Some("https://other.example"), "https://other.example")]
 #[case::default(None, None, None, "https://api-inference.huggingface.co")]
 #[case::empty_hf(None, Some(""), None, "")]
 fn url_selects_the_api_base(
@@ -555,7 +567,7 @@ fn response_input_fallback_uses_the_full_query_and_documents() {
         r#"{"query": "q", "texts": ["ab"]}"#,
         &[Some(3), None],
     );
-    assert_eq!(tokens(&response), (20, 3));
+    assert_eq!(tokens(&response), (20, 10));
 }
 
 #[test]
