@@ -18,7 +18,7 @@ use std::future::ready;
 use std::sync::{Arc, Mutex};
 use tokio::sync::Barrier;
 
-pub(crate) type FakeResult<T> = std::result::Result<T, FakeFailure>;
+pub(crate) type FakeResult<T> = Result<T, FakeFailure>;
 type CountReply<'database> = DatabaseFuture<'database, i64>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

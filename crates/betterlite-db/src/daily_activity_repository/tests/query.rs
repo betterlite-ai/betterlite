@@ -82,8 +82,8 @@ async fn first_nonnull_distinct_count_including_zero() {
         grouping_row(Some(0)),
         grouping_row(Some(7)),
     ]);
-    let repository = repository(database, FakeReads::default());
-    let first = repository
+    let seeded = repository(database, FakeReads::default());
+    let first = seeded
         .aggregated(&scope(DailyActivityTable::User), false, 10)
         .await
         .unwrap();

@@ -21,8 +21,7 @@ impl DailyActivityProxyReads for PanickingReads {
         _api_keys: &BTreeSet<String>,
         _window: Option<SpendLogsWindow>,
     ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
-        let message = "the recovery port failed";
-        panic!("{message}");
+        async move { panic!("the recovery port failed") }
     }
 }
 
@@ -219,7 +218,7 @@ async fn recovery_result_returned_unchanged() {
         .unwrap();
     assert_eq!(
         metadata,
-        std::collections::BTreeMap::from([("enriched".to_owned(), recovered)])
+        BTreeMap::from([("enriched".to_owned(), recovered)])
     );
 }
 
