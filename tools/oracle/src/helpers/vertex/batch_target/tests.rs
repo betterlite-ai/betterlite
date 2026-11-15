@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::case::HelperCase;
 
 fn run(value: Value) -> Result<Value, String> {
-    let input = serde_json::from_value(value).unwrap();
+    let input = serde_json::from_value(value).map_err(|error| error.to_string())?;
     super::ops::run(&input).map_err(|error| error.class)
 }
 
