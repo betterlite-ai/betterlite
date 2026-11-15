@@ -27,9 +27,7 @@ fn secret(text: &str) -> SecretString {
 }
 
 fn key_text(key: Option<&SecretString>) -> Option<String> {
-    let Some(secret) = key else {
-        return None;
-    };
+    let secret = key?;
     Some(secret.expose_secret().to_owned())
 }
 
