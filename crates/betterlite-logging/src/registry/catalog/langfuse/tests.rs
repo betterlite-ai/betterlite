@@ -13,7 +13,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use super::super::{CatalogInputs, LoggerCatalog};
-use crate::callback_logger::CallbackLogger;
 use crate::callback_logger::event::LoggerEvent;
 use crate::langfuse_logger::tests::support as langfuse;
 use crate::registry::error::RegistryError;

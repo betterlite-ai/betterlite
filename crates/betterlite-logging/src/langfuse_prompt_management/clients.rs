@@ -138,24 +138,26 @@ impl LangfusePromptClients {
                 client: Arc::clone(&client),
             },
         );
+        drop(state);
         Ok(client)
     }
 }
 
-fn next_tick(state: &mut CacheState) -> u64 {
+const fn next_tick(state: &mut CacheState) -> u64 {
     state.tick = state.tick.saturating_add(1);
     state.tick
 }
 
 fn evict_least_recently_used(state: &mut CacheState) {
-    let oldest = state
+    let Some(oldest) = state
         .entries
         .iter()
         .min_by_key(|(_key, entry)| entry.used)
-        .map(|(key, _entry)| key.clone());
-    if let Some(oldest) = oldest {
-        state.entries.remove(&oldest);
-    }
+        .map(|(key, _entry)| key.clone())
+    else {
+        return;
+    };
+    state.entries.remove(&oldest);
 }
 
 // langfuse_client_init's checks and credential resolution before build_langfuse_client
