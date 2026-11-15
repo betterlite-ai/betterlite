@@ -4,11 +4,9 @@ use betterlite_auth::auth_limit_inputs::key_limits::{
 };
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
-use crate::limiter_records::RateLimitDescriptor;
+use crate::limiter_records::{RateLimitDescriptor, RateLimitDescriptorRateLimit};
 
-use super::{
-    ModelDescriptorBuilder, ModelDescriptorsError, NONE_TEXT, descriptor, window_rate_limit,
-};
+use super::{ModelDescriptorBuilder, ModelDescriptorsError, NONE_TEXT};
 
 impl ModelDescriptorBuilder {
     pub fn key_model_descriptor(
@@ -34,11 +32,16 @@ impl ModelDescriptorBuilder {
             account_limits(auth).hashed_api_key.unwrap_or(NONE_TEXT),
             model.group
         );
-        out.push(descriptor(
-            "model_per_key",
+        out.push(RateLimitDescriptor {
+            key: "model_per_key".to_owned(),
             value,
-            window_rate_limit(requests, tokens, self.window_size),
-        ));
+            rate_limit: Some(RateLimitDescriptorRateLimit {
+                requests_per_unit: requests,
+                tokens_per_unit: tokens,
+                max_parallel_requests: None,
+                window_size: Some(self.window_size),
+            }),
+        });
         Ok(())
     }
 }

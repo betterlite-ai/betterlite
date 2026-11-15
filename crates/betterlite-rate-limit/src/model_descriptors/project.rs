@@ -7,9 +7,10 @@ use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
 use crate::limiter_records::{
     PROJECT_ITPM_DESCRIPTOR_KEY, PROJECT_OTPM_DESCRIPTOR_KEY, RateLimitDescriptor,
+    RateLimitDescriptorRateLimit,
 };
 
-use super::{ModelDescriptorBuilder, NONE_TEXT, descriptor, window_rate_limit};
+use super::{ModelDescriptorBuilder, NONE_TEXT};
 
 impl ModelDescriptorBuilder {
     pub fn project_model_descriptor(
@@ -37,11 +38,16 @@ impl ModelDescriptorBuilder {
             account_limits(auth).project_id.unwrap_or(NONE_TEXT),
             model.group
         );
-        out.push(descriptor(
-            "model_per_project",
+        out.push(RateLimitDescriptor {
+            key: "model_per_project".to_owned(),
             value,
-            window_rate_limit(requests, tokens, self.window_size),
-        ));
+            rate_limit: Some(RateLimitDescriptorRateLimit {
+                requests_per_unit: requests,
+                tokens_per_unit: tokens,
+                max_parallel_requests: None,
+                window_size: Some(self.window_size),
+            }),
+        });
     }
 
     pub fn project_io_descriptors(
@@ -69,18 +75,28 @@ impl ModelDescriptorBuilder {
         }
         let value = format!("{project_id}:{}", model.group);
         if let Some(limit) = input_tokens {
-            out.push(descriptor(
-                PROJECT_ITPM_DESCRIPTOR_KEY,
-                value.clone(),
-                window_rate_limit(None, Some(limit), self.window_size),
-            ));
+            out.push(RateLimitDescriptor {
+                key: PROJECT_ITPM_DESCRIPTOR_KEY.to_owned(),
+                value: value.clone(),
+                rate_limit: Some(RateLimitDescriptorRateLimit {
+                    requests_per_unit: None,
+                    tokens_per_unit: Some(limit),
+                    max_parallel_requests: None,
+                    window_size: Some(self.window_size),
+                }),
+            });
         }
         if let Some(limit) = output_tokens {
-            out.push(descriptor(
-                PROJECT_OTPM_DESCRIPTOR_KEY,
+            out.push(RateLimitDescriptor {
+                key: PROJECT_OTPM_DESCRIPTOR_KEY.to_owned(),
                 value,
-                window_rate_limit(None, Some(limit), self.window_size),
-            ));
+                rate_limit: Some(RateLimitDescriptorRateLimit {
+                    requests_per_unit: None,
+                    tokens_per_unit: Some(limit),
+                    max_parallel_requests: None,
+                    window_size: Some(self.window_size),
+                }),
+            });
         }
     }
 }

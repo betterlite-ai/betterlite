@@ -62,59 +62,58 @@ pub(crate) enum Input {
     KeyOwnsTpm(RequestMetadataInput),
 }
 
-fn builder(window_size: i64, groups: BTreeMap<String, String>) -> ModelDescriptorBuilder {
-    ModelDescriptorBuilder {
-        window_size,
-        resolver: Box::new(GroupMap(groups)),
-    }
-}
-
 fn organization_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
-    let descriptors = builder(input.window_size, input.groups.clone())
-        .organization_descriptors(&auth, input.requested.as_deref());
+    let descriptors = ModelDescriptorBuilder {
+        window_size: input.window_size,
+        resolver: Box::new(GroupMap(input.groups.clone())),
+    }
+    .organization_descriptors(&auth, input.requested.as_deref());
     Ok(json!({"descriptors": descriptors}))
 }
 
 fn key_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
     let mut descriptors = Vec::new();
-    builder(input.window_size, input.groups.clone())
-        .key_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors)
-        .or_value_error()?;
+    ModelDescriptorBuilder {
+        window_size: input.window_size,
+        resolver: Box::new(GroupMap(input.groups.clone())),
+    }
+    .key_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors)
+    .or_value_error()?;
     Ok(json!({"descriptors": descriptors}))
 }
 
 fn team_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
     let mut descriptors = Vec::new();
-    builder(input.window_size, input.groups.clone()).team_model_descriptor(
-        &auth,
-        input.requested.as_deref(),
-        &mut descriptors,
-    );
+    ModelDescriptorBuilder {
+        window_size: input.window_size,
+        resolver: Box::new(GroupMap(input.groups.clone())),
+    }
+    .team_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors);
     Ok(json!({"descriptors": descriptors}))
 }
 
 fn project_model_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
     let mut descriptors = Vec::new();
-    builder(input.window_size, input.groups.clone()).project_model_descriptor(
-        &auth,
-        input.requested.as_deref(),
-        &mut descriptors,
-    );
+    ModelDescriptorBuilder {
+        window_size: input.window_size,
+        resolver: Box::new(GroupMap(input.groups.clone())),
+    }
+    .project_model_descriptor(&auth, input.requested.as_deref(), &mut descriptors);
     Ok(json!({"descriptors": descriptors}))
 }
 
 fn project_io_answer(input: &DescriptorInput) -> crate::helpers::HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
     let mut descriptors = Vec::new();
-    builder(input.window_size, input.groups.clone()).project_io_descriptors(
-        &auth,
-        input.requested.as_deref(),
-        &mut descriptors,
-    );
+    ModelDescriptorBuilder {
+        window_size: input.window_size,
+        resolver: Box::new(GroupMap(input.groups.clone())),
+    }
+    .project_io_descriptors(&auth, input.requested.as_deref(), &mut descriptors);
     Ok(json!({"descriptors": descriptors}))
 }
 
@@ -140,8 +139,11 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input {
             Input::RatedModel(case) => {
-                let model = builder(case.window_size, case.groups.clone())
-                    .rated_model(case.requested.as_deref());
+                let model = ModelDescriptorBuilder {
+                    window_size: case.window_size,
+                    resolver: Box::new(GroupMap(case.groups.clone())),
+                }
+                .rated_model(case.requested.as_deref());
                 Ok(json!({"model": model.map(|entry| json!({
                     "requested": entry.requested,
                     "group": entry.group,

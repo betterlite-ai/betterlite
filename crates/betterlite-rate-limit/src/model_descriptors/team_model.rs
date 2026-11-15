@@ -7,9 +7,9 @@ use betterlite_auth::auth_limit_inputs::metadata_limits::{
 };
 use betterlite_auth::resolved_key::auth::UserAPIKeyAuth;
 
-use crate::limiter_records::{RateLimitDescriptor, RateLimitedModel};
+use crate::limiter_records::{RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitedModel};
 
-use super::{ModelDescriptorBuilder, NONE_TEXT, descriptor, window_rate_limit};
+use super::{ModelDescriptorBuilder, NONE_TEXT};
 
 impl ModelDescriptorBuilder {
     pub fn team_model_descriptor(
@@ -31,11 +31,16 @@ impl ModelDescriptorBuilder {
             account_limits(auth).team_id.unwrap_or(NONE_TEXT),
             model.group
         );
-        out.push(descriptor(
-            "model_per_team",
+        out.push(RateLimitDescriptor {
+            key: "model_per_team".to_owned(),
             value,
-            window_rate_limit(requests, tokens, self.window_size),
-        ));
+            rate_limit: Some(RateLimitDescriptorRateLimit {
+                requests_per_unit: requests,
+                tokens_per_unit: tokens,
+                max_parallel_requests: None,
+                window_size: Some(self.window_size),
+            }),
+        });
     }
 }
 

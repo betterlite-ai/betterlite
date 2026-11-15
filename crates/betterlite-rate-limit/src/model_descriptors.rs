@@ -1,9 +1,7 @@
 use betterlite_auth::auth_limit_inputs::error::AuthLimitInputsError;
 use betterlite_auth::resolved_key::auth::AuthError;
 
-use crate::limiter_records::{
-    ModelGroupResolver, RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitedModel,
-};
+use crate::limiter_records::{ModelGroupResolver, RateLimitedModel};
 
 mod key_model;
 mod organization;
@@ -41,32 +39,5 @@ impl ModelDescriptorBuilder {
             requested: wanted.to_owned(),
             group,
         })
-    }
-}
-
-#[must_use]
-const fn window_rate_limit(
-    requests_per_unit: Option<i64>,
-    tokens_per_unit: Option<i64>,
-    window_size: i64,
-) -> RateLimitDescriptorRateLimit {
-    RateLimitDescriptorRateLimit {
-        requests_per_unit,
-        tokens_per_unit,
-        max_parallel_requests: None,
-        window_size: Some(window_size),
-    }
-}
-
-#[must_use]
-fn descriptor(
-    key: &str,
-    value: String,
-    rate_limit: RateLimitDescriptorRateLimit,
-) -> RateLimitDescriptor {
-    RateLimitDescriptor {
-        key: key.to_owned(),
-        value,
-        rate_limit: Some(rate_limit),
     }
 }
