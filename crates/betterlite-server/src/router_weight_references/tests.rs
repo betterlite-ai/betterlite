@@ -642,6 +642,20 @@ async fn postgres_reference_lookup_bad_stored_json() {
 }
 
 #[tokio::test]
+async fn postgres_reference_lookup_scalar_model_info_fails() {
+    let case = support::Case::new(TABLE_SCHEMA).await;
+    case.insert_row("dep-1", "gpt-4", Some("false")).await;
+    let repository = case.repository();
+    let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
+    let error = validate_settings_weights(Some(&settings), None, Some(&repository), None)
+        .await
+        .unwrap_err();
+    assert!(matches!(&error, RouterWeightError::Stored(_)));
+    assert_eq!(error.to_string(), "stored row is invalid JSON");
+    case.close().await;
+}
+
+#[tokio::test]
 async fn postgres_reference_lookup_database_failure_no_fallback() {
     let missing = support::MissingDatabase::new();
     let repository = missing.repository();
