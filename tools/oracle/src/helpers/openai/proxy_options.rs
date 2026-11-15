@@ -24,7 +24,7 @@ use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 const DEADLINE: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
+#[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     Route { params: Vec<RouteCase> },
     ChatRequest { params: Vec<ChatCase> },
@@ -34,6 +34,7 @@ pub(crate) enum Input {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct RouteCase {
     model: String,
     api_base: Option<String>,
@@ -46,6 +47,7 @@ pub(crate) struct RouteCase {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ChatCase {
     model: String,
     messages: Value,
@@ -54,12 +56,14 @@ pub(crate) struct ChatCase {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ResponsesCase {
     api_base: Option<String>,
     environment_base: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ImageCase {
     endpoint: Endpoint,
     api_base: Option<String>,
@@ -86,6 +90,7 @@ impl Endpoint {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct ModelsCase {
     api_base: Option<String>,
     api_key: Option<String>,
