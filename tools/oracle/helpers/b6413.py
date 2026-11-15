@@ -1,3 +1,4 @@
+import os
 from datetime import UTC, datetime
 from typing import Final, Protocol, TypedDict
 
@@ -5,7 +6,6 @@ import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.sambanova.chat import SambanovaConfig
-from litellm.llms.sambanova.embedding import transformation
 from litellm.llms.sambanova.embedding.transformation import SambaNovaEmbeddingConfig
 from litellm.types.llms.openai import AllEmbeddingInputValues, AllMessageValues
 from litellm.types.utils import CallTypes, EmbeddingResponse
@@ -86,22 +86,6 @@ class EmbeddingConfig(Protocol):
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, str]
     ) -> BaseLLMException: ...
-
-
-class EnvironmentKey:
-    def __init__(self, api_key: str | None) -> None:
-        self._api_key = api_key
-
-    def __call__(
-        self, secret_name: str, default_value: str | bool | None = None
-    ) -> str | None:
-        if secret_name == ENV_NAME and self._api_key is not None:
-            return self._api_key
-        match default_value:
-            case str():
-                return default_value
-            case bool() | None:
-                return None
 
 
 class SupportedCall(TypedDict):
@@ -193,10 +177,20 @@ def url(config: EmbeddingConfig, call: UrlCall) -> JsonValue:
 
 
 def headers(config: EmbeddingConfig, call: HeadersCall) -> JsonValue:
-    transformation.get_secret_str = EnvironmentKey(call["env_api_key"])
-    validated = config.validate_environment(
-        dict(call["headers"]), MODEL, NoMessages(), {}, {}, call["api_key"], None
-    )
+    original = os.environ.get(ENV_NAME)
+    if call["env_api_key"] is None:
+        os.environ.pop(ENV_NAME, None)
+    else:
+        os.environ[ENV_NAME] = call["env_api_key"]
+    try:
+        validated = config.validate_environment(
+            dict(call["headers"]), MODEL, NoMessages(), {}, {}, call["api_key"], None
+        )
+    finally:
+        if original is None:
+            os.environ.pop(ENV_NAME, None)
+        else:
+            os.environ[ENV_NAME] = original
     answer: dict[str, JsonValue] = {"headers": JSON.validate_python(validated)}
     return JSON.validate_python(answer)
 
