@@ -1,0 +1,18 @@
+task: B2332
+deviations:
+  - what: A stored static_headers or env value that is exactly the JSON text null rotates without the "Cannot rotate MCP %s for server %s" warning.
+    why: betterlite's shared stored-map decoder (B2303) parses that text as JSON null and returns no map, while LiteLLM treats it as a bare stored string, fails to decrypt it and raises SecretMapDecodeError. Both leave the field alone and rotate the row's other fields, so only the warning line differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1343-L1348
+  - what: The legacy URL-safe base64 fallback for a user credential rejects text over 1048576 bytes and non-ASCII text before decoding, so such a row is warned and skipped.
+    why: bounded-inputs requires a finite limit before decoding untrusted stored text, and a real credential ciphertext or legacy value stays far below it. LiteLLM's base64.urlsafe_b64decode would decode the oversized value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1381-L1399
+  - what: JSONB columns are read as their text and re-parsed by the bounded stored-contract decoder, so a stored JSON value over 1048576 bytes or nested past its depth fails with a typed codec error instead of being used.
+    why: Python's Prisma client hands LiteLLM already-parsed JSON, while betterlite's native rows carry text; the size and depth limits are B003's bounded decoding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1308-L1323
+  - what: The rotation takes the current salt key and encryption algorithm from an injected cipher snapshot instead of reading LITELLM_SALT_KEY and general_settings on every call.
+    why: B2303 documents the same precedence read at config load; each reload builds a new snapshot, so a changed setting still reaches the rotation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L26-L56
+kept_bugs:
+  - what: A credential field that cannot be decrypted under the current salt key is re-encrypted as if its ciphertext were plaintext, so the stored value becomes double-encrypted, and the row still counts as rotated.
+    why: LiteLLM's decrypt_credentials returns the original value on failure and encrypt_credentials then encrypts every non-null field, so a working rotation silently rewrites an unreadable field instead of failing the row. betterlite performs the same write so a stored row ends up as LiteLLM leaves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L709-L731
