@@ -6,11 +6,35 @@ use super::{FIXED_NOW, Harness, chat_of, response_of, value};
 
 pub(super) async fn complex_content_order() {
     complex_tool_calls().await;
+    complex_tool_call_text().await;
     complex_function_calls().await;
     complex_lists().await;
     complex_thinking().await;
     complex_audio().await;
     complex_created_at_order().await;
+}
+
+const TOOL_CALL_STREAM: &str = r#"[
+    {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-4o",
+     "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi"}}]},
+    {"choices": [{"index": 0, "delta": {"tool_calls": [{"index": 0, "id": "call_1", "type": "function",
+        "function": {"name": "get_weather", "arguments": "{\"city\":\"Paris\"}"}}]}}]},
+    {"choices": [{"index": 0, "delta": {"content": " there"}, "finish_reason": "stop"}]}
+]"#;
+
+const TOOL_CALL_TEXT: &str = r#"Hi there{"function":{"arguments":"{\"city\":\"Paris\"}","name":"get_weather"},"id":"call_1","type":"function"}"#;
+
+// Without a usage chunk the counter sees the completion text: the content followed by each tool call's JSON.
+pub(super) async fn complex_tool_call_text() {
+    let mut harness = Harness::new(Some(chunks(TOOL_CALL_STREAM)));
+    harness.messages = true;
+    harness.counter.response_text = 1;
+    let response = chat_of(&harness).await;
+    assert!(response.choices[0].message.tool_calls.is_some());
+    assert_eq!(
+        harness.counter.seen_completion().as_deref(),
+        Some(TOOL_CALL_TEXT)
+    );
 }
 
 pub(super) async fn complex_tool_calls() {
