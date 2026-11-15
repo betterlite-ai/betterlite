@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import AsyncIterator
+import json
 from typing import Literal, NotRequired, Protocol, TypedDict, runtime_checkable
 
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator
@@ -28,6 +28,7 @@ class OtherErrorStep(TypedDict):
 
 Step = TextStep | BytesStep | ValueErrorStep | OtherErrorStep
 PassthroughStep = TextStep | BytesStep
+ErrorLabel = Literal["receiving", "parsing", "other", "event", "json", "utf8"]
 
 
 class Input(TypedDict):
@@ -114,6 +115,15 @@ def _step_value(step: Step) -> str | bytes:
             raise RuntimeError(step["message"])
 
 
+def _runtime_label(error: RuntimeError) -> ErrorLabel:
+    message = str(error)
+    if message.startswith("Error receiving chunk from stream:"):
+        return "receiving"
+    if message.startswith("Error parsing chunk:"):
+        return "parsing"
+    return "other"
+
+
 def _iterator(
     input_value: Input,
     source: FakeSyncSource | FakeAsyncSource,
@@ -168,39 +178,34 @@ def _passthrough_chunk(step: PassthroughStep) -> str:
 
 def _run_sync(input_value: Input) -> JsonValue:
     source: SyncSource = _iterator(input_value, FakeSyncSource(input_value["steps"]))
-    items: list[JsonValue] = []
-    errors = 0
+    outcomes: list[JsonValue] = []
     while True:
         try:
             item = next(source)
         except StopIteration:
-            return {"items": items, "errors": errors}
-        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError):
-            errors += 1
+            return outcomes
+        except RuntimeError as error:
+            outcomes.append({"error": _runtime_label(error)})
+        except (AttributeError, KeyError, TypeError, ValueError):
+            outcomes.append({"error": "event"})
         else:
-            items.append(_item_view(item))
-
-
-async def _pull(source: AsyncSource) -> AsyncIterator[HasDump | HasLength | None]:
-    iterator = source.__aiter__()
-    while True:
-        try:
-            yield await iterator.__anext__()
-        except StopAsyncIteration:
-            return
-        except (AttributeError, KeyError, RuntimeError, TypeError, ValueError):
-            yield None
+            outcomes.append(_item_view(item))
 
 
 async def _drain_async(source: AsyncSource) -> JsonValue:
-    items: list[JsonValue] = []
-    errors = 0
-    async for item in _pull(source):
-        if item is None:
-            errors += 1
+    iterator = source.__aiter__()
+    outcomes: list[JsonValue] = []
+    while True:
+        try:
+            item = await iterator.__anext__()
+        except StopAsyncIteration:
+            return outcomes
+        except RuntimeError as error:
+            outcomes.append({"error": _runtime_label(error)})
+        except (AttributeError, KeyError, TypeError, ValueError):
+            outcomes.append({"error": "event"})
         else:
-            items.append(_item_view(item))
-    return {"items": items, "errors": errors}
+            outcomes.append(_item_view(item))
 
 
 def _run_async(input_value: Input) -> JsonValue:
@@ -210,18 +215,21 @@ def _run_async(input_value: Input) -> JsonValue:
 
 def _run_passthrough(input_value: Input) -> JsonValue:
     iterator = _iterator(input_value, FakeSyncSource([]))
-    items: list[JsonValue] = []
-    errors = 0
+    outcomes: list[JsonValue] = []
     for index in range(len(input_value["passthrough"])):
         try:
             chunk = iterator.convert_str_chunk_to_generic_chunk(
                 _passthrough_chunk(input_value["passthrough"][index])
             )
+        except UnicodeDecodeError:
+            outcomes.append({"error": "utf8"})
+        except json.JSONDecodeError:
+            outcomes.append({"error": "json"})
         except (AttributeError, KeyError, RuntimeError, TypeError, ValueError):
-            errors += 1
+            outcomes.append({"error": "event"})
         else:
-            items.append(_passthrough_item(chunk))
-    return {"items": items, "errors": errors}
+            outcomes.append(_passthrough_item(chunk))
+    return outcomes
 
 
 def run(input_value: Input) -> JsonValue:
