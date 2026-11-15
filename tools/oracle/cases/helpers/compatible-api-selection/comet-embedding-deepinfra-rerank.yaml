@@ -1,0 +1,31 @@
+kind: helper
+name: comet-embedding-deepinfra-rerank
+call:
+  compatible_api_selection:
+    calls:
+      - family: embedding
+        provider: cometapi
+        model: comet-embed
+        identity: name
+        native: null
+        providers: []
+      - family: embedding
+        provider: openai
+        model: text-embedding-3-small
+        identity: name
+        native: null
+        providers: []
+      - family: rerank
+        provider: deepinfra
+        model: BAAI/bge-reranker-v2-m3
+        identity: name
+        native: null
+        providers: []
+      - family: rerank
+        provider: cohere
+        model: rerank-v3.5
+        identity: name
+        native: null
+        providers: []
+env: {}
+compare: {ignore: []}
