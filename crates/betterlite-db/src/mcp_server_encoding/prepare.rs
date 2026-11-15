@@ -4,6 +4,7 @@ use betterlite_secrets::secret_codec::diagnostics::SecretDiagnostics;
 use betterlite_secrets::secret_codec::secret_map::{SecretMap, encrypt_secret_map};
 use betterlite_secrets::secret_codec::{NonceSource, StoredCipher};
 use secrecy::SecretString;
+use serde::Serialize;
 
 use super::McpEncodingError;
 use super::credentials::{TOKEN_EXCHANGE_COLUMN_FIELDS, encrypt_credentials};
@@ -64,15 +65,8 @@ fn prepare_credentials<N: NonceSource, D: SecretDiagnostics>(
     mode: PrepareMode<'_>,
     cipher: &StoredCipher<N, D>,
 ) -> Result<(), McpEncodingError> {
-    let Some(value) = data.remove("credentials") else {
+    let Some(mut blob) = take_field(data, "credentials", as_object) else {
         return Ok(());
-    };
-    let mut blob = match value {
-        JsonValue::Object(fields) => fields,
-        other => {
-            data.insert("credentials".to_owned(), other);
-            return Ok(());
-        }
     };
     for field in TOKEN_EXCHANGE_COLUMN_FIELDS {
         let Some(lifted) = blob.remove(field) else {
@@ -86,9 +80,7 @@ fn prepare_credentials<N: NonceSource, D: SecretDiagnostics>(
         blob.retain(|_field, entry| !matches!(entry, JsonValue::Null));
     }
     encrypt_credentials(&mut blob, cipher)?;
-    let text = serde_json::to_string(&JsonValue::Object(blob)).map_err(McpEncodingError::Json)?;
-    data.insert("credentials".to_owned(), JsonValue::String(text));
-    Ok(())
+    store_serialized(data, "credentials", &JsonValue::Object(blob))
 }
 
 fn prepare_secret_map<N: NonceSource, D: SecretDiagnostics>(
@@ -96,15 +88,8 @@ fn prepare_secret_map<N: NonceSource, D: SecretDiagnostics>(
     field: &'static str,
     cipher: &StoredCipher<N, D>,
 ) -> Result<(), McpEncodingError> {
-    let Some(value) = data.remove(field) else {
+    let Some(fields) = take_field(data, field, as_object) else {
         return Ok(());
-    };
-    let fields = match value {
-        JsonValue::Object(fields) => fields,
-        other => {
-            data.insert(field.to_owned(), other);
-            return Ok(());
-        }
     };
     let mut map = SecretMap::new();
     for (name, entry) in fields {
@@ -122,20 +107,11 @@ fn prepare_env_vars<N: NonceSource, D: SecretDiagnostics>(
     data: &mut PreparedServerData,
     cipher: &StoredCipher<N, D>,
 ) -> Result<(), McpEncodingError> {
-    let Some(value) = data.remove("env_vars") else {
+    let Some(mut entries) = take_field(data, "env_vars", as_array) else {
         return Ok(());
     };
-    let mut entries = match value {
-        JsonValue::Array(entries) => entries,
-        other => {
-            data.insert("env_vars".to_owned(), other);
-            return Ok(());
-        }
-    };
     encrypt_global_env_var_values(&mut entries, cipher)?;
-    let text = serde_json::to_string(&entries).map_err(McpEncodingError::Json)?;
-    data.insert("env_vars".to_owned(), JsonValue::String(text));
-    Ok(())
+    store_serialized(data, "env_vars", &entries)
 }
 
 fn prepare_json_text(
@@ -149,7 +125,43 @@ fn prepare_json_text(
         data.insert(field.to_owned(), value);
         return Ok(());
     }
-    let text = serde_json::to_string(&value).map_err(McpEncodingError::Json)?;
+    store_serialized(data, field, &value)
+}
+
+fn take_field<T, F>(data: &mut PreparedServerData, field: &'static str, shape: F) -> Option<T>
+where
+    F: FnOnce(JsonValue) -> Result<T, JsonValue>,
+{
+    let value = data.remove(field)?;
+    match shape(value) {
+        Ok(inner) => Some(inner),
+        Err(other) => {
+            data.insert(field.to_owned(), other);
+            None
+        }
+    }
+}
+
+fn as_object(value: JsonValue) -> Result<BTreeMap<String, JsonValue>, JsonValue> {
+    match value {
+        JsonValue::Object(fields) => Ok(fields),
+        other => Err(other),
+    }
+}
+
+fn as_array(value: JsonValue) -> Result<Vec<JsonValue>, JsonValue> {
+    match value {
+        JsonValue::Array(items) => Ok(items),
+        other => Err(other),
+    }
+}
+
+fn store_serialized<T: Serialize>(
+    data: &mut PreparedServerData,
+    field: &'static str,
+    value: &T,
+) -> Result<(), McpEncodingError> {
+    let text = serde_json::to_string(value).map_err(McpEncodingError::Json)?;
     data.insert(field.to_owned(), JsonValue::String(text));
     Ok(())
 }
