@@ -269,7 +269,10 @@ fn extract_client_ip(request_data: &BTreeMap<String, GuardrailValue>) -> String 
     let Some(ip) = header("x-forwarded-for").or_else(|| header("x-real-ip")) else {
         return String::new();
     };
-    ip.split(',').next().unwrap_or_default().trim().to_owned()
+    match ip.split_once(',') {
+        Some((first, _rest)) => first.trim().to_owned(),
+        None => ip,
+    }
 }
 
 fn value_text(value: &GuardrailValue) -> String {
