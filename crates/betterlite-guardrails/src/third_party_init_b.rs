@@ -70,10 +70,9 @@ pub(crate) fn defaulted<T>(view: &ParamsView<'_>, name: &str, default: T) -> Ini
 where
     T: DeserializeOwned,
 {
-    match view.merged.get(name) {
-        None => Ok(Some(default)),
-        entry => decode(name, entry),
-    }
+    view.merged
+        .get(name)
+        .map_or(Ok(Some(default)), |value| decode(name, Some(value)))
 }
 
 // the class reads the literal spelling, not the wire enum, so the text keeps LiteLLM's values
