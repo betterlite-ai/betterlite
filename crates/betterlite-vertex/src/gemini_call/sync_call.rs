@@ -50,6 +50,7 @@ where
     Console: ConsoleSink + Sync,
 {
     let prepared = prepare(call, optional_params, deps, stream).await?;
+    log_request(&prepared.url, call.model, prepared.body.len());
     if stream {
         let setup = StreamSetup {
             url: prepared.url,
@@ -135,7 +136,6 @@ async fn complete(
     prepared: &Prepared,
     mut identifiers: Box<dyn FnMut() -> Uuid + Send>,
 ) -> Result<GeminiReply, GeminiCallError> {
-    log_request(&prepared.url, call.model, prepared.body.len());
     let reply = post
         .post(PostRequest {
             url: &prepared.url,
