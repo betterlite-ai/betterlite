@@ -15,5 +15,9 @@ call:
       - {object_kind: key, model: "bedrock/us.amazon.nova-micro-v1:0", models: ["bedrock/us.*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
       - {object_kind: team, model: "gpt-4o", models: ["openai/*"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
       - {object_kind: team, model: "gpt-4o-mini", models: ["openai/gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "openai/gpt-4.1", models: ["openai/(?!gpt-4o).*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "openai/gpt-4o", models: ["openai/(?!gpt-4o).*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-gpt-mini", models: ["(gpt)-\\1-*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-other-mini", models: ["(gpt)-\\1-*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
 env: {}
 compare: {ignore: []}
