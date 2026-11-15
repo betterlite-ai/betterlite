@@ -237,13 +237,14 @@ async fn stage_is_registered() {
     .load("general_settings: {master_key: secret, public_routes: ['/v1/models']}")
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(7)).unwrap();
-    let deadline = Duration::from_secs(2);
-    let (server, client) = tokio::join!(
-        timeout(deadline, run(config, chat, "127.0.0.1", port)),
-        timeout(deadline, request_once_ready(port)),
-    );
-    server.unwrap_err();
-    let response = client.unwrap();
+    let client = tokio::spawn(request_once_ready(port));
+    // the server builds its router before binding, so a loaded runner can take seconds
+    let response = tokio::select! {
+        result = run(config, chat, "127.0.0.1", port) => {
+            panic!("the server stopped before answering: {result:?}");
+        }
+        response = timeout(Duration::from_secs(30), client) => response.unwrap().unwrap(),
+    };
     assert!(response.starts_with("HTTP/1.1 200 "), "{response}");
     assert!(response.contains(r#""object":"list""#));
 }
