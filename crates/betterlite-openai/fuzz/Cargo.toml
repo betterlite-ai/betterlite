@@ -609,6 +609,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "ovhcloud_reply"
+path = "fuzz_targets/ovhcloud_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_video_edits"
 path = "fuzz_targets/openai_video_edits.rs"
 test = false
