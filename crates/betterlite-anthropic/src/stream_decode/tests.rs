@@ -289,12 +289,14 @@ fn the_count_after_a_discarded_prefix_is_the_bytes_still_buffered() {
     }
     .collect::<Vec<_>>();
     drop(guard);
-    assert_eq!(outcomes.len(), 2);
+    assert_eq!(outcomes.len(), 3);
     assert_text(&outcomes[0], "");
     assert!(matches!(
         &outcomes[1],
         Err(DecodeError::TooLarge { limit: 44 })
     ));
+    // The value the pop left buffered drains at end of stream.
+    assert_text(&outcomes[2], "");
     assert_eq!(warnings.messages(), drop_warnings(&[4]));
 }
 
