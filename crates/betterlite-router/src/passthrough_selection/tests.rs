@@ -31,7 +31,8 @@ fn deployment_id() {
 
 // The dict arm still resolves the routing context, so an override selector's pre-call check runs for it.
 fn deployment_id_override_pre_call() {
-    let lookup = ask("chosen", &facts()).with_strategy(StrategyOverride::Text("least-busy"));
+    let request_facts = facts();
+    let lookup = ask("chosen", &request_facts).with_strategy(StrategyOverride::Text("least-busy"));
     let (selected, picker) = chosen_by_id(&lookup);
     assert_selected(&selected, MODEL, "chosen");
     assert_eq!(selected.resolution.strategy, RoutingStrategy::LeastBusy);
