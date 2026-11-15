@@ -7,6 +7,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::responses_input_messages::error::InputMessagesError;
 use betterlite_core::api::responses_input_messages::{InputRequest, input_messages};
 use betterlite_models::decisions::Json;
+use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::Message;
@@ -29,7 +30,7 @@ pub enum TokenCountError {
     #[error("the Responses input does not convert to chat messages: {0}")]
     ResponsesInput(#[from] InputMessagesError),
     #[error("the Responses input count needs a cache redactor: {0}")]
-    Redaction(#[from] betterlite_redact::error::RedactionError),
+    Redaction(#[from] RedactionError),
     #[error(transparent)]
     Counter(#[from] CountError),
 }

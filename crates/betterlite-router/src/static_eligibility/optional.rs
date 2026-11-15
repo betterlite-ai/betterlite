@@ -104,12 +104,13 @@ impl PreCallChecks<'_> {
     // async_routing_strategy_checks: a rate limit records the cooldown before the same error goes up.
     pub async fn run_async(&self, cooldown: &dyn CooldownRecorder) -> Result<(), PreCallError> {
         for check in self.checks {
-            if let Err(failure) = check.async_check(self.deployment).await {
-                if let Some((deployment_id, status)) = rate_limit(&failure) {
-                    cooldown.record_rate_limit(deployment_id, status);
-                }
-                return Err(failure);
+            let Err(failure) = check.async_check(self.deployment).await else {
+                continue;
+            };
+            if let Some((deployment_id, status)) = rate_limit(&failure) {
+                cooldown.record_rate_limit(deployment_id, status);
             }
+            return Err(failure);
         }
         Ok(())
     }

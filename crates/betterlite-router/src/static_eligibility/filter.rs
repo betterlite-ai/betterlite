@@ -134,19 +134,19 @@ fn pre_call_filters(
         deployments = window.deployments;
         rejected = window.rejected;
     }
-    let deployments = filter_supported_params(
+    let supported = filter_supported_params(
         deployments,
         facts,
         drop_params,
         services.params,
         &mut causes,
     );
-    if deployments.is_empty() && !rejected.is_empty() {
+    if supported.is_empty() && !rejected.is_empty() {
         return Err(EligibilityError::ContextWindow(ContextWindowExceeded {
             causes: rejected,
         }));
     }
-    Ok((deployments, causes))
+    Ok((supported, causes))
 }
 
 // The static half of async_get_healthy_deployments: the environment gate at construction, then the filters a request applies.

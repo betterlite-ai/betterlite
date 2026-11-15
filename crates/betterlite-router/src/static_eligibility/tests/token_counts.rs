@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_tokenizer::count::request::Message;
@@ -9,6 +9,7 @@ use crate::static_eligibility::tokens::{
 };
 
 const MODEL: &str = "gpt";
+const WINDOW: &str = r#"{"max_input_tokens":100}"#;
 
 #[tokio::test]
 async fn count_request_tokens_prefixes_the_anthropic_system_block() {
@@ -62,7 +63,7 @@ impl TokenCounter for RecordingCounter {
     ) -> Result<usize, TokenCountError> {
         self.counted
             .lock()
-            .unwrap_or_else(|error| error.into_inner())
+            .unwrap_or_else(PoisonError::into_inner)
             .extend_from_slice(messages);
         Ok(messages.len())
     }
@@ -129,20 +130,21 @@ async fn count_request_tokens_inspects_a_reasoning_item_without_replaying_it() {
         tools: &[],
     };
     assert_eq!(count_request_tokens(&payload, &counter).await.unwrap(), 1);
-    let counted = counter
+    let recorded = counter
         .counted
         .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    assert_eq!(counted.len(), 1);
+        .unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(recorded.len(), 1);
     assert_eq!(
-        counted.first().map(|message| message.role.as_str()),
+        recorded.first().map(|message| message.role.as_str()),
         Some("user")
     );
     assert!(
-        counted
+        recorded
             .first()
             .is_some_and(|message| message.reasoning_content.is_none())
     );
+    drop(recorded);
 }
 
 #[tokio::test]
@@ -156,12 +158,7 @@ async fn count_for_pre_call_checks_counts_a_responses_input() {
         system: None,
         tools: &[],
     };
-    let windowed = vec![spec(
-        "gpt",
-        "d1",
-        "openai/gpt-4o",
-        r#"{"max_input_tokens":100}"#,
-    )];
+    let windowed = vec![spec("gpt", "d1", "openai/gpt-4o", WINDOW)];
     assert_eq!(
         count_for_pre_call_checks(MODEL, &windowed, &payload, &InfoLimits, &counter).await,
         Some(8)
@@ -179,12 +176,7 @@ async fn count_for_pre_call_checks_needs_messages_and_a_declared_window() {
         system: None,
         tools: &[],
     };
-    let windowed = vec![spec(
-        "gpt",
-        "d1",
-        "openai/gpt-4o",
-        r#"{"max_input_tokens":100}"#,
-    )];
+    let windowed = vec![spec("gpt", "d1", "openai/gpt-4o", WINDOW)];
     assert_eq!(
         count_for_pre_call_checks(MODEL, &windowed, &with_messages, &InfoLimits, &counter).await,
         Some(8)
@@ -234,12 +226,7 @@ async fn count_for_pre_call_checks_swallows_a_counter_failure() {
         system: None,
         tools: &[],
     };
-    let windowed = vec![spec(
-        "gpt",
-        "d1",
-        "openai/gpt-4o",
-        r#"{"max_input_tokens":100}"#,
-    )];
+    let windowed = vec![spec("gpt", "d1", "openai/gpt-4o", WINDOW)];
     assert_eq!(
         count_for_pre_call_checks(MODEL, &windowed, &payload, &InfoLimits, &Failing).await,
         None

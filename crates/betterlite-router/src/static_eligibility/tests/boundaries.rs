@@ -277,7 +277,11 @@ fn environment_not_a_list() {
             assert_eq!(value, "\"production\"");
             assert!(model_info.contains("supported_environments"));
         }
-        other => panic!("expected a not-a-list error, got {other:?}"),
+        other @ (EnvironmentError::MissingEnvironment
+        | EnvironmentError::UnknownEnvironment { .. }
+        | EnvironmentError::UnknownSupportedEnvironment { .. }) => {
+            panic!("expected a not-a-list error, got {other:?}")
+        }
     }
 }
 
@@ -438,8 +442,8 @@ fn checks_off_skip_context_and_params() {
     assert!(result.causes.is_empty());
 }
 
-fn context_cause_names_the_deployment_model() {
-    let rows = [
+fn context_cause_rows() -> Vec<(DeploymentSpec, &'static str)> {
+    vec![
         (
             spec(
                 "gpt",
@@ -475,8 +479,11 @@ fn context_cause_names_the_deployment_model() {
             with_param(windowed("nameless", 1), "model", Json::Text(String::new())),
             "Model=gpt,",
         ),
-    ];
-    for (deployment, expected) in rows {
+    ]
+}
+
+fn context_cause_names_the_deployment_model() {
+    for (deployment, expected) in context_cause_rows() {
         let result = run(
             Candidates::Pool(vec![deployment]),
             &counted(9),

@@ -3,6 +3,7 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
 use betterlite_models::model_registration::JsonObject;
+use betterlite_tokenizer::count::request::Message;
 
 use crate::deployment_identity::spec::DeploymentSpec;
 use crate::router_predicates::params::{ParamSupport, ResolvedProvider};
@@ -69,9 +70,10 @@ pub(crate) struct InfoLimits;
 impl TokenLimits for InfoLimits {
     fn max_input_tokens(&self, spec: &DeploymentSpec, _model: &str) -> Option<usize> {
         match spec.model_info.get("max_input_tokens") {
-            Some(Json::Number(number)) => number
-                .as_u64()
-                .and_then(|value| usize::try_from(value).ok()),
+            Some(Json::Number(number)) => {
+                let value = number.as_u64()?;
+                usize::try_from(value).ok()
+            }
             Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
             | None => None,
         }
@@ -117,7 +119,7 @@ pub(crate) struct FixedCounter {
 impl TokenCounter for FixedCounter {
     async fn count_messages(
         &self,
-        messages: &[betterlite_tokenizer::count::request::Message],
+        messages: &[Message],
         _tools: &[Json],
     ) -> Result<usize, TokenCountError> {
         Ok(self.count.saturating_add(messages.len()))

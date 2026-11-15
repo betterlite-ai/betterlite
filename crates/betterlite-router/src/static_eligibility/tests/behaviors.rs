@@ -1,3 +1,5 @@
+use std::sync::PoisonError;
+
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 
@@ -145,7 +147,7 @@ fn static_eligibility_behaviors(#[case] behavior: Behavior) {
         Behavior::ParamsSkipsWithDropParams => params_skips_with_drop_params(),
         Behavior::ParamsKeepsAnUnresolvedProvider => params_keeps_an_unresolved_provider(),
         Behavior::ContextErrorWhenParamsRemoveTheRest => {
-            context_error_when_params_remove_the_rest()
+            context_error_when_params_remove_the_rest();
         }
         Behavior::OrderKeepsTheSmallestGroup => order_selection(
             &[
@@ -158,13 +160,16 @@ fn static_eligibility_behaviors(#[case] behavior: Behavior) {
             &["two", "three"],
         ),
         Behavior::OrderTakesTheTargetGroup => {
-            order_selection(&[("one", Some(2)), ("two", Some(1))], Some(2), &["one"])
+            order_selection(&[("one", Some(2)), ("two", Some(1))], Some(2), &["one"]);
         }
         Behavior::SingleDeploymentIsSelected => single_selection("live", "", true),
         Behavior::SingleBlockedDeploymentIsPaused => {
-            single_selection("paused", r#"{"blocked":true}"#, false)
+            single_selection("paused", r#"{"blocked":true}"#, false);
         }
-        Behavior::OptionalChecksUnionAndToggle => optional_checks_union_and_toggle(),
+        Behavior::OptionalChecksUnionAndToggle => {
+            optional_checks_union_adds_each_check_once();
+            optional_checks_replace_toggles_the_runtime_checks();
+        }
         Behavior::PreCallChecksPropagateTheFailure => pre_call_checks_propagate_the_failure(),
     }
 }
@@ -303,7 +308,11 @@ fn context_raises_when_no_window_fits() {
             assert!(window.causes.contains("Max Input Tokens=4"));
             assert!(window.causes.contains("Got=9"));
         }
-        other => panic!("expected a context window error, got {other:?}"),
+        other @ (EligibilityError::Blocked { .. }
+        | EligibilityError::Environment(_)
+        | EligibilityError::WebSearch(_)) => {
+            panic!("expected a context window error, got {other:?}")
+        }
     }
 }
 
@@ -539,7 +548,11 @@ fn context_error_when_params_remove_the_rest() {
                 "Model=openai/gpt-4o, Max Input Tokens=4, Got=9"
             );
         }
-        other => panic!("expected a context window error, got {other:?}"),
+        other @ (EligibilityError::Blocked { .. }
+        | EligibilityError::Environment(_)
+        | EligibilityError::WebSearch(_)) => {
+            panic!("expected a context window error, got {other:?}")
+        }
     }
 }
 
@@ -576,7 +589,7 @@ fn single_selection(id: &str, info: &str, selected: bool) {
     }
 }
 
-fn optional_checks_union_and_toggle() {
+fn optional_checks_union_adds_each_check_once() {
     let mut enabled = EnabledChecks::default();
     enabled.add(&[
         OptionalPreCallCheck::DeploymentAffinity,
@@ -605,6 +618,16 @@ fn optional_checks_union_and_toggle() {
             .checks
             .contains(&OptionalPreCallCheck::EncryptedContentAffinity)
     );
+}
+
+fn optional_checks_replace_toggles_the_runtime_checks() {
+    let mut enabled = EnabledChecks::default();
+    enabled.add(&[
+        OptionalPreCallCheck::DeploymentAffinity,
+        OptionalPreCallCheck::PromptCaching,
+        OptionalPreCallCheck::EnforceModelRateLimits,
+        OptionalPreCallCheck::EncryptedContentAffinity,
+    ]);
     enabled.replace(Some(&[OptionalPreCallCheck::RouterBudgetLimiting]));
     assert!(
         enabled
@@ -680,11 +703,13 @@ async fn async_pre_call_checks_record_the_cooldown_then_fail() {
     .run_async(&cooldown)
     .await;
     assert!(matches!(result, Err(PreCallError::RateLimited { .. })));
-    let recorded = cooldown
-        .recorded
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    assert_eq!(*recorded, [(String::from("d1"), 429)]);
+    assert_eq!(
+        *cooldown
+            .recorded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+        [(String::from("d1"), 429)]
+    );
 }
 
 // Only a rate limit records the cooldown; any other failure goes up with the cooldown untouched.
@@ -710,11 +735,13 @@ async fn async_pre_call_checks_do_not_record_a_plain_failure() {
             message: "over budget".to_owned(),
         })
     );
-    let recorded = cooldown
-        .recorded
-        .lock()
-        .unwrap_or_else(|error| error.into_inner());
-    assert!(recorded.is_empty());
+    assert!(
+        cooldown
+            .recorded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .is_empty()
+    );
 }
 
 #[rstest]
