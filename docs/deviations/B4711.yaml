@@ -16,6 +16,6 @@ deviations:
     why: safe_dumps belongs to B192 and strips NUL bytes; serde_json keeps them and PostgreSQL then rejects the jsonb value loudly (22P05) instead of silently changing a tool description.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2155
   - what: _get_prisma_client_or_none and get_prisma_client_or_throw take the database handle as a parameter instead of reading the litellm.proxy.proxy_server.prisma_client global.
-    why: betterlite has no module-level proxy state; the handle is injected, and an absent one is either returned as None or turned into ProxyCheckError::Database, which answers 500 with detail {"error": message}.
+    why: 'betterlite has no module-level proxy state; the handle is injected, and an absent one is either returned as None or turned into ProxyCheckError::Database, which answers 500 with detail {"error": message}.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L576-L581
 kept_bugs: []
