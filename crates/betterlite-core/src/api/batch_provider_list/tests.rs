@@ -85,6 +85,15 @@ fn prepared(input: &BatchProviderListInput) -> BatchProviderListResult {
         .expect("the input prepares a provider call")
 }
 
+fn prepared_with(
+    settings: ConfiguredSettings,
+    input: &BatchProviderListInput,
+) -> BatchProviderListResult {
+    service_with(settings)
+        .run(input)
+        .expect("the call prepares")
+}
+
 fn openai_call(result: BatchProviderListResult) -> OpenAiBatchListCall {
     let BatchListProviderCall::OpenAiCompatible(call) = result.call.provider else {
         panic!("expected an OpenAI-compatible call");
@@ -198,6 +207,46 @@ fn openai_call_uses_the_default_base_without_any_setting() {
 }
 
 #[test]
+fn openai_call_uses_openai_key_alone() {
+    let mut settings = configured();
+    settings.openai_key = Some(SecretString::from("openai-key"));
+    let call = openai_call(prepared_with(settings, &input(BatchListProvider::OpenAi)));
+    assert_eq!(exposed(call.api_key.as_ref()), Some("openai-key"));
+}
+
+#[test]
+fn openai_call_uses_openai_api_key_alone() {
+    let mut settings = configured();
+    settings.openai_api_key = Some(SecretString::from("env-key"));
+    let call = openai_call(prepared_with(settings, &input(BatchListProvider::OpenAi)));
+    assert_eq!(exposed(call.api_key.as_ref()), Some("env-key"));
+}
+
+#[test]
+fn openai_call_uses_openai_base_url_alone() {
+    let mut settings = configured();
+    settings.openai_base_url = Some("https://base-url.example".to_owned());
+    let call = openai_call(prepared_with(settings, &input(BatchListProvider::OpenAi)));
+    assert_eq!(call.api_base, "https://base-url.example");
+}
+
+#[test]
+fn openai_call_uses_openai_api_base_alone() {
+    let mut settings = configured();
+    settings.openai_api_base = Some("https://api-base.example".to_owned());
+    let call = openai_call(prepared_with(settings, &input(BatchListProvider::OpenAi)));
+    assert_eq!(call.api_base, "https://api-base.example");
+}
+
+#[test]
+fn openai_call_uses_organization_alone() {
+    let mut settings = configured();
+    settings.organization = Some("configured-org".to_owned());
+    let call = openai_call(prepared_with(settings, &input(BatchListProvider::OpenAi)));
+    assert_eq!(call.organization.as_deref(), Some("configured-org"));
+}
+
+#[test]
 fn azure_call_resolves_the_azure_precedence() {
     let mut settings = configured();
     settings.api_key = Some(SecretString::from("global-key"));
@@ -213,6 +262,46 @@ fn azure_call_resolves_the_azure_precedence() {
     assert_eq!(call.api_base.as_deref(), Some("https://env-azure.example"));
     assert_eq!(call.api_version.as_deref(), Some("request-version"));
     assert_eq!(call.max_retries, Some(4));
+}
+
+#[test]
+fn azure_call_uses_api_version_alone() {
+    let mut settings = configured();
+    settings.api_version = Some("configured-version".to_owned());
+    let call = azure_call(prepared_with(settings, &input(BatchListProvider::Azure)));
+    assert_eq!(call.api_version.as_deref(), Some("configured-version"));
+}
+
+#[test]
+fn azure_call_uses_azure_api_version_alone() {
+    let mut settings = configured();
+    settings.azure_api_version = Some("env-version".to_owned());
+    let call = azure_call(prepared_with(settings, &input(BatchListProvider::Azure)));
+    assert_eq!(call.api_version.as_deref(), Some("env-version"));
+}
+
+#[test]
+fn azure_call_uses_azure_key_alone() {
+    let mut settings = configured();
+    settings.azure_key = Some(SecretString::from("azure-key"));
+    let call = azure_call(prepared_with(settings, &input(BatchListProvider::Azure)));
+    assert_eq!(exposed(call.api_key.as_ref()), Some("azure-key"));
+}
+
+#[test]
+fn azure_call_uses_azure_openai_api_key_alone() {
+    let mut settings = configured();
+    settings.azure_openai_api_key = Some(SecretString::from("env-openai-key"));
+    let call = azure_call(prepared_with(settings, &input(BatchListProvider::Azure)));
+    assert_eq!(exposed(call.api_key.as_ref()), Some("env-openai-key"));
+}
+
+#[test]
+fn azure_call_uses_azure_api_key_alone() {
+    let mut settings = configured();
+    settings.azure_api_key = Some(SecretString::from("env-azure-key"));
+    let call = azure_call(prepared_with(settings, &input(BatchListProvider::Azure)));
+    assert_eq!(exposed(call.api_key.as_ref()), Some("env-azure-key"));
 }
 
 #[test]
@@ -271,6 +360,22 @@ fn vertex_call_resolves_the_vertex_precedence() {
         Some(VertexCredentials::Path("env-credentials".to_owned()))
     );
     assert_eq!(call.max_retries, Some(3));
+}
+
+#[test]
+fn vertex_call_uses_vertex_location_alone() {
+    let mut settings = configured();
+    settings.vertex_location = Some("configured-location".to_owned());
+    let call = vertex_call(prepared_with(settings, &input(BatchListProvider::VertexAi)));
+    assert_eq!(call.vertex_location.as_deref(), Some("configured-location"));
+}
+
+#[test]
+fn vertex_call_uses_vertexai_project_alone() {
+    let mut settings = configured();
+    settings.vertexai_project = Some("env-project".to_owned());
+    let call = vertex_call(prepared_with(settings, &input(BatchListProvider::VertexAi)));
+    assert_eq!(call.vertex_project.as_deref(), Some("env-project"));
 }
 
 #[test]
