@@ -1,0 +1,53 @@
+kind: helper
+name: empty-and-error-boundary
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks: null
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks: []
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - choices: []
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - object: chat.completion.chunk
+      model: gpt-4o
+      choices: []
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    counter: {messages: 3, text: 1}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      choices:
+      - index: 0
+        delta:
+          content: A
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

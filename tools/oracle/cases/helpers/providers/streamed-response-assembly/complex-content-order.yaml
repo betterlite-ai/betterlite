@@ -1,0 +1,193 @@
+kind: helper
+name: complex-content-order
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: Hi
+    - choices:
+      - index: 0
+        delta:
+          tool_calls:
+          - index: 0
+            id: call_1
+            type: function
+            function:
+              name: get_weather
+              arguments: ''
+    - choices:
+      - index: 0
+        delta:
+          tool_calls:
+          - index: 0
+            function:
+              arguments: '{"city":"Paris"}'
+    - choices:
+      - index: 0
+        delta:
+          content: ' there'
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: Hi
+    - choices:
+      - index: 0
+        delta:
+          function_call:
+            name: get_weather
+            arguments: '{"city":"'
+    - choices:
+      - index: 0
+        delta:
+          function_call:
+            name: get_weather
+            arguments: '"Paris"}'
+    - choices:
+      - index: 0
+        delta:
+          content: after
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          annotations:
+          - type: url_citation
+            url: u1
+    - choices:
+      - index: 0
+        delta:
+          content: B
+          annotations:
+          - type: url_citation
+            url: u2
+          - type: file_citation
+            file_id: f1
+    - choices:
+      - index: 0
+        delta:
+          images:
+          - image_url:
+              url: img1
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: x
+          thinking_blocks:
+          - type: thinking
+            thinking: deep
+            signature: sig
+    - choices:
+      - index: 0
+        delta:
+          thinking_blocks:
+          - type: redacted_thinking
+            data: d1
+    - choices:
+      - index: 0
+        delta:
+          reasoning_content: think
+    - choices:
+      - index: 0
+        delta:
+          reasoning_content: ing
+    - choices:
+      - index: 0
+        delta:
+          content: y
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: x
+          audio:
+            id: a1
+            data: YQ==
+            transcript: hi
+            expires_at: 1700003600
+    - choices:
+      - index: 0
+        delta:
+          content: y
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          tool_calls:
+          - index: 0
+            id: call_1
+            type: function
+            function:
+              name: get_weather
+              arguments: '{}'
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

@@ -1,0 +1,147 @@
+kind: helper
+name: reported-cost-precedence
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5, cost: 0.25}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5, cost: true}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5, cost: 0.25}
+    logging:
+      provider: xai
+      cache_hit: false
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 3, completion_tokens: 2, total_tokens: 5, cost: 0.25}
+    logging:
+      provider: openai
+      cache_hit: false
+      response_cost: '0.000075'
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+    counter: {messages: 3, text: 1}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+    counter: {messages: 3, text: 1}
+    logging:
+      provider: openai
+      cache_hit: true
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      _hidden_params:
+        custom_llm_provider: openai
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      _hidden_params:
+        custom_llm_provider: openai
+    counter: {messages: 3, text: 1}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

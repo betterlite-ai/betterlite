@@ -1,0 +1,88 @@
+kind: helper
+name: usage-hidden-metadata
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: Hello
+          reasoning_content: r
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      _hidden_params:
+        provider_specific_fields:
+          traffic_type: on_demand
+    count_prompt_tokens: 10
+    counter: {messages: 0, text: 1}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      _hidden_params:
+        provider_specific_fields: nope
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 5, total_tokens: 15}
+      _hidden_params:
+        provider_specific_fields: {}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: Hello
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+    count_prompt_tokens: raise
+    counter: {messages: 0, text: 1}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

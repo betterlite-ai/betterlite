@@ -1,0 +1,158 @@
+kind: helper
+name: provider-fields-citations
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: A
+          provider_specific_fields:
+            citation: [c1, c2]
+            web_search_results:
+            - title: t1
+    - choices:
+      - index: 0
+        delta:
+          content: B
+          provider_specific_fields:
+            citation: [c3]
+            citation_count: 3
+            web_search_results:
+            - title: t2
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields:
+            citation: c1
+    - choices:
+      - index: 0
+        delta:
+          provider_specific_fields:
+            citation: c2
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields:
+            citation: [c1]
+    - choices:
+      - index: 0
+        delta:
+          provider_specific_fields:
+            citations: [mine]
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields: nope
+    - choices:
+      - index: 0
+        delta:
+          provider_specific_fields:
+            k: 1
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields: {}
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields:
+            citation: null
+            web_search_results:
+            - title: t1
+    - choices:
+      - index: 0
+        delta:
+          provider_specific_fields:
+            citation: [c9]
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

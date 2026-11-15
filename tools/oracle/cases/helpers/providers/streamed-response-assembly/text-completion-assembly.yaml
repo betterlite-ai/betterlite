@@ -1,0 +1,99 @@
+kind: helper
+name: text-completion-assembly
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-text
+      object: text_completion
+      created: 1700000000
+      model: gpt-4o
+      system_fingerprint: fp_1
+      choices:
+      - index: 0
+        text: Hel
+    - choices:
+      - index: 0
+        text: lo
+      - index: 1
+        text: '!'
+    - choices:
+      - index: 0
+        text: null
+        finish_reason: stop
+        logprobs:
+          text_offset: [0, 1]
+          token_logprobs: [-0.1, -0.2]
+          tokens: [Hel, lo]
+          top_logprobs:
+          - a: -0.1
+          - b: -0.2
+    counter: {messages: 3, text: 2}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-text
+      object: text_completion
+      created: 1700000000
+      model: gpt-4o
+      system_fingerprint: fp_1
+      choices:
+      - index: 0
+        text: Hel
+    - choices:
+      - index: 0
+        text: lo
+      - index: 1
+        text: '!'
+    - choices:
+      - index: 0
+        text: null
+        finish_reason: stop
+        logprobs:
+          text_offset: [0, 1]
+          token_logprobs: [-0.1, -0.2]
+          tokens: [Hel, lo]
+          top_logprobs:
+          - a: -0.1
+          - b: -0.2
+    counter: {messages: 0, text: 2}
+    messages: null
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-text
+      object: text_completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        text: Hey
+    - choices:
+      - index: 0
+        text: null
+        finish_reason: end_turn
+        logprobs: null
+    counter: {messages: 3, text: 1}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-text
+      object: text_completion
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        text: Solo
+        finish_reason: null
+        logprobs: null
+    counter: {messages: 3, text: 1}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}

@@ -1,0 +1,117 @@
+kind: helper
+name: simple-text-path
+call:
+  streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+          content: A
+    - choices: []
+    - choices:
+      - index: 0
+        delta: [x]
+    - choices:
+      - index: 0
+        delta: tool_calls
+    - choices:
+      - index: 0
+        delta:
+          content: B
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+calls:
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+    - choices:
+      - index: 0
+        delta:
+          tool_calls: []
+    - choices:
+      - index: 0
+        delta:
+          content: B
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          provider_specific_fields: {}
+    - choices:
+      - index: 0
+        delta:
+          content: B
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          content: A
+          annotations: []
+    - choices:
+      - index: 0
+        delta:
+          content: B
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+- streamed_response_assembly:
+    function: assemble
+    chunks:
+    - id: chatcmpl-1
+      object: chat.completion.chunk
+      created: 1700000000
+      model: gpt-4o
+      choices:
+      - index: 0
+        delta:
+          role: assistant
+    - choices:
+      - index: 0
+        delta: {}
+        finish_reason: stop
+      usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12}
+    messages: []
+    now: 1700000000
+env: {LITELLM_RUST: 'false'}
+compare: {ignore: []}
