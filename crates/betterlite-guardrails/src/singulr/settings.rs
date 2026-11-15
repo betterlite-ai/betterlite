@@ -1,9 +1,9 @@
 use std::time::{Duration, TryFromFloatSecsError};
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_http::user_url::split::urlparse;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
-use url::Url;
 
 use super::DEFAULT_API_BASE;
 use super::DEFAULT_TIMEOUT;
@@ -54,18 +54,18 @@ impl SingulrSettings {
         let api_base = resolve_text(args.singulr_api_base.as_deref(), environment, API_BASE_ENV)
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let trimmed = api_base.trim().trim_end_matches('/').to_owned();
-        // urlsplit strips leading C0 controls and spaces, then every tab, CR and LF
+        // urlsplit lowercases the scheme before the first ':'; the text check still holds when the port rejects the base
         let scheme_text = trimmed
             .trim_start_matches(|c: char| matches!(c, '\0'..=' '))
             .replace(['\t', '\r', '\n'], "");
         let plain_http = scheme_text
             .split_once(':')
             .is_some_and(|(scheme, _rest)| scheme.eq_ignore_ascii_case("http"));
-        let url = Url::parse(&trimmed).ok();
-        let local = url
-            .as_ref()
-            .and_then(Url::host_str)
-            .is_some_and(|host| LOCAL_HOSTS.contains(&host));
+        let local = urlparse(&trimmed, "").is_ok_and(|parsed| {
+            parsed
+                .hostname()
+                .is_some_and(|host| LOCAL_HOSTS.contains(&host.as_str()))
+        });
         if plain_http && !local {
             return Err(SettingsError::PlainHttp { api_base: trimmed });
         }

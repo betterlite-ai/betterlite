@@ -89,7 +89,7 @@ fn a_plain_http_base_with_an_upper_case_scheme_is_refused_at_start() {
 #[case::localhost("http://localhost:8003")]
 #[case::loopback("http://127.0.0.1:8003")]
 #[case::uppercase_host("http://LOCALHOST:8003")]
-#[case::normalized_loopback("http://127.1")]
+#[case::invalid_port("http://localhost:notaport")]
 fn plain_http_to_a_local_host_is_allowed(#[case] base: &str) {
     let settings = resolve(&[("SINGULR_API_BASE", base)]).unwrap();
     assert_eq!(settings.api_base, base);
@@ -113,8 +113,14 @@ fn a_plain_http_base_hidden_behind_a_control_character_is_refused_at_start(#[cas
 }
 
 #[test]
-fn a_plain_http_base_with_an_invalid_port_is_refused_at_start() {
-    let error = resolve(&[("SINGULR_API_BASE", "http://localhost:notaport")]).unwrap_err();
+fn a_plain_http_base_with_another_loopback_spelling_is_refused_at_start() {
+    let error = resolve(&[("SINGULR_API_BASE", "http://127.1")]).unwrap_err();
+    assert!(matches!(error, SettingsError::PlainHttp { .. }));
+}
+
+#[test]
+fn a_plain_http_base_with_a_malformed_host_is_refused_at_start() {
+    let error = resolve(&[("SINGULR_API_BASE", "http://[localhost")]).unwrap_err();
     assert!(matches!(error, SettingsError::PlainHttp { .. }));
 }
 
