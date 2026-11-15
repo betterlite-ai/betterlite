@@ -22,6 +22,6 @@ call:
         body: '{"id":"body-2","data":[],"results":[{"index":4,"relevance_score":0.25,"document":""}],"usage":{"total_tokens":10}}'
       - status: 200
         headers: {}
-        body: '{"id":"body-3","data":[{"index":0,"relevance_score":1}]}'
+        body: '{"id":"body-3","data":[{"index":0,"relevance_score":1.0}]}'
 env: {}
 compare: {ignore: []}
