@@ -14,7 +14,7 @@ use serde_json::Number;
 
 use super::error::StabilityGenerationError;
 use super::reply::{StabilityReplyError, decode_stability_image};
-use super::types::DEFAULT_GENERATION_ENDPOINT;
+use super::types::{DEFAULT_GENERATION_ENDPOINT, Nullable};
 use super::{
     StabilityImageGenerationConfig, get_stability_image_generation_config, model_endpoint,
 };
@@ -61,6 +61,10 @@ fn image(value: &str) -> ImageData {
     }
 }
 
+fn json(source: &str) -> Json {
+    serde_json::from_str(source).expect("the fixture is JSON")
+}
+
 #[test]
 fn the_supported_openai_params_are_n_size_and_response_format() {
     assert_eq!(
@@ -71,7 +75,9 @@ fn the_supported_openai_params_are_n_size_and_response_format() {
 
 #[test]
 fn the_adapter_reports_multipart_form_data() {
-    assert!(StabilityImageGenerationConfig::MULTIPART_FORM_DATA);
+    const {
+        assert!(StabilityImageGenerationConfig::MULTIPART_FORM_DATA);
+    }
 }
 
 #[rstest]
@@ -140,19 +146,19 @@ fn validate_environment_overwrites_the_auth_and_accept_headers() {
     headers.insert("Authorization".to_owned(), "Bearer stale".to_owned());
     headers.insert("x-extra".to_owned(), "kept".to_owned());
 
-    let headers = config
+    let validated = config
         .validate_environment(headers, None)
         .expect("the environment key is set");
 
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        validated.get("Authorization").map(String::as_str),
         Some("Bearer server-key")
     );
     assert_eq!(
-        headers.get("Accept").map(String::as_str),
+        validated.get("Accept").map(String::as_str),
         Some("application/json")
     );
-    assert_eq!(headers.get("x-extra").map(String::as_str), Some("kept"));
+    assert_eq!(validated.get("x-extra").map(String::as_str), Some("kept"));
 }
 
 #[test]
@@ -256,10 +262,10 @@ fn an_unknown_size_never_reaches_the_upstream_request() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("the request is built");
 
-    let value = serde_json::to_value(&request).expect("the request serializes");
+    let serialized = serde_json::to_string(&request).expect("the request serializes");
     assert_eq!(
-        value,
-        serde_json::json!({"prompt": "a cat", "output_format": "png"})
+        json(&serialized),
+        json(r#"{"prompt": "a cat", "output_format": "png"}"#)
     );
 }
 
@@ -364,11 +370,11 @@ fn the_request_starts_with_the_prompt_and_png_output() {
     )
     .expect("the request is built");
 
-    assert_eq!(request.output_format, Some(Some("png".to_owned())));
-    let value = serde_json::to_value(&request).expect("the request serializes");
+    assert_eq!(request.output_format, Nullable::Value("png".to_owned()));
+    let serialized = serde_json::to_string(&request).expect("the request serializes");
     assert_eq!(
-        value,
-        serde_json::json!({"prompt": "a cat", "output_format": "png"})
+        json(&serialized),
+        json(r#"{"prompt": "a cat", "output_format": "png"}"#)
     );
 }
 
@@ -380,17 +386,19 @@ fn a_null_provider_option_goes_upstream_as_null() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("null values are accepted");
 
-    assert_eq!(request.negative_prompt, Some(None));
-    assert_eq!(request.seed, Some(None));
-    let value = serde_json::to_value(&request).expect("the request serializes");
+    assert_eq!(request.negative_prompt, Nullable::Null(()));
+    assert_eq!(request.seed, Nullable::Null(()));
+    let serialized = serde_json::to_string(&request).expect("the request serializes");
     assert_eq!(
-        value,
-        serde_json::json!({
-            "prompt": "a cat",
-            "output_format": "png",
-            "negative_prompt": null,
-            "seed": null
-        })
+        json(&serialized),
+        json(
+            r#"{
+                "prompt": "a cat",
+                "output_format": "png",
+                "negative_prompt": null,
+                "seed": null
+            }"#
+        )
     );
 }
 
@@ -407,15 +415,17 @@ fn internal_and_unknown_provider_keys_never_go_upstream() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("the request is built");
 
-    let value = serde_json::to_value(&request).expect("the request serializes");
+    let serialized = serde_json::to_string(&request).expect("the request serializes");
     assert_eq!(
-        value,
-        serde_json::json!({
-            "prompt": "a cat",
-            "output_format": "png",
-            "model": "sd3.5-large",
-            "seed": 7
-        })
+        json(&serialized),
+        json(
+            r#"{
+                "prompt": "a cat",
+                "output_format": "png",
+                "model": "sd3.5-large",
+                "seed": 7
+            }"#
+        )
     );
 }
 
@@ -427,9 +437,12 @@ fn the_generation_transform_never_forwards_an_image() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("the request is built");
 
-    assert_eq!(request.image, None);
-    let value = serde_json::to_value(&request).expect("the request serializes");
-    assert_eq!(value.get("image"), None);
+    assert_eq!(request.image, Nullable::Missing);
+    let serialized = serde_json::to_string(&request).expect("the request serializes");
+    assert_eq!(
+        json(&serialized),
+        json(r#"{"prompt": "a cat", "output_format": "png"}"#)
+    );
 }
 
 #[test]
@@ -440,7 +453,7 @@ fn a_supplied_output_format_replaces_png() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("the request is built");
 
-    assert_eq!(request.output_format, Some(Some("webp".to_owned())));
+    assert_eq!(request.output_format, Nullable::Value("webp".to_owned()));
 }
 
 #[test]
@@ -451,7 +464,7 @@ fn a_null_output_format_goes_upstream_as_null() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("a null output_format is accepted");
 
-    assert_eq!(request.output_format, Some(None));
+    assert_eq!(request.output_format, Nullable::Null(()));
 }
 
 #[test]
@@ -477,7 +490,7 @@ fn strength_keeps_its_number_value() {
         StabilityImageGenerationConfig::transform_image_generation_request("a cat", &optional)
             .expect("the request is built");
 
-    assert_eq!(request.strength, Some(Some(strength)));
+    assert_eq!(request.strength, Nullable::Value(strength));
 }
 
 #[test]

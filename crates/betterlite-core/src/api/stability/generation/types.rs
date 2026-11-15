@@ -26,29 +26,51 @@ pub const STABILITY_GENERATION_MODELS: [(&str, &str); 9] = [
     ("stable-image-core", "/v2beta/stable-image/generate/core"),
 ];
 
+// LiteLLM's optional provider parameter: absent from the body, an explicit null, or a value.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum Nullable<T> {
+    Null(()),
+    Value(T),
+    Missing,
+}
+
+impl<T> Nullable<T> {
+    #[must_use]
+    pub const fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+}
+
+impl<T> Default for Nullable<T> {
+    fn default() -> Self {
+        Self::Missing
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 // ast-grep-ignore: no-long-names
 pub struct StabilityImageGenerationRequest {
     pub prompt: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub negative_prompt: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub aspect_ratio: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub seed: Option<Option<i64>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub output_format: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub model: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mode: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub negative_prompt: Nullable<String>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub aspect_ratio: Nullable<String>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub seed: Nullable<i64>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub output_format: Nullable<String>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub model: Nullable<String>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub mode: Nullable<String>,
     // the generation transform forwards no image; the edit configuration owns the file part
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<Option<String>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub strength: Option<Option<Number>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub style_preset: Option<Option<String>>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub image: Nullable<String>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub strength: Nullable<Number>,
+    #[serde(skip_serializing_if = "Nullable::is_missing")]
+    pub style_preset: Nullable<String>,
 }
 
 #[must_use]

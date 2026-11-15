@@ -14,7 +14,7 @@ use serde_json::Number;
 use self::error::StabilityGenerationError;
 // ast-grep-ignore: no-long-names
 use self::types::StabilityImageGenerationRequest as GenerationRequest;
-use self::types::{DEFAULT_OUTPUT_FORMAT, aspect_ratio, model_endpoint};
+use self::types::{DEFAULT_OUTPUT_FORMAT, Nullable, aspect_ratio, model_endpoint};
 
 #[derive(Debug, Clone)]
 pub struct StabilityGenerationSettings {
@@ -63,14 +63,13 @@ impl StabilityImageGenerationConfig {
 
     pub fn validate_environment(
         &self,
-        headers: ImageHeaders,
+        mut headers: ImageHeaders,
         api_key: Option<&SecretString>,
     ) -> Result<ImageHeaders, StabilityGenerationError> {
         let key = api_key
             .filter(|key| !key.expose_secret().is_empty())
             .or(self.settings.api_key.as_ref())
             .ok_or(StabilityGenerationError::MissingApiKey)?;
-        let mut headers = headers;
         headers.insert(
             "Authorization".to_owned(),
             format!("Bearer {}", key.expose_secret()),
@@ -122,14 +121,16 @@ impl StabilityImageGenerationConfig {
         prompt: &str,
         optional_params: &ImageParams,
     ) -> Result<GenerationRequest, StabilityGenerationError> {
-        let output_format = Some(
-            field_value(
-                "output_format",
-                optional_params.get("output_format"),
-                read_text,
-            )?
-            .unwrap_or_else(|| Some(DEFAULT_OUTPUT_FORMAT.to_owned())),
-        );
+        let requested_format = field_value(
+            "output_format",
+            optional_params.get("output_format"),
+            read_text,
+        )?;
+        let output_format = if requested_format.is_missing() {
+            Nullable::Value(DEFAULT_OUTPUT_FORMAT.to_owned())
+        } else {
+            requested_format
+        };
         Ok(GenerationRequest {
             prompt: prompt.to_owned(),
             negative_prompt: field_value(
@@ -146,7 +147,7 @@ impl StabilityImageGenerationConfig {
             output_format,
             model: field_value("model", optional_params.get("model"), read_text)?,
             mode: field_value("mode", optional_params.get("mode"), read_text)?,
-            image: None,
+            image: Nullable::Missing,
             strength: field_value("strength", optional_params.get("strength"), read_number)?,
             style_preset: field_value(
                 "style_preset",
@@ -162,33 +163,33 @@ fn field_value<T>(
     field: &'static str,
     value: Option<&Json>,
     read: fn(&Json) -> Option<T>,
-) -> Result<Option<Option<T>>, StabilityGenerationError> {
+) -> Result<Nullable<T>, StabilityGenerationError> {
     match value {
-        None => Ok(None),
-        Some(Json::Null) => Ok(Some(None)),
+        None => Ok(Nullable::Missing),
+        Some(Json::Null) => Ok(Nullable::Null(())),
         Some(json) => read(json)
-            .map(|found| Some(Some(found)))
+            .map(Nullable::Value)
             .ok_or(StabilityGenerationError::RequestField { field }),
     }
 }
 
 fn read_text(value: &Json) -> Option<String> {
-    match value {
-        Json::Text(text) => Some(text.clone()),
-        _ => None,
-    }
+    let Json::Text(text) = value else {
+        return None;
+    };
+    Some(text.clone())
 }
 
 fn read_integer(value: &Json) -> Option<i64> {
-    match value {
-        Json::Number(number) => number.as_i64(),
-        _ => None,
-    }
+    let Json::Number(number) = value else {
+        return None;
+    };
+    number.as_i64()
 }
 
 fn read_number(value: &Json) -> Option<Number> {
-    match value {
-        Json::Number(number) => Some(number.clone()),
-        _ => None,
-    }
+    let Json::Number(number) = value else {
+        return None;
+    };
+    Some(number.clone())
 }
