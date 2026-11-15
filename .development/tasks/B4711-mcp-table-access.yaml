@@ -208,19 +208,19 @@ checks:
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::/) - test(/replays_the_/)'
     - id: conflict-where-clause
       why: _identifier_where does not filter correctly.
-      run: grep -qE 'fn _identifier_where' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'case.*insensitive|mode.*insensitive' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'OR.*approval_status.*None|approval_status.*not.*draft' crates/betterlite-db/src/mcp/table_access.rs
+      run: grep -qE 'fn _identifier_where' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'case.*insensitive|mode.*insensitive' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'OR.*approval_status.*None|approval_status.*not.*draft' crates/betterlite-db/src/mcp/table_access/lock.rs
     - id: conflict-alias-first
       why: Identifier conflict detection does not check alias before server_name.
-      run: grep -qE 'fn.*find.*identifier.*conflict|fn.*conflict.*check' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*alias.*first/)'
+      run: grep -qE 'fn.*find.*identifier.*conflict|fn.*conflict.*check' crates/betterlite-db/src/mcp/table_access/lock.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*alias.*first/)'
     - id: lock-keys-sorted
       why: _mcp_identifier_lock_keys does not sort keys.
-      run: grep -qE 'fn _mcp_identifier_lock_keys' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'sorted\(|sort\(' crates/betterlite-db/src/mcp/table_access.rs
+      run: grep -qE 'fn _mcp_identifier_lock_keys' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'sorted\(|sort\(' crates/betterlite-db/src/mcp/table_access/lock.rs
     - id: lock-keys-signed
       why: _mcp_identifier_lock_keys does not use signed BLAKE2b.
-      run: grep -qE 'blake2b|BLAKE2b' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'signed.*True|signed=True|"big".*"signed"' crates/betterlite-db/src/mcp/table_access.rs
+      run: grep -qE 'blake2b|BLAKE2b' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'signed.*True|signed=True|"big".*"signed"' crates/betterlite-db/src/mcp/table_access/lock.rs
     - id: lock-write-conflict
       why: Write-if-identifier-free operation does not check conflicts while locked.
-      run: grep -qE 'fn.*write.*if.*identifier|fn.*write_if.*conflict' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'execute_raw|pg_advisory_xact_lock' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access.rs
+      run: grep -qE 'fn.*write.*if.*identifier|fn.*write_if.*conflict' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'execute_raw|pg_advisory_xact_lock' crates/betterlite-db/src/mcp/table_access/lock.rs && grep -qE 'McpIdentifierConflict' crates/betterlite-db/src/mcp/table_access/lock.rs
     - id: update-not-found
       why: _db_update_mcp_server_row does not raise ValueError when server absent.
       run: grep -qE 'fn _db_update_mcp_server_row' crates/betterlite-db/src/mcp/table_access.rs && grep -qE 'MCP server not found' crates/betterlite-db/src/mcp/table_access.rs && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp::table_access::(.*::)?mcp_table_access::tests::.*update.*not_found/)'
