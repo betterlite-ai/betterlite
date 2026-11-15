@@ -92,7 +92,7 @@ impl ChatPolicy for FakePolicy {
                 headers: Headers::new(),
             });
         }
-        serde_json::from_slice(raw).map_err(|_| OpenRouterError {
+        serde_json::from_slice(raw).map_err(|_source| OpenRouterError {
             message: String::from("the provider answer is not valid JSON"),
             status_code: 400,
             headers: Headers::new(),
