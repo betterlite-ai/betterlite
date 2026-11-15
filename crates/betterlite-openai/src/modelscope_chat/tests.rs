@@ -47,6 +47,26 @@ fn the_default_base_is_the_model_scope_inference_endpoint() {
     assert_eq!(DEFAULT_BASE_URL, "https://api-inference.modelscope.cn/v1");
 }
 
+#[rstest]
+#[case::explicit_wins(
+    Some("https://explicit.test/v1"),
+    Some("https://env.test/v1"),
+    "https://explicit.test/v1"
+)]
+#[case::env_wins_over_default(None, Some("https://env.test/v1"), "https://env.test/v1")]
+#[case::default(None, None, DEFAULT_BASE_URL)]
+#[case::empty_explicit_falls_to_env(Some(""), Some("https://env.test/v1"), "https://env.test/v1")]
+#[case::empty_env_falls_to_default(None, Some(""), DEFAULT_BASE_URL)]
+#[case::both_empty_is_the_default(Some(""), Some(""), DEFAULT_BASE_URL)]
+fn the_base_is_explicit_then_environment_then_default(
+    #[case] api_base: Option<&str>,
+    #[case] env_base: Option<&str>,
+    #[case] expected: &str,
+) {
+    let (base, _) = provider_info(api_base, env_base, None, None);
+    assert_eq!(base, expected);
+}
+
 #[test]
 fn the_environment_base_reaches_provider_info_but_not_the_url() {
     let (base, _) = provider_info(None, Some("https://env.test/v1"), None, None);
