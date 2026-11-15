@@ -15,7 +15,7 @@ use crate::mcp::table_access::lock::mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::rows::{KeyValues, RowFields, ServerUpdate};
 use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::{
-    IdentifierField, LockedWrite, LockedWriteOutcome, McpServerAccess, ServerWrite,
+    IdentifierField, LockedWrite, LockedWriteOutcome, McpServerAccess as _, ServerWrite,
 };
 use crate::mcp::table_access::user_tables::{
     db_find_user_credential_row, db_find_user_credential_rows, db_find_user_env_var_rows,

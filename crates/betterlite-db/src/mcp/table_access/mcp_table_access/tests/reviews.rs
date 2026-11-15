@@ -71,7 +71,7 @@ async fn approve_marks_the_server_active_with_a_review_time() {
         panic!("reviewed_at is stored as text");
     };
     let parsed = DateTime::parse_from_rfc3339(reviewed_at).expect("reviewed_at is RFC 3339");
-    assert_eq!(parsed.offset().local_minus_utc(), 0);
+    assert_eq!(parsed.offset().local_minus_utc(), 0_i32);
 }
 
 #[tokio::test]

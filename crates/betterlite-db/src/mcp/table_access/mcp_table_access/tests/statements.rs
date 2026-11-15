@@ -130,6 +130,10 @@ fn server_predicates_render_each_filter_arm() {
             vec!["a".to_owned(), "b".to_owned()]
         )
     );
+}
+
+#[test]
+fn server_predicates_render_the_status_and_submission_arms() {
     assert_eq!(
         ServerFilter::ApprovalStatus("draft".to_owned()).predicate(1),
         (

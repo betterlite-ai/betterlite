@@ -57,51 +57,63 @@ impl FakeStore {
     }
 }
 
-impl McpServerAccess for FakeStore {
-    async fn find_servers(&self, request: &FindServers) -> Result<Vec<JsonData>, McpTableError> {
-        self.finds
+impl FakeStore {
+    fn select(&self, request: &FindServers) -> Vec<JsonData> {
+        let mut selected: Vec<JsonData> = self
+            .rows
             .lock()
-            .expect("the finds are not poisoned")
-            .push(request.clone());
-        let mut selected = {
-            let stored_rows = self.rows.lock().expect("the rows are not poisoned");
-            let mut matched = Vec::new();
-            for stored in &*stored_rows {
-                if request
+            .expect("the rows are not poisoned")
+            .iter()
+            .filter(|stored| {
+                request
                     .filter
                     .as_ref()
                     .is_none_or(|filter| filter_matches(stored, filter))
-                {
-                    matched.push(stored.clone());
-                }
-            }
-            matched
-        };
+            })
+            .cloned()
+            .collect();
         if request.descending {
             selected.sort_by(|left, right| submitted_at(right).cmp(&submitted_at(left)));
         }
         if let Some(take) = request.take {
             selected.truncate(usize::try_from(take).expect("the take limit fits in usize"));
         }
-        Ok(selected)
+        selected
     }
 
-    async fn update_server(
-        &self,
-        request: &ServerUpdate,
-    ) -> Result<Option<JsonData>, McpTableError> {
+    fn update(&self, request: &ServerUpdate) -> Option<JsonData> {
         self.updates
             .lock()
             .expect("the updates are not poisoned")
             .push(request.clone());
         let mut stored_rows = self.rows.lock().expect("the rows are not poisoned");
-        for stored in &mut *stored_rows {
-            if text(stored, "server_id") == Some(request.server_id.as_str()) {
+        stored_rows
+            .iter_mut()
+            .find(|stored| text(stored, "server_id") == Some(request.server_id.as_str()))
+            .map(|stored| {
                 apply(stored, &request.data);
-                return Ok(Some(stored.clone()));
-            }
-        }
-        Ok(None)
+                stored.clone()
+            })
+    }
+}
+
+impl McpServerAccess for FakeStore {
+    fn find_servers(
+        &self,
+        request: &FindServers,
+    ) -> impl Future<Output = Result<Vec<JsonData>, McpTableError>> + Send {
+        self.finds
+            .lock()
+            .expect("the finds are not poisoned")
+            .push(request.clone());
+        std::future::ready(Ok(self.select(request)))
+    }
+
+    fn update_server(
+        &self,
+        request: &ServerUpdate,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        std::future::ready(Ok(self.update(request)))
     }
 }
 
@@ -132,8 +144,8 @@ fn filter_matches(stored: &JsonData, filter: &ServerFilter) -> bool {
             value,
             exclude_server_id,
         } => {
-            let names = [text(stored, "server_name"), text(stored, "alias")];
-            let named = names
+            let columns = [text(stored, "server_name"), text(stored, "alias")];
+            let named = columns
                 .iter()
                 .any(|candidate| candidate.is_some_and(|name| name.eq_ignore_ascii_case(value)));
             let excluded = exclude_server_id

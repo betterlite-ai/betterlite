@@ -33,7 +33,7 @@ fn every_mcp_table_handle_binds_its_own_table() {
     };
     let server = mcp_server_table_actions(Some(client), publisher()).expect("a server handle");
     assert_eq!(server.actions.table.relation, SERVER_TABLE.relation);
-    assert!(ptr::eq(server.actions.store, &writer));
+    assert!(ptr::eq(server.actions.store, &raw const writer));
     let oauth = oauth_client_table_actions(Some(client), publisher()).expect("an oauth handle");
     assert_eq!(oauth.actions.table.relation, OAUTH_CLIENT_TABLE.relation);
     let credentials =
@@ -77,9 +77,9 @@ fn a_degraded_reader_falls_back_to_the_writer() {
         availability: &availability,
     };
     let store = McpTableStore::new(Some(client), publisher()).expect("a client builds a store");
-    assert!(ptr::eq(store.reader(), &reader));
+    assert!(ptr::eq(store.reader(), &raw const reader));
     availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
-    assert!(ptr::eq(store.reader(), &writer));
+    assert!(ptr::eq(store.reader(), &raw const writer));
 }
