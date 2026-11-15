@@ -15,7 +15,7 @@ from typing_extensions import override
 
 litellm.enable_azure_ad_token_refresh = False
 
-Fields: TypeAlias = Mapping[str, object]
+Fields: TypeAlias = Mapping[str, object]  # ast-grep-ignore: no-loose-types
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 DETAILS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 
@@ -31,6 +31,7 @@ class Settings(Protocol):
         self, api_base: str | None, litellm_params: dict[str, JsonValue]
     ) -> str: ...
 
+    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_response(
         self, response: httpx.Response, litellm_logging_obj: Logging
     ) -> Fields: ...
