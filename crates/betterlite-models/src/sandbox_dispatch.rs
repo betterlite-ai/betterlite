@@ -1,23 +1,11 @@
+use crate::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
-use serde::Deserialize;
 use thiserror::Error;
 
 mod tests;
 
 const SANDBOX_TOOLS_PATH: &str = "sandbox_tools";
-
-// the YAML under sandbox_tools is a plain list of dicts in LiteLLM, so an entry has no declared shape
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(untagged)]
-pub enum SandboxToolValue {
-    Null,
-    Boolean(bool),
-    Number(serde_json::Number),
-    Text(String),
-    List(Vec<Self>),
-    Mapping(IndexMap<String, Self>),
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct SandboxToolConfig {
@@ -47,8 +35,6 @@ pub enum SandboxToolEntry {
 
 #[derive(Debug, Error)]
 pub enum SandboxToolEntryError {
-    #[error("{path} must be a list of sandbox tools")]
-    ToolsNotList { path: String },
     #[error("{path} must be a string")]
     FieldNotText { path: String },
     #[error("{path} must be a mapping")]
@@ -59,32 +45,25 @@ impl SandboxToolEntryError {
     #[must_use]
     pub fn path(&self) -> &str {
         match self {
-            Self::ToolsNotList { path }
-            | Self::FieldNotText { path }
-            | Self::ParamsNotMapping { path } => path,
+            Self::FieldNotText { path } | Self::ParamsNotMapping { path } => path,
         }
     }
 }
 
 pub fn sandbox_tool_entries(
-    value: SandboxToolValue,
+    tools: Vec<Json>,
 ) -> Result<Vec<SandboxToolEntry>, SandboxToolEntryError> {
-    let SandboxToolValue::List(items) = value else {
-        return Err(SandboxToolEntryError::ToolsNotList {
-            path: SANDBOX_TOOLS_PATH.to_owned(),
-        });
-    };
-    let mut entries = Vec::with_capacity(items.len());
-    for (index, item) in items.into_iter().enumerate() {
+    let mut entries = Vec::with_capacity(tools.len());
+    for (index, item) in tools.into_iter().enumerate() {
         let path = format!("{SANDBOX_TOOLS_PATH}[{index}]");
-        let SandboxToolValue::Mapping(mut fields) = item else {
+        let Json::Object(mut fields) = item else {
             entries.push(SandboxToolEntry::NotAnObject);
             continue;
         };
         let params_path = format!("{path}.litellm_params");
         let mut params = match fields.shift_remove("litellm_params") {
-            None | Some(SandboxToolValue::Null) => IndexMap::new(),
-            Some(SandboxToolValue::Mapping(params)) => params,
+            None | Some(Json::Null) => IndexMap::new(),
+            Some(Json::Object(params)) => params,
             Some(_) => {
                 return Err(SandboxToolEntryError::ParamsNotMapping { path: params_path });
             }
@@ -100,13 +79,13 @@ pub fn sandbox_tool_entries(
 }
 
 fn text_field(
-    fields: &mut IndexMap<String, SandboxToolValue>,
+    fields: &mut IndexMap<String, Json>,
     name: &str,
     path: &str,
 ) -> Result<Option<String>, SandboxToolEntryError> {
     match fields.shift_remove(name) {
-        None | Some(SandboxToolValue::Null) => Ok(None),
-        Some(SandboxToolValue::Text(text)) => Ok(Some(text)),
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text)),
         Some(_) => Err(SandboxToolEntryError::FieldNotText {
             path: format!("{path}.{name}"),
         }),

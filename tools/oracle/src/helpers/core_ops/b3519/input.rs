@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_models::sandbox_dispatch::SandboxToolValue;
+use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
@@ -14,7 +14,7 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RegistryInput {
-    pub(crate) tools: Vec<SandboxToolValue>,
+    pub(crate) tools: Vec<Json>,
     pub(crate) names: Vec<String>,
     #[serde(default)]
     pub(crate) environment: BTreeMap<String, String>,

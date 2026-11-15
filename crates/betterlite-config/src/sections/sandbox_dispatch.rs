@@ -1,6 +1,5 @@
-use betterlite_models::sandbox_dispatch::{
-    SandboxToolEntry, SandboxToolValue, sandbox_tool_entries,
-};
+use betterlite_models::decisions::Json;
+use betterlite_models::sandbox_dispatch::{SandboxToolEntry, sandbox_tool_entries};
 use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -10,7 +9,7 @@ mod tests;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
-    sandbox_tools: Option<Vec<SandboxToolValue>>,
+    sandbox_tools: Option<Vec<Json>>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -28,11 +27,9 @@ impl Section for Raw {
         let sandbox_tools = match self.sandbox_tools {
             None => Vec::new(),
             Some(values) => {
-                sandbox_tool_entries(SandboxToolValue::List(values)).map_err(|error| {
-                    ConfigError::InvalidScalar {
-                        path: error.path().to_owned(),
-                        value: false,
-                    }
+                sandbox_tool_entries(values).map_err(|error| ConfigError::InvalidScalar {
+                    path: error.path().to_owned(),
+                    value: false,
                 })?
             }
         };

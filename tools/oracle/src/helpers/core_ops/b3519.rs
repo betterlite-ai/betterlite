@@ -4,7 +4,7 @@ mod support;
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::sandbox_dispatch::{SandboxToolValue, sandbox_tool_entries};
+use betterlite_models::sandbox_dispatch::sandbox_tool_entries;
 use betterlite_provider::e2b::E2bSandbox;
 use betterlite_provider::opensandbox::helpers::OpenSandbox;
 use betterlite_provider::sandbox_dispatch::lifecycle::SandboxDispatch;
@@ -56,7 +56,7 @@ fn build_dispatch(http: &FakeHttp, environment: Environment) -> Dispatch {
 }
 
 fn registry_answer(input: &RegistryInput) -> HelperResult {
-    let entries = sandbox_tool_entries(SandboxToolValue::List(input.tools.clone()))
+    let entries = sandbox_tool_entries(input.tools.clone())
         .map_err(|error| helper_error("SandboxToolEntryError", error))?;
     let mut registry = SandboxToolRegistry::default();
     registry

@@ -3,12 +3,10 @@
 use rstest::rstest;
 use secrecy::SecretString;
 
-use super::{
-    SandboxToolConfig, SandboxToolEntry, SandboxToolEntryError, SandboxToolValue,
-    sandbox_tool_entries,
-};
+use super::{SandboxToolConfig, SandboxToolEntry, SandboxToolEntryError, sandbox_tool_entries};
+use crate::decisions::Json;
 
-fn value(source: &str) -> SandboxToolValue {
+fn value(source: &str) -> Vec<Json> {
     serde_json::from_str(source).unwrap()
 }
 
@@ -102,14 +100,6 @@ fn a_field_of_the_wrong_type_is_an_error_naming_it(#[case] source: &str, #[case]
 fn litellm_params_that_is_not_a_mapping_is_an_error_naming_it() {
     let failure = error(r#"[{"sandbox_tool_name":"t","litellm_params":"e2b"}]"#);
     assert_eq!(failure.path(), "sandbox_tools[0].litellm_params");
-}
-
-#[rstest]
-#[case::mapping("{}")]
-#[case::text("\"sandbox_tools\"")]
-#[case::number("5")]
-fn sandbox_tools_that_is_not_a_list_is_an_error(#[case] source: &str) {
-    assert_eq!(error(source).path(), "sandbox_tools");
 }
 
 #[test]
