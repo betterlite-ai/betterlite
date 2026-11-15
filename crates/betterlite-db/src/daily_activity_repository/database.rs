@@ -210,7 +210,7 @@ fn membership(
     parameters.push(SqlParameter::Texts(values.to_vec()));
 }
 
-fn render_filters(
+pub(super) fn render_filters(
     table: DailyActivityTable,
     filters: &[DailyRowFilter],
 ) -> (String, Vec<SqlParameter>) {
