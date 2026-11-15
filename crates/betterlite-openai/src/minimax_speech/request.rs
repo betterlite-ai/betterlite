@@ -12,8 +12,8 @@ const DEFAULT_OUTPUT_FORMAT: &str = "hex";
 const DEFAULT_SPEED: f64 = 1.0;
 const DEFAULT_VOL: f64 = 1.0;
 const DEFAULT_PITCH: i64 = 0;
-const DEFAULT_SAMPLE_RATE: i64 = 32000;
-const DEFAULT_BITRATE: i64 = 128000;
+const DEFAULT_SAMPLE_RATE: i64 = 32_000;
+const DEFAULT_BITRATE: i64 = 128_000;
 const DEFAULT_CHANNEL: i64 = 1;
 const DEFAULT_FORMAT: &str = "mp3";
 
