@@ -5,6 +5,8 @@ from typing import Final, NotRequired, TypedDict
 import litellm
 from litellm.llms.bedrock.embed.twelvelabs_marengo_transformation import (
     TwelveLabsMarengoEmbeddingConfig as MarengoConfig,
+)
+from litellm.llms.bedrock.embed.twelvelabs_marengo_transformation import (
     drop_params_enabled,
 )
 from litellm.types.utils import EmbeddingResponse
@@ -52,7 +54,7 @@ class Config(MarengoConfig):
         )
 
     def async_replied(self, call: Call, reply: dict[str, JsonValue]) -> EmbeddingResponse:
-        return self._transform_async_invoke_response(  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L321
+        return self._transform_async_invoke_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L321
             reply, call["model"]
         )
 
