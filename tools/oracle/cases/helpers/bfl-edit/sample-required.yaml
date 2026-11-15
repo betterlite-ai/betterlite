@@ -1,0 +1,33 @@
+kind: helper
+name: sample-required
+call:
+  bfl_edit:
+    operation: sample_required
+    status: 200
+    body: '{"status":"Ready","result":{"sample":"https://delivery.test/a.png"}}'
+    now: 1700000000
+calls:
+  - bfl_edit:
+      operation: sample_required
+      status: 200
+      body: '{"status":"Ready"}'
+      now: 1700000000
+  - bfl_edit:
+      operation: sample_required
+      status: 200
+      body: '{"result":{"sample":null}}'
+      now: 1700000000
+  - bfl_edit:
+      operation: sample_required
+      status: 200
+      body: '{"result":{"sample":""}}'
+      now: 1700000000
+  - bfl_edit:
+      operation: sample_required
+      status: 502
+      body: 'not json'
+      now: 1700000000
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/created, why: LiteLLM stamps the wall clock while betterlite takes an injected clock}

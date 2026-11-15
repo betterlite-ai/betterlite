@@ -1,0 +1,45 @@
+kind: helper
+name: endpoint-fill
+call:
+  bfl_edit:
+    operation: endpoint_fill
+    model: black_forest_labs/flux-kontext-pro
+    api_base: https://caller.test//
+    api_key: caller-key
+    environment:
+      BFL_API_KEY: env-bfl
+      BLACK_FOREST_LABS_API_KEY: env-legacy
+      BFL_API_BASE: https://env.test/
+calls:
+  - bfl_edit:
+      operation: endpoint_fill
+      model: black_forest_labs/FLUX-Kontext-Max
+      api_base: null
+      api_key: null
+      environment:
+        BFL_API_KEY: env-bfl
+        BLACK_FOREST_LABS_API_KEY: env-legacy
+        BFL_API_BASE: https://env.test/
+  - bfl_edit:
+      operation: endpoint_fill
+      model: flux-pro-1.0-fill
+      api_base: ""
+      api_key: null
+      environment:
+        BFL_API_KEY: env-bfl
+        BLACK_FOREST_LABS_API_KEY: env-legacy
+        BFL_API_BASE: https://env.test/
+  - bfl_edit:
+      operation: endpoint_fill
+      model: black_forest_labs/flux-pro-1.1
+      api_base: null
+      api_key: null
+      environment:
+        BFL_API_KEY: env-bfl
+        BLACK_FOREST_LABS_API_KEY: env-legacy
+        BFL_API_BASE: https://env.test/
+env:
+  BFL_API_KEY: env-bfl
+  BLACK_FOREST_LABS_API_KEY: env-legacy
+  BFL_API_BASE: https://env.test/
+compare: {ignore: []}

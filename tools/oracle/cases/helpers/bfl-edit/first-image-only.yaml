@@ -1,0 +1,40 @@
+kind: helper
+name: first-image-only
+call:
+  bfl_edit:
+    operation: first_image_only
+    prompt: remove the tree
+    image:
+      kind: list
+      items:
+        - {kind: bytes, data: Zmlyc3Q=}
+        - {kind: bytes, data: c2Vjb25k}
+    mask: {kind: absent}
+    options: {seed: 7}
+calls:
+  - bfl_edit:
+      operation: first_image_only
+      prompt: null
+      image:
+        kind: list
+        items:
+          - kind: list
+            items:
+              - {kind: bytes, data: bmVzdGVk}
+          - {kind: bytes, data: b3RoZXI=}
+      mask: {kind: absent}
+      options: {}
+  - bfl_edit:
+      operation: first_image_only
+      prompt: empty list
+      image: {kind: list, items: []}
+      mask: {kind: absent}
+      options: {}
+  - bfl_edit:
+      operation: first_image_only
+      prompt: missing image
+      image: null
+      mask: {kind: absent}
+      options: {}
+env: {}
+compare: {ignore: []}

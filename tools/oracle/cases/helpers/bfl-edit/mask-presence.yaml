@@ -1,0 +1,42 @@
+kind: helper
+name: mask-presence
+call:
+  bfl_edit:
+    operation: mask_presence
+    prompt: paint the sky
+    image: {kind: bytes, data: aW1hZ2U=}
+    mask: {kind: supplied, media: {kind: bytes, data: bWFzaw==}}
+    options: {steps: 20}
+calls:
+  - bfl_edit:
+      operation: mask_presence
+      prompt: no mask key
+      image: {kind: bytes, data: aW1hZ2U=}
+      mask: {kind: absent}
+      options: {}
+  - bfl_edit:
+      operation: mask_presence
+      prompt: null mask
+      image: {kind: bytes, data: aW1hZ2U=}
+      mask: {kind: null}
+      options: {}
+  - bfl_edit:
+      operation: mask_presence
+      prompt: a local path is not media
+      image: {kind: bytes, data: aW1hZ2U=}
+      mask: {kind: supplied, media: {kind: text, text: /tmp/mask.png}}
+      options: {}
+  - bfl_edit:
+      operation: mask_presence
+      prompt: first mask in the list
+      image: {kind: bytes, data: aW1hZ2U=}
+      mask:
+        kind: supplied
+        media:
+          kind: list
+          items:
+            - {kind: bytes, data: bWFzaw==}
+            - {kind: bytes, data: b3RoZXI=}
+      options: {}
+env: {}
+compare: {ignore: []}

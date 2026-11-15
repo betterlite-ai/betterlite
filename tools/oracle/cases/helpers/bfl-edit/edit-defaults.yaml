@@ -1,0 +1,37 @@
+kind: helper
+name: edit-defaults
+call:
+  bfl_edit:
+    operation: edit_defaults
+    model: black_forest_labs/flux-kontext-pro
+    drop_params: false
+    options:
+      steps: 30
+      unrelated: true
+      seed: 7
+      output_format: null
+calls:
+  - bfl_edit:
+      operation: edit_defaults
+      model: black_forest_labs/FLUX-Kontext-Max
+      drop_params: false
+      options: {output_format: jpeg}
+  - bfl_edit:
+      operation: edit_defaults
+      model: totally-unrelated
+      drop_params: true
+      options: {seed: 1, guidance: 3.5, grow_mask: 12, top: 1, bottom: 2, left: 3, right: 4}
+  - bfl_edit:
+      operation: edit_defaults
+      model: flux-pro-1.0-fill
+      drop_params: false
+      options:
+        mask: ignored here
+        seed: null
+        safety_tolerance: 2
+        prompt_upsampling: false
+        aspect_ratio: "1:1"
+        steps: 50
+        output_format: png
+env: {}
+compare: {ignore: []}
