@@ -1,17 +1,20 @@
 #![cfg(test)]
 
-use std::io;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex, PoisonError};
+mod logging;
+mod words;
+
+use std::str::FromStr as _;
 
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog, UnknownFields};
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
-use tracing::subscriber::{DefaultGuard, set_default};
+use serde::Deserialize;
 
 use crate::api::api_boundaries::ApiLimits;
-use crate::api::transcription_protocol::events::EventIdSource;
+use crate::api::transcription_protocol::events::{
+    AudioFormatType, EventIdSource, SERVER_VAD_TURN_DETECTION, SessionCreatedKind, SessionFormat,
+    TranscriptionSettings,
+};
 use crate::api::transcription_protocol::usage::duration_usage;
 
 use super::events::{
@@ -19,7 +22,6 @@ use super::events::{
     ChirpTurnDiscarded,
 };
 use super::transformer::{ChirpEventTransformer, ItemIdSource, UuidItemIds};
-use super::words::{join_transcript, new_words};
 use super::{
     ChirpProtocolError, ChirpSessionConfig, DEFAULT_SAMPLE_RATE_HERTZ, DISCARD_TURN_COMMAND,
     FINISH_TURN_COMMAND, MAX_AUDIO_MESSAGE_BYTES, MAX_SAMPLE_RATE_HERTZ, MIN_SAMPLE_RATE_HERTZ,
@@ -96,17 +98,45 @@ fn frame(
     })
 }
 
-fn wire_events(events: &[ChirpEvent]) -> Vec<Value> {
+#[derive(Deserialize)]
+struct WireEvent {
+    #[serde(rename = "type")]
+    event_type: String,
+    event_id: String,
+    item_id: Option<String>,
+    delta: Option<String>,
+    transcript: Option<String>,
+    usage: Option<WireUsage>,
+}
+
+#[derive(Deserialize)]
+struct WireUsage {
+    #[serde(rename = "type")]
+    usage_type: String,
+    #[serde(with = "rust_decimal::serde::float")]
+    seconds: Decimal,
+}
+
+impl WireEvent {
+    fn reported_usage(&self) -> &WireUsage {
+        self.usage.as_ref().expect("a usage report")
+    }
+}
+
+fn wire_events(events: &[ChirpEvent]) -> Vec<WireEvent> {
     events
         .iter()
-        .map(|event| serde_json::to_value(event).unwrap())
+        .map(|event| {
+            let wire = serde_json::to_string(event).expect("a serializable event");
+            serde_json::from_str(&wire).expect("a wire event")
+        })
         .collect()
 }
 
-fn event_types(documents: &[Value]) -> Vec<&str> {
+fn event_types(documents: &[WireEvent]) -> Vec<&str> {
     documents
         .iter()
-        .filter_map(|document| document["type"].as_str())
+        .map(|document| document.event_type.as_str())
         .collect()
 }
 
@@ -383,23 +413,6 @@ fn normalizes_the_session_language(#[case] payload: &str, #[case] expected: Opti
 }
 
 #[test]
-fn logs_and_ignores_unsupported_transcription_settings() {
-    let (captured, _guard) = capture_debug();
-    let parsed = parse(
-        r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2","prompt":"p","temperature":0.5}}}}}"#,
-    )
-    .unwrap();
-    assert_eq!(parsed.model, "chirp_2");
-    let logs = captured.take();
-    assert!(
-        logs.contains("ignoring unsupported transcription settings"),
-        "logs: {logs}"
-    );
-    assert!(logs.contains("prompt"), "logs: {logs}");
-    assert!(logs.contains("temperature"), "logs: {logs}");
-}
-
-#[test]
 fn rejects_messages_that_are_not_session_updates() {
     let error = parse(r#"{"type":"session.created"}"#).unwrap_err();
     assert!(matches!(
@@ -432,22 +445,27 @@ fn rejects_a_fractional_sample_rate() {
 #[test]
 fn session_created_event_describes_the_configured_session() {
     let config = session_config(true);
-    let event = created_event("event_0".to_owned(), &config.openai_session("sess_1"));
-    let document = serde_json::to_value(&event).unwrap();
-    assert_eq!(document["type"], "session.created");
-    assert_eq!(document["event_id"], "event_0");
-    assert_eq!(document["session"]["id"], "sess_1");
+    let created = created_event("event_0".to_owned(), &config.openai_session("sess_1"));
+    assert_eq!(created.kind, SessionCreatedKind::SessionCreated);
+    assert_eq!(created.event_id, "event_0");
+    assert_eq!(created.session.id, "sess_1");
     assert_eq!(
-        document["session"]["audio"]["input"]["format"],
-        json!({"type": "audio/pcm", "rate": 16_000})
+        created.session.audio.input.format,
+        SessionFormat {
+            format_type: AudioFormatType::AudioPcm,
+            rate: 16_000,
+        }
     );
     assert_eq!(
-        document["session"]["audio"]["input"]["transcription"],
-        json!({"model": "chirp_2", "language": "en-US"})
+        created.session.audio.input.transcription,
+        TranscriptionSettings {
+            model: "chirp_2".to_owned(),
+            language: Some("en-US".to_owned()),
+        }
     );
     assert_eq!(
-        document["session"]["audio"]["input"]["turn_detection"],
-        json!({"type": "server_vad"})
+        created.session.audio.input.turn_detection,
+        Some(SERVER_VAD_TURN_DETECTION)
     );
 }
 
@@ -455,19 +473,15 @@ fn session_created_event_describes_the_configured_session() {
 fn session_created_event_omits_disabled_turn_detection_and_language() {
     let mut config = session_config(false);
     config.language = None;
-    let document = serde_json::to_value(created_event(
-        "event_0".to_owned(),
-        &config.openai_session("sess_1"),
-    ))
-    .unwrap();
+    let created = created_event("event_0".to_owned(), &config.openai_session("sess_1"));
     assert_eq!(
-        document["session"]["audio"]["input"]["transcription"],
-        json!({"model": "chirp_2"})
+        created.session.audio.input.transcription,
+        TranscriptionSettings {
+            model: "chirp_2".to_owned(),
+            language: None,
+        }
     );
-    assert_eq!(
-        document["session"]["audio"]["input"]["turn_detection"],
-        Value::Null
-    );
+    assert_eq!(created.session.audio.input.turn_detection, None);
 }
 
 #[test]
@@ -495,32 +509,6 @@ fn the_backend_commands_match_the_wire_format() {
     assert_eq!(MAX_AUDIO_MESSAGE_BYTES, 25_000);
 }
 
-#[rstest]
-#[case::shared_prefix_with_punctuation("Hello world", "hello, world!", "")]
-#[case::case_change_inside_the_prefix("hello world", "Hello World", "")]
-#[case::apostrophe_inside_the_prefix("don't", "dont", "")]
-#[case::full_case_fold("Straße", "STRASSE", "")]
-#[case::appended_words("hello", "hello there", " there")]
-#[case::changed_first_word("hello", "yellow", "yellow")]
-#[case::nothing_new("hello there", "hello", "")]
-#[case::empty_current("hello", "", "")]
-#[case::several_words("a b", "a b c d", " c d")]
-#[case::punctuation_between_words("um", "um, hello", " hello")]
-#[case::accents_are_kept("café", "cafe", "cafe")]
-#[case::vowel_signs_are_kept("हिंदी का", "हिंदी की", " की")]
-fn emits_only_new_words(#[case] previous: &str, #[case] current: &str, #[case] expected: &str) {
-    assert_eq!(new_words(previous, current), expected);
-}
-
-#[rstest]
-#[case::both("hello", "there", "hello there")]
-#[case::committed_only("hello", "", "hello")]
-#[case::tail_only("", "there", "there")]
-#[case::neither("", "", "")]
-fn joins_transcripts(#[case] committed: &str, #[case] tail: &str, #[case] expected: &str) {
-    assert_eq!(join_transcript(committed, tail), expected);
-}
-
 #[test]
 fn configured_event_describes_the_session() {
     let mut transformer = chirp_transformer(true);
@@ -529,9 +517,12 @@ fn configured_event_describes_the_session() {
         .unwrap();
     let documents = wire_events(&events);
     assert_eq!(documents.len(), 1);
-    assert_eq!(documents[0]["type"], "session.created");
-    assert_eq!(documents[0]["event_id"], "event_0");
-    assert_eq!(documents[0]["session"]["id"], "sess_1");
+    assert_eq!(documents[0].event_type, "session.created");
+    assert_eq!(documents[0].event_id, "event_0");
+    let ChirpEvent::SessionCreated(created) = &events[0] else {
+        panic!("a session.created event");
+    };
+    assert_eq!(created.session.id, "sess_1");
 }
 
 #[test]
@@ -580,8 +571,8 @@ fn vad_interims_emit_begin_and_deltas_then_a_final_completes() {
         .unwrap();
     let first = wire_events(&first_events);
     assert_eq!(event_types(&first), [STARTED, DELTA]);
-    assert_eq!(first[0]["item_id"], "item_0");
-    assert_eq!(first[1]["delta"], "hello");
+    assert_eq!(first[0].item_id.as_deref(), Some("item_0"));
+    assert_eq!(first[1].delta.as_deref(), Some("hello"));
     let second_events = transformer
         .transform(frame(
             ChirpSpeechEvent::Begin,
@@ -592,10 +583,13 @@ fn vad_interims_emit_begin_and_deltas_then_a_final_completes() {
     let second = wire_events(&second_events);
     assert_eq!(second.len(), 3);
     assert_eq!(event_types(&second), [DELTA, STOPPED, COMPLETED]);
-    assert_eq!(second[0]["delta"], " world");
-    assert_eq!(second[2]["transcript"], "hello world");
-    assert_eq!(second[2]["usage"]["type"], "duration");
-    assert_eq!(second[2]["usage"]["seconds"], 1.25);
+    assert_eq!(second[0].delta.as_deref(), Some(" world"));
+    assert_eq!(second[2].transcript.as_deref(), Some("hello world"));
+    assert_eq!(second[2].reported_usage().usage_type, "duration");
+    assert_eq!(
+        second[2].reported_usage().seconds,
+        Decimal::from_str("1.25").unwrap()
+    );
 }
 
 #[test]
@@ -630,12 +624,12 @@ fn a_final_matching_the_preview_emits_no_delta() {
     transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", false)], "0.5"))
         .unwrap();
-    let transformed = transformer
+    let output = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.5"))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
-    assert_eq!(events[1]["transcript"], "hello");
+    assert_eq!(events[1].transcript.as_deref(), Some("hello"));
 }
 
 #[test]
@@ -653,37 +647,37 @@ fn a_final_before_any_interim_starts_a_new_turn() {
         .unwrap();
     let second = wire_events(&second_events);
     assert_eq!(event_types(&second), [STARTED, DELTA]);
-    assert_eq!(second[0]["item_id"], "item_1");
-    assert_eq!(second[1]["delta"], "two");
+    assert_eq!(second[0].item_id.as_deref(), Some("item_1"));
+    assert_eq!(second[1].delta.as_deref(), Some("two"));
 }
 
 #[test]
 fn a_begin_frame_without_results_starts_the_turn() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(ChirpSpeechEvent::Begin, &[], "0.5"))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(event_types(&events), [STARTED]);
-    assert_eq!(events[0]["item_id"], "item_0");
+    assert_eq!(events[0].item_id.as_deref(), Some("item_0"));
 }
 
 #[test]
 fn one_frame_emits_begin_finals_interim_and_end_in_order() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(
             ChirpSpeechEvent::End,
             &[("hello", true), ("next", false)],
             "0.5",
         ))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(
         event_types(&events),
         [STARTED, DELTA, STOPPED, COMPLETED, STARTED, DELTA, STOPPED]
     );
-    assert_eq!(events[6]["item_id"], "item_1");
+    assert_eq!(events[6].item_id.as_deref(), Some("item_1"));
 }
 
 #[test]
@@ -704,7 +698,7 @@ fn a_frame_with_an_interim_and_an_end_keeps_the_turn_open() {
         .unwrap();
     let finished = wire_events(&finished_events);
     assert_eq!(event_types(&finished), [COMPLETED]);
-    assert_eq!(finished[0]["transcript"], "hello");
+    assert_eq!(finished[0].transcript.as_deref(), Some("hello"));
 }
 
 #[test]
@@ -719,14 +713,17 @@ fn manual_mode_accumulates_finals_until_finish_turn() {
         .unwrap();
     let second = wire_events(&second_events);
     assert_eq!(event_types(&second), [DELTA]);
-    assert_eq!(second[0]["delta"], " world");
+    assert_eq!(second[0].delta.as_deref(), Some(" world"));
     let finished_events = transformer
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
     let finished = wire_events(&finished_events);
     assert_eq!(event_types(&finished), [COMPLETED]);
-    assert_eq!(finished[0]["transcript"], "hello world");
-    assert_eq!(finished[0]["usage"]["seconds"], 1.5);
+    assert_eq!(finished[0].transcript.as_deref(), Some("hello world"));
+    assert_eq!(
+        finished[0].reported_usage().seconds,
+        Decimal::from_str("1.5").unwrap()
+    );
 }
 
 #[test]
@@ -739,8 +736,11 @@ fn a_turn_finished_without_committed_text_completes_the_preview() {
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
     let finished = wire_events(&finished_events);
-    assert_eq!(finished[0]["transcript"], "draft");
-    assert_eq!(finished[0]["usage"]["seconds"], 0.5);
+    assert_eq!(finished[0].transcript.as_deref(), Some("draft"));
+    assert_eq!(
+        finished[0].reported_usage().seconds,
+        Decimal::from_str("0.5").unwrap()
+    );
 }
 
 #[test]
@@ -825,17 +825,23 @@ fn unbilled_seconds_are_reported_once_and_only_the_difference_afterwards() {
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "1.5"))
         .unwrap();
     let finished = wire_events(&finished_events);
-    assert_eq!(finished[2]["usage"]["seconds"], 1.0);
+    assert_eq!(
+        finished[2].reported_usage().seconds,
+        Decimal::from_str("1").unwrap()
+    );
 }
 
 #[test]
 fn usage_is_reported_once_per_completion() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "1.25"))
         .unwrap();
-    let events = wire_events(&transformed);
-    assert_eq!(events[3]["usage"]["seconds"], 1.25);
+    let events = wire_events(&output);
+    assert_eq!(
+        events[3].reported_usage().seconds,
+        Decimal::from_str("1.25").unwrap()
+    );
     assert_eq!(transformer.take_unbilled_usage().unwrap(), None);
 }
 
@@ -849,22 +855,25 @@ fn billing_reports_exact_decimal_seconds() {
         transformer.take_unbilled_usage().unwrap(),
         Some(duration_usage(0.1))
     );
-    let transformed = transformer
+    let output = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0.3"))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(event_types(&events), [STOPPED, COMPLETED]);
-    assert_eq!(events[1]["usage"]["seconds"], 0.2);
+    assert_eq!(
+        events[1].reported_usage().seconds,
+        Decimal::from_str("0.2").unwrap()
+    );
 }
 
 #[test]
 fn a_completion_without_billing_carries_no_usage() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(ChirpSpeechEvent::None, &[("hello", true)], "0"))
         .unwrap();
-    let events = wire_events(&transformed);
-    assert!(events[3].get("usage").is_none());
+    let events = wire_events(&output);
+    assert!(events[3].usage.is_none());
 }
 
 #[test]
@@ -880,47 +889,53 @@ fn billing_never_moves_backwards() {
         .transform(ChirpBackendEvent::TurnFinished)
         .unwrap();
     let finished = wire_events(&finished_events);
-    assert_eq!(finished[0]["transcript"], "hello there");
-    assert_eq!(finished[0]["usage"]["seconds"], 2.0);
+    assert_eq!(finished[0].transcript.as_deref(), Some("hello there"));
+    assert_eq!(
+        finished[0].reported_usage().seconds,
+        Decimal::from_str("2").unwrap()
+    );
 }
 
 #[test]
 fn every_final_completes_in_vad_mode() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
             &[("one", true), ("two", true)],
             "1",
         ))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(
         event_types(&events),
         [
             STARTED, DELTA, STOPPED, COMPLETED, STARTED, DELTA, STOPPED, COMPLETED
         ]
     );
-    assert_eq!(events[3]["transcript"], "one");
-    assert_eq!(events[3]["usage"]["seconds"], 1.0);
-    assert_eq!(events[7]["transcript"], "two");
-    assert!(events[7].get("usage").is_none());
+    assert_eq!(events[3].transcript.as_deref(), Some("one"));
+    assert_eq!(
+        events[3].reported_usage().seconds,
+        Decimal::from_str("1").unwrap()
+    );
+    assert_eq!(events[7].transcript.as_deref(), Some("two"));
+    assert!(events[7].usage.is_none());
 }
 
 #[test]
 fn blank_results_are_skipped_and_transcripts_are_trimmed() {
     let mut transformer = chirp_transformer(true);
-    let transformed = transformer
+    let output = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
             &[("  hello  ", true), ("   ", false)],
             "1",
         ))
         .unwrap();
-    let events = wire_events(&transformed);
+    let events = wire_events(&output);
     assert_eq!(event_types(&events), [STARTED, DELTA, STOPPED, COMPLETED]);
-    assert_eq!(events[1]["delta"], "hello");
-    assert_eq!(events[3]["transcript"], "hello");
+    assert_eq!(events[1].delta.as_deref(), Some("hello"));
+    assert_eq!(events[3].transcript.as_deref(), Some("hello"));
     let interim_events = transformer
         .transform(frame(
             ChirpSpeechEvent::None,
@@ -930,7 +945,7 @@ fn blank_results_are_skipped_and_transcripts_are_trimmed() {
         .unwrap();
     let interim = wire_events(&interim_events);
     assert_eq!(event_types(&interim), [STARTED, DELTA]);
-    assert_eq!(interim[1]["delta"], "hello");
+    assert_eq!(interim[1].delta.as_deref(), Some("hello"));
 }
 
 #[test]
@@ -961,43 +976,4 @@ fn assert_item_id_is_uuid(identifier: &str) {
             .chars()
             .all(|character| character.is_ascii_hexdigit())
     );
-}
-
-#[derive(Clone, Default)]
-struct Captured(Arc<Mutex<Vec<u8>>>);
-
-impl Captured {
-    fn take(&self) -> String {
-        let bytes = self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
-        String::from_utf8(bytes).expect("captured logs are utf-8")
-    }
-}
-
-impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-fn capture_debug() -> (Captured, DefaultGuard) {
-    let captured = Captured::default();
-    let writer = captured.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .with_writer(move || writer.clone())
-        .with_max_level(tracing::Level::DEBUG)
-        .with_ansi(false)
-        .finish();
-    (captured, set_default(subscriber))
 }

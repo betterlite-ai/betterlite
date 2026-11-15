@@ -173,8 +173,8 @@ pub fn parse_chirp_session_update(
     })
 }
 
-fn sample_rate_hertz(format: Option<&TranscriptionAudioFormat>) -> Result<i64, ChirpProtocolError> {
-    let Some(format) = format else {
+fn sample_rate_hertz(audio: Option<&TranscriptionAudioFormat>) -> Result<i64, ChirpProtocolError> {
+    let Some(format) = audio else {
         return Ok(DEFAULT_SAMPLE_RATE_HERTZ);
     };
     if !format.is_pcm16() {
