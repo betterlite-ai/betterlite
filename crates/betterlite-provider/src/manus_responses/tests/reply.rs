@@ -65,6 +65,20 @@ fn missing_fields_get_the_manus_defaults() {
 }
 
 #[test]
+fn a_reply_default_is_filled_before_the_typed_record_is_built() {
+    let upstream = response(
+        200,
+        r#"{"id":"resp_1","created_at":5,"status":"completed"}"#,
+    );
+    let (reply, _logging) = created(&upstream);
+    assert_eq!(reply.get("output"), Some(&Json::List(Vec::new())));
+    assert_eq!(
+        reply.get("status"),
+        Some(&Json::Text(String::from("completed")))
+    );
+}
+
+#[test]
 fn null_fields_get_the_manus_defaults() {
     let upstream = response(
         200,
@@ -93,6 +107,7 @@ fn the_same_reply_routine_answers_create_and_get() {
         .transform_get_response(&upstream, &mut get_logging)
         .expect("get transforms");
     assert_eq!(created, retrieved);
+    assert_eq!(created.id, String::from("resp_1"));
     assert_eq!(
         create_logging.model_call_details,
         get_logging.model_call_details
