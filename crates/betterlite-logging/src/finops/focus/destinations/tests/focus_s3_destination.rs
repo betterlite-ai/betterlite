@@ -38,7 +38,11 @@ fn init_requires_a_bucket_name() {
 fn init_rejects_an_empty_bucket_name() {
     let settings = S3Settings {
         bucket_name: Some(String::new()),
-        ..S3Settings::default()
+        region_name: None,
+        endpoint_url: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
     };
     let connection = s3_connection(&[], &FakeS3Http::answering(200, b""));
     let Err(error) = FocusS3Destination::new(connection, PREFIX, settings) else {
@@ -84,7 +88,8 @@ async fn deliver_uploads_the_export_with_a_put() {
 #[tokio::test]
 async fn deliver_awaits_the_async_upload() {
     let (destination, http) = s3_destination(PREFIX, s3_settings());
-    let delivery = destination.deliver(CONTENT, &window(START_EPOCH, "daily"), FILENAME);
+    let time_window = window(START_EPOCH, "daily");
+    let delivery = destination.deliver(CONTENT, &time_window, FILENAME);
     assert!(http.sent().is_empty());
     delivery.await.unwrap();
     assert_eq!(http.sent().len(), 1);
@@ -294,10 +299,11 @@ async fn kwargs_fall_back_to_the_environment_credentials() {
 async fn kwargs_empty_credentials_fall_back_to_the_environment() {
     let settings = S3Settings {
         bucket_name: Some(BUCKET.to_owned()),
+        region_name: None,
+        endpoint_url: None,
         aws_access_key_id: Some(SecretString::from("")),
         aws_secret_access_key: Some(SecretString::from("")),
         aws_session_token: Some(SecretString::from("")),
-        ..S3Settings::default()
     };
     let http = FakeS3Http::answering(200, b"");
     let destination = s3_destination_with(PREFIX, settings, &ENVIRONMENT_CREDENTIALS, &http);
@@ -326,8 +332,11 @@ async fn kwargs_without_any_credentials_fail_before_sending() {
 async fn kwargs_with_only_an_access_key_fail_before_sending() {
     let settings = S3Settings {
         bucket_name: Some(BUCKET.to_owned()),
+        region_name: None,
+        endpoint_url: None,
         aws_access_key_id: Some(SecretString::from("access-key")),
-        ..S3Settings::default()
+        aws_secret_access_key: None,
+        aws_session_token: None,
     };
     let http = FakeS3Http::answering(200, b"");
     let destination = s3_destination_with(PREFIX, settings, &ENVIRONMENT_CREDENTIALS, &http);
@@ -345,9 +354,10 @@ async fn kwargs_with_only_an_access_key_fail_before_sending() {
 #[rstest]
 #[case::configured(Some("eu-west-1"), &[("AWS_DEFAULT_REGION", "ap-south-1")], "eu-west-1")]
 #[case::default_variable(None, &[("AWS_DEFAULT_REGION", "ap-south-1"), ("AWS_REGION", "eu-central-1")], "ap-south-1")]
-#[case::empty_default_variable(None, &[("AWS_DEFAULT_REGION", ""), ("AWS_REGION", "eu-central-1")], "eu-central-1")]
+#[case::empty_default_variable(None, &[("AWS_DEFAULT_REGION", ""), ("AWS_REGION", "eu-central-1")], "us-east-1")]
 #[case::empty_configured(Some(""), &[("AWS_DEFAULT_REGION", "ap-south-1")], "ap-south-1")]
-#[case::transport_default(None, &[], "us-west-2")]
+#[case::region_variables_ignored(None, &[("AWS_REGION", "eu-central-1"), ("AWS_REGION_NAME", "ap-south-1")], "us-east-1")]
+#[case::unset_region(None, &[], "us-east-1")]
 #[tokio::test]
 async fn kwargs_resolve_the_signing_region(
     #[case] region: Option<&str>,

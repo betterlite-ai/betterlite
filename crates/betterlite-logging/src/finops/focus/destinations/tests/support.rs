@@ -78,34 +78,60 @@ pub(super) fn gcs_bucket_only_settings() -> GcsSettings {
     }
 }
 
+fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
+    variables
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("the network is down")]
 pub(super) struct NetworkDown;
 
-#[derive(Debug)]
-pub(super) struct FakeS3Http {
-    sent: Mutex<Vec<S3Request>>,
+#[derive(Clone, Debug)]
+struct Answer {
     status: u16,
     body: Vec<u8>,
     failing: bool,
+}
+
+impl Answer {
+    fn answering(status: u16, body: &[u8]) -> Self {
+        Self {
+            status,
+            body: body.to_vec(),
+            failing: false,
+        }
+    }
+
+    fn down() -> Self {
+        Self {
+            status: 200,
+            body: Vec::new(),
+            failing: true,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(super) struct FakeS3Http {
+    sent: Mutex<Vec<S3Request>>,
+    answer: Answer,
 }
 
 impl FakeS3Http {
     pub(super) fn answering(status: u16, body: &[u8]) -> Arc<Self> {
         Arc::new(Self {
             sent: Mutex::default(),
-            status,
-            body: body.to_vec(),
-            failing: false,
+            answer: Answer::answering(status, body),
         })
     }
 
     pub(super) fn failing() -> Arc<Self> {
         Arc::new(Self {
             sent: Mutex::default(),
-            status: 200,
-            body: Vec::new(),
-            failing: true,
+            answer: Answer::down(),
         })
     }
 
@@ -120,12 +146,12 @@ impl S3HttpClient for FakeS3Http {
         request: S3Request,
     ) -> Pin<Box<dyn Future<Output = Result<S3Response, S3TransportError>> + Send + '_>> {
         self.sent.lock().unwrap().push(request);
-        let outcome = if self.failing {
+        let outcome = if self.answer.failing {
             Err(S3TransportError::MissingBucket)
         } else {
             Ok(S3Response {
-                status: self.status,
-                body: self.body.clone(),
+                status: self.answer.status,
+                body: self.answer.body.clone(),
             })
         };
         Box::pin(async move { outcome })
@@ -149,14 +175,11 @@ pub(super) fn header<'request>(request: &'request S3Request, name: &str) -> Opti
         .map(|(_, value)| value.as_str())
 }
 
-pub(super) fn s3_connection(environment: &[(&str, &str)], http: &Arc<FakeS3Http>) -> S3Connection {
-    let environment: BTreeMap<String, String> = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
+pub(super) fn s3_connection(variables: &[(&str, &str)], http: &Arc<FakeS3Http>) -> S3Connection {
+    let http: Arc<dyn S3HttpClient> = Arc::clone(http);
     S3Connection {
-        http: Arc::clone(http),
-        environment: Arc::new(environment),
+        http,
+        environment: Arc::new(environment(variables)),
         clock: Arc::new(FixedClock),
     }
 }
@@ -164,10 +187,11 @@ pub(super) fn s3_connection(environment: &[(&str, &str)], http: &Arc<FakeS3Http>
 pub(super) fn s3_destination_with(
     prefix: &str,
     settings: S3Settings,
-    environment: &[(&str, &str)],
+    variables: &[(&str, &str)],
     http: &Arc<FakeS3Http>,
 ) -> FocusS3Destination {
-    FocusS3Destination::new(s3_connection(environment, http), prefix, settings).unwrap()
+    let connection = s3_connection(variables, http);
+    FocusS3Destination::new(connection, prefix, settings).unwrap()
 }
 
 pub(super) fn s3_destination(
@@ -241,27 +265,21 @@ impl VertexAuth for FakeAuth {
 #[derive(Clone, Debug)]
 pub(super) struct FakeGcsHttp {
     sent: Arc<Mutex<Vec<GcsRequest>>>,
-    status: u16,
-    body: Vec<u8>,
-    failing: bool,
+    answer: Answer,
 }
 
 impl FakeGcsHttp {
     pub(super) fn answering(status: u16, body: &[u8]) -> Self {
         Self {
             sent: Arc::default(),
-            status,
-            body: body.to_vec(),
-            failing: false,
+            answer: Answer::answering(status, body),
         }
     }
 
     pub(super) fn failing() -> Self {
         Self {
             sent: Arc::default(),
-            status: 200,
-            body: Vec::new(),
-            failing: true,
+            answer: Answer::down(),
         }
     }
 
@@ -285,13 +303,13 @@ impl GcsHttpClient for FakeGcsHttp {
     async fn send(&self, request: GcsRequest) -> Result<GcsHttpResponse, NetworkDown> {
         let url = request.url().to_owned();
         self.sent.lock().unwrap().push(request);
-        if self.failing {
+        if self.answer.failing {
             return Err(NetworkDown);
         }
         Ok(GcsHttpResponse {
-            status: self.status,
+            status: self.answer.status,
             headers: HeaderMap::new(),
-            body: self.body.clone(),
+            body: self.answer.body.clone(),
             url,
             elapsed: Duration::ZERO,
         })
@@ -301,13 +319,10 @@ impl GcsHttpClient for FakeGcsHttp {
 pub(super) fn gcs_base(
     auth: FakeAuth,
     http: FakeGcsHttp,
-    environment: &[(&str, &str)],
+    variables: &[(&str, &str)],
 ) -> GcsBucketBase<FakeAuth, FakeGcsHttp> {
-    let environment: BTreeMap<String, String> = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect();
-    initialize(Arc::new(environment), Some(BUCKET.to_owned()), auth, http).unwrap()
+    let source = Arc::new(environment(variables));
+    initialize(source, Some(BUCKET.to_owned()), auth, http).unwrap()
 }
 
 pub(super) fn gcs_destination(
