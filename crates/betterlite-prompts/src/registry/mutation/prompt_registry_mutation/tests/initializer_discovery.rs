@@ -64,16 +64,16 @@ fn each_initializer_builds_the_client_its_backend_fetches(
 ) {
     let mut spec = prompt_spec(spec_prompt_id, "development", integration);
     spec.litellm_params.prompt_id = params_prompt_id.map(str::to_owned);
-    let initializer = prompt_initializer(integration).expect("the integration has an initializer");
-    let callback = initializer(&spec.litellm_params, &spec);
+    let backend = prompt_initializer(integration).expect("the integration has an initializer");
+    let callback = backend.initializer(&spec.litellm_params, &spec);
     assert_eq!(callback.prompt_id.as_deref(), expected_prompt_id);
 }
 
 #[test]
 fn a_registered_client_holds_no_compiled_template_yet() {
     let spec = prompt_spec("greeting.v3", "development", "dotprompt");
-    let initializer = prompt_initializer("dotprompt").expect("dotprompt has an initializer");
-    let callback = initializer(&spec.litellm_params, &spec);
+    let backend = prompt_initializer("dotprompt").expect("dotprompt has an initializer");
+    let callback = backend.initializer(&spec.litellm_params, &spec);
     assert!(callback.prompt_template.is_empty());
     assert_eq!(callback.prompt_template_model, None);
     assert_eq!(callback.prompt_optional_params, None);

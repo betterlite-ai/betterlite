@@ -8,12 +8,12 @@ pub fn build_prompt_callback(
     prompt: &PromptSpec,
 ) -> Result<(PromptSpec, PromptManagementClient), PromptRegistryError> {
     let integration = prompt.litellm_params.prompt_integration.as_str();
-    let initializer = prompt_initializer(integration).ok_or_else(|| {
+    let backend = prompt_initializer(integration).ok_or_else(|| {
         PromptRegistryError::UnsupportedIntegration {
             integration: integration.to_owned(),
         }
     })?;
-    let callback = initializer(&prompt.litellm_params, prompt);
+    let callback = backend.initializer(&prompt.litellm_params, prompt);
     let parsed_prompt = PromptSpec {
         prompt_id: prompt.prompt_id.clone(),
         litellm_params: prompt.litellm_params.clone(),
