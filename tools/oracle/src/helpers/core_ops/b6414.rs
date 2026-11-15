@@ -6,7 +6,6 @@ mod session;
 use std::sync::Arc;
 
 use betterlite_core::api::api_boundaries::ApiLimits;
-use betterlite_core::api::realtime_contracts::error::HeaderMap;
 use betterlite_core::api::realtime_contracts::transport::RealtimeMessage;
 use betterlite_core::api::transcription_protocol::events::UuidEventIds;
 use betterlite_core::meta_muse_realtime::request::MetaRealtimeConfig;
@@ -17,7 +16,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use crate::helpers::Helper;
+use crate::helpers::HelperResult;
 
 pub(crate) type MuseConfig = MetaRealtimeConfig<UuidEventIds>;
 
@@ -29,7 +29,6 @@ pub(crate) enum Function {
     Request(client::RequestInput),
     Pacing(client::PacingInput),
     Events(provider::EventsInput),
-    Response(Box<provider::ResponseInput>),
 }
 
 pub(crate) struct Op;
@@ -44,7 +43,6 @@ impl Helper for Op {
             Function::Request(fields) => client::request(fields),
             Function::Pacing(fields) => client::pacing(fields),
             Function::Events(fields) => provider::events(fields),
-            Function::Response(fields) => provider::response(fields),
         }
     }
 }
@@ -94,17 +92,6 @@ pub(crate) fn idle_config() -> MuseConfig {
     let clock: Monotonic = Arc::new(|| 0.0);
     let sleep: Sleep = Arc::new(|_delay: f64| -> BoxFuture<'static, ()> { Box::pin(async {}) });
     MetaRealtimeConfig::new(clock, sleep, ApiLimits::default(), UuidEventIds)
-}
-
-pub(crate) fn config_for(model: &str, access_token: &str) -> Result<MuseConfig, Box<HelperError>> {
-    let mut config = idle_config();
-    let headers = HeaderMap::new();
-    drop(
-        config
-            .validate_environment(headers, model, Some(access_token), None)
-            .or_value_error()?,
-    );
-    Ok(config)
 }
 
 fn message_document(message: &RealtimeMessage) -> Value {
