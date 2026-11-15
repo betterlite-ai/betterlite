@@ -49,7 +49,8 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
 }
 
 fn revealed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
+    let secret = value?;
+    Some(secret.expose_secret().to_owned())
 }
 
 fn api_base(settings: &Settings) -> Option<String> {
@@ -205,7 +206,7 @@ fn loads_settings(
 }
 
 #[test]
-fn loads_every_key_at_once() {
+fn loads_every_module_key() {
     let loaded = load(ALL_KEYS, &ALL_ENVIRONMENT).unwrap();
     assert_eq!(
         loaded.api_base.as_deref(),
@@ -227,6 +228,11 @@ fn loads_every_key_at_once() {
     );
     assert_eq!(loaded.vertex_project.as_deref(), Some("module-project"));
     assert_eq!(loaded.vertex_location.as_deref(), Some("module-location"));
+}
+
+#[test]
+fn loads_every_openai_and_azure_environment_key() {
+    let loaded = load(ALL_KEYS, &ALL_ENVIRONMENT).unwrap();
     assert_eq!(
         loaded.openai_base_url.as_deref(),
         Some("https://base-url.example/v1")
@@ -260,6 +266,11 @@ fn loads_every_key_at_once() {
         revealed(loaded.azure_ad_token.as_ref()).as_deref(),
         Some("azure-ad-token")
     );
+}
+
+#[test]
+fn loads_every_vertex_environment_key() {
+    let loaded = load(ALL_KEYS, &ALL_ENVIRONMENT).unwrap();
     assert_eq!(
         loaded.vertexai_project.as_deref(),
         Some("environment-project")

@@ -87,12 +87,12 @@ impl Section for Raw {
 }
 
 // an os.environ/ reference resolves through the supplied environment, and an empty value counts as unset
-fn value<T, L>(raw: Option<T>, field: &str, lookup: &L) -> Result<Option<T>, ConfigError>
+fn value<T, L>(declared: Option<T>, field: &str, lookup: &L) -> Result<Option<T>, ConfigError>
 where
     T: SecretText + From<String>,
     L: EnvironmentLookup,
 {
-    let Some(raw) = raw else {
+    let Some(raw) = declared else {
         return Ok(None);
     };
     let resolved = resolve_string(raw.secret_text(), &format!("{MODULE_PATH}.{field}"), lookup)?;
