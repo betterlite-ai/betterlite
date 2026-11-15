@@ -324,6 +324,44 @@ async fn list_with_an_invalid_cursor_is_a_bad_request() {
 }
 
 #[tokio::test]
+async fn list_rejects_a_non_integer_window() {
+    let runtime = Arc::new(FakeRuntime::new());
+    let answer = send(
+        app(&runtime, None),
+        build_request(
+            Method::GET,
+            "/v1/traces?start_ms=yesterday",
+            Some(&admin()),
+            &[],
+            b"",
+        ),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::BAD_REQUEST);
+    assert_eq!(
+        body_text(&answer),
+        r#"{"detail":"invalid trace query parameters"}"#
+    );
+}
+
+#[tokio::test]
+async fn list_storage_failure_is_a_shared_error() {
+    let mut runtime = FakeRuntime::new();
+    runtime.list = ReadAnswer::Storage;
+    let runtime = Arc::new(runtime);
+    let answer = send(
+        app(&runtime, None),
+        build_request(Method::GET, "/v1/traces", Some(&admin()), &[], b""),
+    )
+    .await;
+    assert_eq!(answer.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        body_text(&answer),
+        r#"{"error":{"message":"Internal server error","type":"internal_server_error","param":null,"code":"500"}}"#
+    );
+}
+
+#[tokio::test]
 async fn get_trace_found_is_200_and_passes_the_ref() {
     let mut runtime = FakeRuntime::new();
     runtime.trace = ReadAnswer::Ok(Some(trace()));
