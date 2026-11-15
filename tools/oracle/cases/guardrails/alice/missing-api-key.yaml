@@ -1,0 +1,14 @@
+kind: helper
+name: missing-api-key
+call:
+  b3752:
+    function: alice_apply
+    api_key: null
+    unreachable_fallback: fail_closed
+    texts: ["hello"]
+    request_data: {}
+    input_type: request
+    answer: null
+    failure: null
+env: {}
+compare: {ignore: []}

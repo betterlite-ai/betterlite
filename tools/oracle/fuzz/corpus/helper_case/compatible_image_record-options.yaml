@@ -1,0 +1,12 @@
+kind: helper
+name: compatible-image-record-seed-options
+call:
+  compatible_image_record:
+    function: options
+    options:
+      - {host: aiml, model: flux-pro, non_default_params: {n: 2, size: "1024x768"}, optional_params: {}, drop_params: false}
+      - {host: aiml, model: openai/gpt-image-2, non_default_params: {quality: high}, optional_params: {}, drop_params: false}
+      - {host: cometapi, model: any-model, non_default_params: {style: vivid}, optional_params: {}, drop_params: false}
+      - {host: aiml, model: flux-pro, non_default_params: {style: vivid}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}
