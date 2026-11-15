@@ -178,6 +178,28 @@ pub(super) async fn converted_stream_wrapped() {
     assert!(joined.contains("hello"));
 }
 
+pub(super) async fn anthropic_post_failure_keeps_answer() {
+    let plan = plan_with_patch(patched());
+    let harness = plan_harness(
+        anthropic_fixture(),
+        Script::default().with_post_error("post broke"),
+    );
+    let executor = ScriptedExecutor::anthropic_responding(ANTHROPIC_BODY);
+    let (log, _guard) = capture();
+    let response = harness
+        .anthropic(&plan, &executor)
+        .await
+        .expect("a post failure keeps the provider answer");
+    assert_eq!(response.get(), ANTHROPIC_BODY);
+    assert_log(
+        &log,
+        "LiteLLM.AgenticHookError: Exception in async_post_agentic_loop_response_hook [call_id=call-1 model=claude-3-5-sonnet]: post broke",
+    );
+    let records = harness.callback.records();
+    assert_eq!(records.post.len(), 1);
+    assert!(records.cleanup.is_empty());
+}
+
 pub(super) async fn unconverted_answers_keep_response() {
     let order = Arc::new(Mutex::new(Vec::new()));
     let quiet = quiet_callback(&order);

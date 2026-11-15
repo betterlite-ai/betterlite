@@ -5,8 +5,8 @@ use betterlite_context::agentic_loop_plan::JsonMap;
 use super::super::AgenticResult;
 use super::super::error::AgenticExecutionError;
 use super::support::{
-    NEXT_BODY, RecordingCallback, ScriptedExecutor, callback_list, dispatch, fixture,
-    legacy_script, null_legacy_script, order_log, recording, refused_tools,
+    NEXT_BODY, RecordingCallback, ScriptedExecutor, callback_list, continuing_script, dispatch,
+    fixture, legacy_script, null_legacy_script, order_log, recording, refused_tools,
 };
 use super::{
     assert_log, continue_messages, dispatch_error, plan_callback, raw_text, response_text,
@@ -138,6 +138,31 @@ pub(super) async fn plan_error_moves_on() {
     assert_eq!(
         order_log(&order),
         ["br:gate", "br:plan", "le:gate", "le:legacy"]
+    );
+    let answer = outcome.expect("the next callback answers");
+    assert_eq!(response_text(answer), r#"{"legacy":true}"#);
+}
+
+pub(super) async fn run_loop_false_moves_on() {
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let continuing = recording(
+        "co",
+        continuing_script(&refused_tools("web_search", "call-ws")),
+        &order,
+    );
+    let answering = legacy("le", &order, r#"{"legacy":true}"#);
+    let executor = ScriptedExecutor::responding(NEXT_BODY);
+    let outcome = dispatch(
+        &fixture(),
+        &callback_list(&[&continuing, &answering]),
+        &executor,
+    )
+    .await
+    .expect("the dispatcher runs");
+    assert_eq!(executor.call_count(), 0);
+    assert_eq!(
+        order_log(&order),
+        ["co:gate", "co:plan", "le:gate", "le:legacy"]
     );
     let answer = outcome.expect("the next callback answers");
     assert_eq!(response_text(answer), r#"{"legacy":true}"#);

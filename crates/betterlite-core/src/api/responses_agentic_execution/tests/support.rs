@@ -382,6 +382,13 @@ pub(crate) fn plan_script(tools: &JsonMap, request_patch: AgenticLoopRequestPatc
         .with_plan(plan_with_patch(request_patch))
 }
 
+pub(crate) fn continuing_script(tools: &JsonMap) -> Script {
+    Script::default()
+        .with_overrides(overrides(true, true, false))
+        .with_gate(gate(true, tools.clone()))
+        .with_plan(plan(None, None, false, false))
+}
+
 // the direct plan-executor harness: one callback, one plan, one gate, no dispatcher above it
 pub(crate) struct PlanHarness {
     pub fixture: Fixture,

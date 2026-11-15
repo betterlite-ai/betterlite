@@ -157,6 +157,7 @@ async fn agentic_callback_order() {
     callbacks::legacy_answers().await;
     callbacks::null_legacy_is_no_result().await;
     callbacks::plan_error_moves_on().await;
+    callbacks::run_loop_false_moves_on().await;
     callbacks::no_callbacks_is_no_result().await;
     callbacks::optional_tools_reach_the_gate().await;
     callbacks::invalid_optional_tools_raise().await;
@@ -202,4 +203,5 @@ async fn anthropic_continuation_and_wrapping() {
     anthropic::merged_mapping().await;
     anthropic::converted_stream_wrapped().await;
     anthropic::unconverted_answers_keep_response().await;
+    anthropic::anthropic_post_failure_keeps_answer().await;
 }
