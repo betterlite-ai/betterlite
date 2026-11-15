@@ -83,13 +83,13 @@ async fn only_a_cache_hit_makes_the_call_free(
 #[rstest]
 #[case::absent_header(r#"{"additional_headers":{}}"#)]
 #[case::null_header(r#"{"additional_headers":{"llm_provider-x-litellm-response-cost":null}}"#)]
-#[case::no_headers(r#"{}"#)]
+#[case::no_headers("{}")]
 #[case::null_headers(r#"{"additional_headers":null}"#)]
 #[tokio::test]
 async fn a_missing_or_null_header_falls_through_to_the_calculation(#[case] hidden: &str) {
     let usage = chat_usage(10, 5);
-    let hidden = map(hidden);
-    let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
+    let headers = map(hidden);
+    let view = chat_view(&usage, Some("gpt-4o"), Some(&headers));
     let charge = respond(
         &rig(&[("gpt-4o", GPT)]),
         &args(Some(&view)),

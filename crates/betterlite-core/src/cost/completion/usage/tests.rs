@@ -28,6 +28,9 @@ fn the_logging_usage_keeps_only_the_counters_a_partition_set() {
         completion_tokens: 5,
         total_tokens: 15,
         prompt_tokens_details: Some(PromptTokensDetails {
+            video_length_seconds: Some(dec("2.5")),
+            audio_length_seconds: Some(dec("1.5")),
+            cached_tokens: Some(3),
             text_tokens: None,
             audio_tokens: None,
             image_tokens: None,
@@ -37,39 +40,45 @@ fn the_logging_usage_keeps_only_the_counters_a_partition_set() {
             tool_use_tokens: None,
             character_count: None,
             image_count: None,
-            video_length_seconds: Some(dec("2.5")),
-            audio_length_seconds: Some(dec("1.5")),
             query_count: None,
             cache_write_tokens: None,
             cache_creation_tokens: None,
-            cached_tokens: Some(3),
             cached_tokens_details: None,
         }),
+        completion_tokens_details: None,
+        numeric_extras: BTreeMap::new(),
+    };
+    let projected = logging_usage(&usage).unwrap();
+    assert_eq!(projected.prompt_tokens, 10);
+    assert_eq!(projected.completion_tokens, 5);
+    assert_eq!(projected.total_tokens, 15);
+    let prompt = projected.prompt_tokens_details.unwrap();
+    assert_eq!(prompt.len(), 3);
+    assert_eq!(prompt.get("cached_tokens"), Some(&count(3)));
+    assert_eq!(prompt.get("audio_length_seconds"), Some(&seconds("1.5")));
+    assert_eq!(prompt.get("video_length_seconds"), Some(&seconds("2.5")));
+}
+
+#[test]
+fn the_logging_usage_keeps_the_completion_counters_a_partition_set() {
+    let usage = PricingUsage {
+        prompt_tokens: 10,
+        completion_tokens: 5,
+        total_tokens: 15,
+        prompt_tokens_details: None,
         completion_tokens_details: Some(CompletionTokensDetails {
+            reasoning_tokens: Some(2),
             text_tokens: None,
             audio_tokens: None,
             image_tokens: None,
             video_tokens: None,
-            reasoning_tokens: Some(2),
             accepted_prediction_tokens: None,
             rejected_prediction_tokens: None,
         }),
         numeric_extras: BTreeMap::new(),
     };
     let projected = logging_usage(&usage).unwrap();
-    assert_eq!(
-        (
-            projected.prompt_tokens,
-            projected.completion_tokens,
-            projected.total_tokens
-        ),
-        (10, 5, 15)
-    );
-    let prompt = projected.prompt_tokens_details.unwrap();
-    assert_eq!(prompt.len(), 3);
-    assert_eq!(prompt.get("cached_tokens"), Some(&count(3)));
-    assert_eq!(prompt.get("audio_length_seconds"), Some(&seconds("1.5")));
-    assert_eq!(prompt.get("video_length_seconds"), Some(&seconds("2.5")));
+    assert!(projected.prompt_tokens_details.is_none());
     let completion = projected.completion_tokens_details.unwrap();
     assert_eq!(completion.len(), 1);
     assert_eq!(completion.get("reasoning_tokens"), Some(&count(2)));

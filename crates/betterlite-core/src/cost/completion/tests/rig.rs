@@ -19,7 +19,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionContext, ResolvedModel};
 use betterlite_models::tiered_pricing::Scalar;
-use betterlite_models::tool_fees::billing::{BuiltInToolBilling, BuiltInToolParams};
+use betterlite_models::tool_fees::billing::BuiltInToolParams;
 use betterlite_models::tool_fees::error::LookupFailed;
 use betterlite_models::tool_fees::model_info::{Rate, SearchContextRates, ToolModelInfo};
 use betterlite_models::tool_fees::ports::{ToolPricePolicy, ToolPriceSource};
@@ -33,7 +33,8 @@ use serde_json::Number;
 
 use crate::cost::call_price::policy::ProviderPricePolicy;
 use crate::cost::completion::args::{
-    ChargeInputs, CompletionArgs, CostCalculator, ResponseParts, ToolInputs,
+    ChargeInputs, CompletionArgs, CostCalculator, ResponseParts, SpecialBorrows, ToolBorrows,
+    ToolInputs,
 };
 use crate::cost::completion::completion_cost;
 use crate::cost::completion::error::CompletionCostError;
@@ -45,39 +46,37 @@ use crate::cost::prepare::{
 };
 use crate::cost::special::policy::{ModelResolver, SpecialPricePolicy};
 use crate::cost::special::replicate::ReplicateStamps;
-use crate::cost::special::request::{
-    ImageParts, LoggingView, SpecialServices, TranscriptionDuration,
-};
+use crate::cost::special::request::{ImageParts, LoggingView, TranscriptionDuration};
 use crate::cost::usage::{BillingUsage, ResponseKind};
 
 mod respond;
 
-pub use respond::respond;
+pub(crate) use respond::respond;
 
-pub fn dec(text: &str) -> Decimal {
+pub(crate) fn dec(text: &str) -> Decimal {
     Decimal::from_str(text).expect("the fixture is a decimal")
 }
 
-pub fn json(document: &str) -> Json {
+pub(crate) fn json(document: &str) -> Json {
     serde_json::from_str(document).expect("the fixture is JSON")
 }
 
-pub fn map(document: &str) -> IndexMap<String, Json> {
+pub(crate) fn map(document: &str) -> IndexMap<String, Json> {
     let Json::Object(found) = json(document) else {
         panic!("the fixture is an object");
     };
     found
 }
 
-pub fn number(text: &str) -> Json {
+pub(crate) fn number(text: &str) -> Json {
     Json::Number(Number::from_str(text).expect("the fixture is a number"))
 }
 
-pub fn chat_usage(prompt: i64, completion: i64) -> Usage {
+pub(crate) fn chat_usage(prompt: i64, completion: i64) -> Usage {
     Usage {
         prompt_tokens: prompt,
         completion_tokens: completion,
-        total_tokens: prompt + completion,
+        total_tokens: prompt.saturating_add(completion),
         prompt_tokens_details: None,
         completion_tokens_details: None,
         server_tool_use: None,
@@ -86,7 +85,7 @@ pub fn chat_usage(prompt: i64, completion: i64) -> Usage {
     }
 }
 
-pub fn chat_view<'view>(
+pub(crate) fn chat_view<'view>(
     usage: &'view Usage,
     model: Option<&'view str>,
     hidden_params: Option<&'view IndexMap<String, Json>>,
@@ -100,7 +99,7 @@ pub fn chat_view<'view>(
     })
 }
 
-pub fn dictionary_view(usage: &Usage) -> ResponseView<'_> {
+pub(crate) fn dictionary_view(usage: &Usage) -> ResponseView<'_> {
     ResponseView::Dictionary(DictionaryResponse {
         model: Some("gpt-4o"),
         usage: BillingUsage::Chat(usage),
@@ -218,23 +217,23 @@ impl ToolPricePolicy for Tools {
 
 // The amounts a target received; the input type itself is neither Clone nor Debug.
 #[derive(Debug, PartialEq, Eq)]
-pub struct Recorded {
-    pub input_cost: Decimal,
-    pub output_cost: Decimal,
-    pub total_cost: Decimal,
-    pub tool_usage_cost: Decimal,
-    pub additional_costs: Option<BTreeMap<String, Decimal>>,
-    pub original_cost: Option<Decimal>,
-    pub discount_percent: Option<Decimal>,
-    pub discount_amount: Option<Decimal>,
-    pub margin_percent: Option<Decimal>,
-    pub margin_fixed_amount: Option<Decimal>,
-    pub margin_total_amount: Option<Decimal>,
-    pub token_costs: [Option<Decimal>; 3],
+pub(crate) struct Recorded {
+    pub(crate) input_cost: Decimal,
+    pub(crate) output_cost: Decimal,
+    pub(crate) total_cost: Decimal,
+    pub(crate) tool_usage_cost: Decimal,
+    pub(crate) additional_costs: Option<BTreeMap<String, Decimal>>,
+    pub(crate) original_cost: Option<Decimal>,
+    pub(crate) discount_percent: Option<Decimal>,
+    pub(crate) discount_amount: Option<Decimal>,
+    pub(crate) margin_percent: Option<Decimal>,
+    pub(crate) margin_fixed_amount: Option<Decimal>,
+    pub(crate) margin_total_amount: Option<Decimal>,
+    pub(crate) token_costs: [Option<Decimal>; 3],
 }
 
 #[derive(Default)]
-pub struct Stored(pub Option<Recorded>);
+pub(crate) struct Stored(pub(crate) Option<Recorded>);
 
 impl CostBreakdownTarget for Stored {
     type Failure = Infallible;
@@ -263,9 +262,9 @@ impl CostBreakdownTarget for Stored {
 }
 
 #[derive(Debug)]
-pub struct Refused;
+pub(crate) struct Refused;
 
-pub struct Refusing;
+pub(crate) struct Refusing;
 
 impl CostBreakdownTarget for Refusing {
     type Failure = Refused;
@@ -275,20 +274,20 @@ impl CostBreakdownTarget for Refusing {
     }
 }
 
-pub struct Rig {
-    catalog: Catalog,
-    tools: Tools,
-    pattern: SizePattern,
-    database: TimeZoneDatabase,
-    models: ProviderModelSets,
-    pub discount: BTreeMap<String, AdjustmentEntry>,
-    pub margin: BTreeMap<String, AdjustmentEntry>,
-    catalog_model: ModelCatalog,
-    names: BTreeSet<String>,
-    environment: BTreeMap<String, String>,
+pub(crate) struct Rig {
+    pub(crate) catalog: Catalog,
+    pub(crate) tools: Tools,
+    pub(crate) pattern: SizePattern,
+    pub(crate) database: TimeZoneDatabase,
+    pub(crate) models: ProviderModelSets,
+    pub(crate) discount: BTreeMap<String, AdjustmentEntry>,
+    pub(crate) margin: BTreeMap<String, AdjustmentEntry>,
+    pub(crate) catalog_model: ModelCatalog,
+    pub(crate) names: BTreeSet<String>,
+    pub(crate) environment: BTreeMap<String, String>,
 }
 
-pub fn rig(prices: &[(&str, &[(&str, &str)])]) -> Rig {
+pub(crate) fn rig(prices: &[(&str, &[(&str, &str)])]) -> Rig {
     Rig {
         catalog: Catalog(
             prices
@@ -318,7 +317,7 @@ pub fn rig(prices: &[(&str, &[(&str, &str)])]) -> Rig {
 }
 
 // One cent per web search call at the medium context size.
-pub fn searching() -> ToolModelInfo {
+pub(crate) fn searching() -> ToolModelInfo {
     ToolModelInfo {
         litellm_provider: Some("openai".to_owned()),
         search_context: SearchContextRates {
@@ -336,7 +335,7 @@ pub fn searching() -> ToolModelInfo {
 }
 
 impl Rig {
-    pub fn with_tool_prices(mut self, info: ToolModelInfo) -> Self {
+    pub(crate) fn with_tool_prices(mut self, info: ToolModelInfo) -> Self {
         self.tools = Tools(Some(info));
         self
     }
@@ -358,7 +357,7 @@ impl Rig {
         context: &'rig ResolutionContext<'rig>,
     ) -> CostCalculator<'rig, Resolver, Images, Inference> {
         CostCalculator {
-            special: SpecialServices {
+            special: SpecialBorrows {
                 lookup: &self.catalog,
                 resolver: &Resolver,
                 image_policy: &Images,
@@ -375,7 +374,7 @@ impl Rig {
             counter: &Counter,
             price_policy: &Silent,
             resolution: context,
-            tools: BuiltInToolBilling {
+            tools: ToolBorrows {
                 source: &self.tools,
                 policy: &self.tools,
                 prices: &ToolPrices::PINNED,
@@ -383,13 +382,13 @@ impl Rig {
         }
     }
 
-    pub async fn charge<Target>(
+    pub(crate) async fn charge<Target>(
         &self,
         args: &CompletionArgs<'_>,
         target: Option<&mut Target>,
     ) -> Result<Decimal, CompletionCostError<Infallible>>
     where
-        Target: CostBreakdownTarget,
+        Target: CostBreakdownTarget + Send,
     {
         let context = self.context();
         completion_cost(&self.services(&context), args, &mut clock, target).await
@@ -440,7 +439,7 @@ fn charge_inputs<'inputs>() -> ChargeInputs<'inputs> {
     }
 }
 
-pub fn args<'args>(response: Option<&'args ResponseView<'args>>) -> CompletionArgs<'args> {
+pub(crate) fn args<'args>(response: Option<&'args ResponseView<'args>>) -> CompletionArgs<'args> {
     CompletionArgs {
         billing: CompletionBillingInput {
             model: Some("gpt-4o"),

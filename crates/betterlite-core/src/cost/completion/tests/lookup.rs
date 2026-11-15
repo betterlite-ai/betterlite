@@ -144,7 +144,7 @@ fn a_tool_entry_keeps_every_rate_under_its_own_key() {
     assert_eq!(info.computer_input_per_1k, Rate::Value(dec("4.5")));
     assert_eq!(info.computer_output_per_1k, Rate::Value(dec("5.5")));
     assert_eq!(info.code_interpreter_per_session, Rate::Absent);
-    assert!(lookup().model_info("no-such-model", None).is_err());
+    let _error = lookup().model_info("no-such-model", None).unwrap_err();
 }
 
 #[test]
@@ -156,7 +156,7 @@ fn the_container_rate_comes_from_the_providers_container_entry() {
             .expect("the entry resolves"),
         Rate::Value(dec("6.5"))
     );
-    assert!(lookup.container_session_rate("anthropic").is_err());
+    let _error = lookup.container_session_rate("anthropic").unwrap_err();
 }
 
 #[test]
@@ -170,5 +170,5 @@ fn a_prefixed_model_resolves_to_its_provider_and_a_blank_one_to_none() {
         lookup.inferred_provider("openai/gpt-4o"),
         Ok(ProviderIdentity::Known(_))
     ));
-    assert!(lookup.inferred_provider("").is_err());
+    let _error = lookup.inferred_provider("").unwrap_err();
 }

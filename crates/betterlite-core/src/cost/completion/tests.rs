@@ -211,8 +211,8 @@ async fn the_router_fee_needs_azure_ai_and_a_router_shaped_hidden_model(
     #[case] expected: &str,
 ) {
     let usage = chat_usage(10, 5);
-    let hidden = map(hidden);
-    let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
+    let headers = map(hidden);
+    let view = chat_view(&usage, Some("gpt-4o"), Some(&headers));
     let mut call = args(Some(&view));
     call.billing.custom_llm_provider = Some(provider);
     let mut stored = Stored::default();
@@ -245,8 +245,8 @@ async fn the_logging_model_names_the_fee_unless_a_router_hidden_model_replaces_i
     #[case] expected: &str,
 ) {
     let usage = chat_usage(10, 5);
-    let hidden = map(hidden);
-    let view = chat_view(&usage, Some("gpt-4o"), Some(&hidden));
+    let headers = map(hidden);
+    let view = chat_view(&usage, Some("gpt-4o"), Some(&headers));
     let mut call = args(Some(&view));
     call.billing.custom_llm_provider = Some("azure_ai");
     call.charge.logging.model = Some(logging);
