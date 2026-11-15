@@ -404,10 +404,7 @@ fn prepare_create_drops_nulls_and_keeps_explicit_values() {
     assert_eq!(prepared.get("is_byok"), Some(&JsonValue::Bool(true)));
     assert_eq!(prepared.get("args"), Some(&json(r#"["a"]"#)));
     assert_eq!(prepared.get("mcp_access_groups"), Some(&json(r#"["g"]"#)));
-    assert_eq!(
-        prepared.get("max_concurrent_requests"),
-        Some(&JsonValue::Number(3.into()))
-    );
+    assert_eq!(prepared.get("max_concurrent_requests"), Some(&json("3")));
     assert!(!prepared.contains_key("credentials"));
     assert!(!prepared.contains_key("mcp_info"));
     assert!(!prepared.contains_key("static_headers"));

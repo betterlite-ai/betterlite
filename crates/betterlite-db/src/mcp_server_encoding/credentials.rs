@@ -52,17 +52,25 @@ pub const fn credential_auth_class(auth_type: Option<MCPAuth>) -> Option<Credent
     }
 }
 
-pub fn encrypt_credentials<N: NonceSource, D: SecretDiagnostics>(
+pub fn encrypt_credentials<N, D>(
     credentials: &mut CredentialBlob,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     for field in SECRET_FIELDS {
         let Some(value) = credentials.get_mut(field) else {
             continue;
         };
         let stored = match value.clone() {
             JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
-            other => StoredValue::Other(other),
+            other @ (JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_)) => StoredValue::Other(other),
         };
         match cipher.encrypt_value(stored, None)? {
             StoredValue::Text(sealed) => {
@@ -83,7 +91,7 @@ pub fn decrypt_credentials(credentials: &mut CredentialBlob, cipher: &DbCipher) 
         if let Some(StoredValue::Text(plaintext)) =
             cipher.decrypt_value(stored, field, DECRYPT_POLICY)
         {
-            *text = plaintext.expose_secret().to_owned();
+            plaintext.expose_secret().clone_into(text);
         }
     }
 }

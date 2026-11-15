@@ -28,10 +28,14 @@ pub fn is_global_env_var_scope(scope: Option<McpEnvVarScope>) -> bool {
     entry_scope != McpEnvVarScope::User
 }
 
-pub fn encrypt_global_env_var_values<N: NonceSource, D: SecretDiagnostics>(
+pub fn encrypt_global_env_var_values<N, D>(
     env_vars: &mut [JsonValue],
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     for entry in env_vars {
         let JsonValue::Object(fields) = entry else {
             return Err(McpEncodingError::EnvVarNotObject);
@@ -45,7 +49,11 @@ pub fn encrypt_global_env_var_values<N: NonceSource, D: SecretDiagnostics>(
         let stored = match value.clone() {
             JsonValue::String(text) if text.is_empty() => continue,
             JsonValue::String(text) => StoredValue::Text(SecretString::from(text)),
-            other => StoredValue::Other(other),
+            other @ (JsonValue::Null
+            | JsonValue::Bool(_)
+            | JsonValue::Number(_)
+            | JsonValue::Array(_)
+            | JsonValue::Object(_)) => StoredValue::Other(other),
         };
         match cipher.encrypt_value(stored, None)? {
             StoredValue::Text(sealed) => {
@@ -87,7 +95,7 @@ fn decrypt_global_value(value: &mut String, name: &str, cipher: &DbCipher) {
     }
     let stored = StoredValue::<()>::Text(SecretString::from(take(value)));
     match cipher.decrypt_value(stored, GLOBAL_ENV_VAR_KEY, DECRYPT_POLICY) {
-        Some(StoredValue::Text(plaintext)) => *value = plaintext.expose_secret().to_owned(),
+        Some(StoredValue::Text(plaintext)) => plaintext.expose_secret().clone_into(value),
         Some(StoredValue::Other(())) | None => warn_undecryptable(name),
     }
 }

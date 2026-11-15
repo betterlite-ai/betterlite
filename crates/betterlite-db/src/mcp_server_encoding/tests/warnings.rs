@@ -40,7 +40,10 @@ impl<Inner: Subscriber> Layer<Inner> for WarnLogs {
     }
 }
 
-fn warnings_during<Run: FnOnce()>(run: Run) -> Vec<String> {
+fn warnings_during<Run>(run: Run) -> Vec<String>
+where
+    Run: FnOnce(),
+{
     let logs = WarnLogs::default();
     let dispatch = Dispatch::new(tracing_subscriber::registry().with(logs.clone()));
     with_default(&dispatch, run);

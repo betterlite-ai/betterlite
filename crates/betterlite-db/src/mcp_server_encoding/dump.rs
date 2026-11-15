@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use super::McpEncodingError;
-use super::request::{EnvVarRequest, Maybe, McpServerRequest, PrepareMode, PreparedServerData};
+use super::request::{EnvVarRequest, McpServerRequest, PrepareMode, PreparedServerData};
 use crate::managed_resource_rows::mcp::McpEnvVarScope;
 use crate::mcp_stored_contracts::JsonValue;
 
@@ -54,7 +54,10 @@ impl Dumper<'_, '_> {
     }
 }
 
-fn stored<T: Serialize>(value: &T) -> Result<JsonValue, McpEncodingError> {
+fn stored<T>(value: &T) -> Result<JsonValue, McpEncodingError>
+where
+    T: Serialize,
+{
     let text = serde_json::to_string(value).map_err(McpEncodingError::Json)?;
     let parsed = serde_json::from_str(&text).map_err(McpEncodingError::Json)?;
     Ok(parsed)
@@ -67,25 +70,25 @@ fn env_var_entry(
     let creating = matches!(mode, PrepareMode::Create);
     let mut fields = BTreeMap::new();
     fields.insert("name".to_owned(), JsonValue::String(entry.name.clone()));
-    let value = match resolved(&entry.value) {
+    let value = match resolved(entry.value.as_ref()) {
         EnvVarField::Present(text) => Some(text),
         EnvVarField::Absent if creating => Some(String::new()),
         EnvVarField::Absent => None,
         EnvVarField::Null => return Err(env_var_null(entry, "value")),
     };
-    if let Some(value) = value {
-        fields.insert("value".to_owned(), JsonValue::String(value));
+    if let Some(text) = value {
+        fields.insert("value".to_owned(), JsonValue::String(text));
     }
-    let scope = match resolved(&entry.scope) {
+    let scope = match resolved(entry.scope.as_ref()) {
         EnvVarField::Present(scope) => Some(scope),
         EnvVarField::Absent if creating => Some(McpEnvVarScope::Global),
         EnvVarField::Absent => None,
         EnvVarField::Null => return Err(env_var_null(entry, "scope")),
     };
-    if let Some(scope) = scope {
-        fields.insert("scope".to_owned(), stored(&scope)?);
+    if let Some(scope_value) = scope {
+        fields.insert("scope".to_owned(), stored(&scope_value)?);
     }
-    match resolved(&entry.description) {
+    match resolved(entry.description.as_ref()) {
         EnvVarField::Present(description) => {
             fields.insert("description".to_owned(), JsonValue::String(description));
         }
@@ -110,7 +113,10 @@ enum EnvVarField<T> {
     Null,
 }
 
-fn resolved<T: Clone>(value: &Maybe<T>) -> EnvVarField<T> {
+fn resolved<T>(value: Option<&Option<T>>) -> EnvVarField<T>
+where
+    T: Clone,
+{
     match value {
         None => EnvVarField::Absent,
         Some(Some(inner)) => EnvVarField::Present(inner.clone()),

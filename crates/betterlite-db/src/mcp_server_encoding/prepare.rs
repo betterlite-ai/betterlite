@@ -15,11 +15,15 @@ use crate::mcp_stored_contracts::JsonValue;
 
 const JSON_MAP_FIELDS: [&str; 2] = ["tool_name_to_display_name", "tool_name_to_description"];
 
-pub fn prepare_mcp_server_data<N: NonceSource, D: SecretDiagnostics>(
+pub fn prepare_mcp_server_data<N, D>(
     request: &McpServerRequest,
     mode: PrepareMode<'_>,
     cipher: &StoredCipher<N, D>,
-) -> Result<PreparedServerData, McpEncodingError> {
+) -> Result<PreparedServerData, McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     let mut data = Dumper { request, mode }.dump()?;
     match mode {
         PrepareMode::Create => {
@@ -60,11 +64,15 @@ fn apply_partial_defaults(data: &mut PreparedServerData, original_fields: &Field
     }
 }
 
-fn prepare_credentials<N: NonceSource, D: SecretDiagnostics>(
+fn prepare_credentials<N, D>(
     data: &mut PreparedServerData,
     mode: PrepareMode<'_>,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     let Some(mut blob) = take_field(data, "credentials", as_object) else {
         return Ok(());
     };
@@ -83,11 +91,15 @@ fn prepare_credentials<N: NonceSource, D: SecretDiagnostics>(
     store_serialized(data, "credentials", &JsonValue::Object(blob))
 }
 
-fn prepare_secret_map<N: NonceSource, D: SecretDiagnostics>(
+fn prepare_secret_map<N, D>(
     data: &mut PreparedServerData,
     field: &'static str,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     let Some(fields) = take_field(data, field, as_object) else {
         return Ok(());
     };
@@ -103,10 +115,14 @@ fn prepare_secret_map<N: NonceSource, D: SecretDiagnostics>(
     Ok(())
 }
 
-fn prepare_env_vars<N: NonceSource, D: SecretDiagnostics>(
+fn prepare_env_vars<N, D>(
     data: &mut PreparedServerData,
     cipher: &StoredCipher<N, D>,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    N: NonceSource,
+    D: SecretDiagnostics,
+{
     let Some(mut entries) = take_field(data, "env_vars", as_array) else {
         return Ok(());
     };
@@ -145,22 +161,33 @@ where
 fn as_object(value: JsonValue) -> Result<BTreeMap<String, JsonValue>, JsonValue> {
     match value {
         JsonValue::Object(fields) => Ok(fields),
-        other => Err(other),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Array(_)) => Err(other),
     }
 }
 
 fn as_array(value: JsonValue) -> Result<Vec<JsonValue>, JsonValue> {
     match value {
         JsonValue::Array(items) => Ok(items),
-        other => Err(other),
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::String(_)
+        | JsonValue::Object(_)) => Err(other),
     }
 }
 
-fn store_serialized<T: Serialize>(
+fn store_serialized<T>(
     data: &mut PreparedServerData,
     field: &'static str,
     value: &T,
-) -> Result<(), McpEncodingError> {
+) -> Result<(), McpEncodingError>
+where
+    T: Serialize,
+{
     let text = serde_json::to_string(value).map_err(McpEncodingError::Json)?;
     data.insert(field.to_owned(), JsonValue::String(text));
     Ok(())
