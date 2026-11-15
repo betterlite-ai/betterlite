@@ -14,7 +14,7 @@ pub type FieldsSet = BTreeSet<String>;
 pub type PreparedServerData = BTreeMap<String, JsonValue>;
 pub type Maybe<T> = Option<Option<T>>;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct RequestFlag(pub bool);
 
@@ -28,18 +28,20 @@ pub enum PrepareMode<'fields> {
 }
 
 #[derive(Clone, Deserialize)]
-#[serde(default, deny_unknown_fields)]
+#[serde(deny_unknown_fields)]
 pub struct McpServerRequest {
     pub server_id: Option<String>,
     pub server_name: Option<String>,
     pub alias: Option<String>,
     pub description: Option<String>,
+    #[serde(default = "default_transport")]
     pub transport: MCPTransport,
     pub auth_type: Option<MCPAuth>,
     pub credentials: Option<CredentialBlob>,
     pub url: Option<String>,
     pub spec_path: Option<String>,
     pub mcp_info: Option<MCPInfo>,
+    #[serde(default)]
     pub mcp_access_groups: Vec<String>,
     pub allowed_tools: Option<Vec<String>>,
     pub tool_name_to_display_name: Option<BTreeMap<String, String>>,
@@ -49,7 +51,9 @@ pub struct McpServerRequest {
     pub env_vars: Option<Vec<EnvVarRequest>>,
     pub instructions: Option<String>,
     pub command: Option<String>,
+    #[serde(default)]
     pub args: Vec<String>,
+    #[serde(default)]
     pub env: BTreeMap<String, String>,
     pub issuer: Option<String>,
     pub authorization_url: Option<String>,
@@ -60,13 +64,20 @@ pub struct McpServerRequest {
     pub audience: Option<String>,
     pub subject_token_type: Option<String>,
     pub token_exchange_profile: Option<String>,
+    #[serde(default)]
     pub allow_all_keys: RequestFlag,
+    #[serde(default = "default_public_internet")]
     pub available_on_public_internet: RequestFlag,
+    #[serde(default)]
     pub delegate_auth_to_upstream: RequestFlag,
+    #[serde(default)]
     pub oauth_passthrough: RequestFlag,
     pub dcr_bridge: Option<bool>,
+    #[serde(default)]
     pub per_server_oauth_discovery: RequestFlag,
+    #[serde(default)]
     pub is_byok: RequestFlag,
+    #[serde(default)]
     pub byok_description: Vec<String>,
     pub byok_api_key_help_url: Option<String>,
     pub source_url: Option<String>,
@@ -75,6 +86,14 @@ pub struct McpServerRequest {
     pub approval_status: Option<String>,
     pub submitted_by: Option<String>,
     pub submitted_at: Option<Timestamp>,
+}
+
+fn default_transport() -> MCPTransport {
+    MCPTransport::Sse
+}
+
+fn default_public_internet() -> RequestFlag {
+    RequestFlag(true)
 }
 
 #[derive(Clone, Deserialize)]
@@ -87,58 +106,6 @@ pub struct EnvVarRequest {
     pub scope: Maybe<McpEnvVarScope>,
     #[serde(default, with = "double_option")]
     pub description: Maybe<String>,
-}
-
-impl Default for McpServerRequest {
-    fn default() -> Self {
-        Self {
-            server_id: None,
-            server_name: None,
-            alias: None,
-            description: None,
-            transport: MCPTransport::Sse,
-            auth_type: None,
-            credentials: None,
-            url: None,
-            spec_path: None,
-            mcp_info: None,
-            mcp_access_groups: Vec::new(),
-            allowed_tools: None,
-            tool_name_to_display_name: None,
-            tool_name_to_description: None,
-            extra_headers: None,
-            static_headers: None,
-            env_vars: None,
-            instructions: None,
-            command: None,
-            args: Vec::new(),
-            env: BTreeMap::new(),
-            issuer: None,
-            authorization_url: None,
-            token_url: None,
-            registration_url: None,
-            oauth2_flow: None,
-            token_exchange_endpoint: None,
-            audience: None,
-            subject_token_type: None,
-            token_exchange_profile: None,
-            allow_all_keys: RequestFlag(false),
-            available_on_public_internet: RequestFlag(true),
-            delegate_auth_to_upstream: RequestFlag(false),
-            oauth_passthrough: RequestFlag(false),
-            dcr_bridge: None,
-            per_server_oauth_discovery: RequestFlag(false),
-            is_byok: RequestFlag(false),
-            byok_description: Vec::new(),
-            byok_api_key_help_url: None,
-            source_url: None,
-            timeout: None,
-            max_concurrent_requests: None,
-            approval_status: None,
-            submitted_by: None,
-            submitted_at: None,
-        }
-    }
 }
 
 impl Debug for McpServerRequest {
