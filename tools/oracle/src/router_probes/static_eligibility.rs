@@ -1,1 +1,212 @@
-crate::router_probes::not_built_probe!(static_eligibility);
+use betterlite_models::decisions::Json;
+use betterlite_router::deployment_catalog::types::Candidates;
+use betterlite_router::deployment_identity::spec::DeploymentSpec;
+use betterlite_router::static_eligibility::error::EligibilityError;
+use betterlite_router::static_eligibility::filter::{
+    EligibilityInput, EligibilityResult, EligibilityServices, eligible,
+};
+use betterlite_router::static_eligibility::request::RequestFacts;
+use betterlite_router::static_eligibility::tokens::{TokenPayload, count_for_pre_call_checks};
+use serde::{Deserialize, Serialize};
+use tokio::runtime::Builder;
+
+use crate::router_probes::ProbeOutput;
+use crate::router_probes::error::OperationError;
+use crate::router_probes::random::InjectedRandom;
+
+mod counter;
+mod resolve;
+
+use counter::{ProbeCounter, ProbeLimits, ProbeSupport};
+use resolve::resolve;
+
+const API_KEY: &str = "sk-probe";
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Entry {
+    pub model_name: String,
+    pub model: String,
+    pub id: String,
+    pub base_model: Option<String>,
+    pub max_input_tokens: Option<u64>,
+    pub blocked: Option<bool>,
+    pub supports_web_search: Option<bool>,
+    pub supported_environments: Option<Vec<String>>,
+    pub order: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Lookup {
+    pub model: String,
+    pub input: Option<Json>,
+    pub instructions: Option<String>,
+    #[serde(default)]
+    pub specific_deployment: bool,
+    pub messages: Option<Vec<Json>>,
+    #[serde(default)]
+    pub tools: Vec<Json>,
+    #[serde(default)]
+    pub response_format: bool,
+    pub target_order: Option<i64>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Input {
+    pub environment: String,
+    pub enable_pre_call_checks: bool,
+    #[serde(default)]
+    pub drop_params: bool,
+    pub models: Vec<Entry>,
+    pub lookups: Vec<Lookup>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Outcome {
+    Selected,
+    BadRequest,
+    RateLimited,
+    ContextExceeded,
+    ServiceUnavailable,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Found {
+    pub outcome: Outcome,
+    pub selected: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Output {
+    pub lookups: Vec<Found>,
+}
+
+fn ids(deployments: &[DeploymentSpec]) -> Vec<String> {
+    let mut selected = Vec::new();
+    for deployment in deployments {
+        selected.push(deployment.id().unwrap_or_default().to_owned());
+    }
+    selected
+}
+
+async fn counted_facts(
+    input: &Input,
+    lookup: &Lookup,
+    candidates: &Candidates,
+    counter: &ProbeCounter,
+) -> RequestFacts {
+    let mut facts = RequestFacts {
+        messages: lookup.messages.clone(),
+        input: lookup.input.clone(),
+        instructions: lookup.instructions.clone(),
+        system: None,
+        tools: lookup.tools.clone(),
+        response_format: lookup.response_format,
+        target_order: lookup.target_order,
+        input_token_count: None,
+        compaction_pending: false,
+    };
+    if !input.enable_pre_call_checks || (facts.messages.is_none() && facts.input.is_none()) {
+        return facts;
+    }
+    let payload = TokenPayload {
+        messages: facts.messages.as_deref(),
+        input: facts.input.as_ref(),
+        instructions: facts.instructions.as_deref(),
+        system: None,
+        tools: &facts.tools,
+    };
+    facts.input_token_count = count_for_pre_call_checks(
+        &lookup.model,
+        candidates.deployments(),
+        &payload,
+        &ProbeLimits,
+        counter,
+    )
+    .await;
+    facts
+}
+
+fn found(result: Result<EligibilityResult, EligibilityError>) -> Result<Found, OperationError> {
+    match result {
+        Ok(EligibilityResult { deployments, .. }) if deployments.is_empty() => Ok(Found {
+            outcome: Outcome::RateLimited,
+            selected: Vec::new(),
+        }),
+        Ok(EligibilityResult { deployments, .. }) => Ok(Found {
+            outcome: Outcome::Selected,
+            selected: ids(&deployments),
+        }),
+        Err(EligibilityError::Blocked { .. }) => Ok(Found {
+            outcome: Outcome::ServiceUnavailable,
+            selected: Vec::new(),
+        }),
+        Err(EligibilityError::ContextWindow(_error)) => Ok(Found {
+            outcome: Outcome::ContextExceeded,
+            selected: Vec::new(),
+        }),
+        Err(EligibilityError::Environment(error)) => Err(OperationError::InvalidRequest {
+            message: error.to_string(),
+        }),
+        Err(EligibilityError::WebSearch(error)) => Err(OperationError::InvalidRequest {
+            message: error.to_string(),
+        }),
+    }
+}
+
+async fn answer(
+    input: &Input,
+    lookup: &Lookup,
+    counter: &ProbeCounter,
+) -> Result<Found, OperationError> {
+    let Some(candidates) = resolve(input, lookup)? else {
+        return Ok(Found {
+            outcome: Outcome::BadRequest,
+            selected: Vec::new(),
+        });
+    };
+    let facts = counted_facts(input, lookup, &candidates, counter).await;
+    let services = EligibilityServices {
+        limits: &ProbeLimits,
+        params: &ProbeSupport,
+    };
+    found(eligible(
+        EligibilityInput {
+            model: &lookup.model,
+            candidates,
+            facts: &facts,
+            environment: Some(&input.environment),
+            enable_pre_call_checks: input.enable_pre_call_checks,
+            drop_params: input.drop_params,
+        },
+        &services,
+    ))
+}
+
+async fn execute(input: &Input) -> Result<Output, OperationError> {
+    let counter = ProbeCounter::new()?;
+    let mut lookups = Vec::new();
+    for lookup in &input.lookups {
+        lookups.push(answer(input, lookup, &counter).await?);
+    }
+    Ok(Output { lookups })
+}
+
+pub(crate) fn run(
+    input: &Input,
+    _random: &mut InjectedRandom<'_>,
+) -> Result<ProbeOutput, OperationError> {
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| OperationError::InvalidRequest {
+            message: error.to_string(),
+        })?;
+    let output = runtime.block_on(execute(input))?;
+    Ok(ProbeOutput::StaticEligibility(output))
+}

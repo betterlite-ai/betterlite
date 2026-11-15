@@ -1,0 +1,17 @@
+kind: helper
+name: auth-missing-401
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: environment
+        model: claude-sonnet-4
+        headers: [{name: x-api-key, value: stale-fixture-secret}]
+        api_key: null
+        api_base: null
+        litellm_params: {}
+        messages: []
+        optional_params: {}
+        effort_used: false
+env: {}
+compare: {ignore: []}

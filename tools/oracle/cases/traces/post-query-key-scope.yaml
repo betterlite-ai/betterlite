@@ -1,0 +1,14 @@
+kind: helper
+name: post-query-key-scope
+call:
+  b3867:
+    request:
+      method: POST
+      path: /v1/traces/query
+      headers: {content-type: application/json}
+      body: '{"sql":"SELECT 1"}'
+    auth: {user_role: internal_user, token: hash-1}
+    tracing: true
+    master_key: "sk-master"
+env: {}
+compare: {ignore: []}
