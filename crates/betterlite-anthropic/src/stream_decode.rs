@@ -1,5 +1,6 @@
 use std::convert::Infallible;
 use std::error::Error as StdError;
+use std::num::NonZeroUsize;
 use std::str;
 
 use betterlite_models::decisions::Json;
@@ -121,8 +122,7 @@ where
             .next();
         let end = match front {
             Some(Err(error)) if error.classify() != Category::Eof => {
-                // A zero end would spin the loop, so every drop advances at least one.
-                prefix_end(trimmed).unwrap_or(trimmed.len()).max(1)
+                prefix_end(trimmed).map_or(trimmed.len(), NonZeroUsize::get)
             }
             Some(_) | None => break,
         };
@@ -145,7 +145,7 @@ where
 }
 
 // The broken value ends at its own closing bracket or quote, so a valid value glued behind it survives.
-fn prefix_end(trimmed: &str) -> Option<usize> {
+fn prefix_end(trimmed: &str) -> Option<NonZeroUsize> {
     match trimmed.as_bytes().first().copied()? {
         b'{' | b'[' => container_end(trimmed),
         b'"' => quoted_end(trimmed.as_bytes()),
@@ -154,7 +154,7 @@ fn prefix_end(trimmed: &str) -> Option<usize> {
 }
 
 // Counts brackets outside strings so the dropped prefix ends where the value does, not at the buffer end.
-fn container_end(trimmed: &str) -> Option<usize> {
+fn container_end(trimmed: &str) -> Option<NonZeroUsize> {
     let mut depth = 0_usize;
     let mut in_string = false;
     let mut escaped = false;
@@ -184,7 +184,7 @@ fn container_end(trimmed: &str) -> Option<usize> {
         if matches!(character, '}' | ']') {
             depth = depth.checked_sub(1)?;
             if depth == 0 {
-                return index.checked_add(1);
+                return index.checked_add(1).and_then(NonZeroUsize::new);
             }
         }
     }
@@ -192,7 +192,7 @@ fn container_end(trimmed: &str) -> Option<usize> {
 }
 
 // A broken quoted token ends after its next unescaped quote, so a valid value glued behind it survives.
-fn quoted_end(bytes: &[u8]) -> Option<usize> {
+fn quoted_end(bytes: &[u8]) -> Option<NonZeroUsize> {
     let mut position = 1_usize;
     while let Some(&byte) = bytes.get(position) {
         if byte == b'\\' {
@@ -200,7 +200,7 @@ fn quoted_end(bytes: &[u8]) -> Option<usize> {
             continue;
         }
         if byte == b'"' {
-            return position.checked_add(1);
+            return position.checked_add(1).and_then(NonZeroUsize::new);
         }
         position = position.saturating_add(1);
     }
@@ -208,14 +208,14 @@ fn quoted_end(bytes: &[u8]) -> Option<usize> {
 }
 
 // A broken bare token ends where the next value can start; one with no boundary runs to the end.
-fn bare_end(trimmed: &str) -> Option<usize> {
+fn bare_end(trimmed: &str) -> Option<NonZeroUsize> {
     trimmed
         .char_indices()
         .skip(1)
         .find(|&(_, character)| {
             matches!(character, '{' | '[' | '"') || character.is_ascii_whitespace()
         })
-        .map(|(index, _)| index)
+        .and_then(|(index, _)| NonZeroUsize::new(index))
 }
 
 type ChunkItem<SourceFailure> = Result<TransportChunk, ReceiveError<SourceFailure>>;

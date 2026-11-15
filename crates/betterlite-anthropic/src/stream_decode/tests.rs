@@ -5,6 +5,7 @@ mod scenarios;
 
 use std::fs;
 use std::iter;
+use std::num::NonZeroUsize;
 use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -15,7 +16,10 @@ use futures_util::{Stream as _, stream, task::noop_waker};
 use rstest::rstest;
 
 use crate::stream_decode::error::DecodeError;
-use crate::stream_decode::{ChunkStream, DecodedChunk, TransportChunk, decode_anthropic_event};
+use crate::stream_decode::{
+    ChunkStream, DecodedChunk, TransportChunk, bare_end, container_end, decode_anthropic_event,
+    prefix_end, quoted_end,
+};
 
 use fixture::{MAX_EVENT_BYTES, Outcome, converter, delta};
 
@@ -118,6 +122,50 @@ fn drop_warnings(counts: &[usize]) -> Vec<String> {
         .iter()
         .map(|count| format!("dropping {count} {DROPPED}"))
         .collect()
+}
+
+// Each scanner stops exactly where a broken value ends, so a valid value glued behind it survives.
+#[test]
+fn container_end_stops_at_the_end_of_a_broken_object() {
+    assert_eq!(
+        container_end(r#"{"type":}{"type":"ping"}"#),
+        NonZeroUsize::new(9)
+    );
+}
+
+#[test]
+fn container_end_stops_at_the_end_of_a_broken_array() {
+    assert_eq!(
+        container_end(r#"[1,2]{"type":"ping"}"#),
+        NonZeroUsize::new(5)
+    );
+}
+
+#[test]
+fn quoted_end_stops_after_a_broken_tokens_closing_quote() {
+    assert_eq!(
+        quoted_end(br#""bad\q"{"type":"ping"}"#),
+        NonZeroUsize::new(7)
+    );
+}
+
+#[test]
+fn bare_end_stops_where_the_value_behind_a_bare_token_starts() {
+    assert_eq!(bare_end("nope junk{}"), NonZeroUsize::new(4));
+}
+
+#[test]
+fn prefix_end_dispatches_to_each_broken_values_end() {
+    assert_eq!(
+        prefix_end(r#"{"type":}{"type":"ping"}"#),
+        NonZeroUsize::new(9)
+    );
+    assert_eq!(prefix_end(r#"[1,2]{"type":"ping"}"#), NonZeroUsize::new(5));
+    assert_eq!(
+        prefix_end(r#""bad\q"{"type":"ping"}"#),
+        NonZeroUsize::new(7)
+    );
+    assert_eq!(prefix_end("nope junk{}"), NonZeroUsize::new(4));
 }
 
 // Every broken fragment here has a valid event glued behind it, so a drop must end where the broken value ends.
