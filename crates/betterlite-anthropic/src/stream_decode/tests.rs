@@ -14,9 +14,9 @@ use futures_util::{Stream as _, stream, task::noop_waker};
 use rstest::rstest;
 
 use crate::stream_decode::error::DecodeError;
-use crate::stream_decode::{ChunkStream, TransportChunk, decode_anthropic_event};
+use crate::stream_decode::{ChunkStream, DecodedChunk, TransportChunk, decode_anthropic_event};
 
-use fixture::{MAX_EVENT_BYTES, converter};
+use fixture::{MAX_EVENT_BYTES, converter, delta};
 
 #[rstest]
 #[case::split_event_data(scenarios::split_event_data)]
@@ -94,6 +94,65 @@ fn replays_the_anthropic_stream_decode_corpus() {
             .iter()
             .any(|(name, category)| name.starts_with("boundary") && *category == Category::Failed)
     );
+}
+
+#[test]
+fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let outcomes = fixture::drive_sync(vec![
+        Ok(TransportChunk::Text("data: nope".to_owned())),
+        Ok(TransportChunk::Text(delta("t"))),
+        Ok(TransportChunk::Text(
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":7}}"#
+                .to_owned(),
+        )),
+    ]);
+    drop(guard);
+    assert_eq!(outcomes.len(), 2);
+    let Ok(DecodedChunk::Event(text)) = &outcomes[0] else {
+        panic!("the text event after the corrupted fragment must arrive");
+    };
+    assert_eq!(text.choices[0].delta.content, "t");
+    let Ok(DecodedChunk::Event(usage)) = &outcomes[1] else {
+        panic!("the usage event after the corrupted fragment must arrive");
+    };
+    assert_eq!(usage.choices[0].finish_reason.as_deref(), Some("stop"));
+    assert_eq!(usage.usage.as_ref().unwrap().completion_tokens, 7);
+    assert_eq!(
+        warnings.messages(),
+        ["dropping 4 unparseable bytes from the accumulated anthropic stream buffer"]
+    );
+}
+
+#[test]
+fn drops_done_markers_and_keeps_later_events() {
+    let (guard, warnings) = fixture::capture_warnings();
+    let glued = format!("data: [DONE]{}", delta("y").trim_start_matches("data:"));
+    let outcomes = fixture::drive_sync(vec![
+        Ok(TransportChunk::Text("data: [DONE]".to_owned())),
+        Ok(TransportChunk::Text(delta("x"))),
+        Ok(TransportChunk::Text(
+            r#"data: {"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"#
+                .to_owned(),
+        )),
+        Ok(TransportChunk::Text(glued)),
+    ]);
+    drop(guard);
+    assert_eq!(outcomes.len(), 3);
+    let Ok(DecodedChunk::Event(text)) = &outcomes[0] else {
+        panic!("the text event after the first [DONE] must arrive");
+    };
+    assert_eq!(text.choices[0].delta.content, "x");
+    let Ok(DecodedChunk::Event(usage)) = &outcomes[1] else {
+        panic!("the usage event after the first [DONE] must arrive");
+    };
+    assert_eq!(usage.usage.as_ref().unwrap().completion_tokens, 5);
+    let Ok(DecodedChunk::Event(glued_event)) = &outcomes[2] else {
+        panic!("the text event glued behind the second [DONE] must arrive");
+    };
+    assert_eq!(glued_event.choices[0].delta.content, "y");
+    let message = "dropping 6 unparseable bytes from the accumulated anthropic stream buffer";
+    assert_eq!(warnings.messages(), [message, message]);
 }
 
 #[test]

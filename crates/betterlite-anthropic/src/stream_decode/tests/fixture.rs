@@ -1,13 +1,19 @@
 use std::cell::Cell;
 use std::convert::Infallible;
+use std::fmt::Debug;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Poll};
 
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
 use futures_util::{Stream, StreamExt as _, stream};
 use indexmap::IndexMap;
 use tokio::runtime::Builder;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::{DefaultGuard, set_default};
+use tracing::{Event, Level, Subscriber};
+use tracing_subscriber::layer::{Context as LayerContext, Layer, SubscriberExt as _};
 use uuid::Uuid;
 
 use crate::stream_decode::error::{DecodeError, ReceiveError};
@@ -64,10 +70,9 @@ where
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Item>> {
         let this = self.get_mut();
-        let polled = Pin::new(&mut this.inner).poll_next(cx);
-        if polled.is_ready() {
-            this.yielded.set(this.yielded.get().saturating_add(1));
-        }
+        let polled = this.inner.poll_next_unpin(cx);
+        let yielded = usize::from(polled.is_ready());
+        this.yielded.set(this.yielded.get().saturating_add(yielded));
         polled
     }
 }
@@ -76,6 +81,49 @@ impl<S> Drop for Tracked<S> {
     fn drop(&mut self) {
         self.dropped.set(true);
     }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct Warnings(Arc<Mutex<Vec<String>>>);
+
+#[derive(Default)]
+struct Message(String);
+
+impl Visit for Message {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        if field.name() == "message" {
+            self.0 = format!("{value:?}");
+        }
+    }
+}
+
+impl Warnings {
+    pub(super) fn messages(&self) -> Vec<String> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl<Inner: Subscriber> Layer<Inner> for Warnings {
+    fn on_event(&self, event: &Event<'_>, _context: LayerContext<'_, Inner>) {
+        if *event.metadata().level() != Level::WARN {
+            return;
+        }
+        let mut message = Message::default();
+        event.record(&mut message);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(message.0);
+    }
+}
+
+pub(super) fn capture_warnings() -> (DefaultGuard, Warnings) {
+    let warnings = Warnings::default();
+    let subscriber = tracing_subscriber::registry().with(warnings.clone());
+    (set_default(subscriber), warnings)
 }
 
 struct FixedIds(Uuid);
@@ -105,6 +153,12 @@ pub(super) struct SourceFailure {
 pub(super) type Source = Result<TransportChunk, ReceiveError<SourceFailure>>;
 pub(super) type Outcome = Result<DecodedChunk, DecodeError<SourceFailure, Infallible>>;
 pub(super) type Conversion = Result<ConvertedChunk, ConvertError<Infallible>>;
+
+pub(super) fn delta(label: &str) -> String {
+    format!(
+        r#"data:{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{label}"}}}}"#
+    )
+}
 
 pub(super) fn converter() -> StreamEventConverter<Counter> {
     let ids = FixedIds(Uuid::from_u128(RESPONSE_UUID));

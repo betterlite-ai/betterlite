@@ -6,7 +6,8 @@ use crate::stream_decode::{DecodedChunk, TransportChunk};
 use crate::stream_events::error::StreamEventError;
 
 use super::fixture::{
-    Outcome, SourceFailure, convert, drive_async, drive_sync, failure, generic, stream_failure,
+    Outcome, Source, SourceFailure, convert, delta, drive_async, drive_sync, failure, generic,
+    stream_failure,
 };
 
 fn kinds(outcomes: &[Outcome]) -> Vec<&'static str> {
@@ -35,12 +36,6 @@ fn contents(outcomes: &[Outcome]) -> Vec<String> {
     contents
 }
 
-fn delta(label: &str) -> String {
-    format!(
-        r#"data:{{"type":"content_block_delta","index":0,"delta":{{"type":"text_delta","text":"{label}"}}}}"#
-    )
-}
-
 fn assert_empty_generic(chunk: &GenericChunk) {
     assert_eq!(chunk.text, "");
     assert_eq!(chunk.tool_use, None);
@@ -49,6 +44,19 @@ fn assert_empty_generic(chunk: &GenericChunk) {
     assert_eq!(chunk.usage, None);
     assert_eq!(chunk.index, Some(0));
     assert_eq!(chunk.provider_specific_fields, None);
+}
+
+fn driven_both_ways(
+    steps: Vec<Source>,
+    expected_kinds: &[&str],
+    expected_contents: &[&str],
+) -> [Vec<Outcome>; 2] {
+    let (sync, asynchronous) = (drive_sync(steps.clone()), drive_async(steps));
+    for outcomes in [&sync, &asynchronous] {
+        assert_eq!(kinds(outcomes), expected_kinds);
+        assert_eq!(contents(outcomes), expected_contents);
+    }
+    [sync, asynchronous]
 }
 
 pub(super) fn split_event_data() {
@@ -71,17 +79,15 @@ pub(super) fn split_event_data() {
         )),
         Ok(TransportChunk::Text(delta("d"))),
     ];
-    let (sync, asynchronous) = (drive_sync(steps.clone()), drive_async(steps));
-    for outcomes in [&sync, &asynchronous] {
-        assert_eq!(
-            kinds(outcomes),
-            [
-                "event", "event", "generic", "event", "event", "event", "event"
-            ]
-        );
-        assert_eq!(contents(outcomes), ["a", "b", "", "", "", "d"]);
-        assert_empty_generic(generic(&outcomes[2]));
-    }
+    let outcomes = driven_both_ways(
+        steps,
+        &[
+            "event", "event", "generic", "event", "event", "event", "event",
+        ],
+        &["a", "b", "", "", "", "d"],
+    );
+    assert_empty_generic(generic(&outcomes[0][2]));
+    assert_empty_generic(generic(&outcomes[1][2]));
     split_event_data_edges();
 }
 
@@ -158,10 +164,13 @@ pub(super) fn multi_line_sse() {
     for outcomes in [&sync, &asynchronous] {
         assert_eq!(
             kinds(outcomes),
-            ["generic", "event", "generic", "generic", "event"]
+            [
+                "generic", "event", "generic", "generic", "event", "event", "event"
+            ]
         );
-        // Two data lines in one string are not joined or normalized; only the first value is parsed.
-        assert_eq!(contents(outcomes), ["b", "m"]);
+        // Two data lines in one string are not joined: the data: before n is dropped as unparseable,
+        // so n arrives as its own event and the buffered s arrives when the stream ends.
+        assert_eq!(contents(outcomes), ["b", "m", "n", "s"]);
         assert_empty_generic(generic(&outcomes[0]));
         assert_empty_generic(generic(&outcomes[2]));
         assert_empty_generic(generic(&outcomes[3]));
@@ -180,9 +189,9 @@ pub(super) fn done_marker() {
     ];
     let (sync, asynchronous) = (drive_sync(steps.clone()), drive_async(steps));
     for outcomes in [&sync, &asynchronous] {
-        // [DONE] is not a terminator: it fails JSON and wedges the accumulator, so later events never come.
-        assert_eq!(kinds(outcomes), ["event", "event"]);
-        assert_eq!(contents(outcomes), ["", "d"]);
+        // [DONE] is not a terminator: each one is dropped as an unparseable prefix and later events still come.
+        assert_eq!(kinds(outcomes), ["event", "event", "event"]);
+        assert_eq!(contents(outcomes), ["", "d", "e"]);
     }
     // A valid message_stop chunk is an ordinary event and does not end the iteration.
     let continuations = drive_sync(vec![
@@ -220,9 +229,9 @@ pub(super) fn invalid_json_event() {
     for outcomes in [&sync, &asynchronous] {
         assert_eq!(
             kinds(outcomes),
-            ["shape", "event", "parsing", "receiving", "other"]
+            ["shape", "event", "parsing", "receiving", "other", "event"]
         );
-        assert_eq!(contents(outcomes), ["i"]);
+        assert_eq!(contents(outcomes), ["i", "j"]);
     }
     let receiving = failure(&sync[3]).to_string();
     assert_eq!(receiving, "Error receiving chunk from stream: bad read");
