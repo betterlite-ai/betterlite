@@ -1,5 +1,5 @@
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from copy import deepcopy
 from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, runtime_checkable
@@ -23,6 +23,7 @@ USER: Final[list[JsonValue]] = [{"role": "user", "content": "hi"}]
 DROPPED: Final = "Bedrock Invoke: dropping unsupported anthropic-beta values from client headers"
 STRIPPED: Final = "Bedrock Invoke: stripping unsupported top-level request fields: "
 TEXTS = TypeAdapter(list[str])
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 FIXED_MODEL_COST: Final[Object] = {
     "bedrock/claude-opus-4-5": {"litellm_provider": "bedrock"},
     "bedrock/fixture-no-flag": {"litellm_provider": "bedrock", "mode": "chat"},
@@ -104,7 +105,7 @@ class Watch(logging.Handler):
 
 
 @contextmanager
-def watching() -> Iterator[Watch]:
+def watching() -> Generator[Watch]:
     watch = Watch()
     logger = logging.getLogger("LiteLLM")
     previous_handlers = logger.handlers
@@ -120,7 +121,7 @@ def watching() -> Iterator[Watch]:
 
 @runtime_checkable
 class MessagesView(Protocol):
-    def transform_anthropic_messages_request(  # ast-grep-ignore: no-long-names
+    def transform_anthropic_messages_request(
         self,
         model: str,
         messages: list[JsonValue],
@@ -151,7 +152,7 @@ class Probe(MessagesConfig):
 
 
 def probe(provider: str | None) -> Probe:
-    created = Probe()
+    created: Probe = object.__new__(Probe)
     created.requested_provider = provider
     return created
 
@@ -184,9 +185,13 @@ def beta_options(call: BetaCall) -> Object:
 
 
 def beta_call(call: BetaCall) -> JsonValue:
-    given = call["subclass_provider"] if "subclass_provider" in call else None
-    messages: list[JsonValue] = call["messages"] if "messages" in call else []
-    headers: dict[str, str] = call["headers"] if "headers" in call else {}
+    given = call.get("subclass_provider")
+    messages = call.get("messages")
+    if messages is None:
+        messages = []
+    headers = call.get("headers")
+    if headers is None:
+        headers = {}
     with watching() as watch:
         body = probe(effective_provider(given)).invoke(
             call["model"], deepcopy(messages), beta_options(call), headers
@@ -215,19 +220,20 @@ def context_case(case: ContextCase) -> JsonValue:
     if "max_tokens" not in options:
         options["max_tokens"] = MAX_TOKENS
     without = dict(options)
-    if "context_management" in without:
-        del without["context_management"]
+    without.pop("context_management", None)
     model = "fixture-tool-search"
     with_body = probe("bedrock").invoke(model, deepcopy(USER), options, {})
     without_body = probe("bedrock").invoke(model, deepcopy(USER), without, {})
     kept = dict(case["request"])
     if "context_management" in with_body:
         kept["context_management"] = with_body["context_management"]
-    elif "context_management" in kept:
-        del kept["context_management"]
-    given = case["betas"] if "betas" in case else []
+    else:
+        kept.pop("context_management", None)
+    given = case.get("betas")
+    if given is None:
+        given = []
     added = betas_of(with_body) - betas_of(without_body)
-    return {"request": kept, "betas": sorted(set(given) | added)}
+    return JSON.validate_python({"request": kept, "betas": sorted(set(given) | added)})
 
 
 def context_filter(call: ContextFilter) -> JsonValue:
@@ -265,12 +271,13 @@ def unsupported_fields(call: UnsupportedFields) -> JsonValue:
 
 def provider_identity(call: ProviderIdentity) -> JsonValue:
     litellm.model_cost = call["model_cost"]
+    config: MessagesConfig = object.__new__(MessagesConfig)
     answers: list[JsonValue] = []
     for entry in call["cases"]:
-        given = entry["subclass_provider"] if "subclass_provider" in entry else None
+        given = entry.get("subclass_provider")
         answers.append(
             {
-                "custom_llm_provider": MessagesConfig().custom_llm_provider,
+                "custom_llm_provider": config.custom_llm_provider,
                 "beta_headers_provider": probe(given).beta_headers_provider,
                 "supports_tool_search": bedrock_supports_tool_search(entry["model"]),
             }
