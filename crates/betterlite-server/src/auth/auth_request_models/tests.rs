@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::extract::Extension;
-use axum::http::{HeaderValue, Request, StatusCode, header};
+use axum::http::{HeaderName, HeaderValue, Request, StatusCode, header};
 use axum::routing::post;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use betterlite_auth::auth_request_models::MODEL_ROUTING_HEADER_NAME;
@@ -411,7 +411,7 @@ fn non_utf8_model_header_keeps_its_latin1_value() {
         .body(Body::empty())
         .expect("the request builds");
     request.headers_mut().insert(
-        MODEL_ROUTING_HEADER_NAME,
+        HeaderName::from_static(MODEL_ROUTING_HEADER_NAME),
         HeaderValue::from_bytes(b"gpt-\xff").expect("opaque bytes are a valid header value"),
     );
     let headers = headers_json(request.headers());
