@@ -1,0 +1,13 @@
+kind: helper
+name: constructor-missing-api-base
+call:
+  b3766:
+    function: construct
+    settings:
+      guardrail_name: cs-aidr
+    environment:
+      CS_AIDR_TOKEN: env-key
+env:
+  CS_AIDR_TOKEN: env-key
+compare:
+  ignore: []

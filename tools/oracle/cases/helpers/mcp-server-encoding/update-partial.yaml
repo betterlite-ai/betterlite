@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-server-encoding-update-partial
+call:
+  b4710:
+    function: prepare_update
+    salt_key: encoding-salt
+    request:
+      server_id: s1
+      server_name: srv
+      alias: srv
+    model_fields: [server_id, server_name, alias]
+    original_fields: [server_id, server_name]
+env:
+  LITELLM_SALT_KEY: encoding-salt
+compare: {ignore: []}

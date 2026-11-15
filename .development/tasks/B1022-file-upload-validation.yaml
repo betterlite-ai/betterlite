@@ -32,6 +32,8 @@ description: >-
   170 tests, 115 fixtures, 75 adapters, 55 fuzz/replay, 65 config and 30 wiring lines: 790 total.
 scope:
   paths:
+  - "crates/betterlite-config/tests/fixtures/unsupported/**"
+  - "crates/betterlite-config/src/sections/admission_control.rs"
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_upload_validation.rs
   - crates/betterlite-core/src/api/file_upload_validation/**

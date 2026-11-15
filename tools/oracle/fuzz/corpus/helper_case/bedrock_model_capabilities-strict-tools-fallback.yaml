@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-model-capabilities-strict-tools-fallback
+call:
+  bedrock_model_capabilities:
+    function: strict_tools_fallback
+    model_cost:
+      anthropic.claude-flag-true: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: true}
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock}
+    models: [anthropic.claude-flag-true, amazon.nova-pro-v1:0, anthropic.claude-unmapped-9]
+env: {}
+compare: {ignore: []}
