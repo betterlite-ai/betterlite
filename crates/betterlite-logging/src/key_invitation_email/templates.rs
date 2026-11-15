@@ -163,14 +163,13 @@ fn fill_placeholder(
         }
         name.push(next);
     }
-    match fields.iter().find(|(field, _)| *field == name.as_str()) {
-        Some((_, value)) => filled.push_str(value),
-        None => {
-            filled.push('{');
-            filled.push_str(&name);
-            if closed {
-                filled.push('}');
-            }
+    if let Some((_, value)) = fields.iter().find(|(field, _)| *field == name.as_str()) {
+        filled.push_str(value);
+    } else {
+        filled.push('{');
+        filled.push_str(&name);
+        if closed {
+            filled.push('}');
         }
     }
 }

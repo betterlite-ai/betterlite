@@ -932,30 +932,30 @@ async fn link_trims_every_trailing_slash() {
     let store = database_store(&pool);
     let creator = creating_creator();
     let expected = "https://proxy.example/ui/onboarding?invitation_id=inv-created";
-    let link = construct_user_invitation_link(
+    let plain = construct_user_invitation_link(
         Some("user-1"),
         "https://proxy.example",
         Some(&store),
         &creator,
     )
     .await;
-    assert_eq!(link, expected);
-    let link = construct_user_invitation_link(
+    assert_eq!(plain, expected);
+    let with_slash = construct_user_invitation_link(
         Some("user-1"),
         "https://proxy.example/",
         Some(&store),
         &creator,
     )
     .await;
-    assert_eq!(link, expected);
-    let link = construct_user_invitation_link(
+    assert_eq!(with_slash, expected);
+    let with_slashes = construct_user_invitation_link(
         Some("user-1"),
         "https://proxy.example///",
         Some(&store),
         &creator,
     )
     .await;
-    assert_eq!(link, expected);
+    assert_eq!(with_slashes, expected);
     assert_eq!(creator.calls(), vec!["user-1", "user-1", "user-1"]);
     close(&pool, fixture).await;
 }

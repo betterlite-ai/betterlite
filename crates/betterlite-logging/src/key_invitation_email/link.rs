@@ -30,20 +30,20 @@ pub async fn construct_user_invitation_link<C>(
 where
     C: InvitationCreator,
 {
-    let (Some(user_id), Some(database)) = (user_id, database) else {
+    let (Some(user), Some(store)) = (user_id, database) else {
         return base_url.to_owned();
     };
-    match find_invitation(database, user_id).await {
+    match find_invitation(store, user).await {
         Ok(Some(invitation_id)) => onboarding_link(base_url, &invitation_id),
-        Ok(None) => match creator.create_for_user(user_id).await {
-            Ok(invitation_id) => onboarding_link(base_url, &invitation_id),
+        Ok(None) => match creator.create_for_user(user).await {
+            Ok(created) => onboarding_link(base_url, &created),
             Err(error) => {
-                tracing::error!("Error creating invitation link for user_id {user_id}: {error}");
+                tracing::error!("Error creating invitation link for user_id {user}: {error}");
                 base_url.to_owned()
             }
         },
         Err(error) => {
-            tracing::error!("Error creating invitation link for user_id {user_id}: {error}");
+            tracing::error!("Error creating invitation link for user_id {user}: {error}");
             base_url.to_owned()
         }
     }
@@ -54,11 +54,11 @@ async fn find_invitation(
     user_id: &str,
 ) -> Result<Option<InvitationId>, KeyInvitationEmailError> {
     let client = database.session().await?;
-    let row = client
+    let found = client
         .query_opt(FIND_INVITATION_SQL, &[&user_id])
         .await
         .map_err(backend::<Infallible>)?;
-    let Some(row) = row else {
+    let Some(row) = found else {
         return Ok(None);
     };
     let id: String = row.try_get(0).map_err(backend::<Infallible>)?;

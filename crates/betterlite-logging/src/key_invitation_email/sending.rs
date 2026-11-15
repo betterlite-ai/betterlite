@@ -2,7 +2,7 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::team_repository::repository::{TeamDatabase, TeamRepository};
 use betterlite_db::user_repository::UserRepository;
 use rust_decimal::prelude::ToPrimitive as _;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::link::{InvitationCreator, construct_user_invitation_link};
 use super::templates::{
@@ -100,7 +100,7 @@ where
                 email_logo_url: &branding.logo_url,
                 recipient_email,
                 key_budget: event.max_budget.and_then(|budget| budget.to_f64()),
-                key_token: event.token.as_ref().map(|token| token.expose_secret()),
+                key_token: event.token.as_ref().map(ExposeSecret::expose_secret),
                 base_url,
                 email_support_contact: &branding.support_contact,
             };
@@ -132,17 +132,17 @@ where
     }
 
     async fn team_name(&self, team_id: Option<&str>) -> Result<String, KeyInvitationEmailError> {
-        let (Some(team_id), Some(database)) = (team_id, self.database) else {
+        let (Some(team), Some(store)) = (team_id, self.database) else {
             return Ok(DEFAULT_TEAM_NAME.to_owned());
         };
         let teams = TeamRepository {
             database: TeamDatabase {
-                db: database,
-                writer_db: database,
+                db: store,
+                writer_db: store,
             },
             use_writer: false,
         };
-        let Some(record) = teams.table().find_unique(team_id).await? else {
+        let Some(record) = teams.table().find_unique(team).await? else {
             return Ok(DEFAULT_TEAM_NAME.to_owned());
         };
         let Some(JsonData::String(alias)) = record.fields.get("team_alias") else {
