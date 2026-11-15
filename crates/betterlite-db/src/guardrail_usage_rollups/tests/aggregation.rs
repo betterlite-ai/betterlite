@@ -129,6 +129,7 @@ fn sums_two_entries_of_the_same_unit_key() {
 #[rstest]
 #[case::report_only(r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": false}"#)]
 #[case::report_only_text_flag(r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": "false"}"#)]
+#[case::report_only_zero_flag(r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": 0}"#)]
 #[case::negative_cost(
     r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": -0.5}}"#
 )]
@@ -146,6 +147,27 @@ fn keeps_a_zero_cost_unit_priced() {
     assert_eq!(
         units_of(&[payload_with_entries(entry)]),
         [unit_call("g1", "a", increment(1, Decimal::ZERO, 0))]
+    );
+}
+
+#[test]
+fn prices_an_entry_whose_in_spend_flag_is_null() {
+    let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 1}, "guardrail_cost_by_unit": {"a": 0.5}, "guardrail_cost_in_spend": null}"#;
+    assert_eq!(
+        units_of(&[payload_with_entries(entry)]),
+        [unit_call("g1", "a", increment(1, Decimal::new(5, 1), 0))]
+    );
+}
+
+#[test]
+fn leaves_a_unit_with_a_null_price_unpriced() {
+    let entry = r#"{"guardrail_id": "g1", "guardrail_usage": {"a": 2, "b": 3}, "guardrail_cost_by_unit": {"a": 0.5, "b": null}}"#;
+    assert_eq!(
+        units_of(&[payload_with_entries(entry)]),
+        [
+            unit_call("g1", "a", increment(2, Decimal::new(5, 1), 0)),
+            unit_call("g1", "b", increment(3, Decimal::ZERO, 3)),
+        ]
     );
 }
 
