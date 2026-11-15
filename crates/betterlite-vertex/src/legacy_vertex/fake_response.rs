@@ -6,11 +6,15 @@ use uuid::Uuid;
 use crate::legacy_prediction::projection::{LegacyResult, LegacyUsage};
 
 // LiteLLM returns the whole ModelResponse for a code model's fake stream; its dump shape is pinned field by field
-pub(crate) fn model_response(result: &LegacyResult, content: Option<&str>) -> Json {
+pub(crate) fn model_response(
+    result: &LegacyResult,
+    content: Option<&str>,
+    identifier: fn() -> Uuid,
+) -> Json {
     let response = IndexMap::from([
         (
             String::from("id"),
-            Json::Text(format!("chatcmpl-{}", Uuid::new_v4())),
+            Json::Text(format!("chatcmpl-{}", identifier())),
         ),
         (
             String::from("created"),

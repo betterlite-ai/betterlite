@@ -363,7 +363,7 @@ async fn custom_stream_returns_words() {
     let LegacyCompletion::Words(words) = completion else {
         panic!("a word stream");
     };
-    let collected: Vec<String> = words.collect();
+    let collected: Vec<String> = Iterator::collect(words);
     assert_eq!(collected, vec!["alpha", "beta"]);
     let calls = client.calls();
     let Call::Endpoint(request) = &calls[0] else {
@@ -511,7 +511,7 @@ async fn fake_stream_renders_response() {
     let Some(Json::Text(id)) = response.shift_remove("id") else {
         panic!("a response id");
     };
-    assert!(id.starts_with("chatcmpl-"));
+    assert_eq!(id, "chatcmpl-01234567-89ab-cdef-0123-456789abcdef");
     let expected = json(
         r#"{"object":"chat.completion","created":1700000000,"model":"code-bison","system_fingerprint":null,"choices":[{"finish_reason":"stop","index":0,"message":{"content":"a b","role":"assistant","tool_calls":null,"function_call":null,"provider_specific_fields":null}}],"usage":{"completion_tokens":3,"prompt_tokens":5,"total_tokens":8,"completion_tokens_details":null,"prompt_tokens_details":null}}"#,
     );
@@ -530,7 +530,7 @@ async fn fake_stream_nulls_empty() {
     let Some(Json::Text(id)) = response.shift_remove("id") else {
         panic!("a response id");
     };
-    assert!(id.starts_with("chatcmpl-"));
+    assert_eq!(id, "chatcmpl-01234567-89ab-cdef-0123-456789abcdef");
     let expected = json(
         r#"{"object":"chat.completion","created":1700000000,"model":"code-bison","system_fingerprint":null,"choices":[{"finish_reason":"stop","index":0,"message":{"content":null,"role":"assistant","tool_calls":null,"function_call":null,"provider_specific_fields":null}}],"usage":{"completion_tokens":0,"prompt_tokens":5,"total_tokens":5,"completion_tokens_details":null,"prompt_tokens_details":null}}"#,
     );

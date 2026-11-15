@@ -1,6 +1,7 @@
 use betterlite_core::message_utilities::response_streams::iterators::ModelResponseIterator;
 use betterlite_models::decisions::{Extra, Json};
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use super::LegacyCompletion;
 use super::error::LegacyVertexError;
@@ -22,11 +23,19 @@ struct Scope {
     location: String,
 }
 
+// Everything a synchronous call needs from the environment, including the caller's id source
+pub(crate) struct SyncDeps<'call, 'config, 'encoding> {
+    pub(crate) context: &'call LegacyContext<'config, 'encoding>,
+    pub(crate) access: AccessToken,
+    pub(crate) identifier: fn() -> Uuid,
+}
+
 struct SyncCall<'call, 'config, 'encoding> {
     model: &'call str,
     prompt: &'call str,
     stream: bool,
     context: &'call LegacyContext<'config, 'encoding>,
+    identifier: fn() -> Uuid,
 }
 
 #[derive(Clone, Copy)]
@@ -39,12 +48,16 @@ pub(crate) async fn execute<C>(
     client: &C,
     cached: Option<&C>,
     plan: LegacyPlan,
-    context: &LegacyContext<'_, '_>,
-    access: AccessToken,
+    deps: SyncDeps<'_, '_, '_>,
 ) -> Result<LegacyCompletion, LegacyVertexError>
 where
     C: PredictionClient,
 {
+    let SyncDeps {
+        context,
+        access,
+        identifier,
+    } = deps;
     let cached_client = cached.unwrap_or(client);
     let LegacyPlan {
         model,
@@ -58,6 +71,7 @@ where
         prompt: &prompt,
         stream,
         context,
+        identifier,
     };
     match route {
         // The source's vision branch calls no model, so it needs neither a project nor a location
@@ -126,7 +140,7 @@ where
         let result = result_of(call, Some(&prediction))?;
         let content = (!text.is_empty()).then_some(text.as_str());
         // The source's fake stream is that whole response, yielded once by B596's iterator
-        let response = fake_response::model_response(&result, content);
+        let response = fake_response::model_response(&result, content, call.identifier);
         let iterator = ModelResponseIterator::new(response, None)?;
         return Ok(LegacyCompletion::FakeStream(iterator));
     }

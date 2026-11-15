@@ -118,7 +118,7 @@ fn private_route(
         instances,
         options: extra(options),
     };
-    Ok((source_string(&value), route))
+    Ok((source_string(&decision(&value)), route))
 }
 
 fn custom_route(
@@ -165,7 +165,7 @@ fn prompt_of(messages: &[ChatMessage]) -> String {
         .iter()
         .filter_map(|message| match &message.content {
             Some(MessageContent::Text(text)) => Some(text.as_str()),
-            Some(MessageContent::Parts(_parts)) | None => None,
+            Some(MessageContent::Parts(_)) | None => None,
         })
         .collect::<Vec<&str>>()
         .join(" ")

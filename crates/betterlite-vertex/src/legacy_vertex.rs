@@ -5,6 +5,7 @@ use betterlite_core::message_utilities::response_streams::iterators::ModelRespon
 use betterlite_models::provider_model_sets::ProviderModelSets;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_prompts::arguments::json::Object;
+use uuid::Uuid;
 
 use crate::gemini_options::defaults::GenerationDefaults;
 use crate::legacy_prediction::client::PredictionClient;
@@ -39,6 +40,7 @@ pub struct LegacyDeps<'config, 'encoding> {
     pub sets: &'config ProviderModelSets,
     pub defaults: &'config GenerationDefaults,
     pub services: &'config ProjectionServices<'encoding>,
+    pub identifier: fn() -> Uuid,
     pub credentials: Option<&'config ConfiguredCredentials>,
     pub project: Option<&'config str>,
     pub location: Option<&'config str>,
@@ -85,6 +87,11 @@ where
     if plan.acompletion {
         delegation::delegate(client, cached_client, plan, &context, access).await
     } else {
-        sync::execute(client, cached_client, plan, &context, access).await
+        let sync = sync::SyncDeps {
+            context: &context,
+            access,
+            identifier: deps.identifier,
+        };
+        sync::execute(client, cached_client, plan, sync).await
     }
 }

@@ -13,6 +13,7 @@ use betterlite_tokenizer::engine::error::EngineError;
 use futures_util::StreamExt as _;
 use futures_util::stream;
 use secrecy::SecretString;
+use uuid::Uuid;
 
 use crate::gemini_options::defaults::GenerationDefaults;
 use crate::legacy_prediction::client::{
@@ -38,6 +39,11 @@ impl LocalEncoding for CountingEncoding {
     fn encode(&self, text: &str) -> Result<usize, EngineError> {
         Ok(text.chars().count())
     }
+}
+
+// A pinned UUID4 spelling so a fake stream's response id is compared whole
+pub(super) fn fixed_identifier() -> Uuid {
+    Uuid::parse_str("01234567-89ab-cdef-0123-456789abcdef").expect("a pinned UUID")
 }
 
 pub(super) fn services(encoder: &CountingEncoding) -> ProjectionServices<'_> {
@@ -83,6 +89,7 @@ impl PlanFixture {
             sets: &self.sets,
             defaults: &self.defaults,
             services,
+            identifier: fixed_identifier,
             credentials: None,
             project: self.project.as_deref(),
             location: self.location.as_deref(),
@@ -366,7 +373,7 @@ pub(super) async fn fake_stream_chunk(
     let LegacyCompletion::FakeStream(iterator) = completion else {
         panic!("the fake stream");
     };
-    let chunks: Vec<Json> = iterator.collect();
+    let chunks: Vec<Json> = Iterator::collect(iterator);
     assert_eq!(chunks.len(), 1);
     chunks.into_iter().next().expect("the one chunk")
 }
