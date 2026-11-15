@@ -263,6 +263,8 @@ fn maps_lowercase_x_sizes_into_dimensions(
 #[case::blank(" x ")]
 #[case::trailing("1344x")]
 #[case::beyond_64_bits("99999999999999999999x512")]
+#[case::underscores("1_024x768")]
+#[case::non_ascii_digits("١٠٢٤x٧٦٨")]
 fn malformed_sizes_raise_the_parse_error(#[case] size: &str) {
     let error = map_openai_params(
         &params(&[("size", text(size))]),
