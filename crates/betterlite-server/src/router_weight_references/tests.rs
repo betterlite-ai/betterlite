@@ -227,6 +227,31 @@ fn stored_other_team_hidden() {
     assert_unknown(&error, "dep-1");
 }
 
+#[test]
+fn deployment_fixture_decodes_model_info() {
+    let decoded: RouterWeightDeployment = serde_json::from_str(
+        r#"{"model_name": "gpt-4", "model_info": "{\"team_id\": \"team-a\"}"}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        decoded,
+        RouterWeightDeployment {
+            model_name: "gpt-4".to_owned(),
+            model_info: RouterWeightModelInfo {
+                team_id: Some("team-a".to_owned()),
+                db_model: None,
+                team_public_model_name: None,
+            },
+        }
+    );
+    assert!(
+        serde_json::from_str::<RouterWeightDeployment>(
+            r#"{"model_name": "gpt-4", "model_info": {"team_id": 1}}"#
+        )
+        .is_err()
+    );
+}
+
 #[tokio::test]
 async fn settings_validation_null_settings() {
     assert!(
@@ -535,6 +560,20 @@ async fn postgres_reference_lookup_db_required_for_configured_id() {
         .unwrap_err();
     assert_eq!(error.status_code(), Some(StatusCode::SERVICE_UNAVAILABLE));
     assert_eq!(error.to_string(), DATABASE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn postgres_reference_lookup_stored_absent_uses_configured() {
+    let case = support::Case::new(TABLE_SCHEMA).await;
+    case.insert_row("dep-2", "gpt-4o", None).await;
+    let repository = case.repository();
+    let mut catalog = DeploymentCatalog::default();
+    catalog.push(configured("gpt-4", r#"{"id": "dep-1"}"#));
+    let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
+    validate_settings_weights(Some(&settings), None, Some(&repository), Some(&catalog))
+        .await
+        .unwrap();
+    case.close().await;
 }
 
 #[tokio::test]
