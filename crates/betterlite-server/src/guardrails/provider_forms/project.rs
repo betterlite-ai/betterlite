@@ -130,15 +130,13 @@ fn insert_limits(entry: &mut Map<String, Value>, field: &FormField) {
 
 const fn type_name(shape: &FormShape) -> &'static str {
     match shape {
-        FormShape::Text => "string",
+        FormShape::Text | FormShape::Other => "string",
         FormShape::Number => "number",
         FormShape::Boolean => "boolean",
         FormShape::Mapping { .. } => "dict",
-        FormShape::List { .. } => "array",
+        FormShape::List { .. } | FormShape::RawList => "array",
         FormShape::Choice(_) => "select",
         FormShape::Nested(_) => "nested",
         FormShape::RawObject => "object",
-        FormShape::RawList => "array",
-        FormShape::Other => "string",
     }
 }
