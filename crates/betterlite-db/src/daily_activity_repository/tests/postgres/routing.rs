@@ -72,7 +72,7 @@ async fn postgres_count_and_rows_need_not_share_snapshot() {
     .await;
 }
 
-async fn assert_routing(repository: &PostgresRepository<'_>, range: &DailyActivityScope) {
+async fn assert_reports(repository: &PostgresRepository<'_>, range: &DailyActivityScope) {
     let aggregated = repository.aggregated(range, true, 10).await.unwrap();
     let total = aggregated
         .grouping_rows
@@ -86,19 +86,30 @@ async fn assert_routing(repository: &PostgresRepository<'_>, range: &DailyActivi
     assert_eq!(ranked, ["k-writer"]);
     let found = repository.search_keys(range, "k-", 10).await.unwrap();
     assert_eq!(found, ["k-writer"]);
+}
+
+async fn assert_export_and_rows(repository: &PostgresRepository<'_>, range: &DailyActivityScope) {
     let mut export = repository.export_rows(range, ExportType::Daily);
     let exported = export.next_row().await.unwrap().unwrap();
     assert_eq!(Some(exported.spend), Decimal::from_f64(7.0));
     assert!(export.next_row().await.unwrap().is_none());
-
     let page_rows = repository.daily_rows(range, 1, 10).await.unwrap();
     let page_ids: Vec<&str> = page_rows.rows.iter().map(|row| row.id.as_str()).collect();
     assert_eq!(page_rows.total_count, 2);
     assert_eq!(page_ids, ["r1", "r2"]);
+}
+
+async fn assert_metadata_recovery(repository: &PostgresRepository<'_>) {
     let wanted = BTreeSet::from(["sk-1".to_owned()]);
     repository.key_metadata(&wanted, None).await.unwrap();
     let call = repository.proxy_reads.last_call();
     assert_eq!(call.resolved["sk-1"].key_alias.as_deref(), Some("reader"));
+}
+
+async fn assert_routing(repository: &PostgresRepository<'_>, range: &DailyActivityScope) {
+    assert_reports(repository, range).await;
+    assert_export_and_rows(repository, range).await;
+    assert_metadata_recovery(repository).await;
 }
 
 #[tokio::test]

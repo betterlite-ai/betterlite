@@ -91,6 +91,21 @@ impl Default for FakeDatabase {
 }
 
 impl FakeDatabase {
+    pub(crate) fn with_aggregate_barrier(mut self, barrier: Arc<Barrier>) -> Self {
+        self.aggregate_barrier = Some(barrier);
+        self
+    }
+
+    pub(crate) fn with_daily_barrier(mut self, barrier: Arc<Barrier>) -> Self {
+        self.daily_barrier = Some(barrier);
+        self
+    }
+
+    pub(crate) fn with_deleted_pending(mut self) -> Self {
+        self.deleted_pending = true;
+        self
+    }
+
     pub(crate) fn push_raw(&self, reply: RawReply) {
         self.raw.lock().unwrap().push_back(reply);
     }

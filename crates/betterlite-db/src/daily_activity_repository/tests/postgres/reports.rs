@@ -256,10 +256,11 @@ async fn postgres_entity_counts_and_null_groups() {
             .await
             .unwrap();
         let rows = aggregated.entity_rows.unwrap();
-        let mut found: BTreeMap<String, i64> = BTreeMap::new();
-        for row in rows.into_iter().filter(|row| row.api_key_rolled == 1) {
-            found.insert(row.entity_id.unwrap(), row.distinct_api_keys.unwrap());
-        }
+        let found: BTreeMap<String, i64> = rows
+            .into_iter()
+            .filter(|row| row.api_key_rolled == 1)
+            .map(|row| (row.entity_id.unwrap(), row.distinct_api_keys.unwrap()))
+            .collect();
         assert_eq!(found, counted_entity_keys(&client).await);
         assert_eq!(
             found,

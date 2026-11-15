@@ -76,10 +76,7 @@ async fn aggregated_entity_query_optional() {
 
 #[tokio::test]
 async fn aggregate_queries_concurrent() {
-    let database = FakeDatabase {
-        aggregate_barrier: Some(Arc::new(Barrier::new(2))),
-        ..Default::default()
-    };
+    let database = FakeDatabase::default().with_aggregate_barrier(Arc::new(Barrier::new(2)));
     let repository = repository(database, FakeReads::default());
     let outcome = timeout(
         Duration::from_secs(5),
@@ -305,10 +302,10 @@ async fn daily_rows_sentinel_retained() {
         .unwrap();
     let calls = repository.database.daily_calls.lock().unwrap().clone();
     assert_eq!(calls.len(), 2);
-    let call: &DailyCall = calls.first().unwrap();
-    assert_eq!(call.table, DailyActivityTable::User);
-    assert_eq!(call.skip, 0);
-    assert_eq!(call.take, 10);
+    let find: &DailyCall = calls.last().unwrap();
+    assert_eq!(find.table, DailyActivityTable::User);
+    assert_eq!(find.skip, 0);
+    assert_eq!(find.take, 10);
 }
 
 #[tokio::test]
@@ -351,10 +348,7 @@ async fn count_and_rows_share_predicates() {
 
 #[tokio::test]
 async fn daily_rows_count_barrier() {
-    let database = FakeDatabase {
-        daily_barrier: Some(Arc::new(Barrier::new(2))),
-        ..Default::default()
-    };
+    let database = FakeDatabase::default().with_daily_barrier(Arc::new(Barrier::new(2)));
     let repository = repository(database, FakeReads::default());
     let outcome = timeout(
         Duration::from_secs(5),

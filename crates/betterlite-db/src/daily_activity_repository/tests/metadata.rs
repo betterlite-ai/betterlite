@@ -9,7 +9,7 @@ use crate::daily_activity_contracts::{DailyActivityProxyReads, KeyMetadataRow, S
 use crate::daily_activity_repository::DailyActivityRepository;
 use crate::daily_activity_repository::metadata::{metadata_row, metadata_tags};
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::{Future, ready};
+use std::future::{Future, poll_fn};
 use std::time::{Duration, SystemTime};
 use tokio::time::timeout;
 use tracing::subscriber::set_default;
@@ -23,7 +23,7 @@ impl DailyActivityProxyReads for PanickingReads {
         _api_keys: &BTreeSet<String>,
         _window: Option<SpendLogsWindow>,
     ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
-        ready(panic!("the recovery port failed"))
+        poll_fn(|_context| panic!("the recovery port failed"))
     }
 }
 
@@ -125,10 +125,7 @@ async fn deleted_failure_warns_then_recovers() {
 
 #[tokio::test]
 async fn deleted_cancel_propagates() {
-    let database = FakeDatabase {
-        deleted_pending: true,
-        ..Default::default()
-    };
+    let database = FakeDatabase::default().with_deleted_pending();
     let repository = repository(database, FakeReads::default());
     let outcome = timeout(
         Duration::from_millis(50),

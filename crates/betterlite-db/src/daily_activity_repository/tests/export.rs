@@ -142,7 +142,8 @@ async fn export_later_error_keeps_prior_yields() {
     let user_scope = scope(DailyActivityTable::User);
     let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     let mut seen = 0_usize;
-    while rows.next_row().await.unwrap().is_some() {
+    while seen < 1000 {
+        assert!(rows.next_row().await.unwrap().is_some());
         seen += 1;
     }
     assert_eq!(seen, 1000_usize);
