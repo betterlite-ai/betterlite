@@ -16,12 +16,14 @@ betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-core = { path = "../betterlite-core" }
+betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+betterlite-redis = { path = "../betterlite-redis" }
 chrono.workspace = true
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
@@ -46,6 +48,7 @@ sha2.workspace = true
 strfmt = "0.2.6"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["rt", "sync", "time"] }
+tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tracing.workspace = true
 tree-sitter = "0.27.1"
 tree-sitter-python = "0.25.0"
@@ -53,7 +56,7 @@ ulid = "3.0.0"
 unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
 url = "2.5.8"
-uuid.workspace = true
+uuid = { workspace = true, features = ["v5"] }
 
 [dev-dependencies]
 axum.workspace = true
