@@ -2,7 +2,7 @@ use rust_decimal::Decimal;
 
 use super::support::{AUDIO_CONTENT, CONTENT, PROMPT, session};
 use crate::realtime_session::records::{
-    AudioSettings, ExactDecimal, MaxResponseTokens, Setting, UsageEvent,
+    AudioSettings, ExactDecimal, MaxResponseTokens, Setting, UsageDetails, UsageEvent,
 };
 
 const USAGE_ZERO: &str = concat!(
@@ -14,6 +14,16 @@ pub(super) fn default_session_configuration() {
     default_session_state();
     default_inference_configuration();
     default_prompt_configuration();
+    partial_usage_event_zero_fills();
+}
+
+fn partial_usage_event_zero_fills() {
+    let usage: UsageEvent =
+        serde_json::from_str(r#"{"totalInputTokens":5}"#).expect("a partial usage event");
+    assert_eq!(usage.total_input_tokens, 5);
+    assert_eq!(usage.total_output_tokens, 0);
+    assert_eq!(usage.total_tokens, 0);
+    assert_eq!(usage.details, UsageDetails::default());
 }
 
 fn default_session_state() {

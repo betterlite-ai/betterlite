@@ -6,7 +6,6 @@ pub const AUDIO_ENCODING: &str = "base64";
 pub const AUDIO_TYPE: &str = "SPEECH";
 pub const TEXT_MEDIA_TYPE: &str = "text/plain";
 pub const TOOL_MEDIA_TYPE: &str = "application/json";
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct ExactDecimal(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
@@ -256,7 +255,7 @@ pub struct SessionObject {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct UsageEvent {
     pub total_input_tokens: i64,
     pub total_output_tokens: i64,
@@ -265,18 +264,20 @@ pub struct UsageEvent {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UsageDetails {
     pub total: UsageDetailsTotal,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UsageDetailsTotal {
     pub input: UsageTokens,
     pub output: UsageTokens,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct UsageTokens {
     pub speech_tokens: i64,
     pub text_tokens: i64,
