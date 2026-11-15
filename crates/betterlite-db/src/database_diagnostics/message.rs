@@ -21,7 +21,7 @@ pub enum LogValue {
 impl LogValue {
     // the source returns the attribute itself and its caller tests Python truthiness
     #[must_use]
-    pub const fn is_enabled(&self) -> bool {
+    pub fn is_enabled(&self) -> bool {
         match self {
             Self::Null => false,
             Self::Bool(value) => *value,
@@ -41,6 +41,12 @@ pub enum LogArguments {
     Named(BTreeMap<String, LogValue>),
 }
 
+#[derive(Debug, Clone, Copy)]
+enum MessageSource<'arguments> {
+    Positional(&'arguments [LogValue]),
+    Named(&'arguments BTreeMap<String, LogValue>),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum MessageError {
     #[error("the log message ends inside a format specifier")]
@@ -56,28 +62,13 @@ pub enum MessageError {
 }
 
 pub fn format_message(template: &str, arguments: &LogArguments) -> Result<String, MessageError> {
-    let (positional, named) = match arguments {
-        LogArguments::None => return Ok(template.to_owned()),
-        LogArguments::Positional(values) => {
-            if values.is_empty() {
-                return Ok(template.to_owned());
-            }
-            (Some(values.as_slice()), None)
-        }
-        LogArguments::Named(values) => {
-            if values.is_empty() {
-                return Ok(template.to_owned());
-            }
-            (None, Some(values))
-        }
+    let Some(source) = message_source(arguments) else {
+        return Ok(template.to_owned());
     };
     let mut output = String::with_capacity(template.len());
     let mut characters = template.chars().peekable();
     let mut argument_index = 0_usize;
-    loop {
-        let Some(character) = characters.next() else {
-            break;
-        };
+    while let Some(character) = characters.next() {
         if character != '%' {
             output.push(character);
             continue;
@@ -96,13 +87,23 @@ pub fn format_message(template: &str, arguments: &LogArguments) -> Result<String
         let Some(specifier) = characters.next() else {
             return Err(MessageError::IncompleteSpecifier);
         };
-        let value = value_for(positional, named, name.as_deref(), &mut argument_index)?;
+        let value = value_for(source, name.as_deref(), &mut argument_index)?;
         output.push_str(&render_conversion(value, specifier)?);
     }
-    if positional.is_some_and(|values| argument_index < values.len()) {
+    if matches!(source, MessageSource::Positional(values) if argument_index < values.len()) {
         return Err(MessageError::UnusedArguments);
     }
     Ok(output)
+}
+
+fn message_source(arguments: &LogArguments) -> Option<MessageSource<'_>> {
+    match arguments {
+        LogArguments::None => None,
+        LogArguments::Positional(values) => {
+            (!values.is_empty()).then_some(MessageSource::Positional(values.as_slice()))
+        }
+        LogArguments::Named(values) => (!values.is_empty()).then_some(MessageSource::Named(values)),
+    }
 }
 
 fn read_name(characters: &mut Peekable<Chars<'_>>) -> Result<String, MessageError> {
@@ -119,22 +120,24 @@ fn read_name(characters: &mut Peekable<Chars<'_>>) -> Result<String, MessageErro
 }
 
 fn value_for<'arguments>(
-    positional: Option<&'arguments [LogValue]>,
-    named: Option<&'arguments BTreeMap<String, LogValue>>,
+    source: MessageSource<'arguments>,
     name: Option<&str>,
     index: &mut usize,
 ) -> Result<&'arguments LogValue, MessageError> {
-    if let Some(name) = name {
-        return named
-            .and_then(|values| values.get(name))
-            .ok_or(MessageError::MissingArgument);
+    match (source, name) {
+        (MessageSource::Named(values), Some(name)) => {
+            values.get(name).ok_or(MessageError::MissingArgument)
+        }
+        (MessageSource::Positional(values), None) => {
+            let position = *index;
+            let value = values.get(position).ok_or(MessageError::MissingArgument)?;
+            *index = index.saturating_add(1);
+            Ok(value)
+        }
+        (MessageSource::Named(_), None) | (MessageSource::Positional(_), Some(_)) => {
+            Err(MessageError::MissingArgument)
+        }
     }
-    let position = *index;
-    let value = positional
-        .and_then(|values| values.get(position))
-        .ok_or(MessageError::MissingArgument)?;
-    *index = index.saturating_add(1);
-    Ok(value)
 }
 
 fn render_conversion(value: &LogValue, specifier: char) -> Result<String, MessageError> {
@@ -142,7 +145,7 @@ fn render_conversion(value: &LogValue, specifier: char) -> Result<String, Messag
         's' => Ok(display_value(value)),
         'r' => Ok(repr_value(value)),
         'd' | 'i' => integer_value(value),
-        'f' => float_value(value),
+        'f' => Ok(format!("{:.6}", decimal_of(value)?.round_dp(6))),
         _ => Err(MessageError::UnsupportedSpecifier),
     }
 }
@@ -226,8 +229,4 @@ fn integer_value(value: &LogValue) -> Result<String, MessageError> {
     i64::try_from(decimal_of(value)?.trunc())
         .map(|truncated| truncated.to_string())
         .map_err(|_source| MessageError::UnsupportedValue)
-}
-
-fn float_value(value: &LogValue) -> Result<String, MessageError> {
-    Ok(format!("{:.6}", decimal_of(value)?.round_dp(6)))
 }
