@@ -814,6 +814,11 @@ async fn alice_guardrail_any_one_selectable_field_starts_the_call(
     assert_eq!(harness.recorded.lock().expect("the recorder").len(), 1);
 }
 
+#[test]
+fn alice_guardrail_response_cap_is_one_mebibyte() {
+    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+}
+
 #[tokio::test]
 async fn alice_guardrail_reads_a_body_at_the_response_cap() {
     let harness = serve(Answer::Raw {
