@@ -78,7 +78,7 @@ pub fn map_openai_params(request: MapRequest<'_>) -> Result<(), DeepInfraError> 
         // Python compares the value to 0, which is true for both zero signs and no other integer or float
         let value = if name == "temperature"
             && model == MISTRAL
-            && matches!(given, Json::Number(number) if number.as_f64().is_some_and(|parsed| parsed.to_bits() & 0x7fff_ffff_ffff_ffff == 0))
+            && matches!(given, Json::Number(number) if number.as_f64().is_some_and(|parsed| parsed.to_bits().trailing_zeros() >= 63))
         {
             Number::from_f64(minimum_temperature)
                 .map(Json::Number)
@@ -130,8 +130,7 @@ pub fn transform_request(
     };
     let transformed = content.transform(mode)?;
     let mut body = transformed.to_body()?;
-    // to_body builds its messages through serde_json::Value, whose maps sort keys, so the typed list is
-    // rebuilt here to keep the caller's key order inside a tool content part for the json.dumps fallback
+    // to_body sorts message keys through serde_json::Value, and the tool content dump must keep type ahead of its fields
     body.insert(
         String::from("messages"),
         Json::List(messages_json(&transformed.messages)?),
@@ -189,9 +188,7 @@ fn tool_message_content(message: &mut ModelJson) {
         }
         _ => None,
     };
-    let converted = single.map_or_else(
-        || ModelJson::Text(python_json::dumps(&ModelJson::List(content.clone()))),
-        |value| value,
-    );
+    let converted = single
+        .unwrap_or_else(|| ModelJson::Text(python_json::dumps(&ModelJson::List(content.clone()))));
     fields.insert(String::from("content"), converted);
 }

@@ -1,5 +1,7 @@
 #![no_main]
 
+use std::str::from_utf8;
+
 use betterlite_openai::deepinfra::rerank::RerankLimits;
 use betterlite_openai::deepinfra::rerank::response::{
     decode_deepinfra_error, decode_deepinfra_rerank,
@@ -14,11 +16,11 @@ fuzz_target!(|bytes: &[u8]| {
     let Some((&tag, payload)) = bytes.split_first() else {
         return;
     };
-    if tag % 2 == 0 {
+    if tag.is_multiple_of(2) {
         let _decoded = decode_deepinfra_rerank(payload, limits);
         return;
     }
-    if let Ok(message) = std::str::from_utf8(payload) {
+    if let Ok(message) = from_utf8(payload) {
         let _extracted = decode_deepinfra_error(message, limits);
     }
 });

@@ -103,8 +103,8 @@ pub fn map_cohere_rerank_params(request: &MapRequest<'_>) -> Params {
 
 #[must_use]
 pub fn transform_rerank_request(optional: Option<&Params>) -> Params {
-    match optional {
-        Some(params) => params.clone(),
-        None => Params::new(),
-    }
+    let Some(given) = optional else {
+        return Params::new();
+    };
+    given.clone()
 }
