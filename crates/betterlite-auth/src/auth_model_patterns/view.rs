@@ -61,17 +61,15 @@ impl DeploymentView {
     // Router.get_model_list(model_name, team_id): the listed name and the deployment behind it
     #[must_use]
     pub fn model_rows(&self, model: &str, team_id: Option<&str>) -> Vec<(String, &Deployment)> {
-        let mut rows: Vec<(String, &Deployment)> = self
-            .deployed(model, team_id)
-            .into_iter()
-            .map(|deployment| (deployment.model_name.clone(), deployment))
-            .collect();
+        let mut rows: Vec<(String, &Deployment)> = Vec::new();
+        for deployment in self.deployed(model, team_id) {
+            rows.push((deployment.model_name.clone(), deployment));
+        }
+        // the alias's own rows are listed under the alias name
         if let Some(target) = self.model_group_alias_target(model) {
-            rows.extend(
-                self.deployed(&target, None)
-                    .into_iter()
-                    .map(|deployment| (model.to_owned(), deployment)),
-            );
+            for deployment in self.deployed(&target, None) {
+                rows.push((model.to_owned(), deployment));
+            }
         }
         rows
     }

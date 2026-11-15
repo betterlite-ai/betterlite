@@ -107,23 +107,14 @@ fn request_to(reached: &Arc<AtomicBool>, model: &str) -> Request<Body> {
     request
 }
 
-fn application(models: &[&str]) -> Router {
-    let config = config_with_master_key("secret-master-key");
-    routes::router(
-        state_for(&config),
-        Arc::new(AtomicBool::new(false)),
-        Router::new().route("/auth-test/files", post(mark_called)),
-        Router::new(),
-    )
-    .layer(Extension(rule(models)))
-}
-
-fn application_at_depth(depth: &str, models: &[&str]) -> Router {
-    let config = ConfigLoader {
-        lookup: BTreeMap::from([(RECURSE_DEPTH_VARIABLE.to_owned(), depth.to_owned())]),
+fn application(depth: Option<&str>, models: &[&str]) -> Router {
+    let mut lookup: BTreeMap<String, String> = BTreeMap::new();
+    if let Some(depth) = depth {
+        lookup.insert(RECURSE_DEPTH_VARIABLE.to_owned(), depth.to_owned());
     }
-    .load("general_settings:\n  master_key: secret-master-key\n")
-    .expect("the test config loads");
+    let config = ConfigLoader { lookup }
+        .load("general_settings:\n  master_key: secret-master-key\n")
+        .expect("the test config loads");
     routes::router(
         state_for(&config),
         Arc::new(AtomicBool::new(false)),
@@ -136,7 +127,7 @@ fn application_at_depth(depth: &str, models: &[&str]) -> Router {
 #[tokio::test]
 async fn failure_stops_downstream() {
     let reached = Arc::new(AtomicBool::new(false));
-    let response = application(&["gpt-4o"])
+    let response = application(None, &["gpt-4o"])
         .oneshot(request_to(&reached, "internal-model"))
         .await
         .expect("the request reaches the router");
@@ -164,7 +155,7 @@ async fn failure_stops_downstream() {
 async fn fallback_depth_is_answered_with_the_auth_error() {
     // a two-model request checks each entry one level below the request
     let reached = Arc::new(AtomicBool::new(false));
-    let response = application(&["gpt-4o", "other-model"])
+    let response = application(None, &["gpt-4o", "other-model"])
         .oneshot(request_to(&reached, "gpt-4o,other-model"))
         .await
         .expect("the request reaches the router");
@@ -172,7 +163,7 @@ async fn fallback_depth_is_answered_with_the_auth_error() {
 
     // a depth of one refuses the nested check before the allowlist answers
     let reached = Arc::new(AtomicBool::new(false));
-    let response = application_at_depth("1", &["gpt-4o", "other-model"])
+    let response = application(Some("1"), &["gpt-4o", "other-model"])
         .oneshot(request_to(&reached, "gpt-4o,other-model"))
         .await
         .expect("the request reaches the router");
@@ -193,7 +184,7 @@ async fn fallback_depth_is_answered_with_the_auth_error() {
 #[tokio::test]
 async fn allowed_model_reaches_the_route() {
     let reached = Arc::new(AtomicBool::new(false));
-    let response = application(&["gpt-4o"])
+    let response = application(None, &["gpt-4o"])
         .oneshot(request_to(&reached, "gpt-4o"))
         .await
         .expect("the request reaches the router");

@@ -73,29 +73,3 @@ pub fn models_from_access_groups(
     collect_resources(access_group_ids, ResourceField::ModelNames, lookup, false)
         .unwrap_or_default()
 }
-
-pub fn mcp_ids_from_access_groups(
-    access_group_ids: &[String],
-    lookup: Option<&dyn AccessGroupLookup>,
-    check_db_only: bool,
-) -> Result<Vec<String>, AccessGroupError> {
-    collect_resources(
-        access_group_ids,
-        ResourceField::McpServerIds,
-        lookup,
-        check_db_only,
-    )
-}
-
-pub fn agent_ids_from_access_groups(
-    access_group_ids: &[String],
-    lookup: Option<&dyn AccessGroupLookup>,
-    check_db_only: bool,
-) -> Result<Vec<String>, AccessGroupError> {
-    collect_resources(
-        access_group_ids,
-        ResourceField::AgentIds,
-        lookup,
-        check_db_only,
-    )
-}

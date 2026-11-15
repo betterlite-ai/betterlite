@@ -66,12 +66,11 @@ pub fn live_team_alias_target(
     let Some(target) = team_model_aliases.get(model) else {
         return model.to_owned();
     };
-    let deleted_team_deployment = match (view, team_id) {
-        (Some(view), Some(team_id)) => {
-            target.starts_with(&format!("model_name_{team_id}_")) && !view.has_deployment(target)
-        }
-        (Some(_view), None) | (None, Some(_team_id)) | (None, None) => false,
-    };
+    let deleted_team_deployment = matches!(
+        (view, team_id),
+        (Some(view), Some(team_id))
+            if target.starts_with(&format!("model_name_{team_id}_")) && !view.has_deployment(target)
+    );
     if deleted_team_deployment {
         return model.to_owned();
     }

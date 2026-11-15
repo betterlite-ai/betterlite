@@ -3,8 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_error::proxy_error_types::ModelAccessObject;
 
 use crate::auth_model_patterns::access_groups::{
-    AccessGroupResources, ResourceField, agent_ids_from_access_groups, collect_resources,
-    mcp_ids_from_access_groups, models_from_access_groups,
+    AccessGroupResources, ResourceField, collect_resources, models_from_access_groups,
 };
 use crate::auth_model_patterns::decision::{can_object_call_model, check_model_access};
 use crate::auth_model_patterns::view::{DeploymentView, ModelAccessView};
@@ -109,12 +108,25 @@ fn access_group_resources_come_from_the_lookup() {
         )
         .is_err()
     );
+    // the same collector answers the MCP server and agent id fields
     assert_eq!(
-        mcp_ids_from_access_groups(&["known-group".to_owned()], Some(&lookup), false).unwrap(),
+        collect_resources(
+            &["known-group".to_owned()],
+            ResourceField::McpServerIds,
+            Some(&lookup),
+            false
+        )
+        .unwrap(),
         vec!["mcp-1".to_owned()]
     );
     assert_eq!(
-        agent_ids_from_access_groups(&["known-group".to_owned()], Some(&lookup), true).unwrap(),
+        collect_resources(
+            &["known-group".to_owned()],
+            ResourceField::AgentIds,
+            Some(&lookup),
+            true
+        )
+        .unwrap(),
         vec!["agent-1".to_owned()]
     );
     assert!(

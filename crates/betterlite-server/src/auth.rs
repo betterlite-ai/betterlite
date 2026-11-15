@@ -119,23 +119,23 @@ fn stage_input(
 ) -> Result<StageInput, AuthenticationFailure> {
     match backend {
         AuthBackend::MasterKey => Ok(StageInput::MasterKey(extract_key(request.headers()))),
-        AuthBackend::AuthRequestModels => {
-            let context = authenticated.ok_or(AuthenticationFailure::Missing)?;
+        AuthBackend::AuthRequestModels | AuthBackend::AuthModelPatterns => {
+            let context = authenticated
+                .cloned()
+                .ok_or(AuthenticationFailure::Missing)?;
             let stage = model_stage_input(request, context.clone(), resolver);
-            Ok(StageInput::AuthRequestModels(Box::new(stage)))
-        }
-        AuthBackend::AuthModelPatterns => {
-            let context = authenticated.ok_or(AuthenticationFailure::Missing)?;
-            let stage = model_stage_input(request, context.clone(), resolver);
-            let Ok(requested) = resolve(&stage) else {
-                return Err(AuthenticationFailure::Missing);
-            };
+            if backend == AuthBackend::AuthRequestModels {
+                return Ok(StageInput::AuthRequestModels(Box::new(stage)));
+            }
+            let requested = resolve(&stage).map_err(|_| AuthenticationFailure::Missing)?;
+            let rule = rule_for_request(request);
+            let depth = max_recurse_depth_for_request(request);
             Ok(StageInput::AuthModelPatterns(Box::new(
                 ModelPatternStageInput {
-                    context: context.clone(),
+                    context,
                     requested,
-                    rule: rule_for_request(request),
-                    max_recurse_depth: max_recurse_depth_for_request(request),
+                    rule,
+                    max_recurse_depth: depth,
                 },
             )))
         }
@@ -152,12 +152,16 @@ fn model_stage_input(
     context: AuthContext,
     resolver: &Arc<RequestModelResolver>,
 ) -> RequestModelStageInput {
+    let route = request.uri().path().to_owned();
+    let headers = headers_json(request.headers());
+    let query = query_json(request.uri().query());
+    let body = JsonObject::new();
     RequestModelStageInput {
         context,
-        route: request.uri().path().to_owned(),
-        body: JsonObject::new(),
-        headers: Some(headers_json(request.headers())),
-        query: Some(query_json(request.uri().query())),
+        route,
+        body,
+        headers: Some(headers),
+        query: Some(query),
         endpoint_marker: None,
         path_params: BTreeSet::new(),
         team_id: None,
