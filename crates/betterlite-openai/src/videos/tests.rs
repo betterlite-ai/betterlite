@@ -2,6 +2,7 @@
 
 mod auth;
 mod cases;
+mod content;
 mod corpus;
 mod create;
 mod delete;

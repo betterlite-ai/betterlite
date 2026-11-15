@@ -2,7 +2,6 @@ use betterlite_http::error::HttpError;
 use serde_json::{Value, json};
 
 use crate::openai_video_identifiers::ids::encode_video_id_with_provider;
-use crate::videos::content::content_request;
 use crate::videos::error::{VideoError, get_error_class};
 use crate::videos::reply::decode_video;
 use crate::videos::segment::path_url;
@@ -80,11 +79,4 @@ pub(super) fn delete_case() {
     delete_path_errors_case();
     delete_reply_case();
     error_class_case();
-}
-
-pub(super) fn binary_content_case() {
-    let encoded = encode_video_id_with_provider("vid-6", "openai", Some(MODEL));
-    let (url, params) = content_request(&encoded, SLASH_BASE, None).unwrap();
-    assert_eq!(url, "https://mock.example/v1/videos/vid-6/content");
-    assert!(params.is_empty());
 }

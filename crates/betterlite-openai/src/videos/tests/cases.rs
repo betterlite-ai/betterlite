@@ -1,8 +1,9 @@
 use rstest::rstest;
 
-use super::auth::{auth_chain_case, content_variant_case};
+use super::auth::auth_chain_case;
+use super::content::{binary_content_case, content_variant_case};
 use super::create::{create_multipart_case, input_reference_case};
-use super::delete::{binary_content_case, delete_case};
+use super::delete::delete_case;
 use super::durations::{duration_case, invalid_seconds_case};
 use super::list::list_and_status_case;
 use super::remix::remix_case;
