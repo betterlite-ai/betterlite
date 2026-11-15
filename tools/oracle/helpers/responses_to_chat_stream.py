@@ -50,27 +50,18 @@ class LineReader(ResponsesStream):
 
 def run(input_value: Input) -> JsonValue:
     if input_value["mode"] == "line":
-        return _lines(input_value)
-    return _events(input_value)
-
-
-def _events(call: EventCall) -> JsonValue:
-    iterator = ResponsesStream(iter([]), sync_stream=True)
-    steps: list[JsonValue] = [
-        DUMP.validate_json(
-            iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True)
-        )
-        for event in call["events"]
-    ]
-    result: dict[str, JsonValue] = {"steps": steps}
-    return result
-
-
-def _lines(call: LineCall) -> JsonValue:
-    reader = LineReader()
-    steps: list[JsonValue] = [
-        DUMP.validate_json(reader.read(line).model_dump_json(exclude_unset=True))
-        for line in call["lines"]
-    ]
+        reader = LineReader()
+        steps: list[JsonValue] = [
+            DUMP.validate_json(reader.read(line).model_dump_json(exclude_unset=True))
+            for line in input_value["lines"]
+        ]
+    else:
+        iterator = ResponsesStream(iter([]), sync_stream=True)
+        steps = [
+            DUMP.validate_json(
+                iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True)
+            )
+            for event in input_value["events"]
+        ]
     result: dict[str, JsonValue] = {"steps": steps}
     return result
