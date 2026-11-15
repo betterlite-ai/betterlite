@@ -38,11 +38,12 @@ pub fn extract_request_tools(data: &Data) -> Result<RequestTools, RequestToolsEr
     Ok(RequestTools {
         tools: list_names(data, "tools", tool_name)?,
         functions: list_names(data, "functions", function_name)?,
+        // a tool_choice object names a tool the way a tool definition does
         tool_choice: forced_name(
             data,
             "tool_choice",
             &["auto", "none", "required"],
-            tool_choice_object_name,
+            |choice| tool_name(choice, "tool_choice"),
         )?,
         function_call: forced_name(data, "function_call", &["auto", "none"], |call| {
             Ok(text_field(call, "name", "function_call")?.map(str::to_owned))
@@ -145,17 +146,6 @@ fn forced_name(
             "a string or an object",
         )),
     }
-}
-
-// A tool_choice object forces a tool only when its type is function
-fn tool_choice_object_name(choice: &GuardrailValue) -> Result<Option<String>, RequestToolsError> {
-    if text_field(choice, "type", "tool_choice")? != Some("function") {
-        return Ok(None);
-    }
-    let Some(function) = object_field(choice, "function", "tool_choice")? else {
-        return Ok(None);
-    };
-    Ok(text_field(function, "name", "tool_choice.function")?.map(str::to_owned))
 }
 
 mod tests;

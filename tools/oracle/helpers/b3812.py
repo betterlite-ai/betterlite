@@ -68,6 +68,10 @@ FORWARDED: Final = TypeAdapter(Forwarded)
 BUCKETS: Final = TypeAdapter(Buckets)
 
 
+async def invoke(hook: PreCallHook, data: dict[str, JsonValue]) -> None:
+    await hook.async_pre_call_hook(UserAPIKeyAuth(), DualCache(), data, "completion")
+
+
 def run(input_value: Input) -> Output:
     guardrail = ToolPermissionGuardrail(
         rules=input_value["rules"],
@@ -78,11 +82,10 @@ def run(input_value: Input) -> Output:
         default_on=input_value["default_on"],
         violation_message_template=input_value.get("violation_message_template"),
     )
-    hook: PreCallHook = guardrail
     data = input_value["data"]
     blocked: Blocked | None = None
     try:
-        asyncio.run(hook.async_pre_call_hook(UserAPIKeyAuth(), DualCache(), data, "completion"))
+        asyncio.run(invoke(guardrail, data))
     except HTTPException as error:
         blocked = {"status": error.status_code, "detail": DETAIL.validate_python(error.detail)}
     buckets = BUCKETS.validate_python(data)
