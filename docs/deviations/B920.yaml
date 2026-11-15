@@ -25,12 +25,12 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1105-L1146
   - what: >-
       The terminal and passthrough chunks' usage is B906's shared Responses-to-chat projection, so a
-      token detail block keeps only the counters B906 models and always lists cached_tokens_details,
-      while LiteLLM dumps the pydantic PromptTokensDetails and CompletionTokensDetails wrappers with
-      the fields their constructor was given.
+      token detail block omits the null-valued counters LiteLLM's dump lists and always lists
+      cached_tokens_details, while LiteLLM dumps the pydantic PromptTokensDetails and
+      CompletionTokensDetails wrappers as their constructors left them.
     why: >-
       The task routes usage through B906; one projection serves the streaming and non-streaming
-      bridges, and the counters a client reads (prompt, completion, total, cached and reasoning
-      tokens) stay identical.
+      bridges, and the counters a client reads (prompt, completion, total, cached, cache-write and
+      reasoning tokens) stay identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/utils.py#L1193-L1239
 kept_bugs: []

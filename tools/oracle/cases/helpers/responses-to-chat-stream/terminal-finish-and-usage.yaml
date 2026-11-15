@@ -9,6 +9,7 @@ call:
       - {"type": "response.completed", "response": {"id": "resp_a", "custom_key": 5, "output": [{"type": "function_call"}]}}
       - {"type": "response.incomplete", "response": {"id": "resp_a", "incomplete_details": {"reason": "content_filter"}, "output": []}}
       - {"type": "response.incomplete", "response": {"id": "resp_a", "output": [{"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "t"}]}]}}
+      - {"type": "response.completed", "response": {"id": "resp_a", "output": [], "usage": {"input_tokens": 2, "output_tokens": 5, "cache_read_input_tokens": 7, "cache_creation_input_tokens": 3}}}
 env: {}
 compare:
   ignore:
@@ -22,3 +23,15 @@ compare:
       why: the chunk's created timestamp is the wall clock
     - pointer: /value/steps/4/created
       why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/5/created
+      why: the chunk's created timestamp is the wall clock
+    - pointer: /value/steps/5/usage/prompt_tokens_details/audio_tokens
+      why: B906's projection omits a detail counter that LiteLLM's wrapper dumps as null
+    - pointer: /value/steps/5/usage/prompt_tokens_details/text_tokens
+      why: B906's projection omits a detail counter that LiteLLM's wrapper dumps as null
+    - pointer: /value/steps/5/usage/prompt_tokens_details/image_tokens
+      why: B906's projection omits a detail counter that LiteLLM's wrapper dumps as null
+    - pointer: /value/steps/5/usage/prompt_tokens_details/video_tokens
+      why: B906's projection omits a detail counter that LiteLLM's wrapper dumps as null
+    - pointer: /value/steps/5/usage/prompt_tokens_details/cached_tokens_details
+      why: B906's projection always lists the nested cached-token block, which LiteLLM leaves out when unset
