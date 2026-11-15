@@ -26,21 +26,23 @@ impl TryFrom<Value> for Input {
                 "a b3775 helper input is a mapping",
             ));
         };
-        let Some(kind) = fields.remove("kind") else {
+        let Some(tag) = fields.remove("kind") else {
             return Err(serde_json::Error::custom(
                 "the b3775 helper input names no kind",
             ));
         };
-        let Some(kind) = kind.as_str() else {
+        let Some(kind) = tag.as_str() else {
             return Err(serde_json::Error::custom(
                 "the b3775 helper kind is not a string",
             ));
         };
-        let fields = Value::Object(fields);
+        let payload = Value::Object(fields);
         match kind {
-            "should_run" => Ok(Self::ShouldRun(Box::new(serde_json::from_value(fields)?))),
-            "plan" => Ok(Self::Plan(Box::new(serde_json::from_value(fields)?))),
-            "hiddenlayer" => Ok(Self::Hiddenlayer(Box::new(serde_json::from_value(fields)?))),
+            "should_run" => Ok(Self::ShouldRun(Box::new(serde_json::from_value(payload)?))),
+            "plan" => Ok(Self::Plan(Box::new(serde_json::from_value(payload)?))),
+            "hiddenlayer" => Ok(Self::Hiddenlayer(Box::new(serde_json::from_value(
+                payload,
+            )?))),
             other => Err(serde_json::Error::custom(format!(
                 "unknown b3775 helper kind: {other}"
             ))),
