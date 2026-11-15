@@ -1,5 +1,4 @@
 use betterlite_db::database_diagnostics::initialization::DiagnosticSettings;
-use betterlite_db::database_diagnostics::json_enabled::environment_enabled;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
@@ -19,7 +18,10 @@ impl Section for Raw {
         let level = lookup
             .lookup("LITELLM_LOG")
             .unwrap_or_else(|| "INFO".to_owned());
-        let json = environment_enabled(lookup.lookup("JSON_LOGS").as_deref());
+        let json = lookup
+            .lookup("JSON_LOGS")
+            .as_deref()
+            .is_some_and(|text| text.to_lowercase() == "true");
         Ok(DiagnosticSettings { level, json })
     }
 }

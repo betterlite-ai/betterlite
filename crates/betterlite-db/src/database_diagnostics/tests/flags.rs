@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::database_diagnostics::json_enabled::{
-    GlobalJsonLogs, environment_enabled, is_json_enabled,
-};
+use crate::database_diagnostics::json_enabled::{GlobalJsonLogs, is_json_enabled};
 use crate::database_diagnostics::message::LogValue;
 
 #[rstest]
@@ -67,7 +65,8 @@ fn only_import_attribute_errors_fallback(
 #[case::one("1", false)]
 #[case::yes("yes", false)]
 fn env_true_casefold_without_trim(#[case] environment: &str, #[case] expected: bool) {
-    assert_eq!(environment_enabled(Some(environment)), expected);
+    let enabled = is_json_enabled(&GlobalJsonLogs::ImportError, Some(environment)).unwrap();
+    assert_eq!(enabled, expected);
 }
 
 #[test]

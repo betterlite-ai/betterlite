@@ -23,14 +23,8 @@ pub fn is_json_enabled(
         GlobalJsonLogs::Missing => Ok(false),
         GlobalJsonLogs::Supplied(value) => Ok(value.is_enabled()),
         GlobalJsonLogs::ImportError | GlobalJsonLogs::AttributeError => {
-            Ok(environment_enabled(environment))
+            Ok(environment.is_some_and(|text| text.to_lowercase() == "true"))
         }
         GlobalJsonLogs::Failed => Err(JsonLogsError::Lookup),
     }
-}
-
-#[must_use]
-// ast-grep-ignore: no-one-line-functions
-pub fn environment_enabled(environment: Option<&str>) -> bool {
-    environment.is_some_and(|text| text.to_lowercase() == "true")
 }
