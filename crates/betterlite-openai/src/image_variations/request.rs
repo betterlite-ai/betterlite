@@ -24,7 +24,7 @@ pub fn begin_image_variation(
     let prepared = prepare_image_variation(request)?;
     let record = PreCallRecord {
         headers: prepared.headers.clone(),
-        api_base: prepared.client.base_url.clone(),
+        api_base: prepared.api_base.clone(),
         data: prepared.data.clone(),
     };
     if let Err(source) = logger.pre_call(record) {
@@ -61,7 +61,7 @@ pub fn finish_image_variation(
     };
     logger.post_call(PostCallRecord {
         headers: prepared.headers.clone(),
-        api_base: prepared.client.base_url.clone(),
+        api_base: prepared.api_base.clone(),
         original_response: outcome.original_response.clone(),
     });
     Ok(outcome)
@@ -72,27 +72,25 @@ fn checked_reply(
     created_seconds: i64,
 ) -> Result<ImageVariationOutcome, ImageVariationSource> {
     if !(200..=299).contains(&response.status) {
-        let Ok(text) = String::from_utf8(response.body.clone()) else {
-            return Err(ImageVariationSource::Reply(ImageReplyError::Text {
-                field: "status body",
-            }));
-        };
+        // httpx decodes an error body with replacement characters, so a non-UTF-8 one still keeps its status
+        let (text, _, _) = encoding_rs::UTF_8.decode(&response.body);
         return Err(ImageVariationSource::Status {
             status: response.status,
-            message: text,
+            message: text.into_owned(),
             headers: Some(response_headers(&response.headers)?),
         });
     }
+    let original = original_response(&response.body)?;
     let reply = match decode_image_reply(&response.body, created_seconds) {
         Ok(reply) => ImageGenerationReply {
-            usage: usage_identity(reply.usage),
+            usage: usage_identity(reply.usage, &original),
             ..reply
         },
         Err(error) => return Err(ImageVariationSource::Reply(error)),
     };
     Ok(ImageVariationOutcome {
         reply,
-        original_response: original_response(&response.body)?,
+        original_response: original,
     })
 }
 

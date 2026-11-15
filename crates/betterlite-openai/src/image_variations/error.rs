@@ -1,5 +1,6 @@
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_models::controls::multipart::FormFieldError;
 use thiserror::Error;
 
 use crate::api::image_contracts::records::ImageHeaders;
@@ -22,6 +23,11 @@ pub enum ImageVariationSource {
     },
     #[error("the {field} option must be a plain value")]
     Option { field: String },
+    // create_variation takes a fixed keyword set, so the SDK answers an unknown one with a TypeError
+    #[error("image variations do not take a {field} option")]
+    Unsupported { field: String },
+    #[error(transparent)]
+    Form(#[from] FormFieldError),
     #[error(transparent)]
     Url(#[from] url::ParseError),
     #[error(transparent)]
@@ -53,6 +59,8 @@ impl ImageVariationSource {
             | Self::MissingApiKey
             | Self::ClientKind { .. }
             | Self::Option { .. }
+            | Self::Unsupported { .. }
+            | Self::Form(_)
             | Self::Url(_)
             | Self::Transport(_)
             | Self::Logging(_)

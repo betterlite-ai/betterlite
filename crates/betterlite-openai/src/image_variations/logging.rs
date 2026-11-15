@@ -18,13 +18,13 @@ pub trait ImageVariationLogger {
 
 pub struct PreCallRecord {
     pub headers: Option<ImageHeaders>,
-    pub api_base: String,
+    pub api_base: Option<String>,
     pub data: ImageVariationData,
 }
 
 pub struct PostCallRecord {
     pub headers: Option<ImageHeaders>,
-    pub api_base: String,
+    pub api_base: Option<String>,
     pub original_response: Json,
 }
 
@@ -76,7 +76,7 @@ impl ImageVariationLogger for PrePostLogger<'_, '_> {
                 input: Json::Text(String::new()),
                 model: None,
                 additional_args: AdditionalArgs {
-                    api_base: Some(record.api_base),
+                    api_base: record.api_base,
                     headers: headers_view(record.headers.as_ref()),
                     complete_input_dict: Some(RawBody::Object(data_view(&record.data))),
                     request_str: None,
@@ -96,7 +96,7 @@ impl ImageVariationLogger for PrePostLogger<'_, '_> {
                 input: Json::Null,
                 original_response: record.original_response,
                 additional_args: AdditionalArgs {
-                    api_base: Some(record.api_base),
+                    api_base: record.api_base,
                     headers: headers_view(record.headers.as_ref()),
                     complete_input_dict: None,
                     request_str: None,

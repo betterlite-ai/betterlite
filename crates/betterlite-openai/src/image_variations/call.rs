@@ -13,6 +13,8 @@ pub struct PreparedImageVariation {
     pub data: ImageVariationData,
     pub client: ImageVariationClient,
     pub headers: Option<ImageHeaders>,
+    // the caller's api_base as sent, which the logs record unnormalized
+    pub api_base: Option<String>,
     pub deadline: Duration,
     pub boundary: String,
     pub now_seconds: i64,
@@ -58,6 +60,7 @@ pub fn prepare_image_variation(
         data,
         client,
         headers: request.headers,
+        api_base: request.api_base,
         deadline,
         boundary: request.boundary,
         now_seconds: request.now_seconds,
