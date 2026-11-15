@@ -1,5 +1,4 @@
 #![cfg(test)]
-#![cfg(test)]
 
 use std::collections::BTreeMap;
 
