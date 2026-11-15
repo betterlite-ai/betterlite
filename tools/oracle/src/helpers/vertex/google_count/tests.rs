@@ -26,7 +26,7 @@ fn helper_seeds_select_google_count() {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("google_count"))
+                .is_some_and(|name| name.starts_with("google_count-"))
         })
         .map(|path| fs::read_to_string(path).expect("seed file"))
         .collect();
