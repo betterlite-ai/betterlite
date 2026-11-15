@@ -20,13 +20,11 @@ impl CompletionCatalog {
         Self {
             chat_models: sets
                 .sets
-                .get(&ProviderModelSet::OpenAiChatCompletion)
-                .cloned()
+                .remove(&ProviderModelSet::OpenAiChatCompletion)
                 .unwrap_or_default(),
             text_models: sets
                 .sets
-                .get(&ProviderModelSet::OpenAiTextCompletion)
-                .cloned()
+                .remove(&ProviderModelSet::OpenAiTextCompletion)
                 .unwrap_or_default(),
         }
     }
@@ -45,14 +43,11 @@ pub enum CompletionRoute {
 pub fn route_for(deployment: &ChatDeployment, catalog: &CompletionCatalog) -> CompletionRoute {
     match &deployment.provider {
         Provider::OpenAi { model } => {
-            if catalog.chat_models.contains(model) {
-                CompletionRoute::Chat {
-                    model: model.clone(),
-                }
+            let model = model.clone();
+            if catalog.chat_models.contains(&model) {
+                CompletionRoute::Chat { model }
             } else {
-                CompletionRoute::Text {
-                    model: model.clone(),
-                }
+                CompletionRoute::Text { model }
             }
         }
         Provider::Unsupported { model } => match model.strip_prefix("text-completion-openai/") {

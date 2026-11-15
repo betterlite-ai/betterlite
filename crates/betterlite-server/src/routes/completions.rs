@@ -1,4 +1,4 @@
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 use std::time::{Instant, SystemTime};
 
 use async_trait::async_trait;
@@ -22,6 +22,7 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
 use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
@@ -46,7 +47,7 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
         state: Arc::clone(state),
         execution: Arc::new(CompletionExecutor {
             client: executor.client.clone(),
-            catalog: OnceLock::new(),
+            catalog: OnceCell::new(),
         }),
         dispatch: Arc::new(Dispatch::new(
             executor.deployments.clone(),

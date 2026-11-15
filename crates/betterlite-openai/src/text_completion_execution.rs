@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use ::http::HeaderMap;
@@ -6,6 +6,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use betterlite_streaming::stream_chunk_shaping::creation::system_instant;
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 use crate::chat::deployment::ChatDeployment;
@@ -63,7 +64,7 @@ impl CompletionAnswer {
 
 pub struct CompletionExecutor {
     pub client: ProxiedClient,
-    pub catalog: OnceLock<CompletionCatalog>,
+    pub catalog: OnceCell<CompletionCatalog>,
 }
 
 impl CompletionExecutor {
@@ -75,7 +76,10 @@ impl CompletionExecutor {
         redactor: &Redactor,
         logger: &mut (dyn CompletionLogger + Send),
     ) -> Result<CompletionAnswer, CompletionFailure> {
-        let bundled = self.catalog.get_or_init(CompletionCatalog::bundled);
+        let bundled = self
+            .catalog
+            .get_or_init(async || CompletionCatalog::bundled())
+            .await;
         let route = route_for(deployment, bundled);
         let CompletionRoute::Text { model } = &route else {
             return Err(CompletionFailure::route(&route));
