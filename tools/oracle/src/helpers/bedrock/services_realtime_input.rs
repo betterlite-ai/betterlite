@@ -34,7 +34,8 @@ impl Helper for Op {
         let ids = input
             .ids
             .iter()
-            .map(|id| Uuid::parse_str(id))
+            .map(String::as_str)
+            .map(Uuid::parse_str)
             .collect::<Result<Vec<Uuid>, _>>()
             .or_value_error()?;
         let source = FixedIds::new(&ids);

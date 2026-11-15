@@ -86,7 +86,7 @@ struct ContentPart {
     text: Option<String>,
 }
 
-fn default_output() -> Json {
+const fn default_output() -> Json {
     Json::Text(String::new())
 }
 
