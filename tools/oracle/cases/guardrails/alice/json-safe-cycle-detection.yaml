@@ -1,0 +1,14 @@
+kind: helper
+name: json-safe-cycle-detection
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: ["hello"]
+    request_data: {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": {"loop": "dropped"}}}}}}}}}}}}}
+    input_type: request
+    answer: {status: 200, body: {verdict: ALLOW}, raw: null}
+    failure: null
+env: {}
+compare: {ignore: []}
