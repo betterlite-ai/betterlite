@@ -135,25 +135,21 @@ async fn recover(
         .unwrap()
 }
 
-async fn waiting_queries(monitor: &Client, application_name: &str) -> i64 {
-    monitor
-        .query_one(
-            "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
-            &[&application_name],
-        )
-        .await
-        .unwrap()
-        .get(0)
-}
-
-async fn wait_until_waiting(monitor: &Client, application_name: &str) -> i64 {
-    let mut waiting = waiting_queries(monitor, application_name).await;
-    for _ in 0_u32..100 {
+async fn waiting_queries(monitor: &Client, application_name: &str, attempts: u32) -> i64 {
+    let mut waiting = 0_i64;
+    for _ in 0..attempts {
+        waiting = monitor
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity WHERE application_name = $1 AND wait_event_type = 'Lock'",
+                &[&application_name],
+            )
+            .await
+            .unwrap()
+            .get(0);
         if waiting > 0 {
             break;
         }
         sleep(Duration::from_millis(25)).await;
-        waiting = waiting_queries(monitor, application_name).await;
     }
     waiting
 }
@@ -458,10 +454,10 @@ async fn postgres_two_concurrent_callers_share_one_query() {
         )
     };
     let watcher = async {
-        let waiting = wait_until_waiting(&monitor, "history-concurrent").await;
+        let waiting = waiting_queries(&monitor, "history-concurrent", 100).await;
         assert_eq!(waiting, 1);
         sleep(Duration::from_millis(400)).await;
-        assert_eq!(waiting_queries(&monitor, "history-concurrent").await, 1);
+        assert_eq!(waiting_queries(&monitor, "history-concurrent", 1).await, 1);
         monitor.batch_execute("COMMIT").await.unwrap();
     };
     let ((from_first, from_second), ()) = tokio::join!(callers, watcher);

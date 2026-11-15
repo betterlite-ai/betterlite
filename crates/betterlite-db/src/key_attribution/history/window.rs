@@ -11,7 +11,10 @@ pub struct HistoryWindow {
 
 #[must_use]
 pub fn is_spend_log_digest(key: &str) -> bool {
-    is_valid_sha256_hash(key.strip_prefix(HASHED_JWT_PREFIX).unwrap_or(key))
+    let Some(digest) = key.strip_prefix(HASHED_JWT_PREFIX) else {
+        return is_valid_sha256_hash(key);
+    };
+    is_valid_sha256_hash(digest)
 }
 
 #[must_use]

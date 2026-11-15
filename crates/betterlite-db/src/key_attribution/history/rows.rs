@@ -55,11 +55,11 @@ pub fn edge_metadata(
     rows.iter()
         .filter(|row| requested.contains(&row.digest))
         .map(|row| (row.digest.clone(), row.metadata()))
-        .filter(|(_, metadata)| has_truthy_value(metadata))
+        .filter(|(_, metadata)| has_nonempty_value(metadata))
         .collect()
 }
 
-fn has_truthy_value(metadata: &KeyMetadata) -> bool {
+fn has_nonempty_value(metadata: &KeyMetadata) -> bool {
     [&metadata.key_alias, &metadata.team_id, &metadata.user_id]
         .into_iter()
         .any(|value| value.as_deref().is_some_and(|text| !text.is_empty()))
