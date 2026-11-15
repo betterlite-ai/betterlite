@@ -19,6 +19,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::{ChatMessage, MessageContent};
 use betterlite_openai::compatible_line_stream::Mode;
+use betterlite_openai::compatible_wire::decode_compatible_chat_reply;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_streaming::stream_chunk_shaping::records::GenericChunk;
@@ -30,12 +31,13 @@ use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use super::error::CompatibleChatError;
 use super::execution::{CompatibleChatExecution, MessageTransformer, TimeoutFacts};
 use super::plan::ChatPlan;
 use super::send::{ChatAnswer, CompatibleChatOutcome, finish_chat, send_chat};
-use super::stream::{Bytes, CompatibleChatStream, DecodedChunks, StreamingDecoder};
+use super::stream::{Bytes, CompatibleChatStream, DecodedChunks, StreamingDecoder, rechunk};
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(5);
@@ -109,6 +111,14 @@ fn empty_body() -> Bytes {
     futures_util::stream::empty::<Result<Vec<u8>, HttpError>>().boxed()
 }
 
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
+}
+
+fn fixed_clock() -> i64 {
+    1_700_000_000
+}
+
 fn empty_chunk() -> GenericChunk {
     GenericChunk {
         text: String::new(),
@@ -152,11 +162,11 @@ impl Call {
         }
     }
 
-    fn execution<'a>(
-        &'a self,
-        transform: Option<&'a dyn MessageTransformer>,
-        decoder: Option<&'a dyn StreamingDecoder>,
-    ) -> CompatibleChatExecution<'a> {
+    fn execution<'call>(
+        &'call self,
+        transform: Option<&'call dyn MessageTransformer>,
+        decoder: Option<&'call dyn StreamingDecoder>,
+    ) -> CompatibleChatExecution<'call> {
         CompatibleChatExecution {
             model: &self.model,
             messages: &self.messages,
@@ -165,17 +175,23 @@ impl Call {
             api_key: self.api_key.as_ref(),
             headers: self.headers.as_ref(),
             optional_params: &self.options,
-            custom_endpoint: self.custom_endpoint,
+            custom_endpoint: self.custom_endpoint.unwrap_or(false),
             timeout: self.timeout,
             mode: self.mode,
             fake_stream: self.fake_stream,
             transform_messages: transform,
             streaming_decoder: decoder,
+            identifier: fixed_id,
+            clock: fixed_clock,
         }
     }
 }
 
-fn plan<'a>(call: &'a Call, state: &mut LoggingState, env: &PrePostEnv<'_>) -> ChatPlan<'a> {
+fn plan<'call>(
+    call: &'call Call,
+    state: &mut LoggingState,
+    env: &PrePostEnv<'_>,
+) -> ChatPlan<'call> {
     call.execution(None, None).plan(state, env).unwrap()
 }
 
@@ -251,8 +267,8 @@ fn plan_consumes_options_and_extra_body_wins() {
     assert!(!plan.body.contains_key("base_model"));
     assert!(!plan.body.contains_key("extra_body"));
     assert!(!plan.body.contains_key("json_mode"));
-    assert_eq!(plan.base_model.as_deref(), Some("upstream"));
-    assert!(plan.json_mode);
+    assert_eq!(plan.reply.base_model.as_deref(), Some("upstream"));
+    assert!(plan.reply.json_mode);
     assert_eq!(plan.body.get("stream"), Some(&Json::Bool(true)));
     assert_eq!(
         state.model_call_details.get("log_event_type"),
@@ -435,6 +451,21 @@ fn only_the_blocking_fake_stream_reads_the_whole_body() {
     assert!(!plan(&call, &mut state, &env).buffered());
 }
 
+#[test]
+fn a_reply_without_id_or_created_takes_them_from_the_plan() {
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let call = Call::new(Mode::Async);
+    let plan = plan(&call, &mut state, &env);
+    let reply =
+        decode_compatible_chat_reply(br#"{"model":"gpt-4o","choices":[]}"#, &plan.reply_options())
+            .unwrap();
+    assert_eq!(reply.response.id, format!("chatcmpl-{}", fixed_id()));
+    assert_eq!(reply.response.created, 1_700_000_000);
+}
+
+struct Suffix;
+
 impl MessageTransformer for Suffix {
     fn transform(
         &self,
@@ -579,6 +610,64 @@ async fn a_sync_fake_stream_buffers_and_replays_one_chunk() {
         state.model_call_details.get("original_response"),
         Some(&Json::Text(String::from("first stream response received")))
     );
+}
+
+#[tokio::test]
+async fn a_sync_fake_stream_requires_exactly_200() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Sync);
+    call.api_base = Some(base(&listener).await);
+    call.fake_stream = true;
+    call.options.insert("stream".to_owned(), Json::Bool(true));
+    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener, 201, FAKE_REPLY.as_bytes()), async {
+            let plan = plan(&call, &mut state, &env);
+            let answer = send_chat(&client(), &plan).await.unwrap();
+            finish_chat(&plan, answer, &mut state, &env)
+        })
+    })
+    .await
+    .unwrap();
+    assert!(matches!(
+        answer,
+        Err(CompatibleChatError::OpenAiLike(error)) if error.status_code == 201
+    ));
+}
+
+#[tokio::test]
+async fn a_sync_fake_stream_with_a_decoder_reads_1024_byte_chunks() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Sync);
+    call.api_base = Some(base(&listener).await);
+    call.fake_stream = true;
+    call.options.insert("stream".to_owned(), Json::Bool(true));
+    let body = "a".repeat(3000);
+    let reads = Arc::new(Mutex::new(Vec::new()));
+    let decoder = Recording(Arc::clone(&reads));
+    let (_, answer) = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(serve(&listener, 200, body.as_bytes()), async {
+            let plan = call
+                .execution(None, Some(&decoder))
+                .plan(&mut state, &env)
+                .unwrap();
+            let answer = send_chat(&client(), &plan).await.unwrap();
+            finish_chat(&plan, answer, &mut state, &env)
+        })
+    })
+    .await
+    .unwrap();
+    let CompatibleChatOutcome::Stream(stream) = answer.unwrap() else {
+        panic!("the decoder stream");
+    };
+    let CompatibleChatStream::Decoder(mut chunks) = *stream else {
+        panic!("the decoder stream");
+    };
+    while chunks.next().await.is_some() {}
+    assert_eq!(*reads.lock().unwrap(), vec![1024, 1024, 952]);
 }
 
 #[tokio::test]
@@ -794,7 +883,7 @@ async fn a_stream_send_failure_stays_a_transport_error() {
 }
 
 #[tokio::test]
-async fn a_nonstream_send_failure_is_a_timeout_or_a_transport_error() {
+async fn a_nonstream_send_failure_is_a_transport_error() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
@@ -808,16 +897,15 @@ async fn a_nonstream_send_failure_is_a_timeout_or_a_transport_error() {
     let Err(error) = answer else {
         panic!("the deadline error");
     };
-    assert!(matches!(error, CompatibleChatError::Timeout(_)));
-    assert_eq!(error.status_code(), Some(408));
-    assert_eq!(error.to_string(), "Timeout error occurred.");
+    assert!(matches!(error, CompatibleChatError::Transport(_)));
+    assert_eq!(error.status_code(), Some(500));
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut call = Call::new(Mode::Async);
     call.api_base = Some(base(&listener).await);
-    let plan = plan(&call, &mut state, &env);
+    let failed = plan(&call, &mut state, &env);
     drop(listener);
-    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
+    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &failed))
         .await
         .unwrap();
     let Err(error) = answer else {
@@ -827,18 +915,51 @@ async fn a_nonstream_send_failure_is_a_timeout_or_a_transport_error() {
     assert_eq!(error.status_code(), Some(500));
 }
 
+#[tokio::test]
+async fn a_sync_stream_send_timeout_is_the_timeout_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let (mut state, env) = logging(&redactor);
+    let mut call = Call::new(Mode::Sync);
+    call.api_base = Some(base(&listener).await);
+    call.options.insert("stream".to_owned(), Json::Bool(true));
+    call.timeout = Some(Duration::from_millis(20));
+    let plan = plan(&call, &mut state, &env);
+    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
+        .await
+        .unwrap();
+    let Err(error) = answer else {
+        panic!("the timeout error");
+    };
+    assert!(matches!(error, CompatibleChatError::Timeout(_)));
+    assert_eq!(error.status_code(), Some(408));
+}
+
+#[tokio::test]
+async fn a_full_chunk_is_yielded_before_another_read() {
+    let body = futures_util::stream::iter([Ok::<Vec<u8>, HttpError>(vec![b'a'; 1024])])
+        .chain(futures_util::stream::pending())
+        .boxed();
+    let mut chunked = rechunk(body);
+    let first = timeout(EXCHANGE_TIMEOUT, chunked.next()).await.unwrap();
+    let Some(Ok(bytes)) = first else {
+        panic!("the full chunk");
+    };
+    assert_eq!(bytes.len(), 1024);
+}
+
 struct Recording(Arc<Mutex<Vec<usize>>>);
 
 impl StreamingDecoder for Recording {
     fn decode(&self, bytes: Bytes) -> DecodedChunks {
-        let reads = Arc::clone(&self.0);
+        let sizes = Arc::clone(&self.0);
         bytes
-            .map(move |read| {
-                let read = read?;
-                reads
+            .map(move |item| {
+                let chunk = item?;
+                sizes
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
-                    .push(read.len());
+                    .push(chunk.len());
                 Ok(empty_chunk())
             })
             .boxed()
