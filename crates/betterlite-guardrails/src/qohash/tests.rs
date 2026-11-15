@@ -29,7 +29,7 @@ use crate::generic_guardrail_contracts::{
     GenericGuardrailAPISettings, GuardrailExtraValue, GuardrailInputType, GuardrailOptions,
     GuardrailToolParam, UnreachableFallback,
 };
-use crate::guardrail_base::contract::GuardrailContract;
+use crate::guardrail_base::contract::GuardrailContract as _;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
@@ -301,8 +301,11 @@ fn nexus_config_model_is_the_generic_model_with_the_nexus_api_base() {
         "Qostodian Nexus"
     );
     assert_eq!(
-        serde_json::to_value(model).unwrap(),
-        serde_json::json!({"optional_params": null, "api_base": null})
+        model,
+        GuardrailValue::Object(BTreeMap::from([
+            ("optional_params".to_owned(), GuardrailValue::Null),
+            ("api_base".to_owned(), GuardrailValue::Null),
+        ]))
     );
 }
 

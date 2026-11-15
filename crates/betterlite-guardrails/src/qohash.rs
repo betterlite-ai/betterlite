@@ -131,7 +131,13 @@ impl GuardrailContract for QostodianNexus {
         input_type: GuardrailInputType,
         logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> impl Future<Output = Result<GuardrailApiInputs, GuardrailFailure>> + Send {
-        let request = self.request_for(&inputs, request_data, input_type, logging_obj.as_deref());
+        let request = request::request_for(
+            self,
+            &inputs,
+            request_data,
+            input_type,
+            logging_obj.as_deref(),
+        );
         async move {
             match self.generic.apply_guardrail(request).await {
                 Ok(response) => Ok(inputs_from_response(response)),

@@ -11,36 +11,34 @@ use crate::generic_guardrail_contracts::headers::{
 use crate::generic_guardrail_contracts::{GenericGuardrailAPIRequest, GuardrailInputType};
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
-impl QostodianNexus {
-    pub(super) fn request_for(
-        &self,
-        inputs: &GuardrailApiInputs,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        input_type: GuardrailInputType,
-        logging_obj: Option<&GuardrailLogTarget>,
-    ) -> GenericGuardrailAPIRequest {
-        let (litellm_call_id, litellm_trace_id) = call_and_trace_ids(logging_obj);
-        // metadata values are strings in LiteLLM's TypedDict, so a value of another type names no field it reads
-        let litellm_metadata = metadata_strings(request_data.get("litellm_metadata"));
-        let metadata = metadata_strings(request_data.get("metadata"));
-        GenericGuardrailAPIRequest {
-            input_type,
-            litellm_call_id,
-            litellm_trace_id,
-            structured_messages: inputs.structured_messages.clone(),
-            images: inputs.images.clone(),
-            tools: inputs.tools.clone(),
-            texts: inputs.texts.clone(),
-            request_data: extract_user_api_key_metadata(&litellm_metadata, &metadata),
-            request_headers: extract_inbound_headers(
-                &inbound_context(request_data, logging_obj),
-                Some(self.extra_headers.as_slice()),
-            ),
-            litellm_version: Some(LITELLM_VERSION.to_owned()),
-            provider_params: None,
-            tool_calls: inputs.tool_calls.clone(),
-            model: inputs.model.clone(),
-        }
+pub(super) fn request_for(
+    nexus: &QostodianNexus,
+    inputs: &GuardrailApiInputs,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    input_type: GuardrailInputType,
+    logging_obj: Option<&GuardrailLogTarget>,
+) -> GenericGuardrailAPIRequest {
+    let (litellm_call_id, litellm_trace_id) = call_and_trace_ids(logging_obj);
+    // metadata values are strings in LiteLLM's TypedDict, so a value of another type names no field it reads
+    let litellm_metadata = metadata_strings(request_data.get("litellm_metadata"));
+    let metadata = metadata_strings(request_data.get("metadata"));
+    GenericGuardrailAPIRequest {
+        input_type,
+        litellm_call_id,
+        litellm_trace_id,
+        structured_messages: inputs.structured_messages.clone(),
+        images: inputs.images.clone(),
+        tools: inputs.tools.clone(),
+        texts: inputs.texts.clone(),
+        request_data: extract_user_api_key_metadata(&litellm_metadata, &metadata),
+        request_headers: extract_inbound_headers(
+            &inbound_context(request_data, logging_obj),
+            Some(nexus.extra_headers.as_slice()),
+        ),
+        litellm_version: Some(LITELLM_VERSION.to_owned()),
+        provider_params: None,
+        tool_calls: inputs.tool_calls.clone(),
+        model: inputs.model.clone(),
     }
 }
 
@@ -55,11 +53,8 @@ fn object_at<'data>(
 }
 
 fn header_context(context: &BTreeMap<String, GuardrailValue>) -> HeaderContext {
-    match object_at(context, "headers") {
-        Some(headers) => HeaderContext {
-            headers: Some(headers.clone()),
-        },
-        None => HeaderContext { headers: None },
+    HeaderContext {
+        headers: object_at(context, "headers").cloned(),
     }
 }
 
