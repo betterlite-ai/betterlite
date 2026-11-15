@@ -150,7 +150,9 @@ fn retrieve_encodes_the_batch_id_as_one_segment() {
 
 #[test]
 fn retrieve_without_a_key_fails() {
-    let error = retrieve_batch("job-1", None, None, &settings(None, None)).expect_err("no key");
+    let error = retrieve_batch("job-1", None, None, &settings(None, None))
+        .err()
+        .expect("no key");
     assert_eq!(error.status_code(), None);
     assert!(matches!(error, MistralBatchesError::Identity(_)));
 }
@@ -160,7 +162,8 @@ fn retrieve_without_a_key_fails() {
 #[case("")]
 fn retrieve_rejects_a_dot_or_empty_id(#[case] batch_id: &str) {
     let error = retrieve_batch(batch_id, None, None, &settings(None, Some("Key")))
-        .expect_err("no GET plan");
+        .err()
+        .expect("no GET plan");
     assert_eq!(error.status_code(), None);
 }
 
