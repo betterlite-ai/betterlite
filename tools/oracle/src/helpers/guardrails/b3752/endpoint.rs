@@ -123,14 +123,12 @@ fn answer_response(answer: &ScriptedAnswer) -> Response {
         Ok(status) => status,
         Err(_error) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     };
-    match &answer.raw {
-        Some(raw) => (status, raw.clone()).into_response(),
-        None => match serde_json::to_vec(&answer.body) {
-            Ok(body) => {
-                (status, [(header::CONTENT_TYPE, "application/json")], body).into_response()
-            }
-            Err(_error) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
-        },
+    if let Some(raw) = &answer.raw {
+        return (status, raw.clone()).into_response();
+    }
+    match serde_json::to_vec(&answer.body) {
+        Ok(body) => (status, [(header::CONTENT_TYPE, "application/json")], body).into_response(),
+        Err(_error) => StatusCode::INTERNAL_SERVER_ERROR.into_response(),
     }
 }
 
