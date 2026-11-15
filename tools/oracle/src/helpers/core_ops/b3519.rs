@@ -195,7 +195,7 @@ fn duration(seconds: Option<f64>) -> Result<Option<Duration>, Box<HelperError>> 
 
 fn block_on<Output, Failure, Work>(work: Work) -> Result<Output, Box<HelperError>>
 where
-    Work: std::future::Future<Output = Result<Output, Failure>>,
+    Work: Future<Output = Result<Output, Failure>>,
     Failure: std::fmt::Display,
 {
     let runtime = tokio::runtime::Builder::new_current_thread()

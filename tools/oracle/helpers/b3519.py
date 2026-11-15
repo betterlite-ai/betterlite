@@ -1,5 +1,6 @@
 import asyncio
 import os
+from collections.abc import Coroutine
 from typing import Final, Literal, Protocol, Required, TypedDict
 
 import httpx
@@ -111,8 +112,9 @@ class _Handler:
         return response
 
 
+# the provider config's async entry points, typed as the coroutines asyncio.run takes
 class SandboxConfig(Protocol):
-    async def acreate_sandbox(
+    def acreate_sandbox(
         self,
         *,
         template: str | None = None,
@@ -120,24 +122,24 @@ class SandboxConfig(Protocol):
         allow_internet_access: bool | None = None,
         api_key: str | None = None,
         **kwargs: JsonValue | _Handler,
-    ) -> ContainerHandle: ...
+    ) -> Coroutine[None, None, ContainerHandle]: ...
 
-    async def arun_code(
+    def arun_code(
         self,
         *,
         container: ContainerHandle | str,
         code: str,
         api_key: str | None = None,
         **kwargs: JsonValue | _Handler,
-    ) -> CodeExecutionResult: ...
+    ) -> Coroutine[None, None, CodeExecutionResult]: ...
 
-    async def adelete_sandbox(
+    def adelete_sandbox(
         self,
         *,
         container: ContainerHandle | str,
         api_key: str | None = None,
         **kwargs: JsonValue | _Handler,
-    ) -> bool: ...
+    ) -> Coroutine[None, None, bool]: ...
 
 
 class SandboxToolRegistry(Protocol):
