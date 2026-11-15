@@ -17,7 +17,6 @@ use betterlite_secrets::secret_codec::{
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
-use serde::de::{DeserializeOwned, Deserializer};
 use serde_json::Value;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -34,47 +33,32 @@ const JSON_TEXT_FIELDS: [&str; 7] = [
     "tool_name_to_display_name",
 ];
 
-// An internally tagged enum hands each field a ContentDeserializer, which cannot serve the
-// Box<RawValue> behind JsonValue, so these fields decode from a plain JSON value first.
-fn from_json_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: Deserializer<'de>,
-    T: DeserializeOwned,
-{
-    let value = Value::deserialize(deserializer)?;
-    serde_json::from_value(value).map_err(serde::de::Error::custom)
-}
-
+// Internally tagged enums hand each field a ContentDeserializer that cannot serve JsonValue's Box<RawValue>.
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     PrepareCreate {
         salt_key: String,
-        #[serde(deserialize_with = "from_json_value")]
-        request: McpServerRequest,
+        request: Value,
     },
     PrepareUpdate {
         salt_key: String,
-        #[serde(deserialize_with = "from_json_value")]
-        request: McpServerRequest,
+        request: Value,
         model_fields: Vec<String>,
         original_fields: Vec<String>,
     },
     EncryptCredentials {
         salt_key: String,
-        #[serde(deserialize_with = "from_json_value")]
-        credentials: CredentialBlob,
+        credentials: Value,
         nonce_hex: String,
     },
     DecryptCredentials {
         salt_key: String,
-        #[serde(deserialize_with = "from_json_value")]
-        credentials: CredentialBlob,
+        credentials: Value,
     },
     DecryptEnvVars {
         salt_key: String,
-        #[serde(deserialize_with = "from_json_value")]
-        env_vars: Vec<JsonValue>,
+        env_vars: Value,
     },
 }
 
@@ -189,9 +173,11 @@ fn plaintext_view(
     Ok(JsonValue::Object(data))
 }
 
-fn prepare_create(salt: &str, request: &McpServerRequest) -> Result<Value, Box<HelperError>> {
+fn prepare_create(salt: &str, request: &Value) -> Result<Value, Box<HelperError>> {
+    let decoded: McpServerRequest = serde_json::from_value(request.clone())
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     let prepared = prepare_mcp_server_data(
-        request,
+        &decoded,
         PrepareMode::Create,
         &encrypt_cipher(salt, DEFAULT_NONCE),
     )
@@ -203,14 +189,16 @@ fn prepare_create(salt: &str, request: &McpServerRequest) -> Result<Value, Box<H
 
 fn prepare_update(
     salt: &str,
-    request: &McpServerRequest,
+    request: &Value,
     model_fields: &[String],
     original_fields: &[String],
 ) -> Result<Value, Box<HelperError>> {
+    let decoded: McpServerRequest = serde_json::from_value(request.clone())
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     let model: FieldsSet = model_fields.iter().cloned().collect();
     let original: FieldsSet = original_fields.iter().cloned().collect();
     let prepared = prepare_mcp_server_data(
-        request,
+        &decoded,
         PrepareMode::Update {
             model_fields: &model,
             original_fields: &original,
@@ -225,24 +213,27 @@ fn prepare_update(
 
 fn encrypt_step(
     salt: &str,
-    credentials: &CredentialBlob,
+    credentials: &Value,
     nonce_hex: &str,
 ) -> Result<Value, Box<HelperError>> {
-    let mut encrypted = credentials.clone();
+    let mut encrypted: CredentialBlob = serde_json::from_value(credentials.clone())
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     let nonce = fixed_nonce(nonce_hex)?;
     encrypt_credentials(&mut encrypted, &encrypt_cipher(salt, nonce))
         .map_err(|error| helper_error("McpEncodingError", &error.to_string()))?;
     output(JsonValue::Object(encrypted))
 }
 
-fn decrypt_step(salt: &str, credentials: &CredentialBlob) -> Result<Value, Box<HelperError>> {
-    let mut decrypted = credentials.clone();
+fn decrypt_step(salt: &str, credentials: &Value) -> Result<Value, Box<HelperError>> {
+    let mut decrypted: CredentialBlob = serde_json::from_value(credentials.clone())
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     decrypt_credentials(&mut decrypted, &decrypt_cipher(salt));
     output(JsonValue::Object(decrypted))
 }
 
-fn decrypt_env_step(salt: &str, env_vars: &[JsonValue]) -> Result<Value, Box<HelperError>> {
-    let mut decrypted = env_vars.to_vec();
+fn decrypt_env_step(salt: &str, env_vars: &Value) -> Result<Value, Box<HelperError>> {
+    let mut decrypted: Vec<JsonValue> = serde_json::from_value(env_vars.clone())
+        .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     decrypt_stored_env_var_values(&mut decrypted, &decrypt_cipher(salt));
     output(JsonValue::Array(decrypted))
 }
