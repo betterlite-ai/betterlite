@@ -4,7 +4,8 @@ use betterlite_context::agentic_loop_plan::JsonMap;
 use betterlite_models::decisions::Json;
 
 use super::super::dispatch::call_agentic_completion_hooks;
-use super::super::executor::ResponsesContinuation;
+use super::super::executor::{AnthropicContinuation, ContinuationExecutor, ResponsesContinuation};
+use super::super::http::HttpExecutorError;
 use super::support::{
     NEXT_BODY, ScriptedExecutor, SeenRequest, Upstream, callback_list, dispatch, fingerprint_of,
     http_executor, order_log,
@@ -13,6 +14,7 @@ use super::{
     assert_log, followup_fixture, followup_patch, json, number, plan_callback, response_text, text,
 };
 use crate::api::chat_agentic_loop::tests::support::capture;
+use indexmap::IndexMap;
 
 pub(super) async fn http_followup() {
     let (fixture, tools) = followup_fixture();
@@ -140,6 +142,22 @@ fn assert_continuation_dropped_kwargs(call: &ResponsesContinuation, tools: &Json
             Json::Text(fingerprint_of(tools)),
         ]))
     );
+}
+
+pub(super) async fn anthropic_surface_is_refused() {
+    let continuation = AnthropicContinuation {
+        model: "claude-3-5-sonnet".to_owned(),
+        messages: Vec::new(),
+        max_tokens: 1,
+        stream: false,
+        params: IndexMap::new(),
+    };
+    let executor = http_executor("http://provider.invalid");
+    let outcome = executor.anthropic_messages(&continuation).await;
+    let Err(error) = outcome else {
+        panic!("the responses transport refuses the anthropic follow-up");
+    };
+    assert!(matches!(error, HttpExecutorError::UnsupportedAnthropic));
 }
 
 pub(super) async fn failed_send_is_logged() {

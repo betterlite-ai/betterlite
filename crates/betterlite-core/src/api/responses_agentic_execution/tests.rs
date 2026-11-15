@@ -158,6 +158,8 @@ async fn agentic_callback_order() {
     callbacks::null_legacy_is_no_result().await;
     callbacks::plan_error_moves_on().await;
     callbacks::no_callbacks_is_no_result().await;
+    callbacks::optional_tools_reach_the_gate().await;
+    callbacks::invalid_optional_tools_raise().await;
 }
 
 #[tokio::test]
@@ -165,6 +167,7 @@ async fn responses_followup_http() {
     followup::http_followup().await;
     followup::captured_followup().await;
     followup::failed_send_is_logged().await;
+    followup::anthropic_surface_is_refused().await;
 }
 
 #[tokio::test]

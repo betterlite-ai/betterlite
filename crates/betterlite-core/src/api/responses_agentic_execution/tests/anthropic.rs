@@ -28,6 +28,11 @@ pub(super) async fn model_ladder() {
     let patched_plan = plan_with_patch(patched());
     let patched_call = anthropic_call(logged.clone(), &patched_plan).await;
     assert_eq!(patched_call.model, "patched-model");
+    assert_eq!(patched_call.messages.len(), 1);
+    assert_eq!(
+        patched_call.messages[0].0.get(),
+        r#"{"role":"user","content":"continue"}"#
+    );
     let unpatched = plan_with_patch(without_model(&patched()));
     let logged_call = anthropic_call(logged, &unpatched).await;
     assert_eq!(logged_call.model, "logged-model");

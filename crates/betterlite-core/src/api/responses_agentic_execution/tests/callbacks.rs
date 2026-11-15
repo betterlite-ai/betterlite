@@ -3,12 +3,17 @@ use std::sync::{Arc, Mutex};
 use betterlite_context::agentic_loop_plan::JsonMap;
 
 use super::super::AgenticResult;
+use super::super::error::AgenticExecutionError;
 use super::support::{
     NEXT_BODY, RecordingCallback, ScriptedExecutor, callback_list, dispatch, fixture,
     legacy_script, null_legacy_script, order_log, recording, refused_tools,
 };
-use super::{assert_log, continue_messages, plan_callback, raw_text, response_text};
-use crate::api::chat_agentic_loop::tests::support::{Script, capture, gate, overrides, patch};
+use super::{
+    assert_log, continue_messages, dispatch_error, plan_callback, raw_text, response_text,
+};
+use crate::api::chat_agentic_loop::tests::support::{
+    Script, capture, gate, json_map, overrides, patch,
+};
 
 pub(super) async fn plan_hooks_in_order() {
     let order = Arc::new(Mutex::new(Vec::new()));
@@ -144,4 +149,44 @@ pub(super) async fn no_callbacks_is_no_result() {
         .await
         .expect("no callbacks is no result");
     assert!(outcome.is_none());
+}
+
+pub(super) async fn optional_tools_reach_the_gate() {
+    let mut tooled = fixture();
+    tooled.optional_params = json_map(&[(
+        "tools",
+        r#"[{"type":"function","function":{"name":"lookup"}}]"#,
+    )]);
+    let order = Arc::new(Mutex::new(Vec::new()));
+    let quiet = recording(
+        "q",
+        Script::default()
+            .with_overrides(overrides(true, false, false))
+            .with_gate(gate(false, JsonMap::new())),
+        &order,
+    );
+    let outcome = dispatch(
+        &tooled,
+        &callback_list(&[&quiet]),
+        &ScriptedExecutor::responding(NEXT_BODY),
+    )
+    .await
+    .expect("the optional tools parse");
+    assert!(outcome.is_none());
+    let records = quiet.records();
+    let gate_call = &records.gate[0];
+    let tools = gate_call.tools.as_ref().expect("the gate sees the tools");
+    assert_eq!(tools.len(), 1);
+    assert_eq!(
+        tools[0].0.get(),
+        r#"{"type":"function","function":{"name":"lookup"}}"#
+    );
+}
+
+pub(super) async fn invalid_optional_tools_raise() {
+    let mut broken = fixture();
+    broken.optional_params = json_map(&[("tools", "\"not-a-list\"")]);
+    let outcome = dispatch(&broken, &[], &ScriptedExecutor::responding(NEXT_BODY)).await;
+    let error = dispatch_error(outcome, "invalid optional tools raise");
+    assert!(matches!(error, AgenticExecutionError::InvalidTools { .. }));
 }
