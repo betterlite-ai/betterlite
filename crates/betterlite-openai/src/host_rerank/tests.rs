@@ -128,6 +128,7 @@ fn jina_headers_are_lowercase_and_replace_the_caller(#[case] key: &str, #[case] 
 #[case::slashes_stripped("http://h/v1///", "http://h/v1/rerank")]
 #[case::kept("http://h/rerank/", "http://h/rerank")]
 #[case::needs_a_segment("http://h/xrerank", "http://h/xrerank/rerank")]
+#[case::empty("", "/rerank")]
 fn infinity_url_appends_rerank_once(#[case] base: &str, #[case] expected: &str) {
     assert_eq!(infinity_complete_url(Some(base)).unwrap(), expected);
 }
@@ -353,6 +354,16 @@ fn jina_refuses_shapes_it_cannot_hold(#[case] body: &str, #[case] marker: &str) 
     200,
     r#"{"id":"","results":[{"index":0,"relevance_score":1,"document":""},{"index":1,"relevance_score":1,"document":null},{"index":2,"relevance_score":1,"document":"x"}]}"#,
     r#"{"id":"00000000-0000-4000-8000-000000000001","results":[{"index":0,"relevance_score":1},{"index":1,"relevance_score":1},{"index":2,"relevance_score":1,"document":{"text":"x"}}],"meta":{"billed_units":{},"tokens":{"input_tokens":0,"output_tokens":0}},"hidden":{}}"#
+)]
+#[case::null_usage_counts_as_absent(
+    200,
+    r#"{"usage":null,"results":[]}"#,
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{},"tokens":{"input_tokens":0,"output_tokens":0}},"hidden":{}}"#
+)]
+#[case::null_total_tokens_counts_as_absent(
+    200,
+    r#"{"usage":{"total_tokens":null,"prompt_tokens":5},"results":[]}"#,
+    r#"{"id":"00000000-0000-4000-8000-000000000001","results":[],"meta":{"billed_units":{"total_tokens":null},"tokens":{"input_tokens":5,"output_tokens":-5}},"hidden":{}}"#
 )]
 fn infinity_decodes_its_answer(#[case] status: u16, #[case] body: &str, #[case] expected: &str) {
     let (reply, logged) = decode(HostProvider::Infinity, status, body.as_bytes());
