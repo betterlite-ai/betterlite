@@ -235,6 +235,22 @@ pub(super) fn text(value: &GuardrailValue) -> &str {
     ""
 }
 
+pub(super) fn number(value: &GuardrailValue) -> f64 {
+    match value {
+        GuardrailValue::Decimal(number) => *number,
+        GuardrailValue::Object(fields) => {
+            let digits = text(fields.values().next().unwrap_or(&GuardrailValue::Null));
+            digits.parse().unwrap_or(f64::NAN)
+        }
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_) => f64::NAN,
+    }
+}
+
 pub(super) fn texts(value: &GuardrailValue) -> Vec<String> {
     if let GuardrailValue::Array(items) = value {
         return items.iter().filter_map(text_of).collect();

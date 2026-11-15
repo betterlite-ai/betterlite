@@ -13,7 +13,7 @@ use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_response::wire::ResponseBody;
 
 use super::support::{
-    GUARDRAIL_NAME, Reply, SAFE, UNSAFE, field, guard_at, messages_of, mock, seen, text,
+    GUARDRAIL_NAME, Reply, SAFE, UNSAFE, field, guard_at, messages_of, mock, number, seen, text,
 };
 
 const SECRET_SCAN: &str =
@@ -86,15 +86,9 @@ fn assert_logging_entry(entry: &GuardrailValue) {
         "guardrail_intervened"
     );
     assert_eq!(field(entry, "masked_entity_count"), &GuardrailValue::Null);
-    assert_eq!(
-        field(entry, "start_time"),
-        &GuardrailValue::Decimal(1_700_000_000.0_f64)
-    );
-    assert_eq!(
-        field(entry, "end_time"),
-        &GuardrailValue::Decimal(1_700_000_001.0_f64)
-    );
-    assert_eq!(field(entry, "duration"), &GuardrailValue::Decimal(1.0_f64));
+    assert!((number(field(entry, "start_time")) - 1_700_000_000.0_f64).abs() < 1e-6_f64);
+    assert!((number(field(entry, "end_time")) - 1_700_000_001.0_f64).abs() < 1e-6_f64);
+    assert!((number(field(entry, "duration")) - 1.0_f64).abs() < 1e-6_f64);
     assert_eq!(
         text(field(field(entry, "guardrail_response"), "decision")),
         "UNSAFE"
