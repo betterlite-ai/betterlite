@@ -882,8 +882,8 @@ async fn a_nonstream_send_failure_is_a_transport_error() {
     let mut call = Call::new(Mode::Async);
     call.api_base = Some(base(&listener).await);
     call.timeout = Some(Duration::from_millis(20));
-    let plan = plan(&call, &mut state, &env);
-    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
+    let expired = plan(&call, &mut state, &env);
+    let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &expired))
         .await
         .unwrap();
     let Err(error) = answer else {
