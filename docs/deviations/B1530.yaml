@@ -1,0 +1,33 @@
+task: B1530
+deviations:
+  - what: An Ideogram or Stable Diffusion reply larger than 16 MiB is refused with a typed error that keeps the upstream status and headers.
+    why: LiteLLM reads the reply with raw_response.json() and has no size limit; bounded-inputs requires one on a body that comes from outside, and an image reply that large is not one any working setup returns.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L160-L167
+  - what: An Ideogram reply image member that ImageObject cannot hold, such as a number, a boolean or a list, fails with a typed InvalidImageUrl error that names the entry index.
+    why: LiteLLM constructs ImageObject inside the transform and its pydantic ValidationError escapes as a 500; betterlite keeps the failure and its entry index but as a typed error, and no working reply carries such a member.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L172-L185
+  - what: A Stable Diffusion reply map whose url is not a string or null fails with the same typed InvalidImageUrl error and entry index.
+    why: LiteLLM passes the value straight into ImageObject, whose ValidationError escapes as a 500; a working reply carries a string url or none at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L246-L263
+  - what: A Stable Diffusion reply whose JSON root is not an object fails with a typed error that keeps the upstream status and headers.
+    why: LiteLLM raises an unhandled AttributeError from response_data.get on the next line, so the client sees a 500 with the upstream status lost; a working setup never receives a non-object image reply.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L234-L246
+  - what: A Stable Diffusion reply object that repeats one of the top-level fields betterlite reads is a decode error that keeps the upstream status.
+    why: betterlite decodes the reply into a typed struct so a present null stays apart from an absent key, and a typed decode refuses a repeated field where Python's json.loads keeps the last value; a working provider never repeats a key.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L233-L246
+  - what: A Stable Diffusion size value that is not a string fails with a typed SizeNotAString error.
+    why: LiteLLM tests membership and the letter x on the value, so a number, boolean, null, list or map raises an unhandled TypeError as a 500; betterlite names the field instead, and a working request sends a size string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L152-L161
+  - what: An Ideogram or Stable Diffusion size string part that Python's int() reads past i64, such as a 20-digit dimension, falls back to the family preset instead of becoming an unbounded integer.
+    why: betterlite's shared size parser reads dimensions as i64; Python integers are unbounded. No working image request sends a dimension that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L106-L115
+  - what: A size string part of exactly -9223372036854775808 falls back to the family preset, where Python's int() reads it and i64 holds it.
+    why: betterlite's shared size parser in betterlite-models parses the magnitude before applying the sign, so the smallest i64 overflows; that parser sits outside this task's scope, and no working image request sends the minimum i64 as a dimension.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/stable_diffusion_transformation.py#L156-L161
+  - what: A size string part written in non-ASCII decimal digits, such as Arabic-Indic, falls back to the family preset, where Python's int() reads those digits as a number.
+    why: betterlite's shared size reader accepts ASCII digits only; a working request spells its size in ASCII.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L106-L115
+  - what: A size string padded with U+001C to U+001F is not trimmed by betterlite, so it falls back to the family preset where Python's strip() and int() remove those characters and read the dimensions.
+    why: Rust's Unicode whitespace set leaves out the four information separators Python counts as whitespace; no working request sends them around a size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L102-L115
+kept_bugs: []
