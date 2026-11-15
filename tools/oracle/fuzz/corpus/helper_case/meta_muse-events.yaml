@@ -1,0 +1,13 @@
+kind: helper
+name: meta-muse-events
+call:
+  b6414:
+    function: events
+    mode: ENDPOINTING
+    frames:
+      - {type: speechStart, turnId: turn-1}
+      - {type: transcript, turnId: turn-1, transcript: hi}
+      - {type: audioProgress, audioProcessedMs: 500}
+      - {type: transcript, turnId: turn-1, transcript: "hi there", final: true}
+env: {}
+compare: {ignore: []}
