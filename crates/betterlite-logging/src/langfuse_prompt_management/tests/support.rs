@@ -95,7 +95,9 @@ pub(super) fn env(host: &str) -> Vec<(&'static str, String)> {
     ]
 }
 
-pub(super) fn borrowed(variables: &[(&'static str, String)]) -> Vec<(&'static str, &str)> {
+pub(super) fn borrowed<'variables>(
+    variables: &'variables [(&'static str, String)],
+) -> Vec<(&'static str, &'variables str)> {
     variables
         .iter()
         .map(|(name, value)| (*name, value.as_str()))
