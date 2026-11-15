@@ -36,6 +36,8 @@ pub enum NvidiaNimRerankError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the rerank reply body is not a JSON object")]
+    ReplyNotAnObject,
     #[error("the rerank reply does not match the Nvidia NIM format: {source}")]
     ReplyShape {
         #[source]

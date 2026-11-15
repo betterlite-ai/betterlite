@@ -497,7 +497,7 @@ fn transform_rerank_request_builds_the_nim_body() {
     assert_eq!(
         body,
         params(
-            r#"{"model": "meta.llama-3.2", "query": {"text": "q"}, "passages": [{"text": "a"}, {"text": "b"}, {"text": "{\"image\":\"d\"}"}, {"text": "{\"title\":\"e\"}"}], "top_k": 2, "truncate": "END"}"#
+            r#"{"model": "meta/llama-3.2", "query": {"text": "q"}, "passages": [{"text": "a"}, {"text": "b"}, {"text": "{\"image\":\"d\"}"}, {"text": "{\"title\":\"e\"}"}], "top_k": 2, "truncate": "END"}"#
         )
     );
 }
@@ -566,7 +566,7 @@ fn transform_rerank_request_strips_the_ranking_prefix_from_the_body_model() {
         .unwrap();
     assert_eq!(
         body.get("model"),
-        Some(&Json::Text(String::from("meta.llama-3.2")))
+        Some(&Json::Text(String::from("meta/llama-3.2")))
     );
 }
 
@@ -644,8 +644,22 @@ fn transform_rerank_response_reports_a_body_that_is_not_json() {
     );
 }
 
+#[test]
+fn transform_rerank_response_reports_a_body_that_is_not_an_object() {
+    for body in ["[]", "null", r#""text""#] {
+        let error = response(
+            &config(),
+            200,
+            body.as_bytes(),
+            &Params::new(),
+            &Params::new(),
+        )
+        .unwrap_err();
+        assert!(matches!(error, NvidiaNimRerankError::ReplyNotAnObject));
+    }
+}
+
 #[rstest]
-#[case::array("[]")]
 #[case::missing_index(r#"{"rankings": [{"logit": 0.5}]}"#)]
 #[case::missing_logit(r#"{"rankings": [{"index": 0}]}"#)]
 #[case::text_index(r#"{"rankings": [{"index": "0", "logit": 0.5}]}"#)]

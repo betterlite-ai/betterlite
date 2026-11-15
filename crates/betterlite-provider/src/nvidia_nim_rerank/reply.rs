@@ -40,10 +40,14 @@ pub struct NvidiaNimUsage {
 pub fn decode_nvidia_nim_rerank_reply(
     bytes: &[u8],
 ) -> Result<NvidiaNimRerankReply, NvidiaNimRerankError> {
-    match serde_json::from_slice(bytes) {
-        Ok(reply) => Ok(reply),
-        Err(source) => Err(NvidiaNimRerankError::from_json(source)),
+    // serde's derive also reads a sequence into this struct, so the object check runs on the parsed body
+    let parsed: Json = serde_json::from_slice(bytes).map_err(NvidiaNimRerankError::from_json)?;
+    if !matches!(&parsed, Json::Object(_)) {
+        return Err(NvidiaNimRerankError::ReplyNotAnObject);
     }
+    let object =
+        serde_json::to_vec(&parsed).map_err(|source| NvidiaNimRerankError::Encode { source })?;
+    serde_json::from_slice(&object).map_err(NvidiaNimRerankError::from_json)
 }
 
 pub fn to_response(

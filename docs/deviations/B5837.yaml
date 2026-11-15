@@ -1,9 +1,9 @@
 task: B5837
 deviations:
   - what: >-
-      A rerank reply whose ranking entry lacks index or logit, whose rankings is not a list, or whose index is below minus the passage count fails with a typed error that names the field; the dispatcher maps it to status 500.
-    why: LiteLLM raises a raw KeyError, TypeError or IndexError there, which its generic exception mapping turns into a 500 with no field named.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L314-L326
+      A rerank reply whose body is not a JSON object, whose ranking entry lacks index or logit, whose rankings is not a list, or whose index is below minus the passage count fails with a typed error that names the bad field or value; the dispatcher maps it to status 500.
+    why: LiteLLM raises a raw AttributeError, KeyError, TypeError or IndexError there, which its generic exception mapping turns into a 500 with nothing named.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L304-L326
   - what: A reply id of "" is returned as given instead of being replaced by a new UUID4.
     why: docs/compatibility.md keeps an explicit empty value as given and does not port Python truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/nvidia_nim/rerank/transformation.py#L338

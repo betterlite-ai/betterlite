@@ -39,6 +39,13 @@ call:
         headers: {}
         optional: {}
         request_data: {}
+      - config: retrieval
+        model: nvidia/llama
+        status: 200
+        body: '[]'
+        headers: {}
+        optional: {}
+        request_data: {}
       - config: ranking
         model: ranking/nvidia/llama
         status: 200
