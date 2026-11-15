@@ -1,7 +1,7 @@
 id: B1523
 milestone: M3 providers
 title: Build Stability edit multipart bodies and attach catalog image cost
-status: todo
+status: done
 depends_on: [B1522, B997, B2225, B171]
 file: tasks/B1523-stability-edits.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/stability.py"
 parent: B046
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2018
