@@ -60,9 +60,12 @@ pub(crate) enum Step {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SpeechHeaderKeys {
-    pub(crate) api_key: Option<String>,
-    pub(crate) global_key: Option<String>,
-    pub(crate) env_key: Option<String>,
+    #[serde(rename = "api_key")]
+    pub(crate) api: Option<String>,
+    #[serde(rename = "global_key")]
+    pub(crate) global: Option<String>,
+    #[serde(rename = "env_key")]
+    pub(crate) environment: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

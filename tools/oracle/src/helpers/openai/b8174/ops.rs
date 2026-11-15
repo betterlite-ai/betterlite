@@ -100,9 +100,9 @@ fn speech_body(
 }
 
 fn speech_headers(keys: &SpeechHeaderKeys) -> Result<Value, Box<HelperError>> {
-    let key = keys.api_key.clone().map(SecretString::from);
-    let global = keys.global_key.clone().map(SecretString::from);
-    let environment = keys.env_key.clone().map(SecretString::from);
+    let key = keys.api.clone().map(SecretString::from);
+    let global = keys.global.clone().map(SecretString::from);
+    let environment = keys.environment.clone().map(SecretString::from);
     let headers = validate_environment(
         &Headers::new(),
         key.as_ref(),
