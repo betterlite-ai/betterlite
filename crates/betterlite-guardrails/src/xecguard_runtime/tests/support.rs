@@ -215,66 +215,36 @@ pub(super) fn request_data(json: &str) -> BTreeMap<String, GuardrailValue> {
 }
 
 pub(super) fn messages_of(body: &GuardrailValue) -> Vec<GuardrailValue> {
-    match field(body, "messages") {
-        GuardrailValue::Array(messages) => messages.clone(),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Object(_) => Vec::new(),
+    if let GuardrailValue::Array(messages) = field(body, "messages") {
+        return messages.clone();
     }
+    Vec::new()
 }
 
 pub(super) fn field<'value>(value: &'value GuardrailValue, name: &str) -> &'value GuardrailValue {
-    match value {
-        GuardrailValue::Object(fields) => fields.get(name).unwrap_or(&GuardrailValue::Null),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => &GuardrailValue::Null,
+    if let GuardrailValue::Object(fields) = value {
+        return fields.get(name).unwrap_or(&GuardrailValue::Null);
     }
+    &GuardrailValue::Null
 }
 
 pub(super) fn text(value: &GuardrailValue) -> &str {
-    match value {
-        GuardrailValue::Text(text) => text,
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => "",
+    if let GuardrailValue::Text(text) = value {
+        return text;
     }
+    ""
 }
 
 pub(super) fn texts(value: &GuardrailValue) -> Vec<String> {
-    match value {
-        GuardrailValue::Array(items) => items.iter().filter_map(text_of).collect(),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Object(_) => Vec::new(),
+    if let GuardrailValue::Array(items) = value {
+        return items.iter().filter_map(text_of).collect();
     }
+    Vec::new()
 }
 
 fn text_of(value: &GuardrailValue) -> Option<String> {
-    match value {
-        GuardrailValue::Text(text) => Some(text.clone()),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => None,
+    if let GuardrailValue::Text(text) = value {
+        return Some(text.clone());
     }
+    None
 }
