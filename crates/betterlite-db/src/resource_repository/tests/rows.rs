@@ -537,9 +537,9 @@ async fn credential_partial_update(repository: &CredentialsRepository<'_>, case:
 
 pub(crate) async fn credential_upsert_preserves_id(case: &Case) {
     let repository = credential_repository(case);
-    repository
+    let created = repository
         .create(written(
-            r#"{"credential_id":"cred-upsert-id","credential_name":"cred-upsert","credential_values":{"api_key":"before"},"created_by":"seed","updated_by":"seed"}"#,
+            r#"{"credential_id":"cred-upsert-id","credential_name":"cred-upsert","credential_values":{"api_key":"before"},"created_by":"seed","updated_by":"seed","updated_at":"2020-01-01T00:00:00"}"#,
         ))
         .await
         .unwrap();
@@ -556,6 +556,7 @@ pub(crate) async fn credential_upsert_preserves_id(case: &Case) {
         field(&row, "credential_values"),
         &value(r#"{"api_key":"after"}"#)
     );
+    assert_ne!(field(&row, "updated_at"), field(&created, "updated_at"));
     let fresh = table
         .upsert(
             "cred-fresh-name".to_owned(),
