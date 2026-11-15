@@ -55,13 +55,22 @@ fn env(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 fn text_inputs() -> GuardrailApiInputs {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["hello".to_owned()]);
-    inputs
+    GuardrailApiInputs {
+        texts: Some(vec!["hello".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    }
 }
 
-fn built(inputs: GuardrailApiInputs, input_type: GuardrailInputType) -> Option<wire::GuardRequest> {
-    wire::build_request(&inputs, input_type)
+fn built(
+    inputs: &GuardrailApiInputs,
+    input_type: GuardrailInputType,
+) -> Option<wire::GuardRequest> {
+    wire::build_request(inputs, input_type)
 }
 
 #[test]
@@ -244,10 +253,16 @@ fn request_headers_carry_the_api_key_and_the_json_content_type() {
 
 #[test]
 fn texts_become_user_messages_for_a_request() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["first".to_owned(), "second".to_owned()]);
-    inputs.model = Some("gpt-4o".to_owned());
-    let request = built(inputs, GuardrailInputType::Request).expect("request");
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["first".to_owned(), "second".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: Some("gpt-4o".to_owned()),
+        stream_holdback_chars: None,
+    };
+    let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(request.direction, Direction::Input);
     assert_eq!(request.model.as_deref(), Some("gpt-4o"));
     assert_eq!(request.images, None);
@@ -266,7 +281,7 @@ fn texts_become_user_messages_for_a_request() {
 
 #[test]
 fn a_response_scan_uses_the_output_direction() {
-    let request = built(text_inputs(), GuardrailInputType::Response).expect("request");
+    let request = built(&text_inputs(), GuardrailInputType::Response).expect("request");
     assert_eq!(request.direction, Direction::Output);
     assert_eq!(
         serde_json::to_string(&request.direction).expect("direction"),
@@ -276,23 +291,35 @@ fn a_response_scan_uses_the_output_direction() {
 
 #[test]
 fn structured_messages_win_over_texts() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["text".to_owned()]);
-    inputs.structured_messages = Some(vec![GuardrailMessage {
-        role: "system".to_owned(),
-        extra: BTreeMap::new(),
-    }]);
-    let request = built(inputs, GuardrailInputType::Request).expect("request");
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["text".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: Some(vec![GuardrailMessage {
+            role: "system".to_owned(),
+            extra: BTreeMap::new(),
+        }]),
+        model: None,
+        stream_holdback_chars: None,
+    };
+    let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(request.messages.len(), 1);
     assert_eq!(request.messages[0].role, "system");
 }
 
 #[test]
 fn empty_structured_messages_fall_back_to_the_texts() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.structured_messages = Some(Vec::new());
-    inputs.texts = Some(vec!["text".to_owned()]);
-    let request = built(inputs, GuardrailInputType::Request).expect("request");
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["text".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: Some(Vec::new()),
+        model: None,
+        stream_holdback_chars: None,
+    };
+    let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(request.messages.len(), 1);
     assert_eq!(request.messages[0].role, "user");
 }
@@ -301,20 +328,27 @@ fn empty_structured_messages_fall_back_to_the_texts() {
 #[case::nothing(None)]
 #[case::no_texts(Some(Vec::new()))]
 fn no_messages_makes_no_request(#[case] texts: Option<Vec<String>>) {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = texts;
-    assert!(built(inputs, GuardrailInputType::Request).is_none());
+    let inputs = GuardrailApiInputs {
+        texts,
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    };
+    assert!(built(&inputs, GuardrailInputType::Request).is_none());
 }
 
 #[test]
 fn images_are_sent_only_when_they_are_not_empty() {
     let mut inputs = text_inputs();
     inputs.images = Some(Vec::new());
-    let request = built(inputs, GuardrailInputType::Request).expect("request");
+    let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(request.images, None);
     let mut inputs = text_inputs();
     inputs.images = Some(vec!["https://img.test/a.png".to_owned()]);
-    let request = built(inputs, GuardrailInputType::Request).expect("request");
+    let request = built(&inputs, GuardrailInputType::Request).expect("request");
     assert_eq!(
         request.images,
         Some(vec!["https://img.test/a.png".to_owned()])
@@ -406,15 +440,21 @@ fn redacted_messages() -> Vec<GuardrailMessage> {
 
 #[test]
 fn a_redact_decision_rewrites_messages_and_user_texts() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["original".to_owned()]);
-    inputs.structured_messages = Some(vec![GuardrailMessage {
-        role: "user".to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailValue::Text("hello".to_owned()),
-        )]),
-    }]);
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["original".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: Some(vec![GuardrailMessage {
+            role: "user".to_owned(),
+            extra: BTreeMap::from([(
+                "content".to_owned(),
+                GuardrailValue::Text("hello".to_owned()),
+            )]),
+        }]),
+        model: None,
+        stream_holdback_chars: None,
+    };
     let redacted = redacted_messages();
     let response = GuardResponse {
         decision: Some("redact".to_owned()),
@@ -433,14 +473,21 @@ fn a_redact_decision_rewrites_messages_and_user_texts() {
 
 #[test]
 fn a_redact_decision_leaves_texts_alone_when_the_input_has_none() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.structured_messages = Some(vec![GuardrailMessage {
-        role: "user".to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailValue::Text("hello".to_owned()),
-        )]),
-    }]);
+    let inputs = GuardrailApiInputs {
+        texts: None,
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: Some(vec![GuardrailMessage {
+            role: "user".to_owned(),
+            extra: BTreeMap::from([(
+                "content".to_owned(),
+                GuardrailValue::Text("hello".to_owned()),
+            )]),
+        }]),
+        model: None,
+        stream_holdback_chars: None,
+    };
     let redacted = redacted_messages();
     let response = GuardResponse {
         decision: Some("redact".to_owned()),
@@ -456,8 +503,15 @@ fn a_redact_decision_leaves_texts_alone_when_the_input_has_none() {
 
 #[test]
 fn a_redact_decision_without_structured_messages_only_touches_texts() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["original".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["original".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    };
     let response = GuardResponse {
         decision: Some("redact".to_owned()),
         threat_type: None,
@@ -478,8 +532,15 @@ fn a_redact_decision_without_structured_messages_only_touches_texts() {
 
 #[test]
 fn a_redact_decision_without_user_texts_keeps_the_existing_texts() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["original".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["original".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    };
     let response = GuardResponse {
         decision: Some("redact".to_owned()),
         threat_type: None,
@@ -523,8 +584,15 @@ fn a_redact_decision_without_redacted_messages_changes_nothing(
 
 #[test]
 fn an_empty_string_user_content_still_counts_as_extracted_text() {
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.texts = Some(vec!["original".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        texts: Some(vec!["original".to_owned()]),
+        images: None,
+        tools: None,
+        tool_calls: None,
+        structured_messages: None,
+        model: None,
+        stream_holdback_chars: None,
+    };
     let response = GuardResponse {
         decision: Some("redact".to_owned()),
         threat_type: None,
@@ -660,15 +728,21 @@ async fn a_response_scan_sends_the_output_direction_and_the_images() {
         .with_state(Arc::clone(&captured));
     let (base, mut server) = serve(router).await;
     let guardrail = guardrail_at(&base, true);
-    let mut inputs = GuardrailApiInputs::default();
-    inputs.structured_messages = Some(vec![GuardrailMessage {
-        role: "assistant".to_owned(),
-        extra: BTreeMap::from([(
-            "content".to_owned(),
-            GuardrailValue::Text("answer".to_owned()),
-        )]),
-    }]);
-    inputs.images = Some(vec!["https://img.test/a.png".to_owned()]);
+    let inputs = GuardrailApiInputs {
+        texts: None,
+        images: Some(vec!["https://img.test/a.png".to_owned()]),
+        tools: None,
+        tool_calls: None,
+        structured_messages: Some(vec![GuardrailMessage {
+            role: "assistant".to_owned(),
+            extra: BTreeMap::from([(
+                "content".to_owned(),
+                GuardrailValue::Text("answer".to_owned()),
+            )]),
+        }]),
+        model: None,
+        stream_holdback_chars: None,
+    };
     let updated = guardrail
         .apply_guardrail(inputs.clone(), GuardrailInputType::Response)
         .await
