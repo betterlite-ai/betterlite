@@ -228,7 +228,17 @@ async fn selection_studio_none_contents() {
     let script = Script::replying(br#"{"totalTokens":9,"tokenizer_used":"google"}"#);
     let options = deployment("gemini/gemini-2.0-flash", params(None, None, None), None);
     let messages = [message("hello")];
-    let request = call("gemini-2.0-flash", &messages, None, options);
+    let tools = json(r#"[{"functionDeclarations":[]}]"#);
+    let system = json(r#""be brief""#);
+    let request = CountTokensCall {
+        model_to_use: "gemini-2.0-flash",
+        messages: &messages,
+        contents: None,
+        deployment: options,
+        request_model: "gemini-2.0-flash",
+        tools: Some(&tools),
+        system: Some(&system),
+    };
     let counter = StudioTokenCounter {
         settings: Settings::default(),
     };
@@ -487,7 +497,18 @@ async fn selection_partner_empty_messages() {
         params(Some("proj"), Some("us-east5"), None),
         None,
     );
-    let request = call("claude-sonnet-4-6@default", &[], None, options);
+    let tools = json(r#"[{"functionDeclarations":[]}]"#);
+    let system = json(r#""be brief""#);
+    let messages: [Message; 0] = [];
+    let request = CountTokensCall {
+        model_to_use: "claude-sonnet-4-6@default",
+        messages: &messages,
+        contents: None,
+        deployment: options,
+        request_model: "claude-sonnet-4-6@default",
+        tools: Some(&tools),
+        system: Some(&system),
+    };
     let response = vertex_count(&script, &mint, &refresh, &catalog, &request)
         .await
         .unwrap()
