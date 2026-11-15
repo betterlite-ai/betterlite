@@ -6,6 +6,9 @@ deviations:
   - what: There is no module-level IN_MEMORY_PROMPT_REGISTRY. The server makes one InMemoryPromptRegistry at startup and holds it in Shared.prompts.
     why: Module-level state is banned; one instance passed through the server's shared state keeps config load, database sync, chat and the prompt routes on the same registry.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L338
+  - what: The compile-time table holds the four backends this task owns and leaves out arize_phoenix, which LiteLLM discovers at this commit through the arize integration's registry. Betterlite's Phoenix initializer is B3864's work and reaches the table through B117's registration adapter.
+    why: The task splits the Phoenix initializer, like the Langfuse client B3908 builds, away from this registration machinery; until B117 registers it, prompt_initializer answers None for arize_phoenix and the callback build reports the unsupported prompt.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L42-L44
   - what: get_prompt_initializer_from_integrations is named discover_prompt_initializers, because the LiteLLM name is 40 characters and the repository's identifier rule refuses a name past 30.
     why: The shorter name says the same thing; the constant PROMPT_INITIALIZER_REGISTRY keeps LiteLLM's name for the table itself.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L99-L163
