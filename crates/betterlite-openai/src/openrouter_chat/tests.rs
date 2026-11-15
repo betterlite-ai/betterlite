@@ -468,7 +468,6 @@ fn transform_response_adds_the_cost_header_and_keeps_other_headers() {
 #[case::null_cost(r#"{"usage":{"cost":null}}"#)]
 #[case::string_cost(r#"{"usage":{"cost":"0.5"}}"#)]
 #[case::boolean_cost(r#"{"usage":{"cost":true}}"#)]
-#[case::not_json("not json")]
 fn transform_response_leaves_no_cost_header(#[case] raw: &str) {
     let config = config();
     let reply = config
@@ -482,6 +481,11 @@ fn transform_response_leaves_no_cost_header(#[case] raw: &str) {
             .additional_headers
             .contains_key("llm_provider-x-litellm-response-cost")
     );
+}
+
+#[test]
+fn reported_cost_ignores_a_body_it_cannot_read() {
+    assert_eq!(super::reported_cost(b"not json"), None);
 }
 
 #[test]
