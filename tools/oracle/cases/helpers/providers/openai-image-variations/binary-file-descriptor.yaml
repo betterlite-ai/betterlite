@@ -35,6 +35,20 @@ call:
         timeout: 30
         reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
       - model: dall-e-2
+        image_filename: dir/cat.png
+        image_content: NESTEDDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_filename: dir/cat.png/
+        image_content: SLASHDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
         image_filename: ""
         image_content: EMPTYNAME
         api_key: sk-test
