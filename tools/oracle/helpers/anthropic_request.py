@@ -95,7 +95,8 @@ def answer(input_value: Input) -> Json:
     if provider is None:
         provider = "anthropic"
     config = CaseConfig(provider=provider, strips_billing=input_value["strips_billing_metadata"])
-    transformer = Bound.model_validate({"transformer": config}).transformer
+    holder: dict[str, CaseConfig] = {"transformer": config}
+    transformer = Bound.model_validate(holder).transformer
     messages: list[Json] = list(input_value["messages"])
     optional_params: dict[str, Json] = dict(input_value["optional_params"])
     litellm_params: dict[str, Json] = dict(input_value["litellm_params"])
