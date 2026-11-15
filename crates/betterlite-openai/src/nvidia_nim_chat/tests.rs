@@ -144,14 +144,23 @@ fn map_params_keeps_the_options_the_caller_already_mapped() {
     );
 }
 
+#[rstest]
+#[case::max_tokens_first(json!({"max_tokens": 1, "max_completion_tokens": 2}))]
+#[case::max_completion_tokens_first(json!({"max_completion_tokens": 2, "max_tokens": 1}))]
+fn map_params_lets_max_completion_tokens_win_over_max_tokens(#[case] non_default: Value) {
+    // LiteLLM's caller walks max_tokens first, so the rewrite lands last whatever order the map is built in
+    let mapped = mapped("meta/llama3-70b-instruct", non_default, json!({}));
+    assert_eq!(mapped, object(json!({"max_tokens": 2})));
+}
+
 #[test]
-fn map_params_lets_max_tokens_win_over_max_completion_tokens() {
+fn map_params_overwrites_the_max_tokens_the_caller_already_mapped() {
     let mapped = mapped(
-        "meta/llama3-70b-instruct",
-        json!({"max_completion_tokens": 2, "max_tokens": 1}),
-        json!({}),
+        "nvidia/nemotron-4-340b-instruct",
+        json!({"max_completion_tokens": 12}),
+        json!({"max_tokens": 99}),
     );
-    assert_eq!(mapped, object(json!({"max_tokens": 1})));
+    assert_eq!(mapped, object(json!({"max_tokens": 12})));
 }
 
 #[test]

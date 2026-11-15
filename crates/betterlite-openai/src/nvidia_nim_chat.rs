@@ -76,11 +76,13 @@ impl NvidiaNimConfig {
     ) -> Object {
         let supported = Self::supported_params(model);
         for (name, value) in non_default_params {
-            if name == MAX_COMPLETION_TOKENS {
-                optional_params.insert(MAX_TOKENS.to_owned(), value.clone());
-            } else if supported.contains(&name.as_str()) {
+            if name != MAX_COMPLETION_TOKENS && supported.contains(&name.as_str()) {
                 optional_params.insert(name.clone(), value.clone());
             }
+        }
+        // LiteLLM's caller passes max_tokens before max_completion_tokens, so the rewrite lands last
+        if let Some(value) = non_default_params.get(MAX_COMPLETION_TOKENS) {
+            optional_params.insert(MAX_TOKENS.to_owned(), value.clone());
         }
         optional_params
     }

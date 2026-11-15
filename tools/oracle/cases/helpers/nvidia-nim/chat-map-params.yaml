@@ -11,7 +11,10 @@ call:
         non_default: {temperature: 0.2}
         optional: {}
       - model: meta/llama3-70b-instruct
-        non_default: {max_completion_tokens: 2, max_tokens: 1, tools: []}
+        non_default: {max_completion_tokens: 2, tools: []}
+        optional: {}
+      - model: meta/llama3-70b-instruct
+        non_default: {max_tokens: 1, tools: []}
         optional: {}
 env: {}
 compare: {ignore: []}
