@@ -6,6 +6,9 @@ deviations:
   - what: Repository availability does not enable managed files or batches; without the enterprise-created hook, the executed-batch route keeps 400 invalid_request_error with param null and code '400', even with a configured database.
     why: Keep the current missing-hook behavior while Max decides whether betterlite should build a native managed service. B086/B087 route parts own its HTTP equality cases.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
+  - what: File-content load returns the stored bytes unchanged, so non-UTF-8 content downloads byte for byte instead of failing UTF-8 decoding.
+    why: LiteLLM's signature declares bytes | None but the body calls bytes.decode(), returning str and raising UnicodeDecodeError on binary content; returning the row's own bytes keeps the declared contract, and postgres_file_bytes_new_ids_and_empty_content stores 0xff 0x00 0xfe and reads it back.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/managed_file_content_repository.py#L18-L22
 kept_bugs:
   - what: load_batch treats a falsey stored file_object (JSON null, empty string, empty object or array, false, or zero) as no batch instead of a validation failure.
     why: LiteLLM returns None for a row whose blob is still empty, so the batch routes read such a row as not found rather than a server error; a setup that stores placeholder rows relies on that read.

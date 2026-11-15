@@ -8,6 +8,7 @@ use std::sync::atomic::Ordering;
 use betterlite_openai::batches::records::{BatchObject, BatchStatus};
 use betterlite_redis::config_sync::publish::redis_config_change_publisher;
 use betterlite_redis::config_sync::table_actions::TableActions as _;
+use chrono::{Duration, Utc};
 
 use crate::budget_permission_rows::JsonData;
 
@@ -341,11 +342,12 @@ async fn postgres_batch_compare_and_set_race() {
         Some(case.client()),
         recording_publisher(&Journal::default()),
     );
-    let stored = repository
+    let mut stored = repository
         .load_batch::<BatchObject>("batch-race")
         .await
         .unwrap()
         .unwrap();
+    stored.id = "batch-race".to_owned();
     set_batch_status(&case.writer, "batch-race", "cancelled").await;
     assert!(
         !repository
@@ -411,6 +413,46 @@ async fn unchanged_predicate_overrides_batch_id() {
 }
 
 #[tokio::test]
+async fn cas_updated_before_bounds_the_update() {
+    let case = Case::new().await;
+    insert_batch(&case.writer, "stale-guard", Some("in_progress"), BATCH_JSON).await;
+    let repository = ManagedBatchRepository::new(
+        Some(case.client()),
+        recording_publisher(&Journal::default()),
+    );
+    let mut stored = repository
+        .load_batch::<BatchObject>("stale-guard")
+        .await
+        .unwrap()
+        .unwrap();
+    stored.id = "stale-guard".to_owned();
+    let write = write_of(&stored, "validating");
+    let stale = BatchUnchanged {
+        unified_object_id: None,
+        status: Some("in_progress".to_owned()),
+        updated_before: Some(Utc::now() - Duration::days(1)),
+    };
+    assert!(
+        !repository
+            .compare_and_set(&write, &stale, None)
+            .await
+            .unwrap()
+    );
+    let fresh = BatchUnchanged {
+        unified_object_id: None,
+        status: Some("in_progress".to_owned()),
+        updated_before: Some(Utc::now() + Duration::days(1)),
+    };
+    assert!(
+        repository
+            .compare_and_set(&write, &fresh, None)
+            .await
+            .unwrap()
+    );
+    case.close().await;
+}
+
+#[tokio::test]
 async fn cas_multiple_matches_returns_true() {
     let case = Case::new().await;
     drop_batch_unique_index(&case.writer).await;
@@ -425,6 +467,7 @@ async fn cas_multiple_matches_returns_true() {
         .await
         .unwrap()
         .unwrap();
+    stored.id = "duplicate".to_owned();
     stored.status = BatchStatus::Completed;
     assert!(
         repository
@@ -479,6 +522,7 @@ async fn cas_only_three_fields_including_null_author() {
         .await
         .unwrap()
         .unwrap();
+    stored.id = "author-null".to_owned();
     stored.status = BatchStatus::Completed;
     assert!(
         repository
@@ -608,6 +652,7 @@ async fn postgres_file_bytes_new_ids_and_empty_content() {
     let first = repository.store(b"bytes").await.unwrap();
     let second = repository.store(b"bytes").await.unwrap();
     let empty = repository.store(&[]).await.unwrap();
+    let binary = repository.store(&[0xff, 0x00, 0xfe]).await.unwrap();
     assert_ne!(first, second);
     assert_ne!(first, empty);
     assert_eq!(
@@ -619,6 +664,10 @@ async fn postgres_file_bytes_new_ids_and_empty_content() {
         Some(b"bytes".to_vec())
     );
     assert_eq!(repository.load(&empty).await.unwrap(), Some(Vec::new()));
+    assert_eq!(
+        repository.load(&binary).await.unwrap(),
+        Some(vec![0xff, 0x00, 0xfe])
+    );
     case.close().await;
 }
 
