@@ -24,6 +24,12 @@ call:
       - {type: response.content_part.added, response_id: r-extra, item_id: i-extra, part: {type: audio, transcript: he, extra: 1}}
       - {type: response.output_audio_transcript.done, response_id: r-extra, item_id: i-extra, transcript: hello}
       - {type: response.content_part.done, response_id: r-extra, item_id: i-extra}
+      - {type: response.content_part.added, response_id: r-notype, item_id: i-notype, part: {text: he}}
+      - {type: response.output_text.done, response_id: r-notype, item_id: i-notype, text: hello}
+      - {type: response.content_part.done, response_id: r-notype, item_id: i-notype}
+      - {type: response.content_part.added, response_id: r-notype-audio, item_id: i-notype-audio, part: {transcript: he}}
+      - {type: response.output_audio_transcript.done, response_id: r-notype-audio, item_id: i-notype-audio, transcript: hello}
+      - {type: response.content_part.done, response_id: r-notype-audio, item_id: i-notype-audio}
       - {type: response.content_part.added, response_id: null, item_id: null, part: {type: text, text: null-ids}}
       - {type: response.content_part.done}
     sessions: []

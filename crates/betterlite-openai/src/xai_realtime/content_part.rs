@@ -14,26 +14,19 @@ const TRANSCRIPT_DONE: &str = "response.output_audio_transcript.done";
 // LiteLLM keys the cache on the event's own response_id, item_id and content_index values
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ContentPartKey {
-    response_id: Option<Json>,
-    item_id: Option<Json>,
+    response_id: Json,
+    item_id: Json,
     content_index: Json,
 }
 
 fn key_of(fields: &IndexMap<String, Json>) -> ContentPartKey {
     ContentPartKey {
-        response_id: non_null(fields.get("response_id")),
-        item_id: non_null(fields.get("item_id")),
+        response_id: fields.get("response_id").cloned().unwrap_or(Json::Null),
+        item_id: fields.get("item_id").cloned().unwrap_or(Json::Null),
         content_index: fields
             .get("content_index")
             .cloned()
             .unwrap_or_else(|| Json::Number(Number::from(0_u8))),
-    }
-}
-
-fn non_null(value: Option<&Json>) -> Option<Json> {
-    match value {
-        None | Some(Json::Null) => None,
-        Some(value) => Some(value.clone()),
     }
 }
 

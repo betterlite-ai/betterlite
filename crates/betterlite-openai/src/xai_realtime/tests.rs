@@ -195,6 +195,37 @@ fn completed_updates_keep_other_cached_fields() {
     );
 }
 
+#[rstest]
+#[case::text(
+    r#"{"text":"he"}"#,
+    r#"{"type":"response.output_text.done","response_id":"r1","item_id":"i1","text":"hello"}"#,
+    r#"{"text":"hello","type":"text"}"#
+)]
+#[case::audio(
+    r#"{"transcript":"he"}"#,
+    r#"{"type":"response.output_audio_transcript.done","response_id":"r1","item_id":"i1","transcript":"hello"}"#,
+    r#"{"transcript":"hello","type":"audio"}"#
+)]
+fn completed_updates_backfill_a_missing_type(
+    #[case] added_part: &str,
+    #[case] completed: &str,
+    #[case] expected: &str,
+) {
+    let mut normalizer = XaiRealtimeNormalizer::default();
+    normalized(
+        &mut normalizer,
+        &format!(
+            r#"{{"type":"response.content_part.added","response_id":"r1","item_id":"i1","part":{added_part}}}"#
+        ),
+    );
+    normalized(&mut normalizer, completed);
+    let done = normalized(
+        &mut normalizer,
+        r#"{"type":"response.content_part.done","response_id":"r1","item_id":"i1"}"#,
+    );
+    assert_eq!(part_of(&done), json(expected));
+}
+
 #[test]
 fn completed_updates_keep_an_explicit_null_type() {
     let mut normalizer = XaiRealtimeNormalizer::default();
