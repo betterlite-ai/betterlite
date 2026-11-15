@@ -7,3 +7,12 @@ deviations:
       later filters. A response_format-unsupported deployment is therefore still dropped for an
       uncountable prompt, where LiteLLM keeps it and lets the provider reject the request.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12510-L12522
+  - what: A deployment that declares no max_input_tokens is never judged against another deployment's
+      window; LiteLLM's shared backend model-cost entry can hand it a sibling's max_input_tokens and drop
+      it from the group.
+    why: Router init registers each deployment's model_info under the shared backend model key, and
+      get_router_model_info reads it back through the lru-cached get_model_info, so a deployment with no
+      window inherits whichever sibling registered last. That value depends on model_list and cache
+      order, not on the deployment's config, so no working setup can rely on it; betterlite resolves
+      each deployment's window from its own model info.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10115-L10125
