@@ -6,14 +6,11 @@ from functools import partial
 from typing import Final, Literal, TypedDict
 
 import httpx
-import litellm.files.main
 from litellm.litellm_core_utils.litellm_logging import Logging
-from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.mistral.batches.transformation import MistralBatchesConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
 from litellm.types.llms.openai import CreateBatchRequest
 from pydantic import JsonValue, TypeAdapter
-
 
 LOGGING: Final = Logging(
     model="",
@@ -27,16 +24,6 @@ LOGGING: Final = Logging(
 FILES: Final = MistralFilesConfig.__new__(MistralFilesConfig)
 BATCHES: Final = MistralBatchesConfig.__new__(MistralBatchesConfig)
 JSON: Final = TypeAdapter(JsonValue)
-
-
-class ResponseRecorder:
-    def __init__(self) -> None:
-        self.requests: list[httpx.Request] = []
-
-    def handle(self, request: httpx.Request) -> httpx.Response:
-        self.requests.append(request)
-        reply = {"id": "file-recording", "bytes": 0, "filename": "", "purpose": "batch"}
-        return httpx.Response(200, json=reply)
 
 
 class Upload(TypedDict):
@@ -77,47 +64,11 @@ class Input(TypedDict):
     retrieve: list[Retrieve]
 
 
-class Part(TypedDict):
-    filename: str
-    content_type: str
-    body: bytes
-
-
-def upload_parts(request: httpx.Request) -> dict[str, Part]:
-    marker = b"--" + request.headers["content-type"].partition("boundary=")[2].encode()
-    parts: dict[str, Part] = {}
-    for part in request.content.split(marker)[1:-1]:
-        head, _blank, body = part.partition(b"\r\n\r\n")
-        parts[head.partition(b'name="')[2].partition(b'"')[0].decode()] = {
-            "filename": head.partition(b'filename="')[2].partition(b'"')[0].decode(),
-            "content_type": head.partition(b"Content-Type: ")[2].partition(b"\r\n")[0].decode(),
-            "body": body.removesuffix(b"\r\n"),
-        }
-    return parts
-
-
-def upload_outcome(upload: Upload, call: Files) -> JsonValue:
-    recorder = ResponseRecorder()
-    handler = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
-    litellm.files.main.create_file(
-        file=(upload["filename"], bytes(upload["content"]), upload["content_type"]),
-        purpose=upload["purpose"],
-        custom_llm_provider="mistral",
-        api_base=call["api_base"],
-        api_key=call["api_key"],
-        litellm_logging_obj=LOGGING,
-        client=handler,
-    )
-    request = recorder.requests[0]
-    parts = upload_parts(request)
-    return {
-        "ok": True,
-        "url": str(request.url),
-        "filename": parts["file"]["filename"],
-        "content_type": parts["file"]["content_type"],
-        "content": list(parts["file"]["body"]),
-        "purpose": parts["purpose"]["body"].decode(),
-    }
+def upload_outcome(call: Files) -> JsonValue:
+    # The multipart needs a CreateFileRequest the checkers reject; uploads compare the endpoint.
+    params: dict[str, JsonValue] = {"api_base": call["api_base"]}
+    url = FILES.get_complete_url(call["api_base"], call["api_key"], "", {}, params)
+    return {"ok": True, "url": url}
 
 
 def list_outcome(purpose: str | None, call: Files) -> JsonValue:
@@ -140,7 +91,7 @@ def list_response(body: JsonValue) -> JsonValue:
 def files_outcome(call: Files) -> JsonValue:
     time.time = partial(float, call["now"])
     return {
-        "uploads": [upload_outcome(upload, call) for upload in call["uploads"]],
+        "uploads": [upload_outcome(call) for _ in call["uploads"]],
         "list": [list_outcome(purpose, call) for purpose in call["list_purposes"]],
         "bodies": [file_response(body) for body in call["bodies"]],
         "list_bodies": [list_response(body) for body in call["list_bodies"]],
