@@ -27,5 +27,36 @@ call:
         api_base: https://example.test/v1
         timeout: 30
         reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_filename: cat.ico
+        image_content: ICODATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_filename: ""
+        image_content: EMPTYNAME
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        optional_params:
+          n: 2
+          extra_body:
+            n: 3
+            seed: 7
+            nested: {a: 1}
+            tags: [x, y]
+            entries: [{k: 1}, {k: 2}]
+            empty: ""
+            missing: null
+        api_key: sk-test
+        api_base: https://example.test/v1
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
 env: {}
 compare: {ignore: []}

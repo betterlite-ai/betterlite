@@ -24,5 +24,22 @@ call:
         api_base: https://example.test/v1
         optional_params: {max_retries: 0}
         failure: failed
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        optional_params: {max_retries: 0, style: vivid}
+        timeout: 30
+        reply: {status: 200, body: '{"created":1700000000,"data":[]}'}
+      - model: dall-e-2
+        image_content: PNGDATA
+        api_key: sk-test
+        api_base: https://example.test/v1
+        optional_params: {max_retries: 0}
+        timeout: 30
+        reply:
+          status: 429
+          headers: {x-request-id: req-bytes}
+          body_bytes: [98, 97, 100, 32, 255, 32, 98, 111, 100, 121]
 env: {}
 compare: {ignore: []}

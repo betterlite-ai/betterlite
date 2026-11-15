@@ -15,3 +15,9 @@ deviations:
       ImageResponse success with empty data and a wall-clock created.
     why: the shared reply decoder refuses the error object instead of reporting an empty success.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/image_variations/handler.py#L190-L206
+  - what: >-
+      A usage.input_tokens_details object keeps only image_tokens and text_tokens, where LiteLLM's
+      ImageUsageInputTokensDetails allows extra keys and dumps them too.
+    why: the shared image reply decoder declares that detail type without a passthrough map, and this slice may not edit it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2588-L2593
+kept_bugs: []
