@@ -155,7 +155,7 @@ impl AuditCallbackRegistry for TestRegistry {
         if self.s3_fails {
             return Err(AuditCallbackError::Failed);
         }
-        let logger: Arc<dyn AuditLogCallback> = self.s3_logger.clone();
+        let logger: Arc<dyn AuditLogCallback> = Arc::clone(&self.s3_logger);
         Ok(logger)
     }
 }
@@ -274,11 +274,10 @@ impl Captured {
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut captured = self
-            .0
+        self.0
             .lock()
-            .map_err(|error| io::Error::other(error.to_string()))?;
-        captured.extend_from_slice(buf);
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 

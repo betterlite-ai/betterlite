@@ -19,7 +19,7 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use chrono::{DateTime, FixedOffset, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use tokio_postgres::NoTls;
 use tokio_postgres::types::ToSql;
 
@@ -33,9 +33,9 @@ use crate::audit_events::callbacks::{
 use crate::audit_events::enums::{AuditAction, AuditTable};
 use crate::audit_events::identity::CallerIdentity;
 use crate::audit_events::record::{AuditLogRecord, payload_text};
-use crate::audit_events::settings::{AuditSettings, ConfiguredAuditSettings};
+use crate::audit_events::settings::{AuditSettings as _, ConfiguredAuditSettings};
 use crate::audit_events::sink::{
-    AuditClock, AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
+    AuditClock as _, AuditEventSink, AuditLogRepository, AuditRepositoryError, ObjectAuditLog,
     SystemAuditClock,
 };
 
@@ -56,7 +56,7 @@ CREATE TABLE "LiteLLM_AuditLog" (
 const INSERT: &str = r#"
 INSERT INTO "LiteLLM_AuditLog"
     (id, updated_at, changed_by, changed_by_api_key, action, table_name, object_id, before_value, updated_values)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9::jsonb)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8::text::jsonb, $9::text::jsonb)
 "#;
 
 const SELECT: &str = r#"
@@ -94,7 +94,7 @@ impl AuditLogRepository for PostgresAuditRepository {
         let api_key = record
             .changed_by_api_key
             .as_ref()
-            .map(|api_key| api_key.expose_secret());
+            .map(ExposeSecret::expose_secret);
         let values: Vec<&(dyn ToSql + Sync)> = vec![
             &record.id,
             &record.updated_at,
@@ -157,12 +157,12 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
         delivered: Mutex::new(Vec::new()),
         order: Arc::new(Mutex::new(Vec::new())),
     });
-    let callback: Arc<dyn AuditLogCallback> = recorder.clone();
+    let callback: Arc<dyn AuditLogCallback> = Arc::clone(&recorder);
     let registry = Arc::new(TestRegistry {
         instances: Mutex::new(BTreeMap::new()),
         resolves: Mutex::new(Vec::new()),
         s3_calls: Mutex::new(Vec::new()),
-        s3_logger: recorder.clone(),
+        s3_logger: Arc::clone(&recorder),
         s3_fails: false,
     });
     let spawner = Arc::new(CollectingSpawner::default());
@@ -173,7 +173,7 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
     };
     let sink = AuditEventSink {
         settings: Arc::new(settings),
-        callbacks: Arc::new(AuditCallbackDispatcher::new(registry, spawner.clone())),
+        callbacks: Arc::new(AuditCallbackDispatcher::new(registry, Arc::clone(&spawner))),
         repository: Arc::new(PostgresAuditRepository { pool: pool.clone() }),
         clock: Arc::new(FixedClock { now }),
         new_id: Arc::new(|| "audit-id-1".to_owned()),
@@ -183,8 +183,8 @@ async fn enabled_sink(pool: &Pool) -> (Arc<RecordingCallback>, DateTime<FixedOff
     (recorder, now)
 }
 
-fn masked(text: Option<String>) -> JsonValue {
-    serde_json::from_str(text.as_deref().unwrap()).unwrap()
+fn masked(text: Option<&str>) -> JsonValue {
+    serde_json::from_str(text.unwrap()).unwrap()
 }
 
 #[test]
@@ -252,11 +252,11 @@ async fn audit_enabled_without_license() {
     assert_eq!(row.get::<_, String>(4), "LiteLLM_TeamTable");
     assert_eq!(row.get::<_, String>(5), "team-1");
     assert_eq!(
-        masked(row.get::<_, Option<String>>(6)),
+        masked(row.get::<_, Option<String>>(6).as_deref()),
         parsed(r#"{"api_key": "sk-1*****7890", "name": "team"}"#)
     );
     assert_eq!(
-        masked(row.get::<_, Option<String>>(7)),
+        masked(row.get::<_, Option<String>>(7).as_deref()),
         parsed(r#"{"api_key": "sk-1*****7890"}"#)
     );
     drop(client);

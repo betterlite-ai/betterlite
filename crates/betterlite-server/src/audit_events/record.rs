@@ -172,11 +172,18 @@ fn masked_audit_value(
     }
     // LiteLLM's second parse of a string field keeps the string when it yields null
     let masked = match parsed {
-        JsonValue::String(text) => match parse_json_field(&text, field)? {
-            JsonValue::Null => JsonValue::String(text),
-            twice_parsed => twice_parsed,
-        },
-        other => other,
+        JsonValue::String(text) => {
+            let twice_parsed = parse_json_field(&text, field)?;
+            if twice_parsed.is_null() {
+                JsonValue::String(text)
+            } else {
+                twice_parsed
+            }
+        }
+        other @ (JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => other,
     };
     Ok(Some(
         SensitiveDataMasker::with_patterns(["key"], ["cost"]).mask(&masked),
@@ -194,7 +201,11 @@ fn parse_json_field(text: &str, field: &'static str) -> Result<JsonValue, AuditR
 pub fn payload_text(value: &JsonValue) -> String {
     match value {
         JsonValue::String(text) => text.clone(),
-        stored => stored.to_string(),
+        stored @ (JsonValue::Null
+        | JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => stored.to_string(),
     }
 }
 
@@ -203,7 +214,7 @@ pub fn payload_text(value: &JsonValue) -> String {
 pub fn timestamp_text(value: DateTime<FixedOffset>, utc_suffix: &str) -> String {
     let seconds = value.format("%Y-%m-%dT%H:%M:%S");
     let micros = value.timestamp_subsec_micros();
-    let zone = if value.offset().local_minus_utc() == 0 {
+    let zone = if value.offset().local_minus_utc() == 0_i32 {
         utc_suffix.to_owned()
     } else {
         value.format("%:z").to_string()

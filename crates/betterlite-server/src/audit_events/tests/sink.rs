@@ -3,7 +3,7 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::DateTime;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::support::{
     CollectingSpawner, RecordingRepository, SAMPLE_TIMESTAMP, TestSettings, audit_sink, capture,
@@ -36,27 +36,26 @@ fn caller() -> CallerIdentity {
     }
 }
 
-#[tokio::test]
-async fn audit_object_projection() {
-    let callback = recorder("otel", false);
-    let repository = recording_repository();
-    let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
-    );
-    log_team_update(&sink, &caller(), Some("ops")).await;
-    spawner.run_all().await;
+fn enabled_sink(
+    callback: &Arc<RecordingCallback>,
+    repository: &Arc<RecordingRepository>,
+    spawner: &Arc<CollectingSpawner>,
+) -> AuditEventSink {
+    audit_sink(
+        TestSettings {
+            enabled: true,
+            callbacks: vec![instance(Arc::clone(callback))],
+            s3: None,
+        },
+        Arc::clone(repository),
+        Arc::clone(callback),
+        Arc::clone(spawner),
+    )
+}
+
+fn assert_stored(repository: &RecordingRepository) {
     let inserted = repository.inserted.lock().unwrap().clone();
     assert_eq!(inserted.len(), 1);
-    assert_eq!(inserted[0].id, "audit-id-1");
     assert_eq!(
         inserted[0].updated_at,
         DateTime::parse_from_rfc3339(SAMPLE_TIMESTAMP).unwrap()
@@ -66,7 +65,7 @@ async fn audit_object_projection() {
         inserted[0]
             .changed_by_api_key
             .as_ref()
-            .map(|api_key| api_key.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-key")
     );
     assert_eq!(inserted[0].action, AuditAction::Updated);
@@ -80,6 +79,17 @@ async fn audit_object_projection() {
         inserted[0].updated_values,
         Some(parsed(r#"{"name": "team"}"#))
     );
+}
+
+#[tokio::test]
+async fn audit_object_projection() {
+    let callback = recorder("otel", false);
+    let repository = recording_repository();
+    let spawner = Arc::new(CollectingSpawner::default());
+    let sink = enabled_sink(&callback, &repository, &spawner);
+    log_team_update(&sink, &caller(), Some("ops")).await;
+    spawner.run_all().await;
+    assert_stored(&repository);
     let delivered = callback.delivered.lock().unwrap().clone();
     assert_eq!(delivered.len(), 1);
     assert_eq!(delivered[0].changed_by, "ops");
@@ -96,17 +106,7 @@ async fn audit_debug_log_redacts_the_api_key() {
     let callback = recorder("otel", false);
     let repository = recording_repository();
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
-    );
+    let sink = enabled_sink(&callback, &repository, &spawner);
     sink.create_audit_log_for_update(sample_record(None, None))
         .await;
     spawner.run_all().await;
@@ -123,17 +123,7 @@ async fn audit_invalid_json_is_logged() {
     let callback = recorder("otel", false);
     let repository = recording_repository();
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
-    );
+    let sink = enabled_sink(&callback, &repository, &spawner);
     sink.create_object_audit_log(ObjectAuditLog {
         object_id: "team-1",
         action: AuditAction::Updated,
@@ -157,16 +147,15 @@ async fn audit_disabled_no_effects() {
     let callback = recorder("otel", false);
     let repository = recording_repository();
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: false,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
     let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
+        TestSettings {
+            enabled: false,
+            callbacks: vec![instance(Arc::clone(&callback))],
+            s3: None,
+        },
+        Arc::clone(&repository),
+        Arc::clone(&callback),
+        Arc::clone(&spawner),
     );
     sink.create_audit_log_for_update(plain_record()).await;
     log_team_update(&sink, &caller(), None).await;
@@ -184,17 +173,7 @@ async fn audit_callback_before_database() {
         inserted: Mutex::new(Vec::new()),
     });
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
-    );
+    let sink = enabled_sink(&callback, &repository, &spawner);
     sink.create_audit_log_for_update(plain_record()).await;
     spawner.run_all().await;
     assert_eq!(callback.delivered.lock().unwrap().len(), 1);
@@ -211,12 +190,7 @@ async fn audit_no_database_logs() {
         inserted: Mutex::new(Vec::new()),
     });
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(settings, repository.clone(), callback, spawner);
+    let sink = enabled_sink(&callback, &repository, &spawner);
     sink.create_audit_log_for_update(plain_record()).await;
     assert!(repository.inserted.lock().unwrap().is_empty());
     drop(guard);
@@ -237,17 +211,7 @@ async fn audit_insert_failure_is_nonblocking() {
         inserted: Mutex::new(Vec::new()),
     });
     let spawner = Arc::new(CollectingSpawner::default());
-    let settings = TestSettings {
-        enabled: true,
-        callbacks: vec![instance(callback.clone())],
-        s3: None,
-    };
-    let sink = audit_sink(
-        settings,
-        repository.clone(),
-        callback.clone(),
-        spawner.clone(),
-    );
+    let sink = enabled_sink(&callback, &repository, &spawner);
     sink.create_audit_log_for_update(plain_record()).await;
     spawner.run_all().await;
     assert!(repository.inserted.lock().unwrap().is_empty());

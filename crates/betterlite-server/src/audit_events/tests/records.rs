@@ -5,7 +5,7 @@ use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::safe_json::{MAX_JSON_BYTES, MAX_JSON_DEPTH};
 use chrono::DateTime;
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use super::support::parsed;
 use crate::audit_events::record::{AuditRecordError, decode_audit_record, timestamp_text};
@@ -55,7 +55,7 @@ fn audit_record_defaults_and_enums(#[case] action: &str, #[case] table_name: &st
 }
 
 #[rstest]
-#[case::string("text", Some("text"))]
+#[case::string(r#""text""#, Some("text"))]
 #[case::integer("42", Some("42"))]
 #[case::float("1.5", Some("1.5"))]
 #[case::true_bool("true", Some("True"))]
@@ -79,7 +79,7 @@ fn audit_changed_by_api_key_field() {
         decoded
             .changed_by_api_key
             .as_ref()
-            .map(|api_key| api_key.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("sk-key")
     );
     given["changed_by_api_key"] = parsed("7");
@@ -169,6 +169,10 @@ fn audit_invalid_record() {
         decode_audit_record(br#"{"id":1,"updated_at":"2026-01-02T03:04:05Z","action":"updated","table_name":"LiteLLM_TeamTable","object_id":"t"}"#),
         Err(AuditRecordError::FieldType { field: "id" })
     ));
+}
+
+#[test]
+fn audit_invalid_record_enums_and_time() {
     assert!(matches!(
         decode_audit_record(br#"{"id":"a","updated_at":"2026-01-02T03:04:05Z","action":"changed","table_name":"LiteLLM_TeamTable","object_id":"t"}"#),
         Err(AuditRecordError::UnknownValue { field: "action" })
@@ -183,6 +187,10 @@ fn audit_invalid_record() {
         decode_audit_record(br#"{"id":"a","updated_at":"2026-01-02T03:04:05","action":"updated","table_name":"LiteLLM_TeamTable","object_id":"t"}"#),
         Err(AuditRecordError::Timestamp { field: "updated_at", .. })
     ));
+}
+
+#[test]
+fn audit_invalid_record_payloads() {
     assert!(matches!(
         decode_audit_record(br#"{"id":"a","updated_at":"2026-01-02T03:04:05Z","action":"updated","table_name":"LiteLLM_TeamTable","object_id":"t","before_value":"{oops"}"#),
         Err(AuditRecordError::JsonField {
@@ -224,10 +232,12 @@ fn audit_invalid_record_bounds() {
     let at_depth = format!(
         "{{\"id\":\"a\",\"updated_at\":\"2026-01-02T03:04:05Z\",\"action\":\"updated\",\"table_name\":\"LiteLLM_TeamTable\",\"object_id\":\"t\",\"before_value\":{nested}}}"
     );
-    assert!(decode_audit_record(at_depth.as_bytes()).is_ok());
+    let depth_record = decode_audit_record(at_depth.as_bytes()).unwrap();
+    assert_eq!(depth_record.object_id, "t");
     let mut at_size = record_text("updated", "LiteLLM_TeamTable").into_bytes();
     at_size.resize(MAX_JSON_BYTES, b' ');
-    assert!(decode_audit_record(&at_size).is_ok());
+    let size_record = decode_audit_record(&at_size).unwrap();
+    assert_eq!(size_record.object_id, "team-1");
     let oversized = vec![b' '; MAX_JSON_BYTES + 1];
     assert!(matches!(
         decode_audit_record(&oversized),

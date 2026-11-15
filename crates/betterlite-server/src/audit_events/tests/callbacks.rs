@@ -12,7 +12,7 @@ use super::support::{
 };
 use crate::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditCallbackFuture, AuditLogCallback,
-    AuditTaskSpawner, TrackerSpawner,
+    AuditTaskSpawner as _, TrackerSpawner,
 };
 use crate::audit_events::payload::build_audit_log_payload;
 
@@ -44,7 +44,7 @@ async fn audit_tracker_spawner_runs_the_task() {
         tasks: tracker.clone(),
     };
     let ran = Arc::new(AtomicBool::new(false));
-    let flag = ran.clone();
+    let flag = Arc::clone(&ran);
     let task: AuditCallbackFuture = Box::pin(async move {
         flag.store(true, Ordering::SeqCst);
     });
@@ -58,14 +58,14 @@ async fn audit_tracker_spawner_runs_the_task() {
 async fn audit_callback_cache_hit() {
     let registry = registry();
     let otel = recorder("otel", false);
-    register(&registry, "otel", otel.clone());
+    register(&registry, "otel", Arc::clone(&otel));
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     let configs = [AuditCallbackConfig::Named("otel".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
-    dispatcher.dispatch(&configs, None, payload.clone());
+    dispatcher.dispatch(&configs, None, &payload);
     spawner.run_all().await;
-    dispatcher.dispatch(&configs, None, payload);
+    dispatcher.dispatch(&configs, None, &payload);
     spawner.run_all().await;
     assert_eq!(otel.delivered.lock().unwrap().len(), 2);
     assert_eq!(registry.resolves.lock().unwrap().len(), 1);
@@ -76,11 +76,11 @@ fn audit_unresolved_not_cached() {
     let (captured, _guard) = capture();
     let registry = registry();
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     let configs = [AuditCallbackConfig::Named("missing".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
-    dispatcher.dispatch(&configs, None, payload.clone());
-    dispatcher.dispatch(&configs, None, payload);
+    dispatcher.dispatch(&configs, None, &payload);
+    dispatcher.dispatch(&configs, None, &payload);
     assert_eq!(registry.resolves.lock().unwrap().len(), 2);
     assert!(spawner.tasks.lock().unwrap().is_empty());
     let text = captured.text();
@@ -97,14 +97,14 @@ async fn audit_unresolved_warning() {
     let registry = registry();
     let good = recorder("good", false);
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry, spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(registry, Arc::clone(&spawner));
     dispatcher.dispatch(
         &[
             AuditCallbackConfig::Named("missing".to_owned()),
-            AuditCallbackConfig::Instance(good.clone()),
+            AuditCallbackConfig::Instance(Arc::clone(&good)),
         ],
         None,
-        build_audit_log_payload(&plain_record()),
+        &build_audit_log_payload(&plain_record()),
     );
     spawner.run_all().await;
     assert_eq!(good.delivered.lock().unwrap().len(), 1);
@@ -121,16 +121,16 @@ async fn audit_unresolved_warning() {
 async fn audit_s3_override_empty() {
     let registry = registry();
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     let configs = [AuditCallbackConfig::Named("s3_v2".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
-    dispatcher.dispatch(&configs, Some(&parsed("{}")), payload.clone());
+    dispatcher.dispatch(&configs, Some(&parsed("{}")), &payload);
     spawner.run_all().await;
     assert!(registry.resolves.lock().unwrap().is_empty());
     assert_eq!(*registry.s3_calls.lock().unwrap(), vec![parsed("{}")]);
     assert_eq!(registry.s3_logger.delivered.lock().unwrap().len(), 1);
-    let factory = AuditCallbackDispatcher::new(registry.clone(), spawner);
-    factory.dispatch(&configs, None, payload);
+    let factory = AuditCallbackDispatcher::new(Arc::clone(&registry), spawner);
+    factory.dispatch(&configs, None, &payload);
     assert_eq!(*registry.resolves.lock().unwrap(), ["s3_v2".to_owned()]);
 }
 
@@ -138,22 +138,22 @@ async fn audit_s3_override_empty() {
 async fn audit_cache_reset() {
     let registry = registry();
     let first = recorder("first", false);
-    register(&registry, "otel", first.clone());
+    register(&registry, "otel", Arc::clone(&first));
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     let configs = [AuditCallbackConfig::Named("otel".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
-    dispatcher.dispatch(&configs, None, payload.clone());
+    dispatcher.dispatch(&configs, None, &payload);
     spawner.run_all().await;
     let second = recorder("second", false);
-    register(&registry, "otel", second.clone());
-    dispatcher.dispatch(&configs, None, payload.clone());
+    register(&registry, "otel", Arc::clone(&second));
+    dispatcher.dispatch(&configs, None, &payload);
     spawner.run_all().await;
     assert_eq!(first.delivered.lock().unwrap().len(), 2);
     assert!(second.delivered.lock().unwrap().is_empty());
     assert_eq!(registry.resolves.lock().unwrap().len(), 1);
     dispatcher.reset_audit_log_callback_cache();
-    dispatcher.dispatch(&configs, None, payload);
+    dispatcher.dispatch(&configs, None, &payload);
     spawner.run_all().await;
     assert_eq!(first.delivered.lock().unwrap().len(), 2);
     assert_eq!(second.delivered.lock().unwrap().len(), 1);
@@ -191,30 +191,30 @@ async fn audit_callback_order() {
         label: "first".to_owned(),
         fails: false,
         delivered: Mutex::new(Vec::new()),
-        order: order.clone(),
+        order: Arc::clone(&order),
     });
     let otel = Arc::new(RecordingCallback {
         label: "otel".to_owned(),
         fails: false,
         delivered: Mutex::new(Vec::new()),
-        order: order.clone(),
+        order: Arc::clone(&order),
     });
     let last = Arc::new(RecordingCallback {
         label: "last".to_owned(),
         fails: false,
         delivered: Mutex::new(Vec::new()),
-        order: order.clone(),
+        order: Arc::clone(&order),
     });
     let registry = registry();
     register(&registry, "otel", otel);
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry, spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(registry, Arc::clone(&spawner));
     let configs = [
-        AuditCallbackConfig::Instance(first.clone()),
+        AuditCallbackConfig::Instance(Arc::clone(&first)),
         AuditCallbackConfig::Named("otel".to_owned()),
-        AuditCallbackConfig::Instance(last.clone()),
+        AuditCallbackConfig::Instance(Arc::clone(&last)),
     ];
-    dispatcher.dispatch(&configs, None, build_audit_log_payload(&plain_record()));
+    dispatcher.dispatch(&configs, None, &build_audit_log_payload(&plain_record()));
     spawner.run_all().await;
     assert_eq!(*order.lock().unwrap(), ["first", "otel", "last"]);
     assert_eq!(first.delivered.lock().unwrap().len(), 1);
@@ -226,11 +226,11 @@ fn audit_invalid_callback_ignored() {
     let (captured, _guard) = capture();
     let registry = registry();
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     dispatcher.dispatch(
         &[AuditCallbackConfig::Other],
         None,
-        build_audit_log_payload(&plain_record()),
+        &build_audit_log_payload(&plain_record()),
     );
     assert!(registry.resolves.lock().unwrap().is_empty());
     assert!(spawner.tasks.lock().unwrap().is_empty());
@@ -250,9 +250,9 @@ async fn audit_dispatch_exception_continues() {
         s3_fails: true,
     });
     let otel = recorder("otel", false);
-    register(&registry, "otel", otel.clone());
+    register(&registry, "otel", Arc::clone(&otel));
     let spawner = Arc::new(CollectingSpawner::default());
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), spawner.clone());
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::clone(&spawner));
     let configs = [
         AuditCallbackConfig::Named("s3_v2".to_owned()),
         AuditCallbackConfig::Named("otel".to_owned()),
@@ -260,7 +260,7 @@ async fn audit_dispatch_exception_continues() {
     dispatcher.dispatch(
         &configs,
         Some(&parsed(r#"{"bucket_name": "audit"}"#)),
-        build_audit_log_payload(&plain_record()),
+        &build_audit_log_payload(&plain_record()),
     );
     spawner.run_all().await;
     assert_eq!(otel.delivered.lock().unwrap().len(), 1);
@@ -275,17 +275,17 @@ async fn audit_dispatch_exception_continues() {
 async fn audit_task_cancel_or_fail() {
     let (cancelled, cancelled_guard) = capture();
     let registry = registry();
-    let dispatcher = AuditCallbackDispatcher::new(registry.clone(), Arc::new(DroppingSpawner));
+    let dispatcher = AuditCallbackDispatcher::new(Arc::clone(&registry), Arc::new(DroppingSpawner));
     let configs = [AuditCallbackConfig::Named("missing".to_owned())];
     let payload = build_audit_log_payload(&plain_record());
     let good = recorder("good", false);
-    register(&registry, "good", good.clone());
+    register(&registry, "good", Arc::clone(&good));
     dispatcher.dispatch(
-        &[AuditCallbackConfig::Instance(good.clone())],
+        &[AuditCallbackConfig::Instance(Arc::clone(&good))],
         None,
-        payload.clone(),
+        &payload,
     );
-    dispatcher.dispatch(&configs, None, payload.clone());
+    dispatcher.dispatch(&configs, None, &payload);
     assert!(!cancelled.text().contains("Audit log callback task failed"));
     assert!(good.delivered.lock().unwrap().is_empty());
     drop(cancelled_guard);
@@ -294,14 +294,14 @@ async fn audit_task_cancel_or_fail() {
     let spawner = Arc::new(CollectingSpawner::default());
     let failing = recorder("failing", true);
     let succeeding = recorder("succeeding", false);
-    let retry = AuditCallbackDispatcher::new(registry, spawner.clone());
+    let retry = AuditCallbackDispatcher::new(registry, Arc::clone(&spawner));
     retry.dispatch(
         &[
             AuditCallbackConfig::Instance(failing),
-            AuditCallbackConfig::Instance(succeeding.clone()),
+            AuditCallbackConfig::Instance(Arc::clone(&succeeding)),
         ],
         None,
-        payload,
+        &payload,
     );
     spawner.run_all().await;
     assert_eq!(succeeding.delivered.lock().unwrap().len(), 1);

@@ -85,7 +85,7 @@ impl AuditEventSink {
                 .map(|text| JsonValue::String(text.to_owned())),
         });
         match record {
-            Ok(record) => self.create_audit_log_for_update(record).await,
+            Ok(masked) => self.create_audit_log_for_update(masked).await,
             Err(error) => tracing::error!("Failed Creating audit log {error}"),
         }
     }
@@ -99,7 +99,7 @@ impl AuditEventSink {
         self.callbacks.dispatch(
             self.settings.audit_log_callbacks(),
             self.settings.s3_audit_callback_params(),
-            payload,
+            &payload,
         );
         if !self.repository.available() {
             tracing::error!("prisma_client is None, cannot write audit log to DB");

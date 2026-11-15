@@ -3,7 +3,6 @@
 use betterlite_config::sections::settings::JsonValue;
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::json;
 
 use super::support::parsed;
 use crate::audit_events::identity::{CallerIdentity, get_audit_log_changed_by};
@@ -78,10 +77,10 @@ fn audit_header_falsey() {
 }
 
 #[rstest]
-#[case::string(json!("true"))]
-#[case::integer(json!(1))]
-#[case::float(json!(1.0))]
-#[case::array(json!([true]))]
+#[case::string(parsed(r#""true""#))]
+#[case::integer(parsed("1"))]
+#[case::float(parsed("1.0"))]
+#[case::array(parsed("[true]"))]
 fn audit_header_truthy_nonbool_denied(#[case] value: JsonValue) {
     let mut metadata = caller();
     let text = format!(r#"{{"allow_litellm_changed_by_header": {value}}}"#);

@@ -91,14 +91,14 @@ impl AuditCallbackDispatcher {
         &self,
         callbacks: &[AuditCallbackConfig],
         s3_params: Option<&JsonValue>,
-        payload: AuditLogPayload,
+        payload: &AuditLogPayload,
     ) {
         for config in callbacks {
             let Some(callback) = self.resolve_config(config, s3_params) else {
                 continue;
             };
-            let payload = payload.clone();
-            let task: AuditCallbackFuture = Box::pin(log_callback(callback, payload));
+            let delivered = payload.clone();
+            let task: AuditCallbackFuture = Box::pin(log_callback(callback, delivered));
             self.spawner.spawn(task);
         }
     }
@@ -138,13 +138,13 @@ impl AuditCallbackDispatcher {
                     return None;
                 }
             },
-            _ => match self.registry.resolve(name) {
-                Some(callback) => callback,
-                None => {
+            _ => {
+                let Some(callback) = self.registry.resolve(name) else {
                     tracing::warn!("Could not resolve audit log callback: {name}");
                     return None;
-                }
-            },
+                };
+                callback
+            }
         };
         self.cache
             .lock()
