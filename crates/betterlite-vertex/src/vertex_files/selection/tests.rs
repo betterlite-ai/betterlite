@@ -9,6 +9,7 @@ use crate::vertex_batch_upload::sources::{FileContent, FileTypes};
 
 use super::{BatchJsonlFiles, BatchJsonlPredicate, SelectedUpload, select_upload};
 use crate::vertex_files::FileRequest;
+use crate::vertex_files::error::VertexFilesError;
 
 #[derive(Debug, PartialEq, Eq)]
 struct Observed {
@@ -266,6 +267,26 @@ fn a_direct_upload_reaches_the_predicate_without_a_filename() {
             filename: None,
         }]
     );
+}
+
+#[test]
+fn a_string_body_is_not_an_upload_stream() {
+    let file = FileData::Tuple2 {
+        filename: Some("rows.jsonl".to_owned()),
+        content: FileBody::BareString("{\"a\":1}\n".to_owned()),
+    };
+    let failure = select_upload(
+        &FileRequest {
+            file: &file,
+            purpose: CreatePurpose::Assistants,
+            deployment_model: None,
+            passthrough: false,
+            custom_endpoint: false,
+        },
+        &BatchJsonlFiles,
+    )
+    .expect_err("the source only uploads bytes");
+    assert!(matches!(failure, VertexFilesError::Media(_)));
 }
 
 #[test]
