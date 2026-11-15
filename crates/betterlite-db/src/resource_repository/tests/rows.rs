@@ -90,17 +90,13 @@ pub(crate) async fn raw_model_table(case: &Case) {
         .unwrap();
     assert_eq!(field(&created, "model_id"), &value("\"raw-created\""));
     assert_eq!(field(&created, "litellm_params"), &stored);
-    insert_named(
-        &case.writer,
-        INSERT_MODEL_SQL,
-        NamedRow {
-            id: "raw-inserted",
-            name: "raw",
-            document: r#"{"api_key":"sk-raw","n":1}"#,
-            info: Some(r#"{"id":"raw"}"#),
-        },
-    )
-    .await;
+    let inserted = NamedRow {
+        id: "raw-inserted",
+        name: "raw",
+        document: r#"{"api_key":"sk-raw","n":1}"#,
+        info: Some(r#"{"id":"raw"}"#),
+    };
+    insert_named(&case.writer, INSERT_MODEL_SQL, inserted).await;
     let rows = keyed(
         table
             .as_ref()
@@ -109,14 +105,12 @@ pub(crate) async fn raw_model_table(case: &Case) {
             .unwrap(),
         "model_id",
     );
+    let raw = &rows["raw-inserted"];
     assert_eq!(
-        field(&rows["raw-inserted"], "litellm_params"),
+        field(raw, "litellm_params"),
         &value(r#"{"api_key":"sk-raw","n":1}"#)
     );
-    assert_eq!(
-        field(&rows["raw-inserted"], "model_name"),
-        &value("\"raw\"")
-    );
+    assert_eq!(field(raw, "model_name"), &value("\"raw\""));
 }
 
 pub(crate) async fn excluded_model_id(case: &Case) {
@@ -281,7 +275,7 @@ pub(crate) async fn budget_id_column(case: &Case) {
     insert_budget(case, "budget-two").await;
     let repository = budget_repository(case);
     let expected: LiteLLMBudgetTable = serde_json::from_str(
-        r#"{"budget_id":"budget-one","soft_budget":2.5,"max_budget":10,"max_parallel_requests":3,"tpm_limit":40,"rpm_limit":50,"model_max_budget":{"gpt-4o":0.5},"budget_duration":"1d"}"#,
+        r#"{"budget_id":"budget-one","soft_budget":2.5,"max_budget":10,"max_parallel_requests":3,"tpm_limit":40,"rpm_limit":50,"model_max_budget":{"gpt-4o":0.5},"budget_duration":"1d","allowed_models":[]}"#,
     )
     .unwrap();
     assert_eq!(
@@ -730,29 +724,21 @@ pub(crate) async fn falsey_credential_maps(case: &Case) {
         ("cred-null-info-id", "cred-null-info", None),
     ];
     for (id, name, info) in falsey {
-        insert_named(
-            &case.writer,
-            INSERT_CREDENTIAL_SQL,
-            NamedRow {
-                id,
-                name,
-                document: r#"{"api_key":"k"}"#,
-                info,
-            },
-        )
-        .await;
+        let row = NamedRow {
+            id,
+            name,
+            document: r#"{"api_key":"k"}"#,
+            info,
+        };
+        insert_named(&case.writer, INSERT_CREDENTIAL_SQL, row).await;
     }
-    insert_named(
-        &case.writer,
-        INSERT_CREDENTIAL_SQL,
-        NamedRow {
-            id: "cred-empty-values-id",
-            name: "cred-empty-values",
-            document: "{}",
-            info: Some(r#"{"flag":true}"#),
-        },
-    )
-    .await;
+    let empty_row = NamedRow {
+        id: "cred-empty-values-id",
+        name: "cred-empty-values",
+        document: "{}",
+        info: Some(r#"{"flag":true}"#),
+    };
+    insert_named(&case.writer, INSERT_CREDENTIAL_SQL, empty_row).await;
     let repository = credential_repository(case);
     for (_, name, _) in falsey {
         let row = repository.find_by_name(name).await.unwrap().unwrap();
@@ -824,17 +810,13 @@ pub(crate) async fn empty_document_write(case: &Case) {
 }
 
 pub(crate) async fn partial_update_preserves_columns(case: &Case) {
-    insert_named(
-        &case.writer,
-        INSERT_MODEL_SQL,
-        NamedRow {
-            id: "partial-update",
-            name: "before",
-            document: r#"{"api_key":"a","n":1}"#,
-            info: Some(r#"{"id":"keep"}"#),
-        },
-    )
-    .await;
+    let row = NamedRow {
+        id: "partial-update",
+        name: "before",
+        document: r#"{"api_key":"a","n":1}"#,
+        info: Some(r#"{"id":"keep"}"#),
+    };
+    insert_named(&case.writer, INSERT_MODEL_SQL, row).await;
     let repository = model_repository(case, None);
     let table = repository.table().unwrap();
     let updated = table

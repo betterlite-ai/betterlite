@@ -280,29 +280,25 @@ pub(crate) async fn injected_publisher_error_after_commit(case: &Case) {
     );
 }
 
+async fn seed_read_rows(case: &Case) {
+    let credential = NamedRow {
+        id: "cred-read-id",
+        name: "cred-read",
+        document: r#"{"api_key":"k"}"#,
+        info: None,
+    };
+    let model = NamedRow {
+        id: "read-model",
+        name: "read",
+        document: r#"{"api_key":"k"}"#,
+        info: None,
+    };
+    insert_named(&case.writer, INSERT_CREDENTIAL_SQL, credential).await;
+    insert_named(&case.writer, INSERT_MODEL_SQL, model).await;
+}
+
 pub(crate) async fn read_has_no_publication(case: &Case) {
-    insert_named(
-        &case.writer,
-        INSERT_CREDENTIAL_SQL,
-        NamedRow {
-            id: "cred-read-id",
-            name: "cred-read",
-            document: r#"{"api_key":"k"}"#,
-            info: None,
-        },
-    )
-    .await;
-    insert_named(
-        &case.writer,
-        INSERT_MODEL_SQL,
-        NamedRow {
-            id: "read-model",
-            name: "read",
-            document: r#"{"api_key":"k"}"#,
-            info: None,
-        },
-    )
-    .await;
+    seed_read_rows(case).await;
     let journal = Journal::default();
     let credentials =
         CredentialsRepository::new(Some(case.client()), recording_publisher(&journal));
