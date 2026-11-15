@@ -28,10 +28,7 @@ pub fn map_image_size(size: &str) -> Json {
     if let Some((_, preset)) = SIZE_PRESETS.iter().find(|(alias, _)| *alias == size) {
         return Json::Text((*preset).to_owned());
     }
-    match custom_dimensions(size) {
-        Some(dimensions) => Json::Object(dimensions),
-        None => Json::Text(SQUARE_HD.to_owned()),
-    }
+    custom_dimensions(size).map_or_else(|| Json::Text(SQUARE_HD.to_owned()), Json::Object)
 }
 
 // Python splits on a bare x, so Fal's -x- separator reads as one malformed part there and falls to the default
