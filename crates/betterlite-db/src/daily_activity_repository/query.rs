@@ -112,11 +112,6 @@ where
         })
     }
 
-    async fn key_spend(&self, query: &SqlQuery) -> Result<Vec<KeySpendRow>> {
-        let rows = self.query(query).await?;
-        key_spend_rows(&rows)
-    }
-
     pub async fn search_keys(
         &self,
         scope: &DailyActivityScope,
@@ -142,7 +137,7 @@ where
         check_limit(limit, USAGE_MODEL_TOP_KEYS_MAX)?;
         let query =
             build_model_top_keys_sql(scope, model_group, by_model_group, limit, &self.clock)?;
-        self.key_spend(&query).await
+        Ok(key_spend_rows(&self.query(&query).await?)?)
     }
 
     pub async fn cache_leakage_keys(
@@ -151,8 +146,11 @@ where
         limit: i64,
     ) -> Result<Vec<KeySpendRow>> {
         check_limit(limit, USAGE_CACHE_LEAKAGE_KEYS_MAX)?;
-        self.key_spend(&build_cache_leakage_keys_sql(scope, limit, &self.clock)?)
-            .await
+        Ok(key_spend_rows(
+            &self
+                .query(&build_cache_leakage_keys_sql(scope, limit, &self.clock)?)
+                .await?,
+        )?)
     }
 }
 
