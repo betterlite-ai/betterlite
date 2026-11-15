@@ -50,8 +50,8 @@ fn rerank_ignores_token_alias() {
         ("VOYAGE_AI_TOKEN", "third"),
         ("VOYAGE_AI_API_KEY", "second"),
     ]);
-    let resolved = rerank_key(None, |name| with_second.lookup(name)).expect("second alias");
-    assert_eq!(resolved, "second");
+    let from_second = rerank_key(None, |name| with_second.lookup(name)).expect("second alias");
+    assert_eq!(from_second, "second");
 }
 
 #[test]
@@ -67,6 +67,6 @@ fn multimodal_requires_truthy_key() {
         Err(VoyageMultimodalError::MissingApiKey)
     ));
     let token_only = environment(&[("VOYAGE_AI_TOKEN", "third")]);
-    let resolved = multimodal_key(None, |name| token_only.lookup(name)).expect("token alias");
-    assert_eq!(resolved, "third");
+    let from_token = multimodal_key(None, |name| token_only.lookup(name)).expect("token alias");
+    assert_eq!(from_token, "third");
 }
