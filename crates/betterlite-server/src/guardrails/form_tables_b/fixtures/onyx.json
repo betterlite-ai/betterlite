@@ -1,0 +1,17 @@
+{
+  "api_base": {
+    "description": "The URL of the Onyx Guard server. If not provided, the `ONYX_API_BASE` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The API key for the Onyx Guard server. If not provided, the `ONYX_API_KEY` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "timeout": {
+    "description": "The timeout for the Onyx Guard server in seconds. If not provided, the `ONYX_TIMEOUT` environment variable is checked.",
+    "required": false,
+    "type": "number"
+  }
+}
