@@ -1,0 +1,1 @@
+{"type":"chat","prompt":[{"role":"system","content":"Hello {{name}}"},{"type":"placeholder","name":"history"},{"role":"user","content":"{{question}} stays {{missing}}"}],"name":"support","version":3,"config":{"model":"gpt-4o","temperature":0.2},"labels":[],"tags":[]}

@@ -80,3 +80,12 @@ deviations:
       LoggerEvent carries the standard logging payload, its dynamic parameters and its metadata, not the request
       kwargs. The fields the payload owns are logged identically; the kwargs-only ones have no source in the event.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_prompt_management.py#L318-L336
+  - what: >-
+      completion_start_time reaches the span as a UTC RFC 3339 string with the shortest exact fraction
+      ("2024-01-01T00:00:00.500+00:00"); LiteLLM writes datetime.astimezone().isoformat(), the host's local
+      offset and six-digit microseconds ("2024-01-01T00:00:00.500000+00:00").
+    why: >-
+      The event carries the payload's completionStartTime as epoch seconds rather than a datetime object, so
+      betterlite converts it to UTC and chrono prints only the fraction digits the value needs. Both spellings
+      name the same instant in RFC 3339.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L167-L170
