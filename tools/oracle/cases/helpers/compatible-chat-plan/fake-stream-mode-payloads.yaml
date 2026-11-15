@@ -1,0 +1,101 @@
+kind: helper
+name: fake-stream-mode-payloads
+call:
+  compatible_chat_plan:
+    calls:
+      - model: fixture-model
+        messages: [{role: user, content: hello}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v1
+        api_key: sk-test
+        headers: null
+        optional_params: {stream: true}
+        custom_endpoint: null
+        timeout: null
+        mode: async
+        fake_stream: true
+        status: 200
+        watch_headers: [content-type, authorization]
+        reply:
+          id: chat-1
+          object: chat.completion
+          created: 1700000000
+          model: served-model
+          choices:
+            - index: 0
+              message: {role: assistant, content: served}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - model: fixture-model
+        messages: [{role: user, content: hello}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v1
+        api_key: sk-test
+        headers: null
+        optional_params: {stream: true}
+        custom_endpoint: null
+        timeout: null
+        mode: sync
+        fake_stream: true
+        status: 200
+        watch_headers: [content-type, authorization]
+        reply:
+          id: chat-2
+          object: chat.completion
+          created: 1700000001
+          model: served-model
+          choices:
+            - index: 0
+              message: {role: assistant, content: served}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - model: fixture-model
+        messages: [{role: user, content: hello}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v1
+        api_key: sk-test
+        headers: null
+        optional_params:
+          stream: true
+          extra_body: {stream: true}
+        custom_endpoint: null
+        timeout: null
+        mode: sync
+        fake_stream: true
+        status: 200
+        watch_headers: [content-type, authorization]
+        reply:
+          id: chat-3
+          object: chat.completion
+          created: 1700000002
+          model: served-model
+          choices:
+            - index: 0
+              message: {role: assistant, content: served}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+      - model: fixture-model
+        messages: [{role: user, content: hello}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v1
+        api_key: sk-test
+        headers: null
+        optional_params: {stream: true}
+        custom_endpoint: null
+        timeout: null
+        mode: async
+        fake_stream: false
+        status: 200
+        watch_headers: [content-type, authorization]
+        reply:
+          id: chat-4
+          object: chat.completion
+          created: 1700000003
+          model: served-model
+          choices:
+            - index: 0
+              message: {role: assistant, content: served}
+              finish_reason: stop
+          usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}
+compare: {ignore: []}
+env: {}

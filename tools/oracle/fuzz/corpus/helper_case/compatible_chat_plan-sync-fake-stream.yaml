@@ -1,0 +1,32 @@
+kind: helper
+name: compatible-chat-plan-seed-sync-fake-stream
+call:
+  compatible_chat_plan:
+    calls:
+      - model: seed-model
+        messages: [{role: user, content: seed}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v2
+        api_key: sk-seed
+        headers: null
+        optional_params:
+          stream: true
+          extra_body: {stream: true}
+        custom_endpoint: null
+        timeout: 3.5
+        mode: sync
+        fake_stream: true
+        status: 200
+        watch_headers: [authorization]
+        reply:
+          id: seed-1
+          object: chat.completion
+          created: 1700000100
+          model: seed-served
+          choices:
+            - index: 0
+              message: {role: assistant, content: seed}
+              finish_reason: stop
+          usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}
+env: {}
+compare: {ignore: []}

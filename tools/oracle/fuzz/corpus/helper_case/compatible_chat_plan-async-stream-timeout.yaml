@@ -1,0 +1,30 @@
+kind: helper
+name: compatible-chat-plan-seed-async-stream-timeout
+call:
+  compatible_chat_plan:
+    calls:
+      - model: seed-model
+        messages: [{role: system, content: seed}, {role: user, content: hello}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v2/chat
+        api_key: sk-seed
+        headers: {Content-Type: text/plain}
+        optional_params: {stream: true, base_model: seed-base}
+        custom_endpoint: true
+        timeout: 9.25
+        mode: async
+        fake_stream: false
+        status: 200
+        watch_headers: [content-type, authorization, x-missing]
+        reply:
+          id: seed-2
+          object: chat.completion
+          created: 1700000101
+          model: seed-served
+          choices:
+            - index: 0
+              message: {role: assistant, content: seed}
+              finish_reason: stop
+          usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}
+env: {}
+compare: {ignore: []}
