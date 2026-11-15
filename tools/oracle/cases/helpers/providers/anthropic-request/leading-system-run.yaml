@@ -1,0 +1,98 @@
+kind: helper
+name: anthropic-request-leading-system-run
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: lead
+      role: system
+    - content:
+      - cache_control:
+          ttl: 1h
+          type: ephemeral
+        text: second
+        type: text
+      - image_url:
+          url: x
+        type: image_url
+      - text: ''
+        type: text
+      role: system
+    - content: hi
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      system: configured
+    strips_billing_metadata: false
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: ''
+      role: system
+    - content: hi
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      system: configured
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params:
+      system: configured
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - cache_control:
+        type: ephemeral
+      content: '  '
+      role: system
+    - content: hi
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []
