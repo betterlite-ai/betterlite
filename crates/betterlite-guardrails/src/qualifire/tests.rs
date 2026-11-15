@@ -73,13 +73,9 @@ fn resolve(
 }
 
 fn build(args: &QualifireArgs) -> QualifireGuardrail {
-    QualifireGuardrail::new(
-        args,
-        &NoSecrets,
-        &BTreeMap::new(),
-        base_builder().build().unwrap(),
-    )
-    .unwrap()
+    let secrets = NoSecrets;
+    let client = base_builder().build().unwrap();
+    QualifireGuardrail::new(args, &secrets, &BTreeMap::new(), client).unwrap()
 }
 
 fn params(extra: &str) -> LitellmParams {
@@ -198,7 +194,7 @@ fn settings_fall_back_to_the_environment() {
 fn settings_ignore_an_empty_environment_value() {
     let env = environment(&[("QUALIFIRE_API_KEY", ""), ("QUALIFIRE_BASE_URL", "")]);
     let resolved = resolve(&args(), &NoSecrets, &env);
-    assert_eq!(resolved.api_key, None);
+    assert!(resolved.api_key.is_none());
     assert_eq!(resolved.api_base, settings::DEFAULT_API_BASE);
 }
 
@@ -556,6 +552,13 @@ fn request_rows_become_one_user_message_from_the_last_text() {
 fn no_messages_or_texts_selects_nothing() {
     let selected =
         request::select_rows(&inputs(), &BTreeMap::new(), GuardrailInputType::Request).unwrap();
+    assert!(selected.is_none());
+}
+
+#[test]
+fn a_response_without_messages_or_texts_selects_nothing() {
+    let selected =
+        request::select_rows(&inputs(), &BTreeMap::new(), GuardrailInputType::Response).unwrap();
     assert!(selected.is_none());
 }
 

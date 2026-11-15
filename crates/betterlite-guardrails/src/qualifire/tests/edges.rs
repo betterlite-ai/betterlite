@@ -6,6 +6,7 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use reqwest::StatusCode;
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::with_default;
 
@@ -350,21 +351,18 @@ fn a_tool_definition_with_a_wrong_typed_name_is_an_error() {
     assert!(convert::api_tools(Some(&tools)).is_err());
 }
 
-#[test]
-fn dynamic_params_of_the_wrong_type_are_errors() {
-    for (field, value) in [
-        ("evaluation_id", "5"),
-        ("assertions", r#""rule""#),
-        ("assertions", "[5]"),
-        ("on_flagged", "5"),
-    ] {
-        let dynamic = BTreeMap::from([(field.to_owned(), json(value))]);
-        let error = request::overrides(&dynamic).unwrap_err();
-        assert_eq!(
-            error.to_string(),
-            format!("the Qualifire guardrail request option {field} has an invalid value")
-        );
-    }
+#[rstest]
+#[case::evaluation_id("evaluation_id", "5")]
+#[case::assertions_not_a_list("assertions", r#""rule""#)]
+#[case::assertions_item_not_text("assertions", "[5]")]
+#[case::on_flagged("on_flagged", "5")]
+fn dynamic_params_of_the_wrong_type_are_errors(#[case] field: &str, #[case] value: &str) {
+    let dynamic = BTreeMap::from([(field.to_owned(), json(value))]);
+    let error = request::overrides(&dynamic).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("the Qualifire guardrail request option {field} has an invalid value")
+    );
 }
 
 #[test]
@@ -387,19 +385,19 @@ fn the_last_user_message_wins_even_when_it_is_not_text() {
     assert_eq!(request::invocation_input(&rows), "");
 }
 
-#[test]
-fn texts_beside_structured_messages_do_not_replace_them() {
+#[rstest]
+#[case::request(GuardrailInputType::Request)]
+#[case::response(GuardrailInputType::Response)]
+fn texts_beside_structured_messages_do_not_replace_them(#[case] input_type: GuardrailInputType) {
     let mut inputs = inputs();
     inputs.structured_messages = Some(vec![message("user", text("from inputs"))]);
     inputs.texts = Some(vec!["a text".to_owned()]);
-    for input_type in [GuardrailInputType::Request, GuardrailInputType::Response] {
-        let (rows, _output) = request::select_rows(&inputs, &BTreeMap::new(), input_type)
-            .unwrap()
-            .unwrap();
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].get("content"), Some(&text("from inputs")));
-        assert_eq!(rows[0].get("role"), Some(&text("user")));
-    }
+    let (rows, _output) = request::select_rows(&inputs, &BTreeMap::new(), input_type)
+        .unwrap()
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].get("content"), Some(&text("from inputs")));
+    assert_eq!(rows[0].get("role"), Some(&text("user")));
 }
 
 #[test]

@@ -31,7 +31,7 @@ pub enum OnFlagged {
 }
 
 impl OnFlagged {
-    pub const fn parse(value: &str) -> Option<Self> {
+    pub fn parse(value: &str) -> Option<Self> {
         match value {
             "block" => Some(Self::Block),
             "monitor" => Some(Self::Monitor),

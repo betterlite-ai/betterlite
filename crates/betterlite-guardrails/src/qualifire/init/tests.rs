@@ -62,7 +62,7 @@ fn qualifire_args_copy_a_given_on_flagged() {
 #[test]
 fn qualifire_args_leave_absent_settings_absent() {
     let built = build("").unwrap();
-    assert_eq!(built.api_key, None);
+    assert!(built.api_key.is_none());
     assert_eq!(built.api_base, None);
     assert_eq!(built.evaluation_id, None);
     assert_eq!(built.prompt_injections, None);

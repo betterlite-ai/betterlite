@@ -160,7 +160,7 @@ fn arguments(value: Option<&GuardrailValue>) -> BTreeMap<String, GuardrailValue>
     match value {
         Some(GuardrailValue::Text(text)) => serde_json::from_str(text).unwrap_or_default(),
         Some(GuardrailValue::Object(fields)) => fields.clone(),
-        None | Some(GuardrailValue::Null) | Some(_wrong) => BTreeMap::new(),
+        None | Some(_) => BTreeMap::new(),
     }
 }
 

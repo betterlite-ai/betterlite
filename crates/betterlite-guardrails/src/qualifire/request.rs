@@ -4,7 +4,6 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::ExposeSecret as _;
-use serde::Serialize;
 
 use super::error::QualifireError;
 use super::settings::{Check, OnFlagged};
@@ -30,14 +29,14 @@ pub(super) struct CheckRequest<'payload> {
 }
 
 pub(super) struct Plan<'payload> {
-    pub url: String,
-    input: String,
-    messages: Vec<ApiMessage>,
-    tools: Option<Vec<ApiTool>>,
-    output: Option<&'payload str>,
-    evaluation_id: Option<&'payload str>,
-    assertions: &'payload [String],
-    checks: &'payload BTreeSet<Check>,
+    pub(super) url: String,
+    pub(super) input: String,
+    pub(super) messages: Vec<ApiMessage>,
+    pub(super) tools: Option<Vec<ApiTool>>,
+    pub(super) output: Option<&'payload str>,
+    pub(super) evaluation_id: Option<&'payload str>,
+    pub(super) assertions: &'payload [String],
+    pub(super) checks: &'payload BTreeSet<Check>,
 }
 
 impl Plan<'_> {
@@ -76,7 +75,7 @@ impl Plan<'_> {
 
 impl QualifireGuardrail {
     pub(super) fn plan<'payload>(
-        &self,
+        &'payload self,
         check: &CheckRequest<'payload>,
     ) -> Result<Plan<'payload>, QualifireError> {
         let messages = check

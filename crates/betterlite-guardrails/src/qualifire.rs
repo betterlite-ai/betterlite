@@ -31,7 +31,7 @@ pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
     GuardrailEventHooks::PostCall,
 ];
 
-const MAX_RESPONSE_BYTES: usize = 1_048_576;
+const MAX_RESPONSE_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, Clone)]
 pub struct QualifireGuardrail {
@@ -113,7 +113,7 @@ impl QualifireGuardrail {
         let on_flagged = match extra.get("on_flagged") {
             Some(GuardrailValue::Text(text)) if !text.is_empty() => OnFlagged::parse(text)
                 .ok_or_else(|| QualifireError::UnsupportedOnFlagged(text.clone()))?,
-            Some(GuardrailValue::Text(_)) | None | Some(GuardrailValue::Null) => OnFlagged::Block,
+            Some(GuardrailValue::Text(_) | GuardrailValue::Null) | None => OnFlagged::Block,
             Some(wrong) => {
                 let text = serde_json::to_string(wrong)
                     .map_err(|source| QualifireError::Encode { source })?;
