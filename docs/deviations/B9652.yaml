@@ -6,8 +6,8 @@ deviations:
   - what: A GET stream that fails with an HTTP, framing or read error, or with a message that is not JSON-RPC, is reported to B4744's message handler as an HTTP-kind or ValueError-kind stream failure after the SDK's two attempts, and receive then ends; mcp 2.3.0 counts every exception as a reconnect attempt, keeps reading the next connection and gives up silently.
     why: The task fixes the contract that a stream-level failure belonging to no request reaches B4744's MessageHandler, and B4744 fails the session from that record; otherwise a dead or poisoned GET stream leaves the session open forever.
     link: ""
-  - what: An SSE body whose lines have no colon, repeat an event, id or retry field, or carry a retry that is not an integer ends the stream with a framing error, where httpx2's decoder ignores those lines.
-    why: sse-stream is the crate rmcp 3.9 resolves for SSE framing, and its parser rejects only lines a conforming server never sends, so keeping it avoids a second SSE parser in the transport.
+  - what: An SSE line with no colon, an unrecognized field name, a repeated event, id or retry field, or a retry that is not an integer ends the stream with a framing error, where the SSE spec makes an unknown field and a non-integer retry ignorable and httpx2's decoder ignores such lines.
+    why: sse-stream is the crate rmcp 3.9 resolves for SSE framing, so betterlite keeps one parser; its line parser rejects these lines, and filtering them out first would add a second line-level pass in front of it.
     link: ""
   - what: An SSE event above 1 MiB ends a legacy SSE stream with an HTTP-kind stream failure, where the SDK re-raises the SSEError and closes the read stream without a message.
     why: B4744 carries a stream-level failure through its MessageHandler, and the task fixes that contract for every stream the runtime reads; the 1 MiB cap itself is DEFAULT_MAX_SSE_EVENT_SIZE.
@@ -18,3 +18,6 @@ deviations:
   - what: MCP-Protocol-Version is sent once the runtime calls StreamableHttp::set_protocol_version, where the SDK caches it from per-message metadata stamped by the client session.
     why: rmcp's Transport trait carries no per-message metadata, so the negotiated version reaches the transport through an explicit setter B9653 calls after initialize; the header otherwise behaves as the SDK's.
     link: ""
+  - what: 'A JSON response body that fails to arrive during the read (a timeout, reset or truncation) answers the request with PARSE_ERROR "Failed to parse JSON response: {source}", and the same failure while reading a non-2xx error body falls back to the status mapping, where mcp''s _handle_json_response catches only httpx2.StreamError and ValidationError and lets ReadError and ReadTimeout end the transport.'
+    why: An unanswered request would leave the session waiting on a transport that may already be gone, and B4744's runtime cannot resume a POST handler that raised; answering the request keeps the failure local to it.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/v2.3.0/src/mcp/client/streamable_http.py#L448-L465

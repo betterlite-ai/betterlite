@@ -117,7 +117,7 @@ async fn answer_body(
     drop(body.close().await);
     Ok(())
 }
-// httpx2 reports a body that fails to arrive and a body that is not JSON-RPC the same way
+// mcp catches only httpx2.StreamError and ValidationError here, so a read error ends its transport; betterlite answers the request (docs/deviations/B9652.yaml)
 async fn push_json(
     core: &StreamableCore,
     mut body: HttpBody,
