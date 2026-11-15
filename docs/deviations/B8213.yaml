@@ -9,6 +9,9 @@ deviations:
   - what: betterlite uses litellm_params.timeout on the guardrail entry as given and falls back to 600 seconds only when it is absent or null; LiteLLM passes timeout=self.timeout, which stays None when no guardrail timeout is configured, and httpx reads None as no timeout at all.
     why: A Qualifire server that accepts the connection and never answers would hold the proxy request forever; 600 seconds is the read/write fallback the shared AsyncHTTPHandler client is built with.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L377-L382
+  - what: A timeout that a Duration cannot represent (negative, NaN, infinite or too large) is rejected while the guardrail is built or updated. LiteLLM stores the float on the guardrail and every evaluation then fails inside httpx.
+    why: betterlite's timeout is a std Duration, which cannot hold a negative or non-finite duration; the invalid configuration is reported where it enters instead of turning every evaluation into a failure at request time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L377-L382
   - what: A failed on_flagged update reports an error that is betterlite's own, quoting the value with single quotes rather than Python's repr.
     why: Error messages are betterlite's own words; repr text is outside the compatibility contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L109-L118
