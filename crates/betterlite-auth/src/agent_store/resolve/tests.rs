@@ -34,6 +34,24 @@ async fn resolve_claim_without_a_required_name_is_unbound(#[case] name: &str) {
 }
 
 #[tokio::test]
+async fn resolve_claim_without_the_client_id_is_unbound() {
+    let fake = FakeRecords::shared();
+    {
+        let mut state = fake.state();
+        state.identity = Some(binding("agent-1"));
+        state.agent = Some(autonomous_agent());
+    }
+    let mut claims = application_claims();
+    claims.0.remove("azp");
+    let context = store(&fake)
+        .resolve_verified_claims(&claims)
+        .await
+        .expect("the claim resolution");
+    assert!(context.is_none());
+    assert!(fake.state().identity_reads.is_empty());
+}
+
+#[tokio::test]
 async fn resolve_unbound_client_is_unbound() {
     let fake = FakeRecords::shared();
     let context = store(&fake)
