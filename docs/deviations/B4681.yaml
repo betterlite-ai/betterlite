@@ -12,4 +12,7 @@ deviations:
   - what: Listing with use_writer=false answers an empty list after a warning on any storage error, while use_writer=true returns the error.
     why: This copies LiteLLM's graceful degradation for a read replica that is unreachable; the writer path stays fatal so a failed primary read is never mistaken for an empty table.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L113-L121
-kept_bugs: []
+kept_bugs:
+  - what: The reader path of list_mcp_toolsets swallows every exception, not just an unavailable replica, so a broken read answers with an empty toolset list on a proxy that is otherwise up.
+    why: A working setup relies on an empty answer rather than a failed request when the replica is unreachable, and narrowing the catch would change what that setup sees on a real read error; the typed filter rules out a malformed query, and the writer path still returns the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/toolset_db.py#L117-L121
