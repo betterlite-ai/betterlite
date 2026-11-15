@@ -1,0 +1,27 @@
+{
+  "kind": "helper",
+  "name": "token-endpoint-invalid-response",
+  "call": {
+    "b4657": {
+      "function": "fetch",
+      "endpoint": "https://idp.example/token",
+      "client_id": "client-1",
+      "grant": {
+        "grant_type": "authorization_code"
+      },
+      "client_auth": {
+        "source": "client_secret",
+        "client_secret": "s3cr3t"
+      },
+      "response": {
+        "kind": "answered",
+        "status": 200,
+        "body": "not json at all"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
