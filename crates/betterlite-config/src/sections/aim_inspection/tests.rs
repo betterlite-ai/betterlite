@@ -84,8 +84,8 @@ fn aim_inspection_config_treats_empty_values_as_unset() {
     );
     assert_eq!(configured.api_base, super::DEFAULT_API_BASE);
     let blank = BTreeMap::from([("AIM_API_KEY".to_owned(), String::new())]);
-    let configured = resolve(&source, &blank).unwrap().guardrails.remove(0);
-    assert!(configured.api_key.is_none());
+    let keyless = resolve(&source, &blank).unwrap().guardrails.remove(0);
+    assert!(keyless.api_key.is_none());
 }
 
 #[test]
