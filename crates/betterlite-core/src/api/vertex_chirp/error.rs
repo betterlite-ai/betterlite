@@ -3,6 +3,7 @@ use thiserror::Error;
 // ast-grep-ignore: no-long-names
 use crate::api::transcription_protocol::RealtimeTranscriptionProtocolError as ProtocolError;
 use crate::api::vertex_chirp_protocol::ChirpProtocolError;
+use crate::api::vertex_location::VertexLocationError;
 
 #[derive(Debug, Error)]
 pub enum ChirpAdapterError {
@@ -12,10 +13,8 @@ pub enum ChirpAdapterError {
     UnsupportedModel { model: String },
     #[error("session.update must configure the session before audio is sent")]
     UnconfiguredAudio,
-    #[error("the vertex_project '{project}' cannot be used in a URL")]
-    Project { project: String },
-    #[error("the Vertex location is not valid: invalid vertex_location format")]
-    Location,
+    #[error(transparent)]
+    Target(#[from] VertexLocationError),
     #[error("the Speech-to-Text streaming event is not a valid backend event")]
     Event {
         #[from]
@@ -39,7 +38,7 @@ impl ChirpAdapterError {
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Project { .. } | Self::Location => Some(400),
+            Self::Target(_) => Some(400),
             Self::Protocol(_)
             | Self::UnsupportedModel { .. }
             | Self::UnconfiguredAudio

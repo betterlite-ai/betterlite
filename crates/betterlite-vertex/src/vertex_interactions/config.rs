@@ -1,12 +1,12 @@
 use std::sync::Arc;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_core::api::vertex_location::validate_vertex_location;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::credential_sources::getters::VertexParams;
 use crate::endpoint_target::target::get_api_base;
-use crate::model_urls::base_url::validate_vertex_location;
 use crate::studio_interactions::credentials::RequestHeaders;
 use crate::studio_interactions::urls::Lifecycle;
 use crate::token_cache::probe::AccessToken;
@@ -56,7 +56,7 @@ impl VertexInteractionsConfig {
                 .explicit_vertex_ai_location()
                 .unwrap_or(DEFAULT_LOCATION),
         ))
-        .map_err(VertexInteractionsError::Location)?;
+        .map_err(|error| VertexInteractionsError::Location(error.into()))?;
         let base_url = get_api_base(call.api_base, Some(location))
             .map_err(VertexInteractionsError::ApiBase)?;
         Ok(VertexInteractionsTarget {

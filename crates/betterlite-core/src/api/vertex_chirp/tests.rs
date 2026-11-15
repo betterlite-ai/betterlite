@@ -312,10 +312,7 @@ fn a_location_that_could_move_the_host_is_rejected(#[case] location: &str) {
     )
     .err()
     .expect("an unsafe location");
-    assert_eq!(
-        error.to_string(),
-        "the Vertex location is not valid: invalid vertex_location format"
-    );
+    assert_eq!(error.to_string(), "invalid vertex_location format");
     assert_eq!(error.status_code(), Some(400));
 }
 

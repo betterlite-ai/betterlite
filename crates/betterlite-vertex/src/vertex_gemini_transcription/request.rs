@@ -1,5 +1,6 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_core::api::vertex_location::{validate_vertex_location, validate_vertex_project};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::api::audio_file_input::language::normalize_language_to_bcp47;
@@ -9,12 +10,13 @@ use http::header::HeaderMap;
 use secrecy::SecretString;
 
 use crate::model_urls::Endpoint;
-use crate::model_urls::base_url::{get_vertex_base_url, validate_vertex_location};
+use crate::model_urls::base_url::get_vertex_base_url;
 use crate::vertex_gemini_transcription::error::VertexGeminiTranscriptionError;
 use crate::vertex_gemini_transcription::types::{
     AudioTranscriptionConfig, Content, GenerationConfig, InlineData, Part, Role,
     TranscriptionRequest,
 };
+use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::request as shared;
 
 pub const DEFAULT_LOCATION: &str = "global";
@@ -47,11 +49,13 @@ pub fn complete_url(
     model: &str,
 ) -> Result<String, VertexGeminiTranscriptionError> {
     let checked_location = validate_vertex_location(Some(location.unwrap_or(DEFAULT_LOCATION)))
-        .map_err(|source| VertexGeminiTranscriptionError::Location { source })?;
+        .map_err(|error| VertexGeminiTranscriptionError::Location {
+            source: error.into(),
+        })?;
     let Some(requested) = project.or(credential_project) else {
         return Err(VertexGeminiTranscriptionError::ProjectRequired);
     };
-    let project_id = shared::validate_speech_project(requested)?;
+    let project_id = validate_vertex_project(requested).map_err(VertexRecognitionError::from)?;
     let base = match api_base {
         Some(base) => base.to_owned(),
         None => get_vertex_base_url(Some(checked_location))

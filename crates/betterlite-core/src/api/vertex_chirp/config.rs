@@ -23,14 +23,15 @@ use crate::api::vertex_chirp_protocol::{
     ChirpSessionConfig, DISCARD_TURN_COMMAND, FINISH_TURN_COMMAND, MAX_AUDIO_MESSAGE_BYTES,
     default_session_config, is_vertex_speech_to_text_model, parse_chirp_session_update,
 };
+use crate::api::vertex_location::{
+    DEFAULT_SPEECH_LOCATION, speech_to_text_host, validate_vertex_location, validate_vertex_project,
+};
 
 use super::decode::decode_chirp_backend_event;
 use super::error::ChirpAdapterError;
 use super::factory::ChirpBackendFactory;
 use super::ids::{ChirpIds, SharedIds};
-use super::location::{validate_location, validate_project};
 use super::target::{AccessTokenResolver, SpeechStreamingTarget};
-use super::url::{api_endpoint, speech_to_text_host};
 use super::usage::audio_transcription_usage;
 
 const CONFIGURE_EVENT_TYPES: [&str; 2] = ["session.update", "transcription_session.update"];
@@ -70,9 +71,13 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
         factory: Factory,
     ) -> Result<Self, ChirpAdapterError> {
         let ids = SharedIds(Arc::new(Mutex::new(settings.ids)));
+        let location = settings
+            .location
+            .as_deref()
+            .unwrap_or(DEFAULT_SPEECH_LOCATION);
         Ok(Self {
-            project: validate_project(&settings.project)?,
-            location: validate_location(settings.location.as_deref())?,
+            project: validate_vertex_project(&settings.project)?.to_owned(),
+            location: validate_vertex_location(Some(location))?.to_owned(),
             catalog: settings.catalog,
             limits: settings.limits,
             token,
@@ -96,7 +101,15 @@ impl<Factory> VertexChirpRealtimeConfig<Factory> {
                 model: model.to_owned(),
             });
         }
-        Ok(api_base.map_or_else(|| speech_to_text_host(&self.location), api_endpoint))
+        let Some(base) = api_base else {
+            return Ok(speech_to_text_host(&self.location));
+        };
+        // the speech SDK dials the host itself, so a custom api_base keeps only its authority
+        let without_scheme = base.split_once("://").map_or(base, |(_, rest)| rest);
+        Ok(without_scheme
+            .split_once('/')
+            .map_or(without_scheme, |(authority, _)| authority)
+            .to_owned())
     }
 
     fn configure(
