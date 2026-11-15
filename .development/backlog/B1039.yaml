@@ -1,14 +1,14 @@
 id: B1039
 milestone: M5 api families
 title: Batch output usage
-status: todo
+status: done
 depends_on: [B013, B068, B171, B1035, B1087, B906, B649]
 file: tasks/B1039-batch-output-usage.yaml
 covers:
   - "litellm/batches/batch_utils.py"
 parent: B086
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1986
