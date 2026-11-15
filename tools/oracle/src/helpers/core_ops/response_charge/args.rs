@@ -33,7 +33,10 @@ pub(super) fn build_parts(input: &Input) -> Parts {
         transcription_usage: values::transcription_usage(input),
         transcription: TranscriptionDuration {
             hidden: HiddenDuration::Missing,
-            response_duration: values::transcription_duration(input),
+            response_duration: input
+                .transcription_seconds
+                .as_ref()
+                .and_then(|number| number.to_string().parse().ok()),
         },
         image_billing: ImageBilling {
             image_count: 1,

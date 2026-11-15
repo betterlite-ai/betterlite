@@ -105,11 +105,6 @@ pub(crate) fn transcription_usage(input: &Input) -> TranscriptionUsage {
     }))
 }
 
-pub(crate) fn transcription_duration(input: &Input) -> Option<Decimal> {
-    let number = input.transcription_seconds.as_ref()?;
-    number.to_string().parse().ok()
-}
-
 pub(crate) fn protocol(input: &Input) -> Option<ProtocolCall> {
     let agent = input.agent.as_ref()?;
     Some(ProtocolCall::A2a(A2aCall {
