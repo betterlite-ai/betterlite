@@ -1,6 +1,8 @@
 use crate::helpers::{Helper, HelperResult};
+use betterlite_anthropic::completion::model;
 use fixture::Fixture;
 use input::Input;
+use serde_json::json;
 
 mod answers;
 mod fixture;
@@ -15,7 +17,13 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let fixture = Fixture::new()?;
         match input {
-            Input::Select { models } => Ok(answers::select(models)),
+            Input::Select { models } => Ok(json!({
+                "selected": models
+                    .iter()
+                    .map(String::as_str)
+                    .map(model::selects)
+                    .collect::<Vec<bool>>(),
+            })),
             Input::Prompt { cases } => answers::prompts(&fixture, cases),
             Input::Auth { cases } => answers::auth(cases),
             Input::Options { constructor, cases } => answers::options(&fixture, constructor, cases),

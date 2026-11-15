@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use betterlite_anthropic::completion::error::{CompletionError, anthropic_text_error};
 use betterlite_anthropic::completion::headers::validate_environment;
-use betterlite_anthropic::completion::model;
 use betterlite_anthropic::completion::options::{
     SUPPORTED_OPENAI_PARAMS, map_openai_params, resolve_defaults,
 };
@@ -25,11 +24,6 @@ use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 const DEFAULT_MAX_TOKENS: i64 = 4096;
 // a reply made now carries a Unix time far past this, and ours carries the fixed clock
 const CREATED_FLOOR: u64 = 1_000_000_000;
-
-pub(super) fn select(models: &[String]) -> Value {
-    let selected: Vec<bool> = models.iter().map(|name| model::selects(name)).collect();
-    json!({ "selected": selected })
-}
 
 // a registered template stays registered, so a case sees every custom prompt set up to itself
 pub(super) fn prompts(fixture: &Fixture, cases: &[PromptCase]) -> HelperResult {

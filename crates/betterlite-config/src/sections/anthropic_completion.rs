@@ -125,14 +125,11 @@ where
         Json::List(items) => {
             let mut resolved = Vec::with_capacity(items.len());
             for item in items {
-                resolved.push(match item {
-                    Json::Object(fields) => Json::Object(resolved_fields(fields, path, lookup)?),
-                    item @ Json::Null
-                    | item @ Json::Bool(_)
-                    | item @ Json::Number(_)
-                    | item @ Json::Text(_)
-                    | item @ Json::List(_) => item,
-                });
+                if let Json::Object(fields) = item {
+                    resolved.push(Json::Object(resolved_fields(fields, path, lookup)?));
+                    continue;
+                }
+                resolved.push(item);
             }
             Ok(Json::List(resolved))
         }

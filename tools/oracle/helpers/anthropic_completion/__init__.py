@@ -86,8 +86,8 @@ def auth_case(config: TextConfig, case: AuthCase) -> JsonValue:
             api_key=case["api_key"],
         )
     except ValueError as error:
-        return JSON.validate_python({"ok": False, "message": str(error)})
-    return JSON.validate_python({"ok": True, "headers": headers})
+        return {"ok": False, "message": str(error)}
+    return {"ok": True, "headers": JSON.validate_python(headers)}
 
 
 def options(input_value: OptionsInput) -> JsonValue:
@@ -100,17 +100,16 @@ def options(input_value: OptionsInput) -> JsonValue:
             metadata=constructor["metadata"],
         )
     )
-    cases: list[dict[str, dict[str, JsonValue]]] = []
+    cases: list[JsonValue] = []
     for case in input_value["cases"]:
         mapped = config.map_openai_params(
-            case["non_default"], dict(case["existing"]), case["model"], False
+            case["non_default"], dict(case["existing"]), case["model"], drop_params=False
         )
         # transform_request fills the configured defaults into the dict it gets, so it gets a copy
         body = request_body(config, case["model"], case["messages"], dict(mapped))
         cases.append({"mapped": mapped, "body": body})
-    return JSON.validate_python(
-        {"supported": config.get_supported_openai_params(model=MODEL), "cases": cases}
-    )
+    supported = JSON.validate_python(config.get_supported_openai_params(model=MODEL))
+    return {"supported": supported, "cases": cases}
 
 
 def reply_case(config: TextConfig, case: ReplyCase) -> JsonValue:
@@ -140,78 +139,64 @@ def reply_case(config: TextConfig, case: ReplyCase) -> JsonValue:
             encoding=None,
         )
     except BaseLLMException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
-        return JSON.validate_python(
-            {"ok": False, "status": error.status_code, "message": error.message}
-        )
+        return {"ok": False, "status": error.status_code, "message": error.message}
     view = RESPONSE.validate_json(result.model_dump_json())
     choice = view["choices"][0]
     usage = view["usage"]
-    return JSON.validate_python(
-        {
-            "ok": True,
-            "content": choice["message"]["content"],
-            "finish_reason": choice["finish_reason"],
-            "id": view["id"],
-            "model": view["model"],
-            "created_is_current": view["created"] > CREATED_FLOOR,
-            "usage": [usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]],
-        }
-    )
+    return {
+        "ok": True,
+        "content": choice["message"]["content"],
+        "finish_reason": choice["finish_reason"],
+        "id": view["id"],
+        "model": view["model"],
+        "created_is_current": view["created"] > CREATED_FLOOR,
+        "usage": [usage["prompt_tokens"], usage["completion_tokens"], usage["total_tokens"]],
+    }
 
 
 def error_case(config: TextConfig, case: ErrorCase) -> JsonValue:
     error = config.get_error_class(case["message"], case["status_code"], case["headers"])
-    return JSON.validate_python(
-        {
-            "status_code": error.status_code,
-            "message": error.message,
-            "method": error.request.method,
-            "url": str(error.request.url),
-            "response_status": error.response.status_code,
-            "headers_kept": error.headers is not None,
-        }
-    )
+    return {
+        "status_code": error.status_code,
+        "message": error.message,
+        "method": error.request.method,
+        "url": str(error.request.url),
+        "response_status": error.response.status_code,
+        "headers_kept": error.headers is not None,
+    }
 
 
 def run(input_value: Input) -> JsonValue:
     config = as_config(AnthropicTextConfig())
     output: JsonValue
     if input_value["function"] == "select":
-        output = JSON.validate_python(
-            {"selected": [selected(model) for model in input_value["models"]]}
-        )
+        flags: list[JsonValue] = [selected(model) for model in input_value["models"]]
+        output = {"selected": flags}
     elif input_value["function"] == "prompt":
-        output = JSON.validate_python(
-            {"prompts": [prompt_case(config, case) for case in input_value["cases"]]}
-        )
+        prompts: list[JsonValue] = [prompt_case(config, case) for case in input_value["cases"]]
+        output = {"prompts": prompts}
     elif input_value["function"] == "auth":
-        output = JSON.validate_python(
-            {"results": [auth_case(config, case) for case in input_value["cases"]]}
-        )
+        results: list[JsonValue] = [auth_case(config, case) for case in input_value["cases"]]
+        output = {"results": results}
     elif input_value["function"] == "options":
         output = options(input_value)
     elif input_value["function"] == "reply":
-        output = JSON.validate_python(
-            {"replies": [reply_case(config, case) for case in input_value["cases"]]}
-        )
+        replies: list[JsonValue] = [reply_case(config, case) for case in input_value["cases"]]
+        output = {"replies": replies}
     elif input_value["function"] == "chunk":
         parser = config.get_model_response_iterator(NO_STREAM, sync_stream=True, json_mode=False)
         parsed = [parser.chunk_parser(chunk) for chunk in input_value["chunks"]]
-        output = JSON.validate_python(
+        chunks: list[JsonValue] = [
             {
-                "chunks": [
-                    {
-                        "text": chunk["text"],
-                        "is_finished": chunk["is_finished"],
-                        "finish_reason": chunk["finish_reason"],
-                        "index": chunk["index"],
-                    }
-                    for chunk in parsed
-                ]
+                "text": chunk["text"],
+                "is_finished": chunk["is_finished"],
+                "finish_reason": chunk["finish_reason"],
+                "index": chunk["index"],
             }
-        )
+            for chunk in parsed
+        ]
+        output = {"chunks": chunks}
     else:
-        output = JSON.validate_python(
-            {"errors": [error_case(config, case) for case in input_value["cases"]]}
-        )
-    return output
+        errors: list[JsonValue] = [error_case(config, case) for case in input_value["cases"]]
+        output = {"errors": errors}
+    return JSON.validate_python(output)
