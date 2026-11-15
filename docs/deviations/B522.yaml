@@ -1,0 +1,15 @@
+task: B522
+deviations:
+  - what: A retrieve, delete, file list or file content call whose container_id or file_id is empty, "." or ".." still builds the URL, with an empty path segment or the id percent-encoded as %2E or %2E%2E, where LiteLLM raises ValueError and no request is made.
+    why: B3360's request transforms answer with a (url, data) pair and carry no error channel, so the OpenAI implementation cannot surface B171's encode_segment error. The id is fully escaped instead of dropped or normalized.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L96-L113
+  - what: A resource URL built from a base that is not an absolute URL joins the base's trailing slashes and the suffix as text, where LiteLLM's httpx.URL raises InvalidURL.
+    why: join_container_api_base_path returns a String, so the join cannot fail. A parseable base keeps its query and fragment through the URL crate exactly as httpx.URL does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/utils.py#L8-L20
+kept_bugs:
+  - what: validate_environment writes the literal "Bearer None" as Authorization when no key resolves from the call, the litellm globals or OPENAI_API_KEY.
+    why: A setup that calls the containers API through a proxy which injects or ignores the key relies on the header being present, so betterlite keeps the header rather than omitting it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L102-L113
+  - what: The create request body drops only extra_headers; every other optional parameter, extra_body included, is copied into the JSON body sent upstream.
+    why: The task text names extra_headers as the only removed key, and a setup that passes extra_body relies on the create request keeping it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/containers/transformation.py#L131-L150
