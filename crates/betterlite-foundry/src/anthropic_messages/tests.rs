@@ -87,8 +87,9 @@ fn settings(token: Option<&str>, client_secret: Option<&str>) -> DeploymentSetti
 
 // Stands in for B960: it must see the defaults already applied, and a header can make it fail
 fn fixture_betas(mut headers: Headers) -> Result<Headers, BetaFailure> {
-    assert!(headers.contains_key("anthropic-version") && headers.contains_key("content-type"));
-    if headers.contains_key("fail-betas") {
+    let has_version = headers.contains_key("anthropic-version");
+    let has_content_type = headers.contains_key("content-type");
+    if !has_version || !has_content_type || headers.contains_key("fail-betas") {
         return Err(BetaFailure);
     }
     headers.insert("anthropic-beta".to_owned(), "fixture-beta".to_owned());
@@ -420,32 +421,29 @@ fn key_of(outcome: &Outcome, name: &str) -> Option<String> {
         .cloned()
 }
 
+fn identity_call(
+    headers: &[(&str, &str)],
+    argument_key: Option<&str>,
+    token: Option<&str>,
+) -> Outcome {
+    environment(EnvironmentCall {
+        headers: headers
+            .iter()
+            .map(|&(name, value)| (name.to_owned(), value.to_owned()))
+            .collect(),
+        params: None,
+        argument_key: argument_key.map(str::to_owned),
+        configured_key: None,
+        token: token.map(str::to_owned),
+        api_base: None,
+    })
+}
+
 #[test]
 fn anthropic_messages_credential_identity_isolation() {
-    let from_header = environment(EnvironmentCall {
-        headers: BTreeMap::from([("api-key".to_owned(), "identity-a-key".to_owned())]),
-        params: None,
-        argument_key: None,
-        configured_key: None,
-        token: None,
-        api_base: None,
-    });
-    let from_argument = environment(EnvironmentCall {
-        headers: BTreeMap::new(),
-        params: None,
-        argument_key: Some("identity-b-key".to_owned()),
-        configured_key: None,
-        token: None,
-        api_base: None,
-    });
-    let from_token = environment(EnvironmentCall {
-        headers: BTreeMap::new(),
-        params: None,
-        argument_key: None,
-        configured_key: None,
-        token: Some("identity-c-token".to_owned()),
-        api_base: None,
-    });
+    let from_header = identity_call(&[("api-key", "identity-a-key")], None, None);
+    let from_argument = identity_call(&[], Some("identity-b-key"), None);
+    let from_token = identity_call(&[], None, Some("identity-c-token"));
     let anonymous = environment(EnvironmentCall::default());
     assert_eq!(
         key_of(&from_header, "x-api-key").as_deref(),
@@ -463,14 +461,7 @@ fn anthropic_messages_credential_identity_isolation() {
     assert_eq!(key_of(&from_token, "x-api-key"), None);
     assert_eq!(key_of(&anonymous, "x-api-key"), None);
     assert_eq!(key_of(&anonymous, "Authorization"), None);
-    let repeated = environment(EnvironmentCall {
-        headers: BTreeMap::new(),
-        params: None,
-        argument_key: Some("identity-b-key".to_owned()),
-        configured_key: None,
-        token: None,
-        api_base: None,
-    });
+    let repeated = identity_call(&[], Some("identity-b-key"), None);
     assert_eq!(repeated, from_argument);
 }
 
