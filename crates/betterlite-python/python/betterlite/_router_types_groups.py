@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import ClassVar, Literal, Required
 
-from pydantic import ConfigDict, Field, JsonValue, field_validator
+from pydantic import ConfigDict, Field, JsonValue, model_validator
 from typing_extensions import TypedDict
 
 from betterlite._router_types_config import CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS
@@ -81,14 +81,21 @@ class ModelGroupInfo(ResponseObject):
     # ast-grep-ignore: no-long-names
     configurable_clientside_auth_params: CONFIGURABLE_CLIENTSIDE_AUTH_PARAMS = None
 
-    @field_validator(
-        "supports_parallel_function_calling", "supports_vision", "supports_web_search",
-        "supports_url_context", "supports_reasoning", "supports_function_calling",
-        "supports_fast_mode", mode="before",
-    )
+    @model_validator(mode="before")
     @classmethod
-    def _unset_bool_is_false(cls, value: JsonValue) -> JsonValue:
-        return False if value is None else value
+    def _unset_bool_is_false(cls, data: JsonValue) -> JsonValue:
+        match data:
+            case dict():
+                filled: dict[str, JsonValue] = dict(data)
+                for name in (
+                    "supports_parallel_function_calling", "supports_vision",
+                    "supports_web_search", "supports_url_context", "supports_reasoning",
+                    "supports_function_calling", "supports_fast_mode",
+                ):
+                    if filled.get(name) is None:
+                        filled[name] = False
+                return filled
+        return data
 
 
 class AssistantsTypedDict(TypedDict):
