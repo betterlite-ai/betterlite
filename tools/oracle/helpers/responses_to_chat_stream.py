@@ -5,6 +5,7 @@ from litellm.completion_extras.litellm_responses_transformation.transformation i
 )
 from litellm.types.utils import ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
+from typing_extensions import override
 
 
 class StreamEvent(TypedDict, total=False):
@@ -32,7 +33,12 @@ class LineReader(ResponsesStream):
         super().__init__(iter([]), sync_stream=True)
         self.chunks: list[ModelResponseStream] = []
 
-    def chunk_parser(self, chunk: dict[str, object]) -> ModelResponseStream:
+    @override
+    def chunk_parser(
+        self,
+        # ast-grep-ignore: no-loose-types
+        chunk: dict[str, object],
+    ) -> ModelResponseStream:
         parsed = super().chunk_parser(chunk)
         self.chunks.append(parsed)
         return parsed
@@ -51,7 +57,9 @@ def run(input_value: Input) -> JsonValue:
 def _events(call: EventCall) -> JsonValue:
     iterator = ResponsesStream(iter([]), sync_stream=True)
     steps: list[JsonValue] = [
-        DUMP.validate_json(iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True))
+        DUMP.validate_json(
+            iterator.chunk_parser(EVENT.validate_python(event)).model_dump_json(exclude_unset=True)
+        )
         for event in call["events"]
     ]
     result: dict[str, JsonValue] = {"steps": steps}
@@ -61,7 +69,8 @@ def _events(call: EventCall) -> JsonValue:
 def _lines(call: LineCall) -> JsonValue:
     reader = LineReader()
     steps: list[JsonValue] = [
-        DUMP.validate_json(reader.read(line).model_dump_json(exclude_unset=True)) for line in call["lines"]
+        DUMP.validate_json(reader.read(line).model_dump_json(exclude_unset=True))
+        for line in call["lines"]
     ]
     result: dict[str, JsonValue] = {"steps": steps}
     return result
