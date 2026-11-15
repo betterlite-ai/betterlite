@@ -45,7 +45,7 @@ pub(super) fn chunk_view(chunk: InvokeChunk) -> Result<Value, serde_json::Error>
             ChunkProjection::Generic(generic) => return Ok(generic_view(generic)),
             ChunkProjection::Converse(converse) => (to_value(converse)?, ""),
         },
-        InvokeChunk::Anthropic(chunk) => (to_value(*chunk)?, "/choices/0"),
+        InvokeChunk::Anthropic(parsed) => (to_value(*parsed)?, "/choices/0"),
         InvokeChunk::DeepSeek(reply) | InvokeChunk::OpenAiCompatible(reply) => {
             (to_value(*reply)?, "/choices/0")
         }
