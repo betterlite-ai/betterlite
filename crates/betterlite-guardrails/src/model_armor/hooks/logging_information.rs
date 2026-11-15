@@ -22,13 +22,16 @@ pub(super) enum ApplyVerdict {
 }
 
 // LiteLLM's add_guardrail_response_to_standard_logging_object call in async_post_call_success_hook
-pub(super) fn append_post_call<T: ArmorTokens>(
+pub(super) fn append_post_call<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &Data,
     model_call_details: Option<&mut BTreeMap<String, GuardrailValue>>,
     body: &GuardrailValue,
     blocked: bool,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let logged = GuardrailValue::Object(BTreeMap::from([
         (
             "model_armor_response".to_owned(),
@@ -62,13 +65,16 @@ pub(super) fn append_post_call<T: ArmorTokens>(
 }
 
 // LiteLLM's apply_guardrail record: the provider always set, the verdict in the status, no event type
-pub(super) fn record_apply_guardrail<T: ArmorTokens>(
+pub(super) fn record_apply_guardrail<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &mut Data,
     context: &mut HookContext<'_>,
     verdict: ApplyVerdict,
     times: RecordTimes,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let (guardrail_response, guardrail_status) = match verdict {
         ApplyVerdict::Success { response } => (response, GuardrailStatus::Success),
         ApplyVerdict::Flagged { response } => (response, GuardrailStatus::GuardrailFlagged),

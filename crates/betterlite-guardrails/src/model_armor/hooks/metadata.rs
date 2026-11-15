@@ -120,12 +120,15 @@ fn number_of(value: &GuardrailValue) -> Option<f64> {
 }
 
 // LiteLLM scans files into the same per-request bucket the text scan later appends to
-pub(super) async fn scan_files<T: ArmorTokens>(
+pub(super) async fn scan_files<T>(
     data: &mut Data,
     messages: &[Message],
     transport: &ModelArmorTransport<T>,
     settings: &FileScanSettings,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let key = bucket_key(data);
     let previous = data.get(key).cloned();
     let mut slots = MetadataSlots::default();

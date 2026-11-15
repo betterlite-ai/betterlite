@@ -51,28 +51,24 @@ pub struct ModelArmorHooks<'guardrail, T: ArmorTokens> {
     pub clock: fn() -> SystemTime,
 }
 
-impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
-    pub async fn pre_call(
-        &self,
-        data: &mut Data,
-        call_type: Option<&str>,
-        context: &mut HookContext<'_>,
-    ) -> Result<(), HookError<T::Error>> {
-        let scanned = pre_call::scan(self, data, HookPhase::PreCall, call_type, context).await;
-        error_handling::hook_outcome(scanned, self.fail_on_error, "pre-call")?;
-        logging::process_response(self, data, context)
-    }
+// LiteLLM's pre-call and moderation hooks run the same scan, and only the event phase differs
+macro_rules! request_hook {
+    ($name:ident, $phase:expr) => {
+        pub async fn $name(
+            &self,
+            data: &mut Data,
+            call_type: Option<&str>,
+            context: &mut HookContext<'_>,
+        ) -> Result<(), HookError<T::Error>> {
+            let scanned = pre_call::scan(self, data, $phase, call_type, context).await;
+            self.finish(data, scanned, $phase, context)
+        }
+    };
+}
 
-    pub async fn moderation(
-        &self,
-        data: &mut Data,
-        call_type: Option<&str>,
-        context: &mut HookContext<'_>,
-    ) -> Result<(), HookError<T::Error>> {
-        let scanned = pre_call::scan(self, data, moderation::PHASE, call_type, context).await;
-        error_handling::hook_outcome(scanned, self.fail_on_error, "moderation")?;
-        logging::process_response(self, data, context)
-    }
+impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
+    request_hook!(pre_call, HookPhase::PreCall);
+    request_hook!(moderation, moderation::PHASE);
 
     pub async fn post_call_success(
         &self,
@@ -82,9 +78,20 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
     ) -> Result<(), HookError<T::Error>> {
         let scanned = post_call::scan(self, data, response, context).await;
         error_handling::hook_outcome(scanned, self.fail_on_error, "post-call")?;
-        logging::process_response(self, data, context)
+        self.process_response(data, context)
+    }
+
+    // LiteLLM's `except` clauses around a hook and its _process_response call on the way out
+    fn finish(
+        &self,
+        data: &mut Data,
+        scanned: Result<(), HookError<T::Error>>,
+        phase: HookPhase,
+        context: &mut HookContext<'_>,
+    ) -> Result<(), HookError<T::Error>> {
+        error_handling::hook_outcome(scanned, self.fail_on_error, phase.hook_name())?;
+        self.process_response(data, context)
     }
 }
 
-#[cfg(test)]
 mod tests;

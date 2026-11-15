@@ -1,3 +1,3 @@
 #![cfg(test)]
 
-mod support;
+pub(super) mod support;

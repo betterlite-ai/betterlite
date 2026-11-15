@@ -12,14 +12,33 @@ use crate::model_armor::request_files::ScanError;
 use crate::model_armor::transport::ArmorResponse;
 use crate::model_armor::transport::error::{ArmorCallError, ArmorTokenError, TransportError};
 
-fn api_error() -> ArmorCallError<ArmorTokenError> {
-    ArmorCallError::Api(ModelArmorAPIError {
-        detail: "Model Armor API error (upstream 400)".to_owned(),
-    })
+#[derive(Clone, Copy)]
+enum CallFailure {
+    Api,
+    Transport,
 }
 
-fn transport_error() -> ArmorCallError<ArmorTokenError> {
-    ArmorCallError::Transport(TransportError::MissingTemplate)
+fn call_error(kind: CallFailure) -> ArmorCallError<ArmorTokenError> {
+    match kind {
+        CallFailure::Api => ArmorCallError::Api(ModelArmorAPIError {
+            detail: "Model Armor API error (upstream 400)".to_owned(),
+        }),
+        CallFailure::Transport => ArmorCallError::Transport(TransportError::MissingTemplate),
+    }
+}
+
+fn closed_matches(
+    kind: CallFailure,
+    outcome: &Result<Option<ArmorResponse>, HookError<ArmorTokenError>>,
+) -> bool {
+    matches!(
+        (kind, outcome),
+        (CallFailure::Api, Err(HookError::Api(_)))
+            | (
+                CallFailure::Transport,
+                Err(HookError::Transport(TransportError::MissingTemplate))
+            )
+    )
 }
 
 fn response() -> ArmorResponse {
@@ -36,6 +55,14 @@ fn block() -> HookError<ArmorTokenError> {
     }
 }
 
+fn field_error() -> HookError<ArmorTokenError> {
+    HookError::Field(FieldError {
+        field: "messages",
+        expected: "a list of messages with a string role",
+        source: None,
+    })
+}
+
 #[test]
 fn error_handling_a_response_passes_through() {
     let outcome = call_outcome::<ArmorTokenError>(Ok(response()), true, "pre-call");
@@ -43,30 +70,13 @@ fn error_handling_a_response_passes_through() {
 }
 
 #[rstest]
-#[case::fail_closed(true)]
-#[case::fail_open(false)]
-fn error_handling_api_errors_follow_fail_on_error(#[case] fail_on_error: bool) {
-    let outcome = call_outcome(Err(api_error()), fail_on_error, "pre-call");
-    if fail_on_error {
-        assert!(matches!(outcome, Err(HookError::Api(_))));
-    } else {
-        assert!(outcome.expect("fail open").is_none());
-    }
-}
-
-#[rstest]
-#[case::fail_closed(true)]
-#[case::fail_open(false)]
-fn error_handling_transport_errors_follow_fail_on_error(#[case] fail_on_error: bool) {
-    let outcome = call_outcome(Err(transport_error()), fail_on_error, "pre-call");
-    if fail_on_error {
-        assert!(matches!(
-            outcome,
-            Err(HookError::Transport(TransportError::MissingTemplate))
-        ));
-    } else {
-        assert!(outcome.expect("fail open").is_none());
-    }
+#[case::api(CallFailure::Api)]
+#[case::transport(CallFailure::Transport)]
+fn error_handling_call_errors_follow_fail_on_error(#[case] kind: CallFailure) {
+    let closed = call_outcome(call_error(kind), true, "pre-call");
+    assert!(closed_matches(kind, &closed));
+    let open = call_outcome(call_error(kind), false, "pre-call");
+    assert!(open.expect("fail open").is_none());
 }
 
 #[test]
@@ -90,7 +100,7 @@ fn error_handling_a_block_is_never_swallowed(#[case] fail_on_error: bool) {
 
 #[test]
 fn error_handling_a_selection_error_is_never_swallowed() {
-    let error = HookError::Selection(GuardrailSelectionError::TagMode {
+    let error = HookError::<ArmorTokenError>::Selection(GuardrailSelectionError::TagMode {
         guardrail_name: Some("armor".to_owned()),
     });
     let outcome = hook_outcome(Err(error), false, "pre-call");
@@ -101,17 +111,8 @@ fn error_handling_a_selection_error_is_never_swallowed() {
 #[case::fail_closed(true)]
 #[case::fail_open(false)]
 fn error_handling_other_errors_follow_fail_on_error(#[case] fail_on_error: bool) {
-    let error = HookError::Field(FieldError {
-        field: "messages",
-        expected: "a list of messages with a string role",
-        source: None,
-    });
-    let outcome = hook_outcome(Err(error), fail_on_error, "pre-call");
-    if fail_on_error {
-        assert!(matches!(outcome, Err(HookError::Field(_))));
-    } else {
-        outcome.expect("fail open");
-    }
+    let outcome = hook_outcome(Err(field_error()), fail_on_error, "pre-call");
+    assert_eq!(matches!(outcome, Err(HookError::Field(_))), fail_on_error);
 }
 
 #[test]

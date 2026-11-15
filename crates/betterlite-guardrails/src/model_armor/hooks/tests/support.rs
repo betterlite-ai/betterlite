@@ -111,13 +111,17 @@ async fn serve(replies: Vec<(StatusCode, String)>) -> (String, Arc<Mutex<Vec<Rec
     (endpoint, recorded, server)
 }
 
-fn transport(endpoint: &str, sanitize_error_detail: bool) -> ModelArmorTransport<StubTokens> {
+const TEMPLATE_ID: &str = "template";
+const PROJECT_ID: &str = "project";
+const LOCATION: &str = "us-central1";
+
+fn transport(guardrail: &ModelArmorGuardrail, endpoint: &str) -> ModelArmorTransport<StubTokens> {
     ModelArmorTransport {
-        template_id: Some("template".to_owned()),
-        project_id: Some("project".to_owned()),
-        location: "us-central1".to_owned(),
+        template_id: guardrail.template_id.clone(),
+        project_id: guardrail.project_id.clone(),
+        location: guardrail.location.clone(),
         api_endpoint: Some(endpoint.to_owned()),
-        sanitize_error_detail,
+        sanitize_error_detail: guardrail.sanitize_error_detail,
         timeout: None,
         client: client(),
         tokens: Arc::new(StubTokens),
@@ -131,9 +135,9 @@ fn params(
     sanitize_error_detail: bool,
 ) -> ModelArmorParams {
     ModelArmorParams {
-        template_id: Some("template".to_owned()),
-        project_id: Some("project".to_owned()),
-        location: Some("us-central1".to_owned()),
+        template_id: Some(TEMPLATE_ID.to_owned()),
+        project_id: Some(PROJECT_ID.to_owned()),
+        location: Some(LOCATION.to_owned()),
         credentials: None,
         api_endpoint: Some(endpoint.to_owned()),
         sanitize_error_detail: Some(sanitize_error_detail),
@@ -200,7 +204,7 @@ pub(crate) async fn armor_with(
     let guardrail = ModelArmorGuardrail::new(params(&endpoint, settings, sanitize_error_detail))
         .expect("guardrail");
     Armor {
-        transport: transport(&endpoint, sanitize_error_detail),
+        transport: transport(&guardrail, &endpoint),
         guardrail,
         recorded,
         _server: server,
@@ -215,7 +219,7 @@ pub(crate) async fn offline_armor() -> Armor {
     let guardrail =
         ModelArmorGuardrail::new(params(&endpoint, settings(), false)).expect("guardrail");
     Armor {
-        transport: transport(&endpoint, false),
+        transport: transport(&guardrail, &endpoint),
         guardrail,
         recorded: Arc::new(Mutex::new(Vec::new())),
         _server: JoinSet::new(),
@@ -224,20 +228,18 @@ pub(crate) async fn offline_armor() -> Armor {
 
 impl Armor {
     pub(crate) fn hooks(&self) -> ModelArmorHooks<'_, StubTokens> {
-        ModelArmorHooks {
-            guardrail: &self.guardrail,
-            transport: &self.transport,
-            fail_on_error: true,
-            skip_unscannable_attachments: false,
-            clock: fixed_clock,
-        }
+        self.hooks_with(true)
     }
 
     pub(crate) fn hooks_fail_open(&self) -> ModelArmorHooks<'_, StubTokens> {
+        self.hooks_with(false)
+    }
+
+    fn hooks_with(&self, fail_on_error: bool) -> ModelArmorHooks<'_, StubTokens> {
         ModelArmorHooks {
             guardrail: &self.guardrail,
             transport: &self.transport,
-            fail_on_error: false,
+            fail_on_error,
             skip_unscannable_attachments: false,
             clock: fixed_clock,
         }
@@ -263,24 +265,23 @@ impl Armor {
     }
 }
 
-// The text field of the sanitizeUserPrompt / sanitizeModelResponse body the hook sent
-pub(crate) fn sent_text(recorded: &Recorded) -> String {
-    let payload = match &recorded.body {
-        GuardrailValue::Object(fields) => fields
-            .get("userPromptData")
-            .or_else(|| fields.get("modelResponseData")),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Text(_)
-        | GuardrailValue::Array(_) => None,
+// The prompt data object of whichever source the hook scanned
+fn sent_payload(recorded: &Recorded) -> &BTreeMap<String, GuardrailValue> {
+    let GuardrailValue::Object(fields) = &recorded.body else {
+        panic!("no request body in {:?}", recorded.body);
     };
+    let payload = fields
+        .get("userPromptData")
+        .or_else(|| fields.get("modelResponseData"));
     let Some(GuardrailValue::Object(payload)) = payload else {
         panic!("no prompt data in {:?}", recorded.body);
     };
-    match payload.get("text") {
+    payload
+}
+
+// The text field of the sanitizeUserPrompt / sanitizeModelResponse body the hook sent
+pub(crate) fn sent_text(recorded: &Recorded) -> String {
+    match sent_payload(recorded).get("text") {
         Some(GuardrailValue::Text(text)) => text.clone(),
         other => panic!("no text in {other:?}"),
     }
@@ -288,13 +289,7 @@ pub(crate) fn sent_text(recorded: &Recorded) -> String {
 
 // The byteData field of the sanitizeUserPrompt body a file scan sent
 pub(crate) fn sent_file(recorded: &Recorded) -> String {
-    let GuardrailValue::Object(fields) = &recorded.body else {
-        panic!("no file request body in {:?}", recorded.body);
-    };
-    let Some(GuardrailValue::Object(payload)) = fields.get("userPromptData") else {
-        panic!("no prompt data in {:?}", recorded.body);
-    };
-    let Some(GuardrailValue::Object(item)) = payload.get("byteItem") else {
+    let Some(GuardrailValue::Object(item)) = sent_payload(recorded).get("byteItem") else {
         panic!("no byte item in {:?}", recorded.body);
     };
     match item.get("byteData") {
@@ -409,9 +404,9 @@ pub(crate) fn file_settings(fail_on_error: bool) -> FileScanSettings {
     }
 }
 
-pub(crate) fn texts(values: &[&str]) -> GuardrailApiInputs {
+fn inputs(texts: Option<Vec<String>>) -> GuardrailApiInputs {
     GuardrailApiInputs {
-        texts: Some(values.iter().map(|value| String::from(*value)).collect()),
+        texts,
         images: None,
         tools: None,
         tool_calls: None,
@@ -421,16 +416,14 @@ pub(crate) fn texts(values: &[&str]) -> GuardrailApiInputs {
     }
 }
 
+pub(crate) fn texts(values: &[&str]) -> GuardrailApiInputs {
+    inputs(Some(
+        values.iter().map(|value| String::from(*value)).collect(),
+    ))
+}
+
 pub(crate) fn no_texts() -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: None,
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
-    }
+    inputs(None)
 }
 
 pub(crate) fn blocked<E>(error: HookError<E>) -> (u16, IndexMap<String, GuardrailValue>)

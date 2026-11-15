@@ -16,7 +16,7 @@ use crate::model_armor::transport::wire::Source;
 use super::error_handling::HookError;
 use super::logging_information::{self, ApplyVerdict};
 use super::timing::{self, RecordTimes};
-use super::{Data, HookContext, ModelArmorHooks, logging};
+use super::{Data, HookContext, ModelArmorHooks};
 
 impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
     // LiteLLM's apply_guardrail: scan, record the verdict, and block only outside logging_only mode
@@ -27,15 +27,15 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
         input_type: GuardrailInputType,
         context: &mut HookContext<'_>,
     ) -> Result<GuardrailApiInputs, HookError<T::Error>> {
-        let content = joined_texts(&inputs);
-        if content.is_empty() {
-            logging::process_response(self, data, context)?;
+        let text = joined_texts(&inputs);
+        if text.is_empty() {
+            self.process_response(data, context)?;
             return Ok(inputs);
         }
         let started_at = (self.clock)();
         let result = self
             .transport
-            .make_model_armor_request(Some(&content), source(input_type), None)
+            .make_model_armor_request(Some(&text), source(input_type), None)
             .await;
         let times = timing::between(started_at, (self.clock)());
         self.record_verdict(data, context, result, times, input_type)?;

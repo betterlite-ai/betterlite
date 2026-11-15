@@ -80,10 +80,7 @@ where
             Ok(None)
         }
         Err(ArmorCallError::Transport(error)) => {
-            tracing::error!(error = %error, hook, "Model Armor request failed");
-            if fail_on_error {
-                return Err(HookError::Transport(error));
-            }
+            hook_outcome(Err(HookError::Transport(error)), fail_on_error, hook)?;
             Ok(None)
         }
     }
@@ -98,11 +95,12 @@ pub(super) fn hook_outcome<E>(
 where
     E: StdError + Send + Sync + 'static,
 {
-    let error = match result {
-        Ok(()) => return Ok(()),
-        Err(error @ (HookError::Blocked { .. } | HookError::Selection(_))) => return Err(error),
-        Err(error) => error,
+    let Err(error) = result else {
+        return Ok(());
     };
+    if matches!(&error, HookError::Blocked { .. } | HookError::Selection(_)) {
+        return Err(error);
+    }
     tracing::error!(error = %error, hook, "Model Armor error");
     if fail_on_error { Err(error) } else { Ok(()) }
 }

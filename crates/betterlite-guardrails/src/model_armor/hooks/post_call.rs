@@ -13,12 +13,15 @@ use super::applied_guardrails;
 use super::error_handling::{HookError, call_outcome};
 use super::{Data, HookContext, ModelArmorHooks, logging_information, response_masking};
 
-pub(super) async fn scan<T: ArmorTokens>(
+pub(super) async fn scan<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &mut Data,
     response: &mut CallResponse,
     context: &mut HookContext<'_>,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     if !hooks.guardrail.base.should_run_guardrail(
         data,
         GuardrailEventHooks::PostCall,
@@ -26,41 +29,47 @@ pub(super) async fn scan<T: ArmorTokens>(
     )? {
         return Ok(());
     }
-    let content = extract_content_from_response(response)?;
-    if content.is_empty() {
+    let text = extract_content_from_response(response)?;
+    if text.is_empty() {
         tracing::debug!("Model Armor: No text content to process in response, skipping guardrail");
         return Ok(());
     }
-    let Some(armor) = scan_response(hooks, &content).await? else {
+    let Some(armor) = scan_response(hooks, &text).await? else {
         return Ok(());
     };
     let mask = hooks.guardrail.base.settings.mask_response_content;
     record(hooks, data, context, &armor, mask)?;
     if mask {
-        response_masking::apply(response, &content, get_sanitized_content(&armor.verdict));
+        response_masking::apply(response, &text, get_sanitized_content(&armor.verdict));
     }
     Ok(())
 }
 
-async fn scan_response<T: ArmorTokens>(
+async fn scan_response<T>(
     hooks: &ModelArmorHooks<'_, T>,
-    content: &str,
-) -> Result<Option<ArmorResponse>, HookError<T::Error>> {
+    text: &str,
+) -> Result<Option<ArmorResponse>, HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let result = hooks
         .transport
-        .make_model_armor_request(Some(content), Source::ModelResponse, None)
+        .make_model_armor_request(Some(text), Source::ModelResponse, None)
         .await;
     call_outcome(result, hooks.fail_on_error, "post-call")
 }
 
 // LiteLLM writes the standard logging record and the applied header before it decides to block
-fn record<T: ArmorTokens>(
+fn record<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &mut Data,
     context: &mut HookContext<'_>,
     armor: &ArmorResponse,
     mask: bool,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let blocked = should_block_content(&armor.verdict, mask);
     logging_information::append_post_call(
         hooks,

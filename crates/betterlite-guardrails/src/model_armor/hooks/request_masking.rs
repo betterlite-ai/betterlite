@@ -34,8 +34,7 @@ pub(super) fn read_messages(data: &Data) -> Result<Option<Vec<Message>>, FieldEr
     Ok((!messages.is_empty()).then_some(messages))
 }
 
-// LiteLLM's set_last_user_message on the request's own list: drop the trailing user run, append the
-// masked turn, and leave every earlier message exactly as the client sent it
+// LiteLLM's set_last_user_message: drop the trailing user run, append the masked turn, keep the rest
 pub(super) fn apply(
     data: &mut Data,
     messages: &[Message],

@@ -13,13 +13,16 @@ use super::error_handling::{HookError, call_outcome};
 use super::events::HookPhase;
 use super::{Data, HookContext, ModelArmorHooks, metadata, request_masking};
 
-pub(super) async fn scan<T: ArmorTokens>(
+pub(super) async fn scan<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &mut Data,
     phase: HookPhase,
     call_type: Option<&str>,
     context: &mut HookContext<'_>,
-) -> Result<(), HookError<T::Error>> {
+) -> Result<(), HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let guardrail = hooks.guardrail;
     let event_type = phase.event_type(call_type);
     if !guardrail
@@ -38,27 +41,30 @@ pub(super) async fn scan<T: ArmorTokens>(
         skip_unscannable_attachments: hooks.skip_unscannable_attachments,
     };
     metadata::scan_files(data, &messages, hooks.transport, &settings).await?;
-    let Some(content) = get_last_user_message(&messages) else {
+    let Some(text) = get_last_user_message(&messages) else {
         return Ok(());
     };
-    let sanitized = scan_text(hooks, data, &content, phase.hook_name()).await?;
+    let sanitized = scan_text(hooks, data, &text, phase.hook_name()).await?;
     if guardrail.base.settings.mask_request_content {
-        request_masking::apply(data, &messages, &content, sanitized);
+        request_masking::apply(data, &messages, &text, sanitized);
     }
     Ok(())
 }
 
 // LiteLLM's try block for the prompt scan: record the verdict, mark the guardrail applied, then block
-async fn scan_text<T: ArmorTokens>(
+async fn scan_text<T>(
     hooks: &ModelArmorHooks<'_, T>,
     data: &mut Data,
-    content: &str,
+    text: &str,
     hook: &'static str,
-) -> Result<Option<String>, HookError<T::Error>> {
+) -> Result<Option<String>, HookError<T::Error>>
+where
+    T: ArmorTokens,
+{
     let guardrail = hooks.guardrail;
     let result = hooks
         .transport
-        .make_model_armor_request(Some(content), Source::UserPrompt, None)
+        .make_model_armor_request(Some(text), Source::UserPrompt, None)
         .await;
     let Some(armor) = call_outcome(result, hooks.fail_on_error, hook)? else {
         return Ok(None);
