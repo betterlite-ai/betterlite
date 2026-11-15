@@ -215,7 +215,7 @@ pub(crate) fn observing_publisher(
     })
 }
 
-async fn execute(store: &PostgresStore, sql: &str, params: &[&(dyn ToSql + Sync)]) {
+pub(crate) async fn execute(store: &PostgresStore, sql: &str, params: &[&(dyn ToSql + Sync)]) {
     let client = store.session().await.unwrap();
     client.execute(sql, params).await.unwrap();
 }
@@ -225,7 +225,7 @@ pub(crate) async fn insert_batch(
     unified_object_id: &str,
     status: Option<&str>,
     file_object: &str,
-) {
+) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let model_object_id = uuid::Uuid::new_v4().to_string();
     execute(
@@ -242,6 +242,7 @@ pub(crate) async fn insert_batch(
         ],
     )
     .await;
+    model_object_id
 }
 
 pub(crate) async fn set_batch_status(store: &PostgresStore, unified_object_id: &str, status: &str) {

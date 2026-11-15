@@ -4,7 +4,7 @@ use crate::budget_permission_rows::JsonData;
 
 use super::super::batch::ManagedBatchRepository;
 use super::super::decoder::decode_managed_batch_record;
-use super::support::{Case, Journal, insert_batch, recording_publisher};
+use super::support::{Case, Journal, execute, insert_batch, recording_publisher};
 use super::{BATCH_JSON, unchanged, write_of};
 
 struct AuthorRow {
@@ -19,24 +19,14 @@ struct AuthorRow {
 }
 
 async fn seed_author_row(case: &Case) -> String {
-    insert_batch(&case.writer, "author-null", Some("in_progress"), BATCH_JSON).await;
-    let client = case.writer.session().await.unwrap();
-    client
-        .execute(
-            "UPDATE \"LiteLLM_ManagedObjectTable\" SET created_by = 'creator', team_id = 'team', api_key = 'key', request_tags = '[\"tag\"]'::jsonb WHERE unified_object_id = 'author-null'",
-            &[],
-        )
-        .await
-        .unwrap();
-    let model_object_id = client
-        .query_one(
-            "SELECT model_object_id FROM \"LiteLLM_ManagedObjectTable\" WHERE unified_object_id = 'author-null'",
-            &[],
-        )
-        .await
-        .unwrap()
-        .get(0);
-    drop(client);
+    let model_object_id =
+        insert_batch(&case.writer, "author-null", Some("in_progress"), BATCH_JSON).await;
+    execute(
+        &case.writer,
+        "UPDATE \"LiteLLM_ManagedObjectTable\" SET created_by = 'creator', team_id = 'team', api_key = 'key', request_tags = '[\"tag\"]'::jsonb WHERE unified_object_id = 'author-null'",
+        &[],
+    )
+    .await;
     model_object_id
 }
 

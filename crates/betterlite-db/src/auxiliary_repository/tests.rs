@@ -708,7 +708,10 @@ async fn postgres_latest_session_exact_key_partition() {
     case.close().await;
 }
 
-async fn insert_tie_rows(case: &Case) {
+#[tokio::test]
+async fn session_desc_null_and_tie_semantics() {
+    let case = Case::new().await;
+    allow_null_turn_at(&case).await;
     insert_session(
         &case.writer,
         "tie-key",
@@ -725,13 +728,6 @@ async fn insert_tie_rows(case: &Case) {
         Some("2026-01-02 00:00:00"),
     )
     .await;
-}
-
-#[tokio::test]
-async fn session_desc_null_and_tie_semantics() {
-    let case = Case::new().await;
-    allow_null_turn_at(&case).await;
-    insert_tie_rows(&case).await;
     let repository = AutoRouterSessionRepository::new(
         Some(case.client()),
         recording_publisher(&Journal::default()),
