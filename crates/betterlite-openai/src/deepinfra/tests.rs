@@ -476,6 +476,37 @@ fn a_truthy_query_repeats_for_every_formal_document() {
 }
 
 #[test]
+fn a_queries_parameter_overrides_the_repeated_query() {
+    let documents = [
+        RerankDocument::Text(String::from("a")),
+        RerankDocument::Text(String::from("b")),
+    ];
+    let optional = map_cohere_rerank_params(&RerankMapRequest {
+        non_default_params: &params(r#"{"queries": ["x1"]}"#),
+        query: "q",
+        documents: &documents,
+    });
+    assert_eq!(optional, params(r#"{"queries": ["x1"]}"#));
+}
+
+#[test]
+fn the_repetition_counts_the_formal_documents_not_an_overlay() {
+    let documents = [
+        RerankDocument::Text(String::from("a")),
+        RerankDocument::Text(String::from("b")),
+    ];
+    let optional = map_cohere_rerank_params(&RerankMapRequest {
+        non_default_params: &params(r#"{"documents": ["x", "y", "z"]}"#),
+        query: "q",
+        documents: &documents,
+    });
+    assert_eq!(
+        optional,
+        params(r#"{"queries": ["q", "q"], "documents": ["x", "y", "z"]}"#)
+    );
+}
+
+#[test]
 fn documents_come_from_the_parameters_and_other_entries_are_ignored() {
     let optional = map_cohere_rerank_params(&RerankMapRequest {
         non_default_params: &params(
