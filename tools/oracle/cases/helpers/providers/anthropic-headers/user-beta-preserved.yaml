@@ -32,7 +32,7 @@ call:
         api_base: null
         litellm_params: {}
         messages:
-          - {role: user, content: [{type: file, file_id: file_1}]}
+          - {role: user, content: [{type: file, file: {file_id: file_1}}]}
         optional_params: {}
         effort_used: false
       - function: environment

@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use betterlite_anthropic::credentials::{ANTHROPIC_VERSION, AnthropicSettings};
 use betterlite_anthropic::headers::HeadersError;
 use betterlite_anthropic::headers::catalog::{
-    ModelRecord, create_anthropic_model_list_response, model_created_at,
+    ModelRecord, anthropic_model_list_response, model_created_at,
 };
 use betterlite_anthropic::headers::environment::{
     EnvironmentRequest, HeaderLiteLlmParams, HeaderParams, validate_environment,
@@ -43,6 +43,14 @@ struct HeadersCall {
     api_base: Option<String>,
     use_bearer_for_custom_base: bool,
     user_betas: Option<Vec<String>>,
+    #[serde(flatten)]
+    detection: DetectionInput,
+}
+
+// The feature-detection inputs of get_anthropic_headers stay one group, apart from the credential inputs
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DetectionInput {
     features: Vec<HeaderFeature>,
     computer_tool_used: Option<String>,
     is_vertex_request: bool,
@@ -123,10 +131,6 @@ impl Helper for Op {
     }
 }
 
-fn secret(value: Option<&String>) -> Option<SecretString> {
-    value.cloned().map(SecretString::from)
-}
-
 // the anthropic-beta list is built from a Python set, so only its sorted unique tokens are compared
 fn project_headers(headers: &IndexMap<String, String>) -> Value {
     let mut projected = serde_json::Map::new();
@@ -143,13 +147,13 @@ fn project_headers(headers: &IndexMap<String, String>) -> Value {
 }
 
 fn headers_answer(call: &HeadersCall) -> Value {
-    let api_key = secret(call.api_key.as_ref());
-    let auth_token = secret(call.auth_token.as_ref());
+    let api_key = call.api_key.clone().map(SecretString::from);
+    let auth_token = call.auth_token.clone().map(SecretString::from);
     let features = HeaderFeatures {
-        features: call.features.iter().copied().collect(),
-        computer_tool_used: call.computer_tool_used.clone(),
-        is_vertex_request: call.is_vertex_request,
-        web_search_tool_used: call.web_search_tool_used,
+        features: call.detection.features.iter().copied().collect(),
+        computer_tool_used: call.detection.computer_tool_used.clone(),
+        is_vertex_request: call.detection.is_vertex_request,
+        web_search_tool_used: call.detection.web_search_tool_used,
     };
     let headers = get_anthropic_headers(&HeaderRequest {
         api_key: api_key.as_ref(),
@@ -169,7 +173,7 @@ fn environment_answer(call: &EnvironmentCall, settings: &AnthropicSettings) -> H
         .iter()
         .map(|header| (header.name.clone(), header.value.clone()))
         .collect();
-    let api_key = secret(call.api_key.as_ref());
+    let api_key = call.api_key.clone().map(SecretString::from);
     let headers = validate_environment(
         &EnvironmentRequest {
             model: &call.model,
@@ -188,7 +192,7 @@ fn environment_answer(call: &EnvironmentCall, settings: &AnthropicSettings) -> H
 }
 
 fn model_list_answer(call: &ModelListCall, created_at: &str) -> HelperResult {
-    let response = create_anthropic_model_list_response(
+    let response = anthropic_model_list_response(
         &call.models,
         &call.display_names,
         &call.listed_ids,

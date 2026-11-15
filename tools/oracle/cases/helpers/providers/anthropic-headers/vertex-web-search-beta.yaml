@@ -2,7 +2,7 @@ kind: helper
 name: vertex-web-search-beta
 call:
   anthropic_headers:
-    environment: {}
+    environment: {ANTHROPIC_API_KEY: sk-ant-api03-fixture}
     calls:
       - function: headers
         api_key: null
@@ -48,5 +48,5 @@ call:
           is_vertex_request: true
           tools: [{type: web_search_20250305}]
         effort_used: false
-env: {}
+env: {ANTHROPIC_API_KEY: sk-ant-api03-fixture}
 compare: {ignore: []}

@@ -91,12 +91,10 @@ def response_headers_answer(call: ResponseHeadersCall) -> Json:
 
 
 def answer(call: Call) -> Json:
-    match call["function"]:
-        case "headers":
-            return headers_answer(call)
-        case "environment":
-            return environment_answer(call)
-        case "model_list":
-            return model_list_answer(call)
-        case "response_headers":
-            return response_headers_answer(call)
+    if call["function"] == "headers":
+        return headers_answer(call)
+    if call["function"] == "environment":
+        return environment_answer(call)
+    if call["function"] == "model_list":
+        return model_list_answer(call)
+    return response_headers_answer(call)

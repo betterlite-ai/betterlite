@@ -64,6 +64,6 @@ call:
           - {role: user, content: hi, output_config: {effort: high}}
         optional_params:
           thinking: {type: adaptive, display: updates}
-        effort_used: true
+        effort_used: false
 env: {ANTHROPIC_API_KEY: sk-ant-api03-fixture}
 compare: {ignore: []}
