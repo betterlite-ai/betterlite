@@ -47,7 +47,7 @@ fn provider_fields_are_empty(delta: &StreamDelta) -> bool {
         .passthrough
         .get("provider_specific_fields")
         .and_then(|value| value.as_object())
-        .is_some_and(|fields| fields.is_empty())
+        .is_some_and(Object::is_empty)
 }
 
 fn provider_source(delta: &StreamDelta) -> Option<&str> {
@@ -208,10 +208,10 @@ fn partner_class_tokens_default_to_none_and_keep_a_configured_value() {
     };
     let snapshot =
         provider_config(&configured.settings).expect("the configured partner settings serialize");
-    assert_eq!(
-        snapshot.get("max_tokens").and_then(|limit| limit.as_i64()),
-        Some(512)
-    );
+    let limit = snapshot
+        .get("max_tokens")
+        .expect("the snapshot carries max_tokens");
+    assert_eq!(limit.as_i64(), Some(512));
     assert_eq!(snapshot.len(), 1);
 }
 
@@ -281,14 +281,13 @@ fn llama_reply_hands_the_choices_to_the_shared_transform() {
 }
 
 #[test]
-fn llama_stream_adds_the_missing_role_to_the_first_chunk_only() {
+fn llama_stream_adds_the_missing_role_to_the_first_chunk() {
     let mut state = LlamaStreamState::default();
     let first = state.push(chunk(
         r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"first"}}]}"#,
     ));
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].id, "chunk-1");
-    assert_eq!(first[0].object, "chat.completion.chunk");
     assert_eq!(first[0].created, 7);
     assert_eq!(first[0].model.as_deref(), Some("m"));
     let choice = &first[0].choices[0];
@@ -301,21 +300,34 @@ fn llama_stream_adds_the_missing_role_to_the_first_chunk_only() {
     assert_eq!(choice.delta.tool_calls, None);
     assert_eq!(choice.delta.audio, None);
     assert!(choice.delta.passthrough.is_empty());
+}
 
+#[test]
+fn llama_stream_leaves_a_later_chunk_without_the_role() {
+    let mut state = LlamaStreamState::default();
+    state.push(chunk(
+        r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"first"}}]}"#,
+    ));
     let later = state.push(chunk(
         r#"{"id":"chunk-1","created":7,"model":"m","choices":[{"index":0,"delta":{"content":"second"}}]}"#,
     ));
     assert_eq!(later.len(), 1);
+    assert_eq!(later[0].object, "chat.completion.chunk");
     assert_eq!(later[0].choices[0].delta.role, None);
     assert_eq!(later[0].choices[0].delta.content.as_deref(), Some("second"));
 }
 
-#[test]
-fn llama_stream_splits_a_terminal_first_chunk_and_queues_its_terminal() {
+// The first chunk is also terminal, so the push returns the repaired chunk and the queued terminal.
+fn split_terminal_first_chunk() -> Vec<StreamReply> {
     let mut state = LlamaStreamState::default();
-    let chunks = state.push(chunk(
+    state.push(chunk(
         r#"{"id":"chunk-9","created":7,"model":"m","choices":[{"index":1,"delta":{"role":null,"content":null},"finish_reason":"stop"}]}"#,
-    ));
+    ))
+}
+
+#[test]
+fn llama_stream_splits_a_terminal_first_chunk() {
+    let chunks = split_terminal_first_chunk();
     assert_eq!(chunks.len(), 2);
     let repaired = &chunks[0];
     assert_eq!(repaired.id, "chunk-9");
@@ -327,7 +339,11 @@ fn llama_stream_splits_a_terminal_first_chunk_and_queues_its_terminal() {
     assert_eq!(first.delta.role.as_deref(), Some("assistant"));
     assert_eq!(first.delta.content.as_deref(), Some(""));
     assert!(provider_fields_are_empty(&first.delta));
+}
 
+#[test]
+fn llama_stream_queues_the_terminal_chunk_of_a_split() {
+    let chunks = split_terminal_first_chunk();
     let queued = &chunks[1];
     assert_eq!(queued.id, "chunk-9");
     assert_eq!(queued.object, "chat.completion.chunk");

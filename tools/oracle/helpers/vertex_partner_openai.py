@@ -279,12 +279,10 @@ def chunk_value(chunk: ModelResponseStream) -> JsonValue:
 
 # get_model_response_iterator gives each stream its own handler, so each case asks for a fresh one.
 def streamed(case: StreamCase) -> JsonValue:
-    api = apis()[4]
-    emitted: list[JsonValue] = []
+    api, emitted = apis()[4], list[JsonValue]()
     for source in case["chunks"]:
         emitted.append(chunk_value(api.chunk_parser(source)))
-        queued = next_chunk(api)
-        if queued is not None:
+        if (queued := next_chunk(api)) is not None:
             emitted.append(chunk_value(queued))
     return emitted
 

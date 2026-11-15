@@ -26,7 +26,7 @@ pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
 }
 
 // the cases carry no catalog models, so the OpenAI base list is the provider's own
-fn catalog() -> CatalogCapabilities {
+const fn catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),

@@ -37,7 +37,7 @@ fn a_configured_max_tokens_reaches_the_partner_snapshot() {
 
     assert_eq!(settings.max_tokens, Some(64));
     let snapshot = provider_config(&settings).expect("the settings serialize");
-    assert_eq!(snapshot.get("max_tokens"), Some(&serde_json::json!(64)));
+    assert_eq!(snapshot.get("max_tokens"), Some(&serde_json::json!(64_i64)));
     assert_eq!(snapshot.len(), 1);
 }
 
