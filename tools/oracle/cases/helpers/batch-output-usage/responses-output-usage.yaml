@@ -1,0 +1,23 @@
+kind: helper
+name: responses_output_usage
+call:
+  batch_output_usage:
+    kind: output_usage
+    provider: openai
+    model_name: gpt-4o
+    model_info:
+      input_cost_per_token: 1.0
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token: 0.5
+      output_cost_per_token_batches: 0.25
+    content:
+      kind: lines
+      lines:
+        - custom_id: responses-1
+          response:
+            status_code: 200
+            body:
+              model: gpt-4o
+              usage: {input_tokens: 12, output_tokens: 8}
+env: {}
+compare: {ignore: []}

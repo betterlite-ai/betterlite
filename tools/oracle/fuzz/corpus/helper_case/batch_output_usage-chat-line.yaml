@@ -1,0 +1,23 @@
+kind: helper
+name: batch-output-usage-chat-line
+call:
+  batch_output_usage:
+    kind: output_usage
+    provider: openai
+    model_name: gpt-4o
+    model_info:
+      input_cost_per_token: 1.0
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token: 0.5
+      output_cost_per_token_batches: 0.25
+    content:
+      kind: lines
+      lines:
+        - custom_id: corpus-1
+          response:
+            status_code: 200
+            body:
+              model: gpt-4o
+              usage: {prompt_tokens: 2, completion_tokens: 2, total_tokens: 4}
+env: {}
+compare: {ignore: []}

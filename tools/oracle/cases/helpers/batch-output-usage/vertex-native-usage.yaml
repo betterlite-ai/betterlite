@@ -1,0 +1,23 @@
+kind: helper
+name: vertex_native_usage
+call:
+  batch_output_usage:
+    kind: vertex_usage
+    model_name: null
+    model_info:
+      input_cost_per_token: 1.0
+      input_cost_per_token_batches: 0.5
+      output_cost_per_token: 0.5
+      output_cost_per_token_batches: 0.25
+    content:
+      kind: lines
+      lines:
+        - request: {contents: []}
+          response:
+            candidates:
+              - content: {parts: [{text: hi}]}
+                finishReason: STOP
+            usageMetadata: {promptTokenCount: 3, candidatesTokenCount: 2, totalTokenCount: 5}
+            modelVersion: gemini-1.5-flash-001
+env: {}
+compare: {ignore: []}

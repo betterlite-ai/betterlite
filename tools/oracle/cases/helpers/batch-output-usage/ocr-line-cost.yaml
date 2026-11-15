@@ -1,0 +1,19 @@
+kind: helper
+name: ocr_line_cost
+call:
+  batch_output_usage:
+    kind: output_usage
+    provider: openai
+    model_name: gpt-4o
+    model_info:
+      ocr_cost_per_page_batches: 0.5
+    content:
+      kind: lines
+      lines:
+        - custom_id: ocr-1
+          response:
+            status_code: 200
+            body:
+              usage_info: {pages_processed: 3}
+env: {}
+compare: {ignore: []}
