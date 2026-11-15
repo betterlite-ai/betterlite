@@ -58,12 +58,12 @@ pub struct CrowdStrikeAidr {
 
 // LiteLLM reads the parameter, then the environment variable, and rejects an empty value from either
 fn required(
-    value: &Option<String>,
+    value: Option<&String>,
     name: &'static str,
     lookup: &dyn EnvironmentLookup,
 ) -> Result<String, CrowdStrikeError> {
     value
-        .clone()
+        .cloned()
         .filter(|entry| !entry.is_empty())
         .or_else(|| lookup.lookup(name))
         .filter(|entry| !entry.is_empty())
@@ -75,8 +75,8 @@ impl Settings {
         args: &ConstructorArgs,
         lookup: &dyn EnvironmentLookup,
     ) -> Result<Self, CrowdStrikeError> {
-        let api_key = required(&args.api_key, API_KEY_ENV, lookup)?;
-        let api_base = required(&args.api_base, API_BASE_ENV, lookup)?;
+        let api_key = required(args.api_key.as_ref(), API_KEY_ENV, lookup)?;
+        let api_base = required(args.api_base.as_ref(), API_BASE_ENV, lookup)?;
         let streaming = StreamingSettings::from_params(args.streaming);
         Ok(Self {
             guardrail_name: args.guardrail_name.clone(),

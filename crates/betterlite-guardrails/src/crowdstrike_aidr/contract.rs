@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
+use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
@@ -93,10 +93,12 @@ pub async fn run_guardrail(
     ))
 }
 
+type SelectedInput = (GuardInput, Vec<usize>, EventType, &'static str);
+
 fn select_input(
     inputs: &GuardrailApiInputs,
     input_type: GuardrailInputType,
-) -> Result<Option<(GuardInput, Vec<usize>, EventType, &'static str)>, CrowdStrikeError> {
+) -> Result<Option<SelectedInput>, CrowdStrikeError> {
     match input_type {
         GuardrailInputType::Request => {
             let Some(with_indices) = build_guard_input_for_request(inputs)? else {
@@ -177,7 +179,7 @@ fn collect_texts(guard_output: &GuardInput, transformed: &Transformed<'_>) -> Ve
     }
 }
 
-fn empty_result(texts: Vec<String>) -> GuardrailApiInputs {
+const fn empty_result(texts: Vec<String>) -> GuardrailApiInputs {
     GuardrailApiInputs {
         texts: Some(texts),
         images: None,

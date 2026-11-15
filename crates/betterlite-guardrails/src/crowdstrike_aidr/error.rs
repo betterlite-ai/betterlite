@@ -73,7 +73,16 @@ impl CrowdStrikeError {
             Self::MalformedTransformed { guardrail_name, .. } => {
                 (MALFORMED_TRANSFORMED_MESSAGE, guardrail_name.clone())
             }
-            _ => (MALFORMED_TRANSFORMED_MESSAGE, None),
+            Self::MissingEnvironment { .. }
+            | Self::Timeout { .. }
+            | Self::Request { .. }
+            | Self::InvalidHeader { .. }
+            | Self::HttpStatus { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. }
+            | Self::JsonEncode { .. }
+            | Self::InvalidParam { .. }
+            | Self::Record { .. } => (MALFORMED_TRANSFORMED_MESSAGE, None),
         };
         let mut detail = IndexMap::new();
         detail.insert("error".to_owned(), GuardrailValue::Text(message.to_owned()));

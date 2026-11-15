@@ -25,16 +25,13 @@ pub(super) fn build_payload(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> GuardPayload {
     let metadata = merge_metadata_bags(request_data);
-    let (user_id, extra_info) = match metadata {
-        Some(metadata) => {
-            let mut extra = BTreeMap::new();
-            if let Some(email) = present(&metadata, USER_EMAIL_KEY) {
-                extra.insert("user_name".to_owned(), email);
-            }
-            (present(&metadata, USER_ID_KEY), Some(extra))
+    let (user_id, extra_info) = metadata.map_or((None, None), |found| {
+        let mut extra = BTreeMap::new();
+        if let Some(email) = present(&found, USER_EMAIL_KEY) {
+            extra.insert("user_name".to_owned(), email);
         }
-        None => (None, None),
-    };
+        (present(&found, USER_ID_KEY), Some(extra))
+    });
     GuardPayload {
         guard_input,
         event_type,
@@ -198,7 +195,16 @@ pub(super) fn failure(error: &CrowdStrikeError) -> GuardrailFailure {
                 detail: error.detail(),
             }
         }
-        other => GuardrailFailure::Http {
+        other @ CrowdStrikeError::MissingEnvironment { .. }
+        | other @ CrowdStrikeError::Timeout { .. }
+        | other @ CrowdStrikeError::Request { .. }
+        | other @ CrowdStrikeError::InvalidHeader { .. }
+        | other @ CrowdStrikeError::HttpStatus { .. }
+        | other @ CrowdStrikeError::ResponseTooLarge { .. }
+        | other @ CrowdStrikeError::ResponseJson { .. }
+        | other @ CrowdStrikeError::JsonEncode { .. }
+        | other @ CrowdStrikeError::InvalidParam { .. }
+        | other @ CrowdStrikeError::Record { .. } => GuardrailFailure::Http {
             status: other.status_code().as_u16(),
             detail: other.to_string(),
         },

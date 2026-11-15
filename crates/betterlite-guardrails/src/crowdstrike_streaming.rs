@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_identity::item::{GuardrailFlag, GuardrailValue};
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 
 use crate::crowdstrike_aidr::error::CrowdStrikeError;
@@ -24,9 +24,9 @@ pub struct StreamingParams {
 // LiteLLM's _set_streaming_params: an unset flag is false and an unset rate is 5
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamingSettings {
-    pub buffer_until_moderated: bool,
-    pub buffer_release_on_scan: bool,
-    pub end_of_stream_only: bool,
+    pub buffer_until_moderated: GuardrailFlag,
+    pub buffer_release_on_scan: GuardrailFlag,
+    pub end_of_stream_only: GuardrailFlag,
     pub sampling_rate: u64,
 }
 
@@ -82,10 +82,9 @@ fn selected<'value>(
     nested: Option<&'value BTreeMap<String, GuardrailValue>>,
     extras: &'value BTreeMap<String, GuardrailValue>,
 ) -> Option<&'value GuardrailValue> {
-    match nested.and_then(|fields| fields.get(name)) {
-        Some(value) => Some(value),
-        None => extras.get(name),
-    }
+    nested
+        .and_then(|fields| fields.get(name))
+        .or_else(|| extras.get(name))
 }
 
 fn bool_param(

@@ -26,13 +26,17 @@ pub fn merge_request_transforms(
         .iter()
         .map(extract_text_from_message)
         .collect();
-    let original: Vec<String> = match structured_messages.filter(|messages| !messages.is_empty()) {
-        Some(messages) => messages
-            .iter()
-            .map(|message| extract_text_from_content(content_of(message)))
-            .collect(),
-        None => texts.to_vec(),
-    };
+    let original: Vec<String> = structured_messages
+        .filter(|messages| !messages.is_empty())
+        .map_or_else(
+            || texts.to_vec(),
+            |messages| {
+                messages
+                    .iter()
+                    .map(|message| extract_text_from_content(content_of(message)))
+                    .collect()
+            },
+        );
     let mut replacements = BTreeMap::new();
     for (position, index) in sent_indices.iter().enumerate() {
         if let Some(returned_text) = returned.get(position)

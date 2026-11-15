@@ -56,7 +56,7 @@ pub enum MessageContent {
     Parts(Vec<ContentPart>),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub role: String,
     #[serde(default)]
