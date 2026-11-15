@@ -1,0 +1,53 @@
+kind: helper
+name: soniox-records-speaker-language-reset
+call:
+  soniox_records:
+    calls:
+    - function: response
+      payload:
+        tokens:
+        - {text: Hola, speaker: 1, language: es}
+        - {text: " mundo", speaker: 1, language: es}
+        - {text: Hello, speaker: 2, language: en}
+        - {text: " there", speaker: 2, language: en}
+    - function: response
+      payload:
+        tokens:
+        - {text: A, speaker: true}
+        - {text: B, speaker: 1}
+    - function: response
+      payload:
+        tokens:
+        - {text: a, speaker: 1, language: es}
+        - {text: b, speaker: 2, language: es}
+    - function: response
+      payload:
+        tokens:
+        - {text: x, language: es}
+        - {text: y, language: en}
+    - function: response
+      payload:
+        tokens:
+        - {text: "  hi", language: es}
+        - {text: "  there"}
+    - function: response
+      payload:
+        tokens:
+        - {text: A, speaker: false}
+        - {text: B, speaker: 0}
+    - function: response
+      payload:
+        tokens:
+        - {text: A, speaker: one}
+        - {text: B, speaker: two}
+    - function: response
+      payload:
+        tokens:
+        - {text: A, speaker: null, language: es}
+    - function: response
+      payload:
+        text: ignored
+        tokens:
+        - {text: a, speaker: 1}
+compare: {ignore: []}
+env: {}
