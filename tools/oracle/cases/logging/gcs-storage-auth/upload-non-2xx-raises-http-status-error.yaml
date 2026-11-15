@@ -1,0 +1,7 @@
+# a non-2xx upload raises the HTTP status error and returns nothing
+kind: helper
+name: gcs-storage-auth-upload-non-2xx-raises-http-status-error
+call:
+  b3997: {"action": "upload", "bucket": "env-bucket", "object_name": "log.json", "payload": "text", "status": 403, "body": "{\"error\": {\"code\": 403, \"message\": \"denied\"}}"}
+env: {}
+compare: {ignore: []}
