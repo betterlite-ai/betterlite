@@ -146,6 +146,23 @@ async fn waiting_queries(monitor: &Client, application_name: &str) -> i64 {
         .get(0)
 }
 
+async fn wait_until_waiting(monitor: &Client, application_name: &str) -> i64 {
+    let mut waiting = waiting_queries(monitor, application_name).await;
+    for _ in 0_u32..100 {
+        if waiting > 0 {
+            break;
+        }
+        sleep(Duration::from_millis(25)).await;
+        waiting = waiting_queries(monitor, application_name).await;
+    }
+    waiting
+}
+
+async fn insert_one_and_two(store: &PostgresStore) {
+    insert_spend(store, DIGEST, 10, (None, None), &alias_json("one")).await;
+    insert_spend(store, OTHER_DIGEST, 10, (None, None), &alias_json("two")).await;
+}
+
 #[tokio::test]
 async fn postgres_first_and_last_disagreement_is_resolved_per_field() {
     let database = database("history-fields").await;
@@ -441,14 +458,7 @@ async fn postgres_two_concurrent_callers_share_one_query() {
         )
     };
     let watcher = async {
-        let mut waiting = 0_i64;
-        for _ in 0_u32..100 {
-            waiting = waiting_queries(&monitor, "history-concurrent").await;
-            if waiting > 0 {
-                break;
-            }
-            sleep(Duration::from_millis(25)).await;
-        }
+        let waiting = wait_until_waiting(&monitor, "history-concurrent").await;
         assert_eq!(waiting, 1);
         sleep(Duration::from_millis(400)).await;
         assert_eq!(waiting_queries(&monitor, "history-concurrent").await, 1);
@@ -465,22 +475,7 @@ async fn postgres_two_concurrent_callers_share_one_query() {
 #[tokio::test]
 async fn postgres_a_timed_out_query_is_a_miss_and_a_waiting_caller_queries_only_what_is_missing() {
     let database = database("history-timeout").await;
-    insert_spend(
-        &database.store,
-        DIGEST,
-        10,
-        (None, None),
-        &alias_json("one"),
-    )
-    .await;
-    insert_spend(
-        &database.store,
-        OTHER_DIGEST,
-        10,
-        (None, None),
-        &alias_json("two"),
-    )
-    .await;
+    insert_one_and_two(&database.store).await;
     let holder = database.holder.get().await.unwrap();
     holder.batch_execute(LOCK_SPEND_LOGS).await.unwrap();
     let history = SpendLogHistory::default();

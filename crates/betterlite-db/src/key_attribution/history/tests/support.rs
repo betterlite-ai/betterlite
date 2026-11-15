@@ -12,7 +12,8 @@ pub(super) fn at(second: i64) -> NaiveDateTime {
         .unwrap()
         .and_hms_opt(0, 0, 0)
         .unwrap();
-    base + TimeDelta::try_seconds(second).unwrap()
+    base.checked_add_signed(TimeDelta::try_seconds(second).unwrap())
+        .unwrap()
 }
 
 pub(super) fn window(start: i64, end: i64) -> HistoryWindow {

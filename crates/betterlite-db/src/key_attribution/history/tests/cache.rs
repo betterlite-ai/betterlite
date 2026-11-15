@@ -43,7 +43,7 @@ async fn a_repeated_miss_while_the_marker_lives_is_cached_for_the_full_ttl() {
     cache.remember(DIGEST, &probed, None);
     advance(MISS_TTL + MISS_TTL).await;
     assert_eq!(cache.get(&key), Some(KeyMetadata::default()));
-    advance(TTL - MISS_TTL - MISS_TTL).await;
+    advance(Duration::from_secs(540)).await;
     assert_eq!(cache.get(&key), Some(KeyMetadata::default()));
     advance(MILLISECOND).await;
     assert_eq!(cache.get(&key), None);
