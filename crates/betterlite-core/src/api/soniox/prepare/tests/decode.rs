@@ -200,7 +200,10 @@ const TEXT_REPLIES: &[(&str, TextReply)] = &[
     ("empty.bin", TextReply::EmptyText),
 ];
 
-fn expected<T: Copy>(table: &[(&str, T)], name: &str) -> T {
+fn expected<T>(table: &[(&str, T)], name: &str) -> T
+where
+    T: Copy,
+{
     let Some((_, want)) = table.iter().find(|(seed, _)| *seed == name) else {
         panic!("the seed {name} has no expected reply");
     };

@@ -167,8 +167,8 @@ fn raise_answer(
         return Ok(json!({ "ok": true }));
     };
     let watched: BTreeMap<String, Option<String>> = headers
-        .iter()
-        .map(|(name, _)| {
+        .keys()
+        .map(|name| {
             let value = exception
                 .headers
                 .as_ref()
@@ -222,7 +222,10 @@ fn raised(error: &PrepareError) -> Value {
     }
 }
 
-fn failure<Error: std::fmt::Display>(error: Error) -> Failure {
+fn failure<Error>(error: Error) -> Failure
+where
+    Error: std::fmt::Display,
+{
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,

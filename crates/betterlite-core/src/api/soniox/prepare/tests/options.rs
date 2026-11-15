@@ -47,8 +47,8 @@ fn attempts_of(text: &str) -> i64 {
 #[case::infinite_text("{\"soniox_polling_interval\": \"inf\"}", 1.0_f64)]
 #[case::negative_infinite_text("{\"soniox_polling_interval\": \"-infinity\"}", 1.0_f64)]
 #[case::nan_text("{\"soniox_polling_interval\": \"nan\"}", 1.0_f64)]
-fn clamps_the_poll_interval(#[case] input: &str, #[case] expected: f64) {
-    let expected = Decimal::from_f64(expected).expect("the expected interval is a decimal");
+fn clamps_the_poll_interval(#[case] input: &str, #[case] seconds: f64) {
+    let expected = Decimal::from_f64(seconds).expect("the expected interval is a decimal");
 
     assert_eq!(interval_of(input), expected);
 }
