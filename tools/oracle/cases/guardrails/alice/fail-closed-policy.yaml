@@ -1,0 +1,14 @@
+kind: helper
+name: fail-closed-policy
+call:
+  b3752:
+    function: alice_apply
+    api_key: "oracle-key"
+    unreachable_fallback: fail_closed
+    texts: ["hello"]
+    request_data: {}
+    input_type: request
+    answer: {status: 503, body: {}, raw: null}
+    failure: null
+env: {}
+compare: {ignore: []}

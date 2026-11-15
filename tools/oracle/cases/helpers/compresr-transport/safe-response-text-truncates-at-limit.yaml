@@ -1,0 +1,6 @@
+kind: helper
+name: safe-response-text-truncates-at-limit
+call:
+  compresr_transport: {"function": "safe_response_text", "text": "éééééééééééé", "limit": 5, "corrupt": false}
+env: {}
+compare: {ignore: []}

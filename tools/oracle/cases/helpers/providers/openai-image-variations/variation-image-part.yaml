@@ -1,0 +1,15 @@
+kind: helper
+name: openai-image-variations-variation-image-part
+call:
+  openai_image_variations:
+    function: variation_image_part
+    probes:
+      - model: dall-e-2
+        image_filename: cat.png
+        image_content: PNGDATA
+        optional_params: {n: 2, size: 512x512}
+      - model: ''
+        image_content: RAWBYTES
+        optional_params: {}
+env: {}
+compare: {ignore: []}

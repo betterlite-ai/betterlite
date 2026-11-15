@@ -1,0 +1,19 @@
+model_list:
+  - model_name: gpt-4
+    litellm_params:
+      model: openai/gpt-4
+      api_key: sk-config
+      default_api_key_rpm_limit: 10
+      default_api_key_tpm_limit: 100
+  - model_name: gpt-4
+    litellm_params:
+      model: openai/gpt-4
+      default_api_key_rpm_limit: "20"
+  - model_name: gpt-3
+    litellm_params:
+      model: openai/gpt-3
+      default_api_key_tpm_limit: 0
+  - model_name: cleared
+    litellm_params:
+      model: openai/cleared
+      default_api_key_rpm_limit: null

@@ -1,0 +1,17 @@
+kind: helper
+name: file-storage-contracts-storage-uri-validation
+call:
+  file_storage_contracts:
+    calls:
+      - function: storage_row_id
+        storage_url: "litellm_db://r"
+      - function: storage_row_id
+        storage_url: "litellm_db://"
+      - function: storage_row_id
+        storage_url: "litellm_db://a%2Fb"
+      - function: storage_row_id
+        storage_url: "https://example.invalid/r"
+      - function: storage_row_id
+        storage_url: "LITELLM_DB://r"
+env: {}
+compare: {ignore: []}

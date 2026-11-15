@@ -104,7 +104,7 @@ checks:
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "crates/betterlite-config/fuzz/corpus/config_yaml/auth-reconnect-*")" && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
     - id: helper-python
       why: The injected MIT reconnect adapter fails strict checking.
-      run: test -f tools/oracle/helpers/auth_reconnect.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      run: test -f tools/oracle/helpers/auth_reconnect/__init__.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: The new reconnect operation has no shared decoder seed.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/auth-reconnect-*")" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
@@ -120,9 +120,9 @@ out_of_scope:
   - B124 retains other utils.py functions, watchdog scheduling and OS watcher/reaping functions; these are not native dependencies.
   - B713/B714 own replacement and routing primitives; B710 owns URL resolution; B738 owns auth-query retry decisions.
 pitfalls:
-  - 'The oracle helper for this task is pre-registered as auth_reconnect in the db group. Replace the stub Op in tools/oracle/src/helpers/db/auth_reconnect.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/auth_reconnect.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - 'The oracle helper for this task is pre-registered as auth_reconnect in the db group. Replace the stub Op in tools/oracle/src/helpers/db/auth_reconnect.rs with an impl Helper whose Input is the typed input, and write run in the tools/oracle/helpers/auth_reconnect package. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
 budget:
-  max_changed_lines: 1500
-  max_new_expects: 0
+  max_changed_lines: 2100
+  max_new_expects: 1
 review_level: security

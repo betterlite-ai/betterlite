@@ -1,0 +1,23 @@
+kind: helper
+name: groq-web-search-cost
+call:
+  b5833:
+    costs:
+      - model: groq/openai/gpt-oss-20b
+        web_search_requests: 2
+        browser_open_requests: 3
+        medium_rate: "0.005"
+      - model: groq/meta-llama/llama-prompt-guard-2-22m
+        web_search_requests: 0
+        browser_open_requests: 4
+      - model: groq/openai/gpt-oss-20b
+        medium_rate: "0.005"
+      - model: groq/openai/gpt-oss-20b
+        web_search_requests: 3
+        medium_rate: "0.005"
+      - model: groq/openai/gpt-oss-20b
+        web_search_requests: 1
+        browser_open_requests: 0
+        medium_rate: "0.005"
+env: {}
+compare: {ignore: []}
