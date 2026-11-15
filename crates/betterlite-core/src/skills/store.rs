@@ -206,17 +206,7 @@ impl<R: SkillRepository> HostedSkillStore<R> {
         principal: Option<&Principal>,
     ) -> Result<SkillTable, StoreError> {
         tracing::debug!(skill_id = %skill_id, "LiteLLMSkillsHandler: Getting skill");
-        let Some(skill) = self.load_skill(skill_id).await? else {
-            return Err(StoreError::NotFound {
-                skill_id: skill_id.to_owned(),
-            });
-        };
-        if !user_can_access_resource_owner(skill.created_by.as_deref(), principal) {
-            return Err(StoreError::NotFound {
-                skill_id: skill_id.to_owned(),
-            });
-        }
-        Ok(skill)
+        self.authorized_skill(skill_id, principal).await
     }
 
     pub async fn delete_skill(
@@ -226,16 +216,7 @@ impl<R: SkillRepository> HostedSkillStore<R> {
     ) -> Result<DeleteSkillResponse, StoreError> {
         self.repository.availability()?;
         tracing::debug!(skill_id = %skill_id, "LiteLLMSkillsHandler: Deleting skill");
-        let Some(skill) = self.load_skill(skill_id).await? else {
-            return Err(StoreError::NotFound {
-                skill_id: skill_id.to_owned(),
-            });
-        };
-        if !user_can_access_resource_owner(skill.created_by.as_deref(), principal) {
-            return Err(StoreError::NotFound {
-                skill_id: skill_id.to_owned(),
-            });
-        }
+        self.authorized_skill(skill_id, principal).await?;
         self.repository.delete(skill_id).await?;
         self.cache.store(skill_id, None)?;
         Ok(DeleteSkillResponse {
@@ -261,6 +242,25 @@ impl<R: SkillRepository> HostedSkillStore<R> {
                 None
             }
         }
+    }
+
+    // The cache answers first, so a caller can reach a row while the database is down
+    async fn authorized_skill(
+        &self,
+        skill_id: &str,
+        principal: Option<&Principal>,
+    ) -> Result<SkillTable, StoreError> {
+        let Some(skill) = self.load_skill(skill_id).await? else {
+            return Err(StoreError::NotFound {
+                skill_id: skill_id.to_owned(),
+            });
+        };
+        if !user_can_access_resource_owner(skill.created_by.as_deref(), principal) {
+            return Err(StoreError::NotFound {
+                skill_id: skill_id.to_owned(),
+            });
+        }
+        Ok(skill)
     }
 
     async fn load_skill(&self, skill_id: &str) -> Result<Option<SkillTable>, StoreError> {

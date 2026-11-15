@@ -52,7 +52,8 @@ impl SkillCache {
     // The cache holds the row object, not a serialized copy, the way LiteLLM's InMemoryCache does
     pub(crate) fn lookup(&self, skill_id: &str) -> Result<CachedRow, StoreError> {
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
-        let (cached, _) = lookup_marked(&mut guard.markers, &mut guard.entries, skill_id)?;
+        let inner = &mut *guard;
+        let (cached, _) = lookup_marked(&mut inner.markers, &mut inner.entries, skill_id)?;
         Ok(match cached {
             None => CachedRow::Miss,
             Some(CachedEntry::Missing) => CachedRow::Missing,
@@ -61,14 +62,12 @@ impl SkillCache {
     }
 
     pub(crate) fn store(&self, skill_id: &str, row: Option<&SkillTable>) -> Result<(), StoreError> {
-        let entry = match row {
-            Some(row) => CachedEntry::Found(row.clone()),
-            None => CachedEntry::Missing,
-        };
+        let entry = row.map_or(CachedEntry::Missing, |row| CachedEntry::Found(row.clone()));
         let mut guard = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        let inner = &mut *guard;
         store_marked(
-            &mut guard.markers,
-            &mut guard.entries,
+            &mut inner.markers,
+            &mut inner.entries,
             skill_id.to_owned(),
             entry,
             None,

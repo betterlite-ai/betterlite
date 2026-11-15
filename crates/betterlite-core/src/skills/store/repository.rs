@@ -2,10 +2,11 @@ use std::future::Future;
 
 use betterlite_db::auxiliary_repository::bindings::SkillsTable;
 use betterlite_db::auxiliary_repository::repository::{
-    PrismaClient, PrismaTableRepository, TableAccess, TableError,
+    PrismaClient, PrismaTableRepository, TableError,
 };
 use betterlite_db::managed_resource_rows::skills::SkillTable;
 use betterlite_db::postgres_store::errors::backend;
+use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_redis::config_sync::publish::PublishChange;
 use deadpool_postgres::GenericClient as _;
 use deadpool_postgres::tokio_postgres::Row;
@@ -94,57 +95,17 @@ fn decode_row(row: &Row) -> Result<SkillTable, TableError> {
     serde_json::from_str(&text).map_err(TableError::Row)
 }
 
-struct SkillsSql<'db> {
-    access: TableAccess<'db>,
-}
-
-impl SkillsSql<'_> {
-    async fn read_one(
-        &self,
-        sql: &str,
-        params: &Params<'_>,
-    ) -> Result<Option<SkillTable>, TableError> {
-        let client = self.access.read.session().await?;
-        let row = client
-            .query_opt(sql, params)
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        row.as_ref().map(decode_row).transpose()
-    }
-
-    async fn read_many(
-        &self,
-        sql: &str,
-        params: &Params<'_>,
-    ) -> Result<Vec<SkillTable>, TableError> {
-        let client = self.access.read.session().await?;
-        let rows = client
-            .query(sql, params)
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        rows.iter().map(decode_row).collect()
-    }
-
-    async fn write_one(
-        &self,
-        sql: &str,
-        params: &Params<'_>,
-    ) -> Result<Option<SkillTable>, TableError> {
-        let client = self.access.write.session().await?;
-        let row = client
-            .query_opt(sql, params)
-            .await
-            .map_err(|source| TableError::Database(backend(source)))?;
-        row.as_ref().map(decode_row).transpose()
-    }
-
-    async fn execute(&self, sql: &str, params: &Params<'_>) -> Result<u64, TableError> {
-        let client = self.access.write.session().await?;
-        client
-            .execute(sql, params)
-            .await
-            .map_err(|source| TableError::Database(backend(source)))
-    }
+async fn query_rows(
+    store: &PostgresStore,
+    sql: &str,
+    params: &Params<'_>,
+) -> Result<Vec<SkillTable>, TableError> {
+    let client = store.session().await?;
+    let rows = client
+        .query(sql, params)
+        .await
+        .map_err(|source| TableError::Database(backend(source)))?;
+    rows.iter().map(decode_row).collect()
 }
 
 pub struct PrismaSkillRepository<'db> {
@@ -170,32 +131,31 @@ impl SkillRepository for PrismaSkillRepository<'_> {
 
     async fn create(&self, write: SkillWrite) -> Result<SkillTable, TableError> {
         let access = self.base.access()?;
-        let row = SkillsSql { access }
-            .write_one(
-                CREATE_SQL,
-                &[
-                    &write.skill_id,
-                    &write.display_title,
-                    &write.description,
-                    &write.instructions,
-                    &write.source,
-                    &write.file_content,
-                    &write.file_name,
-                    &write.file_type,
-                    &write.metadata,
-                    &write.created_by,
-                    &write.updated_by,
-                ],
-            )
-            .await?;
-        row.ok_or(TableError::MissingRow)
+        let rows = query_rows(
+            access.write,
+            CREATE_SQL,
+            &[
+                &write.skill_id,
+                &write.display_title,
+                &write.description,
+                &write.instructions,
+                &write.source,
+                &write.file_content,
+                &write.file_name,
+                &write.file_type,
+                &write.metadata,
+                &write.created_by,
+                &write.updated_by,
+            ],
+        )
+        .await?;
+        rows.into_iter().next().ok_or(TableError::MissingRow)
     }
 
     async fn find_unique(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
         let access = self.base.access()?;
-        SkillsSql { access }
-            .read_one(FIND_ONE_SQL, &[&skill_id])
-            .await
+        let rows = query_rows(access.read, FIND_ONE_SQL, &[&skill_id]).await?;
+        Ok(rows.into_iter().next())
     }
 
     async fn find_many(
@@ -204,16 +164,21 @@ impl SkillRepository for PrismaSkillRepository<'_> {
         created_by: Option<Vec<String>>,
     ) -> Result<Vec<SkillTable>, TableError> {
         let access = self.base.access()?;
-        SkillsSql { access }
-            .read_many(FIND_PAGE_SQL, &[&created_by, &page.limit, &page.offset])
-            .await
+        query_rows(
+            access.read,
+            FIND_PAGE_SQL,
+            &[&created_by, &page.limit, &page.offset],
+        )
+        .await
     }
 
     async fn delete(&self, skill_id: &str) -> Result<(), TableError> {
         let access = self.base.access()?;
-        let deleted = SkillsSql { access }
+        let client = access.write.session().await?;
+        let deleted = client
             .execute(DELETE_SQL, &[&skill_id])
-            .await?;
+            .await
+            .map_err(|source| TableError::Database(backend(source)))?;
         if deleted == 0 {
             return Err(TableError::MissingRow);
         }
