@@ -1,0 +1,22 @@
+kind: helper
+name: reservation-cost-inference-config-max-tokens
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: flat-model
+      inferenceConfig:
+        maxTokens: 250
+    route: /v1/chat/completions
+    model_cost:
+      flat-model:
+        mode: chat
+        max_input_tokens: 100000
+        max_output_tokens: 1000
+        input_cost_per_token: 0.000002
+        output_cost_per_token: 0.00001
+    input_token_counts:
+      flat-model: 0
+    model_list: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+kind: helper
+name: soniox-prepare-seed
+call:
+  soniox_prepare:
+    calls:
+    - {function: prepare, optional_params: {soniox_polling_interval: 0, soniox_max_polling_attempts: 6001, soniox_cleanup: file, language: en, context: {terms: [Soniox]}}, api_key: explicit, environment: {}}
+    - {function: create_body, prepare: {optional_params: {audio_url: "https://a.test/clip.wav", file_id: file_1, webhook_auth_header_value: secret}, api_key: explicit, environment: {}}, model: soniox/stt-async-v4, file_id: file_1}
+    - {function: redact, body: {webhook_auth_header_value: secret}}
+    - {function: raise, status: 500, action: poll transcription, body: '{"error_message": "quota"}', headers: {X-Request-Id: abc}, probes: [quota]}
+    - {function: pre_call, api_base: "https://api.soniox.com", body: {model: m, webhook_auth_header_value: secret}, failing: false}
+    - {function: post_call, audio: clip.wav, original_response: {transcription: {status: completed}}, body: {model: m, webhook_auth_header_value: secret}, failing: false}
+compare: {ignore: []}
+env: {}

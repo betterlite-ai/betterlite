@@ -1,0 +1,10 @@
+kind: helper
+name: bool-env-fallback
+call:
+  b3790:
+    function: resolve_bool
+    setting: async_mode
+    provided: null
+    environment: {PILLAR_ASYNC: 'yes'}
+env: {PILLAR_ASYNC: 'yes'}
+compare: {ignore: []}
