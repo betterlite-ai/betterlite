@@ -50,6 +50,7 @@ use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 use crate::credential_sources::sdk::CredentialClock;
+use crate::gemini_call::body::body_request;
 use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_call::{CallDeps, GeminiCall, GeminiReply, completion};
 use crate::gemini_http::call::{ClientKind, Clients, SuppliedClient, VertexLlm};
@@ -63,6 +64,7 @@ use crate::model_policy::capabilities::{
 use crate::token_cache::CredentialCache;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::executor::{CredentialExecutor, LoadedCredential};
+use crate::token_cache::probe::AccessToken;
 use crate::token_cache::record::CredentialSnapshot;
 use crate::token_cache::state::TokenState;
 use crate::token_refresh::CredentialRefresh;
@@ -594,16 +596,12 @@ impl Fixture {
         self.transport.calls.load(Ordering::SeqCst)
     }
 
-    pub(super) fn run(&self, setup: Setup) -> Result<GeminiReply, GeminiCallError> {
-        let mut optional_params = Object::new();
-        if let Some(stream) = setup.stream {
-            optional_params.insert("stream".to_owned(), Json::Bool(stream));
-        }
-        let call = GeminiCall {
+    fn call<'call>(&'call self, optional_params: &'call Object, setup: Setup) -> GeminiCall<'call> {
+        GeminiCall {
             provider: VertexCapabilityProvider::VertexAi,
             model: MODEL,
             messages: &self.messages,
-            optional_params: &optional_params,
+            optional_params,
             litellm_params: &self.litellm_params,
             api_base: None,
             gemini_api_key: None,
@@ -616,8 +614,11 @@ impl Fixture {
             modify_params: false,
             now: Timestamp::from_second(NOW_SECOND).expect("fixture clock"),
             call_mode: CallMode::Tools,
-        };
-        let deps = CallDeps {
+        }
+    }
+
+    fn deps(&self) -> CallDeps<'_, NoTransport, NoFetch, SilentLogger, SilentConsole> {
+        CallDeps {
             catalog: self.catalog.as_ref(),
             llm: &self.llm,
             clients: &self.clients,
@@ -627,10 +628,37 @@ impl Fixture {
             counter: &self.counter,
             hooks: &self.hooks,
             schema_template: None,
-        };
+        }
+    }
+
+    pub(super) fn run(&self, setup: Setup) -> Result<GeminiReply, GeminiCallError> {
+        let optional_params = optional_params(setup);
+        let call = self.call(&optional_params, setup);
+        let deps = self.deps();
         self.runtime
             .block_on(completion(&call, &deps, Box::new(fixed_id)))
     }
+
+    pub(super) fn cache_deadline(&self, setup: Setup) -> Duration {
+        let optional_params = optional_params(setup);
+        let call = self.call(&optional_params, setup);
+        let deps = self.deps();
+        let access = AccessToken {
+            token: SecretString::from(TOKEN),
+            project: PROJECT.to_owned(),
+        };
+        body_request(&call, &optional_params, &deps, &access)
+            .cache
+            .deadline
+    }
+}
+
+fn optional_params(setup: Setup) -> Object {
+    let mut optional_params = Object::new();
+    if let Some(stream) = setup.stream {
+        optional_params.insert("stream".to_owned(), Json::Bool(stream));
+    }
+    optional_params
 }
 
 fn fixed_id() -> Uuid {

@@ -13,7 +13,7 @@ use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
-use crate::vertex_embedding_call::post::{ClientTimeout, Timeout};
+use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
 
 use super::support::{
     ANSWER, BODY, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN, complete_reply,
@@ -261,6 +261,22 @@ fn ordered_effects_sync_completion_carries_the_timeout(
     });
     assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
     assert_eq!(fixture.recorder.posts()[0].timeout, expected);
+}
+
+#[rstest]
+#[case::explicit_timeout(Some(THIRTY_SECONDS), THIRTY_SECONDS)]
+#[case::absent_timeout(None, HANDLER_DEFAULT_TIMEOUT.total)]
+fn ordered_effects_sync_cache_deadline_follows_the_call_timeout(
+    timeout: Option<Duration>,
+    expected: Duration,
+) {
+    let fixture = pooled_fixture(Vec::new(), Vec::new());
+    let setup = Setup {
+        acompletion: false,
+        stream: None,
+        timeout,
+    };
+    assert_eq!(fixture.cache_deadline(setup), expected);
 }
 
 #[test]
