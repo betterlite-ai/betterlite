@@ -10,8 +10,9 @@ async fn unbound_client_without_a_retired_store_is_allowed() {
     let fake = FakeRecords::shared();
     let mut store = fake_store(&fake, None);
     store.retired = None;
-    let result = unbound::unbound_client(&store, "tenant-1", "client-1").await;
-    assert!(result.is_ok());
+    unbound::unbound_client(&store, "tenant-1", "client-1")
+        .await
+        .expect("the retired check");
     assert!(fake.state().retired_identity_reads.is_empty());
 }
 
@@ -35,12 +36,9 @@ async fn unbound_client_reads_the_microsoft_entra_key() {
 #[tokio::test]
 async fn unbound_client_retired_binding_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.retired_identity = Some(RetiredIdentityRecord {
-            binding_id: String::from("binding-1"),
-        });
-    }
+    fake.state().retired_identity = Some(RetiredIdentityRecord {
+        binding_id: String::from("binding-1"),
+    });
     let store = fake_store(&fake, None);
     let failure = unbound::unbound_client(&store, "tenant-1", "client-1")
         .await
@@ -55,10 +53,7 @@ async fn unbound_client_retired_binding_is_denied() {
 #[tokio::test]
 async fn unbound_client_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::RetiredIdentity);
-    }
+    fake.state().failure = Some(FakeCall::RetiredIdentity);
     let store = fake_store(&fake, None);
     let failure = unbound::unbound_client(&store, "tenant-1", "client-1")
         .await

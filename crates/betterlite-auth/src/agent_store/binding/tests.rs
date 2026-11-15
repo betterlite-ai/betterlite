@@ -16,10 +16,7 @@ const CACHE_KEY: &str = r#"agent_identity:["tenant-1", "client-1"]"#;
 #[tokio::test]
 async fn bound_agent_id_reads_the_microsoft_entra_key() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-    }
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
@@ -38,12 +35,9 @@ async fn bound_agent_id_reads_the_microsoft_entra_key() {
 #[tokio::test]
 async fn bound_agent_id_writes_the_cache_with_the_management_ttl() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-    }
+    fake.state().identity = Some(binding("agent-1"));
     let cache = FakeCache::shared();
-    cache.state().ttl = 42.5;
+    cache.state().ttl = 42.5_f64;
     let store = fake_store(&fake, Some(&cache));
     let found = bound_agent_id(&store, "tenant-1", "client-1")
         .await
@@ -82,10 +76,7 @@ async fn bound_agent_id_cache_hit_skips_the_identity_read() {
 #[tokio::test]
 async fn bound_agent_id_non_string_cache_value_is_a_miss(#[case] cached: &str) {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-    }
+    fake.state().identity = Some(binding("agent-1"));
     let cache = FakeCache::shared();
     cache.state().value = Some(serde_json::from_str(cached).expect("a json cache value"));
     let store = fake_store(&fake, Some(&cache));
@@ -118,12 +109,9 @@ async fn bound_agent_id_missing_binding_checks_the_retired_key() {
 #[tokio::test]
 async fn bound_agent_id_retired_binding_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.retired_identity = Some(RetiredIdentityRecord {
-            binding_id: String::from("binding-1"),
-        });
-    }
+    fake.state().retired_identity = Some(RetiredIdentityRecord {
+        binding_id: String::from("binding-1"),
+    });
     let store = fake_store(&fake, None);
     let failure = bound_agent_id(&store, "tenant-1", "client-1")
         .await
@@ -138,10 +126,7 @@ async fn bound_agent_id_retired_binding_is_denied() {
 #[tokio::test]
 async fn bound_agent_id_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Identity);
-    }
+    fake.state().failure = Some(FakeCall::Identity);
     let store = fake_store(&fake, None);
     let failure = bound_agent_id(&store, "tenant-1", "client-1")
         .await

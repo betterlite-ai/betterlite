@@ -83,10 +83,7 @@ async fn record_authentication_two_matches_is_a_failure() {
 #[tokio::test]
 async fn record_authentication_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Authentication);
-    }
+    fake.state().failure = Some(FakeCall::Authentication);
     let store = fake_store(&fake, None);
     let context = authentication_context("agent-1", Some("rev-1"));
     let failure = authentication::record_authentication(&store, &context)

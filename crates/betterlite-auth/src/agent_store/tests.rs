@@ -27,10 +27,7 @@ fn init_from_client_builds_every_repository() {
 #[tokio::test]
 async fn init_from_client_keeps_the_management_cache() {
     let cache = FakeCache::shared();
-    {
-        let mut state = cache.state();
-        state.value = Some(Json::Text(String::from("cached-agent")));
-    }
+    cache.state().value = Some(Json::Text(String::from("cached-agent")));
     let client = PostgresStore { pool: None };
     let store = AgentIdentityStore::from_client(&client, Some(Arc::<FakeCache>::clone(&cache)));
     let bound = binding::bound_agent_id(&store, "tenant-1", "client-1")

@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::session::PostgresStore;
 use rstest::rstest;
 
@@ -20,13 +21,29 @@ use super::resolve_verified_claims;
 #[tokio::test]
 async fn resolve_claim_without_a_required_name_is_unbound(#[case] name: &str) {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-        state.agent = Some(autonomous_agent());
-    }
+    fake.state().identity = Some(binding("agent-1"));
+    fake.state().agent = Some(autonomous_agent());
     let mut claims = application_claims();
     claims.0.remove(name);
+    let store = fake_store(&fake, None);
+    let context = resolve_verified_claims(&store, &claims)
+        .await
+        .expect("the claim resolution");
+    assert!(context.is_none());
+    assert!(fake.state().identity_reads.is_empty());
+}
+
+#[rstest]
+#[case::issuer("iss")]
+#[case::tenant("tid")]
+#[case::client("azp")]
+#[tokio::test]
+async fn resolve_non_string_claim_is_unbound(#[case] name: &str) {
+    let fake = FakeRecords::shared();
+    fake.state().identity = Some(binding("agent-1"));
+    fake.state().agent = Some(autonomous_agent());
+    let mut claims = application_claims();
+    claims.0.insert(String::from(name), JsonData::Bool(true));
     let store = fake_store(&fake, None);
     let context = resolve_verified_claims(&store, &claims)
         .await
@@ -38,11 +55,8 @@ async fn resolve_claim_without_a_required_name_is_unbound(#[case] name: &str) {
 #[tokio::test]
 async fn resolve_claim_without_the_client_id_is_unbound() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-        state.agent = Some(autonomous_agent());
-    }
+    fake.state().identity = Some(binding("agent-1"));
+    fake.state().agent = Some(autonomous_agent());
     let mut claims = application_claims();
     claims.0.remove("azp");
     let store = fake_store(&fake, None);
@@ -67,10 +81,7 @@ async fn resolve_unbound_client_is_unbound() {
 #[tokio::test]
 async fn resolve_binding_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Identity);
-    }
+    fake.state().failure = Some(FakeCall::Identity);
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -83,10 +94,7 @@ async fn resolve_binding_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn resolve_missing_agent_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-    }
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -101,11 +109,8 @@ async fn resolve_missing_agent_is_denied() {
 #[tokio::test]
 async fn resolve_agent_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.identity = Some(binding("agent-1"));
-        state.failure = Some(FakeCall::Agent);
-    }
+    fake.state().identity = Some(binding("agent-1"));
+    fake.state().failure = Some(FakeCall::Agent);
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -117,13 +122,10 @@ async fn resolve_agent_read_failure_is_policy_unavailable() {
 #[tokio::test]
 async fn resolve_disabled_agent_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut agent = autonomous_agent();
-        agent.enabled = PolicyFlag(false);
-        let mut state = fake.state();
-        state.agent = Some(agent);
-        state.identity = Some(binding("agent-1"));
-    }
+    let mut agent = autonomous_agent();
+    agent.enabled = PolicyFlag(false);
+    fake.state().agent = Some(agent);
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -138,13 +140,10 @@ async fn resolve_disabled_agent_is_denied() {
 #[tokio::test]
 async fn resolve_agent_not_identity_managed_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut agent = autonomous_agent();
-        agent.identity_managed = false;
-        let mut state = fake.state();
-        state.agent = Some(agent);
-        state.identity = Some(binding("agent-1"));
-    }
+    let mut agent = autonomous_agent();
+    agent.identity_managed = false;
+    fake.state().agent = Some(agent);
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -159,13 +158,10 @@ async fn resolve_agent_not_identity_managed_is_denied() {
 #[tokio::test]
 async fn resolve_agent_without_binding_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut agent = autonomous_agent();
-        agent.identity = None;
-        let mut state = fake.state();
-        state.agent = Some(agent);
-        state.identity = Some(binding("agent-1"));
-    }
+    let mut agent = autonomous_agent();
+    agent.identity = None;
+    fake.state().agent = Some(agent);
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -180,13 +176,10 @@ async fn resolve_agent_without_binding_is_denied() {
 #[tokio::test]
 async fn resolve_inactive_binding_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut agent = autonomous_agent();
-        agent.identity.as_mut().expect("the fixture binding").active = PolicyFlag(false);
-        let mut state = fake.state();
-        state.agent = Some(agent);
-        state.identity = Some(binding("agent-1"));
-    }
+    let mut agent = autonomous_agent();
+    agent.identity.as_mut().expect("the fixture binding").active = PolicyFlag(false);
+    fake.state().agent = Some(agent);
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &application_claims())
         .await
@@ -201,11 +194,8 @@ async fn resolve_inactive_binding_is_denied() {
 #[tokio::test]
 async fn resolve_application_token_returns_autonomous_context() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(autonomous_agent());
-        state.identity = Some(binding("agent-1"));
-    }
+    fake.state().agent = Some(autonomous_agent());
+    fake.state().identity = Some(binding("agent-1"));
     let store = fake_store(&fake, None);
     let context = resolve_verified_claims(&store, &application_claims())
         .await
@@ -222,11 +212,8 @@ async fn resolve_application_token_returns_autonomous_context() {
 #[tokio::test]
 async fn resolve_delegated_token_needs_a_proven_human() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &delegated_claims())
         .await
@@ -249,12 +236,9 @@ async fn resolve_delegated_token_needs_a_proven_human() {
 #[tokio::test]
 async fn resolve_delegated_token_returns_the_human_user() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-        state.subject = Some(human_row("human", "sso_interactive", Some("user-2")));
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
+    fake.state().subject = Some(human_row("human", "sso_interactive", Some("user-2")));
     let store = fake_store(&fake, None);
     let context = resolve_verified_claims(&store, &delegated_claims())
         .await
@@ -270,12 +254,9 @@ async fn resolve_delegated_token_returns_the_human_user() {
 #[tokio::test]
 async fn resolve_delegated_subject_of_another_kind_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-        state.subject = Some(human_row("application", "sso_interactive", Some("user-2")));
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
+    fake.state().subject = Some(human_row("application", "sso_interactive", Some("user-2")));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &delegated_claims())
         .await
@@ -290,12 +271,9 @@ async fn resolve_delegated_subject_of_another_kind_is_denied() {
 #[tokio::test]
 async fn resolve_delegated_subject_not_interactive_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-        state.subject = Some(human_row("human", "sso_other", Some("user-2")));
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
+    fake.state().subject = Some(human_row("human", "sso_other", Some("user-2")));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &delegated_claims())
         .await
@@ -310,12 +288,9 @@ async fn resolve_delegated_subject_not_interactive_is_denied() {
 #[tokio::test]
 async fn resolve_delegated_subject_without_user_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-        state.subject = Some(human_row("human", "sso_interactive", None));
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
+    fake.state().subject = Some(human_row("human", "sso_interactive", None));
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &delegated_claims())
         .await
@@ -330,12 +305,9 @@ async fn resolve_delegated_subject_without_user_is_denied() {
 #[tokio::test]
 async fn resolve_subject_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(delegated_agent());
-        state.identity = Some(binding("agent-2"));
-        state.failure = Some(FakeCall::Subject);
-    }
+    fake.state().agent = Some(delegated_agent());
+    fake.state().identity = Some(binding("agent-2"));
+    fake.state().failure = Some(FakeCall::Subject);
     let store = fake_store(&fake, None);
     let failure = resolve_verified_claims(&store, &delegated_claims())
         .await

@@ -18,13 +18,10 @@ use crate::identity::FailureCode;
 #[tokio::test]
 async fn subject_non_string_oid_is_none(#[case] oid: &str) {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
-    }
-    let oid: JsonData = serde_json::from_str(oid).expect("a json oid");
+    fake.state().subject = Some(human_row("human", "sso_interactive", Some("user-1")));
+    let json_oid: JsonData = serde_json::from_str(oid).expect("a json oid");
     let store = fake_store(&fake, None);
-    let found = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
+    let found = subject::find(&store, "issuer-1", "tenant-1", Some(&json_oid))
         .await
         .expect("the subject lookup");
     assert!(found.is_none());
@@ -34,10 +31,7 @@ async fn subject_non_string_oid_is_none(#[case] oid: &str) {
 #[tokio::test]
 async fn subject_missing_oid_is_none() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
-    }
+    fake.state().subject = Some(human_row("human", "sso_interactive", Some("user-1")));
     let store = fake_store(&fake, None);
     let found = subject::find(&store, "issuer-1", "tenant-1", None)
         .await
@@ -49,10 +43,7 @@ async fn subject_missing_oid_is_none() {
 #[tokio::test]
 async fn subject_reads_the_verified_subject_key() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.subject = Some(human_row("human", "sso_interactive", Some("user-1")));
-    }
+    fake.state().subject = Some(human_row("human", "sso_interactive", Some("user-1")));
     let oid = JsonData::String(String::from("oid-2"));
     let store = fake_store(&fake, None);
     let found = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))
@@ -85,10 +76,7 @@ async fn subject_missing_returns_none() {
 #[tokio::test]
 async fn subject_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Subject);
-    }
+    fake.state().failure = Some(FakeCall::Subject);
     let oid = JsonData::String(String::from("oid-2"));
     let store = fake_store(&fake, None);
     let failure = subject::find(&store, "issuer-1", "tenant-1", Some(&oid))

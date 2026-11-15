@@ -9,10 +9,7 @@ use crate::identity::FailureCode;
 #[tokio::test]
 async fn enroll_create_data_carries_the_subject_and_user() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
-    }
+    fake.state().enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
     let store = fake_store(&fake, None);
     enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -32,22 +29,17 @@ async fn enroll_create_data_carries_the_subject_and_user() {
 #[tokio::test]
 async fn enroll_matching_row_succeeds() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
-    }
+    fake.state().enrollment_row = Some(human_row("human", "sso_interactive", Some("user-1")));
     let store = fake_store(&fake, None);
-    let result = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1").await;
-    assert!(result.is_ok());
+    enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
+        .await
+        .expect("the enrollment");
 }
 
 #[tokio::test]
 async fn enroll_other_user_row_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("human", "sso_interactive", Some("user-9")));
-    }
+    fake.state().enrollment_row = Some(human_row("human", "sso_interactive", Some("user-9")));
     let store = fake_store(&fake, None);
     let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -62,10 +54,7 @@ async fn enroll_other_user_row_is_denied() {
 #[tokio::test]
 async fn enroll_non_human_row_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("application", "sso_interactive", Some("user-1")));
-    }
+    fake.state().enrollment_row = Some(human_row("application", "sso_interactive", Some("user-1")));
     let store = fake_store(&fake, None);
     let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -80,10 +69,7 @@ async fn enroll_non_human_row_is_denied() {
 #[tokio::test]
 async fn enroll_other_verified_via_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("human", "sso_other", Some("user-1")));
-    }
+    fake.state().enrollment_row = Some(human_row("human", "sso_other", Some("user-1")));
     let store = fake_store(&fake, None);
     let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -98,10 +84,7 @@ async fn enroll_other_verified_via_is_denied() {
 #[tokio::test]
 async fn enroll_null_user_row_is_denied() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.enrollment_row = Some(human_row("human", "sso_interactive", None));
-    }
+    fake.state().enrollment_row = Some(human_row("human", "sso_interactive", None));
     let store = fake_store(&fake, None);
     let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await
@@ -116,10 +99,7 @@ async fn enroll_null_user_row_is_denied() {
 #[tokio::test]
 async fn enroll_upsert_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Enrollment);
-    }
+    fake.state().failure = Some(FakeCall::Enrollment);
     let store = fake_store(&fake, None);
     let failure = enrollment::enroll_interactive_human(&store, &microsoft_subject(), "user-1")
         .await

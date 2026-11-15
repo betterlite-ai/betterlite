@@ -8,12 +8,9 @@ use crate::identity::FailureCode;
 #[tokio::test]
 async fn retired_agent_true_for_a_retired_row() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.retired_agent = Some(RetiredAgentRecord {
-            original_agent_id: String::from("agent-1"),
-        });
-    }
+    fake.state().retired_agent = Some(RetiredAgentRecord {
+        original_agent_id: String::from("agent-1"),
+    });
     let store = fake_store(&fake, None);
     let history = retired::agent_is_retired(&store, "agent-1")
         .await
@@ -51,10 +48,7 @@ async fn retired_agent_without_a_repository_is_policy_unavailable() {
 #[tokio::test]
 async fn retired_agent_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::RetiredAgent);
-    }
+    fake.state().failure = Some(FakeCall::RetiredAgent);
     let store = fake_store(&fake, None);
     let failure = retired::agent_is_retired(&store, "agent-1")
         .await

@@ -7,10 +7,7 @@ use crate::identity::FailureCode;
 #[tokio::test]
 async fn agent_returns_the_stored_row() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.agent = Some(autonomous_agent());
-    }
+    fake.state().agent = Some(autonomous_agent());
     let store = fake_store(&fake, None);
     let found = agent::load(&store, "agent-1")
         .await
@@ -35,10 +32,7 @@ async fn agent_missing_returns_none() {
 #[tokio::test]
 async fn agent_read_failure_is_policy_unavailable() {
     let fake = FakeRecords::shared();
-    {
-        let mut state = fake.state();
-        state.failure = Some(FakeCall::Agent);
-    }
+    fake.state().failure = Some(FakeCall::Agent);
     let store = fake_store(&fake, None);
     let failure = agent::load(&store, "agent-1")
         .await
