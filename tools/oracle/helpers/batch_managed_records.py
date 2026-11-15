@@ -1,17 +1,11 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Literal, NotRequired, TypedDict
+from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
-from litellm.proxy.openai_files_endpoints.common_utils import (
-    batch_cost_poller_is_active,
-    ensure_batch_response_managed_file_ids,
-    get_batch_from_database,
-    resolve_input_file_id_to_unified,
-    resolve_output_file_ids_to_unified,
-    update_batch_in_database,
-)
-from pydantic import JsonValue
+from litellm.proxy.openai_files_endpoints import common_utils
+from pydantic import BaseModel, JsonValue
 
 Operation = Literal[
     "resolve_input",
@@ -55,11 +49,11 @@ class FindWhere(TypedDict):
     flat_model_file_ids: HasFilter
 
 
-@dataclass
-class BatchResponse:
+class BatchResponse(BaseModel):
     input_file_id: str | None
     output_file_id: str | None
     error_file_id: str | None
+    status: str = "in_progress"
 
 
 @dataclass
@@ -90,14 +84,53 @@ class FileTable:
         return ManagedFile(unified_file_id=unified_file_id)
 
 
+class ObjectTable:
+    def __init__(self, events: list[JsonValue]) -> None:
+        self._events = events
+        self.written = False
+
+    async def find_first(self, where: dict[str, str]) -> None:
+        self._events.append(
+            {"event": "object_lookup", "unified_object_id": where["unified_object_id"]}
+        )
+
+    async def update(self, where: dict[str, str], data: dict[str, JsonValue]) -> None:
+        self._events.append(
+            {
+                "event": "object_update",
+                "unified_object_id": where["unified_object_id"],
+                "status": data.get("status"),
+            }
+        )
+        self.written = True
+
+
 class FakeDb:
-    def __init__(self, table: FileTable) -> None:
-        self.litellm_managedfiletable = table
+    def __init__(self, files: FileTable, objects: ObjectTable) -> None:
+        self.litellm_managedfiletable = files
+        self.litellm_managedobjecttable = objects
 
 
 class FakeClient:
-    def __init__(self, table: FileTable) -> None:
-        self.db = FakeDb(table)
+    def __init__(self, files: FileTable, objects: ObjectTable) -> None:
+        self.db = FakeDb(files, objects)
+
+
+ResolveFiles: TypeAlias = Callable[[BatchResponse, FakeClient | None], Awaitable[None]]
+EnsureFiles: TypeAlias = Callable[
+    [BatchResponse, None, FakeClient | None, logging.Logger], Awaitable[None]
+]
+DatabaseGet: TypeAlias = Callable[
+    [str, str | Literal[False], None, FakeClient | None, logging.Logger],
+    Awaitable[tuple[None, None]],
+]
+DatabaseUpdate: TypeAlias = Callable[
+    [str, str | Literal[False], BatchResponse, None, FakeClient | None, logging.Logger],
+    Awaitable[None],
+]
+
+# LiteLLM leaves these parameters and returns unannotated; the casts give the shapes sent here
+RESOLVE_INPUT, RESOLVE_OUTPUT, ENSURE, GET_BATCH, UPDATE = cast(ResolveFiles, common_utils.resolve_input_file_id_to_unified), cast(ResolveFiles, common_utils.resolve_output_file_ids_to_unified), cast(EnsureFiles, common_utils.ensure_batch_response_managed_file_ids), cast(DatabaseGet, common_utils.get_batch_from_database), cast(DatabaseUpdate, common_utils.update_batch_in_database)  # noqa: E501  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1200
 
 
 def batch_id(plan: Plan) -> str:
@@ -117,11 +150,11 @@ def unified_batch_id(plan: Plan) -> str | Literal[False]:
 def response_for(plan: Plan) -> BatchResponse:
     files = plan.get("files")
     if files is None:
-        return BatchResponse(None, None, None)
+        return BatchResponse(input_file_id=None, output_file_id=None, error_file_id=None)
     return BatchResponse(
-        files.get("input_file_id"),
-        files.get("output_file_id"),
-        files.get("error_file_id"),
+        input_file_id=files.get("input_file_id"),
+        output_file_id=files.get("output_file_id"),
+        error_file_id=files.get("error_file_id"),
     )
 
 
@@ -141,16 +174,16 @@ async def dispatch(
     response = response_for(plan)
     match plan["op"]:
         case "resolve_input":
-            await resolve_input_file_id_to_unified(response, client)
+            await RESOLVE_INPUT(response, client)
             return files_value(response)
         case "resolve_output":
-            await resolve_output_file_ids_to_unified(response, client)
+            await RESOLVE_OUTPUT(response, client)
             return files_value(response)
         case "ensure":
-            await ensure_batch_response_managed_file_ids(response, None, client, logger)
+            await ENSURE(response, None, client, logger)
             return files_value(response)
         case "database_get":
-            result: tuple[None, None] = await get_batch_from_database(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/common_utils.py#L1324
+            result = await GET_BATCH(
                 batch_id(plan),
                 unified_batch_id(plan),
                 None,
@@ -159,7 +192,7 @@ async def dispatch(
             )
             return {"db_batch_object": result[0], "response": result[1]}
         case "database_update":
-            await update_batch_in_database(
+            await UPDATE(
                 batch_id(plan),
                 unified_batch_id(plan),
                 response,
@@ -167,16 +200,18 @@ async def dispatch(
                 client,
                 logger,
             )
-            return {"files": files_value(response), "written": False}
+            written = client is not None and client.db.litellm_managedobjecttable.written
+            return {"files": files_value(response), "written": written}
         case "poller_active":
-            return {"active": batch_cost_poller_is_active()}
+            return {"active": common_utils.batch_cost_poller_is_active()}
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:
     events: list[JsonValue] = []
     database = input_value["database"]
-    table = FileTable(database, events)
-    client: FakeClient | None = FakeClient(table) if database["present"] else None
+    files = FileTable(database, events)
+    objects = ObjectTable(events)
+    client: FakeClient | None = FakeClient(files, objects) if database["present"] else None
     logger = logging.getLogger("LiteLLM")
     result = asyncio.run(dispatch(input_value["plan"], client, logger))
     return {"result": result, "events": events}
