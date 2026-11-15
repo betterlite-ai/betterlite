@@ -1,9 +1,9 @@
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
 use super::Section;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
+use crate::resolve::{resolve_secret, resolve_string};
 use crate::tls::VerifySetting;
 
 #[derive(Debug, Default, Deserialize)]
@@ -25,8 +25,16 @@ struct Parameters {
     guardrail: String,
     api_key: Option<SecretString>,
     api_base: Option<String>,
-    inspect_embeddings: Option<bool>,
+    inspect_embeddings: Option<RawFlag>,
     ssl_verify: Option<VerifySetting>,
+}
+
+// guardrail_params resolves os.environ/ references in litellm_params before reading a bool key
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawFlag {
+    Boolean(bool),
+    Text(String),
 }
 
 #[derive(Debug, Clone)]
@@ -64,23 +72,26 @@ impl Entry {
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let api_key = match parameters.api_key {
-            Some(key) => Some(SecretString::from(resolve_string(
-                key.expose_secret().to_owned(),
-                &format!("{prefix}.api_key"),
-                lookup,
-            )?)),
-            None => None,
-        };
-        let api_base = match parameters.api_base {
-            Some(base) => Some(resolve_string(base, &format!("{prefix}.api_base"), lookup)?),
-            None => None,
+        let api_key = resolve_secret(parameters.api_key, &format!("{prefix}.api_key"), lookup)?;
+        let api_base = parameters
+            .api_base
+            .map(|base| resolve_string(base, &format!("{prefix}.api_base"), lookup))
+            .transpose()?;
+        let path = format!("{prefix}.inspect_embeddings");
+        let inspect_embeddings = match parameters.inspect_embeddings {
+            Some(RawFlag::Boolean(flag)) => flag,
+            Some(RawFlag::Text(text)) => {
+                let name = text.strip_prefix("os.environ/").unwrap_or(&path).to_owned();
+                let resolved = resolve_string(text, &path, lookup)?;
+                betterlite_env::flag(&name, &resolved)?.unwrap_or(false)
+            }
+            None => false,
         };
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base,
-            inspect_embeddings: parameters.inspect_embeddings.unwrap_or(false),
+            inspect_embeddings,
             ssl_verify: parameters.ssl_verify,
         })
     }

@@ -80,6 +80,62 @@ fn cato_projections_config_names_a_missing_environment_reference() {
 }
 
 #[test]
+fn cato_projections_config_reads_an_environment_inspect_flag() {
+    let source = CATO_CONFIG.replace(
+        "inspect_embeddings: true",
+        "inspect_embeddings: os.environ/FLAG",
+    );
+    let lookup = BTreeMap::from([("FLAG".to_owned(), "yes".to_owned())]);
+    let settings = resolve(&source, &lookup).unwrap();
+    assert!(settings.first().unwrap().inspect_embeddings);
+}
+
+#[test]
+fn cato_projections_config_reads_an_empty_inspect_flag_as_false() {
+    let source = CATO_CONFIG.replace(
+        "inspect_embeddings: true",
+        "inspect_embeddings: os.environ/FLAG",
+    );
+    let lookup = BTreeMap::from([("FLAG".to_owned(), String::new())]);
+    let settings = resolve(&source, &lookup).unwrap();
+    assert!(!settings.first().unwrap().inspect_embeddings);
+}
+
+#[test]
+fn cato_projections_config_names_a_missing_inspect_environment_reference() {
+    let source = CATO_CONFIG.replace(
+        "inspect_embeddings: true",
+        "inspect_embeddings: os.environ/FLAG",
+    );
+    let error = resolve(&source, &BTreeMap::new()).unwrap_err();
+    assert!(matches!(
+        error,
+        ConfigError::MissingEnvironment { variable, path }
+        if variable == "FLAG" && path == "guardrails.0.litellm_params.inspect_embeddings"
+    ));
+}
+
+#[test]
+fn cato_projections_config_rejects_an_invalid_inspect_flag_value() {
+    let source = CATO_CONFIG.replace(
+        "inspect_embeddings: true",
+        "inspect_embeddings: os.environ/FLAG",
+    );
+    let lookup = BTreeMap::from([("FLAG".to_owned(), "perhaps".to_owned())]);
+    let error = resolve(&source, &lookup).unwrap_err();
+    let message = error.to_string();
+    assert!(matches!(error, ConfigError::Environment(_)));
+    assert!(message.contains("FLAG"), "{message}");
+}
+
+#[test]
+fn cato_projections_config_parses_other_kinds_with_an_inspect_flag() {
+    let source = "guardrails:\n  - guardrail_name: other\n    litellm_params: {guardrail: custom, mode: pre_call, inspect_embeddings: os.environ/FLAG}\n";
+    let settings = resolve(source, &BTreeMap::new()).unwrap();
+    assert!(settings.is_empty());
+}
+
+#[test]
 fn cato_projections_config_reads_a_ca_path_ssl_verify() {
     let source = CATO_CONFIG.replace("ssl_verify: false", "ssl_verify: /etc/ca.pem");
     let settings = resolve(&source, &BTreeMap::new()).unwrap();
