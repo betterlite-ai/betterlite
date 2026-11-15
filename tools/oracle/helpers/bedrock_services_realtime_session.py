@@ -232,7 +232,7 @@ def validated_headers(
 
 def run_default(input_value: Input) -> JsonValue:
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config = BedrockRealtimeConfig()
+    config: RealtimeConfig = BedrockRealtimeConfig()
     marker = config.session_configuration_request(input_value["model"])
     configuration = JsonAdapter.validate_json(marker)
     return {
@@ -248,7 +248,7 @@ def run_default(input_value: Input) -> JsonValue:
 
 
 def run_created_updated(input_value: Input) -> JsonValue:
-    config = BedrockRealtimeConfig()
+    config: RealtimeConfig = BedrockRealtimeConfig()
     model = input_value["model"]
     logging_obj = make_logging(input_value["trace_id"])
     fastuuid.uuid4 = FixedFast(input_value["ids"])
@@ -287,7 +287,7 @@ def run(input_value: Input) -> JsonValue:
     if case == "default_session_configuration":
         return run_default(input_value)
     uuid.uuid4 = FixedStd(input_value["ids"])
-    config = BedrockRealtimeConfig()
+    config: RealtimeConfig = BedrockRealtimeConfig()
     if case == "tool_configuration":
         results = tool_updates(config, input_value["updates"])
     else:
