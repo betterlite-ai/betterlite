@@ -132,7 +132,7 @@ where
         .with_ansi(false)
         .without_time()
         .with_target(false)
-        .with_max_level(tracing::Level::INFO)
+        .with_max_level(tracing::Level::DEBUG)
         .with_writer(log.reopen().expect("a reopened log"))
         .finish();
     with_default(subscriber, action);
@@ -599,6 +599,43 @@ fn browser_searches_and_opens_are_counted_from_executed_tools() {
         {"type": "other"}
     ])));
     assert_eq!(converted.browser_actions, billed(2, 1));
+}
+
+#[test]
+fn browser_searches_and_opens_are_summed_across_choices() {
+    let converted = reply(&json!({
+        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": null,
+                "executed_tools": [{"type": "browser_search"}, {"type": "browser_search"}]}},
+            {"index": 1, "message": {"role": "assistant", "content": null,
+                "executed_tools": [{"name": "browser.search"}, {"type": "browser.open"}]}}
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+    }));
+    assert_eq!(converted.browser_actions, billed(3, 1));
+}
+
+#[test]
+fn a_malformed_second_choice_voids_the_whole_count() {
+    let body = json!({
+        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": null,
+                "executed_tools": [{"type": "browser_search"}]}},
+            {"index": 1, "message": {"role": "assistant", "content": null,
+                "executed_tools": [3]}}
+        ],
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
+    });
+    let log = captured(|| {
+        let converted = reply(&body);
+        assert!(converted.browser_actions.is_none());
+        assert_eq!(converted.reply.response.choices.len(), 2);
+    });
+    assert!(
+        log.contains("Groq executed_tools entries did not match the expected shape; not billed")
+    );
 }
 
 #[test]
