@@ -32,8 +32,8 @@ fn pillar_applies_the_defaults() {
     assert_eq!(built.on_flagged_action.as_deref(), Some("monitor"));
     assert_eq!(built.async_mode, None);
     assert_eq!(built.persist_session, None);
-    assert_eq!(built.include_scanners, Some(true));
-    assert_eq!(built.include_evidence, Some(true));
+    assert_eq!(built.include_scanners, None);
+    assert_eq!(built.include_evidence, None);
     assert_eq!(built.fallback_on_error, None);
     assert_eq!(built.timeout, None);
     assert!(!built.default_on);
@@ -145,7 +145,28 @@ fn pillar_keeps_an_explicit_null_at_the_top_level() {
     .unwrap();
     assert_eq!(built.on_flagged_action, None);
     assert_eq!(built.include_scanners, None);
-    assert_eq!(built.include_evidence, Some(true));
+    assert_eq!(built.include_evidence, None);
+}
+
+#[test]
+fn pillar_optional_params_do_not_supply_on_flagged_action() {
+    let both = initialize_pillar(
+        &params(
+            r#",
+            "on_flagged_action": "mask",
+            "optional_params": {"on_flagged_action": "block"}
+            "#,
+        ),
+        Some("pillar-check"),
+    )
+    .unwrap();
+    assert_eq!(both.on_flagged_action.as_deref(), Some("mask"));
+    let optional_only = initialize_pillar(
+        &params(r#", "optional_params": {"on_flagged_action": "block"}"#),
+        Some("pillar-check"),
+    )
+    .unwrap();
+    assert_eq!(optional_only.on_flagged_action.as_deref(), Some("monitor"));
 }
 
 #[rstest]
