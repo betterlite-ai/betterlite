@@ -1,0 +1,13 @@
+task: B1335
+deviations: []
+kept_bugs:
+  - what: >-
+      GPT-OSS's removal list spells its first entry "tool", which the inherited allowlist does not
+      contain, so "tools" stays supported and a request that sends tools is forwarded to
+      openai/gpt-oss-120b-maas even though LiteLLM reports that model as not supporting function
+      calling.
+    why: >-
+      A client that sends tools to that model works today because the typo leaves "tools" in the
+      allowlist, so a working setup can rely on the request going out with its tools; the oracle
+      case gpt-oss-singular-tool pins the same allowlist and mapping.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_ai_partner_models/gpt_oss/transformation.py#L25-L34
