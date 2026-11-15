@@ -19,7 +19,7 @@ use crate::legacy_prediction::client::{
     EndpointPredictRequest, PredictionClient, PredictionStream, PublisherPredictRequest,
 };
 use crate::legacy_prediction::error::PredictionError;
-use crate::legacy_prediction::execution::LegacyContext;
+use crate::legacy_prediction::execution::{LegacyChunkStream, LegacyContext};
 use crate::legacy_prediction::invocation::LegacyInvocation;
 use crate::legacy_prediction::projection::{LocalEncoding, ProjectionServices};
 use crate::legacy_prediction::records::{
@@ -163,6 +163,13 @@ pub(super) fn empty_stream() -> PredictionStream {
     stream::empty().boxed()
 }
 
+pub(super) async fn words_of(stream: LegacyChunkStream) -> Vec<String> {
+    stream
+        .map(|chunk| chunk.expect("a streamed word").text)
+        .collect()
+        .await
+}
+
 #[derive(Clone, Debug)]
 pub(super) enum Call {
     Message(PublisherPredictRequest),
@@ -189,22 +196,19 @@ impl FixtureClient {
         self.calls.lock().expect("calls").clone()
     }
 
-    fn text_reply_of(&self, call: Call) -> Result<TextReply, PredictionError> {
+    fn take_text(&self, call: Call) -> Option<Result<TextReply, PredictionError>> {
         self.record(call);
-        let mut slot = self.text.lock().expect("text");
-        slot.take().expect("a fixture text reply")
+        self.text.lock().expect("text").take()
     }
 
-    fn predictions_of(&self, call: Call) -> Result<PredictionsReply, PredictionError> {
+    fn take_predictions(&self, call: Call) -> Option<Result<PredictionsReply, PredictionError>> {
         self.record(call);
-        let mut slot = self.predictions.lock().expect("predictions");
-        slot.take().expect("a fixture reply")
+        self.predictions.lock().expect("predictions").take()
     }
 
-    fn stream_of(&self, call: Call) -> Result<PredictionStream, PredictionError> {
+    fn take_stream(&self, call: Call) -> Option<Result<PredictionStream, PredictionError>> {
         self.record(call);
-        let mut slot = self.stream.lock().expect("stream");
-        slot.take().expect("a fixture stream")
+        self.stream.lock().expect("stream").take()
     }
 
     pub(super) fn with_text(reply: TextReply) -> Self {
@@ -249,7 +253,9 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        let reply = self.text_reply_of(Call::Message(request.clone()));
+        let reply = self
+            .take_text(Call::Message(request.clone()))
+            .expect("a fixture text reply");
         async move { reply }
     }
 
@@ -257,7 +263,9 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<TextReply, PredictionError>> + Send {
-        let reply = self.text_reply_of(Call::Text(request.clone()));
+        let reply = self
+            .take_text(Call::Text(request.clone()))
+            .expect("a fixture text reply");
         async move { reply }
     }
 
@@ -265,7 +273,9 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &EndpointPredictRequest,
     ) -> impl Future<Output = Result<PredictionsReply, PredictionError>> + Send {
-        let reply = self.predictions_of(Call::Endpoint(request.clone()));
+        let reply = self
+            .take_predictions(Call::Endpoint(request.clone()))
+            .expect("a fixture reply");
         async move { reply }
     }
 
@@ -273,7 +283,9 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        let stream = self.stream_of(Call::MessageStream(request.clone()));
+        let stream = self
+            .take_stream(Call::MessageStream(request.clone()))
+            .expect("a fixture stream");
         async move { stream }
     }
 
@@ -281,7 +293,9 @@ impl PredictionClient for FixtureClient {
         &self,
         request: &PublisherPredictRequest,
     ) -> impl Future<Output = Result<PredictionStream, PredictionError>> + Send {
-        let stream = self.stream_of(Call::TextStream(request.clone()));
+        let stream = self
+            .take_stream(Call::TextStream(request.clone()))
+            .expect("a fixture stream");
         async move { stream }
     }
 }

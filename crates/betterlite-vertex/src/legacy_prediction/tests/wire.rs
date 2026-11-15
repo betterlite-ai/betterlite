@@ -140,7 +140,7 @@ fn legacy_prediction_frames_track_strings_and_nesting() {
             br#"{"d":"\\"}"#.to_vec(),
         ]
     );
-    assert!(frames.finish().is_ok());
+    frames.finish().expect("a finished stream");
     assert!(frames.push(b" \n\t").expect("trailing space").is_empty());
     assert!(matches!(
         frames.push(b"x"),
@@ -191,6 +191,6 @@ fn legacy_prediction_chat_safety_counts() {
             field: "safetyAttributes"
         })
     ));
-    assert!(chat_reply(&two_candidates("[{},{}]")).is_ok());
-    assert!(chat_reply(&two_candidates("[{},{},{}]")).is_ok());
+    chat_reply(&two_candidates("[{},{}]")).expect("two candidates");
+    chat_reply(&two_candidates("[{},{},{}]")).expect("three candidates");
 }

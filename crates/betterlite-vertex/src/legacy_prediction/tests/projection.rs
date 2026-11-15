@@ -95,6 +95,7 @@ async fn projection_none_string() {
         }
     );
     assert_eq!(result.created, 1_700_000_000);
+    assert_eq!(result.model, "gemini-2.5-flash");
 }
 
 #[tokio::test]
@@ -132,6 +133,7 @@ async fn projection_sdk_usage() {
             total_tokens: 10
         }
     );
+    assert_eq!(result.model, "chat-bison");
 }
 
 #[tokio::test]

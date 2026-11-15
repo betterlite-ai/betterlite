@@ -1,6 +1,8 @@
 use std::ffi::OsStr;
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
+
+use rstest::rstest;
 
 use crate::legacy_prediction::error::PredictionError;
 use crate::legacy_prediction::frames::PredictionFrames;
@@ -67,6 +69,14 @@ fn legacy_prediction_rejects_a_large_body() {
 }
 
 #[test]
+fn legacy_prediction_rejects_a_non_object_body() {
+    assert!(matches!(
+        decode_legacy_prediction(b"[]"),
+        Err(PredictionError::BodyShape)
+    ));
+}
+
+#[test]
 fn legacy_prediction_frames_split_across_reads() {
     let mut frames = PredictionFrames::default();
     assert!(frames.push(b"[").expect("the open").is_empty());
@@ -79,7 +89,7 @@ fn legacy_prediction_frames_split_across_reads() {
     let ready = frames.push(br#"llo"]}}}]}"#).expect("the object close");
     assert_eq!(ready.len(), 1);
     assert!(frames.push(b"]").expect("the array close").is_empty());
-    assert!(frames.finish().is_ok());
+    frames.finish().expect("a finished stream");
     let chunk = chunk_of(ChunkKind::Text, &ready[0]).expect("a chunk");
     assert_eq!(
         chunk,
@@ -104,29 +114,18 @@ fn legacy_prediction_frames_reject_unfinished() {
     ));
 }
 
-#[test]
-fn replays_the_legacy_prediction_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/legacy_prediction");
-    let files: Vec<_> = fs::read_dir(corpus)
-        .expect("corpus folder")
-        .map(|entry| entry.expect("corpus entry").path())
-        .collect();
-    assert!(!files.is_empty());
-    files
-        .iter()
-        .try_for_each(|path| {
-            let bytes = fs::read(path)?;
-            let name = path
-                .file_name()
-                .and_then(OsStr::to_str)
-                .expect("a UTF-8 seed name");
-            let decoded = decode_legacy_prediction(&bytes);
-            if name.starts_with("valid") {
-                decoded.expect("this seed is a prediction body");
-            } else {
-                assert!(decoded.is_err(), "{name}");
-            }
-            Ok::<(), std::io::Error>(())
-        })
-        .expect("readable corpus");
+#[rstest]
+fn replays_the_legacy_prediction_corpus(#[files("fuzz/corpus/legacy_prediction/*")] path: PathBuf) {
+    let bytes = fs::read(&path).expect("a readable seed");
+    let name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .expect("a UTF-8 seed name");
+    let decoded = decode_legacy_prediction(&bytes);
+    if name.starts_with("valid") {
+        decoded.expect("this seed is a prediction body");
+    } else {
+        assert!(decoded.is_err(), "{name}");
+    }
+    drop(PredictionFrames::default().push(&bytes));
 }
