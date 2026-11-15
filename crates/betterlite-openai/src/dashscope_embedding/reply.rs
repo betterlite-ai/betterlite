@@ -10,6 +10,7 @@ use super::error::DashscopeError;
 // an entry the embedding record types cannot hold is an unclassified provider failure, which LiteLLM answers with 500
 const SHAPE_FAILURE_STATUS: u16 = 500;
 
+#[derive(Debug)]
 pub struct DashscopeEmbeddingReply {
     pub response: EmbeddingResponse,
     pub id: Option<String>,
@@ -64,6 +65,7 @@ fn error_message(error: &Json) -> String {
             Some(Json::Text(message)) => message.clone(),
             _ => serde_json::to_string(error).unwrap_or_default(),
         },
+        Json::Text(text) => text.clone(),
         _ => serde_json::to_string(error).unwrap_or_default(),
     }
 }
