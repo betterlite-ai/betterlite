@@ -64,8 +64,13 @@ struct CaseLookup {
 }
 
 impl PriceLookup for CaseLookup {
-    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
-        let scoped = provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
+    fn effective_model_info(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
+        let scoped =
+            custom_llm_provider.and_then(|name| self.entries.get(&format!("{name}/{model}")));
         scoped.or_else(|| self.entries.get(model)).cloned()
     }
 
@@ -73,15 +78,20 @@ impl PriceLookup for CaseLookup {
         self.entries.get(key).cloned()
     }
 
-    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
-        let record = self.effective_model_info(model, provider)?;
-        Some(PricedModel {
-            record,
-            tiered_pricing: Vec::new(),
-            off_peak_pricing: None,
-            off_peak_cache_read_present: false,
-        })
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        priced(self.effective_model_info(model, custom_llm_provider))
     }
+}
+
+fn priced(found: Option<PriceRecord>) -> Option<PricedModel> {
+    found.map(|record| PricedModel {
+        record,
+        ..PricedModel::default()
+    })
 }
 
 pub(crate) struct Op;
