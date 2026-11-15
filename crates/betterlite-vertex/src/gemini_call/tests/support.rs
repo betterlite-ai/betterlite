@@ -77,6 +77,8 @@ pub(super) const LOCATION: &str = "us-central1";
 pub(super) const MODEL: &str = "gemini-2.5-flash";
 pub(super) const NOW_SECOND: i64 = 1_700_000_000;
 pub(super) const MESSAGES: &str = r#"[{"role":"user","content":"hi"}]"#;
+// a tool result's remote image: the async transform refuses it, the sync history conversion hands it to the fetcher
+pub(super) const REMOTE_TOOL_MEDIA: &str = r#"[{"role":"tool","name":"f","content":[{"type":"image_url","image_url":{"url":"http://example.com/cat"}}]}]"#;
 pub(super) const BODY: &str = r#"{"contents":[{"role":"user","parts":[{"text":"hi"}]}]}"#;
 pub(super) const ANSWER: &str = r#"{"candidates":[{"content":{"parts":[{"text":"hello"}]},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":3,"candidatesTokenCount":2,"totalTokenCount":5}}"#;
 pub(super) const STREAM_CHUNK: &str =
@@ -346,10 +348,14 @@ impl ModelCapabilityLookup for RecordingLookup {
     }
 }
 
-struct NoFetch;
+#[derive(Default)]
+struct NoFetch {
+    calls: AtomicUsize,
+}
 
 impl RemoteMediaFetcher for NoFetch {
     fn convert_url(&self, _url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         ready(Err(ImageFetchError::Rejected { url: String::new() }))
     }
 
@@ -357,6 +363,7 @@ impl RemoteMediaFetcher for NoFetch {
         &self,
         _urls: &[String],
     ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
         ready(Err(ImageFetchError::Rejected { url: String::new() }))
     }
 }
@@ -586,7 +593,7 @@ impl Fixture {
             catalog: BundledCatalog::default().get(),
             counter: counter(),
             hooks: hooks(),
-            fetcher: NoFetch,
+            fetcher: NoFetch::default(),
             transport: NoTransport::default(),
             lookup: RecordingLookup {
                 order: Arc::clone(&order),
@@ -600,6 +607,15 @@ impl Fixture {
 
     pub(super) fn loads(&self) -> usize {
         self.executor.loads.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn fetches(&self) -> usize {
+        self.fetcher.calls.load(Ordering::SeqCst)
+    }
+
+    pub(super) fn with_messages(mut self, messages: &str) -> Self {
+        self.messages = serde_json::from_str(messages).expect("fixture messages");
+        self
     }
 
     pub(super) fn cache_calls(&self) -> usize {

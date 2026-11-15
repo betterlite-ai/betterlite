@@ -14,15 +14,18 @@ use tracing::subscriber::with_default;
 use crate::cache_lookup::target::CacheProvider;
 use crate::gemini_call::GeminiReply;
 use crate::gemini_call::error::GeminiCallError;
+use crate::gemini_history::error::HistoryError;
 use crate::gemini_http::call::ClientKind;
 use crate::gemini_http::error::{GeminiHttpError, GeminiStreamError};
+use crate::gemini_media::error::{MediaError, MediaField};
+use crate::gemini_request::error::{BodyError, RequestError};
 use crate::gemini_stream::error::StreamError;
 use crate::model_policy::capabilities::VertexCapabilityProvider;
 use crate::vertex_embedding_call::post::{ClientTimeout, HANDLER_DEFAULT_TIMEOUT, Timeout};
 
 use super::support::{
-    ANSWER, BODY, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN, Variation,
-    complete_reply, error_reply, line, pooled_fixture, stream_reply, supplied_fixture,
+    ANSWER, BODY, REMOTE_TOOL_MEDIA, Reply, SCHEMA_ERROR, STREAM_CHUNK, Setup, Stage, TOKEN,
+    Variation, complete_reply, error_reply, line, pooled_fixture, stream_reply, supplied_fixture,
 };
 
 const VERTEX_URL: &str = "https://us-central1-aiplatform.googleapis.com/v1/projects/project-p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent";
@@ -463,6 +466,41 @@ fn ordered_effects_target_error_precedes_the_transform(
     assert_eq!(fixture.order.stages(), vec![Stage::Auth]);
     assert_eq!(fixture.cache_calls(), 0);
     assert!(fixture.recorder.posts().is_empty());
+    assert!(fixture.recorder.opens().is_empty());
+}
+
+// LiteLLM's async branch inlines remote media before the body (L2717, L2810); its sync branch skips that step (L2991)
+#[rstest]
+#[case::async_refuses_before_any_fetch_or_send(true, 0, 0)]
+#[case::sync_hands_the_media_to_the_fetcher_then_sends(false, 1, 1)]
+fn ordered_effects_remote_tool_media_follows_the_branch_transform(
+    #[case] acompletion: bool,
+    #[case] fetches: usize,
+    #[case] posts: usize,
+) {
+    let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new())
+        .with_messages(REMOTE_TOOL_MEDIA);
+    let reply = fixture.run(Setup {
+        acompletion,
+        stream: None,
+        timeout: None,
+    });
+    if acompletion {
+        let Err(GeminiCallError::Request(RequestError::Body(BodyError::History(
+            HistoryError::Media(refusal),
+        )))) = reply
+        else {
+            panic!("the async transform refuses the remote media");
+        };
+        assert_eq!(
+            refusal,
+            MediaError::RemoteMediaRequired(MediaField::ImageUrl)
+        );
+    } else {
+        assert!(matches!(reply, Ok(GeminiReply::Complete(_))));
+    }
+    assert_eq!(fixture.fetches(), fetches);
+    assert_eq!(fixture.recorder.posts().len(), posts);
     assert!(fixture.recorder.opens().is_empty());
 }
 

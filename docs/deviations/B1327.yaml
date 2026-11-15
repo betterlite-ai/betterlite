@@ -9,14 +9,23 @@ deviations:
       emits for the async pair. The header map never reaches a log sink.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/vertex_and_google_ai_studio_gemini.py#L2999-L3007
   - what: >-
-      The context-cache lookup and creation run on the pooled transport with the call timeout as their deadline.
-      LiteLLM hands check_and_create_cache the caller's sync HTTPHandler when one was supplied, or a per-call
-      handler built from the same timeout, so a caller-supplied handler also serves the cache requests.
+      The synchronous context-cache lookup and creation run on the pooled cache transport with the call timeout as
+      their deadline. LiteLLM passes the caller's client into transform_request_params, so a supplied sync
+      HTTPHandler serves check_and_create_cache, or a per-call handler built from the same timeout when none was
+      supplied.
     why: >-
-      B1321's CacheCreateRequest carries a deadline rather than a client, and a supplied handler is selected only
+      B1321's CacheCreateRequest carries a deadline rather than a client, and a supplied client is selected only
       for the completion or stream request. A handler that carries its own proxy or TLS settings does not reach
       the cache calls through it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L359-L367
+  - what: >-
+      The asynchronous context-cache lookup and creation also run on the pooled cache transport with the call
+      timeout as their deadline. LiteLLM passes the caller's client into transform_request_params on this branch
+      too, so a supplied AsyncHTTPHandler serves async_check_and_create_cache.
+    why: >-
+      B1321's CacheCreateRequest carries a deadline rather than a client, so the cache requests never go through
+      a supplied async client. A client that carries its own proxy or TLS settings does not reach them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/vertex_ai_context_caching.py#L519-L522
   - what: >-
       A caller timeout reaches the shared transport as a total deadline, with the connect phase taken from the
       pooled client's limits. LiteLLM builds a per-call httpx client whose timeout bounds every phase.
