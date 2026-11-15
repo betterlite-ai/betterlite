@@ -432,6 +432,7 @@ struct Environment {
     url: Option<String>,
 }
 
+// the second row makes a dropped WHERE clause answer the missing id
 const SEED_SQL: &str = r#"
 INSERT INTO "LiteLLM_ManagedFileTable"
     (id, unified_file_id, file_object, model_mappings, created_at, updated_at, flat_model_file_ids)
