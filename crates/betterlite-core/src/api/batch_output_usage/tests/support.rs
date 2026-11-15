@@ -16,7 +16,6 @@ use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
 use tracing::field::{Field, Visit};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
@@ -30,6 +29,11 @@ use crate::api::batch_output_usage::{
     BatchOutputProviders, BatchOutputUsage, BatchOutputUsageError, BatchOutputUsageInput,
     BatchOutputUsageResult, ConverseUsageOutcome, VertexRowStats,
 };
+
+// The oracle cases send these same model_info shapes, so the keys stay exactly as a deployment config spells them.
+pub(super) const BATCH_MODEL_INFO: &str =
+    r#"{"input_cost_per_token_batches":0.5,"output_cost_per_token_batches":0.25}"#;
+pub(super) const OCR_MODEL_INFO: &str = r#"{"ocr_cost_per_page_batches":0.5}"#;
 
 // Every case supplies its own prices, so the published table never answers here.
 struct NoLookup;
@@ -135,20 +139,104 @@ pub(super) fn run_with_lookup(
     service.run(input)
 }
 
-pub(super) fn input(value: Value) -> BatchOutputUsageInput {
-    serde_json::from_value(value).expect("the fixture input decodes")
+fn parse_input(text: &str) -> BatchOutputUsageInput {
+    serde_json::from_str(text).expect("the fixture input decodes")
 }
 
-pub(super) fn json_entry(value: Value) -> Json {
-    serde_json::from_value(value).expect("the batch entry decodes")
+pub(super) fn json_entry(text: &str) -> Json {
+    serde_json::from_str(text).expect("the batch entry decodes")
 }
 
-pub(super) fn batch_model_info() -> Value {
-    json!({"input_cost_per_token_batches": 0.5, "output_cost_per_token_batches": 0.25})
+fn model_name_field(model_name: Option<&str>) -> String {
+    model_name.map_or_else(String::new, |name| format!(r#""model_name":"{name}","#))
 }
 
-pub(super) fn ocr_model_info() -> Value {
-    json!({"ocr_cost_per_page_batches": 0.5})
+fn model_info_field(model_info: Option<&str>) -> String {
+    model_info.map_or_else(String::new, |info| format!(r#""model_info":{info},"#))
+}
+
+// The fixture is the wire JSON an oracle case sends, assembled around the case's own lines.
+pub(super) fn output_input(
+    provider: &str,
+    model_name: Option<&str>,
+    model_info: Option<&str>,
+    lines: &str,
+) -> BatchOutputUsageInput {
+    let name = model_name_field(model_name);
+    let info = model_info_field(model_info);
+    parse_input(
+        &[
+            r#"{"kind":"output_usage","provider":"#,
+            provider,
+            r#"","#,
+            name.as_str(),
+            info.as_str(),
+            r#""content":{"kind":"lines","lines":["#,
+            lines,
+            "]}}",
+        ]
+        .concat(),
+    )
+}
+
+pub(super) fn output_bytes(
+    provider: &str,
+    model_name: Option<&str>,
+    model_info: Option<&str>,
+    bytes: &[u8],
+) -> BatchOutputUsageInput {
+    let name = model_name_field(model_name);
+    let info = model_info_field(model_info);
+    let encoded = format!("{bytes:?}");
+    parse_input(
+        &[
+            r#"{"kind":"output_usage","provider":"#,
+            provider,
+            r#"","#,
+            name.as_str(),
+            info.as_str(),
+            r#""content":{"kind":"bytes","bytes":"#,
+            encoded.as_str(),
+            "}}",
+        ]
+        .concat(),
+    )
+}
+
+pub(super) fn vertex_input(
+    model_name: Option<&str>,
+    model_info: Option<&str>,
+    lines: &str,
+) -> BatchOutputUsageInput {
+    let name = model_name.map_or_else(|| "null".to_owned(), |name| format!(r#""{name}""#));
+    let info = model_info_field(model_info);
+    parse_input(
+        &[
+            r#"{"kind":"vertex_usage","model_name":"#,
+            name.as_str(),
+            ",",
+            info.as_str(),
+            r#""content":{"kind":"lines","lines":["#,
+            lines,
+            "]}}",
+        ]
+        .concat(),
+    )
+}
+
+pub(super) fn bedrock_input(usage: &str) -> BatchOutputUsageInput {
+    let line = [
+        r#"{"custom_id":"b","modelOutput":{"model":"bedrock-batch","usage":"#,
+        usage,
+        "}}",
+    ]
+    .concat();
+    output_input(
+        "bedrock",
+        Some("bedrock-batch"),
+        Some(BATCH_MODEL_INFO),
+        &line,
+    )
 }
 
 pub(super) const fn totals(
@@ -212,8 +300,8 @@ fn priced_row(
         usage,
         total_tokens,
         model,
-        prompt_cost: cost.map_or(Decimal::ZERO, |cost| cost.prompt_cost),
-        completion_cost: cost.map_or(Decimal::ZERO, |cost| cost.completion_cost),
+        prompt_cost: cost.map_or(Decimal::ZERO, |row_cost| row_cost.prompt_cost),
+        completion_cost: cost.map_or(Decimal::ZERO, |row_cost| row_cost.completion_cost),
     }
 }
 
@@ -315,19 +403,6 @@ impl BatchOutputProviders for EmbeddingProviders {
     }
 }
 
-pub(super) fn bedrock_input(usage: Value) -> BatchOutputUsageInput {
-    input(json!({
-        "kind": "output_usage",
-        "provider": "bedrock",
-        "model_name": "bedrock-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "b",
-            "modelOutput": {"model": "bedrock-batch", "usage": usage},
-        }]},
-    }))
-}
-
 pub(super) const fn prompt_only_usage(prompt_tokens: i64) -> SummedUsage {
     SummedUsage {
         prompt_tokens,
@@ -387,13 +462,15 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     }
 }
 
+pub(super) type CapturedRun = (
+    Result<BatchOutputUsageResult, BatchOutputUsageError>,
+    Vec<(Level, String, String)>,
+);
+
 pub(super) fn run_captured(
     input: &BatchOutputUsageInput,
     providers: &dyn BatchOutputProviders,
-) -> (
-    Result<BatchOutputUsageResult, BatchOutputUsageError>,
-    Vec<(Level, String, String)>,
-) {
+) -> CapturedRun {
     let logs = CapturedLogs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let result = with_default(subscriber, || run(input, providers));

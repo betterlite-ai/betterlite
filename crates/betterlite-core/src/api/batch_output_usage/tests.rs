@@ -10,7 +10,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::usage_sum::Usage as SummedUsage;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use serde_json::{Value, json};
 use tracing::Level;
 
 use super::decode::DecodedBatchLine;
@@ -22,9 +21,9 @@ use super::{
 };
 use crate::api::api_boundaries::ApiLimits;
 use support::{
-    ByModelLookup, EmbeddingProviders, FakeVertex, NoProviders, RecordedCall, ScriptedCounter,
-    batch_model_info, bedrock_input, input, json_entry, logged, ocr_model_info, prompt_only_usage,
-    run, run_captured, run_with_lookup, totals,
+    BATCH_MODEL_INFO, ByModelLookup, EmbeddingProviders, FakeVertex, NoProviders, OCR_MODEL_INFO,
+    RecordedCall, ScriptedCounter, bedrock_input, json_entry, logged, output_bytes, output_input,
+    prompt_only_usage, run, run_captured, run_with_lookup, totals, vertex_input,
 };
 
 #[test]
@@ -79,33 +78,24 @@ fn provider_slugs_match_the_batch_providers() {
     }
 )]
 fn chat_output_usage(#[case] line: &str, #[case] expected: BatchOutputUsageResult) {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [serde_json::from_str::<Value>(line).expect("the line decodes")]},
-    }));
+    let decoded = output_input("openai", None, Some(BATCH_MODEL_INFO), line);
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result, expected);
 }
 
 #[test]
 fn chat_output_usage_counts_cached_tokens() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "a",
-            "response": {"status_code": 200, "body": {"usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-                "prompt_tokens_details": {"cached_tokens": 4, "cache_write_tokens": 6},
-            }}},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "a", "response": {"status_code": 200, "body": {"usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "prompt_tokens_details": {"cached_tokens": 4, "cache_write_tokens": 6}
+        }}}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     let details = result
         .usage
@@ -120,21 +110,17 @@ fn chat_output_usage_counts_cached_tokens() {
 
 #[test]
 fn a_cached_tokens_line_leaves_the_cache_write_detail_absent() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "read",
-            "response": {"status_code": 200, "body": {"usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-                "prompt_tokens_details": {"cached_tokens": 4},
-            }}},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "read", "response": {"status_code": 200, "body": {"usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "prompt_tokens_details": {"cached_tokens": 4}
+        }}}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     let details = result
         .usage
@@ -148,21 +134,17 @@ fn a_cached_tokens_line_leaves_the_cache_write_detail_absent() {
 
 #[test]
 fn a_cache_write_line_leaves_the_cached_tokens_detail_absent() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "write",
-            "response": {"status_code": 200, "body": {"usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-                "prompt_tokens_details": {"cache_write_tokens": 6},
-            }}},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "write", "response": {"status_code": 200, "body": {"usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "prompt_tokens_details": {"cache_write_tokens": 6}
+        }}}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     let details = result
         .usage
@@ -176,21 +158,17 @@ fn a_cache_write_line_leaves_the_cached_tokens_detail_absent() {
 
 #[test]
 fn counts_reasoning_tokens_in_the_aggregate() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "r",
-            "response": {"status_code": 200, "body": {"usage": {
-                "prompt_tokens": 10,
-                "completion_tokens": 5,
-                "total_tokens": 15,
-                "completion_tokens_details": {"reasoning_tokens": 7},
-            }}},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "r", "response": {"status_code": 200, "body": {"usage": {
+            "prompt_tokens": 10,
+            "completion_tokens": 5,
+            "total_tokens": 15,
+            "completion_tokens_details": {"reasoning_tokens": 7}
+        }}}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     let details = result
         .usage
@@ -206,20 +184,17 @@ fn counts_reasoning_tokens_in_the_aggregate() {
 
 #[test]
 fn a_non_object_response_slot_counts_failed() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "bad", "response": "not an object"},
-            {"custom_id": "ok", "response": {"status_code": 200, "body": {"usage": {
-                "prompt_tokens": 4,
-                "completion_tokens": 0,
-                "total_tokens": 4,
-            }}}},
-        ]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "bad", "response": "not an object"},
+        {"custom_id": "ok", "response": {"status_code": 200, "body": {"usage": {
+            "prompt_tokens": 4,
+            "completion_tokens": 0,
+            "total_tokens": 4
+        }}}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.successful_requests, 1);
     assert_eq!(result.failed_requests, 1);
@@ -235,18 +210,15 @@ fn line_cost_prefers_the_response_model() {
         deployment: serde_json::from_str(r#"{"input_cost_per_token_batches":0.25}"#)
             .expect("the deployment rates decode"),
     };
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-deployment",
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "m",
-            "response": {"status_code": 200, "body": {
-                "model": "gpt-4o-response",
-                "usage": {"prompt_tokens": 10, "completion_tokens": 0, "total_tokens": 10},
-            }},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        Some("gpt-4o-deployment"),
+        None,
+        r#"{"custom_id": "m", "response": {"status_code": 200, "body": {
+            "model": "gpt-4o-response",
+            "usage": {"prompt_tokens": 10, "completion_tokens": 0, "total_tokens": 10}
+        }}}"#,
+    );
     let result = run_with_lookup(&decoded, &lookup, &NoProviders).expect("the batch is costed");
     assert_eq!(result.prompt_cost, Decimal::new(5, 0));
     assert_eq!(result.completion_cost, Decimal::ZERO);
@@ -262,18 +234,15 @@ fn bedrock_prices_with_the_deployment_model() {
         deployment: serde_json::from_str(r#"{"input_cost_per_token_batches":0.25}"#)
             .expect("the deployment rates decode"),
     };
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "bedrock",
-        "model_name": "gpt-4o-deployment",
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "d",
-            "modelOutput": {
-                "model": "gpt-4o-response",
-                "usage": {"input_tokens": 10, "output_tokens": 0},
-            },
-        }]},
-    }));
+    let decoded = output_input(
+        "bedrock",
+        Some("gpt-4o-deployment"),
+        None,
+        r#"{"custom_id": "d", "modelOutput": {
+            "model": "gpt-4o-response",
+            "usage": {"input_tokens": 10, "output_tokens": 0}
+        }}"#,
+    );
     let result = run_with_lookup(&decoded, &lookup, &NoProviders).expect("the batch is costed");
     assert_eq!(result.prompt_cost, Decimal::new(25, 1));
     assert_eq!(result.cost, Decimal::new(25, 1));
@@ -281,18 +250,15 @@ fn bedrock_prices_with_the_deployment_model() {
 
 #[test]
 fn responses_output_usage() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [{
-            "custom_id": "r",
-            "response": {"status_code": 200, "body": {
-                "model": "gpt-4o-batch",
-                "usage": {"input_tokens": 12, "output_tokens": 8},
-            }},
-        }]},
-    }));
+    let decoded = output_input(
+        "openai",
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "r", "response": {"status_code": 200, "body": {
+            "model": "gpt-4o-batch",
+            "usage": {"input_tokens": 12, "output_tokens": 8}
+        }}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.usage, totals(12, 8, 20));
     assert_eq!(result.prompt_cost, Decimal::new(6, 0));
@@ -304,25 +270,23 @@ fn responses_output_usage() {
 
 #[test]
 fn anthropic_result_usage() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "anthropic",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "a1", "result": {"type": "succeeded", "message": {
-                "model": "claude-batch",
-                "usage": {"input_tokens": 100, "output_tokens": 20},
-            }}},
-            {"custom_id": "a2", "result": {"type": "succeeded", "message": {
-                "model": "claude-batch",
-                "usage": {"mystery": 1},
-            }}},
-            {"custom_id": "a3", "result": {"type": "errored", "message": {
-                "model": "claude-batch",
-                "usage": {"input_tokens": 7, "output_tokens": 3},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "anthropic",
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "a1", "result": {"type": "succeeded", "message": {
+            "model": "claude-batch",
+            "usage": {"input_tokens": 100, "output_tokens": 20}
+        }}},
+        {"custom_id": "a2", "result": {"type": "succeeded", "message": {
+            "model": "claude-batch",
+            "usage": {"mystery": 1}
+        }}},
+        {"custom_id": "a3", "result": {"type": "errored", "message": {
+            "model": "claude-batch",
+            "usage": {"input_tokens": 7, "output_tokens": 3}
+        }}}"#,
+    );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(100, 20, 120));
@@ -344,17 +308,15 @@ fn anthropic_result_usage() {
 
 #[test]
 fn a_parsed_anthropic_usage_is_not_flagged() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "anthropic",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "ok", "result": {"type": "succeeded", "message": {
-                "model": "claude-batch",
-                "usage": {"input_tokens": 4, "output_tokens": 1},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "anthropic",
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "ok", "result": {"type": "succeeded", "message": {
+            "model": "claude-batch",
+            "usage": {"input_tokens": 4, "output_tokens": 1}
+        }}}"#,
+    );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(4, 1, 5));
@@ -367,17 +329,15 @@ fn a_parsed_anthropic_usage_is_not_flagged() {
 
 #[test]
 fn an_anthropic_result_that_is_not_an_object_counts_failed() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "anthropic",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "bad", "result": "succeeded"},
-            {"custom_id": "ok", "result": {"type": "succeeded", "message": {
-                "usage": {"input_tokens": 4, "output_tokens": 0},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "anthropic",
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "bad", "result": "succeeded"},
+        {"custom_id": "ok", "result": {"type": "succeeded", "message": {
+            "usage": {"input_tokens": 4, "output_tokens": 0}
+        }}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.successful_requests, 1);
     assert_eq!(result.failed_requests, 1);
@@ -387,20 +347,17 @@ fn an_anthropic_result_that_is_not_an_object_counts_failed() {
 
 #[test]
 fn ocr_line_cost() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "mistral",
-        "model_name": "mistral-ocr-batch",
-        "model_info": ocr_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "o1", "response": {"status_code": 200, "body": {
-                "usage_info": {"pages_processed": 3},
-            }}},
-            {"custom_id": "bad", "response": {"status_code": 200, "body": {
-                "usage_info": {"pages_processed": "many"},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "mistral",
+        Some("mistral-ocr-batch"),
+        Some(OCR_MODEL_INFO),
+        r#"{"custom_id": "o1", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": 3}
+        }}},
+        {"custom_id": "bad", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": "many"}
+        }}}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.cost, Decimal::new(15, 1));
     assert_eq!(result.prompt_cost, Decimal::new(15, 1));
@@ -413,17 +370,14 @@ fn ocr_line_cost() {
 
 #[test]
 fn a_null_page_count_is_a_zero_page_ocr_line() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "mistral",
-        "model_name": "mistral-ocr-batch",
-        "model_info": ocr_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "empty", "response": {"status_code": 200, "body": {
-                "usage_info": {"pages_processed": null},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "mistral",
+        Some("mistral-ocr-batch"),
+        Some(OCR_MODEL_INFO),
+        r#"{"custom_id": "empty", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": null}
+        }}}"#,
+    );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
     // LiteLLM's ocr_batch_cost reads a null page count as zero pages, so the line costs nothing without an error.
@@ -445,15 +399,12 @@ fn vertex_native_usage(
     #[case] models: Vec<String>,
     #[case] cost: Decimal,
 ) {
-    let decoded = input(json!({
-        "kind": "vertex_usage",
-        "model_name": model_name,
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"request": {"contents": []}, "response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
-            {"request": {"contents": []}},
-        ]},
-    }));
+    let decoded = vertex_input(
+        model_name,
+        Some(BATCH_MODEL_INFO),
+        r#"{"request": {"contents": []}, "response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+        {"request": {"contents": []}}"#,
+    );
     let (outcome, logs) = run_captured(&decoded, &FakeVertex);
     let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(10, 5, 15));
@@ -467,14 +418,12 @@ fn vertex_native_usage(
 
 #[test]
 fn vertex_models_are_counted_once() {
-    let decoded = input(json!({
-        "kind": "vertex_usage",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
-            {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
-        ]},
-    }));
+    let decoded = vertex_input(
+        None,
+        Some(BATCH_MODEL_INFO),
+        r#"{"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+        {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}}"#,
+    );
     let result = run(&decoded, &FakeVertex).expect("the batch is costed");
     assert_eq!(result.usage, totals(20, 10, 30));
     assert_eq!(result.cost, Decimal::new(125, 1));
@@ -489,13 +438,12 @@ fn malformed_bytes() -> Vec<u8> {
 
 #[test]
 fn malformed_output_line_warning() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "model_name": "gpt-4o-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "bytes", "bytes": malformed_bytes()},
-    }));
+    let decoded = output_bytes(
+        "openai",
+        Some("gpt-4o-batch"),
+        Some(BATCH_MODEL_INFO),
+        &malformed_bytes(),
+    );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(4, 0, 4));
@@ -524,17 +472,14 @@ fn malformed_output_line_warning() {
 
 #[test]
 fn an_uncostable_line_warns_and_stays_successful() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "mistral",
-        "model_name": "mistral-ocr-batch",
-        "model_info": ocr_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "bad", "response": {"status_code": 200, "body": {
-                "usage_info": {"pages_processed": "many"},
-            }}},
-        ]},
-    }));
+    let decoded = output_input(
+        "mistral",
+        Some("mistral-ocr-batch"),
+        Some(OCR_MODEL_INFO),
+        r#"{"custom_id": "bad", "response": {"status_code": 200, "body": {
+            "usage_info": {"pages_processed": "many"}
+        }}}"#,
+    );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
     assert_eq!(result.cost, Decimal::ZERO);
@@ -554,11 +499,7 @@ fn an_uncostable_line_warns_and_stays_successful() {
 
 #[test]
 fn empty_batch_is_a_zero_result() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "content": {"kind": "lines", "lines": []},
-    }));
+    let decoded = output_input("openai", None, None, "");
     let result = run(&decoded, &NoProviders).expect("the empty batch is costed");
     assert_eq!(result.cost, Decimal::ZERO);
     assert_eq!(result.usage, totals(0, 0, 0));
@@ -608,11 +549,7 @@ fn rejects_lines_that_are_not_strict_utf8_json() {
 
 #[test]
 fn decodes_preparsed_lines() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "openai",
-        "content": {"kind": "lines", "lines": [{"custom_id": "a"}, 7, 1.5]},
-    }));
+    let decoded = output_input("openai", None, None, r#"{"custom_id": "a"}, 7, 1.5"#);
     let BatchOutputUsageInput::OutputUsage(request) = &decoded else {
         panic!("the fixture is an output usage request");
     };
@@ -709,7 +646,7 @@ fn estimates_tokens_from_serialized_size() {
 #[tokio::test]
 async fn counts_a_prompt_string_through_the_counter() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": {"model": "gpt", "prompt": "hello"}}));
+    let entry = json_entry(r#"{"body": {"model": "gpt", "prompt": "hello"}}"#);
     let tokens = count_batch_entry_tokens(&entry, Some("fallback"), &counter)
         .await
         .expect("the entry counts");
@@ -728,7 +665,7 @@ async fn counts_a_prompt_string_through_the_counter() {
 #[tokio::test]
 async fn counts_prompt_chunks_that_are_tokens_or_text() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": {"prompt": ["a", 1, 2, true, 1.5, ["b", 3, 2.5]]}}));
+    let entry = json_entry(r#"{"body": {"prompt": ["a", 1, 2, true, 1.5, ["b", 3, 2.5]]}}"#);
     let tokens = count_batch_entry_tokens(&entry, Some("fallback"), &counter)
         .await
         .expect("the entry counts");
@@ -743,7 +680,7 @@ async fn counts_prompt_chunks_that_are_tokens_or_text() {
 #[tokio::test]
 async fn a_deeper_prompt_list_adds_nothing() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": {"prompt": [["a", ["b"]], 1]}}));
+    let entry = json_entry(r#"{"body": {"prompt": [["a", ["b"]], 1]}}"#);
     let tokens = count_batch_entry_tokens(&entry, Some("fallback"), &counter)
         .await
         .expect("the entry counts");
@@ -757,10 +694,12 @@ async fn a_deeper_prompt_list_adds_nothing() {
 #[tokio::test]
 async fn counts_messages_with_the_counter() {
     let counter = ScriptedCounter::with_answer(4);
-    let entry = json_entry(json!({"body": {
-        "model": "gpt",
-        "messages": [{"role": "user", "content": "hi"}],
-    }}));
+    let entry = json_entry(
+        r#"{"body": {
+            "model": "gpt",
+            "messages": [{"role": "user", "content": "hi"}]
+        }}"#,
+    );
     let tokens = count_batch_entry_tokens(&entry, None, &counter)
         .await
         .expect("the entry counts");
@@ -779,7 +718,7 @@ async fn counts_messages_with_the_counter() {
 #[tokio::test]
 async fn an_entry_without_a_prompt_counts_zero() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": {"model": "gpt"}}));
+    let entry = json_entry(r#"{"body": {"model": "gpt"}}"#);
     let tokens = count_batch_entry_tokens(&entry, None, &counter)
         .await
         .expect("the entry counts");
@@ -790,7 +729,7 @@ async fn an_entry_without_a_prompt_counts_zero() {
 #[tokio::test]
 async fn rejects_a_body_that_is_not_an_object() {
     let counter = ScriptedCounter::with_answer(3);
-    let entry = json_entry(json!({"body": "text"}));
+    let entry = json_entry(r#"{"body": "text"}"#);
     let body_error = count_batch_entry_tokens(&entry, None, &counter)
         .await
         .expect_err("the body is not an object");
@@ -810,11 +749,8 @@ fn bedrock_prefers_embedding_usage_over_the_usage_object() {
         embedding: Some(prompt_only_usage(7)),
         converse: ConverseUsageOutcome::Usage(Box::new(prompt_only_usage(99))),
     };
-    let result = run(
-        &bedrock_input(json!({"inputTextTokenCount": 5})),
-        &providers,
-    )
-    .expect("the batch is costed");
+    let result = run(&bedrock_input(r#"{"inputTextTokenCount": 5}"#), &providers)
+        .expect("the batch is costed");
     assert_eq!(result.usage.prompt_tokens, 7);
     assert_eq!(result.usage.total_tokens, 7);
 }
@@ -833,7 +769,7 @@ fn bedrock_uses_converse_usage_before_the_anthropic_shape() {
         })),
     };
     let result = run(
-        &bedrock_input(json!({"inputTokens": 3, "outputTokens": 2})),
+        &bedrock_input(r#"{"inputTokens": 3, "outputTokens": 2}"#),
         &providers,
     )
     .expect("the batch is costed");
@@ -847,7 +783,7 @@ fn bedrock_falls_back_to_the_anthropic_usage_shape() {
         converse: ConverseUsageOutcome::NotConverse,
     };
     let result = run(
-        &bedrock_input(json!({"input_tokens": 4, "output_tokens": 1})),
+        &bedrock_input(r#"{"input_tokens": 4, "output_tokens": 1}"#),
         &providers,
     )
     .expect("the batch is costed");
@@ -856,19 +792,16 @@ fn bedrock_falls_back_to_the_anthropic_usage_shape() {
 
 #[test]
 fn bedrock_success_needs_model_output_and_no_error() {
-    let decoded = input(json!({
-        "kind": "output_usage",
-        "provider": "bedrock",
-        "model_name": "bedrock-batch",
-        "model_info": batch_model_info(),
-        "content": {"kind": "lines", "lines": [
-            {"custom_id": "ok", "modelOutput": {"usage": {"input_tokens": 4, "output_tokens": 1}}},
-            {"custom_id": "errored", "error": {"message": "boom"}, "modelOutput": {
-                "usage": {"input_tokens": 9, "output_tokens": 9},
-            }},
-            {"custom_id": "empty"},
-        ]},
-    }));
+    let decoded = output_input(
+        "bedrock",
+        Some("bedrock-batch"),
+        Some(BATCH_MODEL_INFO),
+        r#"{"custom_id": "ok", "modelOutput": {"usage": {"input_tokens": 4, "output_tokens": 1}}},
+        {"custom_id": "errored", "error": {"message": "boom"}, "modelOutput": {
+            "usage": {"input_tokens": 9, "output_tokens": 9}
+        }},
+        {"custom_id": "empty"}"#,
+    );
     let result = run(&decoded, &NoProviders).expect("the batch is costed");
     assert_eq!(result.usage, totals(4, 1, 5));
     assert_eq!(result.successful_requests, 1);
@@ -882,7 +815,7 @@ fn an_unreadable_converse_usage_is_uncostable() {
         converse: ConverseUsageOutcome::Invalid,
     };
     let result =
-        run(&bedrock_input(json!({"inputTokens": "x"})), &providers).expect("the batch is costed");
+        run(&bedrock_input(r#"{"inputTokens": "x"}"#), &providers).expect("the batch is costed");
     assert_eq!(result.cost, Decimal::ZERO);
     assert_eq!(result.successful_requests, 1);
     assert!(result.diagnostics.is_empty());
