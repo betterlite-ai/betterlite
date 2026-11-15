@@ -66,6 +66,8 @@ fn compatible_host(#[case] hostname: Option<&str>, #[case] expected: bool) {
 #[case::scheme_relative_fragment("//#api.openai.com", false)]
 #[case::opaque_scheme("mailto:api.openai.com", false)]
 #[case::host_without_scheme_colon("api.openai.com:8080/v1/models", false)]
+#[case::invalid_port("https://api.openai.com:99999/v1/models", false)]
+#[case::non_numeric_port("https://api.openai.com:abc/v1/models", false)]
 fn compatible_url(#[case] route: &str, #[case] expected: bool) {
     assert_eq!(is_openai_compatible_url(route), expected);
 }
