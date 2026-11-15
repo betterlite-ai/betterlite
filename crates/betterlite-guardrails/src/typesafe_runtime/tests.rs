@@ -366,13 +366,12 @@ impl Write for Captured {
 
 fn log_subscriber(
     level: tracing::Level,
-    captured: &Captured,
+    captured: Captured,
 ) -> impl tracing::Subscriber + Send + Sync {
-    let writer = captured.clone();
     fmt()
         .with_max_level(level)
         .with_ansi(false)
-        .with_writer(move || writer.clone())
+        .with_writer(move || captured.clone())
         .finish()
 }
 
@@ -809,7 +808,7 @@ async fn a_message_that_is_not_an_object_leaves_the_request_unchanged() {
 #[tokio::test]
 async fn no_candidates_log_at_debug_without_calling_the_service() {
     let captured = Captured::default();
-    let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, &captured));
+    let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, captured.clone()));
     let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
     let guard = guard_at(&base_url, args(&base_url));
     let original = inputs(no_candidates());
@@ -826,7 +825,7 @@ async fn no_candidates_log_at_debug_without_calling_the_service() {
 #[tokio::test]
 async fn all_relevant_answers_log_at_debug_and_leave_every_message() {
     let captured = Captured::default();
-    let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, &captured));
+    let _subscriber = set_default(log_subscriber(tracing::Level::DEBUG, captured.clone()));
     let (base_url, requests, mut server) =
         serve(StatusCode::OK, reply(&[("e0", 1.0), ("e1", 1.0)])).await;
     let guard = guard_at(&base_url, args(&base_url));
@@ -844,7 +843,7 @@ async fn all_relevant_answers_log_at_debug_and_leave_every_message() {
 #[tokio::test]
 async fn a_compaction_logs_the_exchange_and_character_counts() {
     let captured = Captured::default();
-    let _subscriber = set_default(log_subscriber(tracing::Level::INFO, &captured));
+    let _subscriber = set_default(log_subscriber(tracing::Level::INFO, captured.clone()));
     let (base_url, _requests, mut server) =
         serve(StatusCode::OK, reply(&[("e0", 0.0), ("e1", 0.9)])).await;
     let guard = guard_at(&base_url, args(&base_url));
