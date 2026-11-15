@@ -167,6 +167,50 @@ async fn async_iterator_construction_resolves_the_api_base_from_the_model() {
 }
 
 #[tokio::test]
+async fn async_iterator_construction_reads_the_stream_flag_into_the_api_base() {
+    let catalog = ModelCatalog::default();
+    let known = BTreeSet::new();
+    let custom = BTreeSet::new();
+    let environment = BTreeMap::new();
+    let resolution = resolution_context(&catalog, &known, &custom, &environment);
+    let aliases = BTreeMap::new();
+    let hooks = NoHooks;
+    let shared = SharedApiBase {
+        context: ApiBaseContext {
+            model_alias_map: &aliases,
+            hooks: &hooks,
+            resolution: &resolution,
+        },
+    };
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::from([(
+        String::from("litellm_params"),
+        JsonValue::Object(IndexMap::from([(
+            String::from("stream"),
+            JsonValue::Bool(true),
+        )])),
+    )]));
+    let iterator = InteractionsStreamIterator::new(
+        FakeAsyncResponse::new(&[]),
+        InteractionsStreamSetup {
+            model: Some("gemini/gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: None,
+            custom_llm_provider: None,
+            api_base: &shared,
+        },
+    )
+    .expect("the fixture iterator builds");
+    assert_eq!(
+        iterator.base.hidden_params.api_base.as_deref(),
+        Some(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent"
+        )
+    );
+}
+
+#[tokio::test]
 async fn async_iterator_construction_swallows_api_base_resolution_errors() {
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
