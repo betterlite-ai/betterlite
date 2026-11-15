@@ -48,12 +48,6 @@ impl From<ProviderError> for VllmError {
     }
 }
 
-impl From<PassthroughError> for VllmError {
-    fn from(error: PassthroughError) -> Self {
-        Self::Passthrough(error)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum VllmSetupError {
     #[error(
