@@ -66,9 +66,7 @@ where
     let azure_supported = supported_params(&mut azure, mapping.model, mapping.catalog).await;
     let openai_supported =
         gpt_5::supported_params(&mut azure, mapping.model, mapping.catalog).await;
-    // LiteLLM's final copy reads self.get_supported_openai_params, the Azure allowlist above,
-    // not OpenAIGPT5Config's; undo B502's copy for names only the OpenAI list carries and
-    // restore what the caller already had.
+    // LiteLLM's final copy reads the Azure allowlist, so names only OpenAI's list carries are undone
     for (name, value) in mapping.non_default_params.iter() {
         let in_azure = azure_supported.contains(&name.as_str());
         let in_openai = openai_supported.contains(&name.as_str());
@@ -101,9 +99,12 @@ pub fn transform_request(
     optional: &Object,
     openai_system_messages_first: bool,
 ) -> Result<Object, ChatParamsError> {
-    let stripped = model.replace(GPT5_SERIES_ROUTE, "");
-    let body = base_transform(&stripped, messages, optional, openai_system_messages_first)?;
-    Ok(body)
+    base_transform(
+        &model.replace(GPT5_SERIES_ROUTE, ""),
+        messages,
+        optional,
+        openai_system_messages_first,
+    )
 }
 
 async fn supports_none_effort<Capabilities>(
