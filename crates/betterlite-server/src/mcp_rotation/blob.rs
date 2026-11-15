@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use base64::Engine as _;
 use base64::alphabet::STANDARD;
 use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
@@ -19,7 +21,7 @@ const LENIENT: GeneralPurpose = GeneralPurpose::new(
 );
 
 pub fn decode_mcp_rotation_blob(bytes: &[u8]) -> Result<JsonValue, RotationCodecError> {
-    let text = std::str::from_utf8(bytes).map_err(RotationCodecError::Utf8)?;
+    let text = from_utf8(bytes).map_err(RotationCodecError::Utf8)?;
     match decode_mcp_stored_contract(bytes) {
         Ok(value) => Ok(value),
         Err(McpStoredDecodeError::Json(_)) => {

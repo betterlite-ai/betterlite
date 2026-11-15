@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::Path;
+use std::str::from_utf8;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
@@ -120,5 +121,5 @@ fn replays_the_mcp_rotation_blob_corpus(#[case] name: &str) {
     assert!(entries >= 6, "the corpus lost seeded entries");
     let bytes = fs::read(corpus.join(name)).expect("a corpus file");
     let _decoded = decode_mcp_rotation_blob(&bytes);
-    let _column = decode_json_column(std::str::from_utf8(&bytes).ok());
+    let _column = decode_json_column(from_utf8(&bytes).ok());
 }

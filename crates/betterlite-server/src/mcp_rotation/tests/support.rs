@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io;
+use std::str::from_utf8;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
@@ -296,7 +297,9 @@ impl LogBuffer {
     #[must_use]
     pub fn contents(&self) -> String {
         let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        String::from_utf8_lossy(&bytes).into_owned()
+        from_utf8(&bytes)
+            .expect("the tracing writer stores UTF-8")
+            .to_owned()
     }
 
     #[must_use]

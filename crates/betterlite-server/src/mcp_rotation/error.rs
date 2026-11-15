@@ -1,3 +1,5 @@
+use std::str::Utf8Error;
+
 use betterlite_db::mcp_server_encoding::McpEncodingError;
 use betterlite_db::mcp_stored_contracts::decode::McpStoredDecodeError;
 use betterlite_secrets::error::SecretError;
@@ -8,7 +10,7 @@ pub enum RotationCodecError {
     #[error(transparent)]
     Blob(#[from] McpStoredDecodeError),
     #[error("the stored MCP value is not valid UTF-8")]
-    Utf8(#[source] std::str::Utf8Error),
+    Utf8(#[source] Utf8Error),
     #[error(transparent)]
     Encoding(#[from] McpEncodingError),
     #[error(transparent)]
