@@ -102,9 +102,14 @@ fn prediction(step: &Step, catalog: &StepCatalog) -> Result<Value, Box<HelperErr
                 message: error.to_string(),
             })
         })?;
-    Ok(found.map_or(Value::Null, |(current, candidate)| {
-        json!([current.model_name, candidate.model_name])
-    }))
+    Ok(
+        found.map_or(Value::Null, |(current_deployment, candidate_deployment)| {
+            json!([
+                current_deployment.model_name,
+                candidate_deployment.model_name
+            ])
+        }),
+    )
 }
 
 #[derive(Debug)]
