@@ -180,104 +180,83 @@ pub(super) fn json_mode_tool_chunk() {
     empty_tool_list();
 }
 
+const JSON_MODE_VALUES: &str = r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"values\": {\"a\": 1}}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 fn json_mode_values() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"values\": {\"a\": 1}}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(true),
-    );
+    let chunk = first_chunk(JSON_MODE_VALUES, Some(true));
     assert_eq!(chunk.text, r#"{"a": 1}"#);
     assert!(chunk.tool_use.is_none());
 }
 
 // _convert_tool_response_to_message dumps the whole argument object when values is present but null.
+const JSON_MODE_NULL_VALUES: &str = r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"values\": null}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 fn json_mode_null_values() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"values\": null}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(true),
-    );
+    let chunk = first_chunk(JSON_MODE_NULL_VALUES, Some(true));
     assert_eq!(chunk.text, r#"{"values": null}"#);
     assert!(chunk.tool_use.is_none());
 }
 
+const JSON_MODE_WHOLE_OBJECT: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"a\": 1}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 fn json_mode_whole_object() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"{\"a\": 1}"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(true),
-    );
+    let chunk = first_chunk(JSON_MODE_WHOLE_OBJECT, Some(true));
     assert_eq!(chunk.text, r#"{"a": 1}"#);
     assert!(chunk.tool_use.is_none());
 }
 
+const JSON_MODE_MALFORMED_ARGS: &str = r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"not json"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 fn json_mode_malformed_arguments() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call","arguments":"not json"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(true),
-    );
+    let chunk = first_chunk(JSON_MODE_MALFORMED_ARGS, Some(true));
     assert_eq!(chunk.text, "not json");
     assert!(chunk.tool_use.is_none());
 }
 
+const JSON_MODE_MISSING_ARGS: &str = r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 fn json_mode_missing_arguments() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"json_tool_call"}}]},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(true),
-    );
+    let chunk = first_chunk(JSON_MODE_MISSING_ARGS, Some(true));
     assert_eq!(chunk.text, "");
     assert!(chunk.tool_use.is_none());
 }
 
+const PLAIN_MISSING_ARGS: &str = r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"f"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const PLAIN_MISSING_ARGS_RESULT: &str =
+    r#"{"id":"c1","type":"function","function":{"name":"f","arguments":""},"index":0}"#;
+
 fn plain_missing_arguments() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"kept","tool_calls":[{"id":"c1","type":"function","function":{"name":"f"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(false),
-    );
-    assert_eq!(
-        chunk.tool_use,
-        Some(json_value(
-            r#"{"id":"c1","type":"function","function":{"name":"f","arguments":""},"index":0}"#
-        ))
-    );
+    let chunk = first_chunk(PLAIN_MISSING_ARGS, Some(false));
+    assert_eq!(chunk.tool_use, Some(json_value(PLAIN_MISSING_ARGS_RESULT)));
 }
 
 // docs/deviations/B609.yaml: LiteLLM's ChatCompletionMessageToolCall invents a uuid4 when the id is absent.
+const ABSENT_TOOL_ID: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[{"function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const ABSENT_TOOL_ID_RESULT: &str =
+    r#"{"id":null,"type":"function","function":{"name":"f","arguments":"{}"},"index":0}"#;
+
 fn missing_id() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"","tool_calls":[{"function":{"name":"f","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(false),
-    );
-    assert_eq!(
-        chunk.tool_use,
-        Some(json_value(
-            r#"{"id":null,"type":"function","function":{"name":"f","arguments":"{}"},"index":0}"#
-        ))
-    );
+    let chunk = first_chunk(ABSENT_TOOL_ID, Some(false));
+    assert_eq!(chunk.tool_use, Some(json_value(ABSENT_TOOL_ID_RESULT)));
 }
 
 // docs/deviations/B609.yaml: LiteLLM's ChatCompletionMessageToolCall requires function and refuses the response.
+const ABSENT_FUNCTION: &str = r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1"}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const ABSENT_FUNCTION_RESULT: &str =
+    r#"{"id":"c1","type":"function","function":{"name":null,"arguments":""},"index":0}"#;
+
 fn missing_function() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"raw","tool_calls":[{"id":"c1"}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(false),
-    );
-    assert_eq!(
-        chunk.tool_use,
-        Some(json_value(
-            r#"{"id":"c1","type":"function","function":{"name":null,"arguments":""},"index":0}"#
-        ))
-    );
+    let chunk = first_chunk(ABSENT_FUNCTION, Some(false));
+    assert_eq!(chunk.tool_use, Some(json_value(ABSENT_FUNCTION_RESULT)));
 }
 
+const PLAIN_TOOL_CALL: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}},{"id":"c2","type":"function","function":{"name":"g","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const PLAIN_TOOL_CALL_RESULT: &str =
+    r#"{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"},"index":0}"#;
+
 fn plain_tool_call() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"}},{"id":"c2","type":"function","function":{"name":"g","arguments":"{}"}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(false),
-    );
-    assert_eq!(
-        chunk.tool_use,
-        Some(json_value(
-            r#"{"id":"c1","type":"function","function":{"name":"f","arguments":"{}"},"index":0}"#
-        ))
-    );
+    let chunk = first_chunk(PLAIN_TOOL_CALL, Some(false));
+    assert_eq!(chunk.tool_use, Some(json_value(PLAIN_TOOL_CALL_RESULT)));
 }
 
 fn dict_arguments() {
@@ -360,56 +339,50 @@ fn finish_reason_defaults() {
     assert_eq!(absent.next().unwrap().unwrap().finish_reason, "stop");
 }
 
+const EMPTY_TOOL_ARGS: &str = r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":""}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+const EMPTY_TOOL_ARGS_RESULT: &str =
+    r#"{"id":"c1","type":"function","function":{"name":"f","arguments":""},"index":0}"#;
+const MISSING_USAGE: &str = r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#;
+const MISSING_CHOICES: &str =
+    r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#;
+
 pub(super) fn empty_tool_input() {
-    let chunk = first_chunk(
-        r#"{"choices":[{"message":{"content":"","tool_calls":[{"id":"c1","type":"function","function":{"name":"f","arguments":""}}]},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        Some(false),
-    );
-    assert_eq!(
-        chunk.tool_use,
-        Some(json_value(
-            r#"{"id":"c1","type":"function","function":{"name":"f","arguments":""},"index":0}"#
-        ))
-    );
+    empty_arguments_tool();
+    failed_poll_then_done();
+    missing_choices();
+}
 
-    let mut missing_usage = fake(
-        r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
-        None,
-    );
-    let missing_usage_failure = missing_usage.next().unwrap().unwrap_err();
-    assert_eq!(missing_usage_failure.status(), None);
-    assert!(
-        missing_usage_failure
-            .to_string()
-            .starts_with("Failed to decode chunk:")
-    );
-    assert!(missing_usage.next().is_none());
+fn empty_arguments_tool() {
+    let chunk = first_chunk(EMPTY_TOOL_ARGS, Some(false));
+    assert_eq!(chunk.tool_use, Some(json_value(EMPTY_TOOL_ARGS_RESULT)));
+}
 
-    let mut async_missing_usage = fake(
-        r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
-        None,
-    );
-    let async_missing_usage_failure =
-        block_on(futures_util::StreamExt::next(&mut async_missing_usage))
-            .unwrap()
-            .unwrap_err();
-    assert!(
-        async_missing_usage_failure
-            .to_string()
-            .starts_with("Failed to decode chunk:")
-    );
-    assert!(block_on(futures_util::StreamExt::next(&mut async_missing_usage)).is_none());
+// a failed poll is followed by done for next and anext alike
+fn failed_poll_then_done() {
+    sync_failed_poll();
+    async_failed_poll();
+}
 
-    let mut missing_choices = fake(
-        r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
-        None,
-    );
-    let missing_choices_failure = missing_choices.next().unwrap().unwrap_err();
-    assert!(
-        missing_choices_failure
-            .to_string()
-            .starts_with("Failed to decode chunk:")
-    );
+fn sync_failed_poll() {
+    let mut stream = fake(MISSING_USAGE, None);
+    let failure = stream.next().unwrap().unwrap_err();
+    assert_eq!(failure.status(), None);
+    assert!(failure.to_string().starts_with("Failed to decode chunk:"));
+    assert!(stream.next().is_none());
+}
+
+fn async_failed_poll() {
+    let mut stream = fake(MISSING_USAGE, None);
+    let polled = block_on(futures_util::StreamExt::next(&mut stream)).unwrap();
+    let failure = polled.unwrap_err();
+    assert!(failure.to_string().starts_with("Failed to decode chunk:"));
+    assert!(block_on(futures_util::StreamExt::next(&mut stream)).is_none());
+}
+
+fn missing_choices() {
+    let mut no_choices = fake(MISSING_CHOICES, None);
+    let failure = no_choices.next().unwrap().unwrap_err();
+    assert!(failure.to_string().starts_with("Failed to decode chunk:"));
 }
 
 pub(super) fn deepseek_stream_chunks() {
@@ -451,20 +424,17 @@ fn thinking_chunk(decoder: &mut InvokeStreamDecoder) {
     assert_eq!(thinking.model, None);
 }
 
+const TRANSITION_EVENT: &str = r#"{"generation":"</think>","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#;
+const ANSWER_EVENT: &str = r#"{"generation":"answer","stop_reason":"max_tokens","prompt_token_count":0,"generation_token_count":0}"#;
+
 fn transition_chunk(decoder: &mut InvokeStreamDecoder) {
-    let transition = reply(parse(
-        decoder,
-        r#"{"generation":"</think>","stop_reason":"stop","prompt_token_count":0,"generation_token_count":0}"#,
-    ));
+    let transition = reply(parse(decoder, TRANSITION_EVENT));
     assert_eq!(transition.choices[0].delta.content.as_deref(), Some(""));
     assert_eq!(transition.choices[0].delta.reasoning_content, None);
 }
 
 fn answer_chunk(decoder: &mut InvokeStreamDecoder) {
-    let answer = reply(parse(
-        decoder,
-        r#"{"generation":"answer","stop_reason":"max_tokens","prompt_token_count":0,"generation_token_count":0}"#,
-    ));
+    let answer = reply(parse(decoder, ANSWER_EVENT));
     assert_eq!(answer.choices[0].delta.content.as_deref(), Some("answer"));
     assert_eq!(answer.choices[0].delta.reasoning_content, None);
     assert_eq!(answer.choices[0].finish_reason.as_deref(), Some("length"));
@@ -493,16 +463,13 @@ fn mapped_finish_reasons() {
     assert_eq!(empty.choices[0].finish_reason, None);
 }
 
+const LITERAL_MARKER_EVENT: &str = r#"{"generation":"</think>","stop_reason":null,"prompt_token_count":0,"generation_token_count":0}"#;
+
 fn literal_marker(decoder: &mut InvokeStreamDecoder) {
-    let literal = reply(parse(
-        decoder,
-        r#"{"generation":"</think>","stop_reason":null,"prompt_token_count":0,"generation_token_count":0}"#,
-    ));
-    assert_eq!(
-        literal.choices[0].delta.content.as_deref(),
-        Some("</think>")
-    );
-    assert_eq!(literal.choices[0].finish_reason, None);
+    let literal = reply(parse(decoder, LITERAL_MARKER_EVENT));
+    let choice = &literal.choices[0];
+    assert_eq!(choice.delta.content.as_deref(), Some("</think>"));
+    assert_eq!(choice.finish_reason, None);
 }
 
 fn partial_marker() {

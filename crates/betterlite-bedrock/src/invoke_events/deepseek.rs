@@ -18,9 +18,12 @@ struct Fields {
 // LiteLLM builds the DeepSeek usage as a plain dict of these three counts.
 #[derive(Serialize)]
 struct UsageCounts {
-    prompt_tokens: i64,
-    completion_tokens: i64,
-    total_tokens: i64,
+    #[serde(rename = "prompt_tokens")]
+    prompt: i64,
+    #[serde(rename = "completion_tokens")]
+    completion: i64,
+    #[serde(rename = "total_tokens")]
+    total: i64,
 }
 
 pub(crate) fn chunk_parser(
@@ -36,9 +39,9 @@ pub(crate) fn chunk_parser(
         .checked_add(fields.generation_tokens)
         .ok_or_else(invalid_chunk)?;
     let usage = serde_json::to_value(UsageCounts {
-        prompt_tokens: fields.prompt_tokens,
-        completion_tokens: fields.generation_tokens,
-        total_tokens,
+        prompt: fields.prompt_tokens,
+        completion: fields.generation_tokens,
+        total: total_tokens,
     })
     .map_err(|source| InvokeStreamError::Encode { source })?;
     Ok(StreamReply {
