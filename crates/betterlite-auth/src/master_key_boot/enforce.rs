@@ -19,7 +19,7 @@ pub trait BootReporter {
 pub enum BootError {
     #[error("betterlite refused to start: {reason}")]
     Refused { reason: UnsafeReason },
-    #[error("betterlite refused to start: {reason}, and the fix could not be printed")]
+    #[error("betterlite refused to start: {reason} The fix could not be printed.")]
     Announce {
         reason: UnsafeReason,
         #[source]

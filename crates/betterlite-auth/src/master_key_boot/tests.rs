@@ -627,6 +627,10 @@ fn refusal_is_announced_then_raised() {
             reason: UnsafeReason::PubliclyKnown
         }
     ));
+    assert_eq!(
+        error.to_string(),
+        "betterlite refused to start: the master key is a publicly known default."
+    );
     let BootVerdict::Refused(refused) = &verdict else {
         panic!("the verdict is a refusal");
     };
@@ -645,6 +649,10 @@ fn announcement_failure_is_reported() {
             ..
         }
     ));
+    assert_eq!(
+        error.to_string(),
+        "betterlite refused to start: the master key is a publicly known default. The fix could not be printed."
+    );
     assert!(error.source().is_some(), "the write failure is the cause");
 }
 
