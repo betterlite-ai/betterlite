@@ -180,7 +180,8 @@ fn masked_audit_value(
                 twice_parsed
             }
         }
-        other @ (JsonValue::Bool(_)
+        other @ (JsonValue::Null
+        | JsonValue::Bool(_)
         | JsonValue::Number(_)
         | JsonValue::Array(_)
         | JsonValue::Object(_)) => other,
