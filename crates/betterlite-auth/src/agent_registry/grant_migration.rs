@@ -40,7 +40,7 @@ pub(super) async fn migrate_legacy_grant_ids(
         })
         .collect();
     let results = join_all(updates.iter().map(|update| write_row(&session, update))).await;
-    let mut rewritten = 0usize;
+    let mut rewritten = 0_usize;
     for count in results {
         rewritten = rewritten.saturating_add(count?);
     }
@@ -54,11 +54,14 @@ pub(super) async fn migrate_legacy_grant_ids(
 
 fn legacy_ids_to_migrate(registry: &AgentRegistry) -> Vec<String> {
     let state = registry.state();
-    let legacy = state
-        .legacy_to_stable
-        .iter()
-        .filter(|(legacy, stable)| legacy != stable);
-    legacy.map(|(legacy, _)| legacy.clone()).collect()
+    let mut ids = Vec::new();
+    for (legacy, stable) in &state.legacy_to_stable {
+        if legacy != stable {
+            ids.push(legacy.clone());
+        }
+    }
+    drop(state);
+    ids
 }
 
 fn translated_agents(registry: &AgentRegistry, agents: &[String]) -> Vec<String> {

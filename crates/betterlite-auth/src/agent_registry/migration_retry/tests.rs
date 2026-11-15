@@ -12,7 +12,6 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
-use crate::agent_registry::AgentRegistry;
 use crate::agent_registry::AgentRegistryApi as _;
 use crate::agent_registry::tests::support::{
     ALPHA_ENTRY, ALPHA_LEGACY, ALPHA_STABLE, SCHEMA, TestDatabase, insert_row, loaded, row_agents,

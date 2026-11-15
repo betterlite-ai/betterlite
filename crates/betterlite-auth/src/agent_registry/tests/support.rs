@@ -1,7 +1,7 @@
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
 use betterlite_postgres_fixture::connection::PostgresFixture;
-use clap::Parser as _;
+use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;

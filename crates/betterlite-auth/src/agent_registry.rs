@@ -158,8 +158,8 @@ impl AgentRegistryApi for AgentRegistry {
         lookup::get_agent_by_name(self, agent_name)
     }
 
-    fn reconcile(&self) -> impl Future<Output = MutexGuard<'_, ()>> + Send {
-        async move { self.reconcile_lock.lock().await }
+    async fn reconcile(&self) -> MutexGuard<'_, ()> {
+        self.reconcile_lock.lock().await
     }
 
     fn migrate_legacy_grant_ids(

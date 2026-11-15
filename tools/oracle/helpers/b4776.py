@@ -8,7 +8,9 @@ from pydantic import JsonValue, TypeAdapter
 
 
 class Registry(Protocol):
-    def load_agents_from_config(self, agent_config: Sequence[Mapping[str, JsonValue]] | None = None) -> None: ...
+    def load_agents_from_config(
+        self, agent_config: Sequence[Mapping[str, JsonValue]] | None = None
+    ) -> None: ...
 
     def load_agents_from_db_and_config(
         self,
@@ -16,7 +18,9 @@ class Registry(Protocol):
         db_agents: Sequence[Mapping[str, JsonValue]] | None = None,
     ) -> Sequence[AgentResponse]: ...
 
-    def get_agent_list(self, agent_names: Sequence[str] | None = None) -> tuple[AgentResponse, ...]: ...
+    def get_agent_list(
+        self, agent_names: Sequence[str] | None = None
+    ) -> tuple[AgentResponse, ...]: ...
 
     def get_public_agent_list(self) -> tuple[AgentResponse, ...]: ...
 
@@ -34,6 +38,16 @@ class Registry(Protocol):
 class Snapshot(TypedDict):
     agent_id: str
     agent_name: str
+
+
+class Output(TypedDict):
+    agents: list[Snapshot]
+    ids_for: dict[str, list[str]]
+    stable_ids: list[str]
+    by_id: dict[str, Snapshot | None]
+    by_name: dict[str, Snapshot | None]
+    public: list[Snapshot]
+    after_deregister: list[Snapshot]
 
 
 class Input(TypedDict):
@@ -79,20 +93,22 @@ def run(input_value: JsonValue) -> JsonValue:
     ids_for = {agent_id: sorted(registry.ids_for_agent(agent_id)) for agent_id in parsed["ids_for"]}
     stable_ids = [registry.stable_agent_id(agent_id) for agent_id in parsed["stable_ids"]]
     by_id = {agent_id: lookup(registry.get_agent_by_id(agent_id)) for agent_id in parsed["by_id"]}
-    by_name = {agent_name: lookup(registry.get_agent_by_name(agent_name)) for agent_name in parsed["by_name"]}
+    by_name = {
+        agent_name: lookup(registry.get_agent_by_name(agent_name))
+        for agent_name in parsed["by_name"]
+    }
     litellm.public_agent_groups = parsed["public_groups"]
     public = snapshots(registry.get_public_agent_list())
     for agent_name in parsed["deregister"]:
         registry.deregister_agent(agent_name)
     after_deregister = snapshots(registry.get_agent_list())
-    return JSON.validate_python(
-        {
-            "agents": agents,
-            "ids_for": ids_for,
-            "stable_ids": stable_ids,
-            "by_id": by_id,
-            "by_name": by_name,
-            "public": public,
-            "after_deregister": after_deregister,
-        }
-    )
+    result: Output = {
+        "agents": agents,
+        "ids_for": ids_for,
+        "stable_ids": stable_ids,
+        "by_id": by_id,
+        "by_name": by_name,
+        "public": public,
+        "after_deregister": after_deregister,
+    }
+    return JSON.validate_python(result)

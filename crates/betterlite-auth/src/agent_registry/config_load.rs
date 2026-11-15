@@ -52,6 +52,7 @@ pub(super) fn load_agents_from_config(
     for entry in entries {
         register_config_entry(&mut state, entry)?;
     }
+    drop(state);
     Ok(())
 }
 
@@ -115,12 +116,12 @@ fn register_config_entry(state: &mut State, entry: &Json) -> Result<(), AgentReg
     if fields.contains_key("agent_id") {
         return Err(AgentRegistryError::ConfigAgentId);
     }
-    let mut fields = fields.clone();
-    fields.insert(
+    let mut record = fields.clone();
+    record.insert(
         String::from("agent_id"),
         Json::Text(ids::stable_id(agent_name)),
     );
-    let agent = decode_agent(&fields)?;
+    let agent = decode_agent(&record)?;
     state.agent_list.push(agent);
     Ok(())
 }

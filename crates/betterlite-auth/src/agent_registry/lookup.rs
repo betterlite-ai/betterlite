@@ -13,9 +13,7 @@ pub(super) fn get_agent_by_id(registry: &AgentRegistry, agent_id: &str) -> Optio
     {
         return Some(found.clone());
     }
-    let Some(translated) = state.legacy_to_stable.get(agent_id) else {
-        return None;
-    };
+    let translated = state.legacy_to_stable.get(agent_id)?;
     state
         .agent_list
         .iter()
@@ -31,6 +29,8 @@ pub(super) fn get_agent_by_name(
     let found = state
         .agent_list
         .iter()
-        .find(|agent| agent.agent_name == agent_name);
-    found.cloned()
+        .find(|agent| agent.agent_name == agent_name)
+        .cloned();
+    drop(state);
+    found
 }

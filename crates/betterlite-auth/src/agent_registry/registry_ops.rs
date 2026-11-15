@@ -13,8 +13,11 @@ pub(super) fn get_agent_list(
     let agents = state
         .agent_list
         .iter()
-        .filter(|agent| agent_names.is_none_or(|names| names.contains(&agent.agent_name)));
-    agents.cloned().collect()
+        .filter(|agent| agent_names.is_none_or(|names| names.contains(&agent.agent_name)))
+        .cloned()
+        .collect();
+    drop(state);
+    agents
 }
 
 pub(super) fn get_public_agent_list(

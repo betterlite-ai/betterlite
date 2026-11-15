@@ -31,13 +31,14 @@ pub(super) fn ids_for_agent(registry: &AgentRegistry, agent_id: &str) -> BTreeSe
             ids.insert(legacy.clone());
         }
     }
+    drop(state);
     ids
 }
 
 pub(super) fn stable_agent_id(registry: &AgentRegistry, agent_id: &str) -> String {
     let state = registry.state();
-    match state.legacy_to_stable.get(agent_id) {
-        Some(stable) => stable.clone(),
-        None => agent_id.to_owned(),
-    }
+    state
+        .legacy_to_stable
+        .get(agent_id)
+        .map_or_else(|| agent_id.to_owned(), String::clone)
 }
