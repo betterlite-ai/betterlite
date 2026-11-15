@@ -3,7 +3,6 @@ from typing import Literal, Protocol, TypedDict
 
 import httpx
 from litellm.proxy.guardrails.guardrail_hooks.qohash.qohash import QostodianNexus
-from litellm.types.utils import GenericGuardrailAPIInputs
 from pydantic import JsonValue, TypeAdapter
 
 
@@ -26,16 +25,20 @@ class Settings(TypedDict):
     extra_headers: list[str]
 
 
+class Inputs(TypedDict, total=False):
+    texts: list[str]
+
+
+class Scanned(TypedDict, total=False):
+    texts: list[str]
+
+
 class Input(TypedDict, total=False):
     settings: Settings
-    inputs: GenericGuardrailAPIInputs
+    inputs: Inputs
     request_data: dict[str, JsonValue]
     input_type: Literal["request", "response"]
     answer: Answer
-
-
-class Returned(TypedDict):
-    texts: list[str] | None
 
 
 class Output(TypedDict):
@@ -43,16 +46,16 @@ class Output(TypedDict):
     path: str
     content_type: str | None
     request: GuardrailBody
-    inputs: Returned
+    inputs: dict[str, list[str] | None]
 
 
 class Nexus(Protocol):
     async def apply_guardrail(
         self,
-        inputs: GenericGuardrailAPIInputs,
+        inputs: Inputs,
         request_data: dict[str, JsonValue],
         input_type: Literal["request", "response"],
-    ) -> GenericGuardrailAPIInputs: ...
+    ) -> Scanned: ...
 
 
 BODY_ADAPTER: TypeAdapter[GuardrailBody] = TypeAdapter(GuardrailBody)
@@ -74,30 +77,22 @@ class Recorder:
         return httpx.Response(self.answer["status"], json=self.answer["body"])
 
 
-async def apply(
-    guardrail: Nexus,
-    inputs: GenericGuardrailAPIInputs,
-    request_data: dict[str, JsonValue],
-    input_type: Literal["request", "response"],
-) -> GenericGuardrailAPIInputs:
-    return await guardrail.apply_guardrail(
-        inputs=inputs, request_data=request_data, input_type=input_type
-    )
-
-
 def run(input_value: Input) -> Output:
     settings = input_value.get("settings")
     if settings is None:
         settings = Settings(guardrail_name="", extra_headers=[])
     inputs = input_value.get("inputs")
     if inputs is None:
-        inputs = GenericGuardrailAPIInputs(texts=[])
+        inputs = Inputs()
     request_data = input_value.get("request_data")
     if request_data is None:
         request_data = {}
     input_type = input_value.get("input_type")
     if input_type is None:
         input_type = "request"
+    texts = inputs.get("texts")
+    if texts is None:
+        texts = []
     recorder = Recorder(input_value.get("answer"))
     real = QostodianNexus(
         api_base="http://oracle.invalid",
@@ -106,7 +101,11 @@ def run(input_value: Input) -> Output:
     )
     real.async_handler.client = httpx.AsyncClient(transport=httpx.MockTransport(recorder))
     guardrail: Nexus = real
-    result = asyncio.run(apply(guardrail, inputs, request_data, input_type))
+    result = asyncio.run(
+        guardrail.apply_guardrail(
+            inputs=Inputs(texts=texts), request_data=request_data, input_type=input_type
+        )
+    )
     body = recorder.body
     if body is None:
         raise ValueError("the guardrail sent no request")
