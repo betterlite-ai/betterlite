@@ -1,0 +1,43 @@
+kind: helper
+name: ai21-and-modelscope
+call:
+  b8173:
+    steps:
+      - kind: ai21_params
+      - kind: ai21_map
+        params:
+          tools: []
+          response_format: {type: json_object}
+          max_tokens: 7
+          temperature: 0.2
+          stop: ["END"]
+          n: 2
+          stream: false
+          seed: 4
+          tool_choice: auto
+          frequency_penalty: 0.1
+          user: caller
+          modalities: [text]
+      - kind: ai21_map
+        params: {max_completion_tokens: 9}
+      - kind: ai21_map
+        params: {max_tokens: 7, max_completion_tokens: 9}
+      - kind: ai21_map
+        params: {max_completion_tokens: null}
+      - kind: ai21_map
+        params: {}
+        optional_params: {max_tokens: 1, max_completion_tokens: 2}
+      - kind: ai21_map
+        params: {max_completion_tokens: 2}
+        optional_params: {max_tokens: 1}
+      - kind: modelscope_url
+      - kind: modelscope_url
+        api_base: "https://host.test/v1"
+      - kind: modelscope_url
+        api_base: "https://host.test/v1/chat/completions"
+      - kind: modelscope_url
+        api_base: "https://host.test/v1/"
+      - kind: modelscope_url
+        api_base: ""
+env: {}
+compare: {ignore: []}

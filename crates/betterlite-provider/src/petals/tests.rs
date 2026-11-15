@@ -134,13 +134,13 @@ fn get_config_lists_every_set_value() {
 #[test]
 fn get_config_keeps_zero_and_false() {
     let config = PetalsConfig {
-        max_length: Some(Number::from(0)),
+        max_length: Some(Number::from(0_i32)),
         max_new_tokens: 0,
         do_sample: Some(false),
-        temperature: Some(Number::from(0)),
-        top_k: Some(Number::from(0)),
-        top_p: Some(Number::from(0)),
-        repetition_penalty: Some(Number::from(0)),
+        temperature: Some(Number::from(0_i32)),
+        top_k: Some(Number::from(0_i32)),
+        top_p: Some(Number::from(0_i32)),
+        repetition_penalty: Some(Number::from(0_i32)),
     };
     assert_eq!(
         config.get_config(),

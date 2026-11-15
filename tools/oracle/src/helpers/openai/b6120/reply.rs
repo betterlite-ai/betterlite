@@ -8,7 +8,7 @@ use crate::helpers::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Steps {
+pub(crate) struct Steps {
     steps: Vec<Step>,
 }
 
@@ -37,7 +37,7 @@ fn projection(reply: &Value) -> Value {
         .and_then(|choice| choice.get("message"));
     json!({
         "usage": usage,
-        "annotations": message.and_then(|message| message.get("annotations")),
+        "annotations": message.and_then(|selected| selected.get("annotations")),
         "citations": reply.get("citations"),
         "search_results": reply.get("search_results"),
     })
@@ -56,7 +56,7 @@ fn usage_projection(usage: &Value) -> Value {
     }
     let details = usage.get("prompt_tokens_details");
     let requests = details
-        .and_then(|details| details.get("web_search_requests"))
+        .and_then(|prompt_details| prompt_details.get("web_search_requests"))
         .cloned()
         .unwrap_or(Value::Null);
     fields.insert(String::from("web_search_requests"), requests);

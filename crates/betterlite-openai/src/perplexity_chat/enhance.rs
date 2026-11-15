@@ -99,9 +99,9 @@ fn usage_plan(
     let citation_tokens = citation_tokens(raw)?;
     let count = search_count(raw_usage, raw)?;
     Ok(UsagePlan {
-        create_details: citation_tokens >= 1 || count.is_some_and(|count| count >= 1),
+        create_details: citation_tokens >= 1 || count.is_some_and(|requests| requests >= 1),
         citation_tokens: (citation_tokens >= 1).then_some(citation_tokens),
-        search_requests: count.filter(|count| *count >= 1),
+        search_requests: count.filter(|requests| *requests >= 1),
     })
 }
 
@@ -149,7 +149,7 @@ fn search_count(
     ];
     for candidate in candidates {
         match candidate {
-            None | Some(Value::Null) => continue,
+            None | Some(Value::Null) => {}
             Some(Value::Number(number)) => {
                 return number
                     .as_i64()

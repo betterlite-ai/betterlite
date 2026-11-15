@@ -1,0 +1,17 @@
+kind: helper
+name: manus-responses-response-created-at-camel
+env: {}
+compare: {ignore: []}
+call:
+  b8104:
+    op: replies
+    environment: {}
+    sdk: {api_base: null, api_key: null}
+    now: 1700000000
+    probes:
+      - body: '{"id":"resp_1","createdAt":1234567890.5,"output":[]}'
+        status: 200
+        headers: {}
+      - body: '{"id":"resp_2","created_at":"7.9","createdAt":5,"output":[]}'
+        status: 200
+        headers: {}

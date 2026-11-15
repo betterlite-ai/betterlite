@@ -1,0 +1,10 @@
+kind: helper
+name: compatible-image-record-seed-prices
+call:
+  compatible_image_record:
+    function: price
+    prices:
+      - {host: aiml, model: flux-pro/v1.1, images: 2, prices: {aiml/flux-pro/v1.1: {output_cost_per_image: 0.052}}}
+      - {host: cometapi, model: flux-pro/v1.1, images: 2, prices: {cometapi/flux-pro/v1.1: {output_cost_per_image: 0.052}}}
+env: {}
+compare: {ignore: []}

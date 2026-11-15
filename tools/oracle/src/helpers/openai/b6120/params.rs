@@ -3,11 +3,9 @@ use serde_json::{Value, json};
 
 use betterlite_openai::perplexity_chat::{CapabilityLookup, supported_openai_params};
 
-use crate::helpers::HelperResult;
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Steps {
+pub(crate) struct Steps {
     steps: Vec<Step>,
 }
 
@@ -54,7 +52,7 @@ fn answer(lookup: Lookup, name: &str) -> Result<bool, std::io::Error> {
     }
 }
 
-pub(super) fn run(steps: &Steps) -> HelperResult {
+pub(super) fn run(steps: &Steps) -> Value {
     let outcomes: Vec<Value> = steps
         .steps
         .iter()
@@ -66,5 +64,5 @@ pub(super) fn run(steps: &Steps) -> HelperResult {
             json!({"supported": supported_openai_params(&fixture, &step.model)})
         })
         .collect();
-    Ok(Value::Array(outcomes))
+    Value::Array(outcomes)
 }

@@ -1,0 +1,39 @@
+kind: helper
+name: qualifire-invoke
+call:
+  b8213:
+    settings: {api_key: oracle-key, evaluation_id: eval-7, prompt_injections: true}
+    messages:
+      - {role: user, content: "Look up the weather in Paris."}
+      - role: assistant
+        content: ""
+        tool_calls:
+          - id: call-1
+            type: function
+            function: {name: get_weather, arguments: "{\"city\": \"Paris\"}"}
+          - id: call-2
+            type: function
+            function: {name: get_time, arguments: "not json"}
+      - {role: tool, tool_call_id: call-1, content: "18 degrees"}
+      - role: user
+        content:
+          - {type: text, text: "Thanks."}
+          - {type: image_url, image_url: {url: "http://example.test/a.png"}}
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Current weather
+          parameters: {type: object, properties: {city: {type: string}}}
+      - {name: get_time, description: Current time}
+    answer:
+      status: 200
+      headers: {}
+      body:
+        score: 90
+        status: passed
+        evaluationResults:
+          - results:
+              - {name: eval-7, flagged: false}
+env: {}
+compare: {ignore: []}

@@ -11,7 +11,9 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
-use crate::lakera_v2::guardrail::LakeraV2Guardrail;
+use crate::lakera_v2::guardrail::build_advisory_message;
+use crate::lakera_v2::guardrail::construction;
+use crate::lakera_v2::hooks::pre_call::pre_call;
 use crate::lakera_v2::scope::{
     breakdown_has_pii_violation, has_combined_input, has_responses_instructions,
     pre_masking_scope_indices,
@@ -27,10 +29,18 @@ fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
 }
 
-fn flags(skip_system_message: bool, skip_tool_message: bool) -> ScopeFlags {
+#[derive(Clone, Copy)]
+enum Skip {
+    Nothing,
+    System,
+    Tool,
+    Both,
+}
+
+fn flags(skipped: Skip) -> ScopeFlags {
     ScopeFlags {
-        skip_system_message,
-        skip_tool_message,
+        skip_system_message: matches!(skipped, Skip::System | Skip::Both),
+        skip_tool_message: matches!(skipped, Skip::Tool | Skip::Both),
         scan: ScanScope::AllMessages,
     }
 }
@@ -80,7 +90,7 @@ fn advisory_rules_apply_only_in_inject_mode(#[case] on_flagged: LakeraOnFlagged)
 #[test]
 fn the_default_advisory_message_carries_the_reason() {
     let guardrail = build("http://unused", LakeraOnFlagged::InjectSystemMessage, None);
-    let advisory = guardrail.build_advisory_message(None).unwrap();
+    let advisory = build_advisory_message(&guardrail, None).unwrap();
     assert!(
         advisory
             .starts_with("The user's latest message was flagged for a content safety concern by"),
@@ -103,7 +113,7 @@ fn a_named_base_keeps_its_own_name_and_takes_the_args_name_otherwise(
     let mut named = base(true);
     named.settings.guardrail_name = base_name.map(str::to_owned);
     let guardrail =
-        LakeraV2Guardrail::new(args, named, reqwest::Client::default(), &env).expect("built");
+        construction::new(args, named, reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.base.settings.guardrail_name.as_deref(), expected);
 }
 
@@ -122,13 +132,13 @@ fn a_null_input_is_not_a_combined_input() {
 #[test]
 fn only_non_empty_instructions_that_are_not_skipped_count() {
     let mut data = Data::new();
-    assert!(!has_responses_instructions(&data, flags(false, false)));
+    assert!(!has_responses_instructions(&data, flags(Skip::Nothing)));
     data.insert("instructions".to_owned(), text(""));
-    assert!(!has_responses_instructions(&data, flags(false, false)));
+    assert!(!has_responses_instructions(&data, flags(Skip::Nothing)));
     data.insert("instructions".to_owned(), text("be brief"));
-    assert!(has_responses_instructions(&data, flags(false, false)));
-    assert!(!has_responses_instructions(&data, flags(true, false)));
-    assert!(has_responses_instructions(&data, flags(false, true)));
+    assert!(has_responses_instructions(&data, flags(Skip::Nothing)));
+    assert!(!has_responses_instructions(&data, flags(Skip::System)));
+    assert!(has_responses_instructions(&data, flags(Skip::Tool)));
 }
 
 #[test]
@@ -156,18 +166,18 @@ fn masking_scope_indices_follow_the_skip_flags_and_lowercased_roles() {
         ])),
     ];
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(false, false)),
+        pre_masking_scope_indices(&messages, flags(Skip::Nothing)),
         [0, 1, 2]
     );
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(true, false)),
+        pre_masking_scope_indices(&messages, flags(Skip::System)),
         [1, 2]
     );
     assert_eq!(
-        pre_masking_scope_indices(&messages, flags(false, true)),
+        pre_masking_scope_indices(&messages, flags(Skip::Tool)),
         [0, 1]
     );
-    assert_eq!(pre_masking_scope_indices(&messages, flags(true, true)), [1]);
+    assert_eq!(pre_masking_scope_indices(&messages, flags(Skip::Both)), [1]);
 }
 
 #[tokio::test]
@@ -254,9 +264,8 @@ async fn pre_call_masks_around_a_skipped_system_message_and_keeps_other_fields()
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(true, false), &mut call, &sink, &suppressed);
-    guardrail
-        .pre_call(&mut data, &mut call_context)
+    let mut call_context = context(flags(Skip::System), &mut call, &sink, &suppressed);
+    pre_call(&guardrail, &mut data, &mut call_context)
         .await
         .expect("masked");
     assert_eq!(
@@ -335,7 +344,7 @@ async fn call_v2_guard_records_the_clock_times() {
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
@@ -345,11 +354,16 @@ async fn call_v2_guard_records_the_clock_times() {
         )
         .await
         .expect("an answer");
-    let records = sink.records.lock().unwrap();
-    let record = records.first().expect("one record");
-    assert_eq!(record.start_time, Some(1_700_000_000.0));
-    assert_eq!(record.end_time, Some(1_700_000_001.0));
-    assert_eq!(record.duration, Some(1.0));
+    let record = sink
+        .records
+        .lock()
+        .unwrap()
+        .first()
+        .cloned()
+        .expect("one record");
+    assert_eq!(record.start_time, Some(1_700_000_000.0_f64));
+    assert_eq!(record.end_time, Some(1_700_000_001.0_f64));
+    assert_eq!(record.duration, Some(1.0_f64));
 }
 
 fn breakdown_of(items: usize) -> String {
@@ -373,8 +387,8 @@ async fn call_v2_guard_reads_an_answer_of_several_kilobytes() {
 }
 
 #[rstest]
-#[case::configured_allows(Some(1000.0), Duration::from_secs(500), true)]
-#[case::configured_expires(Some(100.0), Duration::from_secs(500), false)]
+#[case::configured_allows(Some(1000.0_f64), Duration::from_secs(500), true)]
+#[case::configured_expires(Some(100.0_f64), Duration::from_secs(500), false)]
 #[case::default_allows(None, Duration::from_secs(500), true)]
 #[case::default_expires(None, Duration::from_secs(700), false)]
 #[tokio::test(start_paused = true)]
@@ -390,12 +404,12 @@ async fn a_stalled_guard_call_ends_at_its_timeout(
     args.timeout = timeout;
     let env = BTreeMap::new();
     let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
+        construction::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     let mut data = chat_data();
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     let result = guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],
@@ -409,9 +423,8 @@ async fn a_stalled_guard_call_ends_at_its_timeout(
         return;
     }
     let error = result.expect_err("the answer arrives after the timeout");
-    let source = match error {
-        LakeraV2Error::Transport { source } => source,
-        other => panic!("expected the timeout as a transport error: {other:?}"),
+    let LakeraV2Error::Transport { source } = &error else {
+        panic!("expected the timeout as a transport error: {error:?}");
     };
     assert!(source.is_timeout(), "{source}");
 }
@@ -424,7 +437,7 @@ async fn call_v2_guard_refuses_an_answer_over_one_mebibyte() {
     let sink = CollectingSink::default();
     let suppressed = BTreeSet::new();
     let mut call = invocation(&data);
-    let mut call_context = context(flags(false, false), &mut call, &sink, &suppressed);
+    let mut call_context = context(flags(Skip::Nothing), &mut call, &sink, &suppressed);
     let error = guardrail
         .call_v2_guard(
             &[lakera_message("user", "hi")],

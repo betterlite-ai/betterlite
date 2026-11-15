@@ -1,10 +1,12 @@
 import os
+from collections.abc import Awaitable, Callable
 from typing import NotRequired, Protocol, TypedDict
 from urllib.parse import parse_qsl
 
 import httpx
 import litellm
 import openai
+from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.petals.completion.transformation import PetalsConfig
@@ -17,16 +19,22 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 
+HeaderMap = dict[str, str]
+JsonMap = dict[str, JsonValue]
+ValidateEnvironment = Callable[
+    [HeaderMap, str, list[AllMessageValues], JsonMap, JsonMap, str | None], dict[str, JsonValue]
+]
+
+
+# mypy rejects an empty list literal of this type because it carries Any; a subclass stays clean
+class NoMessages(list[AllMessageValues]):
+    pass
+
+
 class Config(Protocol):
-    def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        api_key: str | None = None,
-    ) -> dict[str, JsonValue]: ...
+    # ruff counts a def's parameters (PLR0913), so the six-argument call type is a property value
+    @property
+    def validate_environment(self) -> ValidateEnvironment: ...
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, JsonValue]
@@ -40,27 +48,21 @@ class Petals(Config, Protocol):
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
     def map_openai_params(
-        self,
-        non_default_params: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        model: str,
-        *,
-        drop_params: bool,
+        self, non_default_params: dict[str, JsonValue], optional_params: dict[str, JsonValue],
+        model: str, *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
+
+
+CompleteUrl = Callable[
+    [str | None, str | None, str, str, JsonMap | None, JsonMap], tuple[httpx.URL, str]
+]
 
 
 class Passthrough(Protocol):
     def is_streaming_request(self, endpoint: str, request_data: dict[str, JsonValue]) -> bool: ...
 
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        endpoint: str,
-        request_query_params: dict[str, JsonValue] | None,
-        litellm_params: dict[str, JsonValue],
-    ) -> tuple[httpx.URL, str]: ...
+    @property
+    def get_complete_url(self) -> CompleteUrl: ...
 
 
 INFO_VIEW: Config = VLLMModelInfo()
@@ -157,7 +159,7 @@ def models_value(api_base: str | None) -> JsonValue:
 def model_info_value(call: InfoCall) -> JsonValue:
     replace_environment(call["env"])
     headers: dict[str, JsonValue] = INFO_VIEW.validate_environment(
-        call["headers"], call["model"], [], {}, {}, api_key=call.get("api_key")
+        call["headers"], call["model"], NoMessages(), {}, {}, call.get("api_key")
     )
     error = INFO_VIEW.get_error_class("boom", 418, {})
     return {
@@ -194,7 +196,7 @@ def validated_value(case: ValidateCase) -> JsonValue:
     given = TypeAdapter(dict[str, JsonValue]).validate_python(case["headers"])
     key = case["api_key"]
     returned: dict[str, JsonValue] = PETALS_VIEW.validate_environment(
-        case["headers"], "m", [], {}, {}, api_key=key
+        case["headers"], "m", NoMessages(), {}, {}, key
     )
     return {"headers": returned, "given": given, "api_key": key}
 
@@ -233,30 +235,14 @@ def request_value(call: RequestCase) -> JsonValue:
     return {"ok": True, "form": responder.form}
 
 
-def reply_of(response: ModelResponse) -> JsonValue:
-    usage = TypeAdapter(ReplyDump).validate_json(response.model_dump_json())["usage"]
-    return {
-        "ok": True,
-        "model": response.model,
-        "created": response.created,
-        "choices": [
-            {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
-            for c in response.choices
-        ],
-        "usage": {
-            "prompt_tokens": usage.prompt_tokens,
-            "completion_tokens": usage.completion_tokens,
-            "total_tokens": usage.total_tokens,
-        },
-    }
-
-
 def reply_value(call: ReplyCase) -> JsonValue:
     responder = Responder(call["body"], call["status"], call["headers"])
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(responder.handle)))
     try:
         # litellm.completion's decorated return is Any to mypy, so its type is named here.
-        reply: ModelResponse = litellm.completion(
+        response: (
+            ModelResponse | CustomStreamWrapper | Awaitable[ModelResponse | CustomStreamWrapper]
+        ) = litellm.completion(
             model=f"petals/{call['model']}",
             messages=call["messages"],
             api_base="http://petals.test/v1/generate",
@@ -266,17 +252,32 @@ def reply_value(call: ReplyCase) -> JsonValue:
         return {"ok": False, "status": error.status_code}
     except openai.APIConnectionError:
         return {"ok": False, "status": 500}
-    return reply_of(reply)
+    reply = TypeAdapter(ModelResponse).validate_python(response)
+    usage = TypeAdapter(ReplyDump).validate_json(reply.model_dump_json())["usage"]
+    return {
+        "ok": True,
+        "model": reply.model,
+        "created": reply.created,
+        "choices": [
+            {"index": c.index, "content": c.message.content, "finish_reason": c.finish_reason}
+            for c in reply.choices
+        ],
+        "usage": {
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+        },
+    }
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     op = input_value["op"]
     if op == "vllm_model_info":
-        calls = TypeAdapter(list[InfoCall]).validate_python(input_value["calls"])
-        return {"calls": [model_info_value(call) for call in calls]}
+        info_calls = TypeAdapter(list[InfoCall]).validate_python(input_value["calls"])
+        return {"calls": [model_info_value(call) for call in info_calls]}
     if op == "vllm_passthrough":
-        calls = TypeAdapter(list[PassCall]).validate_python(input_value["calls"])
-        return {"calls": [passthrough_value(call) for call in calls]}
+        pass_calls = TypeAdapter(list[PassCall]).validate_python(input_value["calls"])
+        return {"calls": [passthrough_value(call) for call in pass_calls]}
     if op == "petals_params":
         env = TypeAdapter(dict[str, str] | None).validate_python(input_value.get("env"))
         apply_max_new_tokens(env)

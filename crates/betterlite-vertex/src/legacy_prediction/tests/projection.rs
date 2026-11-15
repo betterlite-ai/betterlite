@@ -4,7 +4,7 @@ use betterlite_openai::chat::{ChatMessage, MessageContent, Role};
 use futures_util::StreamExt;
 use indexmap::IndexMap;
 
-use crate::legacy_prediction::execution::complete;
+use crate::legacy_prediction::execution::completion_entry::complete;
 use crate::legacy_prediction::projection::{
     LegacyMessage, LegacyUsage, ProjectionInput, ProjectionServices, project,
 };

@@ -165,7 +165,9 @@ fn search_rate(model_info: &Object) -> Option<Decimal> {
             .get("search_context_size_low")
             .and_then(parse_rate)
             .unwrap_or(Decimal::ZERO),
-        other => parse_rate(other).unwrap_or(Decimal::ZERO),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            parse_rate(chosen).unwrap_or(Decimal::ZERO)
+        }
     })
 }
 

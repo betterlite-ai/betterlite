@@ -16,7 +16,7 @@ const PRICE_SCALE: u32 = 12;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Steps {
+pub(crate) struct Steps {
     steps: Vec<Step>,
 }
 

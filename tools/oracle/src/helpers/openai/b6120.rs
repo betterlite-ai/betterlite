@@ -26,9 +26,9 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Cost(steps) => cost::run(steps),
-            Input::Credentials(steps) => credentials::run(steps),
+            Input::Credentials(steps) => Ok(credentials::run(steps)),
             Input::Reply(steps) => reply::run(steps),
-            Input::SupportedParams(steps) => params::run(steps),
+            Input::SupportedParams(steps) => Ok(params::run(steps)),
         }
     }
 }

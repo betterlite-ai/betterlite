@@ -12,48 +12,46 @@ use super::super::advisory;
 use super::super::error::LakeraV2Error;
 use super::{DEFAULT_API_BASE, DEFAULT_TIMEOUT, LakeraV2Flags, LakeraV2Guardrail};
 
-impl LakeraV2Guardrail {
-    pub fn new(
-        args: LakeraV2Args,
-        base: GuardrailBase,
-        client: reqwest::Client,
-        env: &dyn EnvironmentLookup,
-    ) -> Result<Self, LakeraV2Error> {
-        let api_key = resolve_api_key(&args, env);
-        let api_base = resolve_api_base(&args, env);
-        let timeout = resolve_timeout(args.timeout)?;
-        let flags = LakeraV2Flags {
-            payload: args.payload.unwrap_or(true),
-            breakdown: args.breakdown.unwrap_or(true),
-            dev_info: args.dev_info.unwrap_or(true),
-        };
-        let on_flagged = args.on_flagged.unwrap_or(LakeraOnFlagged::Block);
-        advisory::validate_advisory_config(
-            on_flagged,
-            args.advisory_system_message.as_deref(),
-            Some(flags.payload),
-            Some(flags.breakdown),
-        )?;
-        let skip_flags = GuardrailSkipFlags {
-            skip_system_message: args.skip_system_message,
-            skip_tool_message: args.skip_tool_message_in_guardrail,
-            scan_only_tool_results: None,
-        };
-        Ok(Self {
-            base: named_base(base, &args.name),
-            client,
-            api_key,
-            api_base,
-            project_id: args.project_id,
-            metadata: args.metadata,
-            flags,
-            on_flagged,
-            advisory_system_message: args.advisory_system_message,
-            skip_flags,
-            timeout,
-            clock: SystemTime::now,
-        })
-    }
+pub fn new(
+    args: LakeraV2Args,
+    base: GuardrailBase,
+    client: reqwest::Client,
+    env: &dyn EnvironmentLookup,
+) -> Result<LakeraV2Guardrail, LakeraV2Error> {
+    let api_key = resolve_api_key(&args, env);
+    let api_base = resolve_api_base(&args, env);
+    let timeout = resolve_timeout(args.timeout)?;
+    let flags = LakeraV2Flags {
+        payload: args.payload.unwrap_or(true),
+        breakdown: args.breakdown.unwrap_or(true),
+        dev_info: args.dev_info.unwrap_or(true),
+    };
+    let on_flagged = args.on_flagged.unwrap_or(LakeraOnFlagged::Block);
+    advisory::validate_advisory_config(
+        on_flagged,
+        args.advisory_system_message.as_deref(),
+        Some(flags.payload),
+        Some(flags.breakdown),
+    )?;
+    let skip_flags = GuardrailSkipFlags {
+        skip_system_message: args.skip_system_message,
+        skip_tool_message: args.skip_tool_message_in_guardrail,
+        scan_only_tool_results: None,
+    };
+    Ok(LakeraV2Guardrail {
+        base: named_base(base, &args.name),
+        client,
+        api_key,
+        api_base,
+        project_id: args.project_id,
+        metadata: args.metadata,
+        flags,
+        on_flagged,
+        advisory_system_message: args.advisory_system_message,
+        skip_flags,
+        timeout,
+        clock: SystemTime::now,
+    })
 }
 
 // LiteLLM keeps the CustomGuardrail name, which the initializer already put on the base
@@ -65,10 +63,9 @@ fn named_base(mut base: GuardrailBase, name: &str) -> GuardrailBase {
 }
 
 fn resolve_api_key(args: &LakeraV2Args, env: &dyn EnvironmentLookup) -> SecretString {
-    match &args.api_key {
-        Some(key) => key.clone(),
-        None => SecretString::from(env.lookup("LAKERA_API_KEY").unwrap_or_default()),
-    }
+    args.api_key
+        .clone()
+        .unwrap_or_else(|| SecretString::from(env.lookup("LAKERA_API_KEY").unwrap_or_default()))
 }
 
 fn resolve_api_base(args: &LakeraV2Args, env: &dyn EnvironmentLookup) -> String {

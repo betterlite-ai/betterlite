@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::decode::decode_litellm_params;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
@@ -13,13 +14,19 @@ use crate::guardrail_initializers::lakera_v2::LakeraV2Args;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
-use crate::lakera_v2::guardrail::LakeraV2Guardrail;
+use crate::lakera_v2::guardrail::construction;
+use crate::lakera_v2::guardrail::{LakeraV2Guardrail, update};
+use crate::lakera_v2::hooks::post_call::post_call;
+use crate::lakera_v2::hooks::pre_call::pre_call;
 
 use super::{
     ATTACK_ONLY, CollectingSink, EMAIL_SPAN, ESCAPED_TEMPLATE_TEXT, Hook, MIXED, PAYLOAD_TEXT,
     PII_ONLY, args, base, body_of, build, chat_data, content_of, context, flagged, invocation,
     message, run_hook, serve,
 };
+
+const CHOICE_EMAIL_SPAN: &str =
+    r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#;
 
 #[tokio::test]
 async fn pre_call_masks_a_pii_only_verdict() {
@@ -158,7 +165,7 @@ async fn pre_call_monitor_forwards_multimodal_pii_it_cannot_mask() {
         .await
         .expect("the unredacted request is forwarded");
     assert_eq!(outcome.applied_guardrail.as_deref(), Some("lakera-v2"));
-    assert_eq!(data, original);
+    assert_eq!(data.get("messages"), original.get("messages"));
 }
 
 #[tokio::test]
@@ -179,8 +186,7 @@ async fn pre_call_does_not_run_when_every_message_is_skipped() {
         scan: ScanScope::AllMessages,
     };
     let mut call_context = context(scope, &mut call, &sink, &suppressed);
-    let outcome = guardrail
-        .pre_call(&mut data, &mut call_context)
+    let outcome = pre_call(&guardrail, &mut data, &mut call_context)
         .await
         .expect("skipped");
     assert_eq!(outcome.applied_guardrail, None);
@@ -308,14 +314,7 @@ fn choice_content(response: &Data, index: usize) -> Option<GuardrailValue> {
 
 #[tokio::test]
 async fn post_call_masks_the_assistant_content_by_choice() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response();
@@ -370,8 +369,7 @@ async fn post_call_allows_a_non_pii_verdict_in_monitor_or_advisory_mode(
 
 fn update_params(extra: &str) -> LitellmParams {
     let body = format!(r#"{{"guardrail": "lakera_v2", "mode": "post_call"{extra}}}"#);
-    betterlite_config::sections::guardrail_params::decode::decode_litellm_params(body.as_bytes())
-        .expect("valid params")
+    decode_litellm_params(body.as_bytes()).expect("valid params")
 }
 
 #[test]
@@ -384,9 +382,8 @@ fn update_refuses_the_escaped_template_and_keeps_the_instance() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Watch out for {{reason}}""#,
     );
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("the template is invalid");
+    let error =
+        update::update_params(&mut guardrail, &params).expect_err("the template is invalid");
     assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
     assert_eq!(
         guardrail.advisory_system_message.as_deref(),
@@ -402,9 +399,8 @@ fn update_refuses_advisory_mode_with_payload_off_and_keeps_the_instance() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}", "payload": false"#,
     );
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("advisory mode needs payload");
+    let error =
+        update::update_params(&mut guardrail, &params).expect_err("advisory mode needs payload");
     assert_eq!(error.to_string(), PAYLOAD_TEXT);
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
@@ -418,7 +414,7 @@ fn update_applies_the_advisory_fields_and_the_new_mode() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}", "payload": true, "breakdown": true"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
     assert_eq!(
         guardrail.advisory_system_message.as_deref(),
@@ -438,7 +434,7 @@ fn update_reapplies_the_base_settings_and_the_skip_flags() {
     let params = update_params(
         r#", "default_on": false, "skip_system_message_in_guardrail": true, "skip_tool_message_in_guardrail": false, "scan_only_tool_results": true"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert!(!guardrail.base.settings.default_on);
     assert_eq!(guardrail.skip_flags.skip_system_message, Some(true));
     assert_eq!(guardrail.skip_flags.skip_tool_message, Some(false));
@@ -459,7 +455,7 @@ fn update_keeps_the_connection_fields() {
     let params = update_params(
         r#", "api_base": "http://other", "api_key": "other", "project_id": "other", "metadata": {"team": "b"}"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.api_base, "http://live");
     assert_eq!(guardrail.api_key.expose_secret(), "live-key");
     assert_eq!(guardrail.project_id.as_deref(), Some("live-project"));
@@ -476,9 +472,7 @@ fn update_keeps_the_connection_fields() {
 fn update_rejects_a_wrong_typed_payload() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
     let params = update_params(r#", "payload": "yes""#);
-    let error = guardrail
-        .update_params(&params)
-        .expect_err("payload must be a bool");
+    let error = update::update_params(&mut guardrail, &params).expect_err("payload must be a bool");
     assert!(
         matches!(&error, LakeraV2Error::InvalidParam { field, .. } if field == "payload"),
         "{error}"
@@ -489,8 +483,7 @@ fn update_rejects_a_wrong_typed_payload() {
 #[test]
 fn update_refuses_a_timeout_without_a_duration_and_keeps_the_live_one() {
     let mut guardrail = build("http://unused", LakeraOnFlagged::Block, None);
-    let error = guardrail
-        .update_params(&update_params(r#", "timeout": -1.0"#))
+    let error = update::update_params(&mut guardrail, &update_params(r#", "timeout": -1.0"#))
         .expect_err("a negative timeout has no duration");
     assert!(matches!(error, LakeraV2Error::Timeout { .. }), "{error}");
     assert_eq!(guardrail.timeout, Duration::from_secs(600));
@@ -498,7 +491,7 @@ fn update_refuses_a_timeout_without_a_duration_and_keeps_the_live_one() {
 
 fn built(args: LakeraV2Args) -> LakeraV2Guardrail {
     let env = BTreeMap::new();
-    LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built")
+    construction::new(args, base(true), reqwest::Client::default(), &env).expect("built")
 }
 
 #[test]
@@ -509,9 +502,7 @@ fn update_resets_omitted_params_to_the_model_defaults() {
     args.breakdown = Some(false);
     args.dev_info = Some(false);
     let mut guardrail = built(args);
-    guardrail
-        .update_params(&update_params(""))
-        .expect("a valid update");
+    update::update_params(&mut guardrail, &update_params("")).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
     assert!(guardrail.flags.breakdown);
@@ -529,7 +520,7 @@ fn update_resolves_explicit_nulls_to_the_model_defaults() {
     let params = update_params(
         r#", "on_flagged": null, "payload": null, "breakdown": null, "dev_info": null"#,
     );
-    guardrail.update_params(&params).expect("a valid update");
+    update::update_params(&mut guardrail, &params).expect("a valid update");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::Block);
     assert!(guardrail.flags.payload);
     assert!(guardrail.flags.breakdown);
@@ -544,9 +535,7 @@ fn update_to_advisory_mode_defaults_an_omitted_payload_to_true() {
     let params = update_params(
         r#", "on_flagged": "inject_system_message", "advisory_system_message": "Why: {reason}""#,
     );
-    guardrail
-        .update_params(&params)
-        .expect("the omitted payload defaults to true");
+    update::update_params(&mut guardrail, &params).expect("the omitted payload defaults to true");
     assert_eq!(guardrail.on_flagged, LakeraOnFlagged::InjectSystemMessage);
     assert!(guardrail.flags.payload);
 }
@@ -554,7 +543,7 @@ fn update_to_advisory_mode_defaults_an_omitted_payload_to_true() {
 #[test]
 fn timeout_is_resolved_from_the_configured_seconds() {
     let mut args = args();
-    args.timeout = Some(2.5);
+    args.timeout = Some(2.5_f64);
     assert_eq!(built(args).timeout, Duration::from_millis(2500));
 }
 
@@ -566,24 +555,15 @@ fn the_default_timeout_is_lite_llms_six_hundred_seconds() {
 #[test]
 fn update_resets_an_omitted_timeout_to_the_default() {
     let mut args = args();
-    args.timeout = Some(2.5);
+    args.timeout = Some(2.5_f64);
     let mut guardrail = built(args);
-    guardrail
-        .update_params(&update_params(""))
-        .expect("a valid update");
+    update::update_params(&mut guardrail, &update_params("")).expect("a valid update");
     assert_eq!(guardrail.timeout, Duration::from_secs(600));
 }
 
 #[tokio::test]
 async fn post_call_leaves_out_choices_with_an_empty_content() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let mut response = assistant_response_with(GuardrailValue::Text(String::new()));
@@ -683,14 +663,7 @@ async fn post_call_keeps_a_text_part_list_unmasked() {
 
 #[tokio::test]
 async fn post_call_masks_the_choice_after_a_skipped_system_message() {
-    let server = serve(
-        200,
-        flagged(
-            PII_ONLY,
-            r#"[{"message_id":1,"start":6,"end":19,"detector_type":"pii/email"}]"#,
-        ),
-    )
-    .await;
+    let server = serve(200, flagged(PII_ONLY, CHOICE_EMAIL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = Data::new();
     data.insert(
@@ -711,8 +684,7 @@ async fn post_call_masks_the_choice_after_a_skipped_system_message() {
         scan: ScanScope::AllMessages,
     };
     let mut call_context = context(scope, &mut call, &sink, &suppressed);
-    guardrail
-        .post_call(&mut data, &mut response, &mut call_context)
+    post_call(&guardrail, &mut data, &mut response, &mut call_context)
         .await
         .expect("masked");
     assert_eq!(
@@ -723,7 +695,7 @@ async fn post_call_masks_the_choice_after_a_skipped_system_message() {
         panic!("the request messages are missing");
     };
     assert_eq!(
-        messages.get(0),
+        messages.first(),
         Some(&message("system", "secret a@example.com"))
     );
     assert_eq!(

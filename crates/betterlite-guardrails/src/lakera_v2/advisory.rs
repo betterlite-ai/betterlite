@@ -52,13 +52,13 @@ pub fn validate_advisory_config(
     if on_flagged != LakeraOnFlagged::InjectSystemMessage {
         return Ok(());
     }
-    if let Some(template) = template {
-        let placeholder = format::uses_reason_placeholder(template)
+    if let Some(advisory) = template {
+        let placeholder = format::uses_reason_placeholder(advisory)
             .map_err(|source| LakeraV2Error::AdvisorySyntax { source })?;
         if !placeholder {
             return Err(LakeraV2Error::AdvisoryPlaceholder);
         }
-        format::format_reason(template, PLACEHOLDER)
+        format::format_reason(advisory, PLACEHOLDER)
             .map_err(|source| LakeraV2Error::AdvisoryFormat { source })?;
     }
     if payload != Some(true) || breakdown != Some(true) {

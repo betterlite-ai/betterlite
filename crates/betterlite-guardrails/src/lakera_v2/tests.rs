@@ -17,6 +17,8 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
+use tracing::subscriber::set_default;
 
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -26,11 +28,17 @@ use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::guardrail_records::error::GuardrailSpanError;
 use crate::guardrail_records::invocation::{GuardrailHookName, GuardrailInvocation};
 use crate::guardrail_records::record::{GuardrailInvocationRecord, GuardrailSpanSink};
-use crate::lakera_pii::wire::{BreakdownItem, Message};
+use crate::lakera_pii::wire::{BreakdownItem, LakeraResponse, Message};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::advisory::{humanize_lakera_block_reasons, validate_advisory_config};
 use crate::lakera_v2::error::LakeraV2Error;
-use crate::lakera_v2::guardrail::{DEFAULT_API_BASE, LakeraV2Guardrail, SUPPORTED_EVENT_HOOKS};
+use crate::lakera_v2::guardrail::construction;
+use crate::lakera_v2::guardrail::{
+    DEFAULT_API_BASE, LakeraV2Guardrail, SUPPORTED_EVENT_HOOKS, build_advisory_message,
+};
+use crate::lakera_v2::hooks::during_call::during_call;
+use crate::lakera_v2::hooks::post_call::post_call;
+use crate::lakera_v2::hooks::pre_call::pre_call;
 use crate::lakera_v2::hooks::{HookContext, HookOutcome};
 use crate::lakera_v2::scope::{
     COMBINED_REASON, MULTIMODAL_REASON, NO_PAYLOAD_REASON, NO_WRITE_BACK_REASON, NOT_A_LIST_REASON,
@@ -41,6 +49,7 @@ use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 const ESCAPED_TEMPLATE_TEXT: &str = "Invalid advisory_system_message template: must include a real {reason} placeholder (not an escaped {{reason}}) so the LLM sees why the request was flagged.";
 const UNKNOWN_FIELD_TEXT: &str = "Invalid advisory_system_message template: 'foo'. The template must be a valid str.format() string using only the {reason} placeholder.";
 const PAYLOAD_TEXT: &str = "on_flagged='inject_system_message' requires payload=True and breakdown=True: advisory mode masks any detected PII before appending the advisory note, and that masking can only happen when Lakera's response carries both the violation breakdown and the payload location data. Without them, PII would be forwarded to the model unredacted.";
+const ESCAPED_AND_PRECISION_TEMPLATE: &str = "{{escaped}} {reason:.4}";
 
 fn args() -> LakeraV2Args {
     LakeraV2Args {
@@ -95,7 +104,7 @@ fn build(base_url: &str, on_flagged: LakeraOnFlagged, template: Option<&str>) ->
     args.on_flagged = Some(on_flagged);
     args.advisory_system_message = template.map(str::to_owned);
     let env = BTreeMap::new();
-    LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built")
+    construction::new(args, base(true), reqwest::Client::default(), &env).expect("built")
 }
 
 fn message(role: &str, content: &str) -> GuardrailValue {
@@ -109,15 +118,11 @@ fn message(role: &str, content: &str) -> GuardrailValue {
 }
 
 fn chat_data() -> Data {
+    let model = GuardrailValue::Text("gpt-4o".to_owned());
+    let messages = vec![message("user", "email a@example.com")];
     let mut data = Data::new();
-    data.insert(
-        "model".to_owned(),
-        GuardrailValue::Text("gpt-4o".to_owned()),
-    );
-    data.insert(
-        "messages".to_owned(),
-        GuardrailValue::Array(vec![message("user", "email a@example.com")]),
-    );
+    data.insert("model".to_owned(), model);
+    data.insert("messages".to_owned(), GuardrailValue::Array(messages));
     data
 }
 
@@ -160,7 +165,10 @@ struct CollectingSink {
 
 impl GuardrailSpanSink for CollectingSink {
     fn emit(&self, record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
-        self.records.lock().unwrap().push(record.clone());
+        self.records
+            .lock()
+            .map_err(|_poisoned| GuardrailSpanError::Unavailable)?
+            .push(record.clone());
         Ok(())
     }
 }
@@ -175,7 +183,7 @@ struct Captured {
 struct Server {
     base_url: String,
     captured: Arc<Mutex<Captured>>,
-    _tasks: JoinSet<Result<(), std::io::Error>>,
+    _tasks: JoinSet<Result<(), io::Error>>,
 }
 
 async fn serve(status: u16, body: String) -> Server {
@@ -186,37 +194,40 @@ async fn serve_after(delay: Option<Duration>, status: u16, body: String) -> Serv
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let captured = Arc::new(Mutex::new(Captured::default()));
-    let sink = Arc::clone(&captured);
+    let shared = Arc::clone(&captured);
     let answer = move |uri: Uri, headers: AxumHeaderMap, bytes: Bytes| {
-        let sink = Arc::clone(&sink);
+        let state = Arc::clone(&shared);
         async move {
-            let mut recorded = sink.lock().unwrap();
-            recorded.path = uri.path().to_owned();
-            recorded.headers = headers
-                .iter()
-                .filter_map(|(name, value)| {
-                    value
-                        .to_str()
-                        .ok()
-                        .map(|text| (name.as_str().to_owned(), text.to_owned()))
-                })
-                .collect();
-            recorded.body = String::from_utf8(bytes.to_vec()).unwrap();
-            drop(recorded);
+            record(&state, &uri, &headers, &bytes);
             if let Some(pause) = delay {
-                tokio::time::sleep(pause).await;
+                sleep(pause).await;
             }
             (AxumStatusCode::from_u16(status).unwrap(), body)
         }
     };
     let router = Router::new().fallback(answer);
-    let mut tasks: JoinSet<Result<(), std::io::Error>> = JoinSet::new();
+    let mut tasks: JoinSet<Result<(), io::Error>> = JoinSet::new();
     tasks.spawn(axum::serve(listener, router).into_future());
     Server {
         base_url,
         captured,
         _tasks: tasks,
     }
+}
+
+fn record(shared: &Mutex<Captured>, uri: &Uri, headers: &AxumHeaderMap, bytes: &[u8]) {
+    let mut recorded = shared.lock().unwrap();
+    recorded.path = uri.path().to_owned();
+    recorded.headers = headers
+        .iter()
+        .filter_map(|(name, value)| {
+            value
+                .to_str()
+                .ok()
+                .map(|text| (name.as_str().to_owned(), text.to_owned()))
+        })
+        .collect();
+    recorded.body = String::from_utf8(bytes.to_vec()).unwrap();
 }
 
 impl Server {
@@ -234,7 +245,7 @@ fn body_of(server: &Server) -> Data {
 }
 
 fn lakera_message(role: &str, content: &str) -> Message {
-    let text = serde_json::json!({"role": role, "content": content}).to_string();
+    let text = serde_json::to_string(&message(role, content)).expect("a message");
     serde_json::from_str(&text).expect("a message")
 }
 
@@ -297,13 +308,13 @@ async fn run_hook(
     let mut call = invocation(data);
     let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
     match hook {
-        Hook::Pre => guardrail.pre_call(data, &mut call_context).await,
-        Hook::During => guardrail.during_call(data, &mut call_context).await,
+        Hook::Pre => pre_call(guardrail, data, &mut call_context).await,
+        Hook::During => during_call(guardrail, data, &mut call_context).await,
         Hook::Post => {
-            let Some(response) = response else {
+            let Some(answer) = response else {
                 panic!("the post_call hook needs a response");
             };
-            guardrail.post_call(data, response, &mut call_context).await
+            post_call(guardrail, data, answer, &mut call_context).await
         }
     }
 }
@@ -317,7 +328,7 @@ fn constructor_applies_the_declared_defaults() {
     args.on_flagged = None;
     let env = BTreeMap::new();
     let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
+        construction::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
     assert!(guardrail.flags.payload);
     assert!(guardrail.flags.breakdown);
@@ -336,8 +347,8 @@ fn constructor_reads_the_environment_fallbacks() {
             "https://env.example".to_owned(),
         ),
     ]);
-    let guardrail = LakeraV2Guardrail::new(args(), base(true), reqwest::Client::default(), &env)
-        .expect("built");
+    let guardrail =
+        construction::new(args(), base(true), reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.api_key.expose_secret(), "env-key");
     assert_eq!(guardrail.api_base, "https://env.example");
 }
@@ -348,8 +359,8 @@ fn constructor_leaves_an_empty_environment_value_unset() {
         ("LAKERA_API_KEY".to_owned(), String::new()),
         ("LAKERA_API_BASE".to_owned(), String::new()),
     ]);
-    let guardrail = LakeraV2Guardrail::new(args(), base(true), reqwest::Client::default(), &env)
-        .expect("built");
+    let guardrail =
+        construction::new(args(), base(true), reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.api_key.expose_secret(), "");
     assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
 }
@@ -367,7 +378,7 @@ fn constructor_prefers_the_configured_connection() {
         ),
     ]);
     let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
+        construction::new(args, base(true), reqwest::Client::default(), &env).expect("built");
     assert_eq!(guardrail.api_key.expose_secret(), "arg-key");
     assert_eq!(guardrail.api_base, "https://arg.example");
 }
@@ -403,7 +414,7 @@ fn the_constructor_refuses_the_escaped_reason_template() {
     args.advisory_system_message = Some("Watch out for {{reason}}".to_owned());
     args.payload = Some(false);
     let env = BTreeMap::new();
-    let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
+    let error = construction::new(args, base(true), reqwest::Client::default(), &env)
         .expect_err("the constructor validates the template");
     assert_eq!(error.to_string(), ESCAPED_TEMPLATE_TEXT);
 }
@@ -414,7 +425,7 @@ fn the_constructor_refuses_advisory_mode_without_payload() {
     args.on_flagged = Some(LakeraOnFlagged::InjectSystemMessage);
     args.payload = Some(false);
     let env = BTreeMap::new();
-    let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
+    let error = construction::new(args, base(true), reqwest::Client::default(), &env)
         .expect_err("the constructor validates the flags");
     assert_eq!(error.to_string(), PAYLOAD_TEXT);
 }
@@ -450,7 +461,7 @@ fn constructor_refuses_inject_without_payload_and_breakdown() {
 #[rstest]
 #[case::plain("Flagged for {reason}.")]
 #[case::width("{reason:>30}")]
-#[case::escaped_and_precision("{{escaped}} {reason:.4}")]
+#[case::escaped_and_precision(ESCAPED_AND_PRECISION_TEMPLATE)]
 #[case::str_conversion("{reason!s}")]
 fn constructor_accepts_a_valid_reason_template(#[case] template: &str) {
     validate_advisory_config(
@@ -480,14 +491,14 @@ fn constructor_refuses_a_conversion_the_format_engine_lacks() {
 }
 
 #[rstest]
-#[case::negative(-1.0)]
+#[case::negative(-1.0_f64)]
 #[case::nan(f64::NAN)]
-#[case::beyond_durations_range(1e300)]
+#[case::beyond_durations_range(1e300_f64)]
 fn constructor_refuses_a_timeout_without_a_duration(#[case] timeout: f64) {
     let mut args = args();
     args.timeout = Some(timeout);
     let env = BTreeMap::new();
-    let error = LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env)
+    let error = construction::new(args, base(true), reqwest::Client::default(), &env)
         .expect_err("the timeout has no duration");
     assert!(matches!(error, LakeraV2Error::Timeout { .. }), "{error}");
 }
@@ -499,12 +510,12 @@ fn build_advisory_message_formats_the_template_with_the_humanized_reason() {
         LakeraOnFlagged::InjectSystemMessage,
         Some("Flagged: {reason}!"),
     );
-    let response: crate::lakera_pii::wire::LakeraResponse = serde_json::from_str(&flagged(
+    let response: LakeraResponse = serde_json::from_str(&flagged(
         r#"[{"detected":true,"detector_type":"pii/email"},{"detected":true,"detector_type":"prompt_attack/x"}]"#,
         "[]",
     ))
     .unwrap();
-    let message = guardrail.build_advisory_message(Some(&response)).unwrap();
+    let message = build_advisory_message(&guardrail, Some(&response)).unwrap();
     assert_eq!(
         message,
         "Flagged: personally identifiable information, a potential prompt injection attempt!"
@@ -591,26 +602,42 @@ fn humanize_answers_the_generic_phrase_without_detections() {
     );
 }
 
-fn response_with(breakdown: &str, payload: &str) -> crate::lakera_pii::wire::LakeraResponse {
+fn response_with(breakdown: &str, payload: &str) -> LakeraResponse {
     serde_json::from_str(&flagged(breakdown, payload)).expect("a response")
+}
+
+fn multimodal_data() -> Data {
+    let turn = multimodal_turn();
+    let mut data = chat_data();
+    data.insert("messages".to_owned(), GuardrailValue::Array(vec![turn]));
+    data
+}
+
+fn multimodal_turn() -> GuardrailValue {
+    let role = GuardrailValue::Text("user".to_owned());
+    let content = GuardrailValue::Array(vec![message("text", "hi")]);
+    let mut turn = BTreeMap::new();
+    turn.insert("role".to_owned(), role);
+    turn.insert("content".to_owned(), content);
+    GuardrailValue::Object(turn)
+}
+
+fn instructions_data() -> Data {
+    let brief = GuardrailValue::Text("be brief".to_owned());
+    let mut data = chat_data();
+    data.insert("instructions".to_owned(), brief);
+    data
+}
+
+fn unmaskable_here(data: &Data, response: &LakeraResponse) -> Option<&'static str> {
+    unmaskable_reason(data, Some(response), ScopeFlags::default())
 }
 
 #[test]
 fn unmaskable_reason_reports_the_first_obstacle_in_order() {
     let response = response_with(PII_ONLY, EMAIL_SPAN);
-    let mut multimodal = chat_data();
-    multimodal.insert(
-        "messages".to_owned(),
-        GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
-            ("role".to_owned(), GuardrailValue::Text("user".to_owned())),
-            (
-                "content".to_owned(),
-                GuardrailValue::Array(vec![message("text", "hi")]),
-            ),
-        ]))]),
-    );
     assert_eq!(
-        unmaskable_reason(&multimodal, Some(&response), ScopeFlags::default()),
+        unmaskable_here(&multimodal_data(), &response),
         Some(MULTIMODAL_REASON)
     );
     let mut combined = chat_data();
@@ -618,37 +645,26 @@ fn unmaskable_reason_reports_the_first_obstacle_in_order() {
         "input".to_owned(),
         GuardrailValue::Text("also this".to_owned()),
     );
-    assert_eq!(
-        unmaskable_reason(&combined, Some(&response), ScopeFlags::default()),
-        Some(COMBINED_REASON)
-    );
+    assert_eq!(unmaskable_here(&combined, &response), Some(COMBINED_REASON));
     let mut not_a_list = chat_data();
     not_a_list.insert(
         "messages".to_owned(),
         GuardrailValue::Text("not messages".to_owned()),
     );
     assert_eq!(
-        unmaskable_reason(&not_a_list, Some(&response), ScopeFlags::default()),
+        unmaskable_here(&not_a_list, &response),
         Some(NOT_A_LIST_REASON)
     );
     assert_eq!(
-        unmaskable_reason(&chat_data(), Some(&response), ScopeFlags::default()),
+        unmaskable_here(&chat_data(), &response),
         Some(NO_WRITE_BACK_REASON)
-    );
-    let mut instructions = chat_data();
-    instructions.insert(
-        "instructions".to_owned(),
-        GuardrailValue::Text("be brief".to_owned()),
     );
     let without_payload = response_with(PII_ONLY, "[]");
     assert_eq!(
-        unmaskable_reason(&instructions, Some(&without_payload), ScopeFlags::default()),
+        unmaskable_here(&instructions_data(), &without_payload),
         Some(NO_PAYLOAD_REASON)
     );
-    assert_eq!(
-        unmaskable_reason(&instructions, Some(&response), ScopeFlags::default()),
-        None
-    );
+    assert_eq!(unmaskable_here(&instructions_data(), &response), None);
 }
 
 #[test]
@@ -700,15 +716,9 @@ fn inspection_messages_leave_out_empty_instructions() {
     assert_eq!(messages[0].role, "user");
 }
 
-#[tokio::test]
-async fn call_v2_guard_posts_the_documented_body_and_header() {
-    let server = serve(
-        200,
-        r#"{"flagged":false,"payload":[],"breakdown":[]}"#.to_owned(),
-    )
-    .await;
+fn documented_guardrail(base_url: &str) -> LakeraV2Guardrail {
     let mut args = args();
-    args.api_base = Some(server.base_url.clone());
+    args.api_base = Some(base_url.to_owned());
     args.api_key = Some(SecretString::from("k"));
     args.project_id = Some("proj".to_owned());
     args.metadata = Some(BTreeMap::from([(
@@ -719,27 +729,10 @@ async fn call_v2_guard_posts_the_documented_body_and_header() {
     args.breakdown = Some(false);
     args.dev_info = Some(false);
     let env = BTreeMap::new();
-    let guardrail =
-        LakeraV2Guardrail::new(args, base(true), reqwest::Client::default(), &env).expect("built");
-    let mut data = chat_data();
-    let sink = CollectingSink::default();
-    let suppressed = BTreeSet::new();
-    let mut call = invocation(&data);
-    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
-    let messages = vec![lakera_message("user", "email a@example.com")];
-    let (response, counts) = guardrail
-        .call_v2_guard(
-            &messages,
-            &mut data,
-            GuardrailEventHooks::PreCall,
-            &mut call_context,
-        )
-        .await
-        .expect("a decoded response");
-    assert_eq!(response.flagged, Some(false));
-    assert!(counts.is_empty());
-    let body = body_of(&server);
-    assert_eq!(server.header("authorization"), Some("Bearer k".to_owned()));
+    construction::new(args, base(true), reqwest::Client::default(), &env).expect("built")
+}
+
+fn assert_documented_body(body: &Data) {
     assert!(matches!(
         body.get("messages"),
         Some(GuardrailValue::Array(entries)) if entries.len() == 1
@@ -758,6 +751,35 @@ async fn call_v2_guard_posts_the_documented_body_and_header() {
             GuardrailValue::Text("a".to_owned()),
         )])))
     );
+}
+
+#[tokio::test]
+async fn call_v2_guard_posts_the_documented_body_and_header() {
+    let server = serve(
+        200,
+        r#"{"flagged":false,"payload":[],"breakdown":[]}"#.to_owned(),
+    )
+    .await;
+    let guardrail = documented_guardrail(&server.base_url);
+    let mut data = chat_data();
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
+    let messages = vec![lakera_message("user", "email a@example.com")];
+    let (response, counts) = guardrail
+        .call_v2_guard(
+            &messages,
+            &mut data,
+            GuardrailEventHooks::PreCall,
+            &mut call_context,
+        )
+        .await
+        .expect("a decoded response");
+    assert_eq!(response.flagged, Some(false));
+    assert!(counts.is_empty());
+    assert_eq!(server.header("authorization"), Some("Bearer k".to_owned()));
+    assert_documented_body(&body_of(&server));
     let captured = server.captured.lock().unwrap();
     assert_eq!(captured.path, "/v2/guard");
 }
@@ -935,7 +957,7 @@ async fn call_v2_guard_logs_no_request_or_answer_body() {
         .with_max_level(tracing::Level::DEBUG)
         .with_writer(move || writer.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     guardrail
         .call_v2_guard(
             &[lakera_message("user", "email a@example.com")],

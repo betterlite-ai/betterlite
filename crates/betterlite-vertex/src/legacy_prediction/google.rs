@@ -207,14 +207,14 @@ fn auth_headers(auth: RpcAuth<'_>) -> Result<HeaderMap, PredictionError> {
 const fn publisher_auth(request: &PublisherPredictRequest) -> RpcAuth<'_> {
     RpcAuth {
         token: &request.token,
-        project: &request.project,
+        project: request.project.as_str(),
     }
 }
 
 const fn endpoint_auth(request: &EndpointPredictRequest) -> RpcAuth<'_> {
     RpcAuth {
         token: &request.token,
-        project: &request.project,
+        project: request.project.as_str(),
     }
 }
 

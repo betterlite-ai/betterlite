@@ -82,7 +82,7 @@ fn a_blank_output_is_still_a_reply() {
 #[rstest]
 #[case::not_json("not json", "the petals reply is not JSON")]
 #[case::empty_body("", "the petals reply is not JSON")]
-#[case::truncated(r#"{"outputs":"hel"#, "the petals reply is not JSON")]
+#[case::truncated(r#"{"outputs":"#, "the petals reply is not JSON")]
 #[case::array("[1,2]", "the petals reply is not a JSON object")]
 #[case::text(r#""hi""#, "the petals reply is not a JSON object")]
 #[case::null("null", "the petals reply is not a JSON object")]
@@ -116,10 +116,10 @@ async fn a_string_output_is_the_reply() {
 
 #[tokio::test]
 async fn a_unicode_output_is_counted_by_the_counter() {
-    let response = response(&reply_fixture(r#"{"outputs":"héllo"}"#))
+    let response = response(&reply_fixture("{\"outputs\":\"h\u{e9}llo\"}"))
         .await
         .unwrap();
-    assert_eq!(response.choices[0].content, "héllo");
+    assert_eq!(response.choices[0].content, "h\u{e9}llo");
     assert_eq!(response.usage.completion_tokens, 5);
 }
 

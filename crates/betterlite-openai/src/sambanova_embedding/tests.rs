@@ -188,9 +188,10 @@ fn a_data_record_keeps_only_the_fields_it_models() {
     )
     .unwrap();
     let data = reply.data.expect("data");
+    let record: Object = serde_json::from_value(serde_json::to_value(&data[0]).unwrap()).unwrap();
     assert_eq!(
-        serde_json::to_value(&data[0]).unwrap(),
-        json!({"object": "embedding", "embedding": [0.5_f64], "index": 0_i32})
+        record,
+        object(r#"{"object": "embedding", "embedding": [0.5], "index": 0}"#)
     );
 }
 

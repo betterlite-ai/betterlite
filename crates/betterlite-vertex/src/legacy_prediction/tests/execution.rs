@@ -13,7 +13,9 @@ use crate::legacy_prediction::client::{
     text_predict_body, text_streaming_body,
 };
 use crate::legacy_prediction::error::{LegacyPredictionError, PredictionError};
-use crate::legacy_prediction::execution::{LegacyContext, complete, stream as execute_stream};
+use crate::legacy_prediction::execution::LegacyContext;
+use crate::legacy_prediction::execution::completion_entry::complete;
+use crate::legacy_prediction::execution::streaming_entry::stream as execute_stream;
 use crate::legacy_prediction::invocation::LegacyInvocation;
 use crate::legacy_prediction::projection::LegacyMessage;
 

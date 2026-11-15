@@ -85,8 +85,8 @@ fn openai_params(request: &RequestCase) -> Params {
         ("stream", &request.stream),
     ];
     for (name, value) in fields {
-        if let Some(value) = value {
-            params.insert(String::from(name), value.clone());
+        if let Some(given) = value {
+            params.insert(String::from(name), given.clone());
         }
     }
     params
