@@ -15,6 +15,6 @@ deviations:
   - what: A reply larger than 16 MiB is refused before it is parsed; LiteLLM parses whatever size the provider sends.
     why: The boundary reads bytes from a provider it does not control, so rule bounded-inputs needs a limit before they are buffered and parsed.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L271
-  - what: A result with a null or non-string sample or list url yields the source's 500 or the typed decode error; LiteLLM appends an image carrying that null or non-string url and answers 200.
+  - what: A result with a null or non-string sample or list url yields the source's 500; LiteLLM appends an image carrying that null or non-string url and answers 200.
     why: docs/compatibility.md reads null as the field's default, and a delivery url that is not a string cannot be fetched by any working setup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/black_forest_labs/image_generation/transformation.py#L284-L292
