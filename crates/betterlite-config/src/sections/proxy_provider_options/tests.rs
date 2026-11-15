@@ -50,6 +50,21 @@ fn an_absent_environment_leaves_the_sources_false() {
     assert!(!settings.should_use_litellm_proxy(0));
 }
 
+fn a_boolean_spelling_stays_text_in_the_base_and_key() {
+    let settings = loaded(
+        "model_list: []",
+        &[
+            ("LITELLM_PROXY_API_BASE", "true"),
+            ("LITELLM_PROXY_API_KEY", "false"),
+        ],
+    );
+    assert_eq!(settings.api_base.as_deref(), Some("true"));
+    assert_eq!(
+        settings.api_key.as_ref().map(|key| key.expose_secret()),
+        Some("false")
+    );
+}
+
 fn an_empty_environment_counts_as_unset() {
     let settings = loaded(
         "model_list: []",
@@ -146,6 +161,9 @@ fn settings_debug_hides_the_key() {
 #[case::the_environment_supplies_the_base_and_key(the_environment_supplies_the_base_and_key)]
 #[case::an_absent_environment_leaves_the_sources_false(
     an_absent_environment_leaves_the_sources_false
+)]
+#[case::a_boolean_spelling_stays_text_in_the_base_and_key(
+    a_boolean_spelling_stays_text_in_the_base_and_key
 )]
 #[case::an_empty_environment_counts_as_unset(an_empty_environment_counts_as_unset)]
 #[case::the_environment_flag_enables_forcing(the_environment_flag_enables_forcing)]
