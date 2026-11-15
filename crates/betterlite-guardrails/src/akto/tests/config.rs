@@ -154,12 +154,14 @@ fn akto_guardrail_config_reads_an_integer_timeout() {
 }
 
 #[test]
-fn akto_guardrail_config_reads_a_timeout_from_the_environment() {
-    let lookup = BTreeMap::from([("AKTO_TIMEOUT".to_owned(), "11".to_owned())]);
+fn akto_guardrail_config_reads_a_quoted_timeout() {
     let source = config_source(
-        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      guardrail_timeout: os.environ/AKTO_TIMEOUT\n",
+        "      akto_base_url: http://akto.test\n      akto_api_key: key\n      guardrail_timeout: '11'\n",
     );
-    assert_eq!(load_entry(&source, lookup).timeout, Duration::from_secs(11));
+    assert_eq!(
+        load_entry(&source, BTreeMap::new()).timeout,
+        Duration::from_secs(11)
+    );
 }
 
 #[test]
@@ -177,7 +179,7 @@ fn akto_guardrail_config_rejects_a_negative_timeout() {
 
 #[test]
 fn akto_guardrail_config_leaves_other_guardrails_to_their_sections() {
-    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      akto_base_url: http://other.test\n  - guardrail_name: akto\n    litellm_params:\n      guardrail: akto\n      akto_base_url: http://akto.test\n      akto_api_key: key\n";
+    let source = "guardrails:\n  - guardrail_name: firewall\n    litellm_params:\n      guardrail: deepkeep\n      api_key: other-key\n      api_base: http://other.test\n      deepkeep_firewall_id: fixed\n  - guardrail_name: akto\n    litellm_params:\n      guardrail: akto\n      akto_base_url: http://akto.test\n      akto_api_key: key\n";
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
