@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::future::IntoFuture as _;
+use std::io::Error as IoError;
 use std::process;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -20,14 +21,14 @@ use tokio::task::JoinSet;
 use tracing::subscriber::set_default;
 
 use super::{array_of, body, field_text, list, object, text};
-use crate::cato::error::CatoError;
+use crate::cato::error::{CatoError, INVALID_REQUEST_ERROR};
 use crate::cato::{
     CallHook, CatoGuardrail, CatoParams, DEFAULT_BLOCK_MESSAGE, DEFAULT_TIMEOUT, LITELLM_VERSION,
     MAX_RESPONSE_BYTES,
 };
 
 type Captured = Arc<Mutex<Vec<(BTreeMap<String, String>, String)>>>;
-type Server = JoinSet<Result<(), std::io::Error>>;
+type Server = JoinSet<Result<(), IoError>>;
 
 #[derive(Debug, Clone, Serialize)]
 struct Action {
@@ -199,7 +200,7 @@ async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {
     );
     assert_eq!(
         headers.get("user-agent").map(String::as_str),
-        Some(format!("litellm/{LITELLM_VERSION}").as_str())
+        Some(concat!("betterlite/", env!("CARGO_PKG_VERSION")))
     );
     let posted: PostedBody = serde_json::from_str(body).expect("posted body");
     assert_eq!(
@@ -208,6 +209,37 @@ async fn cato_guardrail_call_posts_the_analyze_messages_and_headers() {
             ("content", text("hello")),
             ("role", text("user"))
         ])]
+    );
+}
+
+#[tokio::test]
+async fn cato_guardrail_sends_the_configured_user_agent() {
+    let (base, mut server, captured) = serve(StatusCode::OK, no_action()).await;
+    let environment =
+        BTreeMap::from([("LITELLM_USER_AGENT".to_owned(), "custom-agent/9".to_owned())]);
+    let guardrail = CatoGuardrail::new(
+        CatoParams {
+            guardrail_name: None,
+            api_key: Some(SecretString::from("test-key")),
+            api_base: Some(base),
+            inspect_embeddings: None,
+            ssl_verify: None,
+            timeout: None,
+        },
+        &environment,
+    )
+    .expect("guardrail");
+    let mut data = chat_data();
+    guardrail
+        .call(&mut data, CallHook::PreCall, None, None)
+        .await
+        .expect("call");
+    let recorded = captured.lock().expect("captured").clone();
+    server.shutdown().await;
+    let (headers, _body) = recorded.first().expect("request");
+    assert_eq!(
+        headers.get("user-agent").map(String::as_str),
+        Some("custom-agent/9")
     );
 }
 
@@ -335,10 +367,7 @@ async fn cato_guardrail_block_action_returns_a_400_error_with_the_detection_mess
         CatoError::Blocked { message } if message == "blocked by the finance policy"
     ));
     assert_eq!(error.status_code().as_u16(), 400);
-    assert_eq!(
-        crate::cato::error::INVALID_REQUEST_ERROR,
-        "invalid_request_error"
-    );
+    assert_eq!(INVALID_REQUEST_ERROR, "invalid_request_error");
     let written = fs::read_to_string(&log_path).expect("log contents");
     fs::remove_file(&log_path).expect("remove log");
     assert!(written.contains("finance-policy"));

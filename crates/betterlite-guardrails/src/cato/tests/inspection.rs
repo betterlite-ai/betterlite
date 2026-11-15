@@ -210,7 +210,7 @@ fn cato_guardrail_finds_schema_strings_recursively_in_a_fixed_order() {
         ),
     ]);
     assert_eq!(
-        field_text(&schema_string_messages(&data), "role"),
+        field_text(&schema_string_messages(&data), "content"),
         [
             "tool description",
             "params title",
@@ -249,7 +249,7 @@ fn cato_guardrail_descends_into_nested_schema_arrays() {
         )])]),
     )]);
     assert_eq!(
-        field_text(&schema_string_messages(&data), "role"),
+        field_text(&schema_string_messages(&data), "content"),
         ["branch one", "branch two"]
     );
 }

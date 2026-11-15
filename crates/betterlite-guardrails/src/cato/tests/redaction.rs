@@ -114,11 +114,7 @@ fn cato_guardrail_anonymize_rewrites_a_prompt_list_by_position() {
         "prompt",
         list(&[text("first"), text(""), integer(7), text("second")]),
     )]);
-    let response = redacted(vec![
-        with_content("FIRST"),
-        with_content("SKIPPED"),
-        with_content("SECOND"),
-    ]);
+    let response = redacted(vec![with_content("FIRST"), with_content("SECOND")]);
     anonymize_request(&response, &mut data).expect("rewritten");
     assert_eq!(
         data.get("prompt"),

@@ -23,7 +23,7 @@ pub(super) fn build_cato_headers(
     insert(
         &mut headers,
         AUTHORIZATION_HEADER,
-        &format!("Bearer {}", guardrail.api_key().expose_secret()),
+        &format!("Bearer {}", guardrail.api_key.expose_secret()),
         true,
     )?;
     insert(&mut headers, HOOK_HEADER, hook.header_value(), false)?;

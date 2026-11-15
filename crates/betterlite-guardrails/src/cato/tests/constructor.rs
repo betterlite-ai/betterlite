@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::tls::VerifySetting;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -12,6 +13,10 @@ use crate::cato::{
 };
 
 const CONFIG: &str = "guardrails:\n  - guardrail_name: cato\n    litellm_params:\n      guardrail: cato_networks\n      api_key: config-key\n      api_base: https://config.test/\n";
+const TRUSTED_CA: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../betterlite-http/fuzz/corpus/http_policy/trusted-ca.pem"
+);
 
 fn params() -> CatoParams {
     CatoParams {
@@ -71,14 +76,14 @@ fn cato_guardrail_constructor_reads_the_api_key_from_the_environment() {
     params.api_key = None;
     let lookup = environment(&[("CATO_API_KEY", "env-key")]);
     let guardrail = build(params, &lookup);
-    assert_eq!(guardrail.api_key().expose_secret(), "env-key");
+    assert_eq!(guardrail.api_key.expose_secret(), "env-key");
 }
 
 #[test]
 fn cato_guardrail_constructor_prefers_the_explicit_api_key() {
     let lookup = environment(&[("CATO_API_KEY", "env-key")]);
     let guardrail = build(params(), &lookup);
-    assert_eq!(guardrail.api_key().expose_secret(), "test-key");
+    assert_eq!(guardrail.api_key.expose_secret(), "test-key");
 }
 
 #[test]
@@ -169,7 +174,11 @@ fn cato_guardrail_constructor_reads_inspect_embeddings(
 fn cato_guardrail_constructor_supports_the_pre_call_during_call_and_post_call_hooks() {
     assert_eq!(
         SUPPORTED_EVENT_HOOKS,
-        ["pre_call", "during_call", "post_call"]
+        [
+            GuardrailEventHooks::PreCall,
+            GuardrailEventHooks::DuringCall,
+            GuardrailEventHooks::PostCall,
+        ]
     );
 }
 
@@ -237,12 +246,9 @@ fn cato_guardrail_ws_ssl_uses_the_system_roots_for_true() {
 #[test]
 fn cato_guardrail_ws_ssl_uses_a_configured_ca_file() {
     let mut params = params();
-    params.ssl_verify = Some(VerifySetting::Path("/etc/ca.pem".to_owned()));
+    params.ssl_verify = Some(VerifySetting::Path(TRUSTED_CA.to_owned()));
     let guardrail = build(params, &BTreeMap::new());
-    assert_eq!(
-        guardrail.ws_ssl,
-        Some(WsSsl::CaFile("/etc/ca.pem".to_owned()))
-    );
+    assert_eq!(guardrail.ws_ssl, Some(WsSsl::CaFile(TRUSTED_CA.to_owned())));
 }
 
 #[rstest]
@@ -263,12 +269,9 @@ fn cato_guardrail_ws_ssl_reads_a_boolean_string(
 fn cato_guardrail_ws_ssl_uses_ssl_cert_file_for_true() {
     let mut params = params();
     params.ssl_verify = Some(VerifySetting::Bool(true));
-    let lookup = environment(&[("SSL_CERT_FILE", "/etc/root.pem")]);
+    let lookup = environment(&[("SSL_CERT_FILE", TRUSTED_CA)]);
     let guardrail = build(params, &lookup);
-    assert_eq!(
-        guardrail.ws_ssl,
-        Some(WsSsl::CaFile("/etc/root.pem".to_owned()))
-    );
+    assert_eq!(guardrail.ws_ssl, Some(WsSsl::CaFile(TRUSTED_CA.to_owned())));
 }
 
 #[test]
@@ -283,7 +286,7 @@ fn cato_guardrail_ws_ssl_ignores_ssl_cert_file_when_verification_is_off() {
 #[test]
 fn cato_guardrail_config_loads_the_api_key_and_base() {
     let guardrail = configured(CONFIG, &BTreeMap::new());
-    assert_eq!(guardrail.api_key().expose_secret(), "config-key");
+    assert_eq!(guardrail.api_key.expose_secret(), "config-key");
     assert_eq!(guardrail.api_base, "https://config.test");
     assert_eq!(guardrail.ws_api_base, "wss://config.test");
     assert!(!guardrail.inspect_embeddings);
@@ -298,7 +301,7 @@ fn cato_guardrail_config_falls_back_to_the_environment() {
         ("CATO_API_BASE", "https://env.test"),
     ]);
     let guardrail = configured(source, &lookup);
-    assert_eq!(guardrail.api_key().expose_secret(), "env-key");
+    assert_eq!(guardrail.api_key.expose_secret(), "env-key");
     assert_eq!(guardrail.api_base, "https://env.test");
 }
 

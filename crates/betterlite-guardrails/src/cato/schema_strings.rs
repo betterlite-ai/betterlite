@@ -48,44 +48,7 @@ pub(crate) fn schema_string_refs(
     while let Some((root, path, node)) = stack.pop() {
         match node {
             GuardrailValue::Object(object) => {
-                for key in SCALAR_KEYS {
-                    if let Some(GuardrailValue::Text(text)) = object.get(key)
-                        && !text.is_empty()
-                    {
-                        refs.push((
-                            SchemaSlot::Field {
-                                root: root.clone(),
-                                path: path.clone(),
-                                key: key.to_owned(),
-                            },
-                            text.clone(),
-                        ));
-                    }
-                }
-                for key in LIST_KEYS {
-                    if let Some(GuardrailValue::Array(items)) = object.get(key) {
-                        for (index, item) in items.iter().enumerate() {
-                            if let GuardrailValue::Text(text) = item
-                                && !text.is_empty()
-                            {
-                                refs.push((
-                                    SchemaSlot::Item {
-                                        root: root.clone(),
-                                        path: path.clone(),
-                                        key: key.to_owned(),
-                                        index,
-                                    },
-                                    text.clone(),
-                                ));
-                            }
-                        }
-                    }
-                }
-                for (key, value) in object.iter().rev() {
-                    let mut child = path.clone();
-                    child.push(SchemaStep::Key(key.clone()));
-                    stack.push((root.clone(), child, value));
-                }
+                object_refs(object, &root, &path, &mut refs, &mut stack);
             }
             GuardrailValue::Array(items) => {
                 for (index, item) in items.iter().enumerate().rev() {
@@ -103,6 +66,53 @@ pub(crate) fn schema_string_refs(
         }
     }
     refs
+}
+
+fn object_refs<'a>(
+    object: &'a BTreeMap<String, GuardrailValue>,
+    root: &SchemaRoot,
+    path: &[SchemaStep],
+    refs: &mut Vec<(SchemaSlot, String)>,
+    stack: &mut Vec<(SchemaRoot, Vec<SchemaStep>, &'a GuardrailValue)>,
+) {
+    for key in SCALAR_KEYS {
+        if let Some(GuardrailValue::Text(text)) = object.get(key)
+            && !text.is_empty()
+        {
+            refs.push((
+                SchemaSlot::Field {
+                    root: root.clone(),
+                    path: path.to_vec(),
+                    key: key.to_owned(),
+                },
+                text.clone(),
+            ));
+        }
+    }
+    for key in LIST_KEYS {
+        if let Some(GuardrailValue::Array(items)) = object.get(key) {
+            for (index, item) in items.iter().enumerate() {
+                if let GuardrailValue::Text(text) = item
+                    && !text.is_empty()
+                {
+                    refs.push((
+                        SchemaSlot::Item {
+                            root: root.clone(),
+                            path: path.to_vec(),
+                            key: key.to_owned(),
+                            index,
+                        },
+                        text.clone(),
+                    ));
+                }
+            }
+        }
+    }
+    for (key, value) in object.iter().rev() {
+        let mut child = path.to_vec();
+        child.push(SchemaStep::Key(key.clone()));
+        stack.push((root.clone(), child, value));
+    }
 }
 
 #[must_use]

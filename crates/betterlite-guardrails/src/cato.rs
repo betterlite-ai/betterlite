@@ -3,7 +3,10 @@ use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::tls::{TlsPolicy, Verification, VerifySetting};
+use betterlite_http::proxy::base_builder;
+use betterlite_http::tls::apply_policy;
 use secrecy::SecretString;
 
 pub mod actions;
@@ -25,11 +28,12 @@ pub const LITELLM_VERSION: &str = "1.105.1";
 pub const DEFAULT_BLOCK_MESSAGE: &str = "the request was blocked by the Cato Networks guardrail";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 pub(crate) const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+const USER_AGENT_VARIABLE: &str = "LITELLM_USER_AGENT";
 
-pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [
-    EventHook::PreCall,
-    EventHook::DuringCall,
-    EventHook::PostCall,
+pub const SUPPORTED_EVENT_HOOKS: [GuardrailEventHooks; 3] = [
+    GuardrailEventHooks::PreCall,
+    GuardrailEventHooks::DuringCall,
+    GuardrailEventHooks::PostCall,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,7 +74,7 @@ pub struct CatoParams {
 #[derive(Debug)]
 pub struct CatoGuardrail {
     pub guardrail_name: Option<String>,
-    api_key: SecretString,
+    pub api_key: SecretString,
     pub api_base: String,
     pub ws_api_base: String,
     pub inspect_embeddings: bool,
@@ -84,21 +88,13 @@ impl CatoGuardrail {
     where
         L: EnvironmentLookup,
     {
-        let environment_key = lookup
-            .lookup("CATO_API_KEY")
-            .filter(|key| !key.is_empty())
-            .map(SecretString::from);
         let api_key = params
             .api_key
-            .or(environment_key)
+            .or_else(|| tls::environment_value(lookup, "CATO_API_KEY").map(SecretString::from))
             .ok_or(CatoError::MissingApiKey)?;
         let api_base = params
             .api_base
-            .or_else(|| {
-                lookup
-                    .lookup("CATO_API_BASE")
-                    .filter(|base| !base.is_empty())
-            })
+            .or_else(|| tls::environment_value(lookup, "CATO_API_BASE"))
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
         let api_base = api_base.trim_end_matches('/').to_owned();
         let ws_api_base = api_base
@@ -121,11 +117,6 @@ impl CatoGuardrail {
             timeout,
             client,
         })
-    }
-
-    #[must_use]
-    pub fn api_key(&self) -> &SecretString {
-        &self.api_key
     }
 
     pub async fn call(
@@ -157,6 +148,8 @@ where
     L: EnvironmentLookup,
 {
     let verification = tls::resolve_verification(ssl_verify, lookup);
+    let user_agent = tls::environment_value(lookup, USER_AGENT_VARIABLE)
+        .unwrap_or_else(|| format!("betterlite/{}", env!("CARGO_PKG_VERSION")));
     let policy = TlsPolicy {
         ca_file: match &verification {
             Verification::CaFile(path) => Some(path.clone()),
@@ -166,9 +159,9 @@ where
         certificate: None,
         http2: false,
         ecdh_curve: None,
-        user_agent: format!("litellm/{LITELLM_VERSION}"),
+        user_agent,
     };
-    betterlite_http::tls::apply_policy(betterlite_http::proxy::base_builder(), &policy)
+    apply_policy(base_builder(), &policy)
         .map_err(|source| CatoError::Tls { source })?
         .timeout(timeout)
         .connect_timeout(timeout.min(Duration::from_secs(5)))

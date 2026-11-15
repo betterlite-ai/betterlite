@@ -48,12 +48,14 @@ pub(super) fn body(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, Guard
 pub(super) fn field_text(messages: &[GuardrailValue], field: &str) -> Vec<String> {
     messages
         .iter()
-        .map(|message| match message {
-            GuardrailValue::Object(object) => match object.get(field) {
+        .map(|message| {
+            let GuardrailValue::Object(object) = message else {
+                return String::new();
+            };
+            match object.get(field) {
                 Some(GuardrailValue::Text(text)) => text.clone(),
                 _ => String::new(),
-            },
-            _ => String::new(),
+            }
         })
         .collect()
 }

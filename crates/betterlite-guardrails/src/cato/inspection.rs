@@ -30,8 +30,7 @@ pub(super) fn synthetic_message(role: &str, content: &str) -> GuardrailValue {
     ]))
 }
 
-// LiteLLM's _inspection_messages: chat messages stay 1:1 by index, every other
-// forwarded field is appended after them as synthetic messages
+// chat messages stay 1:1 by index; every extra source is appended as synthetic messages
 #[must_use]
 pub fn inspection_messages(data: &BTreeMap<String, GuardrailValue>) -> Vec<GuardrailValue> {
     let mut flattened = Vec::new();
@@ -115,11 +114,11 @@ fn prompt_inspection_messages(prompt: Option<&GuardrailValue>) -> Vec<GuardrailV
         }
         Some(GuardrailValue::Array(parts)) => parts
             .iter()
-            .filter_map(|part| match part {
-                GuardrailValue::Text(text) if !text.is_empty() => {
-                    Some(synthetic_message("user", text))
-                }
-                _ => None,
+            .filter_map(|part| {
+                let GuardrailValue::Text(text) = part else {
+                    return None;
+                };
+                (!text.is_empty()).then(|| synthetic_message("user", text))
             })
             .collect(),
         _ => Vec::new(),

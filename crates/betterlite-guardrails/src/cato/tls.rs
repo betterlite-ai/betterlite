@@ -15,7 +15,8 @@ where
 {
     let text = match ssl_verify {
         Some(VerifySetting::Bool(false)) => return Verification::Disabled,
-        Some(VerifySetting::Bool(true)) | None => environment(lookup, SSL_VERIFY_VARIABLE),
+        Some(VerifySetting::Bool(true)) => return ca_verification(lookup),
+        None => environment_value(lookup, SSL_VERIFY_VARIABLE),
         Some(VerifySetting::Path(text)) => Some(text.clone()),
     };
     verification_from(text.as_deref(), lookup)
@@ -44,16 +45,16 @@ fn verification_from<L>(text: Option<&str>, lookup: &L) -> Verification
 where
     L: EnvironmentLookup,
 {
-    match text {
-        Some(text) => match betterlite_env::flag(SSL_VERIFY_VARIABLE, text)
-            .ok()
-            .flatten()
-        {
-            Some(true) => ca_verification(lookup),
-            Some(false) => Verification::Disabled,
-            None => Verification::CaFile(text.to_owned()),
-        },
-        None => ca_verification(lookup),
+    let Some(value) = text else {
+        return ca_verification(lookup);
+    };
+    match betterlite_env::flag(SSL_VERIFY_VARIABLE, value)
+        .ok()
+        .flatten()
+    {
+        Some(true) => ca_verification(lookup),
+        Some(false) => Verification::Disabled,
+        None => Verification::CaFile(value.to_owned()),
     }
 }
 
@@ -61,16 +62,16 @@ fn ca_verification<L>(lookup: &L) -> Verification
 where
     L: EnvironmentLookup,
 {
-    match environment(lookup, SSL_CERT_FILE_VARIABLE) {
-        Some(path) => Verification::CaFile(path),
-        None => Verification::Enabled,
-    }
+    environment_value(lookup, SSL_CERT_FILE_VARIABLE)
+        .map_or(Verification::Enabled, Verification::CaFile)
 }
 
-fn environment<L>(lookup: &L, variable: &str) -> Option<String>
+pub(super) fn environment_value<L>(lookup: &L, variable: &str) -> Option<String>
 where
     L: EnvironmentLookup,
 {
-    let value = lookup.lookup(variable)?;
-    if value.is_empty() { None } else { Some(value) }
+    match lookup.lookup(variable) {
+        Some(value) if !value.is_empty() => Some(value),
+        _ => None,
+    }
 }
