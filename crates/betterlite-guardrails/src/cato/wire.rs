@@ -13,7 +13,14 @@ pub struct AnalyzeRequest {
 pub struct AnalyzeResponse {
     pub required_action: Option<RequiredAction>,
     pub analysis_result: Option<AnalysisResult>,
-    pub redacted_chat: Option<BTreeMap<String, GuardrailValue>>,
+    pub redacted_chat: Option<RedactedChat>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
+pub struct RedactedChat {
+    // LiteLLM's "or []": a null list takes the empty one
+    pub all_redacted_messages: Option<Vec<RedactedMessage>>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -29,24 +36,13 @@ pub struct AnalysisResult {
     pub policy_drill_down: Option<BTreeMap<String, GuardrailValue>>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
+#[serde(default)]
 pub struct RedactedMessage {
     pub content: Option<GuardrailValue>,
 }
 
 impl RedactedMessage {
-    #[must_use]
-    pub fn from_value(value: &GuardrailValue) -> Self {
-        let GuardrailValue::Object(object) = value else {
-            return Self::default();
-        };
-        let content = match object.get("content") {
-            None | Some(GuardrailValue::Null) => None,
-            Some(content) => Some(content.clone()),
-        };
-        Self { content }
-    }
-
     #[must_use]
     pub fn to_value(&self) -> GuardrailValue {
         let mut object = BTreeMap::new();

@@ -43,13 +43,18 @@ struct Analysis {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct Redacted {
+    all_redacted_messages: Vec<GuardrailValue>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct Answer {
     #[serde(skip_serializing_if = "Option::is_none")]
     required_action: Option<Action>,
     #[serde(skip_serializing_if = "Option::is_none")]
     analysis_result: Option<Analysis>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    redacted_chat: Option<BTreeMap<String, GuardrailValue>>,
+    redacted_chat: Option<Redacted>,
 }
 
 fn no_action() -> Answer {
@@ -417,13 +422,12 @@ async fn cato_guardrail_unknown_action_logs_an_error_and_returns_the_request_unc
 #[tokio::test]
 async fn cato_guardrail_anonymize_action_rewrites_the_inspected_request() {
     let mut answer = action("anonymize_action", None);
-    answer.redacted_chat = Some(BTreeMap::from([(
-        "all_redacted_messages".to_owned(),
-        list(&[object(&[
+    answer.redacted_chat = Some(Redacted {
+        all_redacted_messages: vec![object(&[
             ("content", text("REDACTED")),
             ("role", text("user")),
-        ])]),
-    )]));
+        ])],
+    });
     let (base, mut server, _captured) = serve(StatusCode::OK, answer).await;
     let mut data = body(&[(
         "messages",

@@ -13,20 +13,10 @@ pub(super) fn anonymize_request(
     response: &AnalyzeResponse,
     data: &mut BTreeMap<String, GuardrailValue>,
 ) -> Result<(), CatoError> {
-    let Some(chat) = response
-        .redacted_chat
-        .as_ref()
-        .filter(|chat| !chat.is_empty())
-    else {
+    let Some(chat) = response.redacted_chat.as_ref() else {
         return Ok(());
     };
-    let redacted = match chat.get("all_redacted_messages") {
-        Some(GuardrailValue::Array(items)) => items
-            .iter()
-            .map(RedactedMessage::from_value)
-            .collect::<Vec<_>>(),
-        _ => Vec::new(),
-    };
+    let redacted = chat.all_redacted_messages.as_deref().unwrap_or_default();
     let sources = extra_inspection_sources(data);
     let inspected = sources
         .iter()
@@ -35,8 +25,8 @@ pub(super) fn anonymize_request(
     if is_string_batch_input(data) && redacted.len() != inspected {
         return Err(CatoError::RedactionMismatch);
     }
-    let offset = rewrite_messages(data, &redacted);
-    write_extra_sources(data, &sources, &redacted, offset)
+    let offset = rewrite_messages(data, redacted);
+    write_extra_sources(data, &sources, redacted, offset)
 }
 
 fn rewrite_messages(

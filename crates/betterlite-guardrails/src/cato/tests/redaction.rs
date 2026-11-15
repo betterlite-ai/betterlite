@@ -1,33 +1,26 @@
-use std::collections::BTreeMap;
-
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-
 use super::{array_of, body, field_text, integer, list, object, text};
 use crate::cato::error::CatoError;
 use crate::cato::redaction::anonymize_request;
-use crate::cato::wire::AnalyzeResponse;
+use crate::cato::wire::{AnalyzeResponse, RedactedChat, RedactedMessage};
 
-fn redacted(entries: Vec<GuardrailValue>) -> AnalyzeResponse {
+fn redacted(entries: Vec<RedactedMessage>) -> AnalyzeResponse {
     AnalyzeResponse {
         required_action: None,
         analysis_result: None,
-        redacted_chat: Some(BTreeMap::from([(
-            "all_redacted_messages".to_owned(),
-            GuardrailValue::Array(entries),
-        )])),
+        redacted_chat: Some(RedactedChat {
+            all_redacted_messages: Some(entries),
+        }),
     }
 }
 
-fn with_content(content: &str) -> GuardrailValue {
-    object(&[("content", text(content))])
+fn with_content(content: &str) -> RedactedMessage {
+    RedactedMessage {
+        content: Some(text(content)),
+    }
 }
 
-fn without_content() -> GuardrailValue {
-    object(&[("role", text("user"))])
-}
-
-fn null_content() -> GuardrailValue {
-    object(&[("content", GuardrailValue::Null)])
+fn without_content() -> RedactedMessage {
+    RedactedMessage { content: None }
 }
 
 #[test]
@@ -43,10 +36,7 @@ fn cato_guardrail_anonymize_rewrites_messages_by_index_and_keeps_the_rest() {
             object(&[("content", text("two")), ("role", text("user"))]),
         ]),
     )]);
-    let response = redacted(vec![
-        object(&[("content", text("ONE")), ("role", text("user"))]),
-        null_content(),
-    ]);
+    let response = redacted(vec![with_content("ONE"), without_content()]);
     anonymize_request(&response, &mut data).expect("rewritten");
     assert_eq!(
         data.get("messages"),
@@ -132,7 +122,7 @@ fn cato_guardrail_anonymize_rewrites_instructions() {
 #[test]
 fn cato_guardrail_anonymize_keeps_instructions_when_the_redaction_is_null() {
     let mut data = body(&[("instructions", text("original instructions"))]);
-    let response = redacted(vec![null_content()]);
+    let response = redacted(vec![without_content()]);
     anonymize_request(&response, &mut data).expect("rewritten");
     assert_eq!(
         data.get("instructions"),
@@ -182,7 +172,7 @@ fn cato_guardrail_anonymize_rewrites_schema_strings_in_place() {
     )]);
     let response = redacted(vec![
         with_content("REDACTED DESCRIPTION"),
-        null_content(),
+        without_content(),
         with_content("REDACTED ENUM ONE"),
         with_content("REDACTED ENUM TWO"),
     ]);
@@ -289,7 +279,7 @@ fn cato_guardrail_anonymize_passes_through_with_an_empty_redacted_chat() {
     let response = AnalyzeResponse {
         required_action: None,
         analysis_result: None,
-        redacted_chat: Some(BTreeMap::new()),
+        redacted_chat: Some(RedactedChat::default()),
     };
     anonymize_request(&response, &mut data).expect("pass through");
     assert_eq!(data, original);
