@@ -1,0 +1,17 @@
+kind: helper
+name: explicit-key-before-entra
+call:
+  foundry_credentials:
+    auth_headers:
+      - api_key: explicit-key
+      - api_key: explicit-key
+        params: {tenant_id: tenant, client_id: client, client_secret: secret}
+        environment: {AZURE_TENANT_ID: env-tenant, AZURE_CLIENT_ID: env-client, AZURE_CLIENT_SECRET: env-secret}
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret}
+      - params: {azure_ad_token: static-token}
+      - environment: {AZURE_AD_TOKEN: env-token}
+      - environment: {AZURE_TENANT_ID: env-tenant, AZURE_CLIENT_ID: env-client, AZURE_CLIENT_SECRET: env-secret}
+      - params: {azure_ad_token: oidc/assertion, tenant_id: tenant, client_id: client}
+      - params: {azure_ad_token: oidc/assertion, tenant_id: tenant}
+env: {}
+compare: {ignore: []}
