@@ -19,7 +19,7 @@ use crate::database_views::estimate::should_create_missing_views;
 use crate::database_views::runtime::{create_missing_views, create_view_tolerating_race};
 
 pub const VIEW_SETUP_POLL_INTERVAL: Duration = Duration::from_secs(5);
-pub const VIEW_SETUP_DEADLINE: Duration = Duration::from_secs(900);
+pub const VIEW_SETUP_DEADLINE: Duration = Duration::from_mins(15);
 pub const VIEW_SETUP_GATE_TABLE: &str = "\"LiteLLM_SpendLogs\"";
 pub const EXPECTED_VIEWS: [&str; 8] = [
     VERIFICATION_TOKEN_VIEW,

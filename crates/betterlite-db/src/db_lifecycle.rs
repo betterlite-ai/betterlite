@@ -38,12 +38,12 @@ impl TrackedTask {
 
     #[must_use]
     pub async fn stop(&self) -> bool {
-        let handle = self
+        let taken = self
             .handle
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        let Some(handle) = handle else {
+        let Some(handle) = taken else {
             return false;
         };
         handle.abort();

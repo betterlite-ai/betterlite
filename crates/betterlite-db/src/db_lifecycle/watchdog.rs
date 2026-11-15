@@ -5,9 +5,9 @@ use tokio::time::{sleep, timeout};
 use tokio_util::task::TaskTracker;
 use tracing::{debug, info};
 
-use super::health::HealthTarget;
+use super::health::HealthTarget as _;
 use super::read_only::{ReadOnlyWriter, ReconnectControl};
-use super::{DatabaseFailure, LifecycleDatabase, TrackedTask};
+use super::{DatabaseFailure as _, LifecycleDatabase, TrackedTask};
 
 pub const WRITER_UNAVAILABLE_REASON: &str = "db_health_watchdog_writer_unavailable";
 pub const WRITER_READ_ONLY_REASON: &str = "db_health_watchdog_writer_read_only";
@@ -74,7 +74,7 @@ where
         }
     }
 
-    async fn run(&self) {
+    async fn run(&self) -> ! {
         loop {
             sleep(self.settings.interval).await;
             self.turn().await;
