@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::ovhcloud_audio::reply::decode_transcription_reply as ovhcloud_reply;
@@ -25,8 +26,8 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::{
-    AudioProvider, ChatRequestCall, EmbeddingCall, HeaderCall, HeaderProvider, ReplyCall,
-    TranscriptionCall, env_key, fields_pairs, processed,
+    AudioProvider, ChatRequestCall, HeaderCall, HeaderProvider, ReplyCall, TranscriptionCall,
+    env_key, fields_pairs, processed,
 };
 
 pub(super) fn chat_request_value(call: &ChatRequestCall) -> Value {
@@ -86,16 +87,22 @@ pub(super) fn transcription_request_value(
         Err(failure) => return failure,
     };
     let (url, keyed, request) = match provider {
-        AudioProvider::Ovhcloud => (
-            ovhcloud_audio_url(call.api_base.as_deref()),
-            HeaderProvider::OvhcloudAudio,
-            ovhcloud_form(&call.model, &file, &call.optional_params),
-        ),
-        AudioProvider::Scaleway => (
-            scaleway_url(call.api_base.as_deref()),
-            HeaderProvider::ScalewayAudio,
-            scaleway_form(&call.model, &file, &call.optional_params),
-        ),
+        AudioProvider::Ovhcloud => {
+            let form = ovhcloud_form(&call.model, &file, &call.optional_params);
+            (
+                ovhcloud_audio_url(call.api_base.as_deref()),
+                HeaderProvider::OvhcloudAudio,
+                form_value(&form.fields, &form.file),
+            )
+        }
+        AudioProvider::Scaleway => {
+            let form = scaleway_form(&call.model, &file, &call.optional_params);
+            (
+                scaleway_url(call.api_base.as_deref()),
+                HeaderProvider::ScalewayAudio,
+                form_value(&form.fields, &form.file),
+            )
+        }
     };
     let key_call = HeaderCall {
         api_key: None,
@@ -105,14 +112,14 @@ pub(super) fn transcription_request_value(
     json!({
         "url": url,
         "headers": header_value(keyed, &key_call),
-        "request": {
-            "form": fields_pairs(&request.fields),
-            "file": json!([
-                request.file.filename,
-                request.file.content_type,
-                request.file.file_content,
-            ]),
-        },
+        "request": request,
+    })
+}
+
+fn form_value(fields: &[(String, Value)], file: &ProcessedAudioFile) -> Value {
+    json!({
+        "form": fields_pairs(fields),
+        "file": json!([file.filename, file.content_type, file.file_content]),
     })
 }
 

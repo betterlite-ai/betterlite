@@ -217,7 +217,7 @@ fn pairs(body: &JsonObject) -> Value {
 fn env_key(env: &BTreeMap<String, String>, name: &str) -> Option<SecretString> {
     env.get(name)
         .filter(|value| !value.is_empty())
-        .map(SecretString::from)
+        .map(|value| SecretString::from(value.to_owned()))
 }
 
 mod wire;
