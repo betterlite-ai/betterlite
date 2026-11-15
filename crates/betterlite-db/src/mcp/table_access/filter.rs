@@ -64,14 +64,14 @@ fn list_predicate(server_ids: &[String], first_param: usize) -> (String, Vec<Str
     )
 }
 
-// both columns compare equal ignoring case; the submitted value stays a literal, not a pattern
+// both columns compare equal ignoring case; drafts cannot collide, so the NULL-or-not-draft arm applies too
 fn identifier_predicate(
     value: &str,
     exclude_server_id: Option<&str>,
     first_param: usize,
 ) -> (String, Vec<String>) {
     let mut predicate = format!(
-        "(LOWER(\"server_name\") = LOWER(${first_param}) OR LOWER(\"alias\") = LOWER(${first_param}))"
+        "((LOWER(\"server_name\") = LOWER(${first_param}) OR LOWER(\"alias\") = LOWER(${first_param})) AND {NOT_DRAFT_PREDICATE})"
     );
     let mut binds = vec![value.to_owned()];
     if let Some(exclude_server_id) = exclude_server_id {

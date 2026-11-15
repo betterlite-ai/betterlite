@@ -20,7 +20,6 @@ pub mod store;
 pub mod types;
 pub mod user_tables;
 
-#[cfg(test)]
 mod mcp_table_access;
 
 use filter::{FindServers, ServerFilter, identifier_candidates};
