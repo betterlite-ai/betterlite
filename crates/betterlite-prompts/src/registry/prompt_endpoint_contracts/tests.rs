@@ -211,6 +211,24 @@ async fn get_next_version_for_prompt_rejects_a_version_that_cannot_be_incremente
     assert!(matches!(error, PromptVersionError::VersionOverflow));
 }
 
+#[tokio::test]
+async fn the_prompt_table_actions_expose_every_table_operation() {
+    let table = FakePromptTable::answering(Vec::new());
+    let data: PromptRowData =
+        serde_json::from_str(r#"{"prompt_id":"greeting"}"#).expect("row data parses");
+    let created = table.create(data).await;
+    let update = PromptRowUpdate {
+        litellm_params: PromptRowJson::Text("{}".to_owned()),
+        prompt_info: PromptRowJson::Text("{}".to_owned()),
+        created_by: None,
+    };
+    let updated = table.update(PromptRowFilter::default(), update).await;
+    let deleted = table.delete_many(PromptRowFilter::default()).await;
+    assert!(created.is_err());
+    assert!(updated.is_err());
+    assert!(deleted.is_err());
+}
+
 #[test]
 fn create_versioned_prompt_spec_builds_the_versioned_prompt_id() {
     let row = prompt_row("greeting", 2, "production");
