@@ -109,4 +109,5 @@ async def validate(request: Input) -> dict[str, JsonValue]:
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    return asyncio.run(validate(INPUT.validate_python(input_value)))
+    request = INPUT.validate_python(input_value)
+    return asyncio.run(validate(request))
