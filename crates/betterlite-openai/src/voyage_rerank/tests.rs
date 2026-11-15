@@ -22,7 +22,7 @@ struct Recorder {
 
 impl RerankLogging for Recorder {
     fn post_call(&mut self, _original_response: &[u8]) {
-        self.calls += 1;
+        self.calls = self.calls.saturating_add(1);
     }
 }
 
@@ -131,7 +131,10 @@ fn top_n_becomes_top_k_and_documents_are_kept() {
     let body = request("m", "q", &docs, &controls);
     assert_eq!(
         serde_json::to_value(&body).expect("body"),
-        json!({"model": "m", "query": "q", "documents": ["first", {"text": "second"}], "top_k": 3})
+        serde_json::from_str::<Value>(
+            r#"{"model": "m", "query": "q", "documents": ["first", {"text": "second"}], "top_k": 3}"#
+        )
+        .expect("expected")
     );
 }
 
@@ -253,9 +256,9 @@ fn scores_serialize_as_json_numbers() {
     ]}"#;
     let response = decode(body, 200).0.expect("response");
     let encoded = serde_json::to_value(&response).expect("reply");
-    assert_eq!(encoded["results"][0]["relevance_score"], json!(0.25));
-    assert_eq!(encoded["results"][1]["relevance_score"], json!(0.875));
-    assert_eq!(encoded["results"][2]["relevance_score"], json!(1));
+    assert_eq!(encoded["results"][0]["relevance_score"], json!(0.25_f64));
+    assert_eq!(encoded["results"][1]["relevance_score"], json!(0.875_f64));
+    assert_eq!(encoded["results"][2]["relevance_score"], json!(1_i32));
 }
 
 #[test]
@@ -271,12 +274,18 @@ fn nonstring_documents_are_preserved() {
     let encoded = serde_json::to_value(&response).expect("reply");
     assert_eq!(
         encoded["results"][0]["document"],
-        json!({"text": "x", "extra": 1})
+        serde_json::from_str::<Value>(r#"{"text": "x", "extra": 1}"#).expect("expected")
     );
     assert_eq!(encoded["results"][1]["document"], Value::Null);
-    assert_eq!(encoded["results"][2]["document"], json!(4));
-    assert_eq!(encoded["results"][3]["document"], json!({"extra": 1}));
-    assert_eq!(encoded["results"][4]["document"], json!({"text": 7}));
+    assert_eq!(encoded["results"][2]["document"], json!(4_i32));
+    assert_eq!(
+        encoded["results"][3]["document"],
+        serde_json::from_str::<Value>(r#"{"extra": 1}"#).expect("expected")
+    );
+    assert_eq!(
+        encoded["results"][4]["document"],
+        serde_json::from_str::<Value>(r#"{"text": 7}"#).expect("expected")
+    );
 }
 
 #[rstest::rstest]

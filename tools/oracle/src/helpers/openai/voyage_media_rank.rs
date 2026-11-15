@@ -29,9 +29,6 @@ struct MultimodalCall {
     #[serde(default)]
     options: Map<String, Value>,
     base: Option<String>,
-    api_key: Option<String>,
-    #[serde(default)]
-    env: BTreeMap<String, String>,
     reply: Reply,
 }
 
@@ -104,7 +101,7 @@ struct Recorder {
 
 impl RerankLogging for Recorder {
     fn post_call(&mut self, _original_response: &[u8]) {
-        self.calls += 1;
+        self.calls = self.calls.saturating_add(1);
     }
 }
 

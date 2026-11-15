@@ -47,7 +47,7 @@ fn successful_rerank_calls_log_the_post_call_and_keep_the_request() {
         .expect("overlay case");
     let rerank = value["rerank"].as_array().expect("rerank calls");
     assert_eq!(rerank[0]["post_call"], true);
-    assert_eq!(rerank[0]["request"]["value"]["top_k"], 3);
+    assert_eq!(rerank[0]["request"]["value"]["top_k"], 3_i32);
     assert_eq!(rerank[0]["request"]["value"]["return_documents"], false);
     assert_eq!(
         rerank[0]["url"], "https://example.test/v1/rerank",
