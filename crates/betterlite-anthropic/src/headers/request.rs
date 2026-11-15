@@ -106,17 +106,22 @@ fn insert_auth_headers(
         headers.insert(AUTHORIZATION_HEADER.to_owned(), value);
         headers.insert(BROWSER_ACCESS_HEADER.to_owned(), "true".to_owned());
         betas.insert(OAUTH_BETA_HEADER.to_owned());
-    } else if let (None, Some(token)) = (request.api_key, request.auth_token) {
+        return;
+    }
+    if let (None, Some(token)) = (request.api_key, request.auth_token) {
         let value = format!("Bearer {}", token.expose_secret());
         headers.insert(AUTHORIZATION_HEADER.to_owned(), value);
-    } else if let Some(api_key) = request.api_key {
-        let auth = make_api_key_auth_header(
-            api_key,
-            request.api_base,
-            request.use_bearer_for_custom_base,
-        );
-        headers.insert(auth.name.to_owned(), auth.value.expose_secret().to_owned());
+        return;
     }
+    let Some(api_key) = request.api_key else {
+        return;
+    };
+    let auth = make_api_key_auth_header(
+        api_key,
+        request.api_base,
+        request.use_bearer_for_custom_base,
+    );
+    headers.insert(auth.name.to_owned(), auth.value.expose_secret().to_owned());
 }
 
 fn derived_betas(features: &HeaderFeatures) -> BTreeSet<String> {

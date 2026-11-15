@@ -58,11 +58,11 @@ pub fn validate_environment(
         .api_base
         .or(request.litellm_params.api_base.as_deref());
     let mut headers = request.caller_headers.clone();
-    let mut api_key = request.api_key.cloned();
-    if let Some(oauth_key) = handle_anthropic_oauth(&mut headers, api_key.clone()) {
-        api_key = Some(oauth_key);
+    let mut requested_key = request.api_key.cloned();
+    if let Some(oauth_key) = handle_anthropic_oauth(&mut headers, requested_key.clone()) {
+        requested_key = Some(oauth_key);
     }
-    let (api_key, auth_token) = resolve_credentials(api_key, request, settings)?;
+    let (api_key, auth_token) = resolve_credentials(requested_key, request, settings)?;
     let features = detected_features(request)?;
     let user_betas = user_beta_headers(headers.get(OAUTH_BETA_HEADER_NAME).map(String::as_str));
     let generated = get_anthropic_headers(&HeaderRequest {

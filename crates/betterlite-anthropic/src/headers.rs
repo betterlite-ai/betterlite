@@ -18,12 +18,9 @@ pub struct AnthropicHeaders {
 }
 
 impl fmt::Debug for AnthropicHeaders {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let names: Vec<&str> = self.values.keys().map(String::as_str).collect();
-        formatter
-            .debug_tuple("AnthropicHeaders")
-            .field(&names)
-            .finish()
+        f.debug_tuple("AnthropicHeaders").field(&names).finish()
     }
 }
 
