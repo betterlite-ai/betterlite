@@ -15,9 +15,10 @@ class RecordedError(Exception):
     pass
 
 
-class RecordedProviderError(Exception):
+class APIError(Exception):
+    # the provider SDK raises an APIError that carries its status; the scripted provider imitates it
     def __init__(self, status: int) -> None:
-        super().__init__("the scripted provider answered")
+        super().__init__(f"the scripted provider answered {status}")
         self.status_code = status
 
 
@@ -136,7 +137,7 @@ class Recorder:
     def retrieve_batch(self, **kwargs: JsonValue | httpx.Timeout) -> LiteLLMBatch:
         CAPTURED.append((self.provider, kwargs))
         if self.status is not None:
-            raise RecordedProviderError(self.status)
+            raise APIError(self.status)
         raise RecordedError
 
 
