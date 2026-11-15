@@ -136,10 +136,10 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
 }
 
 fn found_row(row: Option<Row>) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
-    let Some(row) = row else {
+    let Some(found) = row else {
         return Ok(None);
     };
-    toolset_row(&row).map(Some)
+    toolset_row(&found).map(Some)
 }
 
 fn toolset_row(row: &Row) -> Result<ToolsetRow, MCPToolsetStorageError> {

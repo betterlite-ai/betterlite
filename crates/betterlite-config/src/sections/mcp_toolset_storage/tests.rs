@@ -89,7 +89,7 @@ impl FakeTable {
     fn take_row(&self, toolset_id: &str) -> Option<ToolsetRow> {
         let mut rows = self.rows.lock().unwrap();
         let index = rows.iter().position(|row| row.toolset_id == toolset_id);
-        index.map(|index| rows.remove(index))
+        index.map(|found| rows.remove(found))
     }
 }
 

@@ -70,11 +70,14 @@ pub enum MCPToolsetStorageError {
 
 pub type ToolsetLookup = Result<Option<MCPToolset>, MCPToolsetStorageError>;
 
-pub async fn create_mcp_toolset<T: ToolsetTable>(
+pub async fn create_mcp_toolset<T>(
     table: &T,
     data: &NewMCPToolsetRequest,
     touched_by: &str,
-) -> Result<MCPToolset, MCPToolsetStorageError> {
+) -> Result<MCPToolset, MCPToolsetStorageError>
+where
+    T: ToolsetTable,
+{
     let tools = serde_json::to_string(&data.tools).map_err(MCPToolsetStorageError::Tools)?;
     let row = ToolsetRow {
         toolset_id: Uuid::new_v4().to_string(),
@@ -89,7 +92,10 @@ pub async fn create_mcp_toolset<T: ToolsetTable>(
     toolset_from_row(table.create(row).await?)
 }
 
-pub async fn get_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
+pub async fn get_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
+where
+    T: ToolsetTable,
+{
     table
         .find_unique(toolset_id)
         .await?
@@ -97,7 +103,10 @@ pub async fn get_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> To
         .transpose()
 }
 
-pub async fn get_mcp_toolset_by_name<T: ToolsetTable>(table: &T, name: &str) -> ToolsetLookup {
+pub async fn get_mcp_toolset_by_name<T>(table: &T, name: &str) -> ToolsetLookup
+where
+    T: ToolsetTable,
+{
     table
         .find_first_by_name(name)
         .await?
@@ -105,11 +114,14 @@ pub async fn get_mcp_toolset_by_name<T: ToolsetTable>(table: &T, name: &str) -> 
         .transpose()
 }
 
-pub async fn list_mcp_toolsets<T: ToolsetTable>(
+pub async fn list_mcp_toolsets<T>(
     table: &T,
     toolset_ids: Option<&[String]>,
     use_writer: bool,
-) -> Result<Vec<MCPToolset>, MCPToolsetStorageError> {
+) -> Result<Vec<MCPToolset>, MCPToolsetStorageError>
+where
+    T: ToolsetTable,
+{
     let filter = toolset_ids.map_or(ToolsetFilter::All, |ids| ToolsetFilter::Ids(ids.to_vec()));
     match listed_toolsets(table, filter, use_writer).await {
         Ok(toolsets) => Ok(toolsets),
@@ -121,11 +133,14 @@ pub async fn list_mcp_toolsets<T: ToolsetTable>(
     }
 }
 
-async fn listed_toolsets<T: ToolsetTable>(
+async fn listed_toolsets<T>(
     table: &T,
     filter: ToolsetFilter,
     use_writer: bool,
-) -> Result<Vec<MCPToolset>, MCPToolsetStorageError> {
+) -> Result<Vec<MCPToolset>, MCPToolsetStorageError>
+where
+    T: ToolsetTable,
+{
     table
         .find_many(filter, use_writer)
         .await?
@@ -134,17 +149,23 @@ async fn listed_toolsets<T: ToolsetTable>(
         .collect()
 }
 
-pub async fn update_mcp_toolset<T: ToolsetTable>(
+pub async fn update_mcp_toolset<T>(
     table: &T,
     data: &UpdateMCPToolsetRequest,
     touched_by: &str,
-) -> Result<Option<MCPToolset>, MCPToolsetStorageError> {
+) -> Result<Option<MCPToolset>, MCPToolsetStorageError>
+where
+    T: ToolsetTable,
+{
     let update = ToolsetUpdate::from_request(data, touched_by)?;
     let stored = table.update(&data.toolset_id, update).await?;
     optional_toolset(stored)
 }
 
-pub async fn delete_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) -> ToolsetLookup {
+pub async fn delete_mcp_toolset<T>(table: &T, toolset_id: &str) -> ToolsetLookup
+where
+    T: ToolsetTable,
+{
     table
         .delete(toolset_id)
         .await?
@@ -153,8 +174,8 @@ pub async fn delete_mcp_toolset<T: ToolsetTable>(table: &T, toolset_id: &str) ->
 }
 
 fn optional_toolset(row: Option<ToolsetRow>) -> ToolsetLookup {
-    let Some(row) = row else {
+    let Some(stored) = row else {
         return Ok(None);
     };
-    toolset_from_row(row).map(Some)
+    toolset_from_row(stored).map(Some)
 }

@@ -52,7 +52,7 @@ impl Store {
     fn take_row(&self, toolset_id: &str) -> Option<ToolsetRow> {
         let mut writer = self.writer.lock().unwrap_or_else(PoisonError::into_inner);
         let index = writer.iter().position(|row| row.toolset_id == toolset_id);
-        index.map(|index| writer.remove(index))
+        index.map(|found| writer.remove(found))
     }
 }
 
