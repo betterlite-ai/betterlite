@@ -86,6 +86,59 @@ fn capped(cache_max_size: usize) -> ExchangedTokenCache {
     ExchangedTokenCache::new(ManualClock::new(), tunables)
 }
 
+async fn remint_after_100_seconds(
+    cache: &ExchangedTokenCache,
+    clock: &ManualClock,
+    computes: &Arc<AtomicUsize>,
+) {
+    cache
+        .get_or_compute(
+            "key",
+            "user-a",
+            minted(Arc::clone(computes), "token-a", Some(600)),
+        )
+        .await
+        .unwrap();
+    clock.advance(100);
+    cache
+        .get_or_compute(
+            "key",
+            "user-b",
+            minted(Arc::clone(computes), "token-b", Some(65)),
+        )
+        .await
+        .unwrap();
+}
+
+async fn three_entries_in_a_cache_of_two(computes: &Arc<AtomicUsize>) -> ExchangedTokenCache {
+    let cache = capped(2);
+    cache
+        .get_or_compute(
+            "long",
+            "",
+            minted(Arc::clone(computes), "token-a", Some(3600)),
+        )
+        .await
+        .unwrap();
+    cache
+        .get_or_compute(
+            "short",
+            "",
+            minted(Arc::clone(computes), "token-b", Some(65)),
+        )
+        .await
+        .unwrap();
+    cache
+        .get_or_compute(
+            "third",
+            "",
+            minted(Arc::clone(computes), "token-c", Some(3600)),
+        )
+        .await
+        .unwrap();
+    cache
+}
+
 #[tokio::test]
 async fn a_hit_skips_the_compute() {
     let (cache, _clock) = cache();
@@ -148,23 +201,7 @@ async fn a_fingerprint_mismatch_recomputes() {
 async fn a_remint_stores_the_new_tokens_own_ttl() {
     let (cache, clock) = cache();
     let computes = Arc::new(AtomicUsize::new(0));
-    cache
-        .get_or_compute(
-            "key",
-            "user-a",
-            minted(Arc::clone(&computes), "token-a", Some(600)),
-        )
-        .await
-        .unwrap();
-    clock.advance(100);
-    cache
-        .get_or_compute(
-            "key",
-            "user-b",
-            minted(Arc::clone(&computes), "token-b", Some(65)),
-        )
-        .await
-        .unwrap();
+    remint_after_100_seconds(&cache, &clock, &computes).await;
     clock.advance(9);
     let still_cached = cache
         .get_or_compute(
@@ -175,31 +212,7 @@ async fn a_remint_stores_the_new_tokens_own_ttl() {
         .await
         .unwrap();
     assert_eq!(still_cached, "token-b");
-    assert_eq!(computes.load(Ordering::SeqCst), 2);
-}
-
-#[tokio::test]
-async fn a_reminted_token_expires_at_its_own_ttl() {
-    let (cache, clock) = cache();
-    let computes = Arc::new(AtomicUsize::new(0));
-    cache
-        .get_or_compute(
-            "key",
-            "user-a",
-            minted(Arc::clone(&computes), "token-a", Some(600)),
-        )
-        .await
-        .unwrap();
-    clock.advance(100);
-    cache
-        .get_or_compute(
-            "key",
-            "user-b",
-            minted(Arc::clone(&computes), "token-b", Some(65)),
-        )
-        .await
-        .unwrap();
-    clock.advance(10);
+    clock.advance(1);
     let expired = cache
         .get_or_compute(
             "key",
@@ -419,66 +432,10 @@ async fn the_cache_evicts_at_capacity() {
 
 #[tokio::test]
 async fn the_cache_evicts_the_entry_that_expires_soonest() {
-    let cache = capped(2);
     let computes = Arc::new(AtomicUsize::new(0));
-    cache
-        .get_or_compute(
-            "long",
-            "",
-            minted(Arc::clone(&computes), "token-a", Some(3600)),
-        )
-        .await
-        .unwrap();
-    cache
-        .get_or_compute(
-            "short",
-            "",
-            minted(Arc::clone(&computes), "token-b", Some(65)),
-        )
-        .await
-        .unwrap();
-    cache
-        .get_or_compute(
-            "third",
-            "",
-            minted(Arc::clone(&computes), "token-c", Some(3600)),
-        )
-        .await
-        .unwrap();
+    let cache = three_entries_in_a_cache_of_two(&computes).await;
     let long = cache
         .get_or_compute("long", "", minted(Arc::clone(&computes), "unused", None))
-        .await
-        .unwrap();
-    assert_eq!(long, "token-a");
-    assert_eq!(computes.load(Ordering::SeqCst), 3);
-}
-
-#[tokio::test]
-async fn the_entry_that_expires_soonest_is_computed_again() {
-    let cache = capped(2);
-    let computes = Arc::new(AtomicUsize::new(0));
-    cache
-        .get_or_compute(
-            "long",
-            "",
-            minted(Arc::clone(&computes), "token-a", Some(3600)),
-        )
-        .await
-        .unwrap();
-    cache
-        .get_or_compute(
-            "short",
-            "",
-            minted(Arc::clone(&computes), "token-b", Some(65)),
-        )
-        .await
-        .unwrap();
-    cache
-        .get_or_compute(
-            "third",
-            "",
-            minted(Arc::clone(&computes), "token-c", Some(3600)),
-        )
         .await
         .unwrap();
     let short = cache
@@ -489,6 +446,7 @@ async fn the_entry_that_expires_soonest_is_computed_again() {
         )
         .await
         .unwrap();
+    assert_eq!(long, "token-a");
     assert_eq!(short, "token-d");
     assert_eq!(computes.load(Ordering::SeqCst), 4);
 }
