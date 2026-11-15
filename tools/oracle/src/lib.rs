@@ -298,8 +298,12 @@ impl From<http_scenarios::error::ScenarioError> for OracleError {
 }
 
 pub fn run() -> Result<ExitCode, OracleError> {
-    let options = <cli::Options as clap::Parser>::try_parse()?;
+    let arguments = <cli::Arguments as clap::Parser>::try_parse()?;
+    let options = arguments.options;
     let cases = case::load_cases(&options.paths)?;
+    if let Some(operation) = arguments.operation {
+        return runner::run_cases(&options, cli::helper_cases_calling(cases, &operation)?);
+    }
     let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
     let probe_cases = case::load_probe_cases(&options.paths)?;
     let scenario_limits = http_scenarios::model::Limits::default();

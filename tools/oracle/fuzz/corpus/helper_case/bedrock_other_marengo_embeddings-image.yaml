@@ -1,0 +1,14 @@
+kind: helper
+name: bedrock-other-marengo-embeddings-image
+call:
+  bedrock_other_marengo_embeddings:
+    marengo_image_input:
+      model: twelvelabs.marengo-embed-2-7-v1:0
+      input: ["data:image/png;base64,AAA"]
+      inference:
+        input_type: image
+      replies:
+        - embedding: [0.5]
+env: {}
+compare:
+  ignore: []
