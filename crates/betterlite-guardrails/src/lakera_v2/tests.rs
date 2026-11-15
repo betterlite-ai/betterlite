@@ -276,6 +276,9 @@ const PII_ONLY: &str = r#"[{"detected":true,"detector_type":"pii/email"}]"#;
 const MIXED: &str = r#"[{"detected":true,"detector_type":"pii/email"},{"detected":true,"detector_type":"prompt_attack/jailbreak"}]"#;
 const ATTACK_ONLY: &str = r#"[{"detected":true,"detector_type":"prompt_attack/jailbreak"}]"#;
 const EMAIL_SPAN: &str = r#"[{"message_id":0,"start":6,"end":19,"detector_type":"pii/email"}]"#;
+// The payload is stripped from the record, so this name can only appear in a logged answer body.
+const SENTINEL_SPAN: &str =
+    r#"[{"message_id":0,"start":0,"end":3,"detector_type":"pii/sentinel-span"}]"#;
 
 enum Hook {
     Pre,
@@ -919,7 +922,7 @@ impl io::Write for CapturedLog {
 
 #[tokio::test]
 async fn call_v2_guard_logs_no_request_or_answer_body() {
-    let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let server = serve(200, flagged(PII_ONLY, SENTINEL_SPAN)).await;
     let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     let mut data = chat_data();
     let sink = CollectingSink::default();
@@ -946,6 +949,10 @@ async fn call_v2_guard_logs_no_request_or_answer_body() {
     assert!(
         !logged.contains("a@example.com"),
         "the guard logged the request body: {logged}"
+    );
+    assert!(
+        !logged.contains("sentinel-span"),
+        "the guard logged the answer body: {logged}"
     );
 }
 
