@@ -1,5 +1,5 @@
 import os
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from typing import NotRequired, Protocol, TypedDict
 from urllib.parse import parse_qsl
 
@@ -19,16 +19,15 @@ from pydantic import JsonValue, TypeAdapter
 litellm.suppress_debug_info = True
 
 
+HeaderMap = dict[str, str]
+JsonMap = dict[str, JsonValue]
+
+
 class Config(Protocol):
-    def validate_environment(
-        self,
-        headers: dict[str, str],
-        model: str,
-        messages: list[AllMessageValues],
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        api_key: str | None = None,
-    ) -> dict[str, JsonValue]: ...
+    validate_environment: Callable[
+        [HeaderMap, str, list[AllMessageValues], JsonMap, JsonMap, str | None],
+        dict[str, JsonValue],
+    ]
 
     def get_error_class(
         self, error_message: str, status_code: int, headers: dict[str, JsonValue]
@@ -54,15 +53,10 @@ class Petals(Config, Protocol):
 class Passthrough(Protocol):
     def is_streaming_request(self, endpoint: str, request_data: dict[str, JsonValue]) -> bool: ...
 
-    def get_complete_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        endpoint: str,
-        request_query_params: dict[str, JsonValue] | None,
-        litellm_params: dict[str, JsonValue],
-    ) -> tuple[httpx.URL, str]: ...
+    get_complete_url: Callable[
+        [str | None, str | None, str, str, JsonMap | None, JsonMap],
+        tuple[httpx.URL, str],
+    ]
 
 
 INFO_VIEW: Config = VLLMModelInfo()
@@ -159,7 +153,7 @@ def models_value(api_base: str | None) -> JsonValue:
 def model_info_value(call: InfoCall) -> JsonValue:
     replace_environment(call["env"])
     headers: dict[str, JsonValue] = INFO_VIEW.validate_environment(
-        call["headers"], call["model"], [], {}, {}, api_key=call.get("api_key")
+        call["headers"], call["model"], [], {}, {}, call.get("api_key")
     )
     error = INFO_VIEW.get_error_class("boom", 418, {})
     return {
@@ -196,7 +190,7 @@ def validated_value(case: ValidateCase) -> JsonValue:
     given = TypeAdapter(dict[str, JsonValue]).validate_python(case["headers"])
     key = case["api_key"]
     returned: dict[str, JsonValue] = PETALS_VIEW.validate_environment(
-        case["headers"], "m", [], {}, {}, api_key=key
+        case["headers"], "m", [], {}, {}, key
     )
     return {"headers": returned, "given": given, "api_key": key}
 
