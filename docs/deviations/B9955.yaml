@@ -1,0 +1,5 @@
+task: B9955
+deviations:
+  - what: The sandbox output cap counts each line's newline, so output of bare newlines also stops at 10 MiB.
+    why: LiteLLM counts only each line's bytes, so empty lines never reach its cap and output made of newlines grows without bound.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L91
