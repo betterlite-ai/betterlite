@@ -16,7 +16,7 @@ use serde_json::{Value, json};
 
 use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
-use endpoint::{build_client, start_endpoint};
+use endpoint::{Endpoint, build_client, start_endpoint};
 
 mod endpoint;
 
@@ -90,7 +90,39 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         Some(FailureKind::Timeout) => TIMEOUT_PROBE,
         Some(FailureKind::Connect) | None => ANSWER_TIMEOUT,
     };
-    let guardrail = match AliceGuardrail::new(
+    let guardrail = guardrail_from(args, &endpoint, timeout)?;
+    let mut request_data = args.request_data.clone();
+    let outcome = <AliceGuardrail as GuardrailContract>::apply_guardrail(
+        &guardrail,
+        state_inputs(args),
+        &mut request_data,
+        args.input_type,
+        None,
+    )
+    .await;
+    let outcome = outcome_of(outcome)?;
+    Ok(json!({
+        "texts": outcome.texts,
+        "requests": endpoint.recorded(),
+        "raised": outcome.raised,
+        "status": outcome.status,
+        "blocked_content": outcome.blocked_content,
+    }))
+}
+
+struct AliceOutcome {
+    texts: Vec<String>,
+    raised: bool,
+    status: Option<u16>,
+    blocked_content: Option<bool>,
+}
+
+fn guardrail_from(
+    args: &AliceApplyArgs,
+    endpoint: &Endpoint,
+    timeout: Duration,
+) -> Result<AliceGuardrail, Box<HelperError>> {
+    AliceGuardrail::new(
         AliceGuardrailParams {
             api_key: args.api_key.clone().map(SecretString::from),
             api_base: Some(endpoint.base().to_owned()),
@@ -99,20 +131,21 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         |_name: &str| String::new(),
         build_client()?,
         timeout,
-    ) {
-        Ok(guardrail) => guardrail,
-        Err(error) => {
-            return Err(Box::new(HelperError {
-                class: "AliceGuardrailMissingSecrets".to_owned(),
-                status: None,
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: error.to_string(),
-            }));
-        }
-    };
-    let inputs = GuardrailApiInputs {
+    )
+    .map_err(|error| {
+        Box::new(HelperError {
+            class: "AliceGuardrailMissingSecrets".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        })
+    })
+}
+
+fn state_inputs(args: &AliceApplyArgs) -> GuardrailApiInputs {
+    GuardrailApiInputs {
         texts: args.texts.clone(),
         images: None,
         tools: None,
@@ -120,41 +153,38 @@ async fn alice_apply_async(args: &AliceApplyArgs) -> HelperResult {
         structured_messages: None,
         model: None,
         stream_holdback_chars: None,
-    };
-    let mut request_data = args.request_data.clone();
-    let outcome = <AliceGuardrail as GuardrailContract>::apply_guardrail(
-        &guardrail,
-        inputs,
-        &mut request_data,
-        args.input_type,
-        None,
-    )
-    .await;
-    let (texts, raised, status, blocked_content) = match outcome {
-        Ok(returned) => (returned.texts.unwrap_or_default(), false, None, None),
+    }
+}
+
+fn outcome_of(
+    outcome: Result<GuardrailApiInputs, GuardrailFailure>,
+) -> Result<AliceOutcome, Box<HelperError>> {
+    match outcome {
+        Ok(returned) => Ok(AliceOutcome {
+            texts: returned.texts.unwrap_or_default(),
+            raised: false,
+            status: None,
+            blocked_content: None,
+        }),
         Err(GuardrailFailure::GuardrailRaised {
             status_code,
             blocked_content,
             ..
-        }) => (Vec::new(), true, Some(status_code), Some(blocked_content)),
-        Err(other) => {
-            return Err(Box::new(HelperError {
-                class: "GuardrailFailure".to_owned(),
-                status: None,
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: other.to_string(),
-            }));
-        }
-    };
-    Ok(json!({
-        "texts": texts,
-        "requests": endpoint.recorded(),
-        "raised": raised,
-        "status": status,
-        "blocked_content": blocked_content,
-    }))
+        }) => Ok(AliceOutcome {
+            texts: Vec::new(),
+            raised: true,
+            status: Some(status_code),
+            blocked_content: Some(blocked_content),
+        }),
+        Err(other) => Err(Box::new(HelperError {
+            class: "GuardrailFailure".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: other.to_string(),
+        })),
+    }
 }
 
 fn conduct_request_payload(args: &ConductPayloadArgs) -> HelperResult {
