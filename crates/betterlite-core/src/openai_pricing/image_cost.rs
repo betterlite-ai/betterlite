@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use betterlite_models::decisions::Json;
 use betterlite_models::image_cost::default_calculator::{
     DefaultImageCostRequest, default_image_cost_calculator,
@@ -49,25 +51,21 @@ fn warn_and_zero(model: &str, failure: &ImageCostFailure, endpoint: &str) -> Dec
     Decimal::ZERO
 }
 
+// The source rewrites an x-separated size to its "-x-" spelling before it builds catalog keys, so either spelling prices the same entry
+fn normalized_size(size: &str) -> Cow<'_, str> {
+    if size.contains('x') && !size.contains("-x-") {
+        return Cow::Owned(size.replace('x', "-x-"));
+    }
+    Cow::Borrowed(size)
+}
+
 fn calculated_cost(
     request: &ImageCostRequest<'_>,
     quality: Option<&Json>,
     lookup: &dyn PriceLookup,
 ) -> Result<Decimal, ImageCostFailure> {
-    let calculation = DefaultImageCostRequest {
-        model: request.model,
-        custom_llm_provider: Some(OPENAI_PROVIDER),
-        quality: image_quality(quality)?,
-        n_images: Some(image_count(request.request_body.get("n"))),
-        size: image_size(request.request_body.get("size"))?,
-        model_info: None,
-    };
-    Ok(default_image_cost_calculator(&calculation, lookup)?)
-}
-
-// int() of a number truncates toward zero, of a bool is 0 or 1, and of anything unparseable raises into the source's fallback of 1
-fn image_count(value: Option<&Json>) -> i64 {
-    match value {
+    // The body reads int() of a number as truncated toward zero, of a bool as 0 or 1, and of anything unparsable as the source's fallback of 1
+    let image_count = match request.request_body.get("n") {
         Some(Json::Number(number)) => number
             .as_i64()
             .or_else(|| number.as_f64().and_then(|float| float.trunc().to_i64()))
@@ -75,29 +73,32 @@ fn image_count(value: Option<&Json>) -> i64 {
         Some(Json::Bool(false)) => 0,
         Some(Json::Text(text)) => text.trim().parse::<i64>().unwrap_or(1),
         None | Some(Json::Bool(true) | Json::Null | Json::List(_) | Json::Object(_)) => 1,
-    }
-}
-
-// The calculator treats an empty or absent quality as no quality, and any other non-string is a type mismatch the source would only fail on later
-const fn image_quality(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) if text.is_empty() => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.as_str())),
+    };
+    // The calculator treats an empty or absent quality as no quality, and any other non-string is a type mismatch the source would only fail on later
+    let quality_text = match quality {
+        None | Some(Json::Null) => None,
+        Some(Json::Text(text)) if text.is_empty() => None,
+        Some(Json::Text(text)) => Some(text.as_str()),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ImageCostFailure::NotText { field: "quality" })
+            return Err(ImageCostFailure::NotText { field: "quality" });
         }
-    }
-}
-
-// The source's body lookup keeps any non-string size, and the calculator then raises, so a number is a failed cost rather than the default size
-const fn image_size(value: Option<&Json>) -> Result<Option<&str>, ImageCostFailure> {
-    match value {
-        None => Ok(Some(DEFAULT_SIZE)),
-        Some(Json::Null) => Ok(None),
-        Some(Json::Text(text)) => Ok(Some(text.as_str())),
+    };
+    // The source's body lookup keeps any non-string size, and the calculator then raises, so a number is a failed cost rather than the default size
+    let raw_size = match request.request_body.get("size") {
+        None | Some(Json::Null) => DEFAULT_SIZE,
+        Some(Json::Text(text)) => text.as_str(),
         Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            Err(ImageCostFailure::NotText { field: "size" })
+            return Err(ImageCostFailure::NotText { field: "size" });
         }
-    }
+    };
+    let price_size = normalized_size(raw_size);
+    let calculation = DefaultImageCostRequest {
+        model: request.model,
+        custom_llm_provider: Some(OPENAI_PROVIDER),
+        quality: quality_text,
+        n_images: Some(image_count),
+        size: Some(price_size.as_ref()),
+        model_info: None,
+    };
+    Ok(default_image_cost_calculator(&calculation, lookup)?)
 }

@@ -165,7 +165,10 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     }
 }
 
-fn capture<T, F: FnOnce() -> T>(call: F) -> (T, Vec<String>) {
+fn capture<T, F>(call: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
     let logs = CapturedLogs::default();
     let subscriber = registry().with(logs.clone());
     let value = with_default(subscriber, call);

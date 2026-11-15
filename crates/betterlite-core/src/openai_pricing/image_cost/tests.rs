@@ -95,7 +95,7 @@ fn decimal(text: &str) -> Decimal {
 #[case::negative(r#"{"n":-1}"#, -1)]
 #[case::absent("{}", 1)]
 #[case::null(r#"{"n":null}"#, 1)]
-#[case::unparseable(r#"{"n":"two"}"#, 1)]
+#[case::unparsable(r#"{"n":"two"}"#, 1)]
 #[case::float_string(r#"{"n":"2.0"}"#, 1)]
 #[case::empty_string(r#"{"n":""}"#, 1)]
 #[case::bool_true(r#"{"n":true}"#, 1)]
@@ -243,7 +243,10 @@ impl<Inner: Subscriber> Layer<Inner> for CapturedLogs {
     }
 }
 
-fn capture<T, F: FnOnce() -> T>(call: F) -> (T, Vec<String>) {
+fn capture<T, F>(call: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
     let logs = CapturedLogs::default();
     let subscriber = registry().with(logs.clone());
     let value = with_default(subscriber, call);
