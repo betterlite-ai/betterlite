@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use rstest::rstest;
 use secrecy::SecretString;
 
 use super::support::{
@@ -93,6 +94,15 @@ async fn output_hook(
         .map(|(_headers, request_body)| serde_json::from_str(request_body).expect("posted body"))
         .collect();
     (result, posted)
+}
+
+// a monitor answer that still carries a redacted chat, which only the anonymize action reads
+fn monitor_with_a_redacted_chat() -> Answer {
+    let mut monitor = action("monitor_action", None);
+    monitor.redacted_chat = Some(Redacted {
+        all_redacted_messages: vec![object(&[("content", text("REDACTED"))])],
+    });
+    monitor
 }
 
 #[tokio::test]
@@ -259,26 +269,21 @@ async fn post_call_success_hook_raises_a_400_on_a_block_action() {
     assert_eq!(error.status_code().as_u16(), 400);
 }
 
+#[rstest]
+#[case::redaction_missing_the_assistant_turn(anonymized(&[object(&[("content", text("REDACTED"))])]))]
+#[case::assistant_turn_without_content(anonymized(&[object(&[("role", text("assistant"))])]))]
+#[case::monitor_with_a_redacted_chat(monitor_with_a_redacted_chat())]
 #[tokio::test]
-async fn post_call_success_hook_leaves_an_answer_without_a_usable_redaction_alone() {
-    let mut monitor = action("monitor_action", None);
-    monitor.redacted_chat = Some(Redacted {
-        all_redacted_messages: vec![object(&[("content", text("REDACTED"))])],
-    });
-    let answers = [
-        anonymized(&[object(&[("content", text("REDACTED"))])]),
-        anonymized(&[object(&[("role", text("assistant"))])]),
-        monitor,
-    ];
-    for answer in answers {
-        let mut response = chat_response(&[("content", text("the answer"))]);
-        let (result, _posted) = output_hook(answer, &mut response, ResponseKind::Chat).await;
-        result.expect("inspected");
-        assert_eq!(
-            first_message(&response).get("content"),
-            Some(&text("the answer"))
-        );
-    }
+async fn post_call_success_hook_leaves_an_answer_without_a_usable_redaction_alone(
+    #[case] answer: Answer,
+) {
+    let mut response = chat_response(&[("content", text("the answer"))]);
+    let (result, _posted) = output_hook(answer, &mut response, ResponseKind::Chat).await;
+    result.expect("inspected");
+    assert_eq!(
+        first_message(&response).get("content"),
+        Some(&text("the answer"))
+    );
 }
 
 #[tokio::test]
@@ -454,29 +459,32 @@ async fn post_call_success_hook_redacts_responses_output_text() {
     );
 }
 
-#[test]
-fn write_fragment_refuses_a_path_it_cannot_reach() {
+const EMPTY_PATH: &[Step] = &[];
+const LAST_IS_AN_INDEX: &[Step] = &[Step::Key("choices"), Step::Index(0)];
+const INDEX_INTO_AN_OBJECT: &[Step] = &[
+    Step::Key("choices"),
+    Step::Index(0),
+    Step::Index(0),
+    Step::Key("content"),
+];
+const TEXT_PARENT: &[Step] = &[
+    Step::Key("choices"),
+    Step::Index(0),
+    Step::Key("message"),
+    Step::Key("content"),
+    Step::Key("nested"),
+];
+
+#[rstest]
+#[case::empty(EMPTY_PATH)]
+#[case::last_is_an_index(LAST_IS_AN_INDEX)]
+#[case::index_into_an_object(INDEX_INTO_AN_OBJECT)]
+#[case::text_parent(TEXT_PARENT)]
+fn write_fragment_refuses_a_path_it_cannot_reach(#[case] path: &[Step]) {
     let mut response = chat_response(&[("content", text("hi"))]);
-    let empty: &[Step] = &[];
-    let last_is_an_index: &[Step] = &[Step::Key("choices"), Step::Index(0)];
-    let index_into_an_object: &[Step] = &[
-        Step::Key("choices"),
-        Step::Index(0),
-        Step::Index(0),
-        Step::Key("content"),
-    ];
-    let text_parent: &[Step] = &[
-        Step::Key("choices"),
-        Step::Index(0),
-        Step::Key("message"),
-        Step::Key("content"),
-        Step::Key("nested"),
-    ];
-    for path in [empty, last_is_an_index, index_into_an_object, text_parent] {
-        assert!(matches!(
-            write_fragment(&mut response, path, "x".to_owned()),
-            Err(CatoError::OutputRedactionMismatch)
-        ));
-    }
+    assert!(matches!(
+        write_fragment(&mut response, path, "x".to_owned()),
+        Err(CatoError::OutputRedactionMismatch)
+    ));
     assert_eq!(first_message(&response).get("content"), Some(&text("hi")));
 }
