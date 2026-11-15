@@ -33,9 +33,9 @@ fn instance(params: &LitellmParams) -> HiddenlayerGuardrailInstance {
 }
 
 #[test]
-fn absent_version_dispatches_to_v2() {
+fn absent_version_dispatches_to_v1() {
     let guardrail = instance(&params(r#", "api_base": "http://127.0.0.1:1""#));
-    assert!(matches!(guardrail, HiddenlayerGuardrailInstance::V2(_)));
+    assert!(matches!(guardrail, HiddenlayerGuardrailInstance::V1(_)));
 }
 
 #[test]

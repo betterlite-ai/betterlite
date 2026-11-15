@@ -21,9 +21,6 @@ use crate::hiddenlayer::hiddenlayer_v2::HiddenlayerV2Guardrail;
 
 mod tests;
 
-// HiddenlayerGuardrailConfigModel.version defaults to 2, and a null version reads as None
-pub const DEFAULT_VERSION: i64 = 2;
-
 pub enum HiddenlayerGuardrailInstance {
     V1(HiddenlayerV1Guardrail),
     V2(HiddenlayerV2Guardrail),
@@ -39,8 +36,9 @@ pub fn initialize_guardrail<L: EnvironmentLookup>(
     new_id: fn() -> Uuid,
 ) -> Result<HiddenlayerGuardrailInstance, EvaluationError> {
     let args = evaluation_args(params, guardrail_name)?;
-    match extras::read(&params.base.extra, "version", Some(DEFAULT_VERSION))? {
-        Some(version) if version >= DEFAULT_VERSION => Ok(HiddenlayerGuardrailInstance::V2(
+    let version: Option<i64> = extras::read(&params.base.extra, "version", None)?;
+    match version {
+        Some(version) if version >= 2 => Ok(HiddenlayerGuardrailInstance::V2(
             HiddenlayerV2Guardrail::new(&args, environment, client, transport, new_id)?,
         )),
         _ => Ok(HiddenlayerGuardrailInstance::V1(
