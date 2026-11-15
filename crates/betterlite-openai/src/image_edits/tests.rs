@@ -87,9 +87,8 @@ fn pair(
 }
 
 fn authorization(headers: &HeaderMap) -> Option<&str> {
-    headers
-        .get("authorization")
-        .and_then(|value| value.to_str().ok())
+    let value = headers.get("authorization")?;
+    value.to_str().ok()
 }
 
 fn credentials(key: Option<&str>) -> OpenAiCredentials {
