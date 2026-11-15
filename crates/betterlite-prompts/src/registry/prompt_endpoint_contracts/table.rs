@@ -1,9 +1,10 @@
-use std::error::Error;
+use std::error::Error as StdError;
 use std::future::Future;
 
 use thiserror::Error;
 
 use super::rows::{PromptRow, PromptRowData, PromptRowJson};
+use crate::registry::prompt_registry_helpers::prompt_environment_or_default;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PromptColumn {
@@ -48,7 +49,7 @@ pub struct PromptRowUpdate {
 }
 
 pub trait PromptTableActions: Send + Sync {
-    type Failure: Error + Send + Sync + 'static;
+    type Failure: StdError + Send + Sync + 'static;
 
     fn find_many(
         &self,
@@ -75,7 +76,7 @@ pub trait PromptTableActions: Send + Sync {
 #[derive(Debug, Error)]
 pub enum PromptVersionError<TableError>
 where
-    TableError: Error + 'static,
+    TableError: StdError + 'static,
 {
     #[error("the prompt table query failed")]
     Table {
@@ -89,18 +90,19 @@ where
 pub async fn get_next_version_for_prompt<Table>(
     table: &Table,
     prompt_id: &str,
-    environment: &str,
+    environment: Option<&str>,
 ) -> Result<i64, PromptVersionError<Table::Failure>>
 where
     Table: PromptTableActions,
 {
+    let query_environment = prompt_environment_or_default(environment);
     let prompts = table
         .find_many(PromptRowQuery {
             filter: PromptRowFilter {
                 id: None,
                 prompt_id: Some(prompt_id.to_owned()),
                 version: None,
-                environment: Some(environment.to_owned()),
+                environment: Some(query_environment),
             },
             order: Vec::new(),
             take: None,

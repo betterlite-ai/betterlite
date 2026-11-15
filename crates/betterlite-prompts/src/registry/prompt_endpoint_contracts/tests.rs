@@ -141,7 +141,7 @@ async fn get_next_version_for_prompt_returns_the_max_version_plus_one() {
         prompt_row("greeting", 1, "development"),
         prompt_row("greeting", 3, "development"),
     ]);
-    let next_version = get_next_version_for_prompt(&table, "greeting", "development")
+    let next_version = get_next_version_for_prompt(&table, "greeting", Some("development"))
         .await
         .expect("version allocated");
     assert_eq!(next_version, 4);
@@ -150,7 +150,7 @@ async fn get_next_version_for_prompt_returns_the_max_version_plus_one() {
 #[tokio::test]
 async fn get_next_version_for_prompt_returns_one_without_matching_rows() {
     let table = FakePromptTable::answering(Vec::new());
-    let next_version = get_next_version_for_prompt(&table, "greeting", "development")
+    let next_version = get_next_version_for_prompt(&table, "greeting", Some("development"))
         .await
         .expect("version allocated");
     assert_eq!(next_version, 1);
@@ -159,7 +159,7 @@ async fn get_next_version_for_prompt_returns_one_without_matching_rows() {
 #[tokio::test]
 async fn get_next_version_for_prompt_queries_the_prompt_id_and_environment() {
     let table = FakePromptTable::answering(Vec::new());
-    get_next_version_for_prompt(&table, "greeting", "production")
+    get_next_version_for_prompt(&table, "greeting", Some("production"))
         .await
         .expect("version allocated");
     let queries = table.queries.lock().unwrap();
@@ -181,9 +181,22 @@ async fn get_next_version_for_prompt_queries_the_prompt_id_and_environment() {
 }
 
 #[tokio::test]
+async fn get_next_version_for_prompt_defaults_the_environment_to_development() {
+    let table = FakePromptTable::answering(Vec::new());
+    get_next_version_for_prompt(&table, "greeting", None)
+        .await
+        .expect("version allocated");
+    let queries = table.queries.lock().unwrap();
+    assert_eq!(
+        queries[0].filter.environment,
+        Some("development".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn get_next_version_for_prompt_reports_a_table_failure() {
     let table = FakePromptTable::failing("database is down");
-    let error = get_next_version_for_prompt(&table, "greeting", "development")
+    let error = get_next_version_for_prompt(&table, "greeting", Some("development"))
         .await
         .expect_err("query fails");
     assert!(matches!(error, PromptVersionError::Table { .. }));
@@ -192,7 +205,7 @@ async fn get_next_version_for_prompt_reports_a_table_failure() {
 #[tokio::test]
 async fn get_next_version_for_prompt_rejects_a_version_that_cannot_be_incremented() {
     let table = FakePromptTable::answering(vec![prompt_row("greeting", i64::MAX, "development")]);
-    let error = get_next_version_for_prompt(&table, "greeting", "development")
+    let error = get_next_version_for_prompt(&table, "greeting", Some("development"))
         .await
         .expect_err("version overflows");
     assert!(matches!(error, PromptVersionError::VersionOverflow));

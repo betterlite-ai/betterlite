@@ -9,9 +9,9 @@ deviations:
   - what: _PromptRow.model_dump and _PromptRowData.model_validate are typed records instead: PromptRow serializes its fields and PromptRowData deserializes them, with version defaulting to 1 and environment to "development".
     why: The pydantic round trip exists to turn an untyped row mapping into checked fields and apply defaults; typed Rust records carry the same fields and defaults without an Any-shaped intermediate.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L56-L87
-  - what: parse_prompt_version accepts only ASCII digit strings, so it returns None for a version written in another Unicode decimal script, where str.isdigit() and int() would return the number.
-    why: A prompt version is ASCII in every working setup, and Rust's integer parsing reads ASCII digits only; betterlite does not port Unicode digit tables, and LiteLLM's isdigit() also accepts characters such as a superscript two that int() then rejects with a ValueError, which escapes as an unhandled 500.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L77-L84
+  - what: Version parsing reads ASCII decimal integers that fit in i64, so get_version_number returns 1 for a suffix such as " 2", "2_0" or another script's digits that Python's int() would read, and parse_prompt_version returns None for a JSON integer beyond i64 that Python's unbounded int would keep; a superscript digit such as a squared sign makes LiteLLM's isdigit() pass and int() raise ValueError, which escapes as an unhandled 500.
+    why: A prompt version is written by the code itself as a plain ASCII decimal from a database Int, so every working setup reads the same number; betterlite does not port int()'s whitespace, underscore and Unicode-digit tolerance or its unbounded range, and it does not reproduce the 500 a superscript causes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L40-L84
 kept_bugs:
   - what: get_next_version_for_prompt reads the existing versions and returns max + 1 without a transaction or lock, so two concurrent calls can allocate the same version.
     why: The task preserves LiteLLM's allocation so version numbers and the unique (prompt_id, version, environment) outcome match what a working setup writes today.

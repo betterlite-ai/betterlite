@@ -35,6 +35,7 @@ fn get_base_prompt_id_strips_one_version_marker(#[case] prompt_id: &str, #[case]
 #[case::space_before_the_number("jack_success.v 2", 1)]
 #[case::underscore_inside_the_number("jack_success.v2_0", 1)]
 #[case::unicode_digit("jack_success.v\u{0662}", 1)]
+#[case::version_beyond_i64("jack_success.v9223372036854775808", 1)]
 fn get_version_number_reads_the_suffix_or_defaults(#[case] prompt_id: &str, #[case] expected: i64) {
     assert_eq!(get_version_number(prompt_id), expected);
 }
@@ -42,6 +43,7 @@ fn get_version_number_reads_the_suffix_or_defaults(#[case] prompt_id: &str, #[ca
 #[rstest]
 #[case::integer(json_value("3"), Some(3))]
 #[case::negative_integer(json_value("-1"), Some(-1))]
+#[case::integer_beyond_i64(json_value("9223372036854775808"), None)]
 #[case::digit_string(json_value("\"12\""), Some(12))]
 #[case::leading_zero_string(json_value("\"012\""), Some(12))]
 #[case::empty_string(json_value("\"\""), None)]

@@ -56,8 +56,8 @@ pub fn registry_key_for_prompt(prompt: &PromptSpec) -> String {
 
 #[must_use]
 pub fn parse_prompt_version(raw_version: Option<&Json>) -> Option<i64> {
-    let raw_version = raw_version?;
-    match raw_version {
+    let version = raw_version?;
+    match version {
         Json::Number(number) => number.as_i64(),
         Json::Text(text) if text.bytes().all(|byte| byte.is_ascii_digit()) => {
             text.parse::<i64>().ok()
