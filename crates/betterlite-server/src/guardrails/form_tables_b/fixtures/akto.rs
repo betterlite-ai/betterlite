@@ -1,0 +1,9 @@
+serde_json::json!({
+    "akto_account_id": { "description": "Akto account ID for multi-tenant deployments. Env: AKTO_ACCOUNT_ID. Default: '1000000'.", "required": false, "type": "string" },
+    "akto_api_key": { "description": "API key for Akto. Env: AKTO_API_KEY.", "required": false, "type": "string" },
+    "akto_base_url": { "description": "Akto Guardrail API Base URL. Env: AKTO_GUARDRAIL_API_BASE.", "required": false, "type": "string" },
+    "akto_vxlan_id": { "description": "Akto VXLAN ID. Env: AKTO_VXLAN_ID. Default: '0'.", "required": false, "type": "string" },
+    "guardrail_timeout": { "description": "HTTP timeout in seconds. Default: 5.", "required": false, "type": "number" },
+    "ui_friendly_name": "Akto",
+    "unreachable_fallback": { "default_value": "fail_closed", "description": "What to do when Akto is unreachable. 'fail_open' = allow, 'fail_closed' = block.", "options": ["fail_closed", "fail_open"], "required": false, "type": "select" },
+})

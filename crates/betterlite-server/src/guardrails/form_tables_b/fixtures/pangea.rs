@@ -1,0 +1,6 @@
+serde_json::json!({
+    "api_base": { "description": "The Pangea API base URL. Defaults to https://ai-guard.aws.us.pangea.cloud. Also checks if the PANGEA_API_BASE env var is set.", "required": false, "type": "string" },
+    "api_key": { "description": "The Pangea API key. Reads from PANGEA_API_KEY env var if None.", "required": false, "type": "string" },
+    "optional_params": { "description": "Optional parameters for the guardrail", "fields": { "pangea_input_recipe": { "description": "The Pangea input recipe for the Pangea guardrail. Used for pre-call hook.", "required": false, "type": "string" }, "pangea_output_recipe": { "description": "The Pangea output recipe for the Pangea guardrail. Used for post-call hook.", "required": false, "type": "string" } }, "required": false, "type": "nested" },
+    "ui_friendly_name": "Pangea Guardrail",
+})

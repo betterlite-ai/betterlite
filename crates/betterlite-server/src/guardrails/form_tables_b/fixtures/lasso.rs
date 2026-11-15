@@ -1,0 +1,6 @@
+serde_json::json!({
+    "api_base": { "description": "The API base for the Lasso guardrail. Default is https://server.lasso.security. Also checks if the `LASSO_API_BASE` environment variable is set.", "required": false, "type": "string" },
+    "api_key": { "description": "The API key for the Lasso guardrail. If not provided, the `LASSO_API_KEY` environment variable is checked.", "required": false, "type": "string" },
+    "optional_params": { "description": "Optional parameters for the guardrail", "fields": { "conversation_id": { "description": "The conversation ID for the Lasso guardrail. If not provided, the `LASSO_CONVERSATION_ID` environment variable is checked.", "required": false, "type": "string" }, "user_id": { "description": "The user ID for the Lasso guardrail. If not provided, the `LASSO_USER_ID` environment variable is checked.", "required": false, "type": "string" } }, "required": false, "type": "nested" },
+    "ui_friendly_name": "Lasso Guardrail",
+})
