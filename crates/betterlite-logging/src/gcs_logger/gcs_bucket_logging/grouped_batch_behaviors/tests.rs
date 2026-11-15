@@ -44,6 +44,15 @@ async fn a_failed_upload_counts_every_item() {
 }
 
 #[tokio::test]
+async fn a_redirect_reply_counts_every_item_as_an_error() {
+    let harness = open(&[], Some("bucket"), Answer::with_status(302));
+    let items = vec![item("chatcmpl-1", None, Json::Null)];
+    let counts = send_grouped_batch(&harness.logger, &items).await;
+    assert_eq!(counts, (0, 1));
+    assert_eq!(harness.requests().len(), 1);
+}
+
+#[tokio::test]
 async fn an_empty_group_sends_nothing() {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
     let counts = send_grouped_batch(&harness.logger, &[]).await;

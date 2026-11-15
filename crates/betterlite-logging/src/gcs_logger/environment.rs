@@ -38,3 +38,5 @@ impl EnvironmentSource for CatalogEnvironment {
             .collect()
     }
 }
+
+mod tests;

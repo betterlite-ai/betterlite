@@ -13,3 +13,5 @@ impl IdSource for RandomIds {
         Uuid::new_v4().simple().to_string()
     }
 }
+
+mod tests;

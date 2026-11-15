@@ -23,6 +23,19 @@ async fn a_success_payload_is_named_after_the_response_id() {
 }
 
 #[tokio::test]
+async fn an_empty_response_id_leaves_an_empty_last_segment() {
+    let harness = open(&[], Some("bucket"), Answer::ok("{}"));
+    let name = get_object_name(
+        &harness.logger,
+        &payload("chatcmpl-1", None),
+        "",
+        &IndexMap::new(),
+    )
+    .expect("the name builds");
+    assert_eq!(name, "2024-03-09/");
+}
+
+#[tokio::test]
 async fn a_failure_payload_is_named_after_a_fresh_uuid() {
     let harness = open(&[], Some("bucket"), Answer::ok("{}"));
     let name = get_object_name(
