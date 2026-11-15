@@ -1,0 +1,60 @@
+use betterlite_models::decisions::Json;
+
+use crate::identity::{AgentIdentityFailure, FailureCode};
+
+use super::AgentIdentityStore;
+use super::records::MICROSOFT_ENTRA_PROVIDER;
+
+mod tests;
+
+impl AgentIdentityStore {
+    pub(super) async fn bound_agent_id(
+        &self,
+        tenant_id: &str,
+        client_id: &str,
+    ) -> Result<Option<String>, AgentIdentityFailure> {
+        let Ok(encoded) = serde_json::to_string(&(tenant_id, client_id)) else {
+            return Err(AgentIdentityFailure {
+                code: FailureCode::PolicyUnavailable,
+                message: String::from("Agent identity could not be loaded"),
+            });
+        };
+        let cache_key = format!("agent_identity:{encoded}");
+        if let Some(cached) = self.cached_agent_id(&cache_key).await {
+            return Ok(Some(cached));
+        }
+        let row = self
+            .identities
+            .find_unique(MICROSOFT_ENTRA_PROVIDER, tenant_id, client_id)
+            .await
+            .map_err(|_source| AgentIdentityFailure {
+                code: FailureCode::PolicyUnavailable,
+                message: String::from("Agent identity could not be loaded"),
+            })?;
+        let Some(row) = row else {
+            self.unbound_client(tenant_id, client_id).await?;
+            return Ok(None);
+        };
+        self.remember_agent_id(&cache_key, &row.agent_id).await;
+        Ok(Some(row.agent_id))
+    }
+
+    async fn cached_agent_id(&self, cache_key: &str) -> Option<String> {
+        let cache = self.cache.as_ref()?;
+        let cached = cache.read(cache_key).await?;
+        match cached {
+            Json::Text(agent_id) => Some(agent_id),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
+        }
+    }
+
+    async fn remember_agent_id(&self, cache_key: &str, agent_id: &str) {
+        let Some(cache) = self.cache.as_ref() else {
+            return;
+        };
+        let ttl = cache.management_ttl();
+        cache
+            .write(cache_key, &Json::Text(agent_id.to_owned()), ttl)
+            .await;
+    }
+}
