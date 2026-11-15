@@ -329,7 +329,8 @@ fn decoded_kind(text: &str) -> Nullable {
         | SdkResult::BetaConfig { .. }
         | SdkResult::MessagesHeaderStream { .. }
         | SdkResult::MessagesStreamLogging { .. }
-        | SdkResult::MessagesNativeStream { .. } => None,
+        | SdkResult::MessagesNativeStream { .. }
+        | SdkResult::ResponsesAgenticContinuation { .. } => None,
     }
 }
 
