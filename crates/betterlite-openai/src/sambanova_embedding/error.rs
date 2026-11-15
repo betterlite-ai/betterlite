@@ -1,10 +1,7 @@
 use thiserror::Error;
 
-use crate::error::{ErrorRequest, ErrorResponse, ProviderError};
+use crate::error::{ProviderError, ProviderErrorParts};
 use crate::openai_base_config::Headers;
-
-const REQUEST_METHOD: &str = "POST";
-const REQUEST_URL: &str = "https://docs.litellm.ai/docs";
 
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
@@ -14,24 +11,18 @@ pub struct SambaNovaError {
     pub headers: Headers,
 }
 
+// BaseLLMException fills an absent request with a POST to the docs page and a response with the same status
 impl From<SambaNovaError> for ProviderError {
     fn from(error: SambaNovaError) -> Self {
-        let request = ErrorRequest {
-            method: REQUEST_METHOD.to_owned(),
-            url: REQUEST_URL.to_owned(),
-        };
-        Self {
+        Self::from(ProviderErrorParts {
             status_code: error.status_code,
-            status_code_is_synthesized: false,
             message: error.message,
             headers: Some(error.headers.into_iter().collect()),
-            response: ErrorResponse {
-                status_code: error.status_code,
-                request: request.clone(),
-            },
-            request,
+            request: None,
+            response: None,
             body: None,
-        }
+            status_code_is_synthesized: false,
+        })
     }
 }
 
