@@ -132,7 +132,7 @@ pub(crate) async fn credential_missing_name(_case: &Case) {
 pub(crate) async fn model_raw_write_before_publication(case: &Case) {
     let journal = Journal::default();
     let sql = "SELECT 1 FROM \"LiteLLM_ProxyModelTable\" WHERE model_name = 'observed-model'";
-    let publish = observing_publisher(&journal, &case.writer, sql.to_owned());
+    let publish = observing_publisher(&journal, &case.writer, sql);
     let repository = ModelRepository::new(Some(case.client()), publish, None, cipher());
     let created = repository
         .table()
@@ -175,8 +175,7 @@ pub(crate) async fn credential_write_before_publication(case: &Case) {
     let publish = observing_publisher(
         &journal,
         &case.writer,
-        "SELECT 1 FROM \"LiteLLM_CredentialsTable\" WHERE credential_name = 'cred-observed'"
-            .to_owned(),
+        "SELECT 1 FROM \"LiteLLM_CredentialsTable\" WHERE credential_name = 'cred-observed'",
     );
     let repository = CredentialsRepository::new(Some(case.client()), publish);
     repository

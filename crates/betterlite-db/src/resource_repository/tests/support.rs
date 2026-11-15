@@ -195,19 +195,20 @@ pub(crate) fn failing_publisher(message: &'static str) -> PublishChange<TableErr
 pub(crate) fn observing_publisher(
     journal: &Journal,
     store: &PostgresStore,
-    sql: String,
+    sql: &str,
 ) -> PublishChange<TableError> {
     let entries = journal.clone();
     let pool = store.clone();
+    let query = sql.to_owned();
     Arc::new(move |object_type: &str| {
         let task_entries = entries.clone();
         let task_pool = pool.clone();
         let name = object_type.to_owned();
-        let query = sql.clone();
+        let task_query = query.clone();
         let future: PublishFuture<TableError> = Box::pin(async move {
             let client = task_pool.session().await?;
             let row = client
-                .query_opt(&query, &[])
+                .query_opt(&task_query, &[])
                 .await
                 .map_err(|source| TableError::Database(backend(source)))?;
             task_entries.record(&format!("publish:{name}:visible={}", row.is_some()));

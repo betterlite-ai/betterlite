@@ -244,13 +244,16 @@ async fn budget_b700_actions(case: &Case) {
         .await
         .unwrap();
     assert_eq!(one.len(), 1);
-    let no_data = ();
-    let update = KeyAction::Update(&no_data);
     let update_key = Key {
         column: KeyColumn::Id,
         value: &"budget-one",
     };
-    assert!(b700.by_key(update, update_key).await.unwrap().is_some());
+    assert!(
+        b700.by_key(KeyAction::Update(&()), update_key)
+            .await
+            .unwrap()
+            .is_some()
+    );
     let delete_key = Key {
         column: KeyColumn::Id,
         value: &"budget-two",
