@@ -40,9 +40,11 @@ pub(crate) struct Call {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    MarengoTextInput(Call),
+    #[serde(rename = "marengo_text_input")]
+    MarengoText(Call),
     MarengoS3VideoOwner(Call),
-    MarengoImageInput(Call),
+    #[serde(rename = "marengo_image_input")]
+    MarengoImage(Call),
     MarengoAsyncOutputWrapper(Call),
     MarengoSegmentsVectorList(Call),
     MarengoBilledUnits(Call),
@@ -66,9 +68,9 @@ impl Helper for Op {
                 "supported": supported_openai_params(Some(&call.model)),
                 "enabled": drop_params_enabled(policy(call)),
             })),
-            Input::MarengoTextInput(call)
+            Input::MarengoText(call)
             | Input::MarengoS3VideoOwner(call)
-            | Input::MarengoImageInput(call)
+            | Input::MarengoImage(call)
             | Input::MarengoAsyncOutputWrapper(call)
             | Input::MarengoSegmentsVectorList(call)
             | Input::MarengoBilledUnits(call) => {
@@ -128,7 +130,10 @@ fn async_reply(call: &Call) -> Option<&Field> {
     })
 }
 
-fn parse_all<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, Failure> {
+fn parse_all<T>(values: &[Value]) -> Result<Vec<T>, Failure>
+where
+    T: DeserializeOwned,
+{
     values
         .iter()
         .cloned()
@@ -138,21 +143,18 @@ fn parse_all<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, Failure> {
 }
 
 fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
-    let response: MarengoEmbeddingResponse = match async_reply(call) {
-        Some(reply) => {
-            let reply_json = serde_json::to_value(reply)?;
-            let parsed: Params = serde_json::from_value(reply_json)?;
-            transform_async_response(&parsed, &call.model)
-        }
-        None => {
-            let replies = call.replies.iter().take(call.input.len());
-            let encoded: Vec<Value> = replies
-                .map(serde_json::to_value)
-                .collect::<Result<_, serde_json::Error>>()?;
-            let responses: Vec<MarengoInvokeResponse> = parse_all(&encoded)?;
-            let batch = batch_value(call, requests)?;
-            transform_response(&responses, &call.model, Some(&batch))?
-        }
+    let response: MarengoEmbeddingResponse = if let Some(reply) = async_reply(call) {
+        let reply_json = serde_json::to_value(reply)?;
+        let parsed: Params = serde_json::from_value(reply_json)?;
+        transform_async_response(&parsed, &call.model)
+    } else {
+        let replies = call.replies.iter().take(call.input.len());
+        let encoded: Vec<Value> = replies
+            .map(serde_json::to_value)
+            .collect::<Result<_, serde_json::Error>>()?;
+        let responses: Vec<MarengoInvokeResponse> = parse_all(&encoded)?;
+        let batch = batch_value(call, requests)?;
+        transform_response(&responses, &call.model, Some(&batch))?
     };
     Ok(serde_json::to_value(response)?)
 }
