@@ -37,45 +37,44 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let cooldown = setting(
+            lookup,
+            COOLDOWN_VARIABLE,
+            DEFAULT_COOLDOWN_SECONDS,
+            ConfigError::InvalidInteger,
+        )?;
+        let escalation = setting(
+            lookup,
+            ESCALATION_VARIABLE,
+            DEFAULT_ESCALATION_THRESHOLD,
+            ConfigError::InvalidInteger,
+        )?;
+        let watchdog = setting(
+            lookup,
+            WATCHDOG_VARIABLE,
+            DEFAULT_WATCHDOG_SECONDS,
+            ConfigError::InvalidFloat,
+        )?;
+        let auth_timeout = setting(
+            lookup,
+            AUTH_TIMEOUT_VARIABLE,
+            DEFAULT_AUTH_TIMEOUT_SECONDS,
+            ConfigError::InvalidFloat,
+        )?;
+        let auth_lock = setting(
+            lookup,
+            AUTH_LOCK_VARIABLE,
+            DEFAULT_AUTH_LOCK_SECONDS,
+            ConfigError::InvalidFloat,
+        )?;
         Ok(ReconnectSettings {
-            cooldown: Duration::from_secs(integer(
-                lookup,
-                COOLDOWN_VARIABLE,
-                DEFAULT_COOLDOWN_SECONDS,
-                1,
-            )?),
-            escalation_threshold: integer(
-                lookup,
-                ESCALATION_VARIABLE,
-                DEFAULT_ESCALATION_THRESHOLD,
-                1,
-            )?,
-            watchdog_timeout: seconds(lookup, WATCHDOG_VARIABLE, DEFAULT_WATCHDOG_SECONDS, 1.0)?,
-            auth_timeout: seconds(
-                lookup,
-                AUTH_TIMEOUT_VARIABLE,
-                DEFAULT_AUTH_TIMEOUT_SECONDS,
-                0.5,
-            )?,
-            auth_lock_timeout: seconds(lookup, AUTH_LOCK_VARIABLE, DEFAULT_AUTH_LOCK_SECONDS, 0.0)?,
+            cooldown: Duration::from_secs(u64::try_from(cooldown).unwrap_or(1).max(1)),
+            escalation_threshold: u64::try_from(escalation).unwrap_or(1).max(1),
+            watchdog_timeout: lower_bounded(watchdog, 1.0),
+            auth_timeout: lower_bounded(auth_timeout, 0.5),
+            auth_lock_timeout: lower_bounded(auth_lock, 0.0),
         })
     }
-}
-
-fn integer<L>(lookup: &L, name: &str, default: i64, minimum: u64) -> Result<u64, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let value = setting(lookup, name, default, ConfigError::InvalidInteger)?;
-    Ok(u64::try_from(value).unwrap_or(minimum).max(minimum))
-}
-
-fn seconds<L>(lookup: &L, name: &str, default: f64, minimum: f64) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let value = setting(lookup, name, default, ConfigError::InvalidFloat)?;
-    Ok(lower_bounded(value, minimum))
 }
 
 fn setting<T, L>(
