@@ -112,12 +112,14 @@ impl Entry {
 }
 
 fn parse_unreachable_fallback(value: &str, path: &str) -> Result<UnreachableFallback, ConfigError> {
-    serde_json::from_value(serde_json::Value::String(value.to_lowercase())).map_err(|_source| {
-        ConfigError::InvalidScalar {
+    match value.to_lowercase().as_str() {
+        "fail_closed" => Ok(UnreachableFallback::FailClosed),
+        "fail_open" => Ok(UnreachableFallback::FailOpen),
+        _ => Err(ConfigError::InvalidScalar {
             path: path.to_owned(),
             value: false,
-        }
-    })
+        }),
+    }
 }
 
 mod tests;

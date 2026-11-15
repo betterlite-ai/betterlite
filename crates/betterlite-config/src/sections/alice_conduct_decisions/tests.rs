@@ -147,6 +147,22 @@ guardrails:
 }
 
 #[test]
+fn alice_conduct_decisions_accepts_an_explicit_fail_closed_fallback() {
+    let yaml = r"
+guardrails:
+  - guardrail_name: alice-check
+    litellm_params:
+      guardrail: alice
+      unreachable_fallback: fail_closed
+";
+    let settings = settings_from(yaml, &[]);
+    assert_eq!(
+        settings.guardrails[0].unreachable_fallback,
+        UnreachableFallback::FailClosed
+    );
+}
+
+#[test]
 fn alice_conduct_decisions_rejects_an_unknown_fallback_value() {
     let yaml = r"
 guardrails:
@@ -162,8 +178,10 @@ guardrails:
     assert!(
         matches!(
             error,
-            ConfigError::InvalidScalar { ref path, .. }
-                if path == "guardrails.0.litellm_params.unreachable_fallback"
+            ConfigError::InvalidScalar {
+                ref path,
+                value: false,
+            } if path == "guardrails.0.litellm_params.unreachable_fallback"
         ),
         "{error:?}"
     );
