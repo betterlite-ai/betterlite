@@ -178,38 +178,29 @@ def frames_document(frames: tuple[str | bytes, ...]) -> Json:
     return _JSON.validate_python(documents)
 
 
-def message_frames(
-    config: transformation.MetaRealtimeConfig, message: str, model: str
-) -> Json:
-    try:
-        frames = config.transform_realtime_request(message, model)
-    except ValueError:
-        return None
-    return frames_document(frames)
-
-
-def header_document(
-    config: transformation.MetaRealtimeConfig, input_value: RequestInput
-) -> Json:
-    try:
-        headers = config.validate_environment(
-            input_value["headers"], input_value["model"], input_value["api_key"]
-        )
-    except ValueError:
-        return None
-    return _JSON.validate_python(headers)
-
-
 def request(input_value: RequestInput) -> Json:
     config = transformation.MetaRealtimeConfig()
     env_api_key = input_value["env_api_key"]
     if env_api_key is not None:
         os.environ["META_API_KEY"] = env_api_key
-    headers: Json = header_document(config, input_value)
-    frames: list[Json] = [
-        message_frames(config, message, input_value["model"])
-        for message in input_value["messages"]
-    ]
+    try:
+        headers: Json = _JSON.validate_python(
+            config.validate_environment(
+                input_value["headers"], input_value["model"], input_value["api_key"]
+            )
+        )
+    except ValueError:
+        headers = None
+    frames: list[Json] = []
+    for message in input_value["messages"]:
+        try:
+            frames.append(
+                frames_document(
+                    config.transform_realtime_request(message, input_value["model"])
+                )
+            )
+        except ValueError:
+            frames.append(None)
     setup = [config.is_setup_message(message) for message in input_value["setup_messages"]]
     usage: Json = _JSON.validate_python(
         config.unbilled_usage_on_session_close(input_value["model"])
@@ -234,16 +225,6 @@ def pacing(input_value: PacingInput) -> Json:
     return _JSON.validate_python(document)
 
 
-def event_frame(
-    transformer: transformation.MuseEventTransformer, frame: dict[str, Json]
-) -> Json:
-    try:
-        events = _JSON.validate_python(list(transformer.transform(frame)))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2076-L2079
-    except ValueError:
-        return None
-    return events
-
-
 def events(input_value: EventsInput) -> Json:
     transformer = transformation.MuseEventTransformer()
     transformer.configure(
@@ -254,7 +235,13 @@ def events(input_value: EventsInput) -> Json:
             language_bias=(),
         )
     )
-    frames: list[Json] = [event_frame(transformer, frame) for frame in input_value["frames"]]
+    frames: list[Json] = []
+    for frame in input_value["frames"]:
+        try:
+            produced = _JSON.validate_python(list(transformer.transform(frame)))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L2076-L2079
+        except ValueError:
+            produced = None
+        frames.append(produced)
     usage: Json = _JSON.validate_python(transformer.take_unbilled_usage())
     document: Json = {"events": frames, "usage": usage}
     return normalized(document)

@@ -65,6 +65,7 @@ pub(crate) fn request(fields: &RequestInput) -> HelperResult {
         })
         .collect();
     let setup: Vec<bool> = fields.setup_messages.iter().map(is_setup_message).collect();
+    // ast-grep-ignore: no-long-names
     let usage = json!(config.unbilled_usage_on_session_close(&fields.model));
     Ok(json!({
         "headers": header_document,
