@@ -264,7 +264,7 @@ fn stable_diffusion_mapping_overwrites_the_image_size_destination() {
     let optional = params(&[("image_size", text("square"))]);
     let mapped =
         map_openai_params(&non_default, optional, MODEL, false).expect("an overwritten image size");
-    assert_eq!(mapped, params(&[("image_size", size(1024, 768))]));
+    assert_eq!(mapped, params(&[("image_size", text("landscape_4_3"))]));
 }
 
 #[test]

@@ -121,9 +121,9 @@ fn ideogram_size_aliases_are_presets(#[case] requested: &str, #[case] preset: &s
 }
 
 #[rstest]
-#[case::spaces(" 1024x1024 ", "square_hd")]
-#[case::tabs("\t768x1024\n", "portrait_4_3")]
-#[case::no_break_space("\u{a0}1536x1024\u{a0}", "landscape_16_9")]
+#[case::spaces(" 1024x1024 ", text("square_hd"))]
+#[case::tabs("\t768x1024\n", text("portrait_4_3"))]
+#[case::no_break_space("\u{a0}1536x1024\u{a0}", text("landscape_16_9"))]
 #[case::padded_dimensions(" 576x1024 ", size(576, 1024))]
 fn ideogram_size_trims_before_mapping(#[case] requested: &str, #[case] expected: Json) {
     assert_eq!(map_image_size(&text(requested)), expected);
@@ -278,7 +278,7 @@ fn ideogram_mapping_overwrites_a_destination_the_input_does_not_name() {
     let optional = params(&[("image_size", text("square"))]);
     let mapped = map_openai_params(&non_default, optional, "fal-ai/ideogram/v3", false)
         .expect("an overwritten destination");
-    assert_eq!(mapped, params(&[("image_size", size(1024, 768))]));
+    assert_eq!(mapped, params(&[("image_size", text("landscape_4_3"))]));
 }
 
 #[test]
@@ -291,7 +291,7 @@ fn ideogram_mapping_treats_a_destination_added_earlier_as_present() {
         false,
     )
     .expect("a destination the earlier key supplied");
-    assert_eq!(mapped, params(&[("image_size", size(1024, 768))]));
+    assert_eq!(mapped, params(&[("image_size", text("landscape_4_3"))]));
 }
 
 #[test]
@@ -391,10 +391,15 @@ fn ideogram_reply_requires_an_image_list(#[case] body: &str) {
 #[case::empty_object(r#"{"images": [{}]}"#)]
 #[case::null_entry(r#"{"images": [null]}"#)]
 #[case::null_url(r#"{"images": [{"url": null}]}"#)]
-#[case::text_entry(r#"{"images": ["https://a.test/1.png"]}"#)]
 fn ideogram_reply_keeps_a_missing_url_as_a_null_url(#[case] body: &str) {
     let (appended, _) = transformed(body);
     assert_eq!(appended.data, Some(vec![image(None, None, None)]));
+}
+
+#[test]
+fn ideogram_reply_takes_a_text_member_as_the_url() {
+    let (appended, _) = transformed(r#"{"images": ["https://a.test/1.png"]}"#);
+    assert_eq!(appended.data, Some(vec![url_image("https://a.test/1.png")]));
 }
 
 #[rstest]
