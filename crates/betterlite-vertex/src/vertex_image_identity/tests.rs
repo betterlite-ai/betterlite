@@ -8,7 +8,7 @@ use std::time::SystemTime;
 
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use super::error::ImageIdentityError;
 use super::settings::{
@@ -366,60 +366,14 @@ fn a_required_project_or_location_that_is_absent_or_empty_is_one_error() {
         complete_url(&missing, &target),
         Err(ImageIdentityError::MissingTarget)
     ));
-    let project_only = ImageIdentitySettings {
-        instance: ImageInstance {
-            project: None,
-            location: None,
-            credentials: None,
-        },
-        environment: ImageEnvironment {
-            project: None,
-            location: None,
-            legacy_location: None,
-            credentials: None,
-            application_credentials: None,
-        },
-        module: ImageModule {
-            project: Some("proj".to_owned()),
-            location: None,
-            credentials: None,
-        },
-        secrets: ImageSecrets {
-            project: None,
-            location: None,
-            legacy_location: None,
-            credentials: None,
-        },
-    };
+    let mut project_only = target_settings();
+    project_only.module.location = None;
     assert!(matches!(
         complete_url(&project_only, &target),
         Err(ImageIdentityError::MissingTarget)
     ));
-    let empty_project = ImageIdentitySettings {
-        instance: ImageInstance {
-            project: None,
-            location: None,
-            credentials: None,
-        },
-        environment: ImageEnvironment {
-            project: None,
-            location: None,
-            legacy_location: None,
-            credentials: None,
-            application_credentials: None,
-        },
-        module: ImageModule {
-            project: Some(String::new()),
-            location: Some("us-central1".to_owned()),
-            credentials: None,
-        },
-        secrets: ImageSecrets {
-            project: None,
-            location: None,
-            legacy_location: None,
-            credentials: None,
-        },
-    };
+    let mut empty_project = target_settings();
+    empty_project.module.project = Some(String::new());
     assert!(matches!(
         complete_url(&empty_project, &target),
         Err(ImageIdentityError::MissingTarget)
@@ -556,7 +510,7 @@ async fn a_custom_base_skips_credentials_and_returns_the_callers_headers() {
     assert_eq!(
         resolved
             .get("x-goog-user-project")
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("billing")
     );
     assert!(asked.lock().expect("the record is not poisoned").is_empty());
@@ -579,7 +533,7 @@ async fn an_empty_parameter_base_alone_is_the_same_as_no_base() {
     assert_eq!(
         resolved
             .get("Authorization")
-            .map(|value| value.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("Bearer vertex-token")
     );
     assert_eq!(asked.lock().expect("the record is not poisoned").len(), 1);
@@ -613,60 +567,34 @@ async fn the_normal_path_mints_a_token_for_the_resolved_project_and_credentials(
         params_api_base: None,
         headers: &headers,
     };
-    let settings = ImageIdentitySettings {
-        instance: ImageInstance {
-            project: None,
-            location: None,
-            credentials: None,
-        },
-        environment: ImageEnvironment {
-            project: Some("env-project".to_owned()),
-            location: None,
-            legacy_location: None,
-            credentials: Some(credential("env-credentials")),
-            application_credentials: None,
-        },
-        module: ImageModule {
-            project: None,
-            location: None,
-            credentials: None,
-        },
-        secrets: ImageSecrets {
-            project: None,
-            location: None,
-            legacy_location: None,
-            credentials: None,
-        },
-    };
+    let mut settings = target_settings();
+    settings.environment.credentials = Some(credential("env-credentials"));
     let resolved = validate_environment(&cache, &settings, &request)
         .await
         .expect("the executor answers a token");
     assert_eq!(
-        resolved
-            .get("Content-Type")
-            .map(|value| value.expose_secret()),
-        Some("application/json")
-    );
-    assert_eq!(
-        resolved
-            .get("Authorization")
-            .map(|value| value.expose_secret()),
-        Some("Bearer vertex-token")
-    );
-    assert_eq!(
-        resolved
-            .get("x-goog-user-project")
-            .map(|value| value.expose_secret()),
-        Some("billing")
+        (
+            resolved
+                .get("Content-Type")
+                .map(ExposeSecret::expose_secret),
+            resolved
+                .get("Authorization")
+                .map(ExposeSecret::expose_secret),
+            resolved
+                .get("x-goog-user-project")
+                .map(ExposeSecret::expose_secret),
+        ),
+        (
+            Some("application/json"),
+            Some("Bearer vertex-token"),
+            Some("billing")
+        )
     );
     let recorded = asked.lock().expect("the record is not poisoned");
     assert_eq!(recorded.len(), 1);
     assert_eq!(
         recorded[0],
-        (
-            Some("env-credentials".to_owned()),
-            Some("env-project".to_owned())
-        )
+        (Some("env-credentials".to_owned()), Some("proj".to_owned()))
     );
 }
 

@@ -56,18 +56,9 @@ pub fn map_openai_params(
             "imageSize" | "image_size" => {
                 mapped.insert("imageSize".to_owned(), value.clone());
             }
-            "imageConfig" => match value {
-                Json::Object(config) => {
-                    mapped.insert("imageConfig".to_owned(), Json::Object(config.clone()));
-                }
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-                    warnings = warnings.saturating_add(1);
-                    tracing::warn!(
-                        "imageConfig must be a dict, got {} — ignoring.",
-                        value_type_name(value)
-                    );
-                }
-            },
+            "imageConfig" => {
+                warnings = warnings.saturating_add(keep_image_config(value, &mut mapped));
+            }
             // tools and web_search_options belong to the tools mapping below, which reads them itself
             _ => {}
         }
@@ -75,6 +66,23 @@ pub fn map_openai_params(
     let params = map_gemini_image_tools_params(non_default_params, &mapped, settings)
         .map_err(GeminiImageError::Policy)?;
     Ok(MappedOptions { params, warnings })
+}
+
+// a non-object imageConfig is dropped with LiteLLM's warning, and the return value counts it
+fn keep_image_config(value: &Json, mapped: &mut Object) -> usize {
+    match value {
+        Json::Object(config) => {
+            mapped.insert("imageConfig".to_owned(), Json::Object(config.clone()));
+            0
+        }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            tracing::warn!(
+                "imageConfig must be a dict, got {} \u{2014} ignoring.",
+                value_type_name(value)
+            );
+            1
+        }
+    }
 }
 
 // %s in LiteLLM's warning is type(v).__name__

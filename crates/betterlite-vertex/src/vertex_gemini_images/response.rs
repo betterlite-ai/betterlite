@@ -50,6 +50,27 @@ pub fn transform_image_generation_response(
 ) -> Result<ImageGenerationResponse, GeminiImageError> {
     let decoded = decode_google_image(reply)?;
     let candidates = decoded.candidates.as_deref().unwrap_or_default();
+    let data = generated_images(candidates);
+    // absent or empty usage leaves usage away, and only a present usage takes the search count
+    let usage_metadata = decoded
+        .usage_metadata
+        .as_deref()
+        .map(decode_image_usage)
+        .transpose()?
+        .flatten();
+    let usage = match usage_metadata {
+        Some(metadata) => Some(ImageGenerationUsage {
+            // ast-grep-ignore: no-long-names
+            usage: transform_image_generation_usage(&metadata)?,
+            web_search_requests: web_search_requests(candidates),
+        }),
+        None => None,
+    };
+    Ok(ImageGenerationResponse { data, usage })
+}
+
+// every part carrying inlineData.data is an image, whatever its MIME type
+fn generated_images(candidates: &[GoogleImageCandidate]) -> Vec<GeneratedImage> {
     let mut data = Vec::new();
     for candidate in candidates {
         let Some(content) = &candidate.content else {
@@ -77,22 +98,7 @@ pub fn transform_image_generation_response(
             });
         }
     }
-    // absent or empty usage leaves usage away, and only a present usage takes the search count
-    let usage_metadata = decoded
-        .usage_metadata
-        .as_deref()
-        .map(decode_image_usage)
-        .transpose()?
-        .flatten();
-    let usage = match usage_metadata {
-        Some(metadata) => Some(ImageGenerationUsage {
-            // ast-grep-ignore: no-long-names
-            usage: transform_image_generation_usage(&metadata)?,
-            web_search_requests: web_search_requests(candidates),
-        }),
-        None => None,
-    };
-    Ok(ImageGenerationResponse { data, usage })
+    data
 }
 
 // ast-grep-ignore: no-long-names

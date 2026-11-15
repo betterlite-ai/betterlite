@@ -92,9 +92,9 @@ fn a_known_size_asks_for_its_aspect_ratio_and_an_unknown_one_for_a_square() {
 
 #[test]
 fn a_mapped_key_never_overrides_a_given_optional_param() {
-    let mapped = map_openai_params(&object(r#"{"n":2}"#), &object(r#"{"n":5}"#), &settings())
+    let given = map_openai_params(&object(r#"{"n":2}"#), &object(r#"{"n":5}"#), &settings())
         .expect("the given value wins");
-    assert_eq!(wrapped(&mapped.params), json_value("{}"));
+    assert_eq!(wrapped(&given.params), json_value("{}"));
     let mapped = map_openai_params(&object(r#"{"n":2}"#), &object("{}"), &settings())
         .expect("n maps to candidate_count");
     assert_eq!(
@@ -360,8 +360,8 @@ fn a_token_count_that_is_not_an_integer_names_the_field() {
     ))
     .expect_err("a string is not a count");
     assert!(matches!(
-        error,
-        GeminiImageError::Shape { ref path, .. } if path == "promptTokenCount"
+        &error,
+        GeminiImageError::Shape { path, .. } if path == "promptTokenCount"
     ));
 }
 
@@ -418,16 +418,16 @@ fn a_body_that_is_not_json_keeps_the_upstream_status_and_headers() {
 fn an_array_root_or_a_non_list_candidates_names_its_shape() {
     let error = decode_google_image(&reply("[]")).expect_err("an array is not a reply object");
     assert!(matches!(
-        error,
-        GeminiImageError::Shape { ref path, .. } if path == "the document root"
+        &error,
+        GeminiImageError::Shape { path, .. } if path == "the document root"
     ));
-    let error = decode_google_image(&reply(r#"{"candidates": {}}"#))
+    let list_error = decode_google_image(&reply(r#"{"candidates": {}}"#))
         .expect_err("candidates must be a list");
     assert!(matches!(
-        error,
-        GeminiImageError::Shape { ref path, .. } if path == "candidates"
+        &list_error,
+        GeminiImageError::Shape { path, .. } if path == "candidates"
     ));
-    assert!(error.upstream_answer().is_none());
+    assert!(list_error.upstream_answer().is_none());
 }
 
 #[test]
