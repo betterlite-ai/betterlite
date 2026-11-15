@@ -1,0 +1,29 @@
+{
+  "kind": "helper",
+  "name": "token-exchange-transport-failure",
+  "call": {
+    "b4665": {
+      "config": {
+        "token_exchange_endpoint": "https://idp.example.com/token",
+        "client_id": "cid",
+        "client_secret": "csec"
+      },
+      "steps": [
+        {
+          "op": "exchange",
+          "subject_token": "caller-jwt",
+          "now_ms": 1000000,
+          "responses": [
+            {
+              "kind": "transport"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
