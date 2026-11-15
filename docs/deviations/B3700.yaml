@@ -1,0 +1,57 @@
+task: B3700
+deviations:
+  - what: >-
+      A streamed choice's buffer is trimmed even when an exception phrase or an
+      unfinished conditional sentence would leave it, so the buffer stays near two
+      context lengths. The dropped phrases travel as per-choice state and keep
+      suppressing category matches. The open sentence, as its own text, and the dropped
+      prefix's first matching conditional, phrase pattern and category keyword travel
+      too, but only while the cut is one LiteLLM's own check would defer. On a cut
+      LiteLLM commits the carry is cleared, so a match the trimmed buffer no longer
+      holds never wins over one it does, and the yielded chunks stay what LiteLLM's own
+      stream gives while the recorded detections stay what an untrimmed whole-buffer
+      scan records.
+    why: >-
+      LiteLLM defers the trim while a phrase sits outside the tail or a conditional
+      word sits in the sentence the cut splits. Once either is more than one context
+      behind the end it never re-enters the tail, so the deferral lasts for the rest of
+      the stream, the buffer holds the whole response and every chunk rescans it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1981-L1989
+  - what: >-
+      The open sentence carried past a trim keeps at most two context lengths of text.
+      A bound that lands inside a word moves forward to the next non-word character, or
+      stays when the rest of the sentence has no word break, so the carried text starts
+      inside a word only in that case. A conditional identifier or block word further
+      than two contexts behind the cut no longer pairs with text that arrives later in
+      the same sentence, so its detection is missing where LiteLLM's untrimmed buffer
+      still holds it.
+    why: >-
+      Carrying the whole sentence would leave the per-choice state growing with the
+      response, which this trim exists to prevent. Two contexts keep the carried text
+      near the size of the buffer the next scans rescan. Starting the carried text on a
+      word boundary stops its first character from turning the tail of a longer word into
+      a whole block word, which would block where LiteLLM's real sentence matches
+      nothing; dropping that text instead would lose the identifier matches its substring
+      check still finds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1991-L2026
+  - what: >-
+      The guardrail record's derived policy_template lists the category descriptions in
+      sorted category-name order, not in the order the categories appear in the
+      configuration.
+    why: >-
+      The content category loader keeps the loaded categories in a name-keyed map, so
+      the configuration order is gone when the record template is built. A configuration
+      whose category order is not the sorted order gets its descriptions joined in a
+      different order than LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1598-L1603
+  - what: >-
+      The guardrail record lists a choice's detections in whole-buffer scan order:
+      category checks, then patterns in config order, then blocked words in config
+      order. LiteLLM lists the detections its trim committed before the ones the latest
+      scan found, so its order follows the trim history.
+    why: >-
+      Betterlite trims in cases where LiteLLM defers, so a blocked word or pattern can
+      sit in committed detections while an earlier pattern is still in the latest scan.
+      Whole-buffer order is the order the untrimmed reference scan gives, and it is what
+      LiteLLM itself records whenever its trim deferred.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1414-L1427
