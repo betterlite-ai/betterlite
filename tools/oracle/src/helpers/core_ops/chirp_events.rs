@@ -152,7 +152,7 @@ fn sessions(expected_model: &str, payloads: &[String]) -> HelperResult {
 impl FrameInput {
     fn event(&self) -> ChirpBackendEvent {
         match self {
-            FrameInput::Response {
+            Self::Response {
                 speech_event,
                 results,
                 billed_seconds,
@@ -167,9 +167,9 @@ impl FrameInput {
                     .collect(),
                 billed_seconds: *billed_seconds,
             }),
-            FrameInput::Configured => ChirpBackendEvent::Configured,
-            FrameInput::TurnFinished => ChirpBackendEvent::TurnFinished,
-            FrameInput::TurnDiscarded { billed_seconds } => {
+            Self::Configured => ChirpBackendEvent::Configured,
+            Self::TurnFinished => ChirpBackendEvent::TurnFinished,
+            Self::TurnDiscarded { billed_seconds } => {
                 ChirpBackendEvent::TurnDiscarded(ChirpTurnDiscarded {
                     billed_seconds: *billed_seconds,
                 })
