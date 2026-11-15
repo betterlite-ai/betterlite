@@ -1,0 +1,15 @@
+kind: helper
+name: promptguard-error-open
+call:
+  b8211:
+    api_key: test-key
+    block_on_error: false
+    input_type: request
+    inputs:
+      texts: ["Hello there"]
+    answer:
+      status: 500
+      headers: {}
+      body: {error: boom}
+env: {}
+compare: {ignore: []}
