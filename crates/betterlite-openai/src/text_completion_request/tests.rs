@@ -203,26 +203,23 @@ fn stream_true_is_kept_out_of_the_provider_params_and_an_explicit_false_is_forwa
     assert!(!params.contains_key("stream"));
 
     let answered = parsed(r#"{"model":"m","prompt":"x","stream":false}"#);
-    let params = answered.optional_params().expect("optional params");
-    assert_eq!(params.get("stream"), Some(&Value::from(false)));
+    let forwarded = answered.optional_params().expect("optional params");
+    assert_eq!(forwarded.get("stream"), Some(&Value::from(false)));
 }
 
 // the text config lists these as supported, so betterlite forwards them and the provider decides
-#[test]
-fn the_sdk_rejected_parameters_are_forwarded() {
+#[rstest]
+#[case::response_format("response_format")]
+#[case::functions("functions")]
+#[case::function_call("function_call")]
+#[case::tools("tools")]
+#[case::tool_choice("tool_choice")]
+fn the_sdk_rejected_parameters_are_forwarded(#[case] name: &str) {
     let request = parsed(
         r#"{"model":"m","prompt":"x","response_format":{"type":"json_object"},"functions":[],"function_call":"none","tools":[],"tool_choice":"auto"}"#,
     );
     let params = request.optional_params().expect("optional params");
-    for name in [
-        "response_format",
-        "functions",
-        "function_call",
-        "tools",
-        "tool_choice",
-    ] {
-        assert!(params.contains_key(name), "{name} dropped");
-    }
+    assert!(params.contains_key(name), "{name} dropped");
 }
 
 #[rstest]

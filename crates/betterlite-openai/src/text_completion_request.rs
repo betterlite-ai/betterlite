@@ -64,7 +64,7 @@ pub enum PromptRefusal {
 }
 
 // a refused prompt keeps the array the client sent, under the shape its dispatch reached
-fn refused(shape: PromptRefusal, items: Vec<Value>) -> CompletionPrompt {
+const fn refused(shape: PromptRefusal, items: Vec<Value>) -> CompletionPrompt {
     match shape {
         PromptRefusal::Unmapped => CompletionPrompt::Unmapped(Value::Array(items)),
         PromptRefusal::Unreadable => CompletionPrompt::Unreadable(Value::Array(items)),

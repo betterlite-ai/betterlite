@@ -2,7 +2,6 @@ use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::envelope::WireField;
 use betterlite_redact::secret::Redactor;
 
-use crate::text_completion_request::CompletionRequestError;
 use crate::text_completion_transport::error::{
     ErrorStatus, TextCompletionError, TextCompletionFailure,
 };
@@ -18,50 +17,37 @@ pub struct CompletionFailure {
     pub message: String,
 }
 
+pub(super) const INTERNAL_ERROR: &str = "internal_server_error";
+
 impl CompletionFailure {
-    const fn new(status: u16, error_type: Option<String>, message: String) -> Self {
+    pub(super) fn new(status: u16, error_type: Option<&str>, message: String) -> Self {
         Self {
             status,
-            error_type,
+            error_type: error_type.map(String::from),
             param: None,
             message,
         }
     }
 
-    pub(super) fn internal(message: String) -> Self {
-        Self::new(500, Some(String::from("internal_server_error")), message)
-    }
-
-    // main.py's own "Unmapped prompt format" Exception reaches the client as an APIConnectionError, whose type is null
-    pub(super) const fn unmapped(message: String) -> Self {
-        Self::new(500, None, message)
-    }
-
     pub(super) fn route(route: &CompletionRoute) -> Self {
         match route {
-            CompletionRoute::Text { .. } => Self::internal(String::from(
-                "betterlite does not serve this completion deployment yet",
-            )),
+            CompletionRoute::Text { .. } => Self::new(
+                500,
+                Some(INTERNAL_ERROR),
+                String::from("betterlite does not serve this completion deployment yet"),
+            ),
             CompletionRoute::Chat { .. } => Self::new(
                 500,
-                Some(String::from("internal_server_error")),
+                Some(INTERNAL_ERROR),
                 String::from("betterlite does not serve chat-model text completions yet"),
             ),
             CompletionRoute::Unsupported { provider } => Self::new(
                 501,
-                Some(String::from("internal_server_error")),
+                Some(INTERNAL_ERROR),
                 format!("betterlite does not serve text completions for {provider}"),
             ),
         }
     }
-}
-
-pub(super) fn request_failure(error: &CompletionRequestError) -> CompletionFailure {
-    CompletionFailure::new(
-        400,
-        Some(String::from("invalid_request_error")),
-        error.to_string(),
-    )
 }
 
 // The unwrapped SDK exception fails the way the route's own except does, with no type of its own

@@ -19,7 +19,7 @@ use crate::text_completion_transport::logging::CompletionLogger;
 use crate::text_completion_transport::{TextCompletionConfigs, TextCompletionTransport};
 
 use self::catalog::{CompletionCatalog, CompletionRoute, route_for};
-use self::failure::{CompletionFailure, request_failure, transport_failure};
+use self::failure::{CompletionFailure, INTERNAL_ERROR, transport_failure};
 use self::http::HttpCompletionConstructor;
 
 pub mod catalog;
@@ -30,6 +30,18 @@ mod tests;
 
 const MISSING_PROMPT: &str =
     "Unmapped prompt format. The prompt must be a string, a list of strings or token ids.";
+
+const INVALID_REQUEST_ERROR: &str = "invalid_request_error";
+
+const NO_STREAM: &str = "betterlite does not stream text completions yet";
+
+// main.py's text completion switch reaches these four provider tags, all sharing the one transform
+const TRANSFORMS: TextCompletionConfigs = TextCompletionConfigs {
+    open_ai: transform_completion_request,
+    fireworks_ai: transform_completion_request,
+    together_ai: transform_completion_request,
+    text_completion_inception: transform_completion_request,
+};
 
 pub struct CompletionAnswer {
     pub response: Box<CompletionResponse>,
@@ -63,33 +75,28 @@ impl CompletionExecutor {
                 authorization: deployment.credential(),
                 facts: Arc::clone(&facts),
             },
-            // the four provider tags main.py's text completion switch reaches, all sharing the one transform
-            configs: TextCompletionConfigs {
-                open_ai: transform_completion_request,
-                fireworks_ai: transform_completion_request,
-                together_ai: transform_completion_request,
-                text_completion_inception: transform_completion_request,
-            },
+            configs: TRANSFORMS,
             now: system_instant,
             next_id: Uuid::new_v4,
         };
         let outcome = drive(&transport, transport_request, redactor, logger).await?;
         let TextCompletionOutcome::Buffered(reply) = outcome else {
-            return Err(CompletionFailure::internal(String::from(
-                "betterlite does not stream text completions yet",
-            )));
+            return Err(CompletionFailure::new(
+                500,
+                Some(INTERNAL_ERROR),
+                NO_STREAM.to_owned(),
+            ));
         };
         let response =
             serde_json::from_value::<CompletionResponse>(reply.response).map_err(|source| {
-                CompletionFailure::internal(format!(
-                    "the provider completion could not be read: {source}"
-                ))
+                CompletionFailure::new(
+                    500,
+                    Some(INTERNAL_ERROR),
+                    format!("the provider completion could not be read: {source}"),
+                )
             })?;
-        let captured = facts
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take()
-            .unwrap_or_default();
+        let taken = facts.lock().unwrap_or_else(PoisonError::into_inner).take();
+        let captured = taken.unwrap_or_default();
         Ok(CompletionAnswer {
             response: Box::new(response),
             upstream_headers: captured.headers,
@@ -106,10 +113,12 @@ fn transport_request(
 ) -> Result<TransportRequest, CompletionFailure> {
     let Some(messages) = request.prompt.messages() else {
         let message = String::from(MISSING_PROMPT);
-        return Err(match request.prompt.refusal() {
-            Some(PromptRefusal::Unreadable) => CompletionFailure::internal(message),
-            Some(PromptRefusal::Unmapped) | None => CompletionFailure::unmapped(message),
-        });
+        // main.py's own "Unmapped prompt format" Exception reaches the client as an APIConnectionError, whose type is null
+        let error_type = match request.prompt.refusal() {
+            Some(PromptRefusal::Unreadable) => Some(INTERNAL_ERROR),
+            Some(PromptRefusal::Unmapped) | None => None,
+        };
+        return Err(CompletionFailure::new(500, error_type, message));
     };
     Ok(TransportRequest {
         model: Some(model.to_owned()),
@@ -120,9 +129,9 @@ fn transport_request(
         timeout: request.timeout.unwrap_or(deployment.timeout_seconds),
         // main.py's text dispatch leaves the handler's organization at None, so no openai-organization header is sent
         organization: None,
-        optional_params: request
-            .optional_params()
-            .map_err(|error| request_failure(&error))?,
+        optional_params: request.optional_params().map_err(|error| {
+            CompletionFailure::new(400, Some(INVALID_REQUEST_ERROR), error.to_string())
+        })?,
         headers: None,
         acompletion: true,
     })
