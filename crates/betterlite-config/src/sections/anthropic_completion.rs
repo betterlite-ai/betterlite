@@ -1,6 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
@@ -9,7 +9,7 @@ use crate::sections::Section;
 
 mod tests;
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
 pub struct OptionValues {
     pub max_tokens_to_sample: Option<i64>,
     pub stop_sequences: Option<Vec<String>>,
@@ -26,10 +26,9 @@ pub struct Settings {
 }
 
 #[derive(Debug, Default, Deserialize)]
+#[serde(default)]
 pub struct Raw {
-    #[serde(default)]
     model_list: Vec<RawDeployment>,
-    #[serde(default)]
     litellm_settings: RawValues,
 }
 
@@ -130,7 +129,8 @@ where
                     item @ Json::Null
                     | item @ Json::Bool(_)
                     | item @ Json::Number(_)
-                    | item @ Json::Text(_) => item,
+                    | item @ Json::Text(_)
+                    | item @ Json::List(_) => item,
                 });
             }
             Ok(Json::List(resolved))
@@ -140,9 +140,8 @@ where
 }
 
 fn integer(text: &str, path: &str) -> Result<i64, ConfigError> {
-    text.parse::<i64>()
-        .map_err(|source| ConfigError::InvalidInteger {
-            path: path.to_owned(),
-            source,
-        })
+    text.parse().map_err(|source| ConfigError::InvalidInteger {
+        path: path.to_owned(),
+        source,
+    })
 }
