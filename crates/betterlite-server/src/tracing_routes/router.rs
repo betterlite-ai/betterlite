@@ -7,6 +7,7 @@ use axum::http::{HeaderMap, StatusCode, Uri, header};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
+use betterlite_error::envelope::{ErrorObject, ErrorResponse, WireField};
 use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
@@ -137,13 +138,17 @@ async fn list_traces(
     }
 }
 
+// LiteLLM's auth_error carries param "None" rather than null, which WireField::MISSING serializes
 pub(crate) fn unauthenticated() -> Response {
-    json_error(
-        StatusCode::UNAUTHORIZED,
-        "the API key is not valid",
-        "auth_error",
-        "401",
-    )
+    let body = ErrorResponse {
+        error: ErrorObject {
+            message: "the API key is not valid".to_owned(),
+            error_type: WireField::Text("auth_error".to_owned()),
+            param: WireField::MISSING,
+            code: WireField::Text("401".to_owned()),
+        },
+    };
+    (StatusCode::UNAUTHORIZED, Json(body)).into_response()
 }
 
 pub(crate) fn access_failure(error: &AccessError) -> Response {

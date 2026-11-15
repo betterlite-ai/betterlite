@@ -133,7 +133,7 @@ async fn ingest_requires_an_authenticated_principal() {
     assert_eq!(answer.status, StatusCode::UNAUTHORIZED);
     assert_eq!(
         body_text(&answer),
-        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":null,"code":"401"}}"#
+        r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#
     );
 }
 
