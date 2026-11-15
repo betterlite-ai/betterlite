@@ -1,0 +1,12 @@
+kind: helper
+name: azure-drops-after-limit
+call:
+  batch_provider_list:
+    request:
+      provider: azure
+      after: cursor-after
+      limit: 25
+    litellm_settings: {}
+    environment: {}
+env: {}
+compare: {ignore: []}
