@@ -1,0 +1,40 @@
+kind: helper
+name: openai-video-identifiers-video-filename-mime
+call:
+  openai_video_identifiers:
+    calls:
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: bm90IHZpZGVv
+          position: 0
+          name: clip.webm
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: AAAAAAAAAAAAAGZ0eXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+          position: 0
+          name: clip.png
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: bm90IHZpZGVv
+          position: 0
+          name: clip.png
+      - op: video_file_tuple
+        fixture:
+          kind: bytes
+          data_base64: bm90IHZpZGVv
+      - op: video_file_tuple
+        fixture:
+          kind: text
+          value: a string
+      - op: video_file_tuple
+        fixture:
+          kind: buffered_reader
+          data_base64: bm90IHZpZGVv
+          position: 0
+          name: ''
+env: {}
+compare:
+  ignore: []

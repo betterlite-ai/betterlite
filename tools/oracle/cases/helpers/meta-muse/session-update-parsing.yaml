@@ -1,0 +1,39 @@
+kind: helper
+name: session-update-parsing
+call:
+  b6414:
+    function: session
+    expected_model: muse-voice-transcribe-1.0
+    access_token: Bearer session-token
+    session_id: sess_meta_1
+    payloads:
+      - '{"type":"session.update","session":{"type":"transcription","input_audio_format":"pcm16","input_audio_transcription":{"model":"muse-voice-transcribe-1.0","language":"es"}}}'
+      - '{"type":"transcription_session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000,"channels":1},"transcription":{"model":"meta/muse-voice-transcribe-1.0","language":"pt-BR"},"turn_detection":{"type":"server_vad"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"turn_detection":null}}}}'
+      - '{"type":"session.update","session":{"type":"realtime"}}'
+      - '{"type":"session.update","session":{"type":"assistant"}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{"model":"other-model"}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm24"}}'
+      - '{"type":"session.update","session":{"input_audio_format":null}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/opus"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","channels":2}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":8000}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":null,"channels":null}}}}}'
+      - '{"type":"session.update","session":{"turn_detection":{"type":"semantic_vad"}}}'
+      - '{"type":"session.update","session":{"turn_detection":{"type":null}}}'
+      - '{"type":"session.update","session":{"audio":null,"turn_detection":null}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"muse-voice-transcribe-1.0","prompt":"hello","temperature":0.5}}}}}'
+      - '{"type":"session.update","session":{}}'
+      - '{"type":"session.update","session":{"type":null,"input_audio_transcription":null,"turn_detection":null}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{},"audio":{"input":{"transcription":{}}}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16","audio":{"input":{"format":{"type":"audio/pcm"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":"pcm16"}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":10.5}}}}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":{"language":5}}}'
+      - '{"type":"session.update","session":{"input_audio_format":"pcm16","input_audio_transcription":{"language":"Klingon"}}}'
+      - '{"type":"session.update","session":{"type":5}}'
+      - '{"type":"session.update","session":{"input_audio_transcription":5}}'
+      - '{"type":"session.created","session":{"type":"transcription"}}'
+      - 'not a json document'
+env: {}
+compare: {ignore: []}
