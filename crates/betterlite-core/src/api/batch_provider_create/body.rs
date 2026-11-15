@@ -11,9 +11,12 @@ pub(super) fn create_request(
     limits: ApiLimits,
 ) -> Result<CreateBatchRequest, BatchProviderCreateError> {
     limits.check(ApiBoundariesInput::Items(ItemsBoundary {
-        known_count: input.metadata.as_ref().map_or(0, IndexMap::len)
-            + input.extra_headers.as_ref().map_or(0, IndexMap::len)
-            + input.extra_body.as_ref().map_or(0, IndexMap::len),
+        known_count: input
+            .metadata
+            .as_ref()
+            .map_or(0, IndexMap::len)
+            .saturating_add(input.extra_headers.as_ref().map_or(0, IndexMap::len))
+            .saturating_add(input.extra_body.as_ref().map_or(0, IndexMap::len)),
     }))?;
     Ok(CreateBatchRequest {
         completion_window: Some(input.completion_window),

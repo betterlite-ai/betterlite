@@ -59,12 +59,12 @@ impl BatchProvider {
     }
 }
 
-// Vertex takes a service-account file path or the decoded service-account fields
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+// VERTEX_CREDENTIALS_TYPES is str | dict[str, str]: a file path or inline JSON text, or the fields themselves
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum VertexCredentials {
-    Path(String),
-    Fields(BTreeMap<String, String>),
+    Text(SecretString),
+    Fields(BTreeMap<String, SecretString>),
 }
 
 // The fields of GenericLiteLLMParams that create_batch reads

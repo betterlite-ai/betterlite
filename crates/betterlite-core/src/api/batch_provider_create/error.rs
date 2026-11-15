@@ -15,11 +15,11 @@ pub enum BatchProviderCreateError {
 impl BatchProviderCreateError {
     // the status LiteLLM's exception carries: BadRequestError for the unsupported provider
     #[must_use]
-    pub const fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> u16 {
         match self {
-            Self::UnsupportedProvider { .. } => Some(400),
-            Self::Provider { status } => Some(*status),
-            Self::Limit(error) => Some(error.fields().status),
+            Self::UnsupportedProvider { .. } => 400,
+            Self::Provider { status } => *status,
+            Self::Limit(error) => error.fields().status,
         }
     }
 }

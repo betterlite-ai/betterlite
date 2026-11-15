@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::batch_provider_create::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 
 use crate::api::batch_provider_create::error::BatchProviderCreateError;
 use crate::api::batch_provider_create::{
-    BatchProvider, BatchProviderCreateCall, BatchProviderCreateInput, DEFAULT_OPENAI_BASE,
+    BatchOptionalParams, BatchProvider, BatchProviderCreateCall, BatchProviderCreateInput,
     ProviderBatchCall, ProviderConfigCall, VertexCredentials,
 };
+use crate::api::resource_sdk_settings::{ResourceSdkRequestOptions, ResourceSdkSettings};
 
 // the credentials each provider branch falls back through, resolved in LiteLLM's order
 struct Resolved {
@@ -40,108 +41,104 @@ fn resolve(
     input: &BatchProviderCreateInput,
     settings: &Settings,
 ) -> Resolved {
-    let request = &input.optional_params;
+    let resources = resource_settings(settings);
+    let options = request_options(&input.optional_params);
     match provider {
         BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
-            Resolved {
-                api_base: [
-                    request.api_base.as_deref(),
-                    settings.api_base.as_deref(),
-                    settings.openai_base_url.as_deref(),
-                    settings.openai_api_base.as_deref(),
-                ]
-                .into_iter()
-                .flatten()
-                .next()
-                .map(str::to_owned),
-                api_key: [
-                    request.api_key.as_ref(),
-                    settings.api_key.as_ref(),
-                    settings.openai_key.as_ref(),
-                    settings.openai_api_key.as_ref(),
-                ]
-                .into_iter()
-                .flatten()
-                .next()
-                .cloned(),
-                organization: [
-                    request.organization.as_deref(),
-                    settings.organization.as_deref(),
-                    settings.openai_organization.as_deref(),
-                ]
-                .into_iter()
-                .flatten()
-                .next()
-                .map(str::to_owned),
-                ..Resolved::empty()
-            }
+            openai_compatible(&resources, &options)
         }
-        BatchProvider::Azure => Resolved {
-            api_base: [
-                request.api_base.as_deref(),
-                settings.api_base.as_deref(),
-                settings.azure_api_base.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .next()
-            .map(str::to_owned),
-            api_version: [
-                request.api_version.as_deref(),
-                settings.api_version.as_deref(),
-                settings.azure_api_version.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .next()
-            .map(str::to_owned),
-            api_key: [
-                request.api_key.as_ref(),
-                settings.api_key.as_ref(),
-                settings.azure_key.as_ref(),
-                settings.azure_openai_api_key.as_ref(),
-                settings.azure_api_key.as_ref(),
-            ]
-            .into_iter()
-            .flatten()
-            .next()
-            .cloned(),
-            ..Resolved::empty()
-        },
-        BatchProvider::VertexAi => Resolved {
-            api_base: Some(request.api_base.clone().unwrap_or_default()),
-            vertex_project: [
-                request.vertex_project.as_deref(),
-                settings.vertex_project.as_deref(),
-                settings.vertexai_project.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .next()
-            .map(str::to_owned),
-            vertex_location: [
-                request.vertex_location.as_deref(),
-                settings.vertex_location.as_deref(),
-                settings.vertexai_location.as_deref(),
-            ]
-            .into_iter()
-            .flatten()
-            .next()
-            .map(str::to_owned),
-            vertex_credentials: request.vertex_credentials.clone().or_else(|| {
-                settings
-                    .vertexai_credentials
-                    .as_ref()
-                    .map(|secret| VertexCredentials::Path(secret.expose_secret().to_owned()))
-            }),
-            ..Resolved::empty()
-        },
-        BatchProvider::Xai => Resolved {
-            api_base: request.api_base.clone(),
-            api_key: request.api_key.clone(),
-            ..Resolved::empty()
-        },
+        BatchProvider::Azure => azure(&resources, &options),
+        BatchProvider::VertexAi => vertex(&resources, &options, &input.optional_params),
+        BatchProvider::Xai => xai(&options),
         BatchProvider::Bedrock | BatchProvider::Mistral => Resolved::empty(),
+    }
+}
+
+// the litellm_settings keys create_batch reads, under the names the config loads them as
+fn resource_settings(settings: &Settings) -> ResourceSdkSettings {
+    ResourceSdkSettings {
+        api_base: settings.api_base.clone(),
+        api_version: settings.api_version.clone(),
+        api_key: settings.api_key.clone(),
+        openai_key: settings.openai_key.clone(),
+        azure_key: settings.azure_key.clone(),
+        azure_ad_token: settings.azure_ad_token.clone(),
+        organization: settings.organization.clone(),
+        vertex_project: settings.vertex_project.clone(),
+        vertex_location: settings.vertex_location.clone(),
+        openai_base_url: settings.openai_base_url.clone(),
+        openai_api_base: settings.openai_api_base.clone(),
+        openai_api_key: settings.openai_api_key.clone(),
+        openai_organization: settings.openai_organization.clone(),
+        azure_api_base: settings.azure_api_base.clone(),
+        azure_api_version: settings.azure_api_version.clone(),
+        azure_openai_api_key: settings.azure_openai_api_key.clone(),
+        azure_api_key: settings.azure_api_key.clone(),
+        vertexai_project: settings.vertexai_project.clone(),
+        vertexai_location: settings.vertexai_location.clone(),
+        vertexai_credentials: settings.vertexai_credentials.clone(),
+    }
+}
+
+// the request side of the same fallback; its vertex_credentials stay out because they may be fields
+fn request_options(params: &BatchOptionalParams) -> ResourceSdkRequestOptions {
+    ResourceSdkRequestOptions {
+        api_base: params.api_base.clone(),
+        api_version: params.api_version.clone(),
+        api_key: params.api_key.clone(),
+        organization: params.organization.clone(),
+        vertex_project: params.vertex_project.clone(),
+        vertex_location: params.vertex_location.clone(),
+        vertex_credentials: None,
+    }
+}
+
+// OPENAI_COMPATIBLE_BATCH_AND_FILES_PROVIDERS shares one branch, whose base always resolves
+fn openai_compatible(
+    resources: &ResourceSdkSettings,
+    options: &ResourceSdkRequestOptions,
+) -> Resolved {
+    Resolved {
+        api_base: Some(resources.openai_base(options)),
+        api_key: resources.openai_api_key(options).cloned(),
+        organization: resources.openai_organization(options).map(str::to_owned),
+        ..Resolved::empty()
+    }
+}
+
+fn azure(resources: &ResourceSdkSettings, options: &ResourceSdkRequestOptions) -> Resolved {
+    Resolved {
+        api_base: resources.azure_base(options).map(str::to_owned),
+        api_version: resources.azure_version(options).map(str::to_owned),
+        api_key: resources.azure_api_key(options).cloned(),
+        ..Resolved::empty()
+    }
+}
+
+fn vertex(
+    resources: &ResourceSdkSettings,
+    options: &ResourceSdkRequestOptions,
+    params: &BatchOptionalParams,
+) -> Resolved {
+    Resolved {
+        api_base: Some(options.api_base.clone().unwrap_or_default()),
+        vertex_project: resources.vertex_project(options).map(str::to_owned),
+        vertex_location: resources.vertex_location(options).map(str::to_owned),
+        vertex_credentials: params.vertex_credentials.clone().or_else(|| {
+            resources
+                .vertex_credentials(options)
+                .map(|secret| VertexCredentials::Text(secret.clone()))
+        }),
+        ..Resolved::empty()
+    }
+}
+
+// xai reads only what the caller passes; no litellm_settings key falls back into it
+fn xai(options: &ResourceSdkRequestOptions) -> Resolved {
+    Resolved {
+        api_base: options.api_base.clone(),
+        api_key: options.api_key.clone(),
+        ..Resolved::empty()
     }
 }
 
@@ -152,7 +149,7 @@ pub(super) fn build_call(
     timeout: f64,
     body: CreateBatchRequest,
 ) -> Result<BatchProviderCreateCall, BatchProviderCreateError> {
-    if let Some(model) = model
+    if let Some(resolved) = model
         && matches!(
             input.custom_llm_provider,
             BatchProvider::Bedrock | BatchProvider::Mistral
@@ -161,11 +158,13 @@ pub(super) fn build_call(
         return Ok(BatchProviderCreateCall::ProviderConfig(
             ProviderConfigCall {
                 provider: input.custom_llm_provider,
-                model: model.to_owned(),
-                headers: match &input.extra_headers {
-                    None => BTreeMap::new(),
-                    Some(headers) => headers.clone().into_iter().collect(),
-                },
+                model: resolved.to_owned(),
+                headers: input
+                    .extra_headers
+                    .as_ref()
+                    .map_or_else(BTreeMap::new, |headers| {
+                        headers.clone().into_iter().collect()
+                    }),
                 api_base: input.optional_params.api_base.clone(),
                 api_key: input.optional_params.api_key.clone(),
                 body,
@@ -206,17 +205,7 @@ fn batch_parts(
     body: CreateBatchRequest,
 ) -> ProviderBatchCall {
     ProviderBatchCall {
-        api_base: match input.custom_llm_provider {
-            BatchProvider::Openai | BatchProvider::HostedVllm | BatchProvider::LitellmProxy => {
-                Some(
-                    resolved
-                        .api_base
-                        .unwrap_or_else(|| DEFAULT_OPENAI_BASE.to_owned()),
-                )
-            }
-            BatchProvider::VertexAi => Some(resolved.api_base.unwrap_or_default()),
-            _other => resolved.api_base,
-        },
+        api_base: resolved.api_base,
         body,
         api_key: resolved.api_key,
         organization: resolved.organization,

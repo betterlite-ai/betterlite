@@ -5,7 +5,8 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::batch_provider_create::error::BatchProviderCreateError;
 use betterlite_core::api::batch_provider_create::transports::BatchCreateTransport;
 use betterlite_core::api::batch_provider_create::{
-    BatchProviderCreate, BatchProviderCreateCall, BatchProviderCreateInput, VertexCredentials,
+    BatchProviderCreate, BatchProviderCreateCall, BatchProviderCreateInput, ProviderBatchCall,
+    ProviderConfigCall, VertexCredentials,
 };
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
@@ -14,7 +15,7 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::batches::records::{BatchObject, BatchObjectKind, BatchStatus};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -133,77 +134,97 @@ fn body_json(body: &CreateBatchRequest) -> Value {
     })
 }
 
-fn credentials_json(credentials: &Option<VertexCredentials>) -> Value {
+fn credentials_json(credentials: Option<&VertexCredentials>) -> Value {
     match credentials {
         None => Value::Null,
-        Some(VertexCredentials::Path(path)) => json!(path),
+        Some(VertexCredentials::Text(text)) => json!(text.expose_secret()),
         Some(VertexCredentials::Fields(fields)) => {
-            let mut sorted: Vec<(&String, &String)> = fields.iter().collect();
+            let mut sorted: Vec<(&String, &SecretString)> = fields.iter().collect();
             sorted.sort_by(|left, right| left.0.cmp(right.0));
             Value::Array(
                 sorted
                     .into_iter()
-                    .map(|(key, value)| json!([key, value]))
+                    .map(|(key, value)| json!([key, value.expose_secret()]))
                     .collect(),
             )
         }
     }
 }
 
-fn call_json(call: &BatchProviderCreateCall) -> Value {
-    match call {
-        BatchProviderCreateCall::ProviderConfig(call) => json!({
-            "branch": "provider_config",
-            "provider": call.provider.as_str(),
-            "model": call.model,
-            "body": body_json(&call.body),
-            "headers": pairs(&call.headers),
-            "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-            "timeout": call.timeout,
-            "is_async": call.is_async,
-        }),
-        BatchProviderCreateCall::Xai(call) => json!({
-            "branch": "xai",
-            "body": body_json(&call.body),
-            "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-            "timeout": call.timeout,
-            "is_async": call.is_async,
-        }),
-        BatchProviderCreateCall::OpenAiCompatible(call) => json!({
-            "branch": "openai_compatible",
-            "body": body_json(&call.body),
-            "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-            "organization": call.organization,
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-            "is_async": call.is_async,
-        }),
-        BatchProviderCreateCall::Azure(call) => json!({
-            "branch": "azure",
-            "body": body_json(&call.body),
-            "api_base": call.api_base,
-            "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
-            "api_version": call.api_version,
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-            "is_async": call.is_async,
-        }),
-        BatchProviderCreateCall::VertexAi(call) => json!({
-            "branch": "vertex_ai",
-            "body": body_json(&call.body),
-            "api_base": call.api_base,
-            "vertex_project": call.vertex_project,
-            "vertex_location": call.vertex_location,
-            "vertex_credentials": credentials_json(&call.vertex_credentials),
-            "timeout": call.timeout,
-            "max_retries": call.max_retries,
-            "custom_endpoint": call.custom_endpoint,
-            "is_async": call.is_async,
-        }),
+fn call_json(record: &BatchProviderCreateCall) -> Value {
+    match record {
+        BatchProviderCreateCall::ProviderConfig(call) => provider_config_json(call),
+        BatchProviderCreateCall::Xai(call) => xai_json(call),
+        BatchProviderCreateCall::OpenAiCompatible(call) => openai_json(call),
+        BatchProviderCreateCall::Azure(call) => azure_json(call),
+        BatchProviderCreateCall::VertexAi(call) => vertex_json(call),
     }
+}
+
+fn provider_config_json(call: &ProviderConfigCall) -> Value {
+    json!({
+        "branch": "provider_config",
+        "provider": call.provider.as_str(),
+        "model": call.model,
+        "body": body_json(&call.body),
+        "headers": pairs(&call.headers),
+        "api_base": call.api_base,
+        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "timeout": call.timeout,
+        "is_async": call.is_async,
+    })
+}
+
+fn xai_json(call: &ProviderBatchCall) -> Value {
+    json!({
+        "branch": "xai",
+        "body": body_json(&call.body),
+        "api_base": call.api_base,
+        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "timeout": call.timeout,
+        "is_async": call.is_async,
+    })
+}
+
+fn openai_json(call: &ProviderBatchCall) -> Value {
+    json!({
+        "branch": "openai_compatible",
+        "body": body_json(&call.body),
+        "api_base": call.api_base,
+        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "organization": call.organization,
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+        "is_async": call.is_async,
+    })
+}
+
+fn azure_json(call: &ProviderBatchCall) -> Value {
+    json!({
+        "branch": "azure",
+        "body": body_json(&call.body),
+        "api_base": call.api_base,
+        "api_key": call.api_key.as_ref().map(secrecy::ExposeSecret::expose_secret),
+        "api_version": call.api_version,
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+        "is_async": call.is_async,
+    })
+}
+
+fn vertex_json(call: &ProviderBatchCall) -> Value {
+    json!({
+        "branch": "vertex_ai",
+        "body": body_json(&call.body),
+        "api_base": call.api_base,
+        "vertex_project": call.vertex_project,
+        "vertex_location": call.vertex_location,
+        "vertex_credentials": credentials_json(call.vertex_credentials.as_ref()),
+        "timeout": call.timeout,
+        "max_retries": call.max_retries,
+        "custom_endpoint": call.custom_endpoint,
+        "is_async": call.is_async,
+    })
 }
 
 fn step_outcome(
