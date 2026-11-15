@@ -1,0 +1,22 @@
+kind: helper
+name: discovery_identifiers
+call:
+  tool_row:
+    rows:
+      - {"tool_id":"t1","tool_name":"owned","origin":"user_defined","key_hash":"k1","team_id":"team-1","key_alias":"alias-1","user_agent":"agent/1","assignments":{"scope":"read"},"created_at":"2026-01-02T03:04:05","last_used_at":"2026-01-03T04:05:06","created_by":"creator","updated_by":"updater"}
+      - {"tool_id":"t2","tool_name":"shared","key_hash":"k1"}
+      - {"tool_id":"t3","tool_name":"alias-less","key_hash":"k2"}
+      - {"tool_id":"t4","tool_name":"missing-owner","key_hash":"k3"}
+      - {"tool_id":"t5","tool_name":"null-owner","key_hash":"k4"}
+      - {"tool_id":"t6","tool_name":"no-key","key_hash":null}
+      - {"tool_id":"t7","tool_name":"stored-owner","key_hash":"k1","user":{"user_id":"ignored"}}
+    tokens:
+      - {"token":"k1","user_id":"u1"}
+      - {"token":"k2","user_id":"u2"}
+      - {"token":"k3","user_id":"missing"}
+      - {"token":"k4","user_id":null}
+    users:
+      - {"user_id":"u1","user_email":"u1@example.com","user_alias":"one"}
+      - {"user_id":"u2","user_email":null,"user_alias":null}
+env: {}
+compare: {ignore: []}

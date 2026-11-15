@@ -1,0 +1,17 @@
+kind: helper
+name: falsy_policy_defaults
+call:
+  tool_row:
+    rows:
+      - {"tool_id":"t1","tool_name":"absent"}
+      - {"tool_id":"t2","tool_name":"null","input_policy":null,"output_policy":null,"call_count":null}
+      - {"tool_id":"t3","tool_name":"empty","input_policy":"","output_policy":"","call_count":""}
+      - {"tool_id":"t4","tool_name":"zero","input_policy":0,"output_policy":0,"call_count":0}
+      - {"tool_id":"t5","tool_name":"false","input_policy":false,"output_policy":false,"call_count":false}
+      - {"tool_id":"t6","tool_name":"containers","input_policy":[],"output_policy":{},"call_count":[]}
+      - {"tool_id":"t7","tool_name":"explicit","input_policy":"blocked","output_policy":"trusted","call_count":7}
+      - {"tool_id":"t8","tool_name":"negative","input_policy":"trusted","output_policy":"untrusted","call_count":-3}
+    tokens: []
+    users: []
+env: {}
+compare: {ignore: []}
