@@ -29,4 +29,13 @@ deviations:
       order keeps the emitted operation list deterministic and lets the oracle compare both sides
       on the same input.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4683-L4696
+  - what: >-
+      The debug log for unused reserved TPM budget on success fires on
+      total_tokens < reserved_tokens alone. LiteLLM writes
+      reserved_tokens > 0 and total_tokens < reserved_tokens.
+    why: >-
+      A token count is never negative, so total_tokens < reserved_tokens already
+      implies reserved_tokens > 0. The folded guard logs on exactly the same events
+      and leaves one comparison to test instead of two.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4971
 kept_bugs: []
