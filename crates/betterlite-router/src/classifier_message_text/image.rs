@@ -1,5 +1,4 @@
 use betterlite_openai::chat::ContentPart;
-use serde_json::{Map, Value};
 
 use crate::classifier_message_text::error::ClassifierTextError;
 
@@ -20,10 +19,6 @@ pub fn inline_image_part(part: &ContentPart) -> Result<Option<InlineImage>, Clas
 
 // a remote URL is caller-controlled and some provider adapters would fetch it from the proxy host
 fn image_url(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
-    let source = part
-        .fields
-        .get("source")
-        .and_then(|value| value.as_object());
     match part.kind.as_str() {
         "image_url" => url_part(part),
         "input_image" => Ok(part
@@ -31,7 +26,7 @@ fn image_url(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> 
             .get("image_url")
             .and_then(|value| value.as_str())
             .and_then(|url| (!url.is_empty()).then(|| url.to_owned()))),
-        "image" => Ok(source.and_then(anthropic_source_url)),
+        "image" => Ok(anthropic_image_url(part)),
         _ => Ok(None),
     }
 }
@@ -58,24 +53,26 @@ fn url_part(part: &ContentPart) -> Result<Option<String>, ClassifierTextError> {
         })
 }
 
-fn anthropic_source_url(source: &Map<String, Value>) -> Option<String> {
-    match source.get("type")?.as_str()? {
-        "base64" => base64_image_url(source),
-        "url" => Some(source_text(source, "url", "")),
+fn anthropic_image_url(part: &ContentPart) -> Option<String> {
+    match source_text(part, "type", "").as_str() {
+        "base64" => base64_image_url(part),
+        "url" => Some(source_text(part, "url", "")),
         _ => None,
     }
 }
 
-fn base64_image_url(source: &Map<String, Value>) -> Option<String> {
-    let media_type = source_text(source, "media_type", "image/jpeg");
-    let data = source_text(source, "data", "");
+fn base64_image_url(part: &ContentPart) -> Option<String> {
+    let media_type = source_text(part, "media_type", "image/jpeg");
+    let data = source_text(part, "data", "");
     (!data.is_empty()).then(|| format!("data:{media_type};base64,{data}"))
 }
 
-fn source_text(source: &Map<String, Value>, key: &str, default: &str) -> String {
-    source
-        .get(key)
-        .and_then(Value::as_str)
+fn source_text(part: &ContentPart, key: &str, default: &str) -> String {
+    part.fields
+        .get("source")
+        .and_then(|value| value.as_object())
+        .and_then(|source| source.get(key))
+        .and_then(|value| value.as_str())
         .unwrap_or(default)
         .to_owned()
 }
