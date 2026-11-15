@@ -27,7 +27,7 @@ impl fmt::Debug for AnthropicHeaders {
 #[derive(Debug, Error)]
 pub enum HeadersError {
     #[error(
-        "Missing Anthropic API Key - a call is being made to anthropic but no key is set either in the environment variables or via params. Please set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in your environment vars"
+        "Missing Anthropic API Key - A call is being made to anthropic but no key is set either in the environment variables or via params. Please set `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` in your environment vars"
     )]
     Authentication { model: String },
     #[error(transparent)]
