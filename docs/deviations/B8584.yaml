@@ -1,0 +1,36 @@
+task: B8584
+deviations:
+  - what: "PreRoutingStrategy.async_pre_routing_hook names its fourth parameter input_value instead of input, and specific_deployment is keyword-only."
+    why: "ruff A002 rejects a parameter named input because it shadows the builtin, and flake8-boolean-trap (FBT001 and FBT002) requires a boolean parameter with a default to be keyword-only; LiteLLM calls the hook with every argument by keyword, so neither change reaches a caller."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1151-L1163
+  - what: "RouterRateLimitError takes every argument after model by keyword only."
+    why: "enable_pre_call_checks is a bool that FBT001 forbids as a positional argument, and Python makes every parameter after a bare * keyword-only as well; LiteLLM raises this error inside the router, so the raise sites pass the same names by keyword."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L964-L990
+  - what: "The exception class is RouterBasicRateLimitError, where LiteLLM's is RouterRateLimitErrorBasic."
+    why: "ruff N818 requires an exception class name to end in Error; betterlite._router_types still exports the class under LiteLLM's name with an import alias, so only __name__ differs."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L945-L957
+  - what: "The classes are LiteLLMParams, UpdateLiteLLMParams, UpdateDeployment and LiteLLMRouterFileObject, where LiteLLM's are LiteLLM_Params, updateLiteLLMParams, updateDeployment and LiteLLM_RouterFileObject."
+    why: "ruff N801 requires CapWords class names without internal underscores; betterlite._router_types exports each under LiteLLM's name with an import alias, so only __name__ differs."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L522-L556
+  - what: "RouterErrorTypes and RequestType subclass enum.StrEnum, where LiteLLM writes (str, enum.Enum)."
+    why: "ruff UP042 replaces the str mixin with StrEnum; str() and f-strings of a member return its value where LiteLLM returns 'RouterErrorTypes.rate_limit_error', while .value and equality with the string are unchanged."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L959-L962
+  - what: "The timeout fields are float | str | None, without LiteLLM's httpx.Timeout member."
+    why: "betterlite's wheel has no httpx dependency; pydantic still accepts a number or a duration string and rejects an httpx.Timeout object that LiteLLM's arbitrary-types model keeps."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L391
+  - what: "GenericLiteLLMParams.mock_response and the object, bare dict, bare list and Any declarations in the file take JsonValue or the concrete type instead."
+    why: "the no-loose-types rule bans Any, object, bare dict and bare list; a mock_response value that is not JSON is rejected where LiteLLM's arbitrary-types model keeps it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L429
+  - what: "MockRouterTestingParams.from_kwargs returns None for a mock value that is neither a bool nor a string; LiteLLM stores the value as it is, so an int 1 or a list ['x'] stays in the field."
+    why: "the dataclass fields are bool | None, and docs/compatibility.md makes a value of the wrong type read as unset rather than carried through untyped; the router only tests these fields for truth."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1090-L1101
+  - what: "Deployment.to_json only dumps with model_dump and has no pydantic-v1 .dict fallback."
+    why: "betterlite is pydantic v2 only, and the fallback runs only when model_dump raises, which no working setup relies on; .dict is deprecated and ruff forbids it."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L678-L683
+kept_bugs:
+  - what: "GenericLiteLLMParams.preprocess_input_data silently drops the keys self, params and __class__ from litellm_params."
+    why: "LiteLLM removes them so that a config carrying a key named params does not raise 'got multiple values for argument', and a working setup with such a key relies on the request succeeding without it; every other key stays."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L476-L491
+  - what: "MockRouterTestingParams.from_kwargs pops the three mock keys out of the caller's request kwargs dict."
+    why: "the router passes its live request kwargs and relies on the mock flags being consumed, so the mutation is part of the call contract and is kept; every other accessor in the file leaves the caller's dict alone."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1084-L1101
