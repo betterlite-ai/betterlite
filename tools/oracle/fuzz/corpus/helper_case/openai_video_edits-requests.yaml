@@ -1,0 +1,29 @@
+kind: helper
+name: openai-video-edits-requests-seed
+call:
+  openai_video_edits:
+    calls:
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: text
+          value: a supplied string
+        api_base: 'https://mock.example/v1'
+      - op: get_character_request
+        character_id: character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7Y2hhcmFjdGVyX2lkOmNoYXItMQ==
+        api_base: 'https://mock.example/v1'
+      - op: edit_request
+        prompt: make it blue
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTE=
+        api_base: 'https://mock.example/v1'
+        fixture: null
+        extra_body: {duration: 4}
+        prefetched_source_data: null
+      - op: extension_request
+        prompt: extend
+        video_id: vid-1
+        seconds: '8'
+        api_base: 'https://mock.example/v1'
+        extra_body: null
+env: {}
+compare: {ignore: []}

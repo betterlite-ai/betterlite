@@ -146,7 +146,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/batch-cost-status/pending-completed-no-output-and-all-failed.yaml
 deviations:
   - what: No managed-batch polling hook or synthetic managed-file charge is installed; startup skips that absent hook and public provider batch-retrieve events retain their normal accounting path.
-    why: The pinned open-source checkout has no enterprise implementation; managed files and batches remain an open product decision.
+    why: The pinned open-source checkout has no enterprise implementation; betterlite builds no managed files (decision 2026-10-31).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10912-L10942
 out_of_scope:
   - B1720 owns failure/enrichment/tag/eligibility/metadata helpers in proxy_track_cost_callback.py; B1719 owns its reservation and database-counter settlement helpers.

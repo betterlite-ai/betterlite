@@ -1,0 +1,26 @@
+kind: helper
+name: reload-remembers-config
+call:
+  b4776:
+    config:
+      - agent_name: alpha
+        agent_card_params:
+          model: gpt-4o
+      - agent_name: beta
+        agent_card_params:
+          name: beta
+    reload: true
+    reload_config: null
+    db_agents:
+      - agent_id: db-gamma
+        agent_name: gamma
+        agent_card_params: {}
+    public_groups: null
+    ids_for: []
+    stable_ids: []
+    by_id: []
+    by_name: []
+    deregister: []
+env: {}
+compare:
+  ignore: []
