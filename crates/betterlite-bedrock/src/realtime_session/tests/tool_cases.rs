@@ -16,7 +16,7 @@ fn configuration_request_with_tools() {
         r#"[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]"#,
     )
     .expect("a tool definition fixture");
-    let configuration = state.configuration_request(Some(&definitions));
+    let configuration = state.configuration_request(Some(definitions.as_slice()));
     let prompt_start = &configuration.prompt_start.event.prompt_start;
     assert_eq!(
         prompt_start.tool_use_output_configuration,
