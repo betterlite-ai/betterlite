@@ -115,5 +115,5 @@ where
         },
         Some(_) => None,
     };
-    flag.ok_or_else(|| ConfigError::InvalidScalar { path, value: false })
+    flag.ok_or(ConfigError::InvalidScalar { path, value: false })
 }
