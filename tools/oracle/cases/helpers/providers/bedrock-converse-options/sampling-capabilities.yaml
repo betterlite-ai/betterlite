@@ -1,0 +1,40 @@
+kind: helper
+name: sampling-capabilities
+call:
+  bedrock_converse_options:
+    function: sampling
+    model_cost:
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
+      us.amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}
+      fixture-priority: {litellm_provider: bedrock}
+      global.fixture-priority: {litellm_provider: bedrock, supports_sampling_params: false}
+      us.fixture-priority: {litellm_provider: bedrock, supports_sampling_params: true}
+      global.us.fixture-priority: {litellm_provider: bedrock, supports_sampling_params: false}
+      eu.fixture-eu: {litellm_provider: bedrock, supports_sampling_params: true}
+      fixture-flag-text: {litellm_provider: bedrock, supports_sampling_params: 'false'}
+      fixture-flag-null: {litellm_provider: bedrock, supports_sampling_params: null}
+      fixture-none: {litellm_provider: bedrock}
+      us.fixture-mixed: {litellm_provider: bedrock, supports_sampling_params: 'false'}
+      global.fixture-mixed: {litellm_provider: bedrock, supports_sampling_params: false}
+      us.fixture-first-true: {litellm_provider: bedrock, supports_sampling_params: true}
+      global.fixture-first-true: {litellm_provider: bedrock, supports_sampling_params: false}
+      anthropic.claude-opus-4-7: {litellm_provider: bedrock, supports_sampling_params: false}
+    models:
+      - amazon.nova-pro-v1:0
+      - us.amazon.nova-pro-v1:0
+      - fixture-priority
+      - us.fixture-priority
+      - fixture-region
+      - fixture-eu
+      - fixture-flag-text
+      - fixture-flag-null
+      - fixture-none
+      - us.fixture-mixed
+      - us.fixture-first-true
+      - anthropic.claude-opus-4-7
+      - us.anthropic.claude-opus-4-7
+      - bedrock/us.anthropic.claude-fable-5
+      - cohere.command-r-v1:0
+      - mistral.mistral-large-2402-v1:0
+env: {}
+compare: {ignore: []}

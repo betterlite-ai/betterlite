@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-converse-options-handle
+call:
+  bedrock_converse_options:
+    function: handle
+    model_cost:
+      anthropic.claude-sonnet-4-6: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+    environment: {}
+    model: anthropic.claude-sonnet-4-6
+    effort: high
+    optional_params: {thinking: {type: enabled, budget_tokens: 1024}}
+env: {}
+compare: {ignore: []}

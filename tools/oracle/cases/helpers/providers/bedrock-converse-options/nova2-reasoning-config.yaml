@@ -1,0 +1,59 @@
+kind: helper
+name: nova2-reasoning-config
+call:
+  bedrock_converse_options:
+    function: nova2_models
+    models:
+      - amazon.nova-2-lite-v1:0
+      - us.amazon.nova-2-lite-v1:0
+      - eu.amazon.nova-2-lite-v1:0
+      - apac.amazon.nova-2-pro-preview-20251202-v1:0
+      - bedrock/converse/us.amazon.nova-2-lite-v1:0
+      - converse/amazon.nova-2-lite-v1:0
+      - nova-2/imported
+      - bedrock/us.nova-2/imported
+      - amazon.nova-pro-v1:0
+      - amazon.nova-pro-1-5-v1:0
+      - amazon.nova-2
+      - us.amazon.nova-2
+      - bedrock/converse/bedrock/amazon.nova-2-lite-v1:0
+      - global.us.amazon.nova-2-lite-v1:0
+      - bedrock.amazon.nova-2-lite-v1:0
+calls:
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: amazon.nova-2-lite-v1:0
+      effort: low
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: bedrock/converse/us.amazon.nova-2-lite-v1:0
+      effort: medium
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: nova-2/imported-v1:0
+      effort: high
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: amazon.nova-2-lite-v1:0
+      effort: minimal
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: amazon.nova-2-lite-v1:0
+      effort: ''
+      optional_params: {}
+env: {}
+compare: {ignore: []}

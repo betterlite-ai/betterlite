@@ -1,0 +1,17 @@
+kind: helper
+name: nova-web-search-only
+call:
+  bedrock_converse_options:
+    function: web_search
+    models:
+      - amazon.nova-pro-v1:0
+      - us.amazon.nova-lite-v1:0
+      - NOVA-2-LITE
+      - nova-2/imported
+      - my-nova-clone
+      - anthropic.claude-3-7-sonnet-20250219-v1:0
+      - cohere.command-r-v1:0
+      - ''
+      - amazon.titan-text-express-v1
+env: {}
+compare: {ignore: []}

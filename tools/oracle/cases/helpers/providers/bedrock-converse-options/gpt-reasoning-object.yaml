@@ -1,0 +1,62 @@
+kind: helper
+name: gpt-reasoning-object
+call:
+  bedrock_converse_options:
+    function: gpt_models
+    models:
+      - openai.gpt-5
+      - openai.gpt-5.2
+      - us.openai.gpt-5
+      - bedrock/openai.gpt-5
+      - openai.gpt-oss-120b-1:0
+      - myopenai.gpt-5
+      - openai.gpt-5x
+      - openai.gpt-x5
+      - OPENAI.GPT-5
+      - openai.gpt-٥
+      - openai.gpt-5-2025
+      - openai.gpt-
+      - novaanthropic.openai.gpt-7
+calls:
+  - bedrock_converse_options:
+      function: min_max_tokens
+      models:
+        - openai.gpt-5
+        - xai.grok-3
+        - XAI.GROK-3
+        - us.xai.grok-2
+        - grok-3
+        - anthropic.claude-3
+        - us.openai.gpt-5-2025
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: openai.gpt-5
+      effort: high
+      optional_params:
+        reasoning: {effort: low, summary: auto}
+        thinking: {type: enabled, budget_tokens: 2048}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: bedrock/openai.gpt-6
+      effort: none
+      optional_params: {}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: us.openai.gpt-5.2
+      effort: minimal
+      optional_params: {reasoning: plain}
+  - bedrock_converse_options:
+      function: handle
+      model_cost: {}
+      environment: {}
+      model: openai.gpt-oss-20b
+      effort: minimal
+      optional_params: {thinking: {type: enabled, budget_tokens: 2048}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,41 @@
+kind: helper
+name: supported-param-list
+call:
+  bedrock_converse_options:
+    function: supported_params
+    model_cost:
+      anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_reasoning: true, supports_function_calling: false, supports_tool_choice: true}
+      amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true}
+      amazon.nova-2-lite-v1:0: {litellm_provider: bedrock, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true}
+      deepseek.v3-v1:0: {litellm_provider: bedrock, supports_reasoning: true, supports_function_calling: true, supports_tool_choice: true}
+      deepseek.r1-v1:0: {litellm_provider: bedrock, supports_reasoning: true, supports_function_calling: true, supports_tool_choice: true}
+      openai.gpt-oss-120b-1:0: {litellm_provider: bedrock, supports_function_calling: true, supports_tool_choice: true}
+      us.openai.gpt-5: {litellm_provider: bedrock, supports_function_calling: true, supports_tool_choice: true, supports_sampling_params: false}
+      cohere.command-r-v1:0: {litellm_provider: bedrock, supports_function_calling: false, supports_tool_choice: false}
+      fixture-tools: {litellm_provider: bedrock, supports_function_calling: true, supports_tool_choice: true}
+      fixture-tool-off: {litellm_provider: bedrock, supports_function_calling: false, supports_tool_choice: false}
+      us.fixture-tool-choice: {litellm_provider: bedrock, supports_function_calling: false, supports_tool_choice: false}
+      fixture-tool-choice: {litellm_provider: bedrock, supports_tool_choice: true}
+      'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-pro-v1:0': {litellm_provider: bedrock, supports_sampling_params: false}
+      'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123': {litellm_provider: bedrock, supports_sampling_params: false}
+      'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-2-lite-v1:0': {litellm_provider: bedrock, supports_sampling_params: false}
+    models:
+      - anthropic.claude-sonnet-4-20250514-v1:0
+      - amazon.nova-pro-v1:0
+      - amazon.nova-2-lite-v1:0
+      - deepseek.v3-v1:0
+      - deepseek.r1-v1:0
+      - openai.gpt-oss-120b-1:0
+      - us.openai.gpt-5
+      - cohere.command-r-v1:0
+      - fixture-tools
+      - fixture-tool-off
+      - us.fixture-tool-choice
+      - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-pro-v1:0'
+      - 'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123'
+      - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-2-lite-v1:0'
+calls:
+  - bedrock_converse_options:
+      function: auto_tool_choice
+env: {}
+compare: {ignore: []}

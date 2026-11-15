@@ -1,0 +1,26 @@
+kind: helper
+name: minimum-thinking-budget
+call:
+  bedrock_converse_options:
+    function: clamp
+    environment: {}
+    cases:
+      - optional_params: {thinking: {type: enabled, budget_tokens: 500}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 1024}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 1025}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 0}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: -5}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: true}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: false}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 500.5}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 1024.0}}
+      - optional_params: {thinking: {type: enabled, budget_tokens: '500'}}
+      - optional_params: {thinking: {type: enabled}}
+      - optional_params: {thinking: {type: adaptive, display: summarized}}
+      - optional_params: {thinking: enabled}
+      - optional_params: {thinking: null}
+      - optional_params: {budget_tokens: 100}
+      - optional_params: {}
+      - optional_params: {thinking: {type: enabled, budget_tokens: 2048}, temperature: 0.5}
+env: {}
+compare: {ignore: []}
