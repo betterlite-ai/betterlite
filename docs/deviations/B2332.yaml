@@ -1,8 +1,5 @@
 task: B2332
 deviations:
-  - what: A stored static_headers or env value that is exactly the JSON text null rotates without the "Cannot rotate MCP %s for server %s" warning.
-    why: betterlite's shared stored-map decoder (B2303) parses that text as JSON null and returns no map, while LiteLLM treats it as a bare stored string, fails to decrypt it and raises SecretMapDecodeError. Both leave the field alone and rotate the row's other fields, so only the warning line differs.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1343-L1348
   - what: The legacy URL-safe base64 fallback for a user credential rejects text over 1048576 bytes and non-ASCII text before decoding, so such a row is warned and skipped.
     why: bounded-inputs requires a finite limit before decoding untrusted stored text, and a real credential ciphertext or legacy value stays far below it. LiteLLM's base64.urlsafe_b64decode would decode the oversized value.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1381-L1399

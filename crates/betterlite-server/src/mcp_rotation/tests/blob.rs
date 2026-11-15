@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_secrets::secret_codec::MAX_ENCODED_BYTES;
 
 use super::super::blob::{
     RotationBlob, decode_json_column, decode_legacy_base64_text, decode_mcp_rotation_blob,
@@ -70,6 +71,7 @@ fn legacy_base64_matches_cpython() {
         ("aGVsbG8=", "hello"),
         ("aGVs bG8=", "hello"),
         ("AA==", "\0"),
+        ("4b-_", "\u{1fff}"),
     ] {
         assert_eq!(
             decode_legacy_base64_text(text).unwrap(),
@@ -83,6 +85,10 @@ fn legacy_base64_matches_cpython() {
             "{rejected:?} must not decode"
         );
     }
+    let at_limit = " ".repeat(MAX_ENCODED_BYTES);
+    assert_eq!(decode_legacy_base64_text(&at_limit).unwrap(), "");
+    let over_limit = " ".repeat(MAX_ENCODED_BYTES + 1);
+    assert!(decode_legacy_base64_text(&over_limit).is_err());
 }
 
 #[test]
