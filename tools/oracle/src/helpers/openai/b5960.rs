@@ -1,26 +1,21 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Mutex;
 
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::openai_base_config::{CatalogCapabilities, Headers};
-use betterlite_openai::sagemaker_chat::request as chat;
 use betterlite_openai::sagemaker_chat::nova;
+use betterlite_openai::sagemaker_chat::request as chat;
 use betterlite_openai::sagemaker_completion::params::{Options, map_openai_params};
 use betterlite_openai::sagemaker_completion::request::{
     CustomPromptEntry, RequestInput, transform_request as completion_request,
 };
-use betterlite_openai::sagemaker_completion::response::{
-    ReplyInput, TextTokenCounter, transform_response,
-};
+use betterlite_openai::sagemaker_completion::response::{ReplyInput, transform_response};
 use betterlite_prompts::arguments::json::Object as Body;
 use betterlite_prompts::builtin::Message;
-use betterlite_prompts::factory::PromptFactory;
-use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult};
 
 mod script;
 
@@ -150,11 +145,6 @@ fn params_step(case: &ParamsStep) -> Value {
     json!({"kind": "params", "optional": optional, "remaining": requested})
 }
 
-fn body_step(kind: &str, body: &Body) -> Value {
-    let keys: Vec<&str> = body.keys().map(String::as_str).collect();
-    json!({"kind": kind, "keys": keys, "body": body})
-}
-
 fn completion_request_step(case: &CompletionRequestStep) -> HelperResult {
     let prompts = factory();
     let now = DateTime::<Utc>::from_timestamp(case.now, 0).unwrap_or_default();
@@ -168,17 +158,11 @@ fn completion_request_step(case: &CompletionRequestStep) -> HelperResult {
         prompts: &prompts,
         now,
     };
-    let body = runtime()?.block_on(completion_request(&request)).map_err(|error| {
-        Box::new(HelperError {
-            class: String::from("RequestError"),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
-    Ok(body_step("completion_request", &body))
+    let body = runtime()?
+        .block_on(completion_request(&request))
+        .map_err(|error| script::failure("RequestError", None, error.to_string()))?;
+    let keys: Vec<&str> = body.keys().map(String::as_str).collect();
+    Ok(json!({"kind": "completion_request", "keys": keys, "body": body}))
 }
 
 fn completion_response_step(case: &CompletionResponseStep) -> HelperResult {
@@ -190,19 +174,12 @@ fn completion_response_step(case: &CompletionResponseStep) -> HelperResult {
         created: case.created,
     };
     let response = transform_response(&input, &WordCounter).map_err(|error| {
-        Box::new(HelperError {
-            class: String::from("SagemakerError"),
-            status: Some(error.status_code),
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.message,
-        })
+        script::failure("SagemakerError", Some(error.status_code), error.message)
     })?;
     let choice = response
         .choices
         .first()
-        .ok_or_else(|| script::failure("the response has no choice"))?;
+        .ok_or_else(|| script::failure("HelperError", None, String::from("no choice")))?;
     Ok(json!({
         "kind": "completion_response",
         "model": response.model,
@@ -218,19 +195,23 @@ fn completion_response_step(case: &CompletionResponseStep) -> HelperResult {
 }
 
 fn chat_headers_step(case: &ChatHeadersStep) -> Value {
-    let headers: Headers = case.headers.clone();
-    let merged = chat::validate_environment(headers, &case.optional);
-    let error = chat::get_error_class("boom", script::COMPONENT_STATUS, Some(script::fixture_headers()));
+    let merged = chat::validate_environment(case.headers.clone(), &case.optional);
+    let fixture = Headers::from([(String::from("x-fixture"), String::from("kept"))]);
+    let error = chat::get_error_class("boom", script::COMPONENT_STATUS, Some(fixture));
     json!({
         "kind": "chat_headers",
         "headers": merged,
-        "error": {"status_code": error.status_code, "headers": error.headers},
+        "error": {"status_code": error.status_code},
     })
 }
 
 fn chat_policy_step(case: &ChatPolicyStep) -> Value {
     let catalog = CatalogCapabilities {
-        chat_models: case.chat_models.iter().cloned().collect::<BTreeSet<String>>(),
+        chat_models: case
+            .chat_models
+            .iter()
+            .cloned()
+            .collect::<BTreeSet<String>>(),
         text_models: BTreeSet::new(),
     };
     json!({
@@ -254,15 +235,10 @@ fn chat_request_step(case: &ChatRequestStep, kind: &str, provider: &'static str)
     } else {
         chat::transform_request(&input)
     }
-    .map_err(|error| {
-        Box::new(HelperError {
-            class: String::from("ChatContentError"),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
-    Ok(body_step(kind, &body))
+    .map_err(|error| script::failure("ChatContentError", None, error.to_string()))?;
+    Ok(json!({
+        "kind": kind,
+        "keys": body.keys().map(String::as_str).collect::<Vec<&str>>(),
+        "body": body,
+    }))
 }
