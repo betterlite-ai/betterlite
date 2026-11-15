@@ -254,6 +254,20 @@ fn plan_consumes_options_and_extra_body_wins() {
         state.model_call_details.get("log_event_type"),
         Some(&Json::Text(String::from("pre_api_call")))
     );
+    let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
+        panic!("the pre-call arguments");
+    };
+    let Some(Json::Object(headers)) = args.get("headers") else {
+        panic!("the logged headers");
+    };
+    assert_eq!(
+        headers.get("Content-Type"),
+        Some(&Json::Text(String::from("application/json")))
+    );
+    assert_eq!(
+        headers.get("Authorization"),
+        Some(&Json::Text(String::from("Bearer sk-test")))
+    );
 }
 
 #[test]
@@ -306,6 +320,7 @@ fn a_wrong_option_type_names_the_field(#[case] field: &str, #[case] value: Json)
     let Err(error) = refused else {
         panic!("a wrong option type is an error");
     };
+    assert_eq!(error.status_code(), Some(400));
     assert!(matches!(
         error,
         CompatibleChatError::OptionType {
@@ -418,8 +433,6 @@ fn only_the_blocking_fake_stream_reads_the_whole_body() {
     call.mode = Mode::Async;
     assert!(!plan(&call, &mut state, &env).buffered());
 }
-
-struct Suffix;
 
 impl MessageTransformer for Suffix {
     fn transform(
@@ -730,7 +743,11 @@ async fn a_stream_send_failure_stays_a_transport_error() {
     let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
         .await
         .unwrap();
-    assert!(matches!(answer, Err(CompatibleChatError::Transport(_))));
+    let Err(error) = answer else {
+        panic!("the transport error");
+    };
+    assert!(matches!(error, CompatibleChatError::Transport(_)));
+    assert_eq!(error.status_code(), Some(500));
 }
 
 #[tokio::test]
@@ -745,7 +762,12 @@ async fn a_nonstream_send_failure_is_a_timeout_or_a_transport_error() {
     let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
         .await
         .unwrap();
-    assert!(matches!(answer, Err(CompatibleChatError::Timeout(_))));
+    let Err(error) = answer else {
+        panic!("the deadline error");
+    };
+    assert!(matches!(error, CompatibleChatError::Timeout(_)));
+    assert_eq!(error.status_code(), Some(408));
+    assert_eq!(error.to_string(), "Timeout error occurred.");
 
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let mut call = Call::new(Mode::Async);
@@ -755,7 +777,11 @@ async fn a_nonstream_send_failure_is_a_timeout_or_a_transport_error() {
     let answer = timeout(EXCHANGE_TIMEOUT, send_chat(&client(), &plan))
         .await
         .unwrap();
-    assert!(matches!(answer, Err(CompatibleChatError::Transport(_))));
+    let Err(error) = answer else {
+        panic!("the transport error");
+    };
+    assert!(matches!(error, CompatibleChatError::Transport(_)));
+    assert_eq!(error.status_code(), Some(500));
 }
 
 struct Recording(Arc<Mutex<Vec<usize>>>);
