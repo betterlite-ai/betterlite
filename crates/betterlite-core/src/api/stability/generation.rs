@@ -5,7 +5,7 @@ pub mod types;
 mod tests;
 
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_config::types::RouterSettings;
+use betterlite_config::types::ProxyTrust;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -25,7 +25,7 @@ pub struct StabilityGenerationSettings {
 impl StabilityGenerationSettings {
     #[must_use]
     pub fn from_environment(lookup: &dyn EnvironmentLookup) -> Self {
-        let (api_key, api_base) = RouterSettings::stability_generation_settings(lookup);
+        let (api_key, api_base) = ProxyTrust::stability_generation_settings(lookup);
         Self { api_key, api_base }
     }
 }
