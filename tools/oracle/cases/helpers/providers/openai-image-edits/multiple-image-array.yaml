@@ -1,0 +1,25 @@
+kind: helper
+name: openai-image-edits-multiple-image-array
+call:
+  openai_image_edits:
+    transform:
+      - model: gpt-image-1
+        prompt: null
+        image: [{content_base64: iVBORw0KGgo=, name: null}, null, {content_base64: /9j/, name: b.jpg}]
+        mask: [{content_base64: iVBORw0KGgo=, name: m1.png}, {content_base64: /9j/, name: null}]
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+      - model: gpt-image-1
+        prompt: null
+        image: [{content_base64: iVBORw0KGgo=, name: null}]
+        mask: []
+        options: {}
+        params: {api_key: sk-test, api_base: 'https://example.test/v1'}
+        globals: {}
+        environment: {}
+        reply: {status: 200, body: '{"created":1700000000,"data":[{"b64_json":"YQ=="}]}'}
+env: {}
+compare: {ignore: []}
