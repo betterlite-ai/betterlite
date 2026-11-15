@@ -1,4 +1,5 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::openrouter_chat::ChatRequest;
 use betterlite_openai::openrouter_embedding::{EmbeddingDecodeError, transform_embedding_response};
@@ -48,53 +49,61 @@ pub(super) fn responses(cases: &[ReplyCase]) -> HelperResult {
     Ok(Value::Array(costs))
 }
 
+fn embedding_body(reply: &EmbeddingResponse, logged: &[String]) -> Value {
+    let data: Vec<Value> = reply
+        .data
+        .iter()
+        .map(|record| {
+            json!({
+                "object": record.object,
+                "embedding": record.embedding,
+                "index": record.index,
+            })
+        })
+        .collect();
+    json!({
+        "response": {
+            "object": reply.object,
+            "data": data,
+            "model": reply.model,
+            "usage": {
+                "prompt_tokens": reply.usage.prompt_tokens,
+                "total_tokens": reply.usage.total_tokens,
+            },
+        },
+        "logged": logged,
+    })
+}
+
+fn embedding_reply(case: &ReplyCase) -> HelperResult<Value> {
+    let mut logged = Vec::new();
+    let decoded = transform_embedding_response(case.body.as_bytes(), &mut |text: &str| {
+        logged.push(text.to_owned());
+    });
+    let reply = match decoded {
+        Ok(reply) => reply,
+        Err(EmbeddingDecodeError::Provider {
+            message,
+            status_code,
+        }) => {
+            return Err(Box::new(HelperError {
+                class: String::from("ProviderError"),
+                status: Some(status_code),
+                error_type: None,
+                param: None,
+                code: None,
+                message,
+            }));
+        }
+        Err(other) => return Err(other).or_value_error(),
+    };
+    Ok(embedding_body(&reply, &logged))
+}
+
 pub(super) fn embedding_replies(cases: &[ReplyCase]) -> HelperResult {
     let mut replies = Vec::with_capacity(cases.len());
     for case in cases {
-        let mut logged = Vec::new();
-        let decoded = transform_embedding_response(case.body.as_bytes(), &mut |text: &str| {
-            logged.push(text.to_owned());
-        });
-        let reply = match decoded {
-            Ok(reply) => reply,
-            Err(EmbeddingDecodeError::Provider {
-                message,
-                status_code,
-            }) => {
-                return Err(Box::new(HelperError {
-                    class: String::from("ProviderError"),
-                    status: Some(status_code),
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message,
-                }));
-            }
-            Err(other) => return Err(other).or_value_error(),
-        };
-        let data: Vec<Value> = reply
-            .data
-            .iter()
-            .map(|record| {
-                json!({
-                    "object": record.object,
-                    "embedding": record.embedding,
-                    "index": record.index,
-                })
-            })
-            .collect();
-        replies.push(json!({
-            "response": {
-                "object": reply.object,
-                "data": data,
-                "model": reply.model,
-                "usage": {
-                    "prompt_tokens": reply.usage.prompt_tokens,
-                    "total_tokens": reply.usage.total_tokens,
-                },
-            },
-            "logged": logged,
-        }));
+        replies.push(embedding_reply(case)?);
     }
     Ok(Value::Array(replies))
 }

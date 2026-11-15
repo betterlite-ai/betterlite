@@ -74,7 +74,7 @@ fn openai_config() -> OpenAiConfig {
     }
 }
 
-fn empty_catalog() -> CatalogCapabilities {
+const fn empty_catalog() -> CatalogCapabilities {
     CatalogCapabilities {
         chat_models: BTreeSet::new(),
         text_models: BTreeSet::new(),

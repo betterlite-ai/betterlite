@@ -1,6 +1,6 @@
 use betterlite_models::decisions::ir::{DecisionResponse, DecisionUsage};
 use betterlite_models::decisions::{Extra, Json as ModelJson, TokenCount};
-use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
+use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::openrouter_decisions::OpenRouterDecisionsConfig;
 use betterlite_openai::openrouter_embedding::{
     SUPPORTED_OPENAI_PARAMS, get_complete_url as embedding_url, map_openai_params,
