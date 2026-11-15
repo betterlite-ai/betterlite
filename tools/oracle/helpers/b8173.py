@@ -9,6 +9,9 @@ from litellm.llms.tencent.chat.transformation import TencentChatConfig
 from litellm.types.utils import Usage
 from pydantic import JsonValue
 
+# register_model resolves an unmapped model through get_llm_provider, whose provider list goes to stdout, the wire format
+litellm.suppress_debug_info = True
+
 JsonObject: TypeAlias = dict[str, JsonValue]
 
 
