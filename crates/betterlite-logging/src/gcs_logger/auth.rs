@@ -5,7 +5,9 @@ use std::path::Path;
 use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
-use betterlite_models::decisions::Json;
+use betterlite_config::sections::vertex_credential_sources::credential_source::{
+    ConfiguredCredentials, CredentialDecodeError, CredentialSource,
+};
 use google_cloud_auth::build_errors::Error as BuildError;
 use google_cloud_auth::credentials::service_account::{
     AccessSpecifier, Builder as ServiceAccountBuilder,
@@ -17,6 +19,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::gcs_client::gcs_storage_auth::STORAGE_ENDPOINT;
+use crate::gcs_client::gcs_storage_auth::caching_key_behaviors::{
+    CredentialKey, vertex_instance_key,
+};
 use crate::gcs_mock::auth::{
     AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
 };
@@ -28,10 +33,12 @@ const CLOUD_PLATFORM_SCOPE: &str = "https://www.googleapis.com/auth/cloud-platfo
 pub enum AuthError {
     #[error("the vertex credentials file could not be read")]
     Read(#[source] io::Error),
-    #[error("the vertex credentials are not valid JSON")]
+    #[error("the vertex credentials could not be read by the Google auth SDK")]
     Parse(#[source] serde_json::Error),
-    #[error("the vertex credentials document has no credential type")]
+    #[error("the vertex credentials are not a credential document")]
     Document,
+    #[error("the vertex credentials could not be decoded")]
+    Decode(#[source] CredentialDecodeError),
     #[error("vertex credentials of type {kind} are not supported by the GCS logging backend")]
     Unsupported { kind: String },
     #[error("the vertex credentials could not be built")]
@@ -47,18 +54,13 @@ pub enum AuthError {
 // one built credential per configured document, since the crate caches the token inside it
 #[derive(Default)]
 pub struct GoogleCloudAuth {
-    credentials: Mutex<BTreeMap<String, AccessTokenCredentials>>,
+    credentials: Mutex<BTreeMap<CredentialKey, AccessTokenCredentials>>,
 }
 
 impl GoogleCloudAuth {
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     fn credentials_for(
         &self,
-        key: &str,
+        key: &CredentialKey,
         supplied: Option<&SecretString>,
     ) -> Result<AccessTokenCredentials, AuthError> {
         let cached = self
@@ -74,7 +76,7 @@ impl GoogleCloudAuth {
         self.credentials
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(key.to_owned(), built.clone());
+            .insert(key.clone(), built.clone());
         Ok(built)
     }
 }
@@ -87,24 +89,31 @@ fn build_credentials(supplied: Option<&SecretString>) -> Result<AccessTokenCrede
             .map_err(AuthError::Build);
     };
     let text = credential_text(secret.expose_secret())?;
-    let document: Json = serde_json::from_str(&text).map_err(AuthError::Parse)?;
-    match credential_kind(&document)? {
-        "service_account" => {
-            let key = serde_json::from_str(&text).map_err(AuthError::Parse)?;
+    let ConfiguredCredentials::Source(source) =
+        ConfiguredCredentials::from_text(text).map_err(AuthError::Decode)?
+    else {
+        return Err(AuthError::Document);
+    };
+    match &source {
+        CredentialSource::ServiceAccount(_) => {
+            let key = serde_json::from_str(&source.document()).map_err(AuthError::Parse)?;
             ServiceAccountBuilder::new(key)
                 .with_access_specifier(AccessSpecifier::from_scopes([CLOUD_PLATFORM_SCOPE]))
                 .build_access_token_credentials()
                 .map_err(AuthError::Build)
         }
-        "authorized_user" => {
-            let key = serde_json::from_str(&text).map_err(AuthError::Parse)?;
+        CredentialSource::AuthorizedUser(_) => {
+            let key = serde_json::from_str(&source.document()).map_err(AuthError::Parse)?;
             UserAccountBuilder::new(key)
                 .with_scopes([CLOUD_PLATFORM_SCOPE])
                 .build_access_token_credentials()
                 .map_err(AuthError::Build)
         }
-        other => Err(AuthError::Unsupported {
-            kind: other.to_owned(),
+        CredentialSource::ExternalAccount(_) => Err(AuthError::Unsupported {
+            kind: "external_account".to_owned(),
+        }),
+        CredentialSource::Impersonated(_) => Err(AuthError::Unsupported {
+            kind: "impersonated_service_account".to_owned(),
         }),
     }
 }
@@ -117,18 +126,6 @@ fn credential_text(raw: &str) -> Result<String, AuthError> {
     Ok(raw.to_owned())
 }
 
-fn credential_kind(document: &Json) -> Result<&str, AuthError> {
-    let Json::Object(fields) = document else {
-        return Err(AuthError::Document);
-    };
-    match fields.get("type") {
-        Some(Json::Text(kind)) => Ok(kind),
-        Some(Json::Null)
-        | Some(Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => Err(AuthError::Document),
-    }
-}
-
 #[async_trait]
 impl VertexAuth for GoogleCloudAuth {
     type Error = AuthError;
@@ -137,10 +134,7 @@ impl VertexAuth for GoogleCloudAuth {
         &self,
         request: EnsureAccessToken,
     ) -> Result<AccessToken, AuthError> {
-        let key = request
-            .credentials
-            .as_ref()
-            .map_or_else(String::new, |secret| secret.expose_secret().to_owned());
+        let key = CredentialKey(vertex_instance_key(request.credentials.as_ref()));
         let credentials = self.credentials_for(&key, request.credentials.as_ref())?;
         let token = credentials.access_token().await.map_err(AuthError::Token)?;
         Ok(AccessToken {
