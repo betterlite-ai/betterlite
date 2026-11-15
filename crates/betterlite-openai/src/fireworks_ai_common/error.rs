@@ -9,7 +9,6 @@ pub struct FireworksError {
     pub message: String,
     pub headers: Option<Headers>,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("FIREWORKS_API_KEY is not set")]
 pub struct MissingApiKey;

@@ -25,7 +25,6 @@ struct EnvKeys {
     #[serde(default)]
     fireworks_ai_token: Option<String>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ApiKeyCall {
@@ -33,20 +32,17 @@ struct ApiKeyCall {
     #[serde(default)]
     env: EnvKeys,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SessionCall {
     litellm_params: SessionParams,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AffinityCall {
     headers: Headers,
     litellm_params: SessionParams,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct MixinCall {
@@ -56,7 +52,6 @@ struct MixinCall {
     env: EnvKeys,
     litellm_params: SessionParams,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct EmbeddingCall {
@@ -64,19 +59,16 @@ struct EmbeddingCall {
     non_default_params: IndexMap<String, Json>,
     optional_params: IndexMap<String, Json>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct PricingCall {
     model: String,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UrlCall {
     api_base: Option<String>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct HeadersCall {
@@ -85,7 +77,6 @@ struct HeadersCall {
     #[serde(default)]
     env: EnvKeys,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 struct ParamsInput {
@@ -94,14 +85,12 @@ struct ParamsInput {
     top_n: Option<i64>,
     return_documents: Option<bool>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RequestCall {
     model: String,
     params: ParamsInput,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ResponseCall {
@@ -109,7 +98,6 @@ struct ResponseCall {
     headers: Headers,
     body: String,
 }
-
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Input {
@@ -126,7 +114,6 @@ pub(crate) struct Input {
     rerank_requests: Vec<RequestCall>,
     rerank_responses: Vec<ResponseCall>,
 }
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 

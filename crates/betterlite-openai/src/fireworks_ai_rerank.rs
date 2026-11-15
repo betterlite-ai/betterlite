@@ -34,7 +34,6 @@ pub fn get_complete_url(api_base: Option<&str>) -> String {
     }
     format!("{trimmed}/inference/v1{RERANK_SUFFIX}")
 }
-
 pub struct CohereRerankCall<'call> {
     pub query: &'call str,
     pub documents: &'call [RerankDocument],
@@ -55,7 +54,6 @@ pub fn map_cohere_rerank_params(call: &CohereRerankCall<'_>) -> OptionalRerankPa
         return_documents: call.return_documents,
     }
 }
-
 pub fn validate_environment(
     headers: &Headers,
     api_key: Option<&SecretString>,

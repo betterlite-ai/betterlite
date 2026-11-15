@@ -13,7 +13,6 @@ pub struct OptionalRerankParams {
     pub top_n: Option<i64>,
     pub return_documents: Option<bool>,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RerankRequestBody {
     pub model: String,
@@ -24,7 +23,6 @@ pub struct RerankRequestBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub return_documents: Option<bool>,
 }
-
 pub fn transform_rerank_request(
     model: &str,
     params: &OptionalRerankParams,

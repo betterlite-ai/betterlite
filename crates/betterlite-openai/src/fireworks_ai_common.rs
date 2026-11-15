@@ -19,7 +19,6 @@ pub struct FireworksEnv {
     pub fireworksai_api_key: Option<SecretString>,
     pub fireworks_ai_token: Option<SecretString>,
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct SessionMetadata {
     #[serde(default)]
@@ -27,7 +26,6 @@ pub struct SessionMetadata {
     #[serde(default)]
     pub session_id: Option<String>,
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct SessionParams {
     #[serde(default)]
@@ -37,7 +35,6 @@ pub struct SessionParams {
     #[serde(default)]
     pub metadata: Option<SessionMetadata>,
 }
-
 #[must_use]
 pub fn resolve_api_key(api_key: Option<&SecretString>, env: &FireworksEnv) -> Option<SecretString> {
     if let Some(key) = api_key.filter(|key| !key.expose_secret().is_empty()) {
@@ -56,7 +53,6 @@ pub fn resolve_api_key(api_key: Option<&SecretString>, env: &FireworksEnv) -> Op
             .cloned()
     })
 }
-
 #[must_use]
 pub fn get_session_id(params: &SessionParams) -> Option<String> {
     if params
@@ -82,7 +78,6 @@ pub fn get_session_id(params: &SessionParams) -> Option<String> {
         .filter(|session_id| !session_id.is_empty())
         .cloned()
 }
-
 #[must_use]
 pub fn with_session_affinity(headers: &Headers, params: &SessionParams) -> Headers {
     if headers
@@ -98,7 +93,6 @@ pub fn with_session_affinity(headers: &Headers, params: &SessionParams) -> Heade
     pinned.insert(SESSION_AFFINITY_HEADER.to_owned(), session_id);
     pinned
 }
-
 pub fn validate_environment(
     headers: &Headers,
     api_key: Option<&SecretString>,

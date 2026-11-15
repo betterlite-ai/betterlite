@@ -14,7 +14,6 @@ pub fn supported_openai_params(model: &str) -> &'static [&'static str] {
         &[]
     }
 }
-
 #[must_use]
 pub fn map_openai_params(
     non_default_params: &IndexMap<String, Json>,

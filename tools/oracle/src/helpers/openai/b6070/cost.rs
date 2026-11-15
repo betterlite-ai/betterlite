@@ -55,13 +55,11 @@ impl ModelInfoClient for RefuseFetch {
         ready(Err(NoFetch))
     }
 }
-
 pub(super) struct ModelCostLookup {
     entries: IndexMap<String, Box<RawValue>>,
     vertex: VertexModelSets,
     catalog: ModelCatalog,
 }
-
 fn build(entries: IndexMap<String, Box<RawValue>>) -> ModelCostLookup {
     let bytes = serde_json::to_vec(&entries).unwrap_or_default();
     let vertex = VertexModelSets::build(&entries);
@@ -72,7 +70,6 @@ fn build(entries: IndexMap<String, Box<RawValue>>) -> ModelCostLookup {
         catalog,
     }
 }
-
 impl ModelCostLookup {
     pub(super) fn from_map(model_cost: &BTreeMap<String, Value>) -> Option<Self> {
         let bytes = serde_json::to_vec(model_cost).ok()?;
@@ -80,7 +77,6 @@ impl ModelCostLookup {
         Some(build(parsed.entries))
     }
 }
-
 impl ModelInfoLookup for ModelCostLookup {
     fn get(
         &self,
@@ -116,7 +112,6 @@ impl ModelInfoLookup for ModelCostLookup {
         query(&environment, &request)
     }
 }
-
 fn query(
     environment: &MetadataEnvironment<'_>,
     request: &MetadataRequest<'_>,
@@ -141,7 +136,6 @@ fn query(
         .map_err(|_| LookupFailed)?;
     serde_json::from_str::<ModelInfo>(raw.get()).map_err(|_| LookupFailed)
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct UsageInput {
@@ -149,7 +143,6 @@ pub(super) struct UsageInput {
     completion_tokens: i64,
     total_tokens: i64,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CostCall {
@@ -157,7 +150,6 @@ pub(super) struct CostCall {
     usage: UsageInput,
     instant: DateTime<Utc>,
 }
-
 pub(super) fn answer(
     call: &CostCall,
     lookup: &ModelCostLookup,
@@ -184,7 +176,6 @@ pub(super) fn answer(
         completion.normalize().to_string(),
     ))
 }
-
 fn cost_error(
     error: &betterlite_openai::fireworks_ai_cost::error::FireworksCostError,
 ) -> Box<HelperError> {

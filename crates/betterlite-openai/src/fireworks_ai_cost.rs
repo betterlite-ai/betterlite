@@ -26,7 +26,6 @@ pub struct FireworksPricingTiers {
     pub moe_up_to_56b: u128,
     pub moe_up_to_176b: u128,
 }
-
 impl Default for FireworksPricingTiers {
     fn default() -> Self {
         Self {
@@ -37,7 +36,6 @@ impl Default for FireworksPricingTiers {
         }
     }
 }
-
 pub trait ModelInfoLookup {
     fn get(
         &self,
@@ -45,7 +43,6 @@ pub trait ModelInfoLookup {
         custom_llm_provider: Option<&str>,
     ) -> Result<ModelInfo, LookupFailed>;
 }
-
 fn moe_billions(name: &str) -> Option<u128> {
     let pattern = Regex::new(MOE_PATTERN).ok()?;
     let captures = pattern.captures(name).ok()??;
@@ -61,14 +58,12 @@ fn moe_billions(name: &str) -> Option<u128> {
         .unwrap_or(u128::MAX);
     Some(first.saturating_mul(second))
 }
-
 fn standard_billions(name: &str) -> Option<u128> {
     let pattern = Regex::new(SIZE_PATTERN).ok()?;
     let captures = pattern.captures(name).ok()??;
     let digits = captures.get(1)?.as_str();
     Some(digits.parse::<u128>().unwrap_or(u128::MAX))
 }
-
 #[must_use]
 pub fn get_base_model_for_pricing(model: &str, tiers: &FireworksPricingTiers) -> &'static str {
     let name = model.to_lowercase();
@@ -91,7 +86,6 @@ pub fn get_base_model_for_pricing(model: &str, tiers: &FireworksPricingTiers) ->
     }
     "fireworks-ai-default"
 }
-
 fn resolve_model_info(
     model: &str,
     tiers: &FireworksPricingTiers,
@@ -112,7 +106,6 @@ fn resolve_model_info(
             source,
         })
 }
-
 // The supplied record is always the pricing source, so the catalog lookup never runs.
 struct SuppliedPricingOnly;
 
@@ -137,7 +130,6 @@ impl PriceLookup for SuppliedPricingOnly {
         None
     }
 }
-
 pub fn cost_per_token(
     model: &str,
     usage: &CostUsage,

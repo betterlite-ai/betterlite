@@ -19,7 +19,6 @@ pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub trait IdSource: Send + Sync {
     fn new_uuid(&self) -> Uuid;
 }
-
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct UuidIds;
 
@@ -28,7 +27,6 @@ impl IdSource for UuidIds {
         Uuid::new_v4()
     }
 }
-
 #[derive(Debug, Default, Deserialize)]
 pub struct RawUsage {
     #[serde(default)]
@@ -38,7 +36,6 @@ pub struct RawUsage {
     #[serde(default)]
     completion_tokens: Option<i64>,
 }
-
 #[derive(Debug, Deserialize)]
 pub struct RawResult {
     #[serde(default)]
@@ -48,7 +45,6 @@ pub struct RawResult {
     #[serde(default)]
     document: Option<Json>,
 }
-
 #[derive(Debug, Default, Deserialize)]
 pub struct RawRerankResponse {
     #[serde(default)]
@@ -60,7 +56,6 @@ pub struct RawRerankResponse {
     #[serde(default)]
     results: Option<Vec<RawResult>>,
 }
-
 pub fn decode_rerank_response(bytes: &[u8]) -> Result<RawRerankResponse, FireworksRerankError> {
     if bytes.len() > MAX_RESPONSE_BYTES {
         return Err(FireworksRerankError::ResponseTooLarge {
@@ -70,7 +65,6 @@ pub fn decode_rerank_response(bytes: &[u8]) -> Result<RawRerankResponse, Firewor
     }
     serde_json::from_slice(bytes).map_err(|source| FireworksRerankError::ResponseDecode { source })
 }
-
 fn project_result(result: RawResult) -> Result<RerankResponseResult, FireworksRerankError> {
     let index = result
         .index
@@ -101,7 +95,6 @@ fn project_result(result: RawResult) -> Result<RerankResponseResult, FireworksRe
         document,
     })
 }
-
 pub fn transform_rerank_response(
     status_code: u16,
     headers: &Headers,

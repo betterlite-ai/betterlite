@@ -32,7 +32,6 @@ pub(super) fn collect<T>(
     }
     Ok(Value::Array(answers))
 }
-
 pub(super) fn env_of(keys: &super::EnvKeys) -> FireworksEnv {
     FireworksEnv {
         fireworks_api_key: keys.fireworks_api_key.as_deref().map(SecretString::from),
@@ -41,7 +40,6 @@ pub(super) fn env_of(keys: &super::EnvKeys) -> FireworksEnv {
         fireworks_ai_token: keys.fireworks_ai_token.as_deref().map(SecretString::from),
     }
 }
-
 fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: class.to_owned(),
@@ -52,13 +50,11 @@ fn helper_error(class: &str, message: String) -> Box<HelperError> {
         message,
     })
 }
-
 pub(super) fn api_key_answer(call: &ApiKeyCall) -> Result<Value, Box<HelperError>> {
     let argument = call.argument.as_deref().map(SecretString::from);
     let resolved = resolve_api_key(argument.as_ref(), &env_of(&call.env));
     Ok(json!(resolved.map(|key| key.expose_secret().clone())))
 }
-
 pub(super) fn sessions_answer(items: &[SessionCall]) -> Value {
     let mut answers = Vec::with_capacity(items.len());
     for call in items {
@@ -66,7 +62,6 @@ pub(super) fn sessions_answer(items: &[SessionCall]) -> Value {
     }
     Value::Array(answers)
 }
-
 pub(super) fn affinity_answer(items: &[AffinityCall]) -> Value {
     let mut answers = Vec::with_capacity(items.len());
     for call in items {
@@ -77,7 +72,6 @@ pub(super) fn affinity_answer(items: &[AffinityCall]) -> Value {
     }
     Value::Array(answers)
 }
-
 pub(super) fn embedding_answer(items: &[EmbeddingCall]) -> Value {
     let mut answers = Vec::with_capacity(items.len());
     for call in items {
@@ -92,7 +86,6 @@ pub(super) fn embedding_answer(items: &[EmbeddingCall]) -> Value {
     }
     Value::Array(answers)
 }
-
 pub(super) fn pricing_answer(items: &[PricingCall]) -> Value {
     let tiers = FireworksPricingTiers::default();
     let mut answers = Vec::with_capacity(items.len());
@@ -101,7 +94,6 @@ pub(super) fn pricing_answer(items: &[PricingCall]) -> Value {
     }
     Value::Array(answers)
 }
-
 pub(super) fn rerank_urls_answer(items: &[UrlCall]) -> Value {
     let mut answers = Vec::with_capacity(items.len());
     for call in items {
@@ -109,7 +101,6 @@ pub(super) fn rerank_urls_answer(items: &[UrlCall]) -> Value {
     }
     Value::Array(answers)
 }
-
 pub(super) fn rerank_requests_answer(items: &[RequestCall]) -> Result<Value, Box<HelperError>> {
     let mut answers = Vec::with_capacity(items.len());
     for call in items {
@@ -124,7 +115,6 @@ pub(super) fn rerank_requests_answer(items: &[RequestCall]) -> Result<Value, Box
     }
     Ok(Value::Array(answers))
 }
-
 pub(super) fn mixin_answer(call: &MixinCall) -> Result<Value, Box<HelperError>> {
     let argument = call.api_key.as_deref().map(SecretString::from);
     match validate_environment(
@@ -140,7 +130,6 @@ pub(super) fn mixin_answer(call: &MixinCall) -> Result<Value, Box<HelperError>> 
         )),
     }
 }
-
 pub(super) fn cost_answers(
     model_cost: &BTreeMap<String, Value>,
     calls: &[super::cost::CostCall],
@@ -160,21 +149,18 @@ pub(super) fn cost_answers(
     }
     Ok(Value::Array(answers))
 }
-
 pub(super) fn rerank_headers_answer(call: &HeadersCall) -> Result<Value, Box<HelperError>> {
     let argument = call.api_key.as_deref().map(SecretString::from);
     let headers = validate_rerank_environment(&call.headers, argument.as_ref(), &env_of(&call.env))
         .map_err(rerank_failure)?;
     Ok(json!(headers))
 }
-
 pub(super) fn response_answer(call: &ResponseCall) -> Result<Value, Box<HelperError>> {
     match transform_rerank_response(call.status, &call.headers, call.body.as_bytes(), &UuidIds) {
         Ok(response) => Ok(json!(response)),
         Err(error) => Err(rerank_failure(error)),
     }
 }
-
 pub(super) fn rerank_failure(error: FireworksRerankError) -> Box<HelperError> {
     let (class, status) = match &error {
         FireworksRerankError::Fireworks(exception) => {
