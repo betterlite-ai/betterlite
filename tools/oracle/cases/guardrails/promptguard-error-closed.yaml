@@ -1,0 +1,15 @@
+kind: helper
+name: promptguard-error-closed
+call:
+  b8211:
+    api_key: test-key
+    block_on_error: true
+    input_type: request
+    inputs:
+      texts: ["Hello there"]
+    answer:
+      status: 500
+      headers: {}
+      body: {error: boom}
+env: {}
+compare: {ignore: []}
