@@ -109,13 +109,13 @@ impl Helper for Op {
             .build()
             .or_value_error()?;
         let outcome = runtime.block_on(records.run(&input.plan));
-        let recorded = lookups
+        let seen = lookups
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         Ok(json!({
             "result": result_value(&outcome),
-            "events": event_values(&recorded),
+            "events": event_values(&seen),
         }))
     }
 }

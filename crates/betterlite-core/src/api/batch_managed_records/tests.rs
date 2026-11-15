@@ -183,7 +183,7 @@ fn ids(
 #[tokio::test]
 async fn existing_input_id_mapping() {
     let files = RecordingFiles::recording(&[("file-raw-in", "litellm_proxy:file:unified-in")]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveInput {
         files: ids(Some("file-raw-in"), Some("file-raw-out"), None),
@@ -196,7 +196,7 @@ async fn existing_input_id_mapping() {
             None
         ))
     );
-    assert_eq!(recording.lookups(), ["file-raw-in"]);
+    assert_eq!(observed.lookups(), ["file-raw-in"]);
 }
 
 #[tokio::test]
@@ -205,7 +205,7 @@ async fn existing_output_error_id__5d60() {
         ("file-raw-out", "litellm_proxy:file:unified-out"),
         ("file-raw-err", "litellm_proxy:file:unified-err"),
     ]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveOutput {
         files: ids(
@@ -222,7 +222,7 @@ async fn existing_output_error_id__5d60() {
             Some("litellm_proxy:file:unified-err")
         ))
     );
-    assert_eq!(recording.lookups(), ["file-raw-out", "file-raw-err"]);
+    assert_eq!(observed.lookups(), ["file-raw-out", "file-raw-err"]);
 }
 
 #[tokio::test]
@@ -231,7 +231,7 @@ async fn lookup_failure_keeps_raw_id() {
         &[("file-raw-in", "litellm_proxy:file:unified-in")],
         &["file-raw-in"],
     );
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveInput {
         files: ids(Some("file-raw-in"), None, None),
@@ -240,13 +240,13 @@ async fn lookup_failure_keeps_raw_id() {
         records.run(&input).await,
         BatchManagedRecordsResult::Resolved(ids(Some("file-raw-in"), None, None))
     );
-    assert_eq!(recording.lookups(), ["file-raw-in"]);
+    assert_eq!(observed.lookups(), ["file-raw-in"]);
 }
 
 #[tokio::test]
 async fn missing_row_keeps_raw_id() {
     let files = RecordingFiles::recording(&[]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::ResolveOutput {
         files: ids(None, Some("file-raw-unknown"), None),
@@ -255,14 +255,14 @@ async fn missing_row_keeps_raw_id() {
         records.run(&input).await,
         BatchManagedRecordsResult::Resolved(ids(None, Some("file-raw-unknown"), None))
     );
-    assert_eq!(recording.lookups(), ["file-raw-unknown"]);
+    assert_eq!(observed.lookups(), ["file-raw-unknown"]);
 }
 
 #[tokio::test]
 async fn empty_and_unified_ids_are_not_looked_up() {
     let unified = URL_SAFE_NO_PAD.encode("litellm_proxy:file:unified-in");
     let files = RecordingFiles::recording(&[]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::Ensure {
         files: ids(Some(""), Some(&unified), None),
@@ -271,7 +271,7 @@ async fn empty_and_unified_ids_are_not_looked_up() {
         records.run(&input).await,
         BatchManagedRecordsResult::Ensured(ids(Some(""), Some(&unified), None))
     );
-    assert!(recording.lookups().is_empty());
+    assert!(observed.lookups().is_empty());
 }
 
 #[tokio::test]
@@ -281,7 +281,7 @@ async fn ensure_no_hook_stops_afte_1794() {
         ("file-raw-out", "litellm_proxy:file:unified-out"),
         ("file-raw-err", "litellm_proxy:file:unified-err"),
     ]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::Ensure {
         files: ids(
@@ -299,7 +299,7 @@ async fn ensure_no_hook_stops_afte_1794() {
         ))
     );
     assert_eq!(
-        recording.lookups(),
+        observed.lookups(),
         ["file-raw-in", "file-raw-out", "file-raw-err"]
     );
 }
@@ -308,7 +308,7 @@ async fn ensure_no_hook_stops_afte_1794() {
 #[tokio::test]
 async fn database_get_no_hook_no_query() {
     let files = RecordingFiles::recording(&[("file-raw-out", "litellm_proxy:file:unified-out")]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::DatabaseGet {
         batch_id: Some("batch-1".to_owned()),
@@ -321,7 +321,7 @@ async fn database_get_no_hook_no_query() {
             response: None,
         })
     );
-    assert!(recording.lookups().is_empty());
+    assert!(observed.lookups().is_empty());
 }
 
 // the same guard returns before the response is normalized or a row is written
@@ -331,7 +331,7 @@ async fn database_update_no_hook_n_99fb() {
         ("file-raw-in", "litellm_proxy:file:unified-in"),
         ("file-raw-out", "litellm_proxy:file:unified-out"),
     ]);
-    let recording = files.clone();
+    let observed = files.clone();
     let records = service(Some(files), Some(NoJobs), true);
     let input = BatchManagedRecordsInput::DatabaseUpdate {
         batch_id: Some("batch-1".to_owned()),
@@ -345,7 +345,7 @@ async fn database_update_no_hook_n_99fb() {
             written: false,
         })
     );
-    assert!(recording.lookups().is_empty());
+    assert!(observed.lookups().is_empty());
 }
 
 #[tokio::test]
