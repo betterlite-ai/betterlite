@@ -89,20 +89,6 @@ class FakeWrapper(PrismaWrapper):
         self._engine_generation += 1
 
 
-class Stale:
-    """Stand-in for LiteLLM's private _StaleReadEngine: the observed handle and its generation.
-
-    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4351
-    """
-
-    def __init__(self, wrapper: PrismaWrapper, generation: int) -> None:
-        self.wrapper = wrapper
-        self.generation = generation
-
-    def is_still_live(self, current: PrismaWrapper) -> bool:
-        return self.wrapper is current and self.generation == current.engine_generation
-
-
 class FakeRouting(RoutingPrismaWrapper):
     def __init__(
         self,
