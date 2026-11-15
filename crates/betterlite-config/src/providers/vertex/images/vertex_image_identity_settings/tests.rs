@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 use super::{ImageEnvironmentTier, ImageModuleTier, ImageSecretTier};
 
@@ -131,6 +131,23 @@ fn an_empty_module_setting_counts_as_unset() {
     let (_environment, module, _secrets) =
         identity("litellm_settings:\n  vertex_project: \"\"\n", &[]);
     assert_eq!(module, (None, None));
+}
+
+#[test]
+fn a_credentials_module_setting_is_an_unknown_key() {
+    let error = ConfigLoader {
+        lookup: lookup(&[]),
+    }
+    .load("litellm_settings:\n  vertex_credentials: /keys/service-account.json\n")
+    .unwrap_err();
+    assert!(
+        matches!(
+            &error,
+            ConfigError::Unsupported { paths }
+                if *paths == ["litellm_settings.vertex_credentials"]
+        ),
+        "{error}"
+    );
 }
 
 #[test]
