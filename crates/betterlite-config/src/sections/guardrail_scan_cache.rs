@@ -7,7 +7,10 @@ const VARIABLE: &str = "GUARDRAIL_SCANNED_MESSAGES_CACHE_TTL_SECONDS";
 
 // The TTL is an environment variable only, so every key of the file is ignored by this section
 #[derive(Debug, Default, serde::Deserialize)]
-pub struct Raw {}
+pub struct Raw {
+    #[serde(skip)]
+    _unused: (),
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
