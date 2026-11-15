@@ -1,3 +1,4 @@
+use std::io::Error as IoError;
 use std::time::TryFromFloatSecsError;
 
 use betterlite_http::tls::TlsError;
@@ -7,11 +8,21 @@ use thiserror::Error;
 use tokio::task::JoinError;
 use tokio_tungstenite::tungstenite;
 
-// the failure the model stream ended with, as the proxy words it
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-#[error("{message}")]
-pub struct ModelStreamError {
-    pub message: String,
+// the failure the model stream ended with, filled by the proxy from its own typed stream error
+#[derive(Debug, Error)]
+pub enum ModelStreamError {
+    #[error("the upstream model request failed")]
+    Http {
+        #[source]
+        source: reqwest::Error,
+    },
+    #[error("the upstream model sent a chunk that could not be parsed")]
+    Parse {
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the upstream model reported an error: {message}")]
+    Provider { message: Box<str> },
 }
 
 #[derive(Debug, Error)]
@@ -82,7 +93,7 @@ pub enum CatoError {
     #[error("the Cato Networks websocket CA file could not be read")]
     WsCaFile {
         #[source]
-        source: std::io::Error,
+        source: IoError,
     },
     #[error("the Cato Networks upstream websocket sent no message in time")]
     StreamTimeout,

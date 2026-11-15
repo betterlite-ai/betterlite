@@ -40,7 +40,7 @@ fn violation_of(
 
 fn exceeds(score: Option<f64>, threshold: Option<f64>) -> bool {
     match (score, threshold) {
-        (Some(score), Some(threshold)) => score >= threshold,
+        (Some(measured), Some(limit)) => measured >= limit,
         _ => false,
     }
 }

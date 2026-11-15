@@ -59,25 +59,40 @@ fn tool_call_fragments(message: &GuardrailValue, choice_index: usize) -> Vec<Fra
     let Some(tool_calls) = field_of(message, "tool_calls").and_then(as_array) else {
         return Vec::new();
     };
+    let route = [
+        Step::Key("choices"),
+        Step::Index(choice_index),
+        Step::Key("message"),
+        Step::Key("tool_calls"),
+    ];
+    element_fragments(&route, tool_calls, None, &["function", "arguments"])
+}
+
+// the non-empty text under `keys` in each element, with the route to it from the elements' array
+fn element_fragments(
+    route: &[Step],
+    elements: &[GuardrailValue],
+    required_type: Option<&str>,
+    keys: &[&'static str],
+) -> Vec<Fragment> {
     let mut fragments = Vec::new();
-    for (call_index, tool_call) in tool_calls.iter().enumerate() {
-        let arguments = field_of(tool_call, "function")
-            .and_then(|function| field_of(function, "arguments"))
-            .and_then(as_text)
-            .filter(|text| !text.is_empty());
-        let Some(text) = arguments else {
+    for (index, element) in elements.iter().enumerate() {
+        let element_type = field_of(element, "type").and_then(as_text);
+        if required_type.is_some_and(|wanted| element_type != Some(wanted)) {
+            continue;
+        }
+        let mut found = Some(element);
+        for &key in keys {
+            found = found.and_then(|value| field_of(value, key));
+        }
+        let Some(text) = found.and_then(as_text).filter(|text| !text.is_empty()) else {
             continue;
         };
+        let mut path = route.to_vec();
+        path.push(Step::Index(index));
+        path.extend(keys.iter().copied().map(Step::Key));
         fragments.push(Fragment {
-            path: vec![
-                Step::Key("choices"),
-                Step::Index(choice_index),
-                Step::Key("message"),
-                Step::Key("tool_calls"),
-                Step::Index(call_index),
-                Step::Key("function"),
-                Step::Key("arguments"),
-            ],
+            path,
             text: text.to_owned(),
         });
     }
@@ -113,29 +128,12 @@ fn output_text_fragments(item: &GuardrailValue, item_index: usize) -> Vec<Fragme
     let Some(parts) = field_of(item, "content").and_then(as_array) else {
         return Vec::new();
     };
-    let mut fragments = Vec::new();
-    for (part_index, part) in parts.iter().enumerate() {
-        if field_of(part, "type").and_then(as_text) != Some("output_text") {
-            continue;
-        }
-        let text = field_of(part, "text")
-            .and_then(as_text)
-            .filter(|text| !text.is_empty());
-        let Some(text) = text else {
-            continue;
-        };
-        fragments.push(Fragment {
-            path: vec![
-                Step::Key("output"),
-                Step::Index(item_index),
-                Step::Key("content"),
-                Step::Index(part_index),
-                Step::Key("text"),
-            ],
-            text: text.to_owned(),
-        });
-    }
-    fragments
+    let route = [
+        Step::Key("output"),
+        Step::Index(item_index),
+        Step::Key("content"),
+    ];
+    element_fragments(&route, parts, Some("output_text"), &["text"])
 }
 
 // LiteLLM's _apply_output_fragment and _apply_responses_output_fragment write into the fragment they read
@@ -167,22 +165,22 @@ pub(crate) fn write_fragment(
 }
 
 fn field_of<'value>(value: &'value GuardrailValue, key: &str) -> Option<&'value GuardrailValue> {
-    match value {
-        GuardrailValue::Object(object) => object.get(key),
-        _ => None,
-    }
+    let GuardrailValue::Object(object) = value else {
+        return None;
+    };
+    object.get(key)
 }
 
 fn as_array(value: &GuardrailValue) -> Option<&[GuardrailValue]> {
-    match value {
-        GuardrailValue::Array(items) => Some(items),
-        _ => None,
-    }
+    let GuardrailValue::Array(items) = value else {
+        return None;
+    };
+    Some(items)
 }
 
 fn as_text(value: &GuardrailValue) -> Option<&str> {
-    match value {
-        GuardrailValue::Text(text) => Some(text),
-        _ => None,
-    }
+    let GuardrailValue::Text(text) = value else {
+        return None;
+    };
+    Some(text)
 }

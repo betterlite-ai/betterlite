@@ -2,13 +2,13 @@ import asyncio
 from typing import Literal, Protocol, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.caching.dual_cache import DualCache
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.lakera_ai import lakeraAI_Moderation
 from litellm.types.guardrails import LakeraCategoryThresholds
 from pydantic import JsonValue, TypeAdapter
+from starlette.exceptions import HTTPException
 
 DETAIL: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 

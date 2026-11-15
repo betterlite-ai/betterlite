@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::io::Write as _;
 use std::sync::Arc;
 use std::time::Duration;
@@ -6,6 +7,7 @@ use std::time::Duration;
 use futures_util::{SinkExt as _, Stream, StreamExt as _};
 use reqwest::header::HeaderMap;
 use rustls::ServerConfig;
+use rustls::crypto::aws_lc_rs;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
@@ -23,7 +25,9 @@ use crate::cato::error::CatoError;
 use crate::cato::inspection::hooks::streaming_iterator_hook;
 use crate::cato::tests::support::{assert_header, chat_data};
 use crate::cato::tests::{list, object, text};
-use crate::cato::transport::stream::{CatoSocket, DONE_FRAME, MAX_FRAME_BYTES};
+use crate::cato::transport::stream::{
+    CatoSocket, CatoSocketConnector as _, DONE_FRAME, MAX_FRAME_BYTES,
+};
 use crate::cato::transport::websocket::WebSocketConnector;
 
 // a hook that stops relaying would otherwise hold the test suite until its timeout
@@ -60,12 +64,13 @@ async fn cato_stream_server(frames: Vec<Message>, wait_for: usize) -> (String, J
 
 async fn serve_cato_stream(listener: TcpListener, frames: Vec<Message>, wait_for: usize) -> Report {
     let (stream, _peer) = listener.accept().await.expect("accept");
+    drop(listener);
     let mut headers = BTreeMap::new();
     let mut socket = accept_hdr_async(
         stream,
         |request: &Request, response: Response| -> Result<Response, ErrorResponse> {
-            for (name, value) in request.headers() {
-                if let Ok(value) = value.to_str() {
+            for (name, raw) in request.headers() {
+                if let Ok(value) = raw.to_str() {
                     headers.insert(name.as_str().to_owned(), value.to_owned());
                 }
             }
@@ -91,7 +96,7 @@ struct TlsServer {
 async fn tls_server() -> TlsServer {
     let certified =
         rcgen::generate_simple_self_signed(vec!["127.0.0.1".to_owned()]).expect("certificate");
-    let provider = Arc::new(rustls::crypto::aws_lc_rs::default_provider());
+    let provider = Arc::new(aws_lc_rs::default_provider());
     let config = ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .expect("protocol versions")
@@ -103,11 +108,10 @@ async fn tls_server() -> TlsServer {
             )),
         )
         .expect("server config");
-    let acceptor = TlsAcceptor::from(Arc::new(config));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let port = listener.local_addr().expect("address").port();
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_tls_stream(listener, acceptor));
+    tasks.spawn(serve_tls_stream(listener, Arc::new(config)));
     TlsServer {
         url: format!("wss://127.0.0.1:{port}/fw/v1/analyze/stream"),
         ca_pem: certified.cert.pem(),
@@ -115,9 +119,10 @@ async fn tls_server() -> TlsServer {
     }
 }
 
-async fn serve_tls_stream(listener: TcpListener, acceptor: TlsAcceptor) {
+async fn serve_tls_stream(listener: TcpListener, config: Arc<ServerConfig>) {
     let (stream, _peer) = listener.accept().await.expect("accept");
-    let Ok(tls) = acceptor.accept(stream).await else {
+    drop(listener);
+    let Ok(tls) = TlsAcceptor::from(config).accept(stream).await else {
         return;
     };
     let Ok(mut socket) = accept_async(tls).await else {
@@ -208,7 +213,7 @@ async fn websocket_connector_bounds_the_handshake_wait() {
     let mut tasks = JoinSet::new();
     tasks.spawn(async move {
         let (_stream, _peer) = listener.accept().await.expect("accept");
-        std::future::pending::<()>().await;
+        pending::<()>().await;
     });
     let guardrail = ws_guardrail(&url, None, Duration::from_secs(5));
     let result = WebSocketConnector::from(&guardrail)
@@ -277,17 +282,17 @@ async fn streaming_iterator_hook_relays_the_stream_with_cato_headers() {
 #[tokio::test]
 async fn websocket_connector_trusts_a_disabled_and_a_ca_file_verification() {
     let mut disabled = tls_server().await;
-    let mut socket =
+    let mut disabled_socket =
         connect_websocket(&disabled.url, Some(WsSsl::Disabled), Duration::from_secs(5))
             .await
             .expect("connected");
-    let frame = socket
+    let disabled_frame = disabled_socket
         .reader
         .recv_message()
         .await
         .expect("frame")
         .expect("text");
-    assert_eq!(frame, DONE_FRAME.as_bytes().to_vec());
+    assert_eq!(disabled_frame, DONE_FRAME.as_bytes().to_vec());
 
     let mut trusted = tls_server().await;
     let mut ca_file = tempfile::NamedTempFile::new().expect("ca file");
@@ -295,20 +300,20 @@ async fn websocket_connector_trusts_a_disabled_and_a_ca_file_verification() {
         .write_all(trusted.ca_pem.as_bytes())
         .expect("ca pem");
     let path = ca_file.path().to_str().expect("ca path").to_owned();
-    let mut socket = connect_websocket(
+    let mut trusted_socket = connect_websocket(
         &trusted.url,
         Some(WsSsl::CaFile(path)),
         Duration::from_secs(5),
     )
     .await
     .expect("connected");
-    let frame = socket
+    let trusted_frame = trusted_socket
         .reader
         .recv_message()
         .await
         .expect("frame")
         .expect("text");
-    assert_eq!(frame, DONE_FRAME.as_bytes().to_vec());
+    assert_eq!(trusted_frame, DONE_FRAME.as_bytes().to_vec());
     disabled.tasks.abort_all();
     trusted.tasks.abort_all();
 }
@@ -316,16 +321,16 @@ async fn websocket_connector_trusts_a_disabled_and_a_ca_file_verification() {
 #[tokio::test]
 async fn websocket_connector_rejects_a_self_signed_server_on_the_system_roots() {
     let native = tls_server().await;
-    let result = connect_websocket(
+    let native_result = connect_websocket(
         &native.url,
         Some(WsSsl::SystemRoots),
         Duration::from_secs(5),
     )
     .await;
-    assert!(matches!(result, Err(CatoError::WebSocket { .. })));
+    assert!(matches!(native_result, Err(CatoError::WebSocket { .. })));
     let default = tls_server().await;
-    let result = connect_websocket(&default.url, None, Duration::from_secs(5)).await;
-    assert!(matches!(result, Err(CatoError::WebSocket { .. })));
+    let default_result = connect_websocket(&default.url, None, Duration::from_secs(5)).await;
+    assert!(matches!(default_result, Err(CatoError::WebSocket { .. })));
 }
 
 #[tokio::test]

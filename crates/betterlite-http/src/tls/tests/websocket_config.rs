@@ -46,7 +46,7 @@ fn local_server() -> LocalServer {
     }
 }
 
-fn serve(listener: TcpListener, config: Arc<ServerConfig>) {
+fn serve(listener: &TcpListener, config: Arc<ServerConfig>) {
     let (mut stream, _peer) = listener.accept().expect("accept");
     stream
         .set_read_timeout(Some(TIMEOUT))
@@ -83,7 +83,7 @@ fn websocket_policy_tests_behavior(#[case] verification: Verification, #[case] t
         ..
     } = local_server();
     thread::scope(|scope| {
-        scope.spawn(move || serve(listener, config));
+        scope.spawn(move || serve(&listener, config));
         let client = websocket_client_config(&verification).expect("client config");
         assert_eq!(handshake(client, address), trusted);
     });
@@ -101,7 +101,7 @@ fn websocket_config_trusts_the_configured_ca_file() {
     fs::write(ca_file.path(), ca_pem).expect("ca pem");
     let path = ca_file.path().to_str().expect("path").to_owned();
     thread::scope(|scope| {
-        scope.spawn(move || serve(listener, config));
+        scope.spawn(move || serve(&listener, config));
         let client = websocket_client_config(&Verification::CaFile(path)).expect("client config");
         assert!(handshake(client, address));
     });
@@ -110,8 +110,8 @@ fn websocket_config_trusts_the_configured_ca_file() {
 #[test]
 fn websocket_config_reports_a_ca_file_it_cannot_read() {
     let directory = tempfile::tempdir().expect("temp dir");
-    let path = directory.path().join("missing-ca.pem");
-    let path = path.to_str().expect("path").to_owned();
+    let missing = directory.path().join("missing-ca.pem");
+    let path = missing.to_str().expect("path").to_owned();
     let result = websocket_client_config(&Verification::CaFile(path));
     assert!(matches!(result, Err(TlsError::ReadCa(_))));
 }

@@ -37,19 +37,25 @@ struct FakeReader {
 
 #[async_trait]
 impl CatoFrameReader for FakeReader {
+    // a frame leaves the queue only once it can be returned, so a cancelled receive loses nothing
     async fn recv_message(&mut self) -> Result<Option<Vec<u8>>, CatoError> {
-        let frame = self.frames.lock().expect("frames").pop_front();
-        match frame {
-            None => std::future::pending().await,
-            Some(FakeFrame::Message(frame)) => frame,
-            Some(FakeFrame::AfterSentTexts(count, frame)) => {
-                loop {
-                    if self.sent.lock().expect("sent").len() >= count {
-                        break;
+        loop {
+            let frame = {
+                let mut frames = self.frames.lock().expect("frames");
+                let poppable = match frames.front() {
+                    Some(FakeFrame::AfterSentTexts(count, _)) => {
+                        self.sent.lock().expect("sent").len() >= *count
                     }
-                    self.sent_signal.notified().await;
+                    Some(FakeFrame::Message(_)) => true,
+                    None => false,
+                };
+                if poppable { frames.pop_front() } else { None }
+            };
+            match frame {
+                Some(FakeFrame::Message(answer) | FakeFrame::AfterSentTexts(_, answer)) => {
+                    return answer;
                 }
-                frame
+                None => self.sent_signal.notified().await,
             }
         }
     }
@@ -149,8 +155,8 @@ fn fake_connector(frames: Vec<FakeFrame>, fail_writes: bool) -> (FakeConnector, 
     (connector, control)
 }
 
-fn encoded(value: &GuardrailValue) -> Result<Option<Vec<u8>>, CatoError> {
-    Ok(Some(serde_json::to_vec(value).expect("frame JSON")))
+fn encoded(value: &GuardrailValue) -> Vec<u8> {
+    serde_json::to_vec(value).expect("frame JSON")
 }
 
 fn empty_chunks() -> Chunks {
@@ -175,7 +181,7 @@ async fn relay(
     let (output, delivered) = mpsc::channel(16);
     let result = time::timeout(
         RELAY_DEADLINE,
-        relay_output_stream(connector, guardrail, HeaderMap::new(), chunks, &output),
+        relay_output_stream(connector, guardrail, &HeaderMap::new(), chunks, &output),
     )
     .await
     .expect("the relay finishes");
@@ -208,10 +214,13 @@ async fn streaming_relay_forwards_the_model_chunks_and_hands_back_the_verified_o
     let second = object(&[("choices", list(&[text("second")]))]);
     let verified = object(&[("verified_chunk", first.clone())]);
     let frames = vec![
-        FakeFrame::Message(encoded(&verified)),
+        FakeFrame::Message(Ok(Some(encoded(&verified)))),
         FakeFrame::AfterSentTexts(
             4,
-            encoded(&object(&[("done", GuardrailValue::Boolean(true))])),
+            Ok(Some(encoded(&object(&[(
+                "done",
+                GuardrailValue::Boolean(true),
+            )])))),
         ),
     ];
     let (connector, control) = fake_connector(frames, false);
@@ -242,15 +251,15 @@ async fn streaming_relay_forwards_the_model_chunks_and_hands_back_the_verified_o
 async fn streaming_relay_raises_a_blocking_message() {
     let frame = object(&[("blocking_message", text("stream blocked"))]);
     let (result, delivered) = relay_frames(
-        vec![FakeFrame::Message(encoded(&frame))],
+        vec![FakeFrame::Message(Ok(Some(encoded(&frame))))],
         false,
         empty_chunks(),
     )
     .await;
     let error = result.expect_err("blocked");
     assert!(matches!(
-        error,
-        CatoError::StreamBlocked { ref message } if message == "stream blocked"
+        &error,
+        CatoError::StreamBlocked { message } if message == "stream blocked"
     ));
     assert_eq!(error.status_code().as_u16(), 500);
     assert!(delivered.is_empty());
@@ -264,7 +273,7 @@ async fn streaming_relay_lets_done_win_over_a_blocking_message() {
         ("blocking_message", text("ignored")),
     ]);
     let (result, delivered) = relay_frames(
-        vec![FakeFrame::Message(encoded(&frame))],
+        vec![FakeFrame::Message(Ok(Some(encoded(&frame))))],
         false,
         empty_chunks(),
     )
@@ -277,7 +286,7 @@ async fn streaming_relay_lets_done_win_over_a_blocking_message() {
 async fn streaming_relay_ends_on_a_frame_it_does_not_recognize() {
     let frame = object(&[("surprise", GuardrailValue::Boolean(true))]);
     let (result, delivered) = relay_frames(
-        vec![FakeFrame::Message(encoded(&frame))],
+        vec![FakeFrame::Message(Ok(Some(encoded(&frame))))],
         false,
         empty_chunks(),
     )
@@ -329,8 +338,9 @@ async fn streaming_relay_reports_a_model_stream_that_fails_midway() {
     let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
     let (sender, chunks) = mpsc::channel(8);
     sender.send(Ok(chunk.clone())).await.expect("chunk");
-    let failure = ModelStreamError {
-        message: "upstream model dropped".to_owned(),
+    let parse_error = serde_json::from_str::<GuardrailValue>("{").expect_err("unterminated");
+    let failure = ModelStreamError::Parse {
+        source: parse_error,
     };
     sender.send(Err(failure)).await.expect("failure");
     let (result, delivered) = relay(&connector, &guardrail, chunks).await;
@@ -338,7 +348,11 @@ async fn streaming_relay_reports_a_model_stream_that_fails_midway() {
     assert_eq!(error.status_code().as_u16(), 500);
     assert!(matches!(
         &error,
-        CatoError::StreamSenderFailed { source } if matches!(**source, CatoError::ModelStream { .. })
+        CatoError::StreamSenderFailed { source }
+            if matches!(
+                **source,
+                CatoError::ModelStream { source: ModelStreamError::Parse { .. } }
+            )
     ));
     assert_eq!(
         control.sent.lock().expect("sent").clone(),
@@ -353,14 +367,17 @@ async fn streaming_relay_cancels_the_sender_when_the_client_stops_reading() {
         "verified_chunk",
         object(&[("choices", list(&[text("one")]))]),
     )]);
-    let (connector, control) = fake_connector(vec![FakeFrame::Message(encoded(&verified))], false);
+    let (connector, control) = fake_connector(
+        vec![FakeFrame::Message(Ok(Some(encoded(&verified))))],
+        false,
+    );
     let guardrail = ws_guardrail("wss://cato.test", None, Duration::from_secs(5));
     let (output, delivered) = mpsc::channel(1);
     drop(delivered);
     // the model stream stays open, so only a cancelled sender task drops the writer
     let (_model, chunks) = mpsc::channel(1);
     let result =
-        relay_output_stream(&connector, &guardrail, HeaderMap::new(), chunks, &output).await;
+        relay_output_stream(&connector, &guardrail, &HeaderMap::new(), chunks, &output).await;
     result.expect("the stream ends");
     time::timeout(Duration::from_secs(1), control.closed)
         .await

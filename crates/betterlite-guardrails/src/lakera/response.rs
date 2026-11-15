@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
-use serde_json::value::RawValue;
 
-pub type Extensions = BTreeMap<String, Box<RawValue>>;
+pub type Extensions = BTreeMap<String, GuardrailValue>;
 
 // LiteLLM echoes the whole response in the error detail, so every field and explicit null must serialize back as read
 #[derive(Debug, Clone, Serialize, Deserialize)]

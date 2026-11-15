@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -39,10 +40,10 @@ fn ws_guardrail(ws_api_base: &str, ws_ssl: Option<WsSsl>, timeout: Duration) -> 
 }
 
 fn first_message(response: &GuardrailValue) -> &BTreeMap<String, GuardrailValue> {
-    let GuardrailValue::Object(response) = response else {
+    let GuardrailValue::Object(fields) = response else {
         panic!("the response is not an object");
     };
-    let Some(GuardrailValue::Array(choices)) = response.get("choices") else {
+    let Some(GuardrailValue::Array(choices)) = fields.get("choices") else {
         panic!("the response has no choices");
     };
     let Some(GuardrailValue::Object(choice)) = choices.first() else {
@@ -71,10 +72,10 @@ fn argument(message: &BTreeMap<String, GuardrailValue>, index: usize) -> Option<
 }
 
 fn output_items(response: &GuardrailValue) -> &[GuardrailValue] {
-    let GuardrailValue::Object(response) = response else {
+    let GuardrailValue::Object(fields) = response else {
         panic!("the response is not an object");
     };
-    match response.get("output") {
+    match fields.get("output") {
         Some(GuardrailValue::Array(output)) => output,
         _ => panic!("the response has no output"),
     }
@@ -85,7 +86,7 @@ async fn output_hook(
     response: &mut GuardrailValue,
     kind: ResponseKind,
 ) -> (Result<(), CatoError>, Vec<PostedBody>) {
-    let (base, mut server, captured) = serve(axum::http::StatusCode::OK, answer).await;
+    let (base, mut server, captured) = serve(StatusCode::OK, answer).await;
     let result = post_call_success_hook(&build(&base), &chat_data(), CALLER, kind, response).await;
     let recorded = captured.lock().expect("captured").clone();
     server.shutdown().await;
@@ -107,7 +108,7 @@ fn monitor_with_a_redacted_chat() -> Answer {
 
 #[tokio::test]
 async fn request_hooks_inspect_the_request_with_their_own_hook_header() {
-    let (base, mut server, captured) = serve(axum::http::StatusCode::OK, no_action()).await;
+    let (base, mut server, captured) = serve(StatusCode::OK, no_action()).await;
     let mut data = chat_data();
     let original = data.clone();
     pre_call_hook(&build(&base), &mut data, "completion", CALLER)
@@ -125,7 +126,7 @@ async fn request_hooks_inspect_the_request_with_their_own_hook_header() {
     server.shutdown().await;
     assert_eq!(data, original);
     assert_eq!(recorded.len(), 2);
-    let (pre_call, posted) = recorded.first().expect("one request");
+    let (pre_call, pre_call_body) = recorded.first().expect("one request");
     assert_header(pre_call, "x-cato-litellm-hook", "pre_call");
     assert_header(pre_call, "x-cato-call-id", "call-1");
     assert_header(pre_call, "x-cato-user-email", "user@example.test");
@@ -133,7 +134,7 @@ async fn request_hooks_inspect_the_request_with_their_own_hook_header() {
     let (moderation, _body) = recorded.get(1).expect("second request");
     assert_header(moderation, "x-cato-litellm-hook", "moderation");
     assert!(!moderation.contains_key("x-cato-user-email"));
-    let posted: PostedBody = serde_json::from_str(posted).expect("posted body");
+    let posted: PostedBody = serde_json::from_str(pre_call_body).expect("posted body");
     assert_eq!(
         posted.messages,
         vec![object(&[
@@ -145,7 +146,7 @@ async fn request_hooks_inspect_the_request_with_their_own_hook_header() {
 
 #[tokio::test]
 async fn request_hooks_skip_embedding_call_types_unless_inspecting_embeddings() {
-    let (base, mut server, captured) = serve(axum::http::StatusCode::OK, no_action()).await;
+    let (base, mut server, captured) = serve(StatusCode::OK, no_action()).await;
     let guardrail = build(&base);
     let mut data = body(&[("input", text("a document"))]);
     pre_call_hook(&guardrail, &mut data, "embedding", CALLER)
@@ -167,7 +168,7 @@ async fn request_hooks_skip_embedding_call_types_unless_inspecting_embeddings() 
 #[tokio::test]
 async fn pre_call_hook_raises_a_400_on_a_block_action() {
     let answer = action("block_action", Some("blocked the request"));
-    let (base, mut server, _captured) = serve(axum::http::StatusCode::OK, answer).await;
+    let (base, mut server, _captured) = serve(StatusCode::OK, answer).await;
     let mut data = chat_data();
     let original = data.clone();
     let error = pre_call_hook(&build(&base), &mut data, "completion", CALLER)
@@ -176,8 +177,8 @@ async fn pre_call_hook_raises_a_400_on_a_block_action() {
     server.shutdown().await;
     assert_eq!(data, original);
     assert!(matches!(
-        error,
-        CatoError::Blocked { ref message } if message == "blocked the request"
+        &error,
+        CatoError::Blocked { message } if message == "blocked the request"
     ));
     assert_eq!(error.status_code().as_u16(), 400);
 }
@@ -188,7 +189,7 @@ async fn moderation_hook_rewrites_the_request_on_an_anonymize_action() {
         ("content", text("REDACTED")),
         ("role", text("user")),
     ])]);
-    let (base, mut server, _captured) = serve(axum::http::StatusCode::OK, answer).await;
+    let (base, mut server, _captured) = serve(StatusCode::OK, answer).await;
     let mut data = body(&[(
         "messages",
         list(&[object(&[
@@ -212,7 +213,7 @@ async fn post_call_success_hook_redacts_the_assistant_text() {
         object(&[("content", text("hello")), ("role", text("user"))]),
         object(&[("content", text("REDACTED")), ("role", text("assistant"))]),
     ]);
-    let (base, mut server, captured) = serve(axum::http::StatusCode::OK, answer).await;
+    let (base, mut server, captured) = serve(StatusCode::OK, answer).await;
     let mut response = chat_response(&[("content", text("the secret answer"))]);
     post_call_success_hook(
         &build(&base),
@@ -263,8 +264,8 @@ async fn post_call_success_hook_raises_a_400_on_a_block_action() {
         Some(&text("the answer"))
     );
     assert!(matches!(
-        error,
-        CatoError::Blocked { ref message } if message == "blocked the answer"
+        &error,
+        CatoError::Blocked { message } if message == "blocked the answer"
     ));
     assert_eq!(error.status_code().as_u16(), 400);
 }

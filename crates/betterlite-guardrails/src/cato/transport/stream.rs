@@ -49,13 +49,13 @@ pub(crate) trait CatoSocketConnector: Send + Sync {
 pub(crate) async fn relay_output_stream(
     connector: &dyn CatoSocketConnector,
     guardrail: &CatoGuardrail,
-    headers: HeaderMap,
+    headers: &HeaderMap,
     chunks: mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>,
     output: &mpsc::Sender<GuardrailValue>,
 ) -> Result<(), CatoError> {
     let url = format!("{}/fw/v1/analyze/stream", guardrail.ws_api_base);
     let socket = connector
-        .connect(&url, &headers, CONNECT_TIMEOUT, guardrail.timeout)
+        .connect(&url, headers, CONNECT_TIMEOUT, guardrail.timeout)
         .await?;
     let mut sender = JoinSet::new();
     sender.spawn(forward_chunks(socket.writer, chunks));
@@ -64,7 +64,7 @@ pub(crate) async fn relay_output_stream(
         sender: Some(sender),
     };
     while let Some(chunk) = state.next_chunk().await? {
-        if output.send(chunk).await.is_err() {
+        if output.send(GuardrailValue::Object(chunk)).await.is_err() {
             // the consumer stopped reading, so cancelling the upstream forward is enough
             break;
         }
@@ -76,14 +76,14 @@ async fn forward_chunks(
     mut writer: Box<dyn CatoFrameWriter>,
     mut chunks: mpsc::Receiver<Result<GuardrailValue, ModelStreamError>>,
 ) -> Result<(), CatoError> {
-    while let Some(chunk) = chunks.recv().await {
+    while let Some(received) = chunks.recv().await {
         // a failed model stream kills the sender before the done frame, as an exception ends LiteLLM's task
-        let chunk = chunk.map_err(|source| CatoError::ModelStream { source })?;
+        let chunk = received.map_err(|source| CatoError::ModelStream { source })?;
         // LiteLLM sends a string chunk as it is and every other chunk as JSON
-        let text = match &chunk {
-            GuardrailValue::Text(text) => text.clone(),
-            _ => serde_json::to_string(&chunk)
-                .map_err(|source| CatoError::StreamChunkJson { source })?,
+        let text = if let GuardrailValue::Text(text) = &chunk {
+            text.clone()
+        } else {
+            serde_json::to_string(&chunk).map_err(|source| CatoError::StreamChunkJson { source })?
         };
         writer.send_text(&text).await?;
     }
@@ -111,6 +111,21 @@ fn classify(mut frame: StreamMessage) -> CatoFrame {
     }
 }
 
+// one upstream frame: a verified chunk, the end of the stream, or a block
+fn decode_frame(bytes: &[u8]) -> Result<Option<BTreeMap<String, GuardrailValue>>, CatoError> {
+    let frame = serde_json::from_slice::<StreamMessage>(bytes)
+        .map_err(|source| CatoError::StreamJson { source })?;
+    match classify(frame) {
+        CatoFrame::Chunk(chunk) => Ok(Some(chunk)),
+        CatoFrame::Done => Ok(None),
+        CatoFrame::Blocked(message) => Err(CatoError::StreamBlocked { message }),
+        CatoFrame::Unknown(unrecognized) => {
+            tracing::error!(frame = ?unrecognized, "Cato: unknown message received");
+            Ok(None)
+        }
+    }
+}
+
 enum Await {
     Sender(Option<Result<Result<(), CatoError>, JoinError>>),
     Message(Result<Option<Vec<u8>>, CatoError>),
@@ -127,17 +142,7 @@ impl StreamState {
         let Some(bytes) = self.next_message().await? else {
             return Err(CatoError::StreamClosed);
         };
-        let frame = serde_json::from_slice::<StreamMessage>(&bytes)
-            .map_err(|source| CatoError::StreamJson { source })?;
-        match classify(frame) {
-            CatoFrame::Chunk(chunk) => Ok(Some(chunk)),
-            CatoFrame::Done => Ok(None),
-            CatoFrame::Blocked(message) => Err(CatoError::StreamBlocked { message }),
-            CatoFrame::Unknown(frame) => {
-                tracing::error!(?frame, "Cato: unknown message received");
-                Ok(None)
-            }
-        }
+        decode_frame(&bytes)
     }
 
     // LiteLLM's _await_cato_message: a dead sender is reported before a waiting receive

@@ -10,9 +10,9 @@ pub mod output;
 
 // the caller identity LiteLLM forwards as Cato headers
 #[derive(Debug, Clone, Copy, Default)]
-pub struct CallerArgs<'a> {
-    pub key_alias: Option<&'a str>,
-    pub user_email: Option<&'a str>,
+pub struct CallerArgs<'caller> {
+    pub key_alias: Option<&'caller str>,
+    pub user_email: Option<&'caller str>,
 }
 
 // the request's litellm_call_id, which ties the input and output inspections together

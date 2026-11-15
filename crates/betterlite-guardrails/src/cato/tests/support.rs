@@ -170,22 +170,3 @@ pub(super) fn chat_data() -> BTreeMap<String, GuardrailValue> {
 pub(super) fn chat_response(message: &[(&str, GuardrailValue)]) -> GuardrailValue {
     object(&[("choices", list(&[object(&[("message", object(message))])]))])
 }
-
-pub(super) fn assistant_text(value: &GuardrailValue) -> String {
-    let GuardrailValue::Object(response) = value else {
-        panic!("response is not an object");
-    };
-    let Some(GuardrailValue::Array(choices)) = response.get("choices") else {
-        panic!("response has no choices");
-    };
-    let Some(GuardrailValue::Object(choice)) = choices.first() else {
-        panic!("choice is not an object");
-    };
-    let Some(GuardrailValue::Object(message)) = choice.get("message") else {
-        panic!("message is not an object");
-    };
-    match message.get("content") {
-        Some(GuardrailValue::Text(text)) => text.clone(),
-        _ => String::new(),
-    }
-}

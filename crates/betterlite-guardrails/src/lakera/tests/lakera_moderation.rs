@@ -10,8 +10,10 @@ use crate::lakera::{LegacyLakeraModeration, LegacyLakeraModerationParams};
 fn moderation(thresholds: Option<LakeraCategoryThresholds>) -> LegacyLakeraModeration {
     LegacyLakeraModeration::new(
         LegacyLakeraModerationParams {
+            moderation_check: None,
             category_thresholds: thresholds,
-            ..LegacyLakeraModerationParams::default()
+            api_base: None,
+            api_key: None,
         },
         |_key| String::new(),
         reqwest::Client::default,
@@ -28,7 +30,10 @@ fn thresholds(
     })
 }
 
-fn parse(body: impl Serialize) -> LakeraModerationResponse {
+fn parse<Body>(body: Body) -> LakeraModerationResponse
+where
+    Body: Serialize,
+{
     let value = serde_json::to_value(body).expect("the fixture is JSON");
     serde_json::from_value(value).expect("the Lakera response parses")
 }
@@ -39,7 +44,10 @@ fn rejection(rejected: Option<LakeraRejection>) -> LakeraRejectionDetail {
     rejection.detail
 }
 
-fn assert_echoed(detail: &LakeraRejectionDetail, expected: impl Serialize) {
+fn assert_echoed<Expected>(detail: &LakeraRejectionDetail, expected: Expected)
+where
+    Expected: Serialize,
+{
     let written = serde_json::to_value(&detail.lakera_ai_response).expect("the response is JSON");
     assert_eq!(
         written,
@@ -217,20 +225,24 @@ fn lakera_moderation_passes_a_null_result_list() {
 
 #[test]
 fn lakera_moderation_reads_only_the_first_result() {
-    let response = parse(json!({
+    let clean_first = parse(json!({
         "results": [
             {"flagged": false},
             {"flagged": true},
         ]
     }));
-    assert!(moderation(None).check_response_flagged(&response).is_none());
-    let response = parse(json!({
+    assert!(
+        moderation(None)
+            .check_response_flagged(&clean_first)
+            .is_none()
+    );
+    let flagged_first = parse(json!({
         "results": [
             {"flagged": true},
             {"flagged": false},
         ]
     }));
-    let rejected = rejection(moderation(None).check_response_flagged(&response));
+    let rejected = rejection(moderation(None).check_response_flagged(&flagged_first));
     assert_eq!(rejected.error, "Violated content safety policy");
 }
 

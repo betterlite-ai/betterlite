@@ -7,7 +7,7 @@ use crate::cato::actions::{block_error, policy_names};
 use crate::cato::error::CatoError;
 use crate::cato::headers::build_cato_headers;
 use crate::cato::transport::post_analyze;
-use crate::cato::wire::AnalyzeRequest;
+use crate::cato::wire::{AnalyzeRequest, AnalyzeResponse};
 use crate::cato::{CallHook, CatoGuardrail};
 
 pub(crate) mod fragments;
@@ -71,12 +71,19 @@ async fn call_cato_guardrail_on_output(
     if required_action.action_type.as_deref() != Some("anonymize_action") {
         return Ok(None);
     }
-    // LiteLLM reads the assistant turn back out of all_redacted_messages by the index it was sent at
+    redacted_assistant_text(&response, assistant_index)
+}
+
+// LiteLLM reads the assistant turn back out of all_redacted_messages by the index it was sent at
+fn redacted_assistant_text(
+    response: &AnalyzeResponse,
+    assistant_index: usize,
+) -> Result<Option<String>, CatoError> {
     let content = response
         .redacted_chat
         .as_ref()
         .and_then(|chat| chat.all_redacted_messages.as_ref())
-        .and_then(|messages| messages.get(assistant_index))
+        .and_then(|redacted| redacted.get(assistant_index))
         .and_then(|message| message.content.as_ref());
     match content {
         Some(GuardrailValue::Text(text)) => Ok(Some(text.clone())),

@@ -55,23 +55,12 @@ impl CatoSocketConnector for WebSocketConnector {
         let config = WebSocketConfig::default()
             .max_message_size(Some(MAX_FRAME_BYTES))
             .max_frame_size(Some(MAX_FRAME_BYTES));
-        let verification = match &self.ssl {
+        let chosen = match &self.ssl {
             None | Some(WsSsl::SystemRoots) => None,
             Some(WsSsl::Disabled) => Some(Verification::Disabled),
             Some(WsSsl::CaFile(path)) => Some(Verification::CaFile(path.clone())),
         };
-        let connector = match verification {
-            None => None,
-            Some(verification) => {
-                let config =
-                    websocket_client_config(&verification).map_err(|source| match source {
-                        TlsError::ReadCa(source) => CatoError::WsCaFile { source },
-                        TlsError::RustlsConfig(source) => CatoError::WsTls { source },
-                        source => CatoError::Tls { source },
-                    })?;
-                Some(Connector::Rustls(Arc::new(config)))
-            }
-        };
+        let connector = chosen.as_ref().map(rustls_connector).transpose()?;
         let opening = connect_async_tls_with_config(request, Some(config), false, connector);
         let (socket, _answer) = time::timeout(open, opening)
             .await
@@ -86,6 +75,16 @@ impl CatoSocketConnector for WebSocketConnector {
             writer: Box::new(TungsteniteWriter { sink: writer }),
         })
     }
+}
+
+// the rustls connector for a verification, with the CA file failures named as the websocket's own
+fn rustls_connector(verification: &Verification) -> Result<Connector, CatoError> {
+    let tls_config = websocket_client_config(verification).map_err(|error| match error {
+        TlsError::ReadCa(source) => CatoError::WsCaFile { source },
+        TlsError::RustlsConfig(source) => CatoError::WsTls { source },
+        other => CatoError::Tls { source: other },
+    })?;
+    Ok(Connector::Rustls(Arc::new(tls_config)))
 }
 
 struct TungsteniteReader {

@@ -49,12 +49,15 @@ pub async fn streaming_iterator_hook(
         caller.user_email,
         call_id(request_data),
     )?;
-    relay_output_stream(
+    let relayed = relay_output_stream(
         &WebSocketConnector::from(guardrail),
         guardrail,
-        headers,
+        &headers,
         response,
         &output,
     )
-    .await
+    .await;
+    // dropping the sender is what tells the consumer the stream has ended
+    drop(output);
+    relayed
 }
