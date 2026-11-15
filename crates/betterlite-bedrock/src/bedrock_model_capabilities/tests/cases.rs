@@ -156,6 +156,11 @@ pub(super) fn native_responses() {
             "number": {"supported_endpoints": 5},
             "flag": {"supported_endpoints": true},
             "not_object": 5,
+            "chat_only_string": {"supported_endpoints": "/v1/chat/completions"},
+            "chat_only_list": {"supported_endpoints": ["/v1/chat/completions"]},
+            "raising": {"supported_endpoints": true},
+            "bedrock/raising": {"supported_endpoints": ["/v1/responses"]},
+            "anthropic.claude-alias-v1:0": {"supported_endpoints": ["/v1/responses"]},
             "bedrock/prefixed": {"supported_endpoints": ["/v1/responses"]},
             "bedrock/only_the_pair": {"supported_endpoints": "/v1/responses"}
         }"#);
@@ -212,6 +217,34 @@ pub(super) fn native_responses() {
         outcome(supports_openai_responses(Some("not_object"), &cost)),
         "false",
         "a non-object entry is skipped, not reported"
+    );
+    assert_eq!(
+        outcome(supports_openai_responses(Some("chat_only_string"), &cost)),
+        "false",
+        "a string endpoint list without the Responses endpoint does not match"
+    );
+    assert_eq!(
+        outcome(supports_openai_responses(Some("chat_only_list"), &cost)),
+        "false",
+        "a list endpoint list without the Responses endpoint does not match"
+    );
+    assert_eq!(
+        outcome(supports_openai_responses(Some("raising"), &cost)),
+        "not-iterable",
+        "the raw key is inspected before the bedrock/-prefixed one"
+    );
+    assert_eq!(
+        outcome(supports_openai_responses(
+            Some("us.anthropic.claude-alias-v1:0"),
+            &cost
+        )),
+        "false",
+        "a region-prefixed name is not an alias for its base model"
+    );
+    assert_eq!(
+        outcome(supports_openai_responses(Some("bedrock/listed"), &cost)),
+        "false",
+        "a model spelled with the bedrock/ prefix is not stripped before lookup"
     );
     assert_eq!(
         outcome(supports_openai_responses(Some("prefixed"), &cost)),
@@ -288,6 +321,16 @@ pub(super) fn cache_point_unknown_model() {
         "the family pattern needs a leading dot, slash or start"
     );
     assert_eq!(
+        outcome(accepts_cache_points(Some("bedrock/openai.gpt-5"), &cost)),
+        "false",
+        "the family pattern also matches after a slash"
+    );
+    assert_eq!(
+        outcome(accepts_cache_points(Some("us.OpenAI.gpt-5"), &cost)),
+        "true",
+        "the family pattern is case-sensitive"
+    );
+    assert_eq!(
         outcome(accepts_cache_points(
             Some("us.anthropic.claude-regional-v1:0"),
             &cost
@@ -341,6 +384,10 @@ pub(super) fn strict_tools_fallback() {
             r#"{"bedrock_converse_supports_strict_tools": false}"#,
         ),
         (
+            "anthropic.claude-flag-and-key",
+            r#"{"bedrock_converse_supports_strict_tools": true, "key": "strict-false"}"#,
+        ),
+        (
             "anthropic.claude-flag-null",
             r#"{"bedrock_converse_supports_strict_tools": null, "key": "strict-false"}"#,
         ),
@@ -377,6 +424,10 @@ pub(super) fn strict_tools_fallback() {
     assert!(ask("anthropic.claude-by-true-key"));
     assert!(ask("anthropic.claude-flag-true"));
     assert!(!ask("anthropic.claude-flag-false"));
+    assert!(
+        ask("anthropic.claude-flag-and-key"),
+        "an actual boolean wins before the packaged key is read"
+    );
     assert!(
         !ask("anthropic.claude-flag-null"),
         "a null flag is not a boolean and falls through to the key"
@@ -466,6 +517,10 @@ pub(super) fn effort_ceiling() {
             "opus-unknown",
             r#"{"bedrock_output_config_effort_ceiling": "ultra"}"#,
         ),
+        (
+            "opus-bad-ceiling",
+            r#"{"bedrock_output_config_effort_ceiling": "ultra", "key": "ceiling-low"}"#,
+        ),
         ("opus-minimal", r#"{"key": "ceiling-minimal"}"#),
         ("opus-none", r#"{"key": "ceiling-none"}"#),
         ("opus-bare", r#"{"key": "missing-entry"}"#),
@@ -539,6 +594,11 @@ pub(super) fn effort_ceiling() {
         "opus-unknown",
         r#"{"effort": "xhigh"}"#,
         r#"{"effort": "xhigh"}"#,
+    );
+    clamped(
+        "opus-bad-ceiling",
+        r#"{"effort": "xhigh"}"#,
+        r#"{"effort": "low"}"#,
     );
     clamped(
         "opus-minimal",

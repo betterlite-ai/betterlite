@@ -6,7 +6,7 @@ call:
     model_cost:
       anthropic.claude-opus-4-6-v1: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: high}
       anthropic.claude-ceiling-low: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: low}
-      anthropic.claude-opus-4-5-20251101-v1:0: {litellm_provider: bedrock}
+      anthropic.claude-opus-4-5-20251101-v1:0: {litellm_provider: bedrock, bedrock_output_config_effort_ceiling: ultra}
     cases:
       - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: xhigh, format: x}}
       - {model: anthropic.claude-opus-4-6-v1, output_config: {effort: low}}

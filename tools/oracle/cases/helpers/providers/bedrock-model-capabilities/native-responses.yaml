@@ -17,6 +17,11 @@ call:
       number: {supported_endpoints: 5}
       flag: {supported_endpoints: true}
       not_object: 5
+      chat_only_string: {supported_endpoints: /v1/chat/completions}
+      chat_only_list: {supported_endpoints: [/v1/chat/completions]}
+      raising: {supported_endpoints: true}
+      bedrock/raising: {supported_endpoints: [/v1/responses]}
+      anthropic.claude-alias-v1:0: {supported_endpoints: [/v1/responses]}
       bedrock/prefixed: {supported_endpoints: [/v1/responses]}
     models:
       - listed
@@ -32,6 +37,11 @@ call:
       - number
       - flag
       - not_object
+      - chat_only_string
+      - chat_only_list
+      - raising
+      - us.anthropic.claude-alias-v1:0
+      - bedrock/listed
       - prefixed
       - missing
       - null

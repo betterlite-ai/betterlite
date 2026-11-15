@@ -4,7 +4,7 @@ call:
   bedrock_model_capabilities:
     function: strict_tools_fallback
     model_cost:
-      anthropic.claude-opus-4-7: {litellm_provider: bedrock}
+      anthropic.claude-opus-4-7: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: true}
       anthropic.claude-flag-true: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: true}
       anthropic.claude-flag-false: {litellm_provider: bedrock, bedrock_converse_supports_strict_tools: false}
       anthropic.claude-gap-v1:0: {litellm_provider: bedrock, mode: chat}
