@@ -41,9 +41,6 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
 // set_callbacks only builds the callbacks the config lists, in any of the three lists
 fn configured(inputs: &CatalogInputs) -> bool {
     let name = CallbackName::Langfuse.as_str();
-    if inputs.callback_settings.contains_key(name) {
-        return true;
-    }
     let settings = &inputs.config.sections.callback_settings;
     [
         &settings.callbacks,
