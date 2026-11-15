@@ -6,7 +6,7 @@ use betterlite_bedrock::marengo_embeddings::params::{
 use betterlite_bedrock::marengo_embeddings::request::{TransformRequest, transform_request};
 use betterlite_bedrock::marengo_embeddings::response::{
     MarengoBilledRequest, MarengoEmbeddingResponse, MarengoInvokeResponse,
-    transform_async_invoke_response, transform_response,
+    transform_async_response, transform_response,
 };
 use betterlite_bedrock::marengo_three::error::Marengo3Error;
 use betterlite_context::non_default_params::mapper::DropPolicy;
@@ -54,8 +54,6 @@ enum Failure {
     Embeddings(#[from] MarengoEmbeddingsError),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error("the response for an input is missing")]
-    MissingReply,
 }
 
 impl Helper for Op {
@@ -120,29 +118,34 @@ fn transform_all(call: &Call) -> Result<Vec<Value>, Failure> {
     Ok(requests)
 }
 
+fn async_reply(call: &Call) -> Option<&Field> {
+    call.replies.first().filter(|reply| {
+        call.async_invoke_route
+            && call.input.len() == 1
+            && call.replies.len() == 1
+            && matches!(*reply, Field::Mapping(entries) if entries.contains_key("invocationArn"))
+    })
+}
+
 fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
-    if call.replies.len() < call.input.len() {
-        return Err(Failure::MissingReply);
-    }
-    let first = call.replies.first();
-    let response: MarengoEmbeddingResponse = if call.async_invoke_route
-        && call.input.len() == 1
-        && first.is_some_and(has_invocation_arn)
-    {
-        let Some(reply) = first else {
-            return Err(Failure::MissingReply);
-        };
-        let parsed: Params = serde_json::from_value(serde_json::to_value(reply)?)?;
-        transform_async_invoke_response(&parsed, &call.model)
-    } else {
-        let responses = call
-            .replies
-            .iter()
-            .take(call.input.len())
-            .map(|reply| Ok(serde_json::from_value::<MarengoInvokeResponse>(reply_value(reply)?)?))
-            .collect::<Result<Vec<_>, Failure>>()?;
-        let batch = batch_value(call, requests)?;
-        transform_response(&responses, &call.model, Some(&batch))?
+    let response: MarengoEmbeddingResponse = match async_reply(call) {
+        Some(reply) => {
+            let parsed: Params = serde_json::from_value(serde_json::to_value(reply)?)?;
+            transform_async_response(&parsed, &call.model)
+        }
+        None => {
+            let responses = call
+                .replies
+                .iter()
+                .take(call.input.len())
+                .map(|reply| {
+                    let value = serde_json::to_value(reply)?;
+                    Ok(serde_json::from_value::<MarengoInvokeResponse>(value)?)
+                })
+                .collect::<Result<Vec<MarengoInvokeResponse>, Failure>>()?;
+            let batch = batch_value(call, requests)?;
+            transform_response(&responses, &call.model, Some(&batch))?
+        }
     };
     Ok(serde_json::to_value(&response)?)
 }
@@ -162,14 +165,6 @@ fn batch_value(call: &Call, requests: &[Value]) -> Result<Vec<MarengoBilledReque
         .collect()
 }
 
-fn reply_value(reply: &Field) -> Result<Value, Failure> {
-    Ok(serde_json::to_value(reply)?)
-}
-
-fn has_invocation_arn(reply: &Field) -> bool {
-    matches!(reply, Field::Mapping(entries) if entries.contains_key("invocationArn"))
-}
-
 impl From<Failure> for Box<HelperError> {
     fn from(failure: Failure) -> Self {
         let (class, status) = match &failure {
@@ -184,10 +179,10 @@ impl From<Failure> for Box<HelperError> {
                 MarengoEmbeddingsError::AsyncRouteRequired { .. }
                 | MarengoEmbeddingsError::EmptyOutputS3Uri
                 | MarengoEmbeddingsError::UsageOverflow
+                | MarengoEmbeddingsError::VectorValue
                 | MarengoEmbeddingsError::Parameters { .. },
             )
-            | Failure::Json(_)
-            | Failure::MissingReply => ("ValueError", None),
+            | Failure::Json(_) => ("ValueError", None),
         };
         Self::new(HelperError {
             class: class.to_owned(),

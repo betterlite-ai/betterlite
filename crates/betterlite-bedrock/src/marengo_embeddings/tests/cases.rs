@@ -1,9 +1,9 @@
 use betterlite_context::non_default_params::mapper::DropPolicy;
 use rstest::rstest;
-use serde::Deserialize;
-use serde_json::Value;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 
-use crate::image_models::params::Params;
+use crate::image_models::params::{Field, Params};
 use crate::marengo_embeddings::error::MarengoEmbeddingsError;
 use crate::marengo_embeddings::params::{
     MARENGO_2_7_ONLY_PARAMS, MARENGO_SHARED_PARAMS, drop_params_enabled, map_openai_params,
@@ -11,7 +11,7 @@ use crate::marengo_embeddings::params::{
 };
 use crate::marengo_embeddings::request::{TransformRequest, transform_request};
 use crate::marengo_embeddings::response::{
-    MarengoBilledRequest, MarengoInvokeResponse, billed_usage, transform_async_invoke_response,
+    MarengoBilledRequest, MarengoInvokeResponse, billed_usage, transform_async_response,
     transform_response,
 };
 use crate::marengo_three::error::Marengo3Error;
@@ -29,8 +29,8 @@ struct Scenario {
     model_id: Option<String>,
     output_s3_uri: Option<String>,
     drop_params: bool,
-    replies: Vec<Value>,
-    batch: Vec<Value>,
+    replies: Vec<Field>,
+    batch: Vec<Field>,
     global_drop_params: bool,
     deployment_drop_params: Option<bool>,
 }
@@ -47,7 +47,7 @@ enum Check {
     Enabled(bool),
 }
 
-fn transform(scenario: &Scenario) -> Result<Value, MarengoEmbeddingsError> {
+fn transform(scenario: &Scenario) -> Result<Field, MarengoEmbeddingsError> {
     let request = transform_request(TransformRequest {
         model: scenario.model.as_deref(),
         input: &scenario.input,
@@ -57,31 +57,29 @@ fn transform(scenario: &Scenario) -> Result<Value, MarengoEmbeddingsError> {
         output_s3_uri: scenario.output_s3_uri.as_deref(),
         drop_params: scenario.drop_params,
     })?;
-    Ok(serde_json::to_value(&request).unwrap())
+    Ok(to_field(&request))
 }
 
-fn batch(scenario: &Scenario, request: &Value) -> Result<Vec<MarengoBilledRequest>, String> {
+fn to_field<T: Serialize>(value: &T) -> Field {
+    serde_json::from_value(serde_json::to_value(value).unwrap()).unwrap()
+}
+
+fn parse<T: DeserializeOwned>(value: &Field) -> Result<T, String> {
+    serde_json::from_value(serde_json::to_value(value).unwrap()).map_err(|error| error.to_string())
+}
+
+fn batch(scenario: &Scenario, request: &Field) -> Result<Vec<MarengoBilledRequest>, String> {
     if !scenario.batch.is_empty() {
-        return scenario
-            .batch
-            .iter()
-            .map(|entry| serde_json::from_value(entry.clone()).map_err(|error| error.to_string()))
-            .collect();
+        return scenario.batch.iter().map(parse).collect();
     }
-    serde_json::from_value(request.clone())
-        .map(|parsed| vec![parsed])
-        .map_err(|error| error.to_string())
+    parse(request).map(|parsed| vec![parsed])
 }
 
 fn responses(scenario: &Scenario) -> Result<Vec<MarengoInvokeResponse>, String> {
-    scenario
-        .replies
-        .iter()
-        .map(|reply| serde_json::from_value(reply.clone()).map_err(|error| error.to_string()))
-        .collect()
+    scenario.replies.iter().map(parse).collect()
 }
 
-fn expected_value(text: &str) -> Value {
+fn expected_value(text: &str) -> Field {
     serde_json::from_str(text).unwrap()
 }
 
@@ -106,7 +104,7 @@ fn verify(scenario: &Scenario, check: &Check) {
                 &scenario.non_default,
                 scenario.optional.clone(),
             );
-            assert_eq!(serde_json::to_value(mapped).unwrap(), expected_value(expected));
+            assert_eq!(to_field(&mapped), expected_value(expected));
         }
         Check::Request(expected) => {
             let built = transform(scenario).unwrap();
@@ -127,13 +125,13 @@ fn verify(scenario: &Scenario, check: &Check) {
             }
             Err(MarengoEmbeddingsError::Parameters { .. }) => assert_eq!(*tag, "parameters"),
             Err(MarengoEmbeddingsError::UsageOverflow) => panic!("usage overflow"),
+            Err(MarengoEmbeddingsError::VectorValue) => panic!("vector value error"),
         },
         Check::Response(expected) => {
             let request = transform(scenario).unwrap();
             let response = if async_branch(scenario) {
-                let reply: Params =
-                    serde_json::from_value(scenario.replies[0].clone()).unwrap();
-                transform_async_invoke_response(&reply, scenario.model.as_deref().unwrap_or_default())
+                let reply: Params = parse(&scenario.replies[0]).unwrap();
+                transform_async_response(&reply, scenario.model.as_deref().unwrap_or_default())
             } else {
                 let parsed_batch = batch(scenario, &request).unwrap();
                 let parsed = responses(scenario).unwrap();
@@ -144,10 +142,13 @@ fn verify(scenario: &Scenario, check: &Check) {
                 )
                 .unwrap()
             };
-            assert_eq!(serde_json::to_value(&response).unwrap(), expected_value(expected));
+            assert_eq!(to_field(&response), expected_value(expected));
         }
         Check::ReplyError => {
-            assert!(responses(scenario).is_err());
+            let request = transform(scenario).unwrap();
+            let parsed_batch = batch(scenario, &request).unwrap();
+            let parsed = responses(scenario).unwrap();
+            assert!(transform_response(&parsed, "", Some(&parsed_batch)).is_err());
         }
         Check::BatchError => {
             let request = transform(scenario).unwrap();
@@ -157,7 +158,7 @@ fn verify(scenario: &Scenario, check: &Check) {
             let request = transform(scenario).unwrap();
             let parsed_batch = batch(scenario, &request).unwrap();
             let usage = billed_usage(Some(&parsed_batch)).unwrap();
-            assert_eq!(serde_json::to_value(usage).unwrap(), expected_value(expected));
+            assert_eq!(to_field(&usage), expected_value(expected));
         }
         Check::Enabled(expected) => {
             let policy = DropPolicy {
@@ -172,13 +173,12 @@ fn verify(scenario: &Scenario, check: &Check) {
 fn async_branch(scenario: &Scenario) -> bool {
     scenario.async_invoke_route
         && scenario.replies.len() == 1
-        && scenario.replies[0].get("invocationArn").is_some()
+        && matches!(&scenario.replies[0], Field::Mapping(entries) if entries.contains_key("invocationArn"))
 }
 
 const TEXT_BODY: &str = r#"{"inputType":"text","inputText":"hello","textTruncate":"end"}"#;
 
-const IMAGE_BODY: &str =
-    r#"{"inputType":"image","mediaSource":{"base64String":"hello"}}"#;
+const IMAGE_BODY: &str = r#"{"inputType":"image","mediaSource":{"base64String":"hello"}}"#;
 
 const WRAPPED_VIDEO: &str = r#"{
     "modelId": "twelvelabs.marengo-embed-2-7-v1:0",
@@ -225,7 +225,8 @@ const WRAPPED_VIDEO: &str = r#"{
         "media_sources": {"a": "b"},
         "unknown": 1
     }}"#,
-    Check::Mapped(r#"{
+    Check::Mapped(
+        r#"{
         "inputType": "video",
         "startSec": 1,
         "lengthSec": 2,
@@ -237,7 +238,8 @@ const WRAPPED_VIDEO: &str = r#"{
         "inferenceId": "x",
         "media_source": "m",
         "media_sources": {"a": "b"}
-    }"#)
+    }"#
+    )
 )]
 #[case::marengo_text_input(r#"{"input": "hello"}"#, Check::Request(TEXT_BODY))]
 #[case::marengo_text_input(
@@ -277,11 +279,15 @@ const WRAPPED_VIDEO: &str = r#"{
 )]
 #[case::marengo_s3_video_owner(
     r#"{"input": "s3://bucket/key.png", "inference": {"inputType": "image"}}"#,
-    Check::Request(r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#)
+    Check::Request(
+        r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#
+    )
 )]
 #[case::marengo_s3_video_owner(
     r#"{"input": "s3://bucket/key.png", "inference": {"inputType": "image", "bucketOwner": ""}}"#,
-    Check::Request(r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#)
+    Check::Request(
+        r#"{"inputType": "image", "mediaSource": {"s3Location": {"uri": "s3://bucket/key.png"}}}"#
+    )
 )]
 #[case::marengo_s3_video_owner(
     r#"{"input": "s3://bucket/key.png", "inference": {"inputType": "image", "bucketOwner": "123"}}"#,
@@ -326,7 +332,7 @@ const WRAPPED_VIDEO: &str = r#"{
 )]
 #[case::marengo_image_input(
     r#"{"input": "AAA", "inference": {"inputType": "image"}}"#,
-    Check::Request(IMAGE_BODY)
+    Check::Request(r#"{"inputType": "image", "mediaSource": {"base64String": "AAA"}}"#)
 )]
 #[case::marengo_image_input(
     r#"{"input": "AAA", "inference": {
@@ -448,6 +454,10 @@ const WRAPPED_VIDEO: &str = r#"{
     r#"{"input": "one", "replies": [{"data": [{"embedding": ["abc"]}]}]}"#,
     Check::ReplyError
 )]
+#[case::marengo_segments_vector_list(
+    r#"{"input": "one", "replies": [{"data": [{"embedding": [1.0]}], "embeddings": [{"embedding": ["abc"]}]}]}"#,
+    Check::ReplyError
+)]
 #[case::marengo_billed_units(
     r#"{"input": "one", "batch": [{"inputType": "text"}]}"#,
     Check::Usage(r#"{"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "prompt_tokens_details": {"query_count": 1, "image_count": null}}"#)
@@ -497,21 +507,45 @@ const WRAPPED_VIDEO: &str = r#"{
     r#"{"input": "one", "batch": [{"inputType": "multi_input", "multi_input": {"inputText": 1}}]}"#,
     Check::BatchError
 )]
-#[case::drop_unsupported_param(
-    r#"{"global_drop_params": true}"#,
-    Check::Enabled(true)
+#[case::drop_unsupported_param(r#"{"global_drop_params": true}"#, Check::Enabled(true))]
+#[case::drop_unsupported_param(r#"{"global_drop_params": false}"#, Check::Enabled(false))]
+#[case::drop_unsupported_param(r#"{"deployment_drop_params": true}"#, Check::Enabled(true))]
+#[case::drop_unsupported_param(r#"{"deployment_drop_params": false}"#, Check::Enabled(false))]
+#[case::marengo_text_input(
+    r#"{"input": "hello", "inference": {"inputType": "image", "input_type": "bogus"}}"#,
+    Check::Request(IMAGE_BODY)
 )]
-#[case::drop_unsupported_param(
-    r#"{"global_drop_params": false}"#,
-    Check::Enabled(false)
+#[case::marengo_text_input(
+    r#"{"input": "hello", "inference": {"inputType": "", "input_type": "image"}}"#,
+    Check::Request(IMAGE_BODY)
 )]
-#[case::drop_unsupported_param(
-    r#"{"deployment_drop_params": true}"#,
-    Check::Enabled(true)
+#[case::marengo_text_input(
+    r#"{"input": "hello", "inference": {"inputType": null, "input_type": ""}}"#,
+    Check::Request(TEXT_BODY)
 )]
-#[case::drop_unsupported_param(
-    r#"{"deployment_drop_params": false}"#,
-    Check::Enabled(false)
+#[case::marengo_async_output_wrapper(
+    r#"{"input": "hello", "async_invoke_route": true, "model_id": "", "output_s3_uri": "s3://out"}"#,
+    Check::Request(TEXT_BODY)
+)]
+#[case::marengo_async_output_wrapper(
+    r#"{
+        "model": "amazon.marengo-embed-3-0-v1:0",
+        "input": "hello",
+        "async_invoke_route": true,
+        "model_id": "async_invoke/twelvelabs.model",
+        "output_s3_uri": "s3://out"
+    }"#,
+    Check::Request(
+        r#"{
+        "modelId": "twelvelabs.model",
+        "modelInput": {"inputType": "text", "text": {"inputText": "hello"}},
+        "outputDataConfig": {"s3OutputDataConfig": {"s3Uri": "s3://out"}}
+    }"#
+    )
+)]
+#[case::marengo_text_input(
+    r#"{"model": "amazon.marengo-embed-3-0-v1:0", "input": "hello", "inference": {"textTruncate": "none"}, "drop_params": true}"#,
+    Check::Request(r#"{"inputType": "text", "text": {"inputText": "hello"}}"#)
 )]
 fn marengo_embeddings_cases(#[case] scenario: &str, #[case] check: Check) {
     let scenario: Scenario = serde_json::from_str(scenario).unwrap();

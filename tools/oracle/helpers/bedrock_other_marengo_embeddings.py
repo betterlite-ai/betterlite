@@ -4,7 +4,7 @@ from typing import Final, NotRequired, TypedDict
 
 import litellm
 from litellm.llms.bedrock.embed.twelvelabs_marengo_transformation import (
-    TwelveLabsMarengoEmbeddingConfig,
+    TwelveLabsMarengoEmbeddingConfig as MarengoConfig,
     drop_params_enabled,
 )
 from litellm.types.utils import EmbeddingResponse
@@ -29,7 +29,7 @@ class Call(TypedDict):
     deployment_drop_params: NotRequired[JsonValue]
 
 
-class Config(TwelveLabsMarengoEmbeddingConfig):
+class Config(MarengoConfig):
     def request(self, call: Call, input_text: str) -> JsonValue:
         request = self._transform_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L182
             input_text,
@@ -52,7 +52,7 @@ class Config(TwelveLabsMarengoEmbeddingConfig):
         )
 
     def async_replied(self, call: Call, reply: dict[str, JsonValue]) -> EmbeddingResponse:
-        return self._transform_async_invoke_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L321
+        return self._transform_async_invoke_response(  # pyright: ignore[reportUnknownMemberType]  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/embed/twelvelabs_marengo_transformation.py#L321
             reply, call["model"]
         )
 
@@ -156,7 +156,12 @@ def response_for(
     requests: list[dict[str, JsonValue]],
 ) -> ResponseOut:
     asynchronous = call.get("async_invoke_route") is True
-    if asynchronous and len(replies) == 1 and INVOCATION_ARN in replies[0]:
+    if (
+        asynchronous
+        and len(call["input"]) == 1
+        and len(replies) == 1
+        and INVOCATION_ARN in replies[0]
+    ):
         return response_out(config.async_replied(call, replies[0]))
     return response_out(config.replied(call, replies, requests))
 

@@ -12,6 +12,8 @@ pub enum MarengoEmbeddingsError {
     EmptyOutputS3Uri,
     #[error("embedding usage counts overflow")]
     UsageOverflow,
+    #[error("embedding: Input should be a valid number")]
+    VectorValue,
     #[error(transparent)]
     Marengo3(#[from] Marengo3Error),
     #[error("invalid Marengo parameters")]

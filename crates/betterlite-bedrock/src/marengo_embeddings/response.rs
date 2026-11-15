@@ -1,6 +1,4 @@
-use serde::de::{Deserializer, Error as _};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 
 use crate::image_models::params::{Field, Params};
 
@@ -8,38 +6,68 @@ use super::error::MarengoEmbeddingsError;
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct MarengoEmbeddingItem {
-    #[serde(default, deserialize_with = "optional_vector")]
-    pub embedding: Option<Vec<f64>>,
+    pub embedding: Option<Vec<VectorItem>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub enum VectorItem {
+    Number(f64),
+    Text(String),
+    Bool(bool),
+}
+
+impl VectorItem {
+    fn number(&self) -> Option<f64> {
+        match self {
+            Self::Number(value) => Some(*value),
+            Self::Text(text) => text.trim().parse().ok(),
+            Self::Bool(flag) => Some(if *flag { 1.0 } else { 0.0 }),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 pub struct MarengoInvokeResponse {
     #[serde(default)]
     pub data: Vec<MarengoEmbeddingItem>,
-    #[serde(default, deserialize_with = "optional_vector")]
-    pub embedding: Option<Vec<f64>>,
+    pub embedding: Option<Vec<VectorItem>>,
     #[serde(default)]
     pub embeddings: Vec<MarengoEmbeddingItem>,
 }
 
 impl MarengoInvokeResponse {
-    #[must_use]
-    pub fn vectors(&self) -> Vec<Vec<f64>> {
+    pub fn vectors(&self) -> Result<Vec<Vec<f64>>, MarengoEmbeddingsError> {
+        // Pydantic coerces every vector in the record before a fallback is chosen.
+        let data = item_vectors(&self.data)?;
+        let direct = self.embedding.as_deref().map(vector_values).transpose()?;
+        let embeddings = item_vectors(&self.embeddings)?;
         if !self.data.is_empty() {
-            return self
-                .data
-                .iter()
-                .filter_map(|item| item.embedding.clone())
-                .collect();
+            return Ok(data);
         }
-        if let Some(embedding) = &self.embedding {
-            return vec![embedding.clone()];
+        if let Some(direct) = direct {
+            return Ok(vec![direct]);
         }
-        self.embeddings
-            .iter()
-            .filter_map(|item| item.embedding.clone())
-            .collect()
+        Ok(embeddings)
     }
+}
+
+fn item_vectors(items: &[MarengoEmbeddingItem]) -> Result<Vec<Vec<f64>>, MarengoEmbeddingsError> {
+    let mut vectors = Vec::new();
+    for item in items {
+        if let Some(embedding) = &item.embedding {
+            vectors.push(vector_values(embedding)?);
+        }
+    }
+    Ok(vectors)
+}
+
+fn vector_values(items: &[VectorItem]) -> Result<Vec<f64>, MarengoEmbeddingsError> {
+    let mut values = Vec::with_capacity(items.len());
+    for item in items {
+        values.push(item.number().ok_or(MarengoEmbeddingsError::VectorValue)?);
+    }
+    Ok(values)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -105,7 +133,7 @@ pub fn transform_response(
 ) -> Result<MarengoEmbeddingResponse, MarengoEmbeddingsError> {
     let mut data = Vec::new();
     for response in response_list {
-        for vector in response.vectors() {
+        for vector in response.vectors()? {
             data.push(EmbeddingRecord {
                 embedding: vector,
                 index: data.len(),
@@ -122,7 +150,7 @@ pub fn transform_response(
 }
 
 #[must_use]
-pub fn transform_async_invoke_response(response: &Params, model: &str) -> MarengoEmbeddingResponse {
+pub fn transform_async_response(response: &Params, model: &str) -> MarengoEmbeddingResponse {
     let invocation_arn = response
         .get("invocationArn")
         .cloned()
@@ -177,46 +205,16 @@ fn billed_units(request: &MarengoBilledRequest) -> Result<(u64, u64), MarengoEmb
         Some(BilledInputType::TextImage) => (1, 1),
         Some(BilledInputType::MultiInput) => {
             let multi_input = request.multi_input.as_ref();
-            let has_text = multi_input
-                .is_some_and(|input| input.input_text.as_deref().is_some_and(|text| !text.is_empty()));
+            let has_text = multi_input.is_some_and(|input| {
+                input
+                    .input_text
+                    .as_deref()
+                    .is_some_and(|text| !text.is_empty())
+            });
             let images = u64::try_from(multi_input.map_or(0, |input| input.media_sources.len()))
                 .map_err(|_unparsed| MarengoEmbeddingsError::UsageOverflow)?;
             (u64::from(has_text), images)
         }
         Some(BilledInputType::Video | BilledInputType::Audio) | None => (0, 0),
     })
-}
-
-fn optional_vector<'de, D>(deserializer: D) -> Result<Option<Vec<f64>>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value = Value::deserialize(deserializer)?;
-    if value.is_null() {
-        return Ok(None);
-    }
-    float_vector(&value).map(Some).map_err(D::Error::custom)
-}
-
-fn float_vector(value: &Value) -> Result<Vec<f64>, String> {
-    let Value::Array(items) = value else {
-        return Err("Input should be a valid tuple".to_owned());
-    };
-    items.iter().map(float_item).collect()
-}
-
-fn float_item(value: &Value) -> Result<f64, String> {
-    match value {
-        Value::Number(number) => number
-            .as_f64()
-            .ok_or_else(|| "Input should be a valid number".to_owned()),
-        Value::String(text) => text
-            .trim()
-            .parse::<f64>()
-            .map_err(|_unparsed| "Input should be a valid number".to_owned()),
-        Value::Bool(flag) => Ok(if *flag { 1.0 } else { 0.0 }),
-        Value::Null | Value::Array(_) | Value::Object(_) => {
-            Err("Input should be a valid number".to_owned())
-        }
-    }
 }
