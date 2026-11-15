@@ -130,7 +130,7 @@ fn post_call_input(audio: Option<&AudioFile<'_>>) -> Json {
 #[case::zero("0")]
 #[case::empty_text(r#""""#)]
 #[case::list(r#"["a"]"#)]
-#[case::object(r#"{"k": "v"}"#)]
+#[case::object(r#"{"k":"v"}"#)]
 fn redacts_every_non_null_secret_value(#[case] value: &str) {
     let body = object(&format!(
         r#"{{"model": "m", "webhook_auth_header_value": {value}}}"#
