@@ -35,8 +35,7 @@ where
     }
 }
 
-// At end of stream LiteLLM drains one complete value per call, and only while the buffer holds text. The pop
-// behind each pull materializes the buffer anyway, so the emptiness check here adds no cost of its own.
+// LiteLLM drains one value per end-of-stream pull; each pop materializes the buffer anyway, so this check adds no copy.
 fn drained<SourceFailure, Counter>(
     converter: &mut StreamEventConverter<Counter>,
 ) -> Result<Progress, DecodeError<SourceFailure, Counter::Failure>>

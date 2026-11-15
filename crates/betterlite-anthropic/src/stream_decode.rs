@@ -33,8 +33,7 @@ pub enum DecodedChunk {
     Generic(Box<GenericChunk>),
 }
 
-// The source hands over transport chunks; the decoder owns the converter, the exhausted flag, the buffered
-// byte count and the event bound.
+// The source hands over chunks; the decoder owns the converter, the exhausted flag, the count and the bound.
 pub struct ChunkStream<Source, Counter> {
     pub converter: StreamEventConverter<Counter>,
     pub source: Source,
@@ -44,8 +43,7 @@ pub struct ChunkStream<Source, Counter> {
     pub max_event_bytes: usize,
 }
 
-// The shared framing parser hands over one event payload per call, so this path decodes and parses without a
-// data: prefix; the caller owns the buffered byte count because the converter's buffer outlives one payload.
+// The framing parser hands over one payload per call; the caller owns the count because the buffer outlives it.
 pub fn decode_anthropic_event<Counter>(
     converter: &mut StreamEventConverter<Counter>,
     payload: &[u8],
@@ -82,8 +80,7 @@ where
         }
         converter.state.chunk_type = ChunkType::AccumulatedJson;
     }
-    // LiteLLM buffers an unterminated value for the rest of the stream; the shared max_event_bytes bounds it.
-    // The bound reads a running count, so a deferred fragment costs its append and not a buffer snapshot.
+    // LiteLLM buffers an unterminated value forever; the shared max_event_bytes bounds it through a running count.
     let appended = accumulated_bytes.saturating_add(data.len());
     if appended > max_event_bytes {
         return Err(DecodeError::TooLarge {
@@ -99,17 +96,15 @@ where
         return Ok(parsed);
     }
     *accumulated_bytes = appended;
-    // The accumulator defers a fragment whose last byte cannot close a value; dropping then would rescan
-    // a buffer LiteLLM leaves alone.
+    // The accumulator defers a fragment its last byte cannot close, so recovery only runs after one that can.
     if !converter.json_could_close {
         return Ok(None);
     }
-    discard_unparseable_prefix(converter, accumulated_bytes).map_err(DecodeError::Event)
+    discard_unparsable_prefix(converter, accumulated_bytes).map_err(DecodeError::Event)
 }
 
-// LiteLLM keeps a failed front in the buffer for good and loses every later event; drop only that value.
-// A value that only lacks its tail keeps accumulating, so only a syntax or data failure is broken.
-fn discard_unparseable_prefix<Counter>(
+// LiteLLM keeps a failed front forever and loses later events, so drop only it; an unfinished value keeps accumulating.
+fn discard_unparsable_prefix<Counter>(
     converter: &mut StreamEventConverter<Counter>,
     accumulated_bytes: &mut usize,
 ) -> Result<Option<StreamEventChunk>, StreamEventError<Counter::Failure>>
@@ -131,7 +126,7 @@ where
             Some(_) | None => break,
         };
         tracing::warn!(
-            "dropping {end} unparseable bytes from the accumulated anthropic stream buffer"
+            "dropping {end} unparsable bytes from the accumulated anthropic stream buffer"
         );
         rest = trimmed.get(end..).unwrap_or_default();
         dropped = true;

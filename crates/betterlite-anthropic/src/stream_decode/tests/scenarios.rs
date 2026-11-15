@@ -168,8 +168,7 @@ pub(super) fn multi_line_sse() {
                 "generic", "event", "generic", "generic", "event", "event", "event"
             ]
         );
-        // Two data lines in one string are not joined: the data: before n is dropped as unparseable,
-        // so n arrives as its own event and the buffered s arrives when the stream ends.
+        // Data lines in one string are not joined, so n arrives as its own event and the buffered s arrives at end of stream.
         assert_eq!(contents(outcomes), ["b", "m", "n", "s"]);
         assert_empty_generic(generic(&outcomes[0]));
         assert_empty_generic(generic(&outcomes[2]));
@@ -189,7 +188,7 @@ pub(super) fn done_marker() {
     ];
     let (sync, asynchronous) = (drive_sync(steps.clone()), drive_async(steps));
     for outcomes in [&sync, &asynchronous] {
-        // [DONE] is not a terminator: each one is dropped as an unparseable prefix and later events still come.
+        // [DONE] is not a terminator: each one is dropped as an unparsable prefix and later events still come.
         assert_eq!(kinds(outcomes), ["event", "event", "event"]);
         assert_eq!(contents(outcomes), ["", "d", "e"]);
     }

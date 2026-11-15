@@ -110,7 +110,7 @@ fn assert_text(outcome: &Outcome, expected: &str) {
     assert_eq!(chunk.choices[0].delta.content, expected);
 }
 
-const DROPPED: &str = "unparseable bytes from the accumulated anthropic stream buffer";
+const DROPPED: &str = "unparsable bytes from the accumulated anthropic stream buffer";
 
 fn drop_warnings(counts: &[usize]) -> Vec<String> {
     counts
@@ -119,8 +119,7 @@ fn drop_warnings(counts: &[usize]) -> Vec<String> {
         .collect()
 }
 
-// Each fragment is broken in its own way and has a valid event glued behind it, so the drop must end
-// where the broken value ends: at a closing brace, a closing quote or a bare token's boundary.
+// Every broken fragment here has a valid event glued behind it, so a drop must end where the broken value ends.
 #[test]
 fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
     let (guard, warnings) = fixture::capture_warnings();
@@ -129,7 +128,7 @@ fn drops_a_corrupted_fragment_and_keeps_later_text_and_usage() {
             r#"data: {"type":}{"type":"ping"}"#.to_owned(),
         )),
         Ok(TransportChunk::Text(format!(
-            r#"data: {"a"}{}"#,
+            r#"data: {{"a"}}{}"#,
             delta("v").trim_start_matches("data:")
         ))),
         Ok(TransportChunk::Text(format!(
@@ -222,8 +221,7 @@ fn a_value_split_over_many_non_closing_data_lines_accumulates() {
     assert_text(&outcomes[0], &"x".repeat(512));
 }
 
-// The count is the caller's, so a check that materializes the empty buffer reads 0 and passes where the count
-// trips; the first fragment errors.
+// The count is the caller's, so a snapshot check reads the empty buffer as 0 and passes where the count trips.
 #[test]
 fn the_event_bound_reads_the_count_instead_of_materializing_the_buffer() {
     let steps: Vec<fixture::Source> = vec![
@@ -245,8 +243,7 @@ fn the_event_bound_reads_the_count_instead_of_materializing_the_buffer() {
     ));
 }
 
-// A data line can carry several values; the pop leaves the rest buffered, so the bound counts them instead of
-// restarting at zero, and the next line trips it.
+// A line can carry several values, so the pop leaves the rest buffered and the next line must count them.
 #[test]
 fn the_count_after_a_produced_value_is_the_bytes_still_buffered() {
     let line = r#"data:{"type":"ping"}{"type":"ping"}{"type":"ping"}"#;
@@ -273,8 +270,7 @@ fn the_count_after_a_produced_value_is_the_bytes_still_buffered() {
     assert_text(&outcomes[3], "");
 }
 
-// The converter's buffer outlives one payload, so the caller's count does too: the first payload is deferred and
-// its bytes count against the second, which trips the bound.
+// The buffer outlives one payload, so the caller's count does too: five deferred bytes count against the second call.
 #[test]
 fn the_entry_bound_carries_the_count_across_calls_on_one_converter() {
     let mut converter = converter();
