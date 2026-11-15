@@ -1,7 +1,8 @@
 use betterlite_logging::azure_sentinel_logging::audit::StandardAuditLogPayload;
 use secrecy::ExposeSecret as _;
 
-use super::record::{AuditLogRecord, isoformat_timestamp, payload_text};
+use super::enums::AuditName;
+use super::record::{AuditLogRecord, payload_text, timestamp_text};
 
 pub type AuditLogPayload = StandardAuditLogPayload;
 
@@ -9,7 +10,7 @@ pub type AuditLogPayload = StandardAuditLogPayload;
 pub fn build_audit_log_payload(record: &AuditLogRecord) -> AuditLogPayload {
     AuditLogPayload {
         id: record.id.clone(),
-        updated_at: isoformat_timestamp(record.updated_at),
+        updated_at: timestamp_text(record.updated_at, "+00:00"),
         changed_by: record.changed_by.clone().unwrap_or_default(),
         hashed_changed_by_api_key: record
             .changed_by_api_key

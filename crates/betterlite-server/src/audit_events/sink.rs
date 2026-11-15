@@ -9,7 +9,7 @@ use super::callbacks::AuditCallbackDispatcher;
 use super::enums::{AuditAction, AuditTable};
 use super::identity::{CallerIdentity, get_audit_log_changed_by};
 use super::payload::build_audit_log_payload;
-use super::record::{AuditLogRecord, AuditRecordFields};
+use super::record::AuditLogRecord;
 use super::settings::AuditSettings;
 
 #[derive(Debug, thiserror::Error)]
@@ -69,7 +69,7 @@ impl AuditEventSink {
             entry.caller,
             entry.litellm_proxy_admin_name,
         );
-        let record = AuditLogRecord::new(AuditRecordFields {
+        let record = AuditLogRecord::masked(AuditLogRecord {
             id: (self.new_id)(),
             updated_at: self.clock.now(),
             changed_by,

@@ -1,7 +1,7 @@
 use betterlite_config::sections::settings::JsonValue;
 use secrecy::SecretString;
 
-pub const ALLOW_LITELLM_CHANGED_BY_HEADER_METADATA_KEY: &str = "allow_litellm_changed_by_header";
+pub const CHANGED_BY_HEADER_METADATA_KEY: &str = "allow_litellm_changed_by_header";
 
 #[derive(Clone, Debug, Default)]
 pub struct CallerIdentity {
@@ -12,11 +12,11 @@ pub struct CallerIdentity {
 }
 
 impl CallerIdentity {
-    fn allows_litellm_changed_by_header(&self) -> bool {
+    fn allows_changed_by_header(&self) -> bool {
         [self.metadata.as_ref(), self.team_metadata.as_ref()]
             .into_iter()
             .flatten()
-            .filter_map(|metadata| metadata.get(ALLOW_LITELLM_CHANGED_BY_HEADER_METADATA_KEY))
+            .filter_map(|metadata| metadata.get(CHANGED_BY_HEADER_METADATA_KEY))
             .any(|value| value.as_bool() == Some(true))
     }
 }
@@ -28,7 +28,7 @@ pub fn get_audit_log_changed_by(
     litellm_proxy_admin_name: Option<&str>,
 ) -> Option<String> {
     let header = litellm_changed_by.filter(|value| !value.is_empty());
-    if header.is_some() && caller.allows_litellm_changed_by_header() {
+    if header.is_some() && caller.allows_changed_by_header() {
         return header.map(str::to_owned);
     }
     let user_id = caller.user_id.clone().filter(|value| !value.is_empty());

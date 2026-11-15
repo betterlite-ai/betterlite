@@ -5,7 +5,7 @@ use betterlite_redact::structured::SensitiveDataMasker;
 use chrono::{DateTime, FixedOffset};
 use secrecy::SecretString;
 
-use super::enums::{AuditAction, AuditTable};
+use super::enums::{AuditAction, AuditName, AuditTable};
 
 const REQUIRED_FIELDS: [&str; 5] = ["id", "updated_at", "action", "table_name", "object_id"];
 const OPTIONAL_FIELDS: [&str; 4] = [
@@ -56,37 +56,19 @@ pub struct AuditLogRecord {
     pub updated_values: Option<JsonValue>,
 }
 
-pub struct AuditRecordFields {
-    pub id: String,
-    pub updated_at: DateTime<FixedOffset>,
-    pub changed_by: Option<String>,
-    pub changed_by_api_key: Option<SecretString>,
-    pub action: AuditAction,
-    pub table_name: AuditTable,
-    pub object_id: String,
-    pub before_value: Option<JsonValue>,
-    pub updated_values: Option<JsonValue>,
-}
-
 impl AuditLogRecord {
-    pub fn new(fields: AuditRecordFields) -> Result<Self, AuditRecordError> {
-        Ok(Self {
-            id: fields.id,
-            updated_at: fields.updated_at,
-            changed_by: fields.changed_by,
-            changed_by_api_key: fields.changed_by_api_key,
-            action: fields.action,
-            table_name: fields.table_name,
-            object_id: fields.object_id,
-            before_value: masked_audit_value(fields.before_value, "before_value")?,
-            updated_values: masked_audit_value(fields.updated_values, "updated_values")?,
-        })
+    pub fn masked(mut record: Self) -> Result<Self, AuditRecordError> {
+        record.before_value = masked_audit_value(record.before_value, "before_value")?;
+        record.updated_values = masked_audit_value(record.updated_values, "updated_values")?;
+        Ok(record)
     }
 }
 
 pub fn decode_audit_record(bytes: &[u8]) -> Result<AuditLogRecord, AuditRecordError> {
-    let value: JsonValue = safe_json_loads(bytes)?;
-    record_from_json(&value)
+    match safe_json_loads(bytes) {
+        Ok(value) => record_from_json(&value),
+        Err(source) => Err(AuditRecordError::from(source)),
+    }
 }
 
 fn record_from_json(value: &JsonValue) -> Result<AuditLogRecord, AuditRecordError> {
@@ -104,7 +86,7 @@ fn record_from_json(value: &JsonValue) -> Result<AuditLogRecord, AuditRecordErro
         },
     )?;
     let object_id = required_string(value, "object_id")?;
-    AuditLogRecord::new(AuditRecordFields {
+    AuditLogRecord::masked(AuditLogRecord {
         id,
         updated_at,
         changed_by: changed_by_text(value.get("changed_by")),
@@ -112,8 +94,14 @@ fn record_from_json(value: &JsonValue) -> Result<AuditLogRecord, AuditRecordErro
         action,
         table_name,
         object_id,
-        before_value: field_value(value, "before_value")?,
-        updated_values: field_value(value, "updated_values")?,
+        before_value: value
+            .get("before_value")
+            .filter(|given| !given.is_null())
+            .cloned(),
+        updated_values: value
+            .get("updated_values")
+            .filter(|given| !given.is_null())
+            .cloned(),
     })
 }
 
@@ -152,16 +140,6 @@ fn optional_string(
     }
 }
 
-fn field_value(
-    value: &JsonValue,
-    field: &'static str,
-) -> Result<Option<JsonValue>, AuditRecordError> {
-    match value.get(field) {
-        None | Some(JsonValue::Null) => Ok(None),
-        Some(given) => masked_audit_value(Some(given.clone()), field),
-    }
-}
-
 fn changed_by_text(value: Option<&JsonValue>) -> Option<String> {
     match value? {
         JsonValue::Null => None,
@@ -188,52 +166,36 @@ fn masked_audit_value(
     };
     let value = match value {
         JsonValue::Null => return Ok(None),
-        JsonValue::String(text) => parse_stored_value(&text, field)?,
-        other => other,
-    };
-    // LiteLLM's validator parses a string field a second time, so a JSON string inside the field is JSON text too
-    let value = match value {
-        JsonValue::String(text) => parse_stored_value(&text, field)?,
-        other => other,
+        JsonValue::String(text) => safe_json_loads(text.as_bytes())
+            .map_err(|source| AuditRecordError::JsonField { field, source })?,
+        value @ (JsonValue::Bool(_)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_)) => value,
     };
     Ok(Some(
         SensitiveDataMasker::with_patterns(["key"], ["cost"]).mask(&value),
     ))
 }
 
-fn parse_stored_value(text: &str, field: &'static str) -> Result<JsonValue, AuditRecordError> {
-    safe_json_loads(text.as_bytes()).map_err(|source| AuditRecordError::JsonField { field, source })
-}
-
 #[must_use]
 pub fn payload_text(value: &JsonValue) -> String {
     match value {
         JsonValue::String(text) => text.clone(),
-        other => other.to_string(),
+        stored => stored.to_string(),
     }
 }
 
+// A UTC instant reads Z in stored JSON and +00:00 in Python's isoformat, so the caller names its form
 #[must_use]
-pub fn json_timestamp(value: DateTime<FixedOffset>) -> String {
+pub fn timestamp_text(value: DateTime<FixedOffset>, utc_suffix: &str) -> String {
     let seconds = value.format("%Y-%m-%dT%H:%M:%S");
     let micros = value.timestamp_subsec_micros();
     let zone = if value.offset().local_minus_utc() == 0 {
-        "Z".to_owned()
+        utc_suffix.to_owned()
     } else {
         value.format("%:z").to_string()
     };
-    if micros == 0 {
-        format!("{seconds}{zone}")
-    } else {
-        format!("{seconds}.{micros:06}{zone}")
-    }
-}
-
-#[must_use]
-pub fn isoformat_timestamp(value: DateTime<FixedOffset>) -> String {
-    let seconds = value.format("%Y-%m-%dT%H:%M:%S");
-    let micros = value.timestamp_subsec_micros();
-    let zone = value.format("%:z");
     if micros == 0 {
         format!("{seconds}{zone}")
     } else {
