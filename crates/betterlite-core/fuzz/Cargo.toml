@@ -32,6 +32,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "bfl_boundary"
+path = "fuzz_targets/bfl_boundary.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "budget_reset_clock"
 path = "fuzz_targets/budget_reset_clock.rs"
 test = false
@@ -293,6 +300,13 @@ bench = false
 [[bin]]
 name = "fal_image_reply"
 path = "fuzz_targets/fal_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "interactions_sse"
+path = "fuzz_targets/interactions_sse.rs"
 test = false
 doc = false
 bench = false

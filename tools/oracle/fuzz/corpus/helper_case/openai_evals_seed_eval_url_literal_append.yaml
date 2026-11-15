@@ -1,0 +1,10 @@
+kind: helper
+name: openai-evals-seed-eval-url-literal-append
+call:
+  openai_evals:
+    eval_url_literal_append:
+      probes:
+        - endpoint: evals
+          api_base: https://api.openai.com/v1
+env: {}
+compare: {ignore: []}
