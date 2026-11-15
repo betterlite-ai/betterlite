@@ -11,8 +11,7 @@ use betterlite_server::mcp_rotation::store::{
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::helper_error;
-use super::input::{CredentialInput, EnvVarInput, OAuthInput, ServerInput};
+use super::{CredentialInput, EnvVarInput, OAuthInput, ServerInput, helper_error};
 use crate::helpers::HelperError;
 
 pub(super) type HelperCipher = StoredCipher<FixedNonces, TracingDiagnostics>;
@@ -110,44 +109,22 @@ fn parse_inner(value: &JsonValue) -> Result<Value, Box<HelperError>> {
 }
 
 fn server_write(server_id: &str, update: &ServerUpdate) -> Result<Value, Box<HelperError>> {
-    let mut data = serde_json::Map::new();
-    if let Some(credentials) = &update.credentials {
-        data.insert("credentials".to_owned(), parse_inner(credentials)?);
+    let credentials = update.credentials.as_ref().map(parse_inner).transpose()?;
+    let env_vars = update.env_vars.as_ref().map(parse_inner).transpose()?;
+    let mut data = json!({
+        "credentials": credentials,
+        "env_vars": env_vars,
+        "static_headers": update.static_headers,
+        "env": update.env,
+        "updated_by": update.updated_by,
+    });
+    if let Value::Object(fields) = &mut data {
+        fields.retain(|_, value| !value.is_null());
     }
-    if let Some(env_vars) = &update.env_vars {
-        data.insert("env_vars".to_owned(), parse_inner(env_vars)?);
-    }
-    if let Some(static_headers) = &update.static_headers {
-        data.insert(
-            "static_headers".to_owned(),
-            serde_json::to_value(static_headers)
-                .map_err(|source| helper_error("SerializationError", &source.to_string()))?,
-        );
-    }
-    if let Some(env) = &update.env {
-        data.insert(
-            "env".to_owned(),
-            serde_json::to_value(env)
-                .map_err(|source| helper_error("SerializationError", &source.to_string()))?,
-        );
-    }
-    data.insert(
-        "updated_by".to_owned(),
-        Value::String(update.updated_by.clone()),
-    );
     Ok(json!({
         "table": "servers",
         "where": {"server_id": server_id},
-        "data": Value::Object(data),
-    }))
-}
-
-fn oauth_write(server_id: &str, credentials: &JsonValue) -> Result<Value, Box<HelperError>> {
-    let credentials = parse_inner(credentials)?;
-    Ok(json!({
-        "table": "oauth_clients",
-        "where": {"server_id": server_id},
-        "data": {"credentials": credentials},
+        "data": data,
     }))
 }
 
@@ -167,6 +144,17 @@ pub(super) struct FakeStore {
     pub(super) user_env_vars: Vec<StoredUserEnvVarRow>,
     pub(super) recorder: Arc<Mutex<Vec<Value>>>,
     pub(super) fail_at: Option<usize>,
+}
+
+pub(super) fn empty_store(recorder: Arc<Mutex<Vec<Value>>>) -> FakeStore {
+    FakeStore {
+        servers: Vec::new(),
+        oauth_clients: Vec::new(),
+        user_credentials: Vec::new(),
+        user_env_vars: Vec::new(),
+        recorder,
+        fail_at: None,
+    }
 }
 
 impl FakeStore {
@@ -208,7 +196,13 @@ impl McpRotationStore for FakeStore {
         server_id: &str,
         credentials: &JsonValue,
     ) -> Result<(), Self::Error> {
-        self.record(oauth_write(server_id, credentials))
+        self.record(parse_inner(credentials).map(|parsed| {
+            json!({
+                "table": "oauth_clients",
+                "where": {"server_id": server_id},
+                "data": {"credentials": parsed},
+            })
+        }))
     }
 
     async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, Self::Error> {
@@ -244,11 +238,4 @@ impl McpRotationStore for FakeStore {
             "data": {"values_b64": values_b64},
         })))
     }
-}
-
-pub(super) fn written(recorder: &Arc<Mutex<Vec<Value>>>) -> Vec<Value> {
-    recorder
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .clone()
 }

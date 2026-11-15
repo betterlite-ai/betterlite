@@ -163,6 +163,43 @@ pub struct FakeStore {
     pub fail_at: Option<usize>,
 }
 
+#[must_use]
+pub fn empty_store() -> FakeStore {
+    FakeStore {
+        servers: Vec::new(),
+        oauth_clients: Vec::new(),
+        user_credentials: Vec::new(),
+        user_env_vars: Vec::new(),
+        writes: Mutex::new(Vec::new()),
+        fail_at: None,
+    }
+}
+
+#[must_use]
+pub fn server_row(
+    server_id: &str,
+    credentials: Option<String>,
+    env_vars: Option<String>,
+    static_headers: Option<String>,
+    env: Option<String>,
+) -> StoredServerRow {
+    StoredServerRow {
+        server_id: server_id.to_owned(),
+        credentials,
+        env_vars,
+        static_headers,
+        env,
+    }
+}
+
+#[must_use]
+pub fn oauth_row(server_id: &str, credentials: Option<String>) -> StoredOAuthClientRow {
+    StoredOAuthClientRow {
+        server_id: server_id.to_owned(),
+        credentials,
+    }
+}
+
 impl FakeStore {
     #[must_use]
     pub fn written(&self) -> Vec<Write> {

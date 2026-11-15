@@ -34,15 +34,11 @@ class InjectedWriteError(Exception):
 
 
 class ProxyServerStub(ModuleType):
-    master_key: str | None
-    general_settings: dict[str, JsonValue]
-    redis_usage_cache: None
-
     def __init__(self) -> None:
         super().__init__(PROXY_SERVER_NAME)
-        self.master_key = None
-        self.general_settings = {"encryption_algorithm": "aes-256-gcm"}
-        self.redis_usage_cache = None
+        self.master_key: str | None = None
+        self.general_settings: dict[str, JsonValue] = {"encryption_algorithm": "aes-256-gcm"}
+        self.redis_usage_cache: None = None
 
 
 class LogCapture(logging.Handler):
@@ -53,12 +49,11 @@ class LogCapture(logging.Handler):
     @override
     def emit(self, record: logging.LogRecord) -> None:
         if record.levelno >= logging.ERROR:
-            level = "error"
+            self.entries.append("error")
         elif record.levelno >= logging.WARNING:
-            level = "warn"
+            self.entries.append("warn")
         else:
-            level = "info"
-        self.entries.append(level)
+            self.entries.append("info")
 
 
 class FixedRandom:
@@ -69,37 +64,16 @@ class FixedRandom:
         return self.nonce[:size]
 
 
-class StoredRow:
-    pass
-
-
 @dataclass
-class ServerRow(StoredRow):
+class Row:
     server_id: str
-    credentials: JsonValue
-    env_vars: JsonValue
-    static_headers: JsonValue
-    env: JsonValue
-
-
-@dataclass
-class OAuthRow(StoredRow):
-    server_id: str
-    credentials: JsonValue
-
-
-@dataclass
-class CredentialRow(StoredRow):
-    user_id: str
-    server_id: str
-    credential_b64: str
-
-
-@dataclass
-class EnvVarRow(StoredRow):
-    user_id: str
-    server_id: str
-    values_b64: str
+    credentials: JsonValue = None
+    env_vars: JsonValue = None
+    static_headers: JsonValue = None
+    env: JsonValue = None
+    user_id: str = ""
+    credential_b64: str = ""
+    values_b64: str = ""
 
 
 class Recorder:
@@ -114,22 +88,23 @@ class Recorder:
 
 
 class RecordingTable:
-    def __init__(self, table: str, rows: list[StoredRow], recorder: Recorder) -> None:
+    def __init__(self, table: str, rows: list[Row], recorder: Recorder) -> None:
         self.table = table
         self.rows = rows
         self.recorder = recorder
 
-    async def find_many(self, where: dict[str, JsonValue] | None = None) -> list[StoredRow]:
+    async def find_many(self, where: dict[str, JsonValue] | None = None) -> list[Row]:
         del where
         return self.rows
 
     async def update(self, where: dict[str, JsonValue], data: dict[str, JsonValue]) -> None:
-        entry: JsonValue = {
-            "table": self.table,
-            "where": where,
-            "data": stored_data(data),
+        stored: dict[str, JsonValue] = {
+            name: JSON_VALUE.validate_json(TEXT.validate_python(value))
+            if name in JSON_TEXT_FIELDS
+            else value
+            for name, value in data.items()
         }
-        self.recorder.add(entry)
+        self.recorder.add({"table": self.table, "where": where, "data": stored})
 
 
 class FakeDb(PrismaWrapper):
@@ -171,125 +146,80 @@ class EnvVarInput(TypedDict):
     values_b64: str
 
 
-class RotateServers(TypedDict):
-    function: Literal["rotate_servers"]
+class CaseInput(TypedDict):
     salt_key: str
     new_master_key: str
     nonce_hex: str
+    fail_at_write: NotRequired[int]
+
+
+class RotateServers(CaseInput):
+    function: Literal["rotate_servers"]
     touched_by: str
     servers: list[ServerInput]
     oauth_clients: list[OAuthInput]
-    fail_at_write: NotRequired[int]
 
 
-class RotateUserCredentials(TypedDict):
+class RotateUserCredentials(CaseInput):
     function: Literal["rotate_user_credentials"]
-    salt_key: str
-    new_master_key: str
-    nonce_hex: str
     rows: list[CredentialInput]
-    fail_at_write: NotRequired[int]
 
 
-class RotateUserEnvVars(TypedDict):
+class RotateUserEnvVars(CaseInput):
     function: Literal["rotate_user_env_vars"]
-    salt_key: str
-    new_master_key: str
-    nonce_hex: str
     rows: list[EnvVarInput]
-    fail_at_write: NotRequired[int]
 
 
 Input = RotateServers | RotateUserCredentials | RotateUserEnvVars
 
 
-def stored_data(data: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    stored: dict[str, JsonValue] = {}
-    for name, value in data.items():
-        if name in JSON_TEXT_FIELDS:
-            stored[name] = JSON_VALUE.validate_json(TEXT.validate_python(value))
-        else:
-            stored[name] = value
-    return stored
-
-
-def server_rows(servers: list[ServerInput]) -> list[StoredRow]:
+def server_rows(servers: list[ServerInput]) -> list[Row]:
     return [
-        ServerRow(
-            server_id=server["server_id"],
-            credentials=server.get("credentials"),
-            env_vars=server.get("env_vars"),
-            static_headers=server.get("static_headers"),
-            env=server.get("env"),
+        Row(
+            server["server_id"],
+            server.get("credentials"),
+            server.get("env_vars"),
+            server.get("static_headers"),
+            server.get("env"),
         )
         for server in servers
     ]
 
 
-def oauth_rows(clients: list[OAuthInput]) -> list[StoredRow]:
-    return [
-        OAuthRow(
-            server_id=client["server_id"],
-            credentials=client.get("credentials"),
-        )
-        for client in clients
-    ]
+def oauth_rows(clients: list[OAuthInput]) -> list[Row]:
+    return [Row(client["server_id"], client.get("credentials")) for client in clients]
 
 
-def credential_rows(rows: list[CredentialInput]) -> list[StoredRow]:
+def credential_rows(rows: list[CredentialInput]) -> list[Row]:
     return [
-        CredentialRow(
-            user_id=row["user_id"],
-            server_id=row["server_id"],
-            credential_b64=row["credential_b64"],
-        )
+        Row(row["server_id"], user_id=row["user_id"], credential_b64=row["credential_b64"])
         for row in rows
     ]
 
 
-def env_var_rows(rows: list[EnvVarInput]) -> list[StoredRow]:
+def env_var_rows(rows: list[EnvVarInput]) -> list[Row]:
     return [
-        EnvVarRow(
-            user_id=row["user_id"],
-            server_id=row["server_id"],
-            values_b64=row["values_b64"],
-        )
+        Row(row["server_id"], user_id=row["user_id"], values_b64=row["values_b64"])
         for row in rows
     ]
 
 
-def run_case(
-    value: Input,
-    recorder: Recorder,
-    rotation: Coroutine[None, None, None],
-) -> JsonValue:
+def run_case(value: Input, recorder: Recorder, rotation: Coroutine[None, None, None]) -> JsonValue:
     os.environ[SALT_ENV] = value["salt_key"]
     sys.modules[PROXY_SERVER_NAME] = ProxyServerStub()
     capture = LogCapture()
     logger = logging.getLogger(LOGGER_NAME)
-    saved_level = logger.level
-    saved_propagate = logger.propagate
-    saved_handlers = list(logger.handlers)
-    for existing in saved_handlers:
-        logger.removeHandler(existing)
+    for handler in list(logger.handlers):
+        logger.removeHandler(handler)
     logger.setLevel(logging.INFO)
     logger.propagate = False
     logger.addHandler(capture)
-    fixed = FixedRandom(bytes.fromhex(value["nonce_hex"]))
-    saved_random = os.urandom
-    os.urandom = fixed
+    os.urandom = FixedRandom(bytes.fromhex(value["nonce_hex"]))
     failed = False
     try:
         asyncio.run(rotation)
     except InjectedWriteError:
         failed = True
-    finally:
-        os.urandom = saved_random
-        logger.removeHandler(capture)
-        for existing in saved_handlers:
-            logger.addHandler(existing)
-        logger.setLevel(saved_level)
-        logger.propagate = saved_propagate
     return {"failed": failed, "writes": recorder.writes, "logs": capture.entries}
 
 
@@ -298,8 +228,6 @@ def rotate_servers(value: RotateServers) -> JsonValue:
     tables = {
         SERVER_TABLE: RecordingTable("servers", server_rows(value["servers"]), recorder),
         OAUTH_TABLE: RecordingTable("oauth_clients", oauth_rows(value["oauth_clients"]), recorder),
-        CREDENTIAL_TABLE: RecordingTable("user_credentials", [], recorder),
-        ENV_VAR_TABLE: RecordingTable("user_env_vars", [], recorder),
     }
     rotation: Coroutine[None, None, None] = rotate_mcp_server_credentials_master_key(
         FakeClient(tables), value["touched_by"], value["new_master_key"]
@@ -309,39 +237,27 @@ def rotate_servers(value: RotateServers) -> JsonValue:
 
 def rotate_user_credentials(value: RotateUserCredentials) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
-    tables = {
-        SERVER_TABLE: RecordingTable("servers", [], recorder),
-        OAUTH_TABLE: RecordingTable("oauth_clients", [], recorder),
-        CREDENTIAL_TABLE: RecordingTable("user_credentials", credential_rows(value["rows"]), recorder),
-        ENV_VAR_TABLE: RecordingTable("user_env_vars", [], recorder),
-    }
+    table = RecordingTable("user_credentials", credential_rows(value["rows"]), recorder)
     rotation: Coroutine[None, None, None] = rotate_mcp_user_credentials_master_key(
-        FakeClient(tables), value["new_master_key"]
+        FakeClient({CREDENTIAL_TABLE: table}), value["new_master_key"]
     )
     return run_case(value, recorder, rotation)
 
 
 def rotate_user_env_vars(value: RotateUserEnvVars) -> JsonValue:
     recorder = Recorder(value.get("fail_at_write"))
-    tables = {
-        SERVER_TABLE: RecordingTable("servers", [], recorder),
-        OAUTH_TABLE: RecordingTable("oauth_clients", [], recorder),
-        CREDENTIAL_TABLE: RecordingTable("user_credentials", [], recorder),
-        ENV_VAR_TABLE: RecordingTable("user_env_vars", env_var_rows(value["rows"]), recorder),
-    }
+    table = RecordingTable("user_env_vars", env_var_rows(value["rows"]), recorder)
     rotation: Coroutine[None, None, None] = rotate_mcp_user_env_vars_master_key(
-        FakeClient(tables), value["new_master_key"]
+        FakeClient({ENV_VAR_TABLE: table}), value["new_master_key"]
     )
     return run_case(value, recorder, rotation)
 
 
 def run(input_value: Input) -> JsonValue:
-    answer: JsonValue = None
-    match input_value["function"]:
-        case "rotate_servers":
-            answer = rotate_servers(input_value)
-        case "rotate_user_credentials":
-            answer = rotate_user_credentials(input_value)
-        case "rotate_user_env_vars":
-            answer = rotate_user_env_vars(input_value)
-    return answer
+    if input_value["function"] == "rotate_servers":
+        return rotate_servers(input_value)
+    if input_value["function"] == "rotate_user_credentials":
+        return rotate_user_credentials(input_value)
+    if input_value["function"] == "rotate_user_env_vars":
+        return rotate_user_env_vars(input_value)
+    return None

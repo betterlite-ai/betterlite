@@ -20,7 +20,7 @@ const DROP_UNREADABLE: DecryptPolicy = DecryptPolicy {
     value: FailureValue::Nothing,
 };
 
-pub fn reencrypt_global_env_var_values<N, D>(
+pub fn reencrypt_global_env_values<N, D>(
     stored: Option<&str>,
     cipher: &StoredCipher<N, D>,
     new_key: &SecretString,
@@ -32,18 +32,8 @@ where
     let Some(text) = stored else {
         return Ok(None);
     };
-    let value = match decode_mcp_stored_contract(text.as_bytes()) {
-        Ok(value) => value,
-        Err(McpStoredDecodeError::Json(_)) => return Ok(None),
-        Err(error) => return Err(RotationCodecError::Blob(error)),
-    };
-    let value = match value {
-        JsonValue::String(inner) => match decode_mcp_stored_contract(inner.as_bytes()) {
-            Ok(parsed) => parsed,
-            Err(McpStoredDecodeError::Json(_)) => return Ok(None),
-            Err(error) => return Err(RotationCodecError::Blob(error)),
-        },
-        other => other,
+    let Some(value) = decode_env_entries(text)? else {
+        return Ok(None);
     };
     if is_falsey(&value) {
         return Ok(None);
@@ -70,6 +60,22 @@ where
     Ok(Some(JsonValue::String(text)))
 }
 
+fn decode_env_entries(text: &str) -> Result<Option<JsonValue>, RotationCodecError> {
+    let value = match decode_mcp_stored_contract(text.as_bytes()) {
+        Ok(value) => value,
+        Err(McpStoredDecodeError::Json(_)) => return Ok(None),
+        Err(error) => return Err(RotationCodecError::Blob(error)),
+    };
+    match value {
+        JsonValue::String(inner) => match decode_mcp_stored_contract(inner.as_bytes()) {
+            Ok(parsed) => Ok(Some(parsed)),
+            Err(McpStoredDecodeError::Json(_)) => Ok(None),
+            Err(error) => Err(RotationCodecError::Blob(error)),
+        },
+        other => Ok(Some(other)),
+    }
+}
+
 fn rotate_entry<N, D>(
     fields: &mut BTreeMap<String, JsonValue>,
     cipher: &StoredCipher<N, D>,
@@ -79,7 +85,7 @@ where
     N: NonceSource,
     D: SecretDiagnostics,
 {
-    if !is_global_scope(fields.get("scope")) {
+    if matches!(fields.get("scope"), Some(JsonValue::String(scope)) if scope == "user") {
         return Ok(false);
     }
     let name = match fields.get("name") {
@@ -112,8 +118,4 @@ where
             Ok(false)
         }
     }
-}
-
-fn is_global_scope(scope: Option<&JsonValue>) -> bool {
-    !matches!(scope, Some(JsonValue::String(text)) if text == "user")
 }

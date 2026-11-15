@@ -22,5 +22,5 @@ pub enum RotationError<Store> {
     #[error(transparent)]
     Codec(#[from] RotationCodecError),
     #[error("the MCP rotation store failed")]
-    Store(#[source] Store),
+    Store(#[from] Store),
 }

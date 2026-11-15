@@ -3,6 +3,7 @@
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::error::SecretError;
+use rstest::rstest;
 
 use super::super::codec::{
     decode_user_credential, decrypt_credentials, encrypt_credentials, is_falsey,
@@ -36,25 +37,44 @@ fn encrypted_fields() -> CredentialBlob {
     credentials
 }
 
-#[test]
-fn credential_field_matrix() {
+#[rstest]
+#[case::auth_value("auth_value")]
+#[case::client_id("client_id")]
+#[case::client_secret("client_secret")]
+#[case::client_private_key("client_private_key")]
+#[case::aws_access_key_id("aws_access_key_id")]
+#[case::aws_secret_access_key("aws_secret_access_key")]
+#[case::aws_session_token("aws_session_token")]
+fn credential_field_matrix(#[case] field: &str) {
     let old = cipher(OLD_KEY);
     let key = new_key();
     let rotated =
         reencrypt_credentials_blob(Some(&JsonValue::Object(encrypted_fields())), &old, &key)
             .unwrap()
             .unwrap();
-    let JsonValue::String(text) = rotated.clone() else {
+    let JsonValue::String(text) = rotated else {
         panic!("the rotated credentials are a JSON text string");
     };
     let rotated = blob(&text);
-    for field in SECRET_FIELDS {
-        assert_eq!(
-            rotated.get(field),
-            Some(&string(&sealed(&format!("{field}-value"), NEW_KEY))),
-            "the {field} field is re-encrypted under the new key"
-        );
-    }
+    assert_eq!(
+        rotated.get(field),
+        Some(&string(&sealed(&format!("{field}-value"), NEW_KEY))),
+        "the {field} field is re-encrypted under the new key"
+    );
+}
+
+#[test]
+fn credential_field_matrix_leaves_other_fields() {
+    let old = cipher(OLD_KEY);
+    let key = new_key();
+    let rotated =
+        reencrypt_credentials_blob(Some(&JsonValue::Object(encrypted_fields())), &old, &key)
+            .unwrap()
+            .unwrap();
+    let JsonValue::String(text) = rotated else {
+        panic!("the rotated credentials are a JSON text string");
+    };
+    let rotated = blob(&text);
     assert_eq!(rotated.get("aws_region_name"), Some(&string("us-east-1")));
     assert_eq!(
         rotated.get("aws_service_name"),
@@ -113,46 +133,40 @@ fn credential_decrypt_passthrough() {
     );
 }
 
-#[test]
-fn credential_empty_blob() {
+#[rstest]
+#[case::absent(None)]
+#[case::null(Some(JsonValue::Null))]
+#[case::empty_object(Some(object(&[])))]
+#[case::empty_string(Some(string("")))]
+#[case::empty_array(Some(json("[]")))]
+#[case::zero(Some(json("0")))]
+#[case::false_value(Some(JsonValue::Bool(false)))]
+fn credential_empty_blob(#[case] empty: Option<JsonValue>) {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    for empty in [
-        None,
-        Some(JsonValue::Null),
-        Some(object(&[])),
-        Some(string("")),
-        Some(json("[]")),
-        Some(json("0")),
-        Some(JsonValue::Bool(false)),
-    ] {
-        assert_eq!(
-            reencrypt_credentials_blob(empty.as_ref(), &old, &key).unwrap(),
-            None
-        );
-    }
+    assert_eq!(
+        reencrypt_credentials_blob(empty.as_ref(), &old, &key).unwrap(),
+        None
+    );
 }
 
-#[test]
-fn credential_invalid_blob() {
+#[rstest]
+#[case::not_json(string("{not json"))]
+#[case::array_text(string("[]"))]
+#[case::number(json("17"))]
+#[case::number_text(string("17"))]
+#[case::true_value(JsonValue::Bool(true))]
+fn credential_invalid_blob(#[case] invalid: JsonValue) {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    for invalid in [
-        string("{not json"),
-        string("[]"),
-        json("17"),
-        string("17"),
-        JsonValue::Bool(true),
-    ] {
-        let result = reencrypt_credentials_blob(Some(&invalid), &old, &key);
-        assert!(
-            matches!(
-                &result,
-                Err(RotationCodecError::Encoding(_)) | Err(RotationCodecError::Json(_))
-            ),
-            "a non-object credential blob is rejected"
-        );
-    }
+    let result = reencrypt_credentials_blob(Some(&invalid), &old, &key);
+    assert!(
+        matches!(
+            &result,
+            Err(RotationCodecError::Encoding(_)) | Err(RotationCodecError::Json(_))
+        ),
+        "a non-object credential blob is rejected"
+    );
 }
 
 #[test]
@@ -238,28 +252,25 @@ fn user_empty_plaintext() {
     assert_eq!(open(&ciphertext, NEW_KEY).as_deref(), Some(""));
 }
 
-#[test]
-fn user_decode_error_classes() {
+#[rstest]
+#[case::short_padding("AA")]
+#[case::single_char("A")]
+#[case::bad_padding("AA=")]
+#[case::double_group("aGVsbG8=aGVsbG8=")]
+#[case::non_zero_padding("__8=")]
+#[case::non_ascii("\u{e9}")]
+#[case::not_base64("not a ciphertext")]
+fn user_decode_error_classes(#[case] unreadable: &str) {
     let old = cipher(OLD_KEY);
-    for unreadable in [
-        "AA",
-        "A",
-        "AA=",
-        "aGVsbG8=aGVsbG8=",
-        "__8=",
-        "\u{e9}",
-        "not a ciphertext",
-    ] {
-        assert_eq!(
-            decode_user_credential(unreadable, &old),
-            None,
-            "{unreadable:?} must not decode"
-        );
-        assert_eq!(
-            reencrypt_user_credential(unreadable, &old, &new_key()).unwrap(),
-            None
-        );
-    }
+    assert_eq!(
+        decode_user_credential(unreadable, &old),
+        None,
+        "{unreadable:?} must not decode"
+    );
+    assert_eq!(
+        reencrypt_user_credential(unreadable, &old, &new_key()).unwrap(),
+        None
+    );
 }
 
 #[test]
@@ -287,30 +298,23 @@ fn user_env_empty_success() {
     assert_eq!(open(&ciphertext, NEW_KEY).as_deref(), Some(""));
 }
 
-#[test]
-fn falsey_values_follow_python() {
-    for falsey in [
-        JsonValue::Null,
-        JsonValue::Bool(false),
-        json("0"),
-        json("0.0"),
-        string(""),
-        json("[]"),
-        object(&[]),
-    ] {
-        assert!(is_falsey(&falsey), "{falsey:?} is falsey");
-    }
-    for truthy in [
-        JsonValue::Bool(true),
-        json("1"),
-        json("-1"),
-        json("0.5"),
-        string(" "),
-        json("[null]"),
-        object(&[("a", JsonValue::Null)]),
-    ] {
-        assert!(!is_falsey(&truthy), "{truthy:?} is truthy");
-    }
+#[rstest]
+#[case::null(JsonValue::Null, true)]
+#[case::false_value(JsonValue::Bool(false), true)]
+#[case::zero(json("0"), true)]
+#[case::zero_float(json("0.0"), true)]
+#[case::empty_string(string(""), true)]
+#[case::empty_array(json("[]"), true)]
+#[case::empty_object(object(&[]), true)]
+#[case::true_value(JsonValue::Bool(true), false)]
+#[case::one(json("1"), false)]
+#[case::negative(json("-1"), false)]
+#[case::fraction(json("0.5"), false)]
+#[case::space(string(" "), false)]
+#[case::array_with_null(json("[null]"), false)]
+#[case::object_with_null(object(&[("a", JsonValue::Null)]), false)]
+fn falsey_values_follow_python(#[case] value: JsonValue, #[case] falsey: bool) {
+    assert_eq!(is_falsey(&value), falsey, "{value:?}");
 }
 
 #[test]

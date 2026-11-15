@@ -1,40 +1,36 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE;
 use betterlite_db::mcp_stored_contracts::JsonValue;
 use betterlite_secrets::secret_codec::MAX_ENCODED_BYTES;
+use rstest::rstest;
 
-use super::super::blob::{
-    RotationBlob, decode_json_column, decode_legacy_base64_text, decode_mcp_rotation_blob,
-};
+use super::super::blob::{decode_json_column, decode_legacy_base64_text, decode_mcp_rotation_blob};
 use super::super::error::RotationCodecError;
 use super::support::json;
 
-#[test]
-fn rotation_blob_prefers_json() {
-    for (text, expected) in [
-        (r#"{"client_id":"value"}"#, json(r#"{"client_id":"value"}"#)),
-        ("[1,2]", json("[1,2]")),
-        ("null", JsonValue::Null),
-        ("17", json("17")),
-        (r#""aGVsbG8=""#, json(r#""aGVsbG8=""#)),
-    ] {
-        let decoded = decode_mcp_rotation_blob(text.as_bytes()).unwrap();
-        assert!(decoded == RotationBlob::Json(expected), "{text}");
-    }
+#[rstest]
+#[case::object(r#"{"client_id":"value"}"#, json(r#"{"client_id":"value"}"#))]
+#[case::array("[1,2]", json("[1,2]"))]
+#[case::null("null", JsonValue::Null)]
+#[case::integer("17", json("17"))]
+#[case::text(r#""aGVsbG8=""#, json(r#""aGVsbG8=""#))]
+fn rotation_blob_prefers_json(#[case] text: &str, #[case] expected: JsonValue) {
+    let decoded = decode_mcp_rotation_blob(text.as_bytes()).unwrap();
+    assert!(decoded == expected, "{text}");
 }
 
 #[test]
 fn rotation_blob_falls_back_to_legacy_base64() {
     let encoded = URL_SAFE.encode("legacy-secret");
     let decoded = decode_mcp_rotation_blob(encoded.as_bytes()).unwrap();
-    assert!(decoded == RotationBlob::Legacy("legacy-secret".to_owned()));
+    assert!(decoded == JsonValue::String("legacy-secret".to_owned()));
     let padded = decode_mcp_rotation_blob(b"aGVsbG8=").unwrap();
-    assert!(padded == RotationBlob::Legacy("hello".to_owned()));
+    assert!(padded == JsonValue::String("hello".to_owned()));
 }
 
 #[test]
@@ -63,28 +59,38 @@ fn rotation_blob_rejects_oversize_and_depth() {
     ));
 }
 
+#[rstest]
+#[case::empty("", "")]
+#[case::stray_bits("***", "")]
+#[case::padded("aGVsbG8=", "hello")]
+#[case::whitespace("aGVs bG8=", "hello")]
+#[case::null_byte("AA==", "\0")]
+#[case::url_safe("4b-_", "\u{1fff}")]
+fn legacy_base64_matches_cpython(#[case] text: &str, #[case] expected: &str) {
+    assert_eq!(
+        decode_legacy_base64_text(text).unwrap(),
+        expected,
+        "{text:?}"
+    );
+}
+
+#[rstest]
+#[case::unpadded("aGVsbG8")]
+#[case::one_byte("AA")]
+#[case::single_char("A")]
+#[case::short_padding("AA=")]
+#[case::non_zero_padding("__8=")]
+#[case::non_ascii("\u{e9}")]
+#[case::not_base64("not json")]
+fn legacy_base64_rejects_like_cpython(#[case] rejected: &str) {
+    assert!(
+        decode_legacy_base64_text(rejected).is_err(),
+        "{rejected:?} must not decode"
+    );
+}
+
 #[test]
-fn legacy_base64_matches_cpython() {
-    for (text, expected) in [
-        ("", ""),
-        ("***", ""),
-        ("aGVsbG8=", "hello"),
-        ("aGVs bG8=", "hello"),
-        ("AA==", "\0"),
-        ("4b-_", "\u{1fff}"),
-    ] {
-        assert_eq!(
-            decode_legacy_base64_text(text).unwrap(),
-            expected,
-            "{text:?}"
-        );
-    }
-    for rejected in ["aGVsbG8", "AA", "A", "AA=", "__8=", "\u{e9}", "not json"] {
-        assert!(
-            decode_legacy_base64_text(rejected).is_err(),
-            "{rejected:?} must not decode"
-        );
-    }
+fn legacy_base64_size_limit_is_enforced() {
     let at_limit = " ".repeat(MAX_ENCODED_BYTES);
     assert_eq!(decode_legacy_base64_text(&at_limit).unwrap(), "");
     let over_limit = " ".repeat(MAX_ENCODED_BYTES + 1);
@@ -101,17 +107,18 @@ fn json_column_decoding() {
     assert!(decode_json_column(Some("{bad")).is_err());
 }
 
-#[test]
-fn replays_the_mcp_rotation_blob_corpus() {
+#[rstest]
+#[case::deep_nesting("deep-nesting.json")]
+#[case::invalid_utf8("invalid-utf8.bin")]
+#[case::legacy_base64("legacy-base64.txt")]
+#[case::malformed_json("malformed-json.json")]
+#[case::secret_map("secret-map.json")]
+#[case::user_env_vars("user-env-vars.json")]
+fn replays_the_mcp_rotation_blob_corpus(#[case] name: &str) {
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/mcp_rotation_blob");
-    let entries: Vec<PathBuf> = fs::read_dir(&corpus)
-        .expect("the corpus directory")
-        .map(|entry| entry.expect("a corpus entry").path())
-        .collect();
-    assert!(!entries.is_empty(), "the corpus has no entries");
-    for path in entries {
-        let bytes = fs::read(path).expect("a corpus file");
-        let _decoded = decode_mcp_rotation_blob(&bytes);
-        let _column = decode_json_column(std::str::from_utf8(&bytes).ok());
-    }
+    let entries = fs::read_dir(&corpus).expect("the corpus directory").count();
+    assert!(entries >= 6, "the corpus lost seeded entries");
+    let bytes = fs::read(corpus.join(name)).expect("a corpus file");
+    let _decoded = decode_mcp_rotation_blob(&bytes);
+    let _column = decode_json_column(std::str::from_utf8(&bytes).ok());
 }

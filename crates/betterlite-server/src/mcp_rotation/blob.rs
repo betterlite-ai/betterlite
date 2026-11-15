@@ -18,19 +18,12 @@ const LENIENT: GeneralPurpose = GeneralPurpose::new(
         .with_decode_padding_mode(DecodePaddingMode::RequireNone),
 );
 
-// The legacy arm is decoded plaintext, so the type carries no Debug.
-#[derive(Clone, PartialEq)]
-pub enum RotationBlob {
-    Json(JsonValue),
-    Legacy(String),
-}
-
-pub fn decode_mcp_rotation_blob(bytes: &[u8]) -> Result<RotationBlob, RotationCodecError> {
+pub fn decode_mcp_rotation_blob(bytes: &[u8]) -> Result<JsonValue, RotationCodecError> {
     let text = std::str::from_utf8(bytes).map_err(RotationCodecError::Utf8)?;
     match decode_mcp_stored_contract(bytes) {
-        Ok(value) => Ok(RotationBlob::Json(value)),
+        Ok(value) => Ok(value),
         Err(McpStoredDecodeError::Json(_)) => {
-            decode_legacy_base64_text(text).map(RotationBlob::Legacy)
+            decode_legacy_base64_text(text).map(JsonValue::String)
         }
         Err(error) => Err(RotationCodecError::Blob(error)),
     }

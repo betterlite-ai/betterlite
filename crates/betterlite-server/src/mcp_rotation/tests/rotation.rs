@@ -9,12 +9,10 @@ use secrecy::SecretString;
 use super::super::codec::encrypt_credentials;
 use super::super::error::RotationError;
 use super::super::rotation::Rotation;
-use super::super::store::{
-    StoredOAuthClientRow, StoredServerRow, StoredUserCredentialRow, StoredUserEnvVarRow,
-};
+use super::super::store::{StoredUserCredentialRow, StoredUserEnvVarRow};
 use super::support::{
-    FakeStore, FixedNonces, NEW_KEY, OLD_KEY, TestCipher, Write, blob, capture_logs, cipher, json,
-    new_key, object, open, sealed, string,
+    FakeStore, FixedNonces, NEW_KEY, OLD_KEY, TestCipher, Write, blob, capture_logs, cipher,
+    empty_store, json, new_key, oauth_row, object, open, sealed, server_row, string,
 };
 
 type TestRotation<'a> = Rotation<'a, FakeStore, FixedNonces, TracingDiagnostics>;
@@ -63,15 +61,14 @@ fn decrypted_credentials(update: &StoredUpdate) -> CredentialBlob {
 async fn server_secret_map_warning() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            static_headers: Some(stored(&string("not-a-secret-map"))),
-            env: Some(stored(&json(r#"{"X-Key":"plain-value"}"#))),
-            ..StoredServerRow::default()
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        None,
+        None,
+        Some(stored(&string("not-a-secret-map"))),
+        Some(stored(&json(r#"{"X-Key":"plain-value"}"#))),
+    )];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .servers("rotator")
@@ -106,14 +103,14 @@ async fn server_secret_map_json_text_roundtrip() {
     let mut map = SecretMap::new();
     map.insert("X-Key".to_owned(), SecretString::from("plain-value"));
     let stored_headers = encrypt_secret_map(&old, &map, None).unwrap();
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            static_headers: Some(stored(&string(&stored_headers))),
-            ..StoredServerRow::default()
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        None,
+        None,
+        Some(stored(&string(&stored_headers))),
+        None,
+    )];
     test_rotation(&store, &old, &key)
         .servers("rotator")
         .await
@@ -135,14 +132,14 @@ async fn server_secret_map_legacy_ciphertext() {
     let old = cipher(OLD_KEY);
     let key = new_key();
     let sealed_map = sealed(r#"{"X-Key":"plain-value"}"#, OLD_KEY);
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            env: Some(stored(&string(&sealed_map))),
-            ..StoredServerRow::default()
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        None,
+        None,
+        None,
+        Some(stored(&string(&sealed_map))),
+    )];
     test_rotation(&store, &old, &key)
         .servers("rotator")
         .await
@@ -165,22 +162,17 @@ async fn server_secret_map_legacy_ciphertext() {
 async fn server_empty_skip() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![
-            StoredServerRow {
-                server_id: "empty".to_owned(),
-                ..StoredServerRow::default()
-            },
-            StoredServerRow {
-                server_id: "empty-objects".to_owned(),
-                credentials: Some(stored(&object(&[]))),
-                env_vars: Some("[]".to_owned()),
-                static_headers: Some(stored(&object(&[]))),
-                env: Some(stored(&object(&[]))),
-            },
-        ],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![
+        server_row("empty", None, None, None, None),
+        server_row(
+            "empty-objects",
+            Some(stored(&object(&[]))),
+            Some("[]".to_owned()),
+            Some(stored(&object(&[]))),
+            Some(stored(&object(&[]))),
+        ),
+    ];
     test_rotation(&store, &old, &key)
         .servers("rotator")
         .await
@@ -192,14 +184,14 @@ async fn server_empty_skip() {
 async fn server_json_text_empty_blob_is_rotated() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            credentials: Some(stored(&string("{}"))),
-            ..StoredServerRow::default()
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        Some(stored(&string("{}"))),
+        None,
+        None,
+        None,
+    )];
     test_rotation(&store, &old, &key)
         .servers("rotator")
         .await
@@ -214,14 +206,14 @@ async fn server_json_text_empty_blob_is_rotated() {
 async fn server_updated_by() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            credentials: Some(stored(&encrypted_credentials())),
-            ..StoredServerRow::default()
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        Some(stored(&encrypted_credentials())),
+        None,
+        None,
+        None,
+    )];
     test_rotation(&store, &old, &key)
         .servers("rotator-7")
         .await
@@ -247,24 +239,18 @@ async fn server_updated_by() {
 async fn server_before_oauth_clients() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![StoredServerRow {
-            server_id: "s1".to_owned(),
-            credentials: Some(stored(&encrypted_credentials())),
-            ..StoredServerRow::default()
-        }],
-        oauth_clients: vec![
-            StoredOAuthClientRow {
-                server_id: "o1".to_owned(),
-                credentials: Some(stored(&encrypted_credentials())),
-            },
-            StoredOAuthClientRow {
-                server_id: "o2".to_owned(),
-                credentials: Some(stored(&encrypted_credentials())),
-            },
-        ],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        Some(stored(&encrypted_credentials())),
+        None,
+        None,
+        None,
+    )];
+    store.oauth_clients = vec![
+        oauth_row("o1", Some(stored(&encrypted_credentials()))),
+        oauth_row("o2", Some(stored(&encrypted_credentials()))),
+    ];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .servers("rotator")
@@ -290,25 +276,18 @@ async fn server_before_oauth_clients() {
 async fn server_midstream_failure() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        servers: vec![
-            StoredServerRow {
-                server_id: "s1".to_owned(),
-                credentials: Some(stored(&encrypted_credentials())),
-                ..StoredServerRow::default()
-            },
-            StoredServerRow {
-                server_id: "s2".to_owned(),
-                credentials: Some(stored(&string("not json"))),
-                ..StoredServerRow::default()
-            },
-        ],
-        oauth_clients: vec![StoredOAuthClientRow {
-            server_id: "o1".to_owned(),
-            credentials: Some(stored(&encrypted_credentials())),
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.servers = vec![
+        server_row(
+            "s1",
+            Some(stored(&encrypted_credentials())),
+            None,
+            None,
+            None,
+        ),
+        server_row("s2", Some(stored(&string("not json"))), None, None, None),
+    ];
+    store.oauth_clients = vec![oauth_row("o1", Some(stored(&encrypted_credentials())))];
     let result = test_rotation(&store, &old, &key).servers("rotator").await;
     assert!(matches!(result, Err(RotationError::Codec(_))));
     let writes = store.written();
@@ -320,13 +299,11 @@ async fn server_midstream_failure() {
 async fn user_legacy_base64() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![
-            super::support::credential_row("u1", "s1", "aGVsbG8tdG9rZW4="),
-            super::support::credential_row("u2", "s1", &sealed("encrypted-token", OLD_KEY)),
-        ],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_credentials = vec![
+        super::support::credential_row("u1", "s1", "aGVsbG8tdG9rZW4="),
+        super::support::credential_row("u2", "s1", &sealed("encrypted-token", OLD_KEY)),
+    ];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .user_credentials()
@@ -335,12 +312,20 @@ async fn user_legacy_base64() {
     drop(guard);
     let writes = store.written();
     assert_eq!(writes.len(), 2);
-    for (write, plaintext) in writes.iter().zip(["hello-token", "encrypted-token"]) {
-        let Write::UserCredential { credential_b64, .. } = write else {
-            panic!("a user credential row is written");
-        };
-        assert_eq!(open(credential_b64, NEW_KEY).as_deref(), Some(plaintext));
-    }
+    let Write::UserCredential { credential_b64, .. } = &writes[0] else {
+        panic!("a user credential row is written");
+    };
+    assert_eq!(
+        open(credential_b64, NEW_KEY).as_deref(),
+        Some("hello-token")
+    );
+    let Write::UserCredential { credential_b64, .. } = &writes[1] else {
+        panic!("a user credential row is written");
+    };
+    assert_eq!(
+        open(credential_b64, NEW_KEY).as_deref(),
+        Some("encrypted-token")
+    );
     assert!(
         logs.lines()
             .first()
@@ -353,13 +338,11 @@ async fn user_legacy_base64() {
 async fn user_corrupt_skip() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![
-            super::support::credential_row("u1", "s1", "__8="),
-            super::support::credential_row("u2", "s1", "AA"),
-        ],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_credentials = vec![
+        super::support::credential_row("u1", "s1", "__8="),
+        super::support::credential_row("u2", "s1", "AA"),
+    ];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .user_credentials()
@@ -383,15 +366,13 @@ async fn user_corrupt_skip() {
 async fn user_decode_error_classes() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![
-            super::support::credential_row("bad-length", "s1", "A"),
-            super::support::credential_row("bad-utf8", "s1", "__8="),
-            super::support::credential_row("non-ascii", "s1", "\u{e9}"),
-            super::support::credential_row("empty-bytes", "s1", "***"),
-        ],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_credentials = vec![
+        super::support::credential_row("bad-length", "s1", "A"),
+        super::support::credential_row("bad-utf8", "s1", "__8="),
+        super::support::credential_row("non-ascii", "s1", "\u{e9}"),
+        super::support::credential_row("empty-bytes", "s1", "***"),
+    ];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .user_credentials()
@@ -422,14 +403,12 @@ async fn user_decode_error_classes() {
 async fn user_composite_update() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![StoredUserCredentialRow {
-            user_id: "user-9".to_owned(),
-            server_id: "server-4".to_owned(),
-            credential_b64: sealed("token", OLD_KEY),
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_credentials = vec![StoredUserCredentialRow {
+        user_id: "user-9".to_owned(),
+        server_id: "server-4".to_owned(),
+        credential_b64: sealed("token", OLD_KEY),
+    }];
     test_rotation(&store, &old, &key)
         .user_credentials()
         .await
@@ -446,10 +425,8 @@ async fn user_composite_update() {
 async fn user_env_no_base64_fallback() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_env_vars: vec![super::support::env_row("u1", "s1", "aGVsbG8tdG9rZW4=")],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_env_vars = vec![super::support::env_row("u1", "s1", "aGVsbG8tdG9rZW4=")];
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .user_env_vars()
@@ -471,14 +448,12 @@ async fn user_env_no_base64_fallback() {
 async fn user_env_empty_success() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_env_vars: vec![StoredUserEnvVarRow {
-            user_id: "u1".to_owned(),
-            server_id: "s1".to_owned(),
-            values_b64: String::new(),
-        }],
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_env_vars = vec![StoredUserEnvVarRow {
+        user_id: "u1".to_owned(),
+        server_id: "s1".to_owned(),
+        values_b64: String::new(),
+    }];
     test_rotation(&store, &old, &key)
         .user_env_vars()
         .await
@@ -490,23 +465,26 @@ async fn user_env_empty_success() {
     assert_eq!(open(values_b64, NEW_KEY).as_deref(), Some(""));
 }
 
+fn counts_store() -> FakeStore {
+    let mut store = empty_store();
+    store.user_credentials = vec![
+        super::support::credential_row("u1", "s1", &sealed("one", OLD_KEY)),
+        super::support::credential_row("u2", "s1", "AA"),
+        super::support::credential_row("u3", "s1", &sealed("three", OLD_KEY)),
+        super::support::credential_row("u4", "s1", "__8="),
+    ];
+    store.user_env_vars = vec![
+        super::support::env_row("u1", "s1", &sealed("env-one", OLD_KEY)),
+        super::support::env_row("u2", "s1", "AA"),
+    ];
+    store
+}
+
 #[tokio::test]
 async fn user_rotation_counts() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![
-            super::support::credential_row("u1", "s1", &sealed("one", OLD_KEY)),
-            super::support::credential_row("u2", "s1", "AA"),
-            super::support::credential_row("u3", "s1", &sealed("three", OLD_KEY)),
-            super::support::credential_row("u4", "s1", "__8="),
-        ],
-        user_env_vars: vec![
-            super::support::env_row("u1", "s1", &sealed("env-one", OLD_KEY)),
-            super::support::env_row("u2", "s1", "AA"),
-        ],
-        ..FakeStore::default()
-    };
+    let store = counts_store();
     let (logs, guard) = capture_logs();
     test_rotation(&store, &old, &key)
         .user_credentials()
@@ -541,15 +519,13 @@ async fn user_rotation_counts() {
 async fn user_rotation_partial_failure() {
     let old = cipher(OLD_KEY);
     let key = new_key();
-    let store = FakeStore {
-        user_credentials: vec![
-            super::support::credential_row("u1", "s1", &sealed("one", OLD_KEY)),
-            super::support::credential_row("u2", "s1", &sealed("two", OLD_KEY)),
-            super::support::credential_row("u3", "s1", &sealed("three", OLD_KEY)),
-        ],
-        fail_at: Some(1),
-        ..FakeStore::default()
-    };
+    let mut store = empty_store();
+    store.user_credentials = vec![
+        super::support::credential_row("u1", "s1", &sealed("one", OLD_KEY)),
+        super::support::credential_row("u2", "s1", &sealed("two", OLD_KEY)),
+        super::support::credential_row("u3", "s1", &sealed("three", OLD_KEY)),
+    ];
+    store.fail_at = Some(1);
     let (logs, guard) = capture_logs();
     let result = test_rotation(&store, &old, &key).user_credentials().await;
     drop(guard);

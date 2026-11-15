@@ -15,7 +15,7 @@ pub struct ServerUpdate {
 
 impl ServerUpdate {
     #[must_use]
-    pub fn has_changes(&self) -> bool {
+    pub const fn has_changes(&self) -> bool {
         self.credentials.is_some()
             || self.env_vars.is_some()
             || self.static_headers.is_some()

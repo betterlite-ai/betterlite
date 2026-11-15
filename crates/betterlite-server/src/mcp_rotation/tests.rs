@@ -8,6 +8,7 @@ mod support;
 
 use betterlite_db::mcp_server_encoding::credentials::CredentialBlob;
 use betterlite_db::mcp_stored_contracts::JsonValue;
+use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use betterlite_secrets::secret_codec::secret_map::{
@@ -16,12 +17,16 @@ use betterlite_secrets::secret_codec::secret_map::{
 use clap::Parser;
 use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
+use thiserror::Error;
 use tokio_postgres::NoTls;
 
-use self::support::{NEW_KEY, OLD_KEY, cipher, new_key, open, sealed, string};
+use self::support::{NEW_KEY, OLD_KEY, TestCipher, cipher, new_key, open, sealed, string};
 use super::codec::encrypt_credentials;
-use super::postgres::PostgresRotationStore;
 use super::rotation::Rotation;
+use super::store::{
+    McpRotationStore, ServerUpdate, StoredOAuthClientRow, StoredServerRow, StoredUserCredentialRow,
+    StoredUserEnvVarRow,
+};
 
 const SCHEMA: &str = r#"
 CREATE TABLE "LiteLLM_MCPServerTable" (
@@ -62,6 +67,209 @@ CREATE TRIGGER reject_boom_update BEFORE UPDATE ON "LiteLLM_MCPServerTable"
 FOR EACH ROW EXECUTE FUNCTION reject_boom();
 "#;
 
+const SERVER_ROWS_SQL: &str = r#"SELECT server_id, credentials::text, env_vars::text, static_headers::text, env::text FROM "LiteLLM_MCPServerTable""#;
+const SERVER_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerTable" SET credentials = COALESCE(to_jsonb($2::text), credentials), env_vars = COALESCE(to_jsonb($3::text), env_vars), static_headers = COALESCE(to_jsonb($4::text), static_headers), env = COALESCE(to_jsonb($5::text), env), updated_by = $6 WHERE server_id = $1"#;
+const OAUTH_ROWS_SQL: &str =
+    r#"SELECT server_id, credentials::text FROM "LiteLLM_MCPServerOAuthClient""#;
+const OAUTH_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPServerOAuthClient" SET credentials = to_jsonb($2::text) WHERE server_id = $1"#;
+const USER_CREDENTIAL_ROWS_SQL: &str =
+    r#"SELECT user_id, server_id, credential_b64 FROM "LiteLLM_MCPUserCredentials""#;
+const USER_CREDENTIAL_UPDATE_SQL: &str = r#"UPDATE "LiteLLM_MCPUserCredentials" SET credential_b64 = $3 WHERE user_id = $1 AND server_id = $2"#;
+const USER_ENV_ROWS_SQL: &str =
+    r#"SELECT user_id, server_id, values_b64 FROM "LiteLLM_MCPUserEnvVars""#;
+const USER_ENV_UPDATE_SQL: &str =
+    r#"UPDATE "LiteLLM_MCPUserEnvVars" SET values_b64 = $3 WHERE user_id = $1 AND server_id = $2"#;
+
+const INSERT_SERVER_SQL: &str = r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials, env_vars, static_headers) VALUES ('s1', to_jsonb($1::text), to_jsonb($2::text), to_jsonb($3::text))"#;
+const INSERT_BOOM_SQL: &str = r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials) VALUES ('boom', to_jsonb($1::text))"#;
+const INSERT_OAUTH_SQL: &str = r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ('oauth-1', to_jsonb($1::text)), ('oauth-2', to_jsonb($1::text))"#;
+const INSERT_CREDENTIAL_SQL: &str = r#"INSERT INTO "LiteLLM_MCPUserCredentials" (id, user_id, server_id, credential_b64) VALUES ('c1', 'u1', 's1', $1), ('c2', 'u2', 's1', 'AA')"#;
+const INSERT_ENV_VAR_SQL: &str = r#"INSERT INTO "LiteLLM_MCPUserEnvVars" (id, user_id, server_id, values_b64) VALUES ('e1', 'u1', 's1', $1), ('e2', 'u2', 's1', 'AA')"#;
+const SERVER_CREDENTIALS_SQL: &str =
+    r#"SELECT credentials::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#;
+const SERVER_UPDATED_BY_SQL: &str =
+    r#"SELECT updated_by FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#;
+const SERVER_ENV_VARS_SQL: &str =
+    r#"SELECT env_vars::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#;
+const SERVER_HEADERS_SQL: &str =
+    r#"SELECT static_headers::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#;
+const BOOM_CREDENTIALS_SQL: &str =
+    r#"SELECT credentials::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 'boom'"#;
+const OAUTH_CREDENTIALS_SQL: &str =
+    r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = $1"#;
+const USER_CREDENTIAL_SQL: &str = r#"SELECT credential_b64 FROM "LiteLLM_MCPUserCredentials" WHERE user_id = $1 AND server_id = 's1'"#;
+const USER_ENV_SQL: &str =
+    r#"SELECT values_b64 FROM "LiteLLM_MCPUserEnvVars" WHERE user_id = $1 AND server_id = 's1'"#;
+const DROP_TRIGGER_SQL: &str = r#"DROP TRIGGER reject_boom_update ON "LiteLLM_MCPServerTable""#;
+
+#[derive(Debug, Error)]
+enum PostgresRotationError {
+    #[error("the MCP rotation query failed")]
+    Database(#[from] DbError),
+    #[error("the rotated MCP value cannot be stored")]
+    Json(#[from] serde_json::Error),
+}
+
+struct PostgresRotationStore {
+    store: PostgresStore,
+}
+
+fn update_columns(update: &ServerUpdate) -> Result<[Option<String>; 4], PostgresRotationError> {
+    let credentials = update
+        .credentials
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let env_vars = update
+        .env_vars
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let static_headers = update
+        .static_headers
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()?;
+    let env = update.env.as_ref().map(serde_json::to_string).transpose()?;
+    Ok([credentials, env_vars, static_headers, env])
+}
+
+impl McpRotationStore for PostgresRotationStore {
+    type Error = PostgresRotationError;
+
+    async fn server_rows(&self) -> Result<Vec<StoredServerRow>, Self::Error> {
+        let client = self.store.session().await?;
+        let rows = client.query(SERVER_ROWS_SQL, &[]).await.map_err(backend)?;
+        let mut found = Vec::with_capacity(rows.len());
+        for row in rows {
+            found.push(StoredServerRow {
+                server_id: row.try_get("server_id").map_err(backend)?,
+                credentials: row.try_get("credentials").map_err(backend)?,
+                env_vars: row.try_get("env_vars").map_err(backend)?,
+                static_headers: row.try_get("static_headers").map_err(backend)?,
+                env: row.try_get("env").map_err(backend)?,
+            });
+        }
+        Ok(found)
+    }
+
+    async fn update_server(
+        &self,
+        server_id: &str,
+        update: &ServerUpdate,
+    ) -> Result<(), Self::Error> {
+        let [credentials, env_vars, static_headers, env] = update_columns(update)?;
+        let client = self.store.session().await?;
+        client
+            .execute(
+                SERVER_UPDATE_SQL,
+                &[
+                    &server_id,
+                    &credentials,
+                    &env_vars,
+                    &static_headers,
+                    &env,
+                    &update.updated_by,
+                ],
+            )
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn oauth_client_rows(&self) -> Result<Vec<StoredOAuthClientRow>, Self::Error> {
+        let client = self.store.session().await?;
+        let rows = client.query(OAUTH_ROWS_SQL, &[]).await.map_err(backend)?;
+        let mut found = Vec::with_capacity(rows.len());
+        for row in rows {
+            found.push(StoredOAuthClientRow {
+                server_id: row.try_get("server_id").map_err(backend)?,
+                credentials: row.try_get("credentials").map_err(backend)?,
+            });
+        }
+        Ok(found)
+    }
+
+    async fn update_oauth_client(
+        &self,
+        server_id: &str,
+        credentials: &JsonValue,
+    ) -> Result<(), Self::Error> {
+        let credentials = serde_json::to_string(credentials)?;
+        let client = self.store.session().await?;
+        client
+            .execute(OAUTH_UPDATE_SQL, &[&server_id, &credentials])
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn user_credential_rows(&self) -> Result<Vec<StoredUserCredentialRow>, Self::Error> {
+        let client = self.store.session().await?;
+        let rows = client
+            .query(USER_CREDENTIAL_ROWS_SQL, &[])
+            .await
+            .map_err(backend)?;
+        let mut found = Vec::with_capacity(rows.len());
+        for row in rows {
+            found.push(StoredUserCredentialRow {
+                user_id: row.try_get("user_id").map_err(backend)?,
+                server_id: row.try_get("server_id").map_err(backend)?,
+                credential_b64: row.try_get("credential_b64").map_err(backend)?,
+            });
+        }
+        Ok(found)
+    }
+
+    async fn update_user_credential(
+        &self,
+        user_id: &str,
+        server_id: &str,
+        credential_b64: &str,
+    ) -> Result<(), Self::Error> {
+        let client = self.store.session().await?;
+        client
+            .execute(
+                USER_CREDENTIAL_UPDATE_SQL,
+                &[&user_id, &server_id, &credential_b64],
+            )
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
+
+    async fn user_env_var_rows(&self) -> Result<Vec<StoredUserEnvVarRow>, Self::Error> {
+        let client = self.store.session().await?;
+        let rows = client
+            .query(USER_ENV_ROWS_SQL, &[])
+            .await
+            .map_err(backend)?;
+        let mut found = Vec::with_capacity(rows.len());
+        for row in rows {
+            found.push(StoredUserEnvVarRow {
+                user_id: row.try_get("user_id").map_err(backend)?,
+                server_id: row.try_get("server_id").map_err(backend)?,
+                values_b64: row.try_get("values_b64").map_err(backend)?,
+            });
+        }
+        Ok(found)
+    }
+
+    async fn update_user_env_var(
+        &self,
+        user_id: &str,
+        server_id: &str,
+        values_b64: &str,
+    ) -> Result<(), Self::Error> {
+        let client = self.store.session().await?;
+        client
+            .execute(USER_ENV_UPDATE_SQL, &[&user_id, &server_id, &values_b64])
+            .await
+            .map_err(backend)?;
+        Ok(())
+    }
+}
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -76,7 +284,7 @@ async fn database() -> (PostgresFixture, Pool, Client) {
         .resolve()
         .await
         .unwrap();
-    let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
+    let manager = Manager::new(fixture.options.config.clone(), NoTls);
     let pool = Pool::builder(manager).max_size(4).build().unwrap();
     let client = pool.get().await.unwrap();
     client.batch_execute(SCHEMA).await.unwrap();
@@ -104,8 +312,32 @@ fn env_vars_text() -> String {
     .unwrap()
 }
 
+struct Texts {
+    blob: String,
+    env_vars: String,
+    headers: String,
+    user_token: String,
+    user_env: String,
+}
+
+fn texts() -> Texts {
+    let mut headers_map = SecretMap::new();
+    headers_map.insert("X-Key".to_owned(), SecretString::from("plain-value"));
+    Texts {
+        blob: encrypted_blob_text(),
+        env_vars: env_vars_text(),
+        headers: encrypt_secret_map(&cipher(OLD_KEY), &headers_map, None).unwrap(),
+        user_token: sealed("user-token", OLD_KEY),
+        user_env: sealed("user-env", OLD_KEY),
+    }
+}
+
 async fn column(client: &Client, sql: &str) -> Option<String> {
     client.query_one(sql, &[]).await.unwrap().get(0)
+}
+
+async fn column_param(client: &Client, sql: &str, param: &str) -> Option<String> {
+    client.query_one(sql, &[&param]).await.unwrap().get(0)
 }
 
 async fn execute(
@@ -121,7 +353,11 @@ fn json(text: &str) -> JsonValue {
 }
 
 fn credential_field(column: &str, field: &str) -> String {
-    let JsonValue::Object(fields) = json(column) else {
+    let stored = match json(column) {
+        JsonValue::String(text) => json(&text),
+        other => other,
+    };
+    let JsonValue::Object(fields) = stored else {
         panic!("the rotated credentials are a JSON object");
     };
     let Some(JsonValue::String(ciphertext)) = fields.get(field) else {
@@ -130,85 +366,32 @@ fn credential_field(column: &str, field: &str) -> String {
     ciphertext.clone()
 }
 
-#[tokio::test]
-async fn postgres_rows_and_failures() {
-    let (fixture, pool, client) = database().await;
-    let blob = encrypted_blob_text();
-    let env_vars = env_vars_text();
-    let mut headers_map = SecretMap::new();
-    headers_map.insert("X-Key".to_owned(), SecretString::from("plain-value"));
-    let headers = encrypt_secret_map(&cipher(OLD_KEY), &headers_map, None).unwrap();
-    let user_token = sealed("user-token", OLD_KEY);
-    let user_env = sealed("user-env", OLD_KEY);
+async fn seed(client: &Client, texts: &Texts) {
     execute(
-        &client,
-        r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials, env_vars, static_headers) VALUES ('s1', $1::jsonb, to_jsonb($2::text), to_jsonb($3::text))"#,
-        &[&blob, &env_vars, &headers],
+        client,
+        INSERT_SERVER_SQL,
+        &[&texts.blob, &texts.env_vars, &texts.headers],
     )
     .await;
-    execute(
-        &client,
-        r#"INSERT INTO "LiteLLM_MCPServerTable" (server_id, credentials) VALUES ('boom', $1::jsonb)"#,
-        &[&blob],
-    )
-    .await;
-    execute(
-        &client,
-        r#"INSERT INTO "LiteLLM_MCPServerOAuthClient" (server_id, credentials) VALUES ('oauth-1', $1::jsonb), ('oauth-2', $1::jsonb)"#,
-        &[&blob],
-    )
-    .await;
-    execute(
-        &client,
-        r#"INSERT INTO "LiteLLM_MCPUserCredentials" (id, user_id, server_id, credential_b64) VALUES ('c1', 'u1', 's1', $1), ('c2', 'u2', 's1', 'AA')"#,
-        &[&user_token],
-    )
-    .await;
-    execute(
-        &client,
-        r#"INSERT INTO "LiteLLM_MCPUserEnvVars" (id, user_id, server_id, values_b64) VALUES ('e1', 'u1', 's1', $1), ('e2', 'u2', 's1', 'AA')"#,
-        &[&user_env],
-    )
-    .await;
-    let store = PostgresRotationStore {
-        store: PostgresStore {
-            pool: Some(pool.clone()),
-        },
-    };
-    let old = cipher(OLD_KEY);
-    let key = new_key();
-    let result = Rotation {
-        store: &store,
-        cipher: &old,
-        new_key: &key,
-    }
-    .servers("rotator")
-    .await;
-    assert!(result.is_err(), "the boom row aborts the server stage");
-    let rotated = column(
-        &client,
-        r#"SELECT credentials::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
+    execute(client, INSERT_BOOM_SQL, &[&texts.blob]).await;
+    execute(client, INSERT_OAUTH_SQL, &[&texts.blob]).await;
+    execute(client, INSERT_CREDENTIAL_SQL, &[&texts.user_token]).await;
+    execute(client, INSERT_ENV_VAR_SQL, &[&texts.user_env]).await;
+}
+
+async fn assert_server_credentials(client: &Client) {
+    let rotated = column(client, SERVER_CREDENTIALS_SQL).await.unwrap();
     let client_id = credential_field(&rotated, "client_id");
     assert_eq!(
         open(&client_id, NEW_KEY).as_deref(),
         Some("client-id-value")
     );
-    let updated_by = column(
-        &client,
-        r#"SELECT updated_by FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
+    let updated_by = column(client, SERVER_UPDATED_BY_SQL).await.unwrap();
     assert_eq!(updated_by, "rotator");
-    let env_vars = column(
-        &client,
-        r#"SELECT env_vars::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
+}
+
+async fn assert_server_env_vars(client: &Client) {
+    let env_vars = column(client, SERVER_ENV_VARS_SQL).await.unwrap();
     let JsonValue::String(inner) = json(&env_vars) else {
         panic!("the rotated env var column is a JSON string");
     };
@@ -222,12 +405,10 @@ async fn postgres_rows_and_failures() {
         panic!("the env value is a ciphertext string");
     };
     assert_eq!(open(value, NEW_KEY).as_deref(), Some("global-value"));
-    let headers = column(
-        &client,
-        r#"SELECT static_headers::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
+}
+
+async fn assert_server_headers(client: &Client) {
+    let headers = column(client, SERVER_HEADERS_SQL).await.unwrap();
     let JsonValue::String(stored_headers) = json(&headers) else {
         panic!("the static headers column is a JSON string");
     };
@@ -243,27 +424,83 @@ async fn postgres_rows_and_failures() {
             .map(|value| value.expose_secret().to_owned()),
         Some("plain-value".to_owned())
     );
-    let boom = column(
-        &client,
-        r#"SELECT credentials::text FROM "LiteLLM_MCPServerTable" WHERE server_id = 'boom'"#,
-    )
-    .await
-    .unwrap();
+}
+
+async fn assert_boom_untouched(client: &Client) {
+    let boom = column(client, BOOM_CREDENTIALS_SQL).await.unwrap();
     let boom_id = credential_field(&boom, "client_id");
     assert_eq!(open(&boom_id, OLD_KEY).as_deref(), Some("client-id-value"));
     assert_eq!(open(&boom_id, NEW_KEY), None);
-    let oauth = column(
-        &client,
-        r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = 'oauth-1'"#,
-    )
-    .await
-    .unwrap();
-    let oauth_id = credential_field(&oauth, "client_id");
-    assert_eq!(open(&oauth_id, OLD_KEY).as_deref(), Some("client-id-value"));
-    client
-        .batch_execute(r#"DROP TRIGGER reject_boom_update ON "LiteLLM_MCPServerTable""#)
+}
+
+async fn assert_oauth(client: &Client, server_id: &str, key: &str) {
+    let stored = column_param(client, OAUTH_CREDENTIALS_SQL, server_id)
         .await
         .unwrap();
+    let field = credential_field(&stored, "client_id");
+    assert_eq!(open(&field, key).as_deref(), Some("client-id-value"));
+}
+
+async fn user_stages(
+    client: &Client,
+    store: &PostgresRotationStore,
+    old: &TestCipher,
+    key: &SecretString,
+) {
+    Rotation {
+        store,
+        cipher: old,
+        new_key: key,
+    }
+    .user_credentials()
+    .await
+    .unwrap();
+    let rotated = column_param(client, USER_CREDENTIAL_SQL, "u1")
+        .await
+        .unwrap();
+    assert_eq!(open(&rotated, NEW_KEY).as_deref(), Some("user-token"));
+    let skipped = column_param(client, USER_CREDENTIAL_SQL, "u2").await;
+    assert_eq!(skipped.as_deref(), Some("AA"));
+    Rotation {
+        store,
+        cipher: old,
+        new_key: key,
+    }
+    .user_env_vars()
+    .await
+    .unwrap();
+    let values = column_param(client, USER_ENV_SQL, "u1").await.unwrap();
+    assert_eq!(open(&values, NEW_KEY).as_deref(), Some("user-env"));
+    let skipped = column_param(client, USER_ENV_SQL, "u2").await;
+    assert_eq!(skipped.as_deref(), Some("AA"));
+}
+
+#[tokio::test]
+async fn postgres_rows_and_failures() {
+    let (fixture, pool, client) = database().await;
+    let texts = texts();
+    seed(&client, &texts).await;
+    let store = PostgresRotationStore {
+        store: PostgresStore {
+            pool: Some(pool.clone()),
+        },
+    };
+    let old = cipher(OLD_KEY);
+    let key = new_key();
+    let abort = Rotation {
+        store: &store,
+        cipher: &old,
+        new_key: &key,
+    }
+    .servers("rotator")
+    .await;
+    assert!(abort.is_err(), "the boom row aborts the server stage");
+    assert_server_credentials(&client).await;
+    assert_server_env_vars(&client).await;
+    assert_server_headers(&client).await;
+    assert_boom_untouched(&client).await;
+    assert_oauth(&client, "oauth-1", OLD_KEY).await;
+    client.batch_execute(DROP_TRIGGER_SQL).await.unwrap();
     Rotation {
         store: &store,
         cipher: &old,
@@ -272,68 +509,9 @@ async fn postgres_rows_and_failures() {
     .servers("rotator")
     .await
     .unwrap();
-    for server_id in ["oauth-1", "oauth-2"] {
-        let oauth = column(
-            &client,
-            &format!(
-                r#"SELECT credentials::text FROM "LiteLLM_MCPServerOAuthClient" WHERE server_id = '{server_id}'"#
-            ),
-        )
-        .await
-        .unwrap();
-        let field = credential_field(&oauth, "client_id");
-        assert_eq!(open(&field, NEW_KEY).as_deref(), Some("client-id-value"));
-    }
-    Rotation {
-        store: &store,
-        cipher: &old,
-        new_key: &key,
-    }
-    .user_credentials()
-    .await
-    .unwrap();
-    let credentials = column(
-        &client,
-        r#"SELECT credential_b64 FROM "LiteLLM_MCPUserCredentials" WHERE user_id = 'u1' AND server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        open(credentials.as_deref().unwrap(), NEW_KEY).as_deref(),
-        Some("user-token")
-    );
-    let skipped = column(
-        &client,
-        r#"SELECT credential_b64 FROM "LiteLLM_MCPUserCredentials" WHERE user_id = 'u2' AND server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
-    assert_eq!(skipped.as_deref(), Some("AA"));
-    Rotation {
-        store: &store,
-        cipher: &old,
-        new_key: &key,
-    }
-    .user_env_vars()
-    .await
-    .unwrap();
-    let values = column(
-        &client,
-        r#"SELECT values_b64 FROM "LiteLLM_MCPUserEnvVars" WHERE user_id = 'u1' AND server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        open(values.as_deref().unwrap(), NEW_KEY).as_deref(),
-        Some("user-env")
-    );
-    let skipped = column(
-        &client,
-        r#"SELECT values_b64 FROM "LiteLLM_MCPUserEnvVars" WHERE user_id = 'u2' AND server_id = 's1'"#,
-    )
-    .await
-    .unwrap();
-    assert_eq!(skipped.as_deref(), Some("AA"));
+    assert_oauth(&client, "oauth-1", NEW_KEY).await;
+    assert_oauth(&client, "oauth-2", NEW_KEY).await;
+    user_stages(&client, &store, &old, &key).await;
     drop(client);
     pool.close();
     fixture.close_async().await.unwrap();
