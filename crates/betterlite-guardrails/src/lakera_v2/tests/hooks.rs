@@ -5,15 +5,17 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
+use rstest::rstest;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
 use crate::lakera_v2::Data;
 use crate::lakera_v2::error::LakeraV2Error;
+use crate::lakera_v2::guardrail::LakeraV2Guardrail;
 
 use super::{
-    ATTACK_ONLY, CollectingSink, EMAIL_SPAN, Hook, MIXED, PII_ONLY, build, chat_data, content_of,
-    context, flagged, invocation, message, run_hook, serve, update_params,
+    ATTACK_ONLY, CollectingSink, EMAIL_SPAN, ESCAPED_TEMPLATE_TEXT, Hook, MIXED, PII_ONLY, args,
+    base, build, chat_data, content_of, context, flagged, invocation, message, run_hook, serve,
 };
 
 #[tokio::test]
@@ -404,19 +406,26 @@ async fn post_call_leaves_out_choices_with_an_empty_content() {
     );
 }
 
+#[rstest]
+#[case::pre_call(Hook::Pre)]
+#[case::during_call(Hook::During)]
+#[case::post_call(Hook::Post)]
 #[tokio::test]
-async fn hooks_skip_a_guardrail_the_request_did_not_select() {
+async fn hooks_skip_a_guardrail_the_request_did_not_select(#[case] hook: Hook) {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
     let mut guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
     guardrail.base.settings.default_on = false;
-    for hook in [Hook::Pre, Hook::During, Hook::Post] {
-        let mut data = chat_data();
-        let mut response = assistant_response();
-        let outcome = run_hook(&guardrail, &mut data, Some(&mut response), hook)
-            .await
-            .expect("not selected");
-        assert_eq!(outcome.applied_guardrail, None);
-        assert_eq!(data, chat_data());
-    }
+    guardrail.base.settings.event_hook = Some(LitellmParamsMode::Many(vec![
+        "pre_call".to_owned(),
+        "during_call".to_owned(),
+        "post_call".to_owned(),
+    ]));
+    let mut data = chat_data();
+    let mut response = assistant_response();
+    let outcome = run_hook(&guardrail, &mut data, Some(&mut response), hook)
+        .await
+        .expect("not selected");
+    assert_eq!(outcome.applied_guardrail, None);
+    assert_eq!(data, chat_data());
     assert!(server.captured().is_empty());
 }

@@ -4,6 +4,7 @@ use std::time::SystemTime;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 use betterlite_config::sections::guardrail_translation::LakeraOnFlagged;
+use rstest::rstest;
 
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::scoped_indices::{ScanScope, ScopeFlags};
@@ -33,18 +34,26 @@ fn flags(skip_system_message: bool, skip_tool_message: bool) -> ScopeFlags {
     }
 }
 
+#[rstest]
+#[case::no_breakdown(Some(true), Some(false))]
+#[case::null_breakdown(Some(true), None)]
+#[case::neither(None, None)]
+fn advisory_mode_needs_both_payload_and_breakdown(
+    #[case] payload: Option<bool>,
+    #[case] breakdown: Option<bool>,
+) {
+    let error = validate_advisory_config(
+        LakeraOnFlagged::InjectSystemMessage,
+        None,
+        payload,
+        breakdown,
+    )
+    .expect_err("advisory mode needs both flags");
+    assert_eq!(error.to_string(), PAYLOAD_TEXT);
+}
+
 #[test]
-fn advisory_mode_needs_both_payload_and_breakdown() {
-    for (payload, breakdown) in [(Some(true), Some(false)), (Some(true), None), (None, None)] {
-        let error = validate_advisory_config(
-            LakeraOnFlagged::InjectSystemMessage,
-            None,
-            payload,
-            breakdown,
-        )
-        .expect_err("advisory mode needs both flags");
-        assert_eq!(error.to_string(), PAYLOAD_TEXT);
-    }
+fn advisory_mode_accepts_both_flags() {
     validate_advisory_config(
         LakeraOnFlagged::InjectSystemMessage,
         None,
@@ -54,17 +63,17 @@ fn advisory_mode_needs_both_payload_and_breakdown() {
     .expect("both flags on");
 }
 
-#[test]
-fn advisory_rules_apply_only_in_inject_mode() {
-    for on_flagged in [LakeraOnFlagged::Block, LakeraOnFlagged::Monitor] {
-        validate_advisory_config(
-            on_flagged,
-            Some("Watch out for {{reason}}"),
-            Some(false),
-            Some(false),
-        )
-        .expect("only inject mode validates the advisory setup");
-    }
+#[rstest]
+#[case::block(LakeraOnFlagged::Block)]
+#[case::monitor(LakeraOnFlagged::Monitor)]
+fn advisory_rules_apply_only_in_inject_mode(#[case] on_flagged: LakeraOnFlagged) {
+    validate_advisory_config(
+        on_flagged,
+        Some("Watch out for {{reason}}"),
+        Some(false),
+        Some(false),
+    )
+    .expect("only inject mode validates the advisory setup");
 }
 
 #[test]
@@ -78,23 +87,23 @@ fn the_default_advisory_message_carries_the_reason() {
     );
 }
 
-#[test]
-fn a_named_base_keeps_its_own_name_and_takes_the_args_name_otherwise() {
+#[rstest]
+#[case::named_base_kept(Some("kept"), "from-args", Some("kept"))]
+#[case::args_name_otherwise(None, "from-args", Some("from-args"))]
+#[case::empty_name_stays_none(None, "", None)]
+fn a_named_base_keeps_its_own_name_and_takes_the_args_name_otherwise(
+    #[case] base_name: Option<&str>,
+    #[case] args_name: &str,
+    #[case] expected: Option<&str>,
+) {
     let env = BTreeMap::new();
-    let cases = [
-        (Some("kept"), "from-args", Some("kept")),
-        (None, "from-args", Some("from-args")),
-        (None, "", None),
-    ];
-    for (base_name, args_name, expected) in cases {
-        let mut args = args();
-        args.name = args_name.to_owned();
-        let mut named = base(true);
-        named.settings.guardrail_name = base_name.map(str::to_owned);
-        let guardrail =
-            LakeraV2Guardrail::new(args, named, reqwest::Client::default(), &env).expect("built");
-        assert_eq!(guardrail.base.settings.guardrail_name.as_deref(), expected);
-    }
+    let mut args = args();
+    args.name = args_name.to_owned();
+    let mut named = base(true);
+    named.settings.guardrail_name = base_name.map(str::to_owned);
+    let guardrail =
+        LakeraV2Guardrail::new(args, named, reqwest::Client::default(), &env).expect("built");
+    assert_eq!(guardrail.base.settings.guardrail_name.as_deref(), expected);
 }
 
 #[test]
@@ -178,14 +187,21 @@ async fn a_failed_guard_call_reaches_the_caller_as_a_server_error() {
     );
 }
 
-#[tokio::test]
-async fn pii_that_cannot_be_masked_is_blocked_in_block_mode() {
-    let mut combined = chat_data();
-    combined.insert("input".to_owned(), text("also this"));
-    let mut instructions = chat_data();
-    instructions.insert("instructions".to_owned(), text("be brief"));
-    let mut parts = Data::new();
-    parts.insert(
+fn combined_data() -> Data {
+    let mut data = chat_data();
+    data.insert("input".to_owned(), text("also this"));
+    data
+}
+
+fn instructions_data() -> Data {
+    let mut data = chat_data();
+    data.insert("instructions".to_owned(), text("be brief"));
+    data
+}
+
+fn parts_data() -> Data {
+    let mut data = Data::new();
+    data.insert(
         "messages".to_owned(),
         GuardrailValue::Array(vec![GuardrailValue::Object(BTreeMap::from([
             ("role".to_owned(), text("user")),
@@ -198,17 +214,24 @@ async fn pii_that_cannot_be_masked_is_blocked_in_block_mode() {
             ),
         ]))]),
     );
-    for mut data in [combined, instructions, parts] {
-        let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
-        let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
-        let error = run_hook(&guardrail, &mut data, None, Hook::Pre)
-            .await
-            .expect_err("PII on a shape that cannot be masked blocks");
-        assert!(
-            matches!(error, GuardrailFailure::HttpObject { status: 400, .. }),
-            "{data:?}"
-        );
-    }
+    data
+}
+
+#[rstest]
+#[case::combined(combined_data())]
+#[case::instructions(instructions_data())]
+#[case::parts(parts_data())]
+#[tokio::test]
+async fn pii_that_cannot_be_masked_is_blocked_in_block_mode(#[case] mut data: Data) {
+    let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let error = run_hook(&guardrail, &mut data, None, Hook::Pre)
+        .await
+        .expect_err("PII on a shape that cannot be masked blocks");
+    assert!(
+        matches!(error, GuardrailFailure::HttpObject { status: 400, .. }),
+        "{data:?}"
+    );
 }
 
 #[tokio::test]
@@ -369,7 +392,10 @@ async fn call_v2_guard_refuses_an_answer_over_one_mebibyte() {
         .await
         .expect_err("the answer is too large");
     assert!(
-        matches!(error, LakeraV2Error::ResponseTooLarge { limit: 1_048_576 }),
+        matches!(
+            error,
+            LakeraV2Error::ResponseTooLarge { limit: 0x0010_0000 }
+        ),
         "{error}"
     );
 }
