@@ -1,0 +1,28 @@
+kind: helper
+name: foundry-settings
+call:
+  foundry_credentials:
+    settings:
+      - api_base: https://explicit.example
+        api_key: explicit-key
+        global_api_base: https://global.example
+        global_api_key: global-key
+        environment: {AZURE_AI_API_BASE: https://env.example, AZURE_AI_API_KEY: env-key}
+      - global_api_base: https://global.example
+        global_api_key: global-key
+        environment: {AZURE_AI_API_BASE: https://env.example, AZURE_AI_API_KEY: env-key}
+      - environment: {AZURE_AI_API_BASE: https://env.example, AZURE_AI_API_KEY: env-key}
+      - {}
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret}
+      - params: {tenant_id: tenant, client_id: client, client_secret: secret, azure_scope: https://custom/.default}
+      - params: {client_id: client, azure_username: user, azure_password: password}
+      - params: {azure_ad_token: oidc/assertion, tenant_id: tenant, client_id: client}
+      - params: {azure_ad_token: static-token}
+        environment: {AZURE_AI_API_BASE: https://res.services.ai.azure.com/openai/v1}
+      - environment: {AZURE_AD_TOKEN: env-token}
+      - params: {}
+        environment: {AZURE_TENANT_ID: env-tenant, AZURE_CLIENT_ID: env-client, AZURE_CLIENT_SECRET: env-secret}
+      - params: {tenant_id: true}
+      - params: {client_secret: []}
+env: {}
+compare: {ignore: []}
