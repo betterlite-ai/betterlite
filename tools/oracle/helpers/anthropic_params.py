@@ -145,6 +145,6 @@ def answer(step: Step) -> Json:
 
 def run(input_value: Input) -> list[Json]:
     litellm.model_cost = input_value["fixture"]["model_cost"]
-    # the proxy and Router run with this set, and an unknown model otherwise prints a banner to stdout
+    # the proxy and Router set this, else an unknown model prints a banner to stdout
     litellm.suppress_debug_info = True
     return [answer(step) for step in input_value["steps"]]

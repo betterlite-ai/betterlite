@@ -150,12 +150,12 @@ where
             llm_provider: request.provider,
             budgets: request.budgets,
         };
-        let capped = map_reasoning_effort(&reasoning, environment, request.catalogs)
+        let legacy = map_reasoning_effort(&reasoning, environment, request.catalogs)
             .await?
             .as_ref()
             .and_then(value::as_object)
             .and_then(|fields| cap_thinking_to_max_tokens(fields, limit));
-        let Some(capped) = capped else {
+        let Some(capped) = legacy else {
             drop_adaptive(request.model, optional_params);
             return Ok(());
         };
