@@ -26,7 +26,7 @@ pub enum NvidiaNimPassthroughError {
     MissingApiBase,
     #[error(transparent)]
     Passthrough(#[from] PassthroughError),
-    #[error(transparent)]
+    #[error("{}", .0.message)]
     Provider(Box<ProviderError>),
 }
 
@@ -86,9 +86,14 @@ pub fn version_deduplicated_root(
         url: api_base.to_owned(),
         source,
     })?;
-    let base_segments: Vec<&str> = url
+    let base_segments: Vec<String> = url
         .path_segments()
-        .map(|segments| segments.filter(|segment| !segment.is_empty()).collect())
+        .map(|segments| {
+            segments
+                .filter(|segment| !segment.is_empty())
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default();
     let first_native_segment = native_endpoint
         .trim_start_matches('/')
@@ -96,7 +101,7 @@ pub fn version_deduplicated_root(
         .next()
         .unwrap_or("");
     let repeated = base_segments.last().is_some_and(|last| {
-        *last == first_native_segment && is_version_segment(first_native_segment)
+        last.as_str() == first_native_segment && is_version_segment(first_native_segment)
     });
     let kept = if repeated {
         base_segments

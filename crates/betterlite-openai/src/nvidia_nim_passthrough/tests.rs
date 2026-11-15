@@ -282,18 +282,24 @@ impl PassthroughLogging for NoLogging {
 #[test]
 fn logging_non_streaming_response_relays_a_json_object() {
     let body = relayed(br#"{"id": "reply"}"#).unwrap();
-    assert_eq!(body, RelayedBody::Json(object(json!({"id": "reply"}))));
+    match body {
+        RelayedBody::Json(fields) => assert_eq!(fields, object(json!({"id": "reply"}))),
+        RelayedBody::Text(text) => panic!("expected a json object, got text {text:?}"),
+    }
 }
 
 #[test]
 fn logging_non_streaming_response_relays_text() {
     let body = relayed(b"not json").unwrap();
-    assert_eq!(body, RelayedBody::Text(String::from("not json")));
+    match body {
+        RelayedBody::Text(text) => assert_eq!(text, "not json"),
+        RelayedBody::Json(fields) => panic!("expected text, got json {fields:?}"),
+    }
 }
 
 #[test]
 fn logging_non_streaming_response_skips_a_body_that_is_not_utf8() {
-    assert_eq!(relayed(&[0xff, 0xfe]), None);
+    assert!(relayed(&[0xff, 0xfe]).is_none());
 }
 
 #[test]
