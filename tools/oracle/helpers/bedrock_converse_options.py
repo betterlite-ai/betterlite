@@ -88,7 +88,7 @@ class ConverseSurface(Protocol):
         return self._map_web_search_options({}, model)
 
 
-DECLARED: Declared = AmazonConverseConfig
+DECLARED: type[Declared] = AmazonConverseConfig
 
 
 # The typed helpers are reachable through a subclass, which is the only seam ruff and pyright allow.
