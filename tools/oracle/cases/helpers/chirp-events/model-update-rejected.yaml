@@ -1,0 +1,23 @@
+kind: helper
+name: chirp-events-model-update-rejected
+call:
+  chirp_events:
+    function: sessions
+    expected_model: vertex_ai/chirp_2
+    payloads:
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"vertex_ai/chirp_2"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_3"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":7}}}}}'
+      - '{"type":"session.update","session":{"type":"realtime","audio":{"input":{"transcription":{"model":"chirp_2"}}}}}'
+      - '{"type":"session.update","session":{"type":"translation"}}'
+      - '{"type":"transcription_session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_3"}}}}}'
+      - '{"type":"conversation.item.create"}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2","language":"en"}}}}}'
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2","prompt":"ignored"}}}}}'
+      - '{"type":"session.update","session":{"type":7}}'
+env: {}
+compare:
+  ignore: []
