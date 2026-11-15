@@ -9,8 +9,14 @@ import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.mistral.batches.transformation import MistralBatchesConfig
 from litellm.llms.mistral.files.transformation import MistralFilesConfig
-from litellm.types.llms.openai import CreateBatchRequest
+from litellm.types.llms.openai import CreateBatchRequest, CreateFileRequest
 from pydantic import JsonValue, TypeAdapter
+
+
+class UploadParts(TypedDict):
+    file: tuple[str, bytes, str]
+    purpose: tuple[None, str]
+
 
 LOGGING: Final = Logging(
     model="",
@@ -24,6 +30,7 @@ LOGGING: Final = Logging(
 FILES: Final = MistralFilesConfig.__new__(MistralFilesConfig)
 BATCHES: Final = MistralBatchesConfig.__new__(MistralBatchesConfig)
 JSON: Final = TypeAdapter(JsonValue)
+UPLOAD_PARTS: Final = TypeAdapter(UploadParts)
 
 
 class Upload(TypedDict):
@@ -64,11 +71,23 @@ class Input(TypedDict):
     retrieve: list[Retrieve]
 
 
-def upload_outcome(call: Files) -> JsonValue:
-    # The multipart needs a CreateFileRequest the checkers reject; uploads compare the endpoint.
+def upload_outcome(upload: Upload, call: Files) -> JsonValue:
     params: dict[str, JsonValue] = {"api_base": call["api_base"]}
     url = FILES.get_complete_url(call["api_base"], call["api_key"], "", {}, params)
-    return {"ok": True, "url": url}
+    file = (upload["filename"], bytes(upload["content"]), upload["content_type"])
+    body = FILES.transform_create_file_request(
+        "", CreateFileRequest(file=file, purpose=upload["purpose"]), {}, params  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L472
+    )
+    parts = UPLOAD_PARTS.validate_python(body)
+    filename, content, content_type = parts["file"]
+    return {
+        "ok": True,
+        "url": url,
+        "filename": filename,
+        "content_type": content_type,
+        "content": list(content),
+        "purpose": parts["purpose"][1],
+    }
 
 
 def list_outcome(purpose: str | None, call: Files) -> JsonValue:
@@ -91,7 +110,7 @@ def list_response(body: JsonValue) -> JsonValue:
 def files_outcome(call: Files) -> JsonValue:
     time.time = partial(float, call["now"])
     return {
-        "uploads": [upload_outcome(call) for _ in call["uploads"]],
+        "uploads": [upload_outcome(upload, call) for upload in call["uploads"]],
         "list": [list_outcome(purpose, call) for purpose in call["list_purposes"]],
         "bodies": [file_response(body) for body in call["bodies"]],
         "list_bodies": [list_response(body) for body in call["list_bodies"]],

@@ -45,6 +45,13 @@ fn oracle_ocr_reads_back_as_user_data() {
         files["uploads"][0]["url"],
         "https://api.mistral.ai/v1/files"
     );
+    assert_eq!(files["uploads"][0]["purpose"], "batch");
+    assert_eq!(files["uploads"][0]["filename"], "scan.pdf");
+    assert_eq!(files["uploads"][0]["content_type"], "application/pdf");
+    assert_eq!(
+        files["uploads"][0]["content"],
+        json!([37_i64, 80_i64, 68_i64, 70_i64])
+    );
     assert_eq!(files["list"][0]["query"], json!([["purpose", "ocr"]]));
     assert_eq!(files["list"][1]["query"], json!([["purpose", "ocr"]]));
     assert_eq!(result["create"], json!([]));
@@ -133,6 +140,25 @@ fn oracle_upload_endpoints_and_list_filters() {
     assert_eq!(files["uploads"].as_array().unwrap().len(), 3);
     assert_eq!(
         files["uploads"][0]["url"],
+        "https://api.mistral.ai/v1/files"
+    );
+    assert_eq!(files["uploads"][0]["filename"], "file_1704153600.jsonl");
+    assert_eq!(
+        files["uploads"][0]["content_type"],
+        "application/octet-stream"
+    );
+    assert_eq!(files["uploads"][0]["content"], json!([1_i64, 2_i64, 3_i64]));
+    assert_eq!(files["uploads"][0]["purpose"], "batch");
+    assert_eq!(files["uploads"][1]["filename"], "notes.txt");
+    assert_eq!(files["uploads"][1]["content_type"], "text/plain");
+    assert_eq!(files["uploads"][1]["content"], json!([4_i64]));
+    assert_eq!(files["uploads"][1]["purpose"], "batch");
+    assert_eq!(files["uploads"][2]["filename"], "data.bin");
+    assert_eq!(files["uploads"][2]["content_type"], "application/x-custom");
+    assert_eq!(files["uploads"][2]["content"], json!([5_i64]));
+    assert_eq!(files["uploads"][2]["purpose"], "fine-tune");
+    assert_eq!(
+        files["uploads"][2]["url"],
         "https://api.mistral.ai/v1/files"
     );
     assert_eq!(files["list"][0]["query"], json!([]));

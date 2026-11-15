@@ -98,7 +98,9 @@ fn files_outcome(section: &FilesSection, settings: &Settings) -> Result<Value, B
         };
         let created = create_upload(&request, section.now, section.api_base.as_deref(), settings)
             .map_err(|error| file_failure(&error))?;
-        uploads.push(json!({"ok": true, "url": created.url}));
+        uploads.push(
+            json!({"ok": true, "url": created.url, "filename": created.filename, "content_type": created.content_type, "content": created.content, "purpose": created.purpose.wire_name()}),
+        );
     }
     let mut listed = Vec::with_capacity(section.list_purposes.len());
     for purpose in &section.list_purposes {
