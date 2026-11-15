@@ -16,10 +16,10 @@ use super::repository::{
 pub const USER_BANNER_ROW_ID: &str = "user_banner";
 
 const CREATE_SQL: &str = "INSERT INTO \"LiteLLM_UISettings\" (id, ui_settings, updated_at) \
-     VALUES ($1, to_jsonb($2::text), now()) RETURNING to_jsonb(\"LiteLLM_UISettings\".*)::text";
+     VALUES ($1, to_jsonb($2::text), now()) RETURNING ui_settings::text";
 
 const UPDATE_SQL: &str = "UPDATE \"LiteLLM_UISettings\" SET ui_settings = to_jsonb($2::text), \
-     updated_at = now() WHERE id = $1 RETURNING to_jsonb(\"LiteLLM_UISettings\".*)::text";
+     updated_at = now() WHERE id = $1 RETURNING ui_settings::text";
 
 const UPDATE_MANY_SQL: &str = "UPDATE \"LiteLLM_UISettings\" SET ui_settings = to_jsonb($2::text), \
      updated_at = now() WHERE id = $1";
@@ -27,9 +27,10 @@ const UPDATE_MANY_SQL: &str = "UPDATE \"LiteLLM_UISettings\" SET ui_settings = t
 const UPSERT_SQL: &str = "INSERT INTO \"LiteLLM_UISettings\" (id, ui_settings, updated_at) \
      VALUES ($1, to_jsonb($2::text), now()) ON CONFLICT (id) \
      DO UPDATE SET ui_settings = EXCLUDED.ui_settings, updated_at = now() \
-     RETURNING to_jsonb(\"LiteLLM_UISettings\".*)::text";
+     RETURNING ui_settings::text";
 
-const DELETE_SQL: &str = "DELETE FROM \"LiteLLM_UISettings\" WHERE id = $1 RETURNING to_jsonb(\"LiteLLM_UISettings\".*)::text";
+const DELETE_SQL: &str =
+    "DELETE FROM \"LiteLLM_UISettings\" WHERE id = $1 RETURNING ui_settings::text";
 
 const DELETE_MANY_SQL: &str = "DELETE FROM \"LiteLLM_UISettings\" WHERE id = $1";
 
