@@ -6,12 +6,23 @@ use betterlite_guardrails::compresr_recovery::plan::{PlanRequest, build_plan, sh
 use betterlite_guardrails::compresr_recovery::store::{Originals, RecoveryStore, StoreKey};
 use serde::Deserialize;
 use serde_json::json;
-use serde_json::value::RawValue;
+use serde_json::value::{RawValue, to_raw_value};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
 
 // the marker LiteLLM would draw a per-process token for, standing in for the guardrail's own
 const OWN_MARKER: &str = "$OWN";
+
+// What the proxy puts into the request data once it has authenticated the virtual key
+fn carried_kwargs(kwargs: &JsonMap, scope: &str) -> Result<JsonMap, Box<HelperError>> {
+    let mut carried = kwargs.clone();
+    let carrier = json!({"metadata": {"user_api_key_auth": {"api_key": scope}}});
+    carried.insert(
+        "litellm_params".to_owned(),
+        to_raw_value(&carrier).or_config_error()?,
+    );
+    Ok(carried)
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -55,6 +66,7 @@ impl Helper for Op {
             store.store(&seed_key, seed.originals.clone(), Duration::ZERO, 0);
         }
         let call = &input.call;
+        let kwargs = carried_kwargs(&call.kwargs, &call.scope)?;
         let gate_call = AgenticCall {
             response: &call.response,
             model: &call.model,
@@ -62,7 +74,7 @@ impl Helper for Op {
             tools: call.request_tools.as_deref(),
             stream: false,
             custom_llm_provider: "openai",
-            kwargs: &call.kwargs,
+            kwargs: &kwargs,
         };
         let gate = should_run(&gate_call).or_config_error()?;
         let logging = AgenticLogging {
@@ -78,9 +90,8 @@ impl Helper for Op {
                 optional_params: &call.optional_params,
                 logging: Some(&logging),
                 stream: false,
-                kwargs: &call.kwargs,
+                kwargs: &kwargs,
             },
-            caller_scope: &call.scope,
             own_marker: Some(OWN_MARKER),
             now: Duration::ZERO,
         };

@@ -69,7 +69,13 @@ call:
         ],
         "optional_params": {},
         "kwargs": {
-          "litellm_call_id": "call-1"
+          "litellm_call_id": "call-1",
+          "metadata": {
+            "user_api_key": "hash-a",
+            "user_api_key_auth": {
+              "api_key": "hash-a"
+            }
+          }
         }
       }
     }

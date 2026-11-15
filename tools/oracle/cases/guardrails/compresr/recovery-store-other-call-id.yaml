@@ -69,7 +69,7 @@ call:
         ],
         "optional_params": {},
         "kwargs": {
-          "litellm_call_id": "call-2"
+          "litellm_call_id": "call-1"
         }
       }
     }
