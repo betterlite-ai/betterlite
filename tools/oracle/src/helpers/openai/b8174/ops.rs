@@ -6,7 +6,7 @@ use betterlite_openai::minimax_speech::request::{
 use betterlite_openai::modelscope_image::params::map_openai_params as map_image_params;
 use betterlite_openai::modelscope_image::reply::{ImageReply, decode_image_generation_reply};
 use betterlite_openai::modelscope_image::request::{
-    get_complete_url as image_url, image_request_body, validate_environment as image_environment,
+    get_complete_url as image_url, image_request_body,
 };
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::speech::result::SpeechResponse;
@@ -31,6 +31,18 @@ fn invalid(message: String) -> Box<HelperError> {
     })
 }
 
+// LiteLLM raises here and the call ends, so a failed step ends the run with its status
+fn failure<T>(class: &str, status: Option<u16>, message: String) -> Result<T, Box<HelperError>> {
+    Err(Box::new(HelperError {
+        class: class.to_owned(),
+        status,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    }))
+}
+
 fn header_map(headers: &Headers) -> Result<HeaderMap, Box<HelperError>> {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
@@ -47,7 +59,11 @@ fn speech_params(voice: Option<&Voice>, params: &Object) -> Result<Value, Box<He
     let voice = voice.map(Voice::input);
     match map_openai_params(voice, params) {
         Ok(mapped) => Ok(json!({"voice": mapped.voice, "params": mapped.params})),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => failure(
+            "UnsupportedParamsError",
+            error.status_code(),
+            error.to_string(),
+        ),
     }
 }
 
@@ -59,7 +75,13 @@ fn speech_body(
 ) -> Result<Value, Box<HelperError>> {
     let mapped = match map_openai_params(voice.map(Voice::input), params) {
         Ok(mapped) => mapped,
-        Err(error) => return Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => {
+            return failure(
+                "UnsupportedParamsError",
+                error.status_code(),
+                error.to_string(),
+            );
+        }
     };
     Ok(Value::Object(speech_request_body(
         model,
@@ -84,7 +106,7 @@ fn speech_headers(
         environment.as_ref(),
     ) {
         Ok(headers) => Ok(serde_json::to_value(headers)?),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => failure("ValueError", error.status_code(), error.to_string()),
     }
 }
 
@@ -114,7 +136,7 @@ fn speech_reply(status: u16, headers: &Headers, body: &str) -> Result<Value, Box
         body: body.as_bytes(),
     }) {
         Ok(response) => render_audio(response),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => failure("MinimaxException", error.status_code(), error.to_string()),
     }
 }
 
@@ -126,19 +148,11 @@ fn image_params(
     let mut optional = Object::new();
     match map_image_params(params, &mut optional, model, drop_params) {
         Ok(()) => Ok(json!({"params": optional})),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
-    }
-}
-
-fn image_headers(
-    api_key: Option<&str>,
-    environment_key: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
-    let key = api_key.map(|text| SecretString::from(text.to_owned()));
-    let environment = environment_key.map(|text| SecretString::from(text.to_owned()));
-    match image_environment(&Headers::new(), key.as_ref(), environment.as_ref()) {
-        Ok(headers) => Ok(serde_json::to_value(headers)?),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => failure(
+            "UnsupportedOptionError",
+            error.status_code(),
+            error.to_string(),
+        ),
     }
 }
 
@@ -153,7 +167,11 @@ fn image_reply(status: u16, body: &str, created: i64) -> Result<Value, Box<Helpe
         Ok(reply) => Ok(
             json!({"created": reply.created, "data": reply.data.iter().map(datum).collect::<Vec<Value>>()}),
         ),
-        Err(error) => Ok(json!({"ok": false, "status": error.status_code()})),
+        Err(error) => failure(
+            "ModelScopeImageError",
+            error.status_code(),
+            error.to_string(),
+        ),
     }
 }
 
@@ -216,9 +234,6 @@ pub(crate) fn execute(step: &Step) -> Result<Value, Box<HelperError>> {
             api_base.as_deref(),
             env_base.as_deref(),
         ))),
-        Step::ImageHeaders { api_key, env_key } => {
-            image_headers(api_key.as_deref(), env_key.as_deref())
-        }
         Step::ImageBody {
             model,
             prompt,

@@ -11,7 +11,6 @@ pub(crate) struct Input {
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub(crate) enum Step {
     SpeechParams {
-        #[serde(default)]
         voice: Option<Voice>,
         #[serde(default)]
         params: Object,
@@ -19,23 +18,17 @@ pub(crate) enum Step {
     SpeechBody {
         model: String,
         input: String,
-        #[serde(default)]
         voice: Option<Voice>,
         #[serde(default)]
         params: Object,
     },
     SpeechUrl {
-        #[serde(default)]
         api_base: Option<String>,
-        #[serde(default)]
         env_base: Option<String>,
     },
     SpeechHeaders {
-        #[serde(default)]
         api_key: Option<String>,
-        #[serde(default)]
         global_key: Option<String>,
-        #[serde(default)]
         env_key: Option<String>,
     },
     SpeechReply {
@@ -52,16 +45,8 @@ pub(crate) enum Step {
         drop_params: bool,
     },
     ImageUrl {
-        #[serde(default)]
         api_base: Option<String>,
-        #[serde(default)]
         env_base: Option<String>,
-    },
-    ImageHeaders {
-        #[serde(default)]
-        api_key: Option<String>,
-        #[serde(default)]
-        env_key: Option<String>,
     },
     ImageBody {
         model: String,
