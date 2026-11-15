@@ -3,11 +3,11 @@ use std::collections::BTreeMap;
 use betterlite_openai::api::container_contracts::config::{
     BaseContainerConfig as _, ContainerRequestContext,
 };
+use betterlite_openai::containers::urls::join_container_api_base_path;
 use serde_json::{Map, json};
 
 use self::calls::{
-    content, content_reply, create, create_reply, error, file_list, headers, join_path, list,
-    map_params, metadata_reply, resource, url,
+    content, content_reply, create_reply, file_list, headers, list, metadata_reply, resource, url,
 };
 use self::fixture::call_config;
 use self::input::{Globals, Input};
@@ -33,10 +33,10 @@ impl crate::helpers::Helper for Op {
         };
         Ok(json!({
             "supported": supported,
-            "maps": input.maps.iter().map(|call| map_params(&shared, call)).collect::<Vec<_>>(),
-            "joins": input.joins.iter().map(join_path).collect::<Vec<_>>(),
+            "maps": input.maps.iter().map(|call| json!({"mapped": shared.map_openai_params(&call.params, call.drop_params)})).collect::<Vec<_>>(),
+            "joins": input.joins.iter().map(|call| json!({"url": join_container_api_base_path(&call.api_base, &call.path_suffix)})).collect::<Vec<_>>(),
             "urls": input.urls.iter().map(url).collect::<Result<Vec<_>, _>>()?,
-            "creates": input.creates.iter().map(|call| create(&shared, context, call)).collect::<Vec<_>>(),
+            "creates": input.creates.iter().map(|call| json!({"request": shared.transform_container_create_request(&call.name, &call.params, context)})).collect::<Vec<_>>(),
             "lists": input.lists.iter().map(|call| list(&shared, context, call)).collect::<Vec<_>>(),
             "file_lists": input.file_lists.iter().map(|call| file_list(&shared, context, call)).collect::<Vec<_>>(),
             "resources": input.resources.iter().map(|call| resource(&shared, context, call)).collect::<Vec<_>>(),
@@ -45,7 +45,10 @@ impl crate::helpers::Helper for Op {
             "create_replies": input.create_replies.iter().map(|call| create_reply(&shared, call)).collect::<Vec<_>>(),
             "metadata_replies": input.metadata_replies.iter().map(|call| metadata_reply(&shared, call)).collect::<Vec<_>>(),
             "content_replies": input.content_replies.iter().map(|call| content_reply(&shared, call)).collect::<Result<Vec<_>, _>>()?,
-            "errors": input.errors.iter().map(|call| error(&shared, call)).collect::<Vec<_>>(),
+            "errors": input.errors.iter().map(|call| {
+                let raised = shared.get_error_class(&call.message, call.status, &call.headers);
+                json!({"status_code": raised.status_code, "message": raised.message})
+            }).collect::<Vec<_>>(),
         }))
     }
 }

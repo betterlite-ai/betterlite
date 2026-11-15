@@ -406,23 +406,11 @@ fn container_cost_header() {
             .iter()
             .all(|entry| entry.hidden_params.is_empty())
     );
-    let mut hidden = Map::new();
-    hidden.insert("trace".to_owned(), json!("t-1"));
-    hidden.insert("additional_headers".to_owned(), json!({"existing": "yes"}));
-    costs::insert_code_interpreter_cost(&mut hidden, Decimal::new(3, 2));
-    assert_eq!(hidden.get("trace"), Some(&json!("t-1")));
-    assert_eq!(cost_header(&hidden).to_string(), "0.03");
-    assert_eq!(
-        hidden.pointer("/additional_headers/existing"),
-        Some(&json!("yes"))
-    );
-    let mut broken = Map::new();
-    broken.insert("additional_headers".to_owned(), json!("not-a-map"));
-    costs::insert_code_interpreter_cost(&mut broken, Decimal::new(3, 2));
-    assert_eq!(broken.get("additional_headers"), Some(&json!("not-a-map")));
-    let mut other = Map::new();
-    costs::insert_code_interpreter_cost(&mut other, Decimal::new(75, 2));
+    let other = costs::cost_hidden_params(Decimal::new(75, 2)).unwrap();
     assert_eq!(cost_header(&other).to_string(), "0.75");
+    assert_eq!(other.len(), 1);
+    let whole = costs::cost_hidden_params(Decimal::new(300, 2)).unwrap();
+    assert_eq!(cost_header(&whole).to_string(), "3");
 }
 
 fn container_response_error() {

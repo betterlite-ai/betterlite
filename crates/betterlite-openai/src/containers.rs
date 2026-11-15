@@ -24,7 +24,6 @@ pub mod urls;
 
 mod tests;
 
-// The whole OpenAI container identity: B500 settings, the litellm globals, the B8500 env key and the B068 cost projection
 #[derive(Debug)]
 pub struct OpenAiContainerConfig {
     pub settings: OpenAiCredentialsSettings,
@@ -106,7 +105,7 @@ impl BaseContainerConfig for OpenAiContainerConfig {
     ) -> Result<ContainerObject, ContainerError> {
         let mut container: ContainerObject = replies::decode_container_reply(raw_response)?;
         let cost = self.costs.code_interpreter_cost(1, "openai");
-        costs::insert_code_interpreter_cost(&mut container.hidden_params, cost);
+        container.hidden_params = costs::cost_hidden_params(cost)?;
         Ok(container)
     }
 

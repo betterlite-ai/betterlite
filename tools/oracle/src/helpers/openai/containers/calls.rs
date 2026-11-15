@@ -3,25 +3,14 @@ use betterlite_openai::api::container_contracts::config::{
 };
 use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::containers::OpenAiContainerConfig;
-use betterlite_openai::containers::urls::join_container_api_base_path;
 use serde_json::{Map, Value, json};
 
 use super::fixture::{call_config, failure};
 use super::input::{
-    ContentCall, CreateCall, ErrorCall, FileListCall, HeadersCall, JoinCall, ListCall, MapCall,
-    MetadataCall, MetadataKind, ReplyCall, ResourceCall, ResourceKind, UrlCall,
+    ContentCall, FileListCall, HeadersCall, ListCall, MetadataCall, MetadataKind, ReplyCall,
+    ResourceCall, ResourceKind, UrlCall,
 };
 use crate::helpers::HelperError;
-
-pub(super) fn map_params(built: &OpenAiContainerConfig, call: &MapCall) -> Value {
-    let mapped = built.map_openai_params(&call.params, call.drop_params);
-    json!({"mapped": mapped})
-}
-
-pub(super) fn join_path(call: &JoinCall) -> Value {
-    let joined = join_container_api_base_path(&call.api_base, &call.path_suffix);
-    json!({"url": joined})
-}
 
 pub(super) fn url(call: &UrlCall) -> Result<Value, Box<HelperError>> {
     let built = call_config(&call.globals, &call.environment)?;
@@ -30,15 +19,6 @@ pub(super) fn url(call: &UrlCall) -> Result<Value, Box<HelperError>> {
         .get_complete_url(call.api_base.as_deref(), &litellm_params)
         .map_err(|error| failure(&error.to_string()))?;
     Ok(json!({"url": resolved}))
-}
-
-pub(super) fn create(
-    built: &OpenAiContainerConfig,
-    context: ContainerRequestContext<'_>,
-    call: &CreateCall,
-) -> Value {
-    let request = built.transform_container_create_request(&call.name, &call.params, context);
-    json!({"request": request})
 }
 
 pub(super) fn list(
@@ -159,9 +139,4 @@ pub(super) fn content_reply(
         .map_err(|error| failure(&error.to_string()))?;
     let text = String::from_utf8(content).map_err(|error| failure(&error.to_string()))?;
     Ok(json!({"content": text}))
-}
-
-pub(super) fn error(built: &OpenAiContainerConfig, call: &ErrorCall) -> Value {
-    let raised = built.get_error_class(&call.message, call.status, &call.headers);
-    json!({"status_code": raised.status_code, "message": raised.message})
 }

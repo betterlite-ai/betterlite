@@ -42,7 +42,7 @@ pub fn join_container_api_base_path(api_base: &str, path_suffix: &str) -> String
     url.to_string()
 }
 
-// B3360's request transforms answer without an error channel, so the two ids B171 refuses stay fully escaped
+// Pending B3360: its request transforms have no error channel, so an id B171 refuses cannot be reported yet
 fn encode_id(value: &str, field_name: &str) -> String {
     match encode_segment(value, field_name) {
         Ok(encoded) => encoded,
