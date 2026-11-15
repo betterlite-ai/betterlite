@@ -174,10 +174,6 @@ impl From<ConfiguredSettings> for ResourceSdkSettings {
 }
 
 fn request_options(input: &BatchProviderListInput) -> ResourceSdkRequestOptions {
-    let vertex_credentials = match input.vertex_credentials.as_ref() {
-        Some(Json::Text(path)) => Some(SecretString::from(path.clone())),
-        _ => None,
-    };
     ResourceSdkRequestOptions {
         api_base: input.api_base.clone(),
         api_version: input.api_version.clone(),
@@ -185,7 +181,10 @@ fn request_options(input: &BatchProviderListInput) -> ResourceSdkRequestOptions 
         organization: input.organization.clone(),
         vertex_project: input.vertex_project.clone(),
         vertex_location: input.vertex_location.clone(),
-        vertex_credentials,
+        vertex_credentials: match input.vertex_credentials.as_ref() {
+            Some(Json::Text(path)) => Some(SecretString::from(path.clone())),
+            _ => None,
+        },
     }
 }
 
@@ -195,13 +194,11 @@ fn resolve_vertex_credentials(
     request: &ResourceSdkRequestOptions,
     input: &BatchProviderListInput,
 ) -> Result<Option<VertexCredentials>, BatchProviderListError> {
-    if let Some(Json::Object(account)) = input.vertex_credentials.as_ref() {
+    let credentials = input.vertex_credentials.as_ref();
+    if let Some(Json::Object(account)) = credentials {
         return Ok(Some(VertexCredentials::ServiceAccount(account.clone())));
     }
-    if matches!(
-        input.vertex_credentials.as_ref(),
-        Some(Json::Bool(_) | Json::Number(_) | Json::List(_))
-    ) {
+    if let Some(Json::Bool(_) | Json::Number(_) | Json::List(_)) = credentials {
         return Err(BatchProviderListError::InvalidVertexCredentials);
     }
     // a path string is already on the request options, so the shared chain resolves it
@@ -233,14 +230,13 @@ impl BatchProviderList {
         input: &BatchProviderListInput,
     ) -> Result<BatchProviderListResult, BatchProviderListError> {
         let request = request_options(input);
-        let window = BatchListWindow {
-            after: input.after.clone(),
-            limit: input.limit,
-            timeout: resolve_timeout(input, input.provider.supports_httpx_timeout())?,
-        };
         Ok(BatchProviderListResult {
             call: BatchProviderListCall {
-                window,
+                window: BatchListWindow {
+                    after: input.after.clone(),
+                    limit: input.limit,
+                    timeout: resolve_timeout(input, input.provider.supports_httpx_timeout())?,
+                },
                 provider: self.provider_call(input, &request)?,
             },
             is_async: input.alist_batches,
