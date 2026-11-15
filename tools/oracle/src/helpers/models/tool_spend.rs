@@ -1,8 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_db::spend_batches::{
-    StatementLimits, TrimmedQueue, spend_log_queue_within_budget, spend_log_row_bytes,
-    spend_log_write_batches,
+    StatementLimits, spend_log_queue_within_budget, spend_log_row_bytes, spend_log_write_batches,
 };
 use betterlite_db::tool_spend::index_rows::ToolIndexRow;
 use betterlite_models::tool_spend::{
@@ -193,12 +192,9 @@ fn trimmed_output(
     queued_bytes: Option<usize>,
     max_bytes: Option<usize>,
 ) -> Option<TrimmedOutput> {
-    let TrimmedQueue {
-        rows: kept,
-        queued_bytes,
-    } = spend_log_queue_within_budget(rows, queued_bytes?, max_bytes?);
+    let trimmed = spend_log_queue_within_budget(rows, queued_bytes?, max_bytes?);
     Some(TrimmedOutput {
-        start: rows.len().saturating_sub(kept.len()),
-        queued_bytes,
+        start: rows.len().saturating_sub(trimmed.rows.len()),
+        queued_bytes: trimmed.queued_bytes,
     })
 }
