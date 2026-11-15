@@ -24,11 +24,7 @@ where
     Timeout(#[from] TimeoutError),
     #[error("vertex_credentials must be a string or an object")]
     InvalidVertexCredentials,
-    #[error(
-        "LiteLLM doesn't support custom_llm_provider={provider} for 'retrieve_batch' without a `model` kwarg. \
-         Supported via this path: 'openai', 'azure', 'vertex_ai', 'anthropic'. \
-         'bedrock' and 'mistral' are supported but require `model` to be passed so the provider config can be loaded."
-    )]
+    #[error("retrieving a batch from provider `{provider}` needs a model, or is not supported")]
     Unsupported { provider: String },
     #[error(transparent)]
     Dispatch(DispatchError),

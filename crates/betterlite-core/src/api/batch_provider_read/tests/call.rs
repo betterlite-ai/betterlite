@@ -13,14 +13,15 @@ use super::{
     configured, failed, input, recorded_calls, request, scripted,
 };
 use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
-use crate::api::batch_provider_read::call::BatchProviderReadCall;
+use crate::api::batch_provider_read::call::{
+    AwsSessionTag, BatchProviderReadCall, VertexReadCredentials,
+};
 use crate::api::batch_provider_read::error::{BatchProviderReadError, ReadErrorFields};
 use crate::api::batch_provider_read::{
     BatchProviderRead, BatchProviderReadInput, BatchReadOptionalParams, BatchReadProvider,
     BatchReadTimeoutValue,
 };
 use crate::api::resource_sdk_settings;
-use crate::genai_setup::params::VertexCredentials;
 
 fn json_value(text: &str) -> Json {
     serde_json::from_str(text).expect("a JSON value")
@@ -236,6 +237,15 @@ async fn configured_provider_retrieve(#[case] provider: &str) {
                 access_key_id: Some("AKID".to_owned()),
                 secret_access_key: Some("secret".to_owned()),
                 session_token: Some("token".to_owned()),
+                session_name: None,
+                profile_name: None,
+                role_name: None,
+                web_identity_token: None,
+                sts_endpoint: None,
+                external_id: None,
+                session_tags: None,
+                bedrock_runtime_endpoint: None,
+                bedrock_project_id: None,
             },
             timeout: Timeout::Seconds(600.0),
             is_async: true,
@@ -262,11 +272,69 @@ async fn provider_config_without_extras() {
                 access_key_id: None,
                 secret_access_key: None,
                 session_token: None,
+                session_name: None,
+                profile_name: None,
+                role_name: None,
+                web_identity_token: None,
+                sts_endpoint: None,
+                external_id: None,
+                session_tags: None,
+                bedrock_runtime_endpoint: None,
+                bedrock_project_id: None,
             },
             timeout: Timeout::Seconds(600.0),
             is_async: false,
         }]
     );
+}
+
+// every AWS credential kwarg reaches both the provider config and the ARN handlers
+#[tokio::test]
+async fn aws_credentials_reach_every_bedrock_call() {
+    let mut call = input("bedrock");
+    call.model = Some("anthropic.claude".to_owned());
+    call.optional_params.aws_role_name = Some("role".to_owned());
+    call.optional_params.aws_session_name = Some("session".to_owned());
+    call.optional_params.aws_profile_name = Some("profile".to_owned());
+    call.optional_params.aws_web_identity_token = Some(SecretString::from("identity".to_owned()));
+    call.optional_params.aws_sts_endpoint = Some("https://sts.example".to_owned());
+    call.optional_params.aws_external_id = Some("external".to_owned());
+    call.optional_params.aws_session_tags = Some(vec![AwsSessionTag {
+        key: "team".to_owned(),
+        value: "batch".to_owned(),
+    }]);
+    call.optional_params.aws_bedrock_runtime_endpoint = Some("https://runtime.example".to_owned());
+    call.optional_params.aws_bedrock_project_id = Some("project".to_owned());
+    let expected = RecordedAws {
+        region_name: None,
+        access_key_id: None,
+        secret_access_key: None,
+        session_token: None,
+        session_name: Some("session".to_owned()),
+        profile_name: Some("profile".to_owned()),
+        role_name: Some("role".to_owned()),
+        web_identity_token: Some("identity".to_owned()),
+        sts_endpoint: Some("https://sts.example".to_owned()),
+        external_id: Some("external".to_owned()),
+        session_tags: Some(vec![AwsSessionTag {
+            key: "team".to_owned(),
+            value: "batch".to_owned(),
+        }]),
+        bedrock_runtime_endpoint: Some("https://runtime.example".to_owned()),
+        bedrock_project_id: Some("project".to_owned()),
+    };
+    let (_, config_calls) = answered(base_settings(), &call).await;
+    let Recorded::ProviderConfig { aws, .. } = &config_calls[0] else {
+        panic!("expected a provider config call");
+    };
+    assert_eq!(*aws, expected);
+
+    call.batch_id = async_invoke_arn().to_owned();
+    let (_, arn_calls) = answered(base_settings(), &call).await;
+    let Recorded::BedrockAsyncInvoke { aws, .. } = &arn_calls[0] else {
+        panic!("expected an async invoke call");
+    };
+    assert_eq!(*aws, expected);
 }
 
 // a model alone does not give a provider a config
@@ -293,11 +361,7 @@ async fn unsupported_provider(#[case] provider: &str) {
     assert_eq!(error.error_fields(), Some(ReadErrorFields { status: 400 }));
     assert_eq!(
         error.to_string(),
-        format!(
-            "LiteLLM doesn't support custom_llm_provider={provider} for 'retrieve_batch' without a `model` kwarg. \
-             Supported via this path: 'openai', 'azure', 'vertex_ai', 'anthropic'. \
-             'bedrock' and 'mistral' are supported but require `model` to be passed so the provider config can be loaded."
-        )
+        format!("retrieving a batch from provider `{provider}` needs a model, or is not supported")
     );
 }
 
@@ -344,6 +408,15 @@ async fn bedrock_async_invoke_region(
                 access_key_id: None,
                 secret_access_key: None,
                 session_token: None,
+                session_name: None,
+                profile_name: None,
+                role_name: None,
+                web_identity_token: None,
+                sts_endpoint: None,
+                external_id: None,
+                session_tags: None,
+                bedrock_runtime_endpoint: None,
+                bedrock_project_id: None,
             },
         }]
     );
@@ -375,6 +448,15 @@ async fn bedrock_model_invocation_job_region(
                 access_key_id: None,
                 secret_access_key: None,
                 session_token: Some("token".to_owned()),
+                session_name: None,
+                profile_name: None,
+                role_name: None,
+                web_identity_token: None,
+                sts_endpoint: None,
+                external_id: None,
+                session_tags: None,
+                bedrock_runtime_endpoint: None,
+                bedrock_project_id: None,
             },
         }]
     );
@@ -592,7 +674,7 @@ async fn azure_forwards_the_raw_kwargs() {
 async fn vertex_credentials_of(
     credentials: Option<Json>,
     resources: resource_sdk_settings::Settings,
-) -> Option<VertexCredentials> {
+) -> Option<VertexReadCredentials> {
     let params = BatchReadOptionalParams {
         vertex_credentials: credentials,
         ..BatchReadOptionalParams::default()
@@ -619,7 +701,7 @@ async fn vertex_credentials_accept_an_inline_account() {
             resource_sdk_settings::Settings::default()
         )
         .await,
-        Some(VertexCredentials::ServiceAccount(fields))
+        Some(VertexReadCredentials::ServiceAccount(fields))
     );
 }
 
@@ -636,8 +718,26 @@ async fn vertex_credentials_read_the_shared_chain(
     resources.vertexai_credentials = Some(SecretString::from("env-ca.json".to_owned()));
     assert_eq!(
         vertex_credentials_of(credentials, resources).await,
-        Some(VertexCredentials::Path(expected.to_owned()))
+        Some(VertexReadCredentials::Path(SecretString::from(
+            expected.to_owned()
+        )))
     );
+}
+
+// neither the path nor the inline account reaches Debug output
+#[rstest]
+#[case::request_path("\"secret-ca.json\"")]
+#[case::inline_account("{\"type\": \"service_account\", \"private_key\": \"secret-key\"}")]
+#[tokio::test]
+async fn vertex_credentials_stay_out_of_debug(#[case] credentials: &str) {
+    let params = BatchReadOptionalParams {
+        vertex_credentials: Some(json_value(credentials)),
+        ..BatchReadOptionalParams::default()
+    };
+    let (_, calls) = answered(base_settings(), &with_params(input("vertex_ai"), params)).await;
+    let rendered = format!("{:?}", calls[0]);
+    assert!(rendered.contains("VertexReadCredentials(<redacted>)"));
+    assert!(!rendered.contains("secret"));
 }
 
 #[rstest]
@@ -712,10 +812,10 @@ async fn anthropic_reads_its_own_environment(
     #[case] expected: &str,
 ) {
     let settings = Settings {
+        resources: resource_sdk_settings::Settings::default(),
         anthropic_api_base: api_base.map(str::to_owned),
         anthropic_base_url: base_url.map(str::to_owned),
         anthropic_api_key: Some(SecretString::from("sk-anthropic".to_owned())),
-        ..Settings::default()
     };
     let (_, calls) = answered(settings, &input("anthropic")).await;
     let Recorded::Anthropic {

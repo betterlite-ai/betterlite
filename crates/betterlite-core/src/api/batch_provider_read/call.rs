@@ -1,19 +1,39 @@
 use std::collections::BTreeMap;
+use std::fmt::{self, Debug, Formatter};
 
 use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::sdk::Timeout;
+use betterlite_prompts::arguments::json::Object;
 use secrecy::SecretString;
+use serde::Deserialize;
 
 use super::{BatchReadProvider, BatchReadTimeoutValue};
-use crate::genai_setup::params::VertexCredentials;
 
-// get_litellm_params carries these AWS overrides into the Bedrock request signature
+// get_litellm_params carries every AWS override into the Bedrock request signature
 #[derive(Debug, Clone, Default)]
 pub struct AwsCredentials {
     pub region_name: Option<String>,
     pub access_key_id: Option<String>,
     pub secret_access_key: Option<SecretString>,
     pub session_token: Option<SecretString>,
+    pub session_name: Option<String>,
+    pub profile_name: Option<String>,
+    pub role_name: Option<String>,
+    pub web_identity_token: Option<SecretString>,
+    pub sts_endpoint: Option<String>,
+    pub external_id: Option<String>,
+    pub session_tags: Option<Vec<AwsSessionTag>>,
+    pub bedrock_runtime_endpoint: Option<String>,
+    pub bedrock_project_id: Option<String>,
+}
+
+// GenericLiteLLMParams.aws_session_tags
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct AwsSessionTag {
+    #[serde(rename = "Key")]
+    pub key: String,
+    #[serde(rename = "Value")]
+    pub value: String,
 }
 
 // base_llm_http_handler.retrieve_batch, which the configured Bedrock and Mistral providers reach
@@ -82,6 +102,19 @@ pub struct AzureReadParams {
     pub azure_password: Option<SecretString>,
 }
 
+// a path or an inline service-account document; both stay out of Debug until the Vertex client opens them
+#[derive(Clone, PartialEq)]
+pub enum VertexReadCredentials {
+    Path(SecretString),
+    ServiceAccount(Object),
+}
+
+impl Debug for VertexReadCredentials {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        formatter.write_str("VertexReadCredentials(<redacted>)")
+    }
+}
+
 // VertexAIBatchPrediction.retrieve_batch
 #[derive(Debug, Clone)]
 pub struct VertexBatchReadCall {
@@ -89,7 +122,7 @@ pub struct VertexBatchReadCall {
     pub api_base: String,
     pub vertex_project: Option<String>,
     pub vertex_location: Option<String>,
-    pub vertex_credentials: Option<VertexCredentials>,
+    pub vertex_credentials: Option<VertexReadCredentials>,
     pub timeout: Timeout,
     pub max_retries: Option<i64>,
     pub is_async: bool,

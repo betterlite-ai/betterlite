@@ -15,9 +15,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use super::call::{
-    AnthropicBatchReadCall, AwsCredentials, AzureBatchReadCall, AzureReadParams,
+    AnthropicBatchReadCall, AwsCredentials, AwsSessionTag, AzureBatchReadCall, AzureReadParams,
     BatchProviderReadCall, OpenAiBatchReadCall, ProviderConfigReadCall, VertexBatchReadCall,
-    XaiBatchReadCall,
+    VertexReadCredentials, XaiBatchReadCall,
 };
 use super::error::BatchProviderReadError;
 use super::{
@@ -26,7 +26,6 @@ use super::{
 };
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::resource_sdk_settings;
-use crate::genai_setup::params::VertexCredentials;
 
 #[derive(Debug, Clone, PartialEq)]
 struct RecordedAws {
@@ -34,6 +33,15 @@ struct RecordedAws {
     access_key_id: Option<String>,
     secret_access_key: Option<String>,
     session_token: Option<String>,
+    session_name: Option<String>,
+    profile_name: Option<String>,
+    role_name: Option<String>,
+    web_identity_token: Option<String>,
+    sts_endpoint: Option<String>,
+    external_id: Option<String>,
+    session_tags: Option<Vec<AwsSessionTag>>,
+    bedrock_runtime_endpoint: Option<String>,
+    bedrock_project_id: Option<String>,
 }
 
 fn recorded_aws(aws: &AwsCredentials) -> RecordedAws {
@@ -42,6 +50,15 @@ fn recorded_aws(aws: &AwsCredentials) -> RecordedAws {
         access_key_id: aws.access_key_id.clone(),
         secret_access_key: aws.secret_access_key.as_ref().map(secret_text),
         session_token: aws.session_token.as_ref().map(secret_text),
+        session_name: aws.session_name.clone(),
+        profile_name: aws.profile_name.clone(),
+        role_name: aws.role_name.clone(),
+        web_identity_token: aws.web_identity_token.as_ref().map(secret_text),
+        sts_endpoint: aws.sts_endpoint.clone(),
+        external_id: aws.external_id.clone(),
+        session_tags: aws.session_tags.clone(),
+        bedrock_runtime_endpoint: aws.bedrock_runtime_endpoint.clone(),
+        bedrock_project_id: aws.bedrock_project_id.clone(),
     }
 }
 
@@ -123,7 +140,7 @@ enum Recorded {
         api_base: String,
         vertex_project: Option<String>,
         vertex_location: Option<String>,
-        vertex_credentials: Option<VertexCredentials>,
+        vertex_credentials: Option<VertexReadCredentials>,
         timeout: Timeout,
         max_retries: Option<i64>,
         is_async: bool,
@@ -264,7 +281,9 @@ fn base_settings() -> Settings {
 fn configured(resources: resource_sdk_settings::Settings) -> Settings {
     Settings {
         resources,
-        ..Settings::default()
+        anthropic_api_base: None,
+        anthropic_base_url: None,
+        anthropic_api_key: None,
     }
 }
 

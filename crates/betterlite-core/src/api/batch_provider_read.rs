@@ -11,18 +11,17 @@ use std::error::Error;
 use std::future::Future;
 
 use betterlite_config::sections::batch_provider_read::Settings;
-use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::records::BatchObject;
 use betterlite_openai::batches::sdk::TimeoutPhases;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::api::api_boundaries::{
     ApiBoundariesInput, ApiLimitError, ApiLimits, ItemsBoundary, JsonBoundary,
 };
-use call::BatchProviderReadCall;
+use call::{AwsCredentials, AwsSessionTag, BatchProviderReadCall};
 use error::BatchProviderReadError;
 
 // retrieve_batch's declared literal names plus any other string, which answers 400
@@ -81,7 +80,16 @@ impl BatchReadProvider {
     // LiteLLM keeps an httpx.Timeout for openai, azure and bedrock and reads it for every other provider
     #[must_use]
     pub const fn supports_httpx_timeout(&self) -> bool {
-        matches!(self, Self::Azure | Self::OpenAi | Self::Bedrock)
+        match self {
+            Self::Azure | Self::Bedrock | Self::OpenAi => true,
+            Self::Anthropic
+            | Self::HostedVllm
+            | Self::LitellmProxy
+            | Self::Mistral
+            | Self::VertexAi
+            | Self::Xai
+            | Self::Other(_) => false,
+        }
     }
 }
 
@@ -96,11 +104,8 @@ pub struct BatchProviderReadInput {
     pub batch_id: String,
     #[serde(default = "default_provider")]
     pub provider: BatchReadProvider,
-    #[serde(default)]
     pub extra_headers: Option<IndexMap<String, String>>,
-    #[serde(default)]
     pub extra_body: Option<IndexMap<String, String>>,
-    #[serde(default)]
     pub model: Option<String>,
     // aretrieve_batch sets this before retrieve_batch turns it into the provider's is_async flag
     #[serde(default)]
@@ -110,7 +115,7 @@ pub struct BatchProviderReadInput {
 }
 
 // GenericLiteLLMParams.timeout: seconds, a number written as text, or the pieces of an httpx.Timeout
-#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum BatchReadTimeoutValue {
     Seconds(f64),
@@ -142,6 +147,15 @@ pub struct BatchReadOptionalParams {
     pub aws_access_key_id: Option<String>,
     pub aws_secret_access_key: Option<SecretString>,
     pub aws_session_token: Option<SecretString>,
+    pub aws_session_name: Option<String>,
+    pub aws_profile_name: Option<String>,
+    pub aws_role_name: Option<String>,
+    pub aws_web_identity_token: Option<SecretString>,
+    pub aws_sts_endpoint: Option<String>,
+    pub aws_external_id: Option<String>,
+    pub aws_session_tags: Option<Vec<AwsSessionTag>>,
+    pub aws_bedrock_runtime_endpoint: Option<String>,
+    pub aws_bedrock_project_id: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -176,9 +190,24 @@ where
     ) -> Result<BatchProviderReadResult, BatchProviderReadError<Dispatch::Error>> {
         check_read_limits(&self.limits, input)?;
         let timeout = timeout::resolve_timeout(input)?;
-        let call = match provider::bedrock_arn_call(input) {
+        let aws = AwsCredentials {
+            region_name: input.optional_params.aws_region_name.clone(),
+            access_key_id: input.optional_params.aws_access_key_id.clone(),
+            secret_access_key: input.optional_params.aws_secret_access_key.clone(),
+            session_token: input.optional_params.aws_session_token.clone(),
+            session_name: input.optional_params.aws_session_name.clone(),
+            profile_name: input.optional_params.aws_profile_name.clone(),
+            role_name: input.optional_params.aws_role_name.clone(),
+            web_identity_token: input.optional_params.aws_web_identity_token.clone(),
+            sts_endpoint: input.optional_params.aws_sts_endpoint.clone(),
+            external_id: input.optional_params.aws_external_id.clone(),
+            session_tags: input.optional_params.aws_session_tags.clone(),
+            bedrock_runtime_endpoint: input.optional_params.aws_bedrock_runtime_endpoint.clone(),
+            bedrock_project_id: input.optional_params.aws_bedrock_project_id.clone(),
+        };
+        let call = match provider::bedrock_arn_call(input, aws.clone()) {
             Some(call) => call,
-            None => provider::call(input, &retrieve_request(input), timeout, &self.settings)?,
+            None => provider::call(input, timeout, &self.settings, aws)?,
         };
         let batch = self
             .dispatch
@@ -186,15 +215,6 @@ where
             .await
             .map_err(BatchProviderReadError::Dispatch)?;
         Ok(BatchProviderReadResult { call, batch })
-    }
-}
-
-fn retrieve_request(input: &BatchProviderReadInput) -> RetrieveBatchRequest {
-    RetrieveBatchRequest {
-        batch_id: Some(input.batch_id.clone()),
-        extra_headers: input.extra_headers.clone(),
-        extra_body: input.extra_body.clone(),
-        timeout: None,
     }
 }
 

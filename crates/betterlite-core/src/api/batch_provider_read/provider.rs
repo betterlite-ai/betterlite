@@ -1,9 +1,9 @@
 use betterlite_config::sections::batch_provider_read::Settings;
-use betterlite_openai::api::batch_records::RetrieveBatchRequest;
 use betterlite_openai::batches::sdk::Timeout;
 
 use super::call::{
-    BatchProviderReadCall, BedrockAsyncInvokeReadCall, BedrockModelInvocationJobReadCall,
+    AwsCredentials, BatchProviderReadCall, BedrockAsyncInvokeReadCall,
+    BedrockModelInvocationJobReadCall, XaiBatchReadCall,
 };
 use super::error::ReadCallError;
 use super::resolution;
@@ -12,9 +12,11 @@ use super::{BatchProviderReadInput, BatchReadProvider};
 const DEFAULT_BEDROCK_REGION: &str = "us-east-1";
 
 // batch ids that carry a Bedrock ARN are read from AWS rather than from a provider batch endpoint
-pub(super) fn bedrock_arn_call(input: &BatchProviderReadInput) -> Option<BatchProviderReadCall> {
+pub(super) fn bedrock_arn_call(
+    input: &BatchProviderReadInput,
+    mut aws: AwsCredentials,
+) -> Option<BatchProviderReadCall> {
     let kind = BedrockArn::parse(&input.batch_id)?;
-    let mut aws = resolution::aws_credentials(&input.optional_params);
     if kind == BedrockArn::AsyncInvoke && aws.region_name.is_none() {
         aws.region_name = Some(DEFAULT_BEDROCK_REGION.to_owned());
     }
@@ -53,56 +55,50 @@ impl BedrockArn {
     }
 }
 
-// a provider config comes before the legacy branches, and only bedrock and mistral declare one
+// bedrock and mistral read a provider config when a model is set; every other provider reads its own endpoint
 pub(super) fn call(
     input: &BatchProviderReadInput,
-    request: &RetrieveBatchRequest,
     timeout: Timeout,
     settings: &Settings,
+    aws: AwsCredentials,
 ) -> Result<BatchProviderReadCall, ReadCallError> {
-    if let Some(model) = input.model.as_deref()
-        && matches!(
-            input.provider,
-            BatchReadProvider::Bedrock | BatchReadProvider::Mistral
-        )
-    {
-        return Ok(BatchProviderReadCall::ProviderConfig(Box::new(
-            resolution::provider_config(input, model, timeout),
-        )));
-    }
-    legacy_call(input, request, timeout, settings)
-}
-
-// the branches that read a provider's own endpoint once no provider config applies
-fn legacy_call(
-    input: &BatchProviderReadInput,
-    request: &RetrieveBatchRequest,
-    timeout: Timeout,
-    settings: &Settings,
-) -> Result<BatchProviderReadCall, ReadCallError> {
-    let selected = match input.provider {
-        BatchReadProvider::Xai => {
-            BatchProviderReadCall::Xai(Box::new(resolution::xai(input, timeout)))
+    let provider_name = input.provider.name();
+    Ok(match input.provider {
+        BatchReadProvider::Bedrock | BatchReadProvider::Mistral => {
+            let Some(model) = input.model.as_deref() else {
+                return Err(ReadCallError::Unsupported {
+                    provider: provider_name.to_owned(),
+                });
+            };
+            BatchProviderReadCall::ProviderConfig(Box::new(resolution::provider_config(
+                input, model, timeout, aws,
+            )))
         }
+        BatchReadProvider::Xai => BatchProviderReadCall::Xai(Box::new(XaiBatchReadCall {
+            batch_id: input.batch_id.clone(),
+            api_base: input.optional_params.api_base.clone(),
+            api_key: input.optional_params.api_key.clone(),
+            timeout,
+            is_async: input.aretrieve_batch,
+        })),
         BatchReadProvider::OpenAi
         | BatchReadProvider::HostedVllm
         | BatchReadProvider::LitellmProxy => BatchProviderReadCall::OpenAiCompatible(Box::new(
-            resolution::openai(input, request, settings, timeout),
+            resolution::openai(input, settings, timeout),
         )),
-        BatchReadProvider::Azure => BatchProviderReadCall::Azure(Box::new(resolution::azure(
-            input, request, settings, timeout,
-        ))),
+        BatchReadProvider::Azure => {
+            BatchProviderReadCall::Azure(Box::new(resolution::azure(input, settings, timeout)))
+        }
         BatchReadProvider::VertexAi => {
             BatchProviderReadCall::VertexAi(Box::new(resolution::vertex(input, settings, timeout)?))
         }
         BatchReadProvider::Anthropic => BatchProviderReadCall::Anthropic(Box::new(
             resolution::anthropic(input, settings, timeout),
         )),
-        BatchReadProvider::Bedrock | BatchReadProvider::Mistral | BatchReadProvider::Other(_) => {
+        BatchReadProvider::Other(_) => {
             return Err(ReadCallError::Unsupported {
-                provider: input.provider.name().to_owned(),
+                provider: provider_name.to_owned(),
             });
         }
-    };
-    Ok(selected)
+    })
 }
