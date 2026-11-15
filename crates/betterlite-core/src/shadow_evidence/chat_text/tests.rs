@@ -119,16 +119,20 @@ fn finish_reason_reads_the_choice(#[case] response: &str, #[case] expected: &str
 }
 
 #[rstest]
-#[case::model_unknown(r#"{"choices":[]}"#, "", "finish_reason=unknown, model=unknown")]
+#[case::model_unknown(
+    r#"{"choices":[]}"#,
+    "",
+    "shadow router returned an empty response; finish_reason=unknown, model=unknown"
+)]
 #[case::model_known(
     r#"{"choices":[{"message":{"content":""},"finish_reason":"stop"}]}"#,
     "gpt-4o",
-    "finish_reason=stop, model=gpt-4o"
+    "shadow router returned an empty response; finish_reason=stop, model=gpt-4o"
 )]
 #[case::finish_reason_from_choice(
     r#"{"choices":[{"message":{"content":null},"finish_reason":"length"}]}"#,
     "shadow",
-    "finish_reason=length, model=shadow"
+    "shadow router returned an empty response; finish_reason=length, model=shadow"
 )]
 fn empty_reply_error_names_the_response(
     #[case] response: &str,

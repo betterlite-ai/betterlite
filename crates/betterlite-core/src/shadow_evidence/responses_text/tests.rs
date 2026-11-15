@@ -23,7 +23,7 @@ const MESSAGE: &str = r#"{"type":"message","id":"msg_1","role":"assistant","stat
 
 #[rstest]
 #[case::message_text(
-    &response(MESSAGE),
+    &response(&format!("[{MESSAGE}]")),
     "Hello world"
 )]
 #[case::two_messages(

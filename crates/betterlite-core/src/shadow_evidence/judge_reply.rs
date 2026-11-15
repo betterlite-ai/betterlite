@@ -11,15 +11,15 @@ pub fn shape(response: &Json) -> String {
     let Some(message) = chat_text::message(response) else {
         return "unreadable judge reply".to_owned();
     };
-    let content = chat_text::field(message, "content");
-    let body = match content.filter(|value| has_value(value)) {
-        Some(content) => format!("{} chars", string_value(content).chars().count()),
-        None => "no content".to_owned(),
-    };
-    let served = match chat_text::field(response, "model").filter(|value| has_value(value)) {
-        Some(model) => string_value(model),
-        None => "unknown".to_owned(),
-    };
+    let body = chat_text::field(message, "content")
+        .filter(|value| has_value(value))
+        .map_or_else(
+            || "no content".to_owned(),
+            |content| format!("{} chars", string_value(content).chars().count()),
+        );
+    let served = chat_text::field(response, "model")
+        .filter(|value| has_value(value))
+        .map_or_else(|| "unknown".to_owned(), string_value);
     format!(
         "finish_reason={}, content={body}, model={served}",
         chat_text::finish_reason(response)

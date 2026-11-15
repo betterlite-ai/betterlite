@@ -45,7 +45,7 @@ def run(input_value: Input) -> JsonValue:
         judge_reply = input_value["response"]
         return {"shape": judge_shape(judge_reply)}
     metadata = input_value["metadata"]
-    decision = JSON.validate_python(dict(routing_decision(metadata)))
+    decision = JSON.validate_python({**routing_decision(metadata)})
     classifier = classifier_cost(metadata)
     return {
         "decision": decision,

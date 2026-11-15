@@ -20,10 +20,7 @@ pub fn final_text(response: &Json) -> String {
     let Some(message) = message(response) else {
         return String::new();
     };
-    let prose = match field(message, "content") {
-        Some(content) => extract_text_from_content(content),
-        None => String::new(),
-    };
+    let prose = field(message, "content").map_or_else(String::new, extract_text_from_content);
     let calls = field(message, "tool_calls");
     let single = field(message, "function_call");
     if !(calls.is_some_and(has_value) || single.is_some_and(has_value)) {
@@ -39,10 +36,8 @@ pub fn final_text(response: &Json) -> String {
 #[must_use]
 pub fn finish_reason(response: &Json) -> String {
     let raw = choice(response).and_then(|choice| field(choice, "finish_reason"));
-    match raw.filter(|value| has_value(value)) {
-        Some(reason) => string_value(reason),
-        None => "unknown".to_owned(),
-    }
+    raw.filter(|value| has_value(value))
+        .map_or_else(|| "unknown".to_owned(), string_value)
 }
 
 #[must_use]
@@ -96,24 +91,17 @@ fn listed_calls(message: &Json) -> Vec<&Json> {
 fn invocation_payload(call: &Json) -> &Json {
     let function = field(call, "function").filter(|value| has_value(value));
     let custom = field(call, "custom").filter(|value| has_value(value));
-    match function.or(custom) {
-        Some(payload) => payload,
-        None => call,
-    }
+    function.or(custom).unwrap_or(call)
 }
 
 fn invocation(call: &Json) -> String {
     let payload = invocation_payload(call);
-    let name = match field(payload, "name").filter(|value| has_value(value)) {
-        Some(name) => string_value(name),
-        None => "unnamed".to_owned(),
-    };
-    let arguments = match field(payload, "arguments").filter(|value| has_value(value)) {
-        Some(arguments) => string_value(arguments),
-        None => match field(payload, "input").filter(|value| has_value(value)) {
-            Some(input) => string_value(input),
-            None => String::new(),
-        },
-    };
+    let name = field(payload, "name")
+        .filter(|value| has_value(value))
+        .map_or_else(|| "unnamed".to_owned(), string_value);
+    let arguments = field(payload, "arguments")
+        .filter(|value| has_value(value))
+        .or_else(|| field(payload, "input").filter(|value| has_value(value)))
+        .map_or_else(String::new, string_value);
     format!("{name}({arguments})")
 }

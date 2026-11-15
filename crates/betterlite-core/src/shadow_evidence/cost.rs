@@ -16,10 +16,8 @@ pub fn call_cost<Map>(response: &Json, prices: &Map) -> Decimal
 where
     Map: PriceMap + ?Sized,
 {
-    match stamped_cost(response) {
-        Some(cost) => cost,
-        None => prices.completion_cost(response).unwrap_or(Decimal::ZERO),
-    }
+    stamped_cost(response)
+        .unwrap_or_else(|| prices.completion_cost(response).unwrap_or(Decimal::ZERO))
 }
 
 fn stamped_cost(response: &Json) -> Option<Decimal> {

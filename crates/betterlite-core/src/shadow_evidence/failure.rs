@@ -15,10 +15,9 @@ pub fn detail<Message>(class: &str, location: Option<Location<'_>>, message: Mes
 where
     Message: Display,
 {
-    let place = match location {
-        Some(location) => format!(" at {}:{}", basename(location.file), location.line),
-        None => String::new(),
-    };
+    let place = location.map_or_else(String::new, |at| {
+        format!(" at {}:{}", basename(at.file), at.line)
+    });
     let full = format!("{class}{place}: {message}");
     full.chars().take(MAX_ERROR_CHARS).collect()
 }
