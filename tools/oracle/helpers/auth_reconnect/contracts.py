@@ -1,7 +1,9 @@
-from collections.abc import Iterator
+import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Literal, Protocol, TypedDict
 
+from litellm._logging import verbose_proxy_logger
 from litellm.proxy import utils as proxy_utils
 from pydantic import JsonValue as Json
 
@@ -146,13 +148,11 @@ def logged_fields(message: str, args: tuple[LogArgument, ...]) -> dict[str, Json
 
 
 @contextmanager
-def scripted_proxy(logger: ScriptedLogger, clock: ScriptedClock) -> Iterator[None]:
-    original_logger = proxy_utils.verbose_proxy_logger
-    original_time = proxy_utils.time
+def scripted_proxy(logger: ScriptedLogger, clock: ScriptedClock) -> Generator[None]:
     object.__setattr__(proxy_utils, "verbose_proxy_logger", logger)
     object.__setattr__(proxy_utils, "time", clock)
     try:
         yield
     finally:
-        object.__setattr__(proxy_utils, "verbose_proxy_logger", original_logger)
-        object.__setattr__(proxy_utils, "time", original_time)
+        object.__setattr__(proxy_utils, "verbose_proxy_logger", verbose_proxy_logger)
+        object.__setattr__(proxy_utils, "time", time)
