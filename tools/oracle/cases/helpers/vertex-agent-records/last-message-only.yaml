@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-agent-records-last-message-only
+call:
+  vertex_agent_records:
+    operation: request
+    calls:
+      - messages:
+          - {role: system, content: ignored}
+          - {role: user, content: first}
+          - role: user
+            content: second
+            search_results:
+              - {title: t, content: [{text: c}]}
+        non_default_params: {}
+        optional_params: {user_id: ada}
+        uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare: {ignore: []}

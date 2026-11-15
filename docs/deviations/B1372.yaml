@@ -1,0 +1,17 @@
+task: B1372
+deviations:
+  - what: "A failed create POST is logged with its status and the first 1000 body characters on every call, because betterlite has one async execution path."
+    why: "LiteLLM logs only on its async create path, and its sync path propagates the HTTP error unlogged. A second path in betterlite would only duplicate the code."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L252-L281"
+  - what: "The create request and the tuned-endpoint lookup carry one request deadline (600 seconds by default) where LiteLLM relies on its pooled httpx client's timeout."
+    why: "betterlite's transport takes a deadline per request, and the create timeout never reaches the provider call at this pin either, so 600 seconds, the client default LiteLLM uses, stays the effective limit for both calls."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L168-L172"
+  - what: "Provider JSON bodies over 4 MiB, bodies that are not a single JSON object and wrongly typed fields are refused with a 500 that names the field path, and an error body that is not UTF-8 keeps the text before its first invalid byte."
+    why: "LiteLLM calls response.json() with no bound and fails later with a Python exception when a field has the wrong type, and httpx decodes response.text with replacement characters."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L174-L175"
+  - what: "A connection that fails before an answer is not retried: the create POST goes out at most once and such a failure is a 500."
+    why: "LiteLLM's async create repeats the request once on ConnectError or RemoteProtocolError on a fresh single-connection client, while its sync create does not retry at all; betterlite's shared outbound client attempts each request once, so a create is never delivered twice."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851"
+  - what: "The create POST and the tuned-endpoint GET use betterlite's 10-second connect timeout, where LiteLLM's cached sync and async httpx clients allow 5 seconds to connect."
+    why: "B173 owns the transport limits every provider shares; a per-provider connect timeout would need a pool-level change outside this task, so a host that accepts the connection between 5 and 10 seconds succeeds here where LiteLLM gives up."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167"
