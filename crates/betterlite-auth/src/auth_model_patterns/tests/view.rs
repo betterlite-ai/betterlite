@@ -100,6 +100,72 @@ fn deployment_view_rows_follow_router_listing() {
     );
 }
 
+// deployments that share a public name and deployments of other teams
+fn team_rows_view() -> DeploymentView {
+    DeploymentView {
+        deployments: vec![
+            Deployment {
+                model_name: "model_name_team-a_1".to_owned(),
+                access_groups: vec!["group-a".to_owned()],
+                team_id: Some("team-a".to_owned()),
+                team_public_model_name: Some("team-public".to_owned()),
+            },
+            Deployment {
+                model_name: "model_name_team-b_9".to_owned(),
+                access_groups: vec!["group-b".to_owned()],
+                team_id: Some("team-b".to_owned()),
+                team_public_model_name: Some("team-public".to_owned()),
+            },
+            Deployment {
+                model_name: "model_name_team-a_2".to_owned(),
+                access_groups: vec!["group-c".to_owned()],
+                team_id: Some("team-a".to_owned()),
+                team_public_model_name: Some("another-public".to_owned()),
+            },
+            Deployment {
+                model_name: "gpt-4o".to_owned(),
+                access_groups: vec!["group-d".to_owned()],
+                ..Deployment::default()
+            },
+            Deployment {
+                model_name: "shared".to_owned(),
+                access_groups: vec!["group-e".to_owned()],
+                team_id: Some("team-b".to_owned()),
+                team_public_model_name: None,
+            },
+        ],
+        model_group_alias: IndexMap::new(),
+    }
+}
+
+#[test]
+fn team_public_names_resolve_only_the_callers_row() {
+    let view = team_rows_view();
+
+    // only the caller's own row answers its public name
+    let owned = view.deployed("team-public", Some("team-a"));
+    assert_eq!(owned.len(), 1);
+    assert_eq!(owned[0].model_name, "model_name_team-a_1");
+    assert_eq!(
+        view.access_groups("team-public", Some("team-a")),
+        BTreeMap::from([("group-a".to_owned(), vec!["model_name_team-a_1".to_owned()])])
+    );
+    // a public name no team of the caller's owns resolves to no row
+    assert!(view.deployed("team-public", Some("team-c")).is_empty());
+    // a public name the caller's team does not use resolves to no row either
+    assert!(view.deployed("unowned-name", Some("team-a")).is_empty());
+    // a name only another team deploys is not the caller's
+    assert!(view.deployed("shared", Some("team-a")).is_empty());
+    // the caller's own deployments stay reachable by their model name
+    assert_eq!(
+        view.deployed("gpt-4o", Some("team-a"))
+            .iter()
+            .map(|deployment| deployment.model_name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["gpt-4o"]
+    );
+}
+
 #[test]
 fn deployment_view_lists_alias_targets_and_deployments() {
     let view = listing_view();

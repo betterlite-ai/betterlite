@@ -125,6 +125,26 @@ fn access_group_resources_come_from_the_lookup() {
 }
 
 #[test]
+fn grouped_model_keeps_the_plain_allowlist() {
+    let view = grouped_view();
+    let aliases = empty_aliases();
+    let provider = empty_provider();
+    let ctx = context(Some(&view), &aliases, &provider);
+
+    // the grouped deployment filters nothing out of a wildcard allowlist
+    assert!(check_model_access(
+        "grouped-model",
+        &grant(&["grouped-*"]),
+        &ctx
+    ));
+    assert!(!check_model_access(
+        "other-model",
+        &grant(&["grouped-*"]),
+        &ctx
+    ));
+}
+
+#[test]
 fn access_group_resources_keep_first_seen_order() {
     // resources of several groups keep the first-seen order and drop duplicates
     let second = FixedGroups(BTreeMap::from([

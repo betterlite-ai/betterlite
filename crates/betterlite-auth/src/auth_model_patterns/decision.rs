@@ -46,8 +46,8 @@ pub fn check_model_access(
         .map(|view| view.access_groups(model, team_id))
         .unwrap_or_default();
     let models = resolve_team_model_sentinel(&grant.models, context.view, team_id);
-    if context.view.is_some()
-        && !access_groups.is_empty()
+    // without a view there are no access groups, so a non-empty map already means the router answered
+    if !access_groups.is_empty()
         && models
             .iter()
             .any(|allowed| access_groups.contains_key(allowed))
@@ -65,7 +65,8 @@ pub fn check_model_access(
     if matches_wildcard_patterns(model, &filtered, context.provider) {
         return true;
     }
-    let all_model_access = (filtered.is_empty() && models.is_empty())
+    // filtering only removes names the map holds, so an empty allowlist stays the only unrestricted case
+    let all_model_access = models.is_empty()
         || filtered.iter().any(|allowed| allowed.as_str() == "*")
         || filtered
             .iter()

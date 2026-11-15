@@ -12,6 +12,7 @@ use axum::routing::post;
 use betterlite_auth::auth_model_patterns::grant::ModelGrantPattern;
 use betterlite_auth::auth_request_models::{MODEL_ROUTING_HEADER_NAME, RequestedModels};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::database_reencryption::RECURSE_DEPTH_VARIABLE;
 use betterlite_config::types::Config;
 use betterlite_error::proxy_error_types::ModelAccessObject;
 use secrecy::SecretString;
@@ -117,6 +118,21 @@ fn application(models: &[&str]) -> Router {
     .layer(Extension(rule(models)))
 }
 
+fn application_at_depth(depth: &str, models: &[&str]) -> Router {
+    let config = ConfigLoader {
+        lookup: BTreeMap::from([(RECURSE_DEPTH_VARIABLE.to_owned(), depth.to_owned())]),
+    }
+    .load("general_settings:\n  master_key: secret-master-key\n")
+    .expect("the test config loads");
+    routes::router(
+        state_for(&config),
+        Arc::new(AtomicBool::new(false)),
+        Router::new().route("/auth-test/files", post(mark_called)),
+        Router::new(),
+    )
+    .layer(Extension(rule(models)))
+}
+
 #[tokio::test]
 async fn failure_stops_downstream() {
     let reached = Arc::new(AtomicBool::new(false));
@@ -141,6 +157,36 @@ async fn failure_stops_downstream() {
     );
     // the allowlist stays in the diagnostics, never in the client body
     assert!(!text.contains("gpt-4o"), "{text}");
+    assert!(!reached.load(Ordering::Acquire));
+}
+
+#[tokio::test]
+async fn fallback_depth_is_answered_with_the_auth_error() {
+    // a two-model request checks each entry one level below the request
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application(&["gpt-4o", "other-model"])
+        .oneshot(request_to(&reached, "gpt-4o,other-model"))
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::OK);
+
+    // a depth of one refuses the nested check before the allowlist answers
+    let reached = Arc::new(AtomicBool::new(false));
+    let response = application_at_depth("1", &["gpt-4o", "other-model"])
+        .oneshot(request_to(&reached, "gpt-4o,other-model"))
+        .await
+        .expect("the request reaches the router");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("the error body is readable");
+    let text = String::from_utf8(body.to_vec()).expect("the error body is UTF-8");
+    assert!(text.contains("\"type\":\"auth_error\""), "{text}");
+    assert!(text.contains("\"code\":\"401\""), "{text}");
+    assert!(
+        text.contains("max fallback depth exceeded - received model: gpt-4o"),
+        "{text}"
+    );
     assert!(!reached.load(Ordering::Acquire));
 }
 

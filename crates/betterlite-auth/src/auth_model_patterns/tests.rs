@@ -764,6 +764,30 @@ fn empty_alias_target_is_not_a_potential_model() {
 }
 
 #[test]
+fn key_alias_after_the_global_alias_checks_only_the_final_target() {
+    let provider = empty_provider();
+    let mut aliases = BTreeMap::new();
+    aliases.insert("alias".to_owned(), "target".to_owned());
+    let ctx = context(None, &aliases, &provider);
+    let mut aliased_grant = grant(&["target"]);
+    aliased_grant
+        .key_model_aliases
+        .insert("target".to_owned(), "elsewhere".to_owned());
+
+    // the key alias rewrites the global alias target, and only the final target is checked
+    assert!(
+        !can_object_call_model(
+            &one("alias"),
+            &aliased_grant,
+            ModelAccessObject::Key,
+            &ctx,
+            0
+        )
+        .is_allowed()
+    );
+}
+
+#[test]
 fn team_alias_chains_into_the_global_alias() {
     let provider = empty_provider();
     let mut aliases = BTreeMap::new();
