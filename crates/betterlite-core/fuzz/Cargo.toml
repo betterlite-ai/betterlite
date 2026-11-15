@@ -265,3 +265,10 @@ path = "fuzz_targets/parallel_ai_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "soniox_reply"
+path = "fuzz_targets/soniox_reply.rs"
+test = false
+doc = false
+bench = false
