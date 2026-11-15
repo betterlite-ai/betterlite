@@ -186,6 +186,7 @@ Max's product decisions so far. A task that contradicts one of them is wrong, no
 - 2026-11-14: a run whose reviewer hit its 45 minute timeout reruns by itself after a pause that doubles from 30 minutes, six times at most, and parks only after that (Max). 97 ready tasks sat parked from the night before (331 of 753 reviews from 00:00 timed out, 4 of 253 after 08:00), and the feeder never restarts a task that has a journal, so the pool drained to 13 flows by 21:44.
 - 2026-11-14: a worker ladder that ran out on a timeout gets one more start the same way, after a pause that doubles from 30 minutes, three times at most (Max: restart stalled work by itself when it is time). B4665, B583 and B730 parked that way the same night.
 - 2026-11-15: the DeepSeek reviewer stops after 30 minutes instead of 45, and a review that timed out first reruns after 5 minutes instead of 30, the pause still doubling (Max). From 00:00 to 08:00 on 11-14, 327 of 850 reviews hit the 45 minute limit with no answer at all, while 407 of the 523 that answered took under 15 minutes and 63 took over 30.
+- 2026-11-15: a flow started with a grant skips the wait for a runner on its own worker ladder, since the grant moves its next start to another vendor anyway. B3752 waited from 01:20 with GRANT=2 and never dispatched, because `cargo gate availability` (added in [#1855](https://github.com/betterlite-ai/betterlite/pull/1855)) looks only at the task's own ladder.
 
 ## Writing a task
 
