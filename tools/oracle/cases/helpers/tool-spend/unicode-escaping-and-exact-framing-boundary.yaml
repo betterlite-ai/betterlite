@@ -1,0 +1,22 @@
+kind: helper
+name: unicode-escaping-and-exact-framing-boundary
+call:
+  tool_spend:
+    rows:
+      - {request_id: req-1, tool_name: search, start_time: "2026-01-02T00:00:00Z", refused: false}
+      - {request_id: req-2, tool_name: "wörld-界", start_time: "2026-01-02T00:00:00.500Z", refused: false}
+      - {request_id: req-3, tool_name: "\U0001F600 search \u0001", start_time: "2026-01-03T12:30:15+02:00", refused: false}
+      - {request_id: req-4, tool_name: fetch, start_time: "2026-01-04T08:00:00Z", refused: false}
+    max_bytes: 200
+    max_rows: 100
+calls:
+  - tool_spend:
+      rows:
+        - {request_id: req-1, tool_name: search, start_time: "2026-01-02T00:00:00Z", refused: false}
+        - {request_id: req-2, tool_name: "wörld-界", start_time: "2026-01-02T00:00:00.500Z", refused: false}
+        - {request_id: req-3, tool_name: "\U0001F600 search \u0001", start_time: "2026-01-03T12:30:15+02:00", refused: false}
+        - {request_id: req-4, tool_name: fetch, start_time: "2026-01-04T08:00:00Z", refused: false}
+      max_bytes: 2000000
+      max_rows: 3
+env: {}
+compare: {ignore: []}
