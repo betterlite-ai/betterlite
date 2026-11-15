@@ -6,11 +6,9 @@ use serde_json::{Value, json};
 
 use betterlite_openai::perplexity_chat::provider_info;
 
-use crate::helpers::HelperResult;
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(super) struct Steps {
+pub(crate) struct Steps {
     steps: Vec<Step>,
 }
 
@@ -22,12 +20,12 @@ struct Step {
     environment: BTreeMap<String, String>,
 }
 
-pub(super) fn run(steps: &Steps) -> HelperResult {
+pub(super) fn run(steps: &Steps) -> Value {
     let mut outcomes = Vec::with_capacity(steps.steps.len());
     for step in &steps.steps {
         outcomes.push(outcome(step));
     }
-    Ok(Value::Array(outcomes))
+    Value::Array(outcomes)
 }
 
 fn outcome(step: &Step) -> Value {
@@ -38,6 +36,6 @@ fn outcome(step: &Step) -> Value {
     let (base, resolved) = provider_info(step.api_base.as_deref(), key.as_ref(), &step.environment);
     json!({
         "base": base,
-        "key": resolved.as_ref().map(|key| key.expose_secret().to_owned()),
+        "key": resolved.as_ref().map(|secret| secret.expose_secret().to_owned()),
     })
 }
