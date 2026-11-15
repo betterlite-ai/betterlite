@@ -40,11 +40,6 @@ pub(super) fn field<'a, T: FieldValue<'a>>(
 }
 
 #[must_use]
-pub(super) fn listed_choices(fields: &Fields) -> bool {
-    matches!(fields.get("choices"), Some(Value::Array(items)) if !items.is_empty())
-}
-
-#[must_use]
 pub(super) fn json_type_name(value: &Value) -> &'static str {
     match value {
         Value::Array(_) => "list",

@@ -4,7 +4,7 @@ use betterlite_context::provider_message_primitives::CHAT_COMPLETION_ID_PREFIX;
 use serde_json::{Map, Value};
 
 use super::error::ResponsesChatStreamError;
-use super::fields::{Fields, field, json_type_name, listed_choices, sequential_index};
+use super::fields::{Fields, field, json_type_name, sequential_index};
 use super::passthrough::passthrough_chunk;
 use super::records::{CHUNK_OBJECT, ChatChoice, ChatChunk, ChatDelta, ChunkFactory};
 use super::terminal::terminal_chunk;
@@ -71,7 +71,8 @@ pub fn translate_event(
 // an event already in chat format, or a payload with no type and a list of choices, is passed through whole
 fn is_chat_passthrough(fields: &Fields, event_type: Option<&str>) -> bool {
     fields.get("object").and_then(Value::as_str) == Some(CHUNK_OBJECT)
-        || (event_type.is_none() && listed_choices(fields))
+        || (event_type.is_none()
+            && matches!(fields.get("choices"), Some(Value::Array(items)) if !items.is_empty()))
 }
 
 fn dispatch_event(
