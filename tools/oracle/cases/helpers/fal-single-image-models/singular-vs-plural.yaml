@@ -1,0 +1,46 @@
+kind: helper
+name: fal-single-image-models-singular-vs-plural
+call:
+  fal_single_image_models:
+    operation: singular_vs_plural
+    bria:
+      - status: 200
+        headers: {x-request-id: req-1}
+        body: '{"image": {"url": "https://a.test/1.png"}}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://b.test/2.png"]}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"image": {"url": "https://a.test/1.png"}, "images": ["https://b.test/2.png"]}'
+        existing: ["https://first.test/0.png"]
+      - status: 200
+        headers: {}
+        body: '{"image": "https://c.test/3.png"}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{}'
+        existing: []
+    recraft:
+      - status: 200
+        headers: {x-request-id: req-2}
+        body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png"}, 7, null, true, [], {}]}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"image": {"url": "https://a.test/1.png"}}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": {"url": "https://a.test/1.png"}}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://a.test/1.png"]}'
+        existing: ["https://first.test/0.png"]
+env: {}
+compare:
+  ignore: []
