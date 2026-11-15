@@ -548,31 +548,42 @@ fn parse_errors() {
 }
 
 fn reply_shape_errors() {
+    not_object_body();
+    finish_reason_shape_errors();
+    message_shape_errors();
+}
+
+fn not_object_body() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    assert!(matches!(
+        decode_body(b"[1,2]", &mut single_choice(), &headers, &given),
+        Err(PegasusError::ReplyNotObject)
+    ));
+}
+
+fn finish_reason_shape_errors() {
     let headers = header_counts("1", "2");
     let given = messages("[]");
     let mut response = single_choice();
-    assert!(matches!(
-        decode_body(b"[1,2]", &mut response, &headers, &given),
-        Err(PegasusError::ReplyNotObject)
-    ));
-    assert!(matches!(
-        decode_body(
-            br#"{"message":"visible","finishReason":[]}"#,
-            &mut response,
-            &headers,
-            &given
-        ),
-        Err(PegasusError::FinishReasonNotMappable)
-    ));
-    assert!(matches!(
-        decode_body(
-            br#"{"message":"visible","finishReason":{"a":1}}"#,
-            &mut response,
-            &headers,
-            &given
-        ),
-        Err(PegasusError::FinishReasonNotMappable)
-    ));
+    for body in [
+        br#"{"message":"visible","finishReason":[]}"#.as_slice(),
+        br#"{"message":"visible","finishReason":{"a":1}}"#.as_slice(),
+    ] {
+        assert!(
+            matches!(
+                decode_body(body, &mut response, &headers, &given),
+                Err(PegasusError::FinishReasonNotMappable)
+            ),
+            "{body:?}"
+        );
+    }
+}
+
+fn message_shape_errors() {
+    let headers = header_counts("1", "2");
+    let given = messages("[]");
+    let mut response = single_choice();
     assert!(matches!(
         decode_body(
             br#"{"message":{"a":1},"finishReason":"stop"}"#,
