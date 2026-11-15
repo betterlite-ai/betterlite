@@ -269,8 +269,10 @@ async fn postgres_update_empties_the_tools_without_touching_another_toolset() {
     let created = create_mcp_toolset(&repository, &request, "creator")
         .await
         .unwrap();
-    let beta: NewMCPToolsetRequest =
-        serde_json::from_str(r#"{"toolset_name": "beta", "description": "kept"}"#).unwrap();
+    let beta: NewMCPToolsetRequest = serde_json::from_str(
+        r#"{"toolset_name": "beta", "description": "kept", "tools": [{"server_id": "s2", "tool_name": "t2"}]}"#,
+    )
+    .unwrap();
     let other = create_mcp_toolset(&repository, &beta, "creator")
         .await
         .unwrap();
@@ -281,12 +283,14 @@ async fn postgres_update_empties_the_tools_without_touching_another_toolset() {
         .unwrap()
         .unwrap();
     assert!(emptied.tools.is_empty());
+    assert_eq!(emptied.toolset_id, created.toolset_id);
     let untouched = get_mcp_toolset(&repository, &other.toolset_id)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(untouched.toolset_name, "beta");
     assert_eq!(untouched.description.as_deref(), Some("kept"));
+    assert_eq!(untouched.tools, vec![tool("s2", "t2")]);
     case.close().await;
 }
 
