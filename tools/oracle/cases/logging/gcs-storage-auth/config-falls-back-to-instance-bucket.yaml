@@ -1,0 +1,7 @@
+# dynamic params without a bucket fall back to the instance bucket
+kind: helper
+name: gcs-storage-auth-config-falls-back-to-instance-bucket
+call:
+  b3997: {"action": "logging_config", "environment": {"GCS_BUCKET_NAME": "env-bucket"}, "dynamic": {}}
+env: {}
+compare: {ignore: []}
