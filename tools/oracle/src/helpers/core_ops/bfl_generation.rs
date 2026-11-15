@@ -84,7 +84,7 @@ impl Helper for Op {
     }
 }
 
-fn failure(error: BflError) -> Box<HelperError> {
+fn failure(error: &BflError) -> Box<HelperError> {
     Box::new(HelperError {
         class: "BflError".to_owned(),
         status: error.status(),
@@ -115,7 +115,7 @@ fn mapping(params: &MappingParams) -> HelperResult {
             &params.model,
             params.drop_params,
         )
-        .map_err(failure)?;
+        .map_err(|error| failure(&error))?;
         let body = request_body(&params.prompt, &mapped);
         results.push(json!({"params": mapped, "body": body}));
     }
@@ -130,14 +130,14 @@ fn credentials(params: &CredentialParams) -> HelperResult {
         let key = request.api_key.clone().map(SecretString::from);
         let prepared =
             validate_environment(HeaderMap::new(), key.as_ref(), configured_key.as_ref())
-                .map_err(failure)?;
+                .map_err(|error| failure(&error))?;
         let mut headers = Map::new();
         for (name, value) in &prepared {
             let text = value.to_str().map_err(|error| invalid(error.to_string()))?;
             headers.insert(name.as_str().to_owned(), json!(text));
         }
         let url = complete_url(request.api_base.as_deref(), &params.model, &configured_base)
-            .map_err(failure)?;
+            .map_err(|error| failure(&error))?;
         outcomes.push(json!({"headers": headers, "url": url}));
     }
     Ok(json!({"outcomes": outcomes}))
@@ -147,9 +147,9 @@ fn append_results(params: &AppendParams) -> HelperResult {
     let mut responses = Vec::new();
     for reply in &params.replies {
         let bytes = serde_json::to_vec(&reply.body).map_err(|error| invalid(error.to_string()))?;
-        let decoded = decode_bfl_reply(&bytes).map_err(failure)?;
-        let response =
-            apply_image_response(&decoded, reply.existing.clone(), params.now).map_err(failure)?;
+        let decoded = decode_bfl_reply(&bytes).map_err(|error| failure(&error))?;
+        let response = apply_image_response(&decoded, reply.existing.clone(), params.now)
+            .map_err(|error| failure(&error))?;
         responses.push(response);
     }
     Ok(json!({"responses": responses}))
