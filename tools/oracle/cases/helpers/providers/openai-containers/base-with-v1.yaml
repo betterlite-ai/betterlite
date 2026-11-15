@@ -17,6 +17,10 @@ call:
         path_suffix: "/containers"
       - api_base: "http://localhost:8080/v1"
         path_suffix: "/containers"
+      - api_base: "api.openai.com/v1/?api-version=v1"
+        path_suffix: "/containers"
+      - api_base: "host/v1#frag?x"
+        path_suffix: "cntr_abc"
     urls: []
     creates: []
     requests: []

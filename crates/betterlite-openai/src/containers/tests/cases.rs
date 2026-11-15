@@ -81,10 +81,18 @@ fn base_with_v1() {
         urls::join_container_api_base_path("https://example.test", "/containers"),
         "https://example.test/containers"
     );
-    // a base that is not an absolute URL has no parsed path, so the join trims its slashes as text
+    // a relative base joins as text, and its query and fragment stay last as httpx.URL keeps them
     assert_eq!(
         urls::join_container_api_base_path("api.openai.com/v1/", "/containers"),
         "api.openai.com/v1/containers"
+    );
+    assert_eq!(
+        urls::join_container_api_base_path("host/v1/?x=1#f", "/containers"),
+        "host/v1/containers?x=1#f"
+    );
+    assert_eq!(
+        urls::join_container_api_base_path("host/v1#frag?x", "/containers"),
+        "host/v1/containers#frag?x"
     );
 }
 

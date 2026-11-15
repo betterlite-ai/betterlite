@@ -40,8 +40,10 @@ pub fn join_container_api_base_path(api_base: &str, path_suffix: &str) -> String
     } else {
         format!("/{path_suffix}")
     };
+    // httpx.URL also takes a relative base, and its query and fragment still stay after the path
     let Ok(mut url) = Url::parse(api_base) else {
-        return format!("{}{suffix}", api_base.trim_end_matches('/'));
+        let (path, rest) = api_base.split_at(api_base.find(['?', '#']).unwrap_or(api_base.len()));
+        return format!("{}{suffix}{rest}", path.trim_end_matches('/'));
     };
     let path = format!("{}{suffix}", url.path().trim_end_matches('/'));
     url.set_path(&path);
