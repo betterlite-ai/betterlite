@@ -1,0 +1,9 @@
+kind: helper
+name: auth-request-models-http-azure-path-model
+call:
+  auth_request_models:
+    steps:
+      - {route: "/azure/chat/gpt-4/chat/completions", endpoint_marker: false, path_params: [], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+      - {route: "/azure_ai/chat/gpt-4/chat/completions", endpoint_marker: null, path_params: [endpoint], team_id: null, deployments: [], current_deployment_id: null, candidate_deployment_id: null}
+env: {}
+compare: {ignore: []}
