@@ -239,6 +239,7 @@ fn a_failed_validation_keeps_a_well_typed_status_and_error() {
         reply.error.as_ref().and_then(|error| error.get("code")),
         Some(&Json::Text(String::from("x")))
     );
+    assert!(reply.metadata.is_none());
 }
 
 #[test]
