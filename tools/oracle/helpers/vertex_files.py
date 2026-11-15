@@ -118,10 +118,11 @@ def environment_headers(call: Call) -> JsonValue:
 
 def file_reply(call: Call, shape: Shape) -> JsonValue:
     response = httpx.Response(200, content=call["body"].encode("utf-8"))
-    if shape == "create":
-        file = HANDLER.transform_create_file_response(None, response, LOGGING, PARAMS)
-    else:
-        file = HANDLER.transform_retrieve_file_response(response, LOGGING, PARAMS)
+    file = (
+        HANDLER.transform_create_file_response(None, response, LOGGING, PARAMS)
+        if shape == "create"
+        else HANDLER.transform_retrieve_file_response(response, LOGGING, PARAMS)
+    )
     return {
         "file": {
             "id": file.id,
