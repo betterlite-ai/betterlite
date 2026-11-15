@@ -13,13 +13,14 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::future::Future;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::metadata::metadata_with_recovered_owner;
 
 pub struct ProxyDailyActivityReads {
     pub store: PostgresStore,
-    pub history: SpendLogHistory,
+    pub history: Arc<SpendLogHistory>,
 }
 
 impl DailyActivityProxyReads for ProxyDailyActivityReads {
@@ -187,25 +188,23 @@ fn rows_from(
 }
 
 fn naive(time: SystemTime) -> Option<NaiveDateTime> {
-    match time.duration_since(UNIX_EPOCH) {
-        Ok(elapsed) => instant(
+    let (seconds, nanos) = match time.duration_since(UNIX_EPOCH) {
+        Ok(elapsed) => (
             i64::try_from(elapsed.as_secs()).ok()?,
             elapsed.subsec_nanos(),
         ),
         Err(before) => {
             let elapsed = before.duration();
-            let seconds = i64::try_from(elapsed.as_secs()).ok()?;
+            let seconds = i64::try_from(elapsed.as_secs()).ok()?.checked_neg()?;
             if elapsed.subsec_nanos() == 0 {
-                return instant(seconds.checked_neg()?, 0);
+                (seconds, 0)
+            } else {
+                (
+                    seconds.checked_sub(1)?,
+                    1_000_000_000_u32.checked_sub(elapsed.subsec_nanos())?,
+                )
             }
-            instant(
-                seconds.checked_neg()?.checked_sub(1)?,
-                1_000_000_000_u32.checked_sub(elapsed.subsec_nanos())?,
-            )
         }
-    }
-}
-
-fn instant(seconds: i64, nanos: u32) -> Option<NaiveDateTime> {
+    };
     DateTime::<Utc>::from_timestamp(seconds, nanos).map(|moment| moment.naive_utc())
 }

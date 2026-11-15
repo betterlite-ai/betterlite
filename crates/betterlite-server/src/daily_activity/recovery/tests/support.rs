@@ -81,7 +81,7 @@ pub(crate) fn digest_of(token: &str) -> String {
 pub(crate) fn reads(store: &PostgresStore) -> ProxyDailyActivityReads {
     ProxyDailyActivityReads {
         store: store.clone(),
-        history: SpendLogHistory::default(),
+        history: Arc::new(SpendLogHistory::default()),
     }
 }
 

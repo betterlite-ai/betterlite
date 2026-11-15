@@ -26,7 +26,7 @@ pub(crate) enum Input {
         table: DailyActivityTable,
         entity_id_field: String,
         entity_id: Option<ScopeIdInput>,
-        exclude_entity_ids: Option<Vec<String>>,
+        exclude_entity_ids: Vec<String>,
         api_key: Option<ScopeIdInput>,
         start_date: String,
         end_date: String,

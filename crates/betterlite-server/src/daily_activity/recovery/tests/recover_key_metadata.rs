@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use betterlite_db::daily_activity_contracts::KeyMetadataRow;
 use betterlite_db::daily_activity_repository::database::PostgresDailyActivityDatabase;
+use betterlite_db::key_attribution::history::recovery::SpendLogHistory;
 use betterlite_db::postgres_store::session::PostgresStore;
 use tracing::subscriber::set_default;
 
@@ -403,6 +405,7 @@ async fn recover_key_metadata_repository_factory_attaches_user_details() {
                 reader: None,
             },
             database.store.clone(),
+            Arc::new(SpendLogHistory::default()),
         );
         repository
             .key_metadata(&keys(&["sk-factory"]), None)
@@ -425,7 +428,7 @@ async fn recover_key_metadata_repository_factory_attaches_user_details() {
 }
 
 #[tokio::test]
-async fn recover_key_metadata_history_cache_lives_in_the_repository() {
+async fn recover_key_metadata_history_cache_is_shared_by_repositories() {
     let database = database().await;
     insert_spend_log(
         &database.store,
@@ -436,7 +439,8 @@ async fn recover_key_metadata_history_cache_lives_in_the_repository() {
     )
     .await;
     let spent = window(at(2026, 1, 4, 0, 0), at(2026, 1, 7, 0, 0));
-    let (first, second, fresh) = {
+    let history = Arc::new(SpendLogHistory::default());
+    let (first, second, shared, fresh) = {
         let client = client(&database.store).await;
         let repository = daily_activity_repository(
             PostgresDailyActivityDatabase {
@@ -444,6 +448,7 @@ async fn recover_key_metadata_history_cache_lives_in_the_repository() {
                 reader: None,
             },
             database.store.clone(),
+            Arc::clone(&history),
         );
         let first = repository
             .key_metadata(&keys(&[DIGEST]), Some(spent))
@@ -457,24 +462,38 @@ async fn recover_key_metadata_history_cache_lives_in_the_repository() {
             .key_metadata(&keys(&[DIGEST]), Some(spent))
             .await
             .unwrap();
+        let sharing_repository = daily_activity_repository(
+            PostgresDailyActivityDatabase {
+                writer: &client,
+                reader: None,
+            },
+            database.store.clone(),
+            Arc::clone(&history),
+        );
+        let shared = sharing_repository
+            .key_metadata(&keys(&[DIGEST]), Some(spent))
+            .await
+            .unwrap();
         let fresh_repository = daily_activity_repository(
             PostgresDailyActivityDatabase {
                 writer: &client,
                 reader: None,
             },
             database.store.clone(),
+            Arc::new(SpendLogHistory::default()),
         );
         let fresh = fresh_repository
             .key_metadata(&keys(&[DIGEST]), Some(spent))
             .await
             .unwrap();
-        (first, second, fresh)
+        (first, second, shared, fresh)
     };
     assert_eq!(
         first.get(DIGEST).unwrap().key_alias.as_deref(),
         Some("cached-alias")
     );
     assert_eq!(second.get(DIGEST), first.get(DIGEST));
+    assert_eq!(shared.get(DIGEST), first.get(DIGEST));
     assert!(!fresh.contains_key(DIGEST));
     close(database).await;
 }

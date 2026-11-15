@@ -21,6 +21,6 @@ deviations:
   - what: daily_activity_repository takes the daily activity database adapter and the Postgres store as two arguments, where LiteLLM takes one Prisma client.
     why: betterlite-db keeps typed daily activity reads and the recovery probes that use the generic store apart, and the factory is where the two meet. A caller that holds one Prisma client has the store on hand already.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L552-L553
-  - what: Each repository value owns its spend-log metadata cache and query lock, so two reads made through two repository values do not share cached digests; LiteLLM's cache and lock are module-level and shared by every read in the process.
-    why: betterlite passes shared state through constructors, so the cache is the SpendLogHistory value the repository holds; a caller that wants sharing holds one repository, and the cached answers are identical either way.
+  - what: daily_activity_repository takes the spend-log metadata cache and query lock as an Arc<SpendLogHistory> argument, where LiteLLM keeps them as module-level state.
+    why: betterlite passes shared state through constructors, so the server state owns one SpendLogHistory and hands each read an Arc clone. Every read in the process then shares one cache and one query lock, as LiteLLM's module-level pair does; a repository can't hold them itself since it borrows a per-request client.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L463-L480

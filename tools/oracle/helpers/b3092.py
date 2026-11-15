@@ -18,7 +18,7 @@ class ScopeCall(TypedDict):
     table: str
     entity_id_field: str
     entity_id: str | list[str] | None
-    exclude_entity_ids: list[str] | None
+    exclude_entity_ids: list[str]
     api_key: str | list[str] | None
     start_date: str
     end_date: str

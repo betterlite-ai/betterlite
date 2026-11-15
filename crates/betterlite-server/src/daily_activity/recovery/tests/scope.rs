@@ -12,7 +12,7 @@ fn request(table: DailyActivityTable, entity_id_field: &str) -> ScopeRequest<'_>
         table,
         entity_id_field,
         entity_id: None,
-        exclude_entity_ids: None,
+        exclude_entity_ids: Vec::new(),
         api_key: None,
         start_date: "2026-01-01",
         end_date: "2026-01-31",
@@ -104,7 +104,7 @@ fn scope_keeps_an_empty_api_key_list_as_an_empty_filter() {
 fn scope_passes_every_remaining_parameter_through() {
     let mut call = request(DailyActivityTable::Team, "team_id");
     call.entity_id = Some(ScopeIds::One("team-1".to_owned()));
-    call.exclude_entity_ids = Some(vec!["team-skip".to_owned()]);
+    call.exclude_entity_ids = vec!["team-skip".to_owned()];
     call.start_date = "2026-02-01";
     call.end_date = "2026-02-28";
     call.model = Some("gpt-4o");
