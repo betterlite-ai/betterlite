@@ -159,6 +159,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compresr_response"
+path = "fuzz_targets/compresr_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cato_response"
 path = "fuzz_targets/cato_response.rs"
 test = false
