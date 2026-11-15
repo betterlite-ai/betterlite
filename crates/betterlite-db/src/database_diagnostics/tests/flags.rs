@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::database_diagnostics::json_enabled::{GlobalJsonLogs, is_json_enabled};
+use crate::database_diagnostics::json_enabled::{GlobalJsonLogs, JsonLogsError, is_json_enabled};
 use crate::database_diagnostics::message::LogValue;
 
 #[rstest]
@@ -52,7 +52,10 @@ fn only_import_attribute_errors_fallback(
     #[case] expected: bool,
 ) {
     assert_eq!(is_json_enabled(&global, environment).unwrap(), expected);
-    assert!(is_json_enabled(&GlobalJsonLogs::Failed, environment).is_err());
+    assert_eq!(
+        is_json_enabled(&GlobalJsonLogs::Failed, environment),
+        Err(JsonLogsError::Lookup)
+    );
 }
 
 #[rstest]

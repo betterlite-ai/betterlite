@@ -47,7 +47,10 @@ fn invalid_level_leaves_installed_handler() {
 #[test]
 fn repeated_init_after_level_error_skips_validation() {
     let mut logger = RecordingLogger::default();
-    assert!(initialize_logging(&settings(false, ""), &mut logger).is_err());
+    assert_eq!(
+        initialize_logging(&settings(false, ""), &mut logger),
+        Err(LevelError::Unknown)
+    );
     initialize_logging(&settings(false, ""), &mut logger).unwrap();
     assert_eq!(logger.formats, vec![DiagnosticFormat::Text]);
     assert!(logger.levels.is_empty());
