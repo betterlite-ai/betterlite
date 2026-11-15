@@ -31,11 +31,14 @@ impl SearchToolRegistry {
         }
     }
 
-    pub async fn add_search_tool_to_db<Table: SearchToolTableClient>(
+    pub async fn add_search_tool_to_db<Table>(
         &self,
         search_tool: SearchTool,
         table: &Table,
-    ) -> Result<SearchTool, SearchToolsError> {
+    ) -> Result<SearchTool, SearchToolsError>
+    where
+        Table: SearchToolTableClient,
+    {
         let record = create::persist((self.now)(), &search_tool, table).await?;
         let mut stored = search_tool;
         stored.search_tool_id = Some(record.search_tool_id);
@@ -44,11 +47,14 @@ impl SearchToolRegistry {
         Ok(stored)
     }
 
-    pub async fn delete_search_tool_from_db<Table: SearchToolTableClient>(
+    pub async fn delete_search_tool_from_db<Table>(
         &self,
         search_tool_id: &str,
         table: &Table,
-    ) -> Result<DeletedSearchTool, SearchToolsError> {
+    ) -> Result<DeletedSearchTool, SearchToolsError>
+    where
+        Table: SearchToolTableClient,
+    {
         let existing = delete::lookup::existing(search_tool_id, table).await?;
         let message = format!("Search tool {search_tool_id} deleted successfully");
         delete::remove(search_tool_id, table).await?;
@@ -58,12 +64,15 @@ impl SearchToolRegistry {
         })
     }
 
-    pub async fn update_search_tool_in_db<Table: SearchToolTableClient>(
+    pub async fn update_search_tool_in_db<Table>(
         &self,
         search_tool_id: &str,
         search_tool: &SearchTool,
         table: &Table,
-    ) -> Result<SearchToolRow, SearchToolsError> {
+    ) -> Result<SearchToolRow, SearchToolsError>
+    where
+        Table: SearchToolTableClient,
+    {
         let updated_at = (self.now)();
         let record = update::replace(search_tool_id, search_tool, updated_at, table).await?;
         Ok(Self::convert_prisma_to_dict(&record))
@@ -88,11 +97,14 @@ impl SearchToolRegistry {
         Ok(tools)
     }
 
-    pub async fn get_search_tool_by_id_from_db<Table: SearchToolTableClient>(
+    pub async fn get_search_tool_by_id_from_db<Table>(
         &self,
         search_tool_id: &str,
         table: &Table,
-    ) -> Result<Option<SearchTool>, SearchToolsError> {
+    ) -> Result<Option<SearchTool>, SearchToolsError>
+    where
+        Table: SearchToolTableClient,
+    {
         get_by_id::lookup(search_tool_id, table)
             .await?
             .map(|record| Self::convert_prisma_to_dict(&record))
