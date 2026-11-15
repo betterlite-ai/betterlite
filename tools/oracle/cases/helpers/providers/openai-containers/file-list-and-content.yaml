@@ -1,0 +1,39 @@
+kind: helper
+name: file-list-and-content
+call:
+  openai_containers:
+    supported: false
+    maps: []
+    joins: []
+    urls: []
+    creates: []
+    requests:
+      - kind: file_list
+        container_id: cntr_abc
+        api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+        query: {after: null, limit: 20, order: null, extra_query: null}
+      - kind: file_list
+        container_id: cntr/abc
+        api_base: "https://api.openai.com/v1/containers"
+        query: {after: null, limit: null, order: null, extra_query: null}
+      - kind: content
+        container_id: cntr_abc
+        file_id: cfile_1
+        api_base: "https://api.openai.com/v1/containers"
+      - kind: content
+        container_id: cntr/abc
+        file_id: cfile/1 x
+        api_base: "https://example.openai.azure.com/openai/v1/containers?api-version=v1"
+      - kind: content
+        container_id: cntr_abc
+        file_id: cfile-2
+        api_base: "https://api.openai.com/v1/containers/"
+    headers: []
+    replies: []
+    content_replies:
+      - body: "raw file bytes"
+      - body: "line one\nline two"
+      - body: ""
+    errors: []
+env: {}
+compare: {ignore: []}

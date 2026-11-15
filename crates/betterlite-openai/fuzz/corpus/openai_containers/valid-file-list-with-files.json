@@ -1,0 +1,1 @@
+{"object":"list","data":[{"id":"cfile_1","object":"container.file","container_id":"cntr_1","bytes":12,"created_at":1700000000,"path":"/mnt/data/a.txt","source":"user"},{"id":"cfile_2","object":"container_file","container_id":"cntr_1","bytes":null,"created_at":1700000001,"path":"/mnt/data/b.txt","source":"assistant"}],"first_id":"cfile_1","last_id":"cfile_2","has_more":true}

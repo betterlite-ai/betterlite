@@ -1,0 +1,29 @@
+{
+  "kind": "helper",
+  "name": "token-endpoint-jwt-auth",
+  "call": {
+    "b4657": {
+      "function": "fetch",
+      "endpoint": "https://idp.example/token",
+      "client_id": "client-1",
+      "grant": {
+        "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange"
+      },
+      "client_auth": {
+        "source": "private_key_jwt",
+        "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDAPlal9kzPrjXD\nX39vm6fF9+CAoqqAjScmU3VVk8GAipNUKxXhd2sQpl7NwlKdIYxsyklYXT7tInxM\nK3tcoyZ6xOZ9QMmklL91rfrlEpNP55OVIvpBng5xmgpCEQc9c0n76jhv/4vFKgtS\nVqbIGTfk93MXcZTi6RDalwLqJ5RndVsHphoPZX8TJtm/K+myIZixVQ1d/hs+udE8\nwqwyWym7bkw1Vu91tsQbtWvcLqkDAT1dC+Nl0fxOMr/0ZP045+FN2kc2lYyiniKj\n2KT394N2yLx/+MmXGVrdymVVkdL8GUqJ1oeCd04+D4ADcpmaLtXfQEni4sahCRJB\nhkkLCsCtAgMBAAECggEAH5tAK19gB+G9pMZIe+TXWRokrCbSVHn13qcTCpj/09k0\nrr5ksGHYqu9HdURxHl9mfc5mRPkTqvDOscaRAiKFZY2GKD/6HFfOVek0ROw1vF83\nqZSLbjVabOf6rsZWQ+P2sncIL2Blg5V4MLc0CtWb6xuZ2FgMC/XDQm+t2CneDCzQ\nL9yZKhoFTNRfYRePaYka2H2eMXLBCXLLvoKwSl1uYSh7+iWi9c6OX13IonqQVMmr\nHcqGTd68aLKFnb5zQfsPL4m1d3KrAA4MnZJFOdECLYPjvLNl2/g0ofLVi6ZuJC74\nTK+QDJ90jclUHrSVwKVWAyu9xnGPpF/qAhLAVze02wKBgQD7/ax6Tke0foWsmegn\nKN5q1WTnHxId343BS1WsTHXyljgAK2yHXLdwH+iJ3+eaeJNHcHwXk9yJuXFjXq1z\nDPJuQVQJ79iOU7B7LYrD0rrf/lE9EdUpPhm9r4hIvnk6evIw9K0tgdmm6gi0xwE9\nDD+7z1YqUF/oq56exZV5twP99wKBgQDDTVJBsgRdERRW6jN6F66JjRATxIAiw4O8\nkLJACMvPqBqiYUlzxcns4AKoTNT5ZxR7eIXk8KB3dhBvr0zIQ4MoCw7KYLEccwZt\nRfcTmouwZyIIzI725aylF79QbtEuUIn+VdG06oEDB02qW1EbC5HhHIxgEuOo0KrJ\nGKY5astdewKBgQCjt41erQszPlx05k2JW6kdueTjsDEiDYNYySwxVD/xSx25Jn1N\neLSJeYGoSjt8BciSSoek/eDz7fK4P+Pq8sdzUKhcCGMnHUJ01QLp9TiKnP2E8tgO\nApXQwoGF2ZKDpytBGUaGYW3aXwUnBoBMfG/QAoYV2cBmN1JID1DtEjXawwKBgQCX\n7wcW5I5QeIECPKBfUx0NFRh0yGGGqeNKRqbk+fLUUUqnGFg0IKK+DGcE1wC4JWDh\nzRkcybWMOeT/fbiV8y+Nb0zKU/50y2csi0lzjr8tNI5dmgV+PZ7ZsGe9Avjotu8j\nVVAXFnfXC094QCIQkCekoLjz5L4HDo5Oc0adVF9xEQKBgBCfRL90hRwwO39OO3H9\nFbOAICm0i58R5B84kvuHO3GPRMXH2jJLbZKOutIKi/ujSKN62pGaEOocLXl0gyl0\nTTklJP+NswyLej5ku0ZdLeRpLQ6BrT0rgMJYhE4Pak9N8KPr9mSqENWc6jMMr11C\njt9qIV2fBaVbYdTslNxPSHdj\n-----END PRIVATE KEY-----\n",
+        "key_id": "client-kid",
+        "signing_alg": "RS256"
+      },
+      "response": {
+        "kind": "answered",
+        "status": 200,
+        "body": "{\"access_token\":\"jwt-minted\",\"expires_in\":120}"
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
