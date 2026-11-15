@@ -112,7 +112,12 @@ fn continuation_run(
                 message: error.to_string(),
             }),
         }),
-        Err(error) => Err(SdkHttpError::Invalid(format!(
+        Err(
+            error @ (AgenticExecutionError::Settings(_)
+            | AgenticExecutionError::InvalidTools { .. }
+            | AgenticExecutionError::Json(_)
+            | AgenticExecutionError::Wrap(_)),
+        ) => Err(SdkHttpError::Invalid(format!(
             "the native agentic dispatcher failed: {error}"
         ))),
     }

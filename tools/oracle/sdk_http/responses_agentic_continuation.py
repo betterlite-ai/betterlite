@@ -3,15 +3,16 @@ import json
 from typing import Literal, TypedDict
 
 import litellm
-from litellm.exceptions import APIConnectionError
+import openai
 from litellm.integrations.custom_logger import CustomLogger
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.anthropic_messages.transformation import BaseAnthropicMessagesConfig
+from litellm.responses.streaming_iterator import BaseResponsesAPIStreamingIterator
 from litellm.types.integrations.custom_logger import AgenticLoopPlan
-from openai.types.responses.response_create_params import ResponseInputParam, ToolParam
+from litellm.types.llms.openai import ResponsesAPIResponse
+from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
-from pydantic_core import to_jsonable_python
 from typing_extensions import override
 
 INPUT: TypeAdapter[str | ResponseInputParam] = TypeAdapter(str | ResponseInputParam)
@@ -25,19 +26,6 @@ class Identity(TypedDict):
 
 
 IDENTITY: TypeAdapter[Identity] = TypeAdapter(Identity)
-
-
-class RequestParams(TypedDict, total=False):
-    stream: bool
-    temperature: float
-    tools: list[ToolParam]
-
-
-class RequestKwargs(TypedDict, total=False):
-    custom_llm_provider: str
-    _agentic_loop_depth: int
-    max_agentic_loops: int
-    _agentic_loop_fingerprints: list[str]
 
 
 class GateScript(BaseModel):
@@ -60,8 +48,8 @@ class ContinuationCall(BaseModel):
     model_config = ConfigDict(extra="forbid")
     model: str
     input: Json
-    params: RequestParams = Field(default_factory=dict)
-    kwargs: RequestKwargs = Field(default_factory=dict)
+    params: dict[str, Json] = Field(default_factory=dict)
+    kwargs: dict[str, Json] = Field(default_factory=dict)
     callbacks: list[CallbackScript] = Field(default_factory=list)
     dynamic: list[CallbackScript] = Field(default_factory=list)
 
@@ -143,14 +131,20 @@ async def execute(call: ContinuationCall, api_base: str) -> Json:
             **call.params,
             **call.kwargs,
         )
-    except APIConnectionError as error:
+    except openai.APIConnectionError as error:
         failure: Json = {"class": type(error).__name__, "message": str(error.__context__)}
         outcome["error"] = failure
         return outcome
-    outcome["returned"] = JSON.validate_python(IDENTITY.validate_python(to_jsonable_python(result)))
+    match result:
+        case ResponsesAPIResponse():
+            identity = IDENTITY.validate_json(result.model_dump_json())
+            outcome["returned"] = JSON.validate_python(identity)
+        case BaseResponsesAPIStreamingIterator():
+            raise ValueError("the responses surface answered with a streaming iterator")
     return outcome
 
 
 def run_continuation(call: ContinuationCall, api_base: str) -> str:
-    outcome = asyncio.run(execute(call, api_base))
-    return json.dumps({"responses_agentic_continuation": {"value": outcome}})
+    returned = asyncio.run(execute(call, api_base))
+    outcome: Json = {"responses_agentic_continuation": {"value": returned}}
+    return json.dumps(outcome)
