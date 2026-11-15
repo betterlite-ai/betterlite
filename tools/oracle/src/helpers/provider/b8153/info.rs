@@ -9,12 +9,12 @@ use serde_json::{Value, json};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct InfoInput {
-    calls: Vec<InfoCall>,
+    pub(super) calls: Vec<InfoCall>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct InfoCall {
+pub(super) struct InfoCall {
     model: String,
     #[serde(default)]
     api_base: Option<String>,
@@ -36,7 +36,7 @@ where
     }
 }
 
-fn model_info_value(call: &InfoCall) -> Value {
+pub(super) fn model_info_value(call: &InfoCall) -> Value {
     let info = VllmModelInfo {
         environment: &call.env,
     };
@@ -54,9 +54,4 @@ fn model_info_value(call: &InfoCall) -> Value {
         "headers": headers,
         "error": {"status": error.status()},
     })
-}
-
-pub(crate) fn model_info_values(input: &InfoInput) -> Value {
-    let calls: Vec<Value> = input.calls.iter().map(model_info_value).collect();
-    json!({"calls": calls})
 }

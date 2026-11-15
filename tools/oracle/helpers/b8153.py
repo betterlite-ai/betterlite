@@ -112,6 +112,10 @@ class ReplyCase(TypedDict):
     messages: list[dict[str, JsonValue]]
 
 
+class ReplyDump(TypedDict):
+    usage: Usage
+
+
 class Responder:
     def __init__(
         self,
@@ -207,12 +211,10 @@ def params_value(cases: list[MapCase], validate: list[ValidateCase]) -> JsonValu
     }
 
 
-# DEFAULT_MAX_TOKENS becomes litellm.max_tokens, the PetalsConfig class default (constants.py L90)
-# PetalsConfig.__init__ writes a non-None value onto the class, which get_config reads
-def apply_max_new_tokens(values: dict[str, str]) -> None:
-    text = values.get("DEFAULT_MAX_TOKENS", "").strip()
-    if text != "":
-        PetalsConfig(max_new_tokens=int(text))
+# PetalsConfig.__init__ sets the class max_new_tokens that get_config reads (transformation.py L60)
+def apply_max_new_tokens(values: dict[str, str] | None) -> None:
+    if values is not None and "DEFAULT_MAX_TOKENS" in values:
+        PetalsConfig(max_new_tokens=int(values["DEFAULT_MAX_TOKENS"]))
 
 
 def request_value(call: RequestCase) -> JsonValue:
@@ -232,8 +234,7 @@ def request_value(call: RequestCase) -> JsonValue:
 
 
 def reply_of(response: ModelResponse) -> JsonValue:
-    dump = TypeAdapter(dict[str, JsonValue]).validate_json(response.model_dump_json())
-    usage = TypeAdapter(Usage).validate_python(dump["usage"])
+    usage = TypeAdapter(ReplyDump).validate_json(response.model_dump_json())["usage"]
     return {
         "ok": True,
         "model": response.model,
@@ -277,13 +278,13 @@ def run(input_value: dict[str, JsonValue]) -> JsonValue:
         calls = TypeAdapter(list[PassCall]).validate_python(input_value["calls"])
         return {"calls": [passthrough_value(call) for call in calls]}
     if op == "petals_params":
-        env = TypeAdapter(dict[str, str]).validate_python(input_value.get("env") or {})
+        env = TypeAdapter(dict[str, str] | None).validate_python(input_value.get("env"))
         apply_max_new_tokens(env)
         cases = TypeAdapter(list[MapCase]).validate_python(input_value["cases"])
         validate = TypeAdapter(list[ValidateCase]).validate_python(input_value["validate"])
         return params_value(cases, validate)
     if op == "petals_request":
-        env = TypeAdapter(dict[str, str]).validate_python(input_value.get("env") or {})
+        env = TypeAdapter(dict[str, str] | None).validate_python(input_value.get("env"))
         apply_max_new_tokens(env)
         requests = TypeAdapter(list[RequestCase]).validate_python(input_value["requests"])
         custom = input_value.get("custom_prompt_dict")

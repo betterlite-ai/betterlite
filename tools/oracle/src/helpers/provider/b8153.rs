@@ -11,12 +11,13 @@ use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use betterlite_provider::petals::config::{PetalsConfig, max_new_tokens_default};
 use serde::Deserialize;
+use serde_json::{Value, json};
 use tokio::runtime::{Builder, Runtime};
 
 use crate::helpers::{Helper, HelperError, HelperResult};
-use info::{InfoInput, model_info_values};
+use info::{InfoInput, model_info_value};
 use params::{ParamsInput, params_value};
-use passthrough::{PassInput, passthrough_values};
+use passthrough::{PassInput, passthrough_value};
 use reply::{ReplyCases, reply_values};
 use request::{RequestInput, request_values};
 
@@ -39,8 +40,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::VllmModelInfo(info) => Ok(model_info_values(info)),
-            Input::VllmPassthrough(pass) => Ok(passthrough_values(pass)),
+            Input::VllmModelInfo(info) => Ok(json!({
+                "calls": info.calls.iter().map(model_info_value).collect::<Vec<Value>>(),
+            })),
+            Input::VllmPassthrough(pass) => Ok(json!({
+                "calls": pass.calls.iter().map(passthrough_value).collect::<Vec<Value>>(),
+            })),
             Input::PetalsParams(params) => params_value(params),
             Input::PetalsRequest(request) => request_values(request),
             Input::PetalsReply(replies) => reply_values(replies),

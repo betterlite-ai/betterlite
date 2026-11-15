@@ -12,12 +12,12 @@ use serde_json::{Value, json};
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct PassInput {
-    calls: Vec<PassCall>,
+    pub(super) calls: Vec<PassCall>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct PassCall {
+pub(super) struct PassCall {
     endpoint: String,
     #[serde(default)]
     api_base: Option<String>,
@@ -29,7 +29,7 @@ struct PassCall {
     request_data: Object,
 }
 
-fn passthrough_value(call: &PassCall) -> Value {
+pub(super) fn passthrough_value(call: &PassCall) -> Value {
     let config = VllmPassthroughConfig {
         environment: &call.env,
     };
@@ -53,9 +53,4 @@ fn passthrough_value(call: &PassCall) -> Value {
         "streaming": config.is_streaming_request(&call.endpoint, &call.request_data),
         "result": result,
     })
-}
-
-pub(crate) fn passthrough_values(input: &PassInput) -> Value {
-    let calls: Vec<Value> = input.calls.iter().map(passthrough_value).collect();
-    json!({"calls": calls})
 }
