@@ -99,7 +99,7 @@ async fn answer(input: &Input) -> HelperResult {
             script: input.script.clone(),
         });
     let state = TraceRoutesState {
-        receiver: if input.tracing { Some(erased) } else { None },
+        receiver: input.tracing.then_some(erased),
         master_key: input.master_key.clone().map(SecretString::from),
         clock: Arc::new(SystemClock),
     };
@@ -200,10 +200,10 @@ fn principal(auth: &AuthInput) -> Result<Principal, Box<HelperError>> {
         Some("proxy_admin_view_only") => json!(["platform_viewer"]),
         Some(_) | None => json!([]),
     };
-    let teams = match &auth.team_id {
-        Some(id) => json!([{"id": id}]),
-        None => json!([]),
-    };
+    let teams = auth
+        .team_id
+        .as_ref()
+        .map_or_else(|| json!([]), |id| json!([{"id": id}]));
     serde_json::from_value(json!({
         "principal_type": "human",
         "subject": "virtual-key",
