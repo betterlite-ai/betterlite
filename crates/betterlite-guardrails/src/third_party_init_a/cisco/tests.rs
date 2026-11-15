@@ -30,17 +30,22 @@ fn cisco_takes_the_defaults_of_an_empty_config() {
     assert_eq!(built.inspect_path, None);
     assert_eq!(built.enabled_rules, None);
     assert_eq!(built.integration_profile_id, None);
+    assert!(!built.default_on);
+    assert_eq!(
+        built.event_hook,
+        LitellmParamsMode::One("pre_call".to_owned())
+    );
+}
+
+#[test]
+fn cisco_leaves_the_integration_and_action_params_unset() {
+    let built = initialize_cisco(&params(""), Some("cisco-guard")).unwrap();
     assert_eq!(built.integration_profile_version, None);
     assert_eq!(built.integration_tenant_id, None);
     assert_eq!(built.integration_type, None);
     assert_eq!(built.on_flagged_action, None);
     assert_eq!(built.fallback_on_error, None);
     assert_eq!(built.timeout, None);
-    assert!(!built.default_on);
-    assert_eq!(
-        built.event_hook,
-        LitellmParamsMode::One("pre_call".to_owned())
-    );
 }
 
 #[test]
@@ -73,6 +78,28 @@ fn cisco_copies_the_plain_params_and_the_optional_params() {
     assert!(built.default_on);
     assert_eq!(built.inspection_type, Some(InspectionType::Mcp));
     assert_eq!(built.inspect_path.as_deref(), Some("/custom/path"));
+    assert_eq!(built.integration_profile_id.as_deref(), Some("profile-1"));
+    assert_eq!(built.integration_profile_version.as_deref(), Some("2"));
+    assert_eq!(built.integration_tenant_id.as_deref(), Some("tenant-3"));
+    assert_eq!(built.integration_type.as_deref(), Some("gateway"));
+    assert_eq!(built.on_flagged_action.as_deref(), Some("monitor"));
+    assert_eq!(built.fallback_on_error, Some(FallbackAction::Allow));
+    assert_eq!(built.timeout, Some(20.0_f64));
+}
+
+#[test]
+fn cisco_parses_the_enabled_rules() {
+    let built = initialize_cisco(
+        &params(
+            r#",
+            "optional_params": {
+                "enabled_rules": ["PII", {"rule_name": "PCI", "entity_types": ["Card"]}]
+            }
+            "#,
+        ),
+        Some("cisco-guard"),
+    )
+    .unwrap();
     assert_eq!(
         built.enabled_rules,
         Some(vec![
@@ -85,13 +112,6 @@ fn cisco_copies_the_plain_params_and_the_optional_params() {
             }),
         ])
     );
-    assert_eq!(built.integration_profile_id.as_deref(), Some("profile-1"));
-    assert_eq!(built.integration_profile_version.as_deref(), Some("2"));
-    assert_eq!(built.integration_tenant_id.as_deref(), Some("tenant-3"));
-    assert_eq!(built.integration_type.as_deref(), Some("gateway"));
-    assert_eq!(built.on_flagged_action.as_deref(), Some("monitor"));
-    assert_eq!(built.fallback_on_error, Some(FallbackAction::Allow));
-    assert_eq!(built.timeout, Some(20.0_f64));
 }
 
 #[test]

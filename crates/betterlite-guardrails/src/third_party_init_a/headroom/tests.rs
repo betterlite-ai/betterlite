@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_params::base::UnreachableFallback;
 use betterlite_config::sections::guardrail_params::mode::{Mode, ModeTarget};
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
@@ -128,14 +130,13 @@ fn headroom_keeps_a_tagged_mode_as_it_is() {
     )
     .unwrap();
     let expected = Mode {
-        tags: [
+        tags: BTreeMap::from([
             ("finance".to_owned(), ModeTarget::One("pre_call".to_owned())),
             (
                 "legal".to_owned(),
                 ModeTarget::Many(vec!["post_call".to_owned()]),
             ),
-        ]
-        .into(),
+        ]),
         default: Some(ModeTarget::One("during_call".to_owned())),
     };
     assert_eq!(built.event_hook, HeadroomEventHook::Tagged(expected));

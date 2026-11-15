@@ -90,6 +90,6 @@ fn config_value_falls_back_to_the_top_level(#[case] extras: &str, #[case] expect
     let built = params(extras);
     let optional = optional_params(&built.base.extra).unwrap();
     let value = config_value(optional, &built.base.extra.0, "k");
-    let expected = expected.map(|text| GuardrailValue::Text(text.to_owned()));
-    assert_eq!(value, expected.as_ref());
+    let want = expected.map(|text| GuardrailValue::Text(text.to_owned()));
+    assert_eq!(value, want.as_ref());
 }

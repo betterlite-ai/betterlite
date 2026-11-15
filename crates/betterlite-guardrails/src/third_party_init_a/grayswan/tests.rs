@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use rstest::rstest;
 
@@ -72,7 +74,10 @@ fn grayswan_copies_the_optional_params() {
     assert_eq!(built.reasoning_mode.as_deref(), Some("hybrid"));
     assert_eq!(
         built.categories,
-        Some([("violence".to_owned(), "no violence".to_owned())].into())
+        Some(BTreeMap::from([(
+            "violence".to_owned(),
+            "no violence".to_owned()
+        )]))
     );
     assert_eq!(built.policy_id.as_deref(), Some("policy-1"));
     assert!(built.streaming_end_of_stream_only);
