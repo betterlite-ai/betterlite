@@ -46,6 +46,7 @@ fn discovers_no_initializer_for_an_integration_without_one(#[case] integration: 
 #[case::dotprompt_strips_the_version("dotprompt", None, "greeting.v3", Some("greeting"))]
 #[case::dotprompt_keeps_the_params_id("dotprompt", Some("chat/hi"), "greeting.v3", Some("chat/hi"))]
 #[case::dotprompt_keeps_an_unversioned_id("dotprompt", None, "greeting", Some("greeting"))]
+#[case::dotprompt_keeps_an_empty_params_id("dotprompt", Some(""), "greeting.v3", Some(""))]
 #[case::gitlab_uses_the_spec_id("gitlab", Some("ignored"), "chat/hi", Some("chat/hi"))]
 #[case::bitbucket_uses_the_params_id("bitbucket", Some("bb-id"), "greeting.v3", Some("bb-id"))]
 #[case::bitbucket_without_a_params_id("bitbucket", None, "greeting.v3", None)]
