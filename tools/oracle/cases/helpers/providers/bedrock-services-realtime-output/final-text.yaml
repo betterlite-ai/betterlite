@@ -1,0 +1,22 @@
+kind: helper
+name: final-text
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+    calls:
+      - {method: text_output, event: {content: lost}, ids: {response: null, item: null}}
+      - {method: text_output, event: {content: lost}, ids: {response: resp_a, item: null}}
+      - {method: text_output, event: {content: lost}, ids: {response: null, item: item_a}}
+      - {method: text_output, event: {content: lost}, ids: {response: "", item: item_a}}
+      - {method: text_output, event: {content: lost}, ids: {response: resp_a, item: ""}}
+      - {method: text_output, event: {content: Hel}, ids: {response: resp_a, item: item_a}}
+      - {method: text_output, event: {content: ""}, ids: {response: resp_a, item: item_a}}
+      - {method: text_output, event: {}, ids: {response: resp_a, item: item_a}}
+      - {method: text_output, event: {content: lost}, ids: {response: "", item: ""}}
+      - {method: text_output, event: {content: lo}, ids: {response: resp_b, item: item_b}}
+env: {}
+compare: {ignore: []}
