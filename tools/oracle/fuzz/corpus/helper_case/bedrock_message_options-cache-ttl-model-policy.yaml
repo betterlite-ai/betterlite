@@ -1,0 +1,31 @@
+kind: helper
+name: bedrock_message_options-cache-ttl-model-policy
+call:
+  bedrock_message_options:
+    function: remove_ttl
+    model_cost:
+      anthropic.claude-4-5-fixture: {cache_creation_input_token_cost_above_1hr: 0.000006}
+      anthropic.claude-legacy-fixture: {litellm_provider: bedrock}
+    cases:
+      - model: anthropic.claude-4-5-fixture
+        request:
+          tools:
+            - {name: both, cache_control: {type: ephemeral, scope: global, ttl: "1h"}}
+          system:
+            - {type: text, cache_control: {scope: x, ttl: "5m"}}
+          messages:
+            - role: user
+              content:
+                - {type: text, cache_control: {ttl: "10m"}}
+      - model: anthropic.claude-legacy-fixture
+        request:
+          messages:
+            - role: user
+              content:
+                - {type: text, cache_control: {ttl: "1h", scope: global}}
+      - model: null
+        request:
+          tools:
+            - {name: keep, cache_control: {ttl: "5m"}}
+env: {}
+compare: {ignore: []}

@@ -1,7 +1,7 @@
 id: B1387
 milestone: M3 providers
 title: Vertex Agent Engine streamed chunks and wrapper binding
-status: todo
+status: done
 depends_on: [B1386, B010, B173, B171]
 file: tasks/B1387-vertex-agent-engine-stream.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/vertex_ai/agent_engine/sse_iterator.py"
 parent: B034
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1954
