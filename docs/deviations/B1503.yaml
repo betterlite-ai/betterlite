@@ -1,0 +1,14 @@
+task: B1503
+deviations:
+  - what: >-
+      A stored skill date that carries an explicit zero UTC offset renders with a trailing Z in created_at and
+      updated_at, where LiteLLM's datetime.isoformat() writes the offset as +00:00.
+    why: >-
+      The projection serializes the row through B858's RowTimestamp, whose wire format writes Z for an aware zero
+      offset (crates/betterlite-db/src/managed_resource_rows/wire.rs, format_offset). No row this store writes can
+      reach that branch: LiteLLM's skills table declares created_at and updated_at as PostgreSQL timestamp(3)
+      without time zone, so rows hold naive timestamps, and a naive timestamp renders exactly like isoformat (no
+      fractional digits when the microseconds are zero, six digits otherwise). The oracle row fixtures use the naive
+      form, and projects_skill_records_iso_dates_padded_to_microseconds covers the subsecond case in Rust.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/transformation.py#L367
+kept_bugs: []
