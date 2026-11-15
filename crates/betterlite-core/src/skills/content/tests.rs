@@ -213,6 +213,19 @@ fn markdown_falls_back_to_any_markdown_entry_in_archive_order() {
 }
 
 #[test]
+fn markdown_uses_a_lone_markdown_entry() {
+    let entries = write_archive(
+        &[("skill/notes.md", b"notes text")],
+        CompressionMethod::Stored,
+    );
+    let skill = archive_row(&entries, Some("fallback"));
+    assert_eq!(
+        extract_skill_content(&skill),
+        Some("## Skill: Title\n\nnotes text".to_owned())
+    );
+}
+
+#[test]
 fn markdown_absent_from_the_archive_returns_the_instructions() {
     let entries = write_archive(
         &[("skill/notes.txt", b"plain text")],
