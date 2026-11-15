@@ -7,11 +7,6 @@ use crate::chat_choices::wire::StreamReply;
 
 pub const THINKING_SIGNATURE: &str = "mistral";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MistralChatResponseIterator {
-    pub json_mode: bool,
-}
-
 pub fn chunk_parser(
     chunk: &mut Value,
     identifier: fn() -> Uuid,
@@ -34,9 +29,7 @@ fn normalize_choices(chunk: &mut Value) -> Option<()> {
         Some(_) => return None,
     };
     for choice in choices {
-        let Some(choice_fields) = choice.as_object_mut() else {
-            return None;
-        };
+        let choice_fields = choice.as_object_mut()?;
         let Some(delta) = choice_fields.get_mut("delta") else {
             continue;
         };
