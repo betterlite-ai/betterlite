@@ -66,6 +66,7 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-db/src/policy_persistence*"
     - crates/betterlite-db/src/policy_persistence.rs
     - crates/betterlite-db/src/policy_persistence/**
     - crates/betterlite-db/Cargo.toml
