@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
 
+use tracing::dispatcher::with_default;
 use tracing::field::{Field, Visit};
-use tracing::{Level, Subscriber};
+use tracing::{Dispatch, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
 use super::{
@@ -24,7 +26,7 @@ impl Visit for EventFields {
         self.0.push_str(value);
     }
 
-    fn record_debug(&mut self, _field: &Field, _value: &dyn std::fmt::Debug) {}
+    fn record_debug(&mut self, _field: &Field, _value: &dyn Debug) {}
 }
 
 impl<Inner: Subscriber> Layer<Inner> for WarnLogs {
@@ -40,8 +42,8 @@ impl<Inner: Subscriber> Layer<Inner> for WarnLogs {
 
 fn warnings_during<Run: FnOnce()>(run: Run) -> Vec<String> {
     let logs = WarnLogs::default();
-    let dispatch = tracing::Dispatch::new(tracing_subscriber::registry().with(logs.clone()));
-    tracing::dispatcher::with_default(&dispatch, run);
+    let dispatch = Dispatch::new(tracing_subscriber::registry().with(logs.clone()));
+    with_default(&dispatch, run);
     logs.0.lock().unwrap().clone()
 }
 
