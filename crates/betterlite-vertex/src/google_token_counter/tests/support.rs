@@ -19,7 +19,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::credential_sources::sdk::CredentialClock;
 use crate::google_count_tokens::transport::CountTransport;
-use crate::google_token_counter::counter::{CountRuntime, CountTokensCall, TokenCounter as _};
+use crate::google_token_counter::counter::{CountRuntime, CountTokensCall};
 use crate::google_token_counter::error::CountTokensError;
 use crate::google_token_counter::reply::TokenCountResponse;
 use crate::partner_count::execute::PartnerCountTransport;

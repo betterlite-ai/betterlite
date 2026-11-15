@@ -272,10 +272,10 @@ async fn selection_vertex_missing_total() {
         .unwrap();
     assert!(outcome.is_none());
     let null_total = Script::replying(br#"{"totalTokens":null}"#);
-    let outcome = vertex_count(&null_total, &mint, &refresh, &catalog, &request)
+    let null_outcome = vertex_count(&null_total, &mint, &refresh, &catalog, &request)
         .await
         .unwrap();
-    assert!(outcome.is_none());
+    assert!(null_outcome.is_none());
     let overflowing = Script::replying(br#"{"totalTokens":18446744073709551615}"#);
     let error = vertex_count(&overflowing, &mint, &refresh, &catalog, &request)
         .await
@@ -375,11 +375,11 @@ async fn selection_studio_missing_total() {
         Some(CountReply::Google(_))
     ));
     let null_total = Script::replying(br#"{"totalTokens":null}"#);
-    let response = counter
+    let null_response = counter
         .count_tokens(&null_total, &request, DEADLINE)
         .await
         .unwrap();
-    assert_eq!(response.total_tokens, 0);
+    assert_eq!(null_response.total_tokens, 0);
 }
 
 #[tokio::test]

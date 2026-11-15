@@ -13,6 +13,7 @@ use crate::google_count_tokens::vertex::{VertexCountInput, count_tokens};
 use crate::google_token_counter::counter::{CountRuntime, CountTokensCall};
 use crate::google_token_counter::error::CountTokensError;
 use crate::google_token_counter::reply::{CountReply, TokenCountResponse, counted};
+use crate::vertex_interactions::mint::MintAccessToken;
 
 // LiteLLM's non-partner branch: supplied contents win even when empty, and only absent contents convert the messages
 pub(crate) async fn count<T, M, F>(
@@ -23,6 +24,7 @@ pub(crate) async fn count<T, M, F>(
 ) -> Result<Option<TokenCountResponse>, CountTokensError>
 where
     T: CountTransport,
+    M: MintAccessToken,
     F: RemoteMediaFetcher + Sync,
 {
     let transport = runtime.transport;
