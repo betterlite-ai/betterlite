@@ -9,7 +9,7 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 #[serde(tag = "group", rename_all = "snake_case")]
 pub(crate) enum Input {
     PolicyRecordsRecords(records::Call),
-    PolicyRecordsLookup(lookup::Call),
+    PolicyRecordsLookup(Box<lookup::Call>),
 }
 
 pub(crate) struct Op;

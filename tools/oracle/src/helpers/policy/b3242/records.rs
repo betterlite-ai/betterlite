@@ -53,30 +53,32 @@ pub(super) fn run(call: &Call) -> HelperResult {
     match call {
         Call::Validate { model, value } => dumped_record(model, value.clone()),
         Call::ProjectScope { scope } => {
-            let scope: PolicyScope = serde_json::from_value(scope.clone())
+            let parsed_scope: PolicyScope = serde_json::from_value(scope.clone())
                 .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
-            serde_json::to_value(PolicyScopeResponse::from_scope(&scope))
+            serde_json::to_value(PolicyScopeResponse::from_scope(&parsed_scope))
                 .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
         Call::ProjectGuardrails { guardrails } => {
-            let guardrails: PolicyGuardrails = serde_json::from_value(guardrails.clone())
+            let parsed_guardrails: PolicyGuardrails = serde_json::from_value(guardrails.clone())
                 .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
-            serde_json::to_value(PolicyGuardrailsResponse::from_guardrails(&guardrails))
-                .map_err(|error| helper_error("InvalidInput", error.to_string()))
+            serde_json::to_value(PolicyGuardrailsResponse::from_guardrails(
+                &parsed_guardrails,
+            ))
+            .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
         Call::ProjectInfo {
             policy_name,
             policy,
             resolved,
         } => {
-            let policy: Policy = serde_json::from_value(policy.clone())
+            let parsed_policy: Policy = serde_json::from_value(policy.clone())
                 .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
-            let resolved: ResolvedPolicy = serde_json::from_value(resolved.clone())
+            let parsed_resolved: ResolvedPolicy = serde_json::from_value(resolved.clone())
                 .map_err(|error| helper_error("InvalidInput", error.to_string()))?;
             serde_json::to_value(PolicyInfoResponse::from_policy(
                 policy_name,
-                &policy,
-                &resolved,
+                &parsed_policy,
+                &parsed_resolved,
             ))
             .map_err(|error| helper_error("InvalidInput", error.to_string()))
         }
