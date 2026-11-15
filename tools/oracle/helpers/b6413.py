@@ -284,14 +284,13 @@ def carried(config: EmbeddingConfig, call: ErrorCall) -> JsonValue:
 def run(value: Input) -> JsonValue:
     chat: ChatConfig = SambanovaConfig()
     embedding: EmbeddingConfig = SambaNovaEmbeddingConfig()
-    answer: dict[str, JsonValue] = {
-        "chat_supported": [supported(chat, call) for call in value["chat_supported"]],
-        "chat_params": [params(chat, call) for call in value["chat_params"]],
-        "chat_messages": [messages(call) for call in value["chat_messages"]],
-        "embedding_urls": [url(embedding, call) for call in value["embedding_urls"]],
-        "embedding_headers": [headers(embedding, call) for call in value["embedding_headers"]],
-        "embedding_requests": [request(embedding, call) for call in value["embedding_requests"]],
-        "embedding_replies": [reply(embedding, call) for call in value["embedding_replies"]],
-        "embedding_errors": [carried(embedding, call) for call in value["embedding_errors"]],
-    }
+    answer: dict[str, JsonValue] = {}
+    answer["chat_supported"] = [supported(chat, call) for call in value["chat_supported"]]
+    answer["chat_params"] = [params(chat, call) for call in value["chat_params"]]
+    answer["chat_messages"] = [messages(call) for call in value["chat_messages"]]
+    answer["embedding_urls"] = [url(embedding, call) for call in value["embedding_urls"]]
+    answer["embedding_headers"] = [headers(embedding, call) for call in value["embedding_headers"]]
+    answer["embedding_requests"] = [request(embedding, call) for call in value["embedding_requests"]]
+    answer["embedding_replies"] = [reply(embedding, call) for call in value["embedding_replies"]]
+    answer["embedding_errors"] = [carried(embedding, call) for call in value["embedding_errors"]]
     return JSON.validate_python(answer)
