@@ -66,6 +66,17 @@ fn init_accepts_a_bucket_without_client_options() {
     assert!(destination.client_options.aws_session_token.is_none());
 }
 
+#[test]
+fn init_accepts_every_optional_client_option() {
+    let (destination, _client) = s3_destination(PREFIX, s3_settings());
+    assert_eq!(destination.bucket_name, BUCKET);
+    assert_eq!(
+        destination.client_options.region_name.as_deref(),
+        Some("us-east-1")
+    );
+    assert!(destination.client_options.aws_session_token.is_some());
+}
+
 #[tokio::test]
 async fn deliver_uploads_the_export() {
     let (destination, client) = s3_destination(PREFIX, s3_bucket_only_settings());
