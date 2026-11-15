@@ -14,6 +14,7 @@ pub mod error;
 pub mod matching;
 pub mod rule;
 mod tests;
+pub mod tool_permission_evaluation;
 pub mod types;
 
 pub const GUARDRAIL_NAME: &str = "tool_permission";
