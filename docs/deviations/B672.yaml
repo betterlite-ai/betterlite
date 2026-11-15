@@ -19,9 +19,9 @@ deviations:
       followed by two NUL bytes, and the second raises Incorrect padding and falls back with a
       debug line.
     why: >-
-      The padding quad closes the base64 group, and CPython 3.12 and earlier stopped there; the
-      review that defines this task's behavior specifies that rule. The two oracle calls in
-      decode-permissive-fields.yaml that differ on the pinned CPython 3.13 are ignored, and a
-      padding-in-the-middle payload only comes from a malformed identifier, not from a value a
-      provider or LiteLLM itself encodes.
+      The padding quad closes the base64 group, and CPython 3.12 and earlier stopped there while
+      the pinned 3.13 changed the decoder under LiteLLM; the task's review specifies the stop
+      rule. A padding-in-the-middle payload only comes from a malformed identifier, not from a
+      value a provider or LiteLLM itself encodes, and the two oracle calls in
+      decode-permissive-fields.yaml that differ on the pinned CPython 3.13 are ignored.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L75-L78
