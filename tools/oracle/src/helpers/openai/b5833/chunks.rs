@@ -6,7 +6,11 @@ use betterlite_openai::groq_chat::stream::chunk_parser;
 use super::Call;
 
 pub(super) fn chunk_values(calls: &[Call]) -> Vec<Value> {
-    calls.iter().map(chunk_one).collect()
+    let mut values = Vec::with_capacity(calls.len());
+    for call in calls {
+        values.push(chunk_one(call));
+    }
+    values
 }
 
 // an error chunk becomes an item, so one case compares the parsed chunks beside the error
