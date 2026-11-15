@@ -9,7 +9,13 @@ pub(crate) fn tables() -> Vec<(&'static str, FormModel)> {
         ("qostodian_nexus", qostodian_nexus()),
         ("hiddenlayer", hiddenlayer()),
         ("javelin", javelin()),
-        ("mcp_end_user_permission", mcp_end_user_permission()),
+        (
+            "mcp_end_user_permission",
+            FormModel {
+                ui_friendly_name: Some("MCP End User Permission"),
+                fields: Vec::new(),
+            },
+        ),
         ("openai_moderation", openai_moderation()),
         ("xecguard", xecguard()),
         ("azure/prompt_shield", azure_prompt_shield()),
@@ -54,11 +60,6 @@ fn javelin() -> FormModel {
         FormField { name: "guard_name", description: Some("Name of the Javelin guard to use"), required: false, shape: FormShape::Text, default: None, extra: FormExtra::NONE },
         FormField { name: "metadata", description: Some("Additional metadata to send with requests"), required: false, shape: FormShape::RawObject, default: None, extra: FormExtra::NONE },
     ] }
-}
-
-#[rustfmt::skip]
-const fn mcp_end_user_permission() -> FormModel {
-    FormModel { ui_friendly_name: Some("MCP End User Permission"), fields: Vec::new() }
 }
 
 #[rustfmt::skip]
