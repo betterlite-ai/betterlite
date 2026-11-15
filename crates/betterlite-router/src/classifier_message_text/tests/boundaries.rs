@@ -272,18 +272,20 @@ fn assert_encrypted_item_not_object() {
 }
 
 fn assert_encrypted_content_not_list() {
-    let input = json_object(&[
+    let item = json_object(&[
         ("type", json_text("agent_message")),
         ("content", json_text("plain")),
     ]);
+    let input = Json::List(vec![item]);
     assert_encrypted_absent_with_ask(&input);
 }
 
 fn assert_encrypted_part_not_object() {
-    let input = typed_item(
+    let item = typed_item(
         "agent_message",
         vec![json_number(7), encrypted_part(json_text("blob"))],
     );
+    let input = Json::List(vec![item]);
     assert_encrypted_absent_with_ask(&input);
 }
 
@@ -298,17 +300,20 @@ fn assert_encrypted_resolved_without_ask() {
 
 fn assert_encrypted_non_agent_selected() {
     let item = typed_item("message", vec![encrypted_part(json_text("blob"))]);
-    assert_encrypted_absent_with_ask(&item);
+    let input = Json::List(vec![item]);
+    assert_encrypted_absent_with_ask(&input);
 }
 
 fn assert_encrypted_empty_string_absent() {
     let item = typed_item("agent_message", vec![encrypted_part(json_text(""))]);
-    assert_encrypted_absent_with_ask(&item);
+    let input = Json::List(vec![item]);
+    assert_encrypted_absent_with_ask(&input);
 }
 
 fn assert_encrypted_non_string_errors() {
     let item = typed_item("agent_message", vec![encrypted_part(json_number(7))]);
-    assert_encrypted_input_error(&item, ClassifierTextError::EncryptedContentNotString);
+    let input = Json::List(vec![item]);
+    assert_encrypted_input_error(&input, ClassifierTextError::EncryptedContentNotString);
 }
 
 #[rstest]
