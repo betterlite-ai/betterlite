@@ -64,6 +64,9 @@ use support::{run_build, run_scan};
 #[case::metadata_and_call_id_reach_every_analysis(
     text_cases::metadata_and_call_id_reach_every_analysis()
 )]
+#[case::an_empty_call_id_does_not_shadow_a_later_one(
+    text_cases::an_empty_call_id_does_not_shadow_a_later_one()
+)]
 #[case::an_unchanged_full_record_is_preserved(text_cases::an_unchanged_full_record_is_preserved())]
 #[case::a_sanitized_text_drops_stale_structured_messages(
     text_cases::a_sanitized_text_drops_stale_structured_messages()

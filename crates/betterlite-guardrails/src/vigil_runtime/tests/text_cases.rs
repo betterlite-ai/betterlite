@@ -146,6 +146,27 @@ pub(crate) fn metadata_and_call_id_reach_every_analysis() -> Case {
     Case::Scan(Box::new(scenario))
 }
 
+pub(crate) fn an_empty_call_id_does_not_shadow_a_later_one() -> Case {
+    let mut litellm_params = BTreeMap::new();
+    litellm_params.insert(
+        "litellm_call_id".to_owned(),
+        GuardrailValue::Text("call-litellm".to_owned()),
+    );
+    let mut model_call_params = BTreeMap::new();
+    model_call_params.insert(
+        "litellm_call_id".to_owned(),
+        GuardrailValue::Text(String::new()),
+    );
+    let mut scenario = scan_case(texts_inputs(Some(vec!["hello"])), vec![allowed()]);
+    scenario.analyzed = vec!["hello"];
+    scenario.logging = Some(GuardrailLogTarget {
+        litellm_params: Some(litellm_params),
+        model_call_params: Some(model_call_params),
+    });
+    scenario.metadata = vec![("litellm_call_id", "call-litellm")];
+    Case::Scan(Box::new(scenario))
+}
+
 pub(crate) fn an_unchanged_full_record_is_preserved() -> Case {
     let mut inputs = texts_inputs(Some(vec!["hello"]));
     inputs.images = Some(vec!["https://images.example/one".to_owned()]);
