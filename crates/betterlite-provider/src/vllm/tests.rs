@@ -28,9 +28,7 @@ fn environment(values: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn info<'environment>(
-    environment: &'environment BTreeMap<String, String>,
-) -> VllmModelInfo<'environment> {
+fn info(environment: &BTreeMap<String, String>) -> VllmModelInfo<'_> {
     VllmModelInfo { environment }
 }
 
@@ -179,7 +177,7 @@ fn get_models_without_a_base_reports_the_missing_base_first() {
 }
 
 #[rstest]
-#[case::absent(r#"{}"#, false)]
+#[case::absent("{}", false)]
 #[case::false_value(r#"{"stream":false}"#, true)]
 #[case::null_value(r#"{"stream":null}"#, true)]
 #[case::zero(r#"{"stream":0}"#, true)]
@@ -327,7 +325,7 @@ fn an_api_error_keeps_the_status_message_and_headers() {
     assert_eq!(error.status(), Some(418));
     assert_eq!(error.to_string(), "boom");
     assert!(
-        matches!(error, VllmError::Api { ref headers, .. } if headers.get("x").map(String::as_str) == Some("1"))
+        matches!(&error, VllmError::Api { headers: error_headers, .. } if error_headers.get("x").map(String::as_str) == Some("1"))
     );
 }
 
@@ -338,7 +336,7 @@ fn the_error_class_carries_the_status_message_and_headers() {
     assert_eq!(error.status(), Some(418));
     assert_eq!(error.to_string(), "boom");
     assert!(
-        matches!(error, VllmError::Api { ref headers, .. } if headers.get("x").map(String::as_str) == Some("1"))
+        matches!(&error, VllmError::Api { headers: error_headers, .. } if error_headers.get("x").map(String::as_str) == Some("1"))
     );
 }
 

@@ -116,10 +116,10 @@ async fn a_string_output_is_the_reply() {
 
 #[tokio::test]
 async fn a_unicode_output_is_counted_by_the_counter() {
-    let response = response(&reply_fixture(r#"{"outputs":"héllo"}"#))
+    let response = response(&reply_fixture("{\"outputs\":\"h\u{e9}llo\"}"))
         .await
         .unwrap();
-    assert_eq!(response.choices[0].content, "héllo");
+    assert_eq!(response.choices[0].content, "h\u{e9}llo");
     assert_eq!(response.usage.completion_tokens, 5);
 }
 
