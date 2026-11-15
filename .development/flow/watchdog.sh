@@ -81,7 +81,7 @@ sample_machine() {
   cargo_count=$(pgrep -xc cargo)
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "${EPOCHSECONDS}" "${btime}" "${disk}" "${cpu}" "${mem}" "${psi}" "${df}" "${flows}" "${rustc_count}" "${cargo_count}" "${clippy}" >> "${samples}"
 }
-# stage 3 runs up to 24 DeepSeek agents at once, so the day's spend stops at 300 USD (Max, 11-13): the limit mark holds the vendor until midnight, as a usage limit with a reset time does
+# stage 3 runs up to 24 DeepSeek agents at once, so the day's spend stops at 480 USD, 24 hours at 20 USD (Max, 11-15): the limit mark holds the vendor until midnight, as a usage limit with a reset time does
 check_deepseek_spend() {
   mark=${main}/.git/betterlite/limits/deepseek
   [[ -f "${mark}" ]] && grep -q 'daily ceiling' "${mark}" && return
@@ -98,10 +98,10 @@ check_deepseek_spend() {
     rows+="${when}"$'\t'"${usage}"$'\n'
   done <<< "${started}"
   spent=$(LC_ALL=C awk -F'\t' 'NF { split($1, d, " "); peak = (d[1] <= 5 && ((d[2] >= 1 && d[2] < 4) || (d[2] >= 6 && d[2] < 10))) ? 2 : 1; usd += ($2 * 0.15 + $3 * 0.003 + $4 * 0.60) * peak / 1e6 } END { printf "%.2f", usd }' <<< "${rows}")
-  LC_ALL=C awk -v spent="${spent}" 'BEGIN { exit !(spent >= 300) }' || return
+  LC_ALL=C awk -v spent="${spent}" 'BEGIN { exit !(spent >= 480) }' || return
   zone=$(timedatectl show -p Timezone --value) || return
-  printf 'DeepSeek spent %s USD today at list price, the 300 USD daily ceiling; resets 12am (%s)\n' "${spent}" "${zone}" > "${mark}.watchdog" && mv -f -- "${mark}.watchdog" "${mark}" &&
-    printf '%(%H:%M)T %s\n' -1 "(watchdog) DeepSeek spent ${spent} USD today, the 300 USD daily ceiling; its runs wait until midnight" >> "${events}"
+  printf 'DeepSeek spent %s USD today at list price, the 480 USD daily ceiling; resets 12am (%s)\n' "${spent}" "${zone}" > "${mark}.watchdog" && mv -f -- "${mark}.watchdog" "${mark}" &&
+    printf '%(%H:%M)T %s\n' -1 "(watchdog) DeepSeek spent ${spent} USD today, the 480 USD daily ceiling; its runs wait until midnight" >> "${events}"
 }
 deepseek_low=0
 # Max wants to hear before DeepSeek runs dry (11-13); the key goes to curl on stdin, so no process list shows it
