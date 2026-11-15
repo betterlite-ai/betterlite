@@ -182,14 +182,6 @@ def litellm_params(job: Job) -> GenericLiteLLMParams | dict[str, JsonValue]:
     return job["litellm_params"]
 
 
-def settle(pending: ImageResponse | Coroutine[object, object, ImageResponse]) -> ImageResponse:
-    match pending:
-        case Coroutine():
-            raise ValueError("the sync BFL entry point answered with a coroutine")
-        case object():
-            return pending
-
-
 def call(
     handler: BlackForestLabsImageGeneration,
     job: Job,
@@ -197,19 +189,22 @@ def call(
     client: HTTPHandler,
 ) -> ImageResponse:
     timeout = job["timeout_millis"]
-    return settle(
-        handler.image_generation(
-            model=job["model"],
-            prompt=job["prompt"],
-            model_response=ImageResponse(created=0, data=[]),
-            optional_params=job["optional_params"],
-            litellm_params=litellm_params(job),
-            logging_obj=logging,
-            timeout=None if timeout is None else timeout / 1000,
-            extra_headers=job["extra_headers"],
-            client=client,
-        )
+    pending = handler.image_generation(
+        model=job["model"],
+        prompt=job["prompt"],
+        model_response=ImageResponse(created=0, data=[]),
+        optional_params=job["optional_params"],
+        litellm_params=litellm_params(job),
+        logging_obj=logging,
+        timeout=None if timeout is None else timeout / 1000,
+        extra_headers=job["extra_headers"],
+        client=client,
     )
+    match pending:
+        case Coroutine():
+            raise ValueError("the sync BFL entry point answered with a coroutine")
+        case object():
+            return pending
 
 
 def outcome(job: Job, logging: RecordingLogging, client: HTTPHandler) -> JsonValue:
