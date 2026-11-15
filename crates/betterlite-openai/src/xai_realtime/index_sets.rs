@@ -28,28 +28,25 @@ const CONTENT_INDEX_EVENTS: [&str; 8] = [
 ];
 
 #[must_use]
-pub fn inject_missing_indices(event: Json, event_type: Option<&str>) -> Json {
-    let Some(event_type) = event_type else {
+pub fn inject_missing_indices(mut event: Json, event_type: Option<&str>) -> Json {
+    let Some(kind) = event_type else {
         return event;
     };
-    let needs_output = OUTPUT_INDEX_EVENTS.contains(&event_type);
-    let needs_content = CONTENT_INDEX_EVENTS.contains(&event_type);
-    match event {
-        Json::Object(mut fields) if needs_output || needs_content => {
-            if needs_output && !fields.contains_key("output_index") {
-                fields.insert(
-                    String::from("output_index"),
-                    Json::Number(Number::from(0_u8)),
-                );
-            }
-            if needs_content && !fields.contains_key("content_index") {
-                fields.insert(
-                    String::from("content_index"),
-                    Json::Number(Number::from(0_u8)),
-                );
-            }
-            Json::Object(fields)
+    let needs_output = OUTPUT_INDEX_EVENTS.contains(&kind);
+    let needs_content = CONTENT_INDEX_EVENTS.contains(&kind);
+    if let Json::Object(fields) = &mut event {
+        if needs_output && !fields.contains_key("output_index") {
+            fields.insert(
+                String::from("output_index"),
+                Json::Number(Number::from(0_u8)),
+            );
         }
-        other => other,
+        if needs_content && !fields.contains_key("content_index") {
+            fields.insert(
+                String::from("content_index"),
+                Json::Number(Number::from(0_u8)),
+            );
+        }
     }
+    event
 }

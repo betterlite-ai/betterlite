@@ -61,8 +61,22 @@ fn helper_error(message: &str) -> Box<HelperError> {
 
 fn sequence_answer(input: &Input) -> HelperResult {
     let mut normalizer = XaiRealtimeNormalizer::default();
-    let mut emitted = Vec::with_capacity(input.events.len());
-    for event in &input.events {
+    let emitted = replay(&mut normalizer, &input.events)?;
+    let sessions: Vec<Json> = input
+        .sessions
+        .iter()
+        .cloned()
+        .map(patch_outgoing_session)
+        .collect();
+    Ok(json!({"emitted": emitted, "sessions": sessions}))
+}
+
+fn replay(
+    normalizer: &mut XaiRealtimeNormalizer,
+    events: &[Json],
+) -> Result<Vec<Json>, Box<HelperError>> {
+    let mut emitted = Vec::with_capacity(events.len());
+    for event in events {
         if should_drop(event) {
             continue;
         }
@@ -71,13 +85,7 @@ fn sequence_answer(input: &Input) -> HelperResult {
             .map_err(|error| helper_error(&error.to_string()))?;
         emitted.push(normalized);
     }
-    let sessions: Vec<Json> = input
-        .sessions
-        .iter()
-        .cloned()
-        .map(patch_outgoing_session)
-        .collect();
-    Ok(json!({"emitted": emitted, "sessions": sessions}))
+    Ok(emitted)
 }
 
 struct RecordingLogger;

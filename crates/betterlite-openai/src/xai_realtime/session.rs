@@ -3,19 +3,16 @@ use indexmap::IndexMap;
 
 // xAI does not default turn_detection.create_response to true for server_vad as OpenAI does
 #[must_use]
-pub fn patch_outgoing_session(session: Json) -> Json {
-    match session {
-        Json::Object(mut fields) => {
-            if let Some(Json::Object(turn_detection)) = fields.get_mut("turn_detection") {
-                default_create_response(turn_detection);
-            }
-            if let Some(Json::Object(audio)) = fields.get_mut("audio") {
-                patch_nested_turn_detection(audio);
-            }
-            Json::Object(fields)
+pub fn patch_outgoing_session(mut session: Json) -> Json {
+    if let Json::Object(fields) = &mut session {
+        if let Some(Json::Object(turn_detection)) = fields.get_mut("turn_detection") {
+            default_create_response(turn_detection);
         }
-        other => other,
+        if let Some(Json::Object(audio)) = fields.get_mut("audio") {
+            patch_nested_turn_detection(audio);
+        }
     }
+    session
 }
 
 fn patch_nested_turn_detection(audio: &mut IndexMap<String, Json>) {

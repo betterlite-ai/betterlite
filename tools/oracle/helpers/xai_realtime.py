@@ -20,8 +20,8 @@ SslKind: TypeAlias = Literal["none", "insecure", "shared"]
 
 class Input(TypedDict):
     kind: Literal["sequence", "connection"]
-    events: list[JsonValue]
-    sessions: list[JsonValue]
+    events: list[dict[str, JsonValue]]
+    sessions: list[dict[str, JsonValue]]
     model: str
     api_key: str | None
     scope_headers: list[tuple[str, str]]
@@ -31,9 +31,9 @@ class Input(TypedDict):
 class Normalizer(Protocol):
     def should_drop(self, event: JsonValue) -> bool: ...
 
-    def normalize(self, event: JsonValue) -> JsonValue: ...
+    def normalize(self, event: dict[str, JsonValue]) -> JsonValue: ...
 
-    def patch_outgoing_session(self, session: JsonValue) -> JsonValue: ...
+    def patch_outgoing_session(self, session: dict[str, JsonValue]) -> JsonValue: ...
 
 
 class ClientSocket(Protocol):
@@ -133,17 +133,17 @@ def logging_object(input_value: Input) -> Logging:
     )
 
 
-def sequence_answer(input_value: Input) -> JsonValue:
-    current: Normalizer = XAIRealtimeNormalizer()
+def sequence_answer(current: Normalizer, input_value: Input) -> JsonValue:
     emitted: list[JsonValue] = []
     for event in input_value["events"]:
         if current.should_drop(event):
             continue
         emitted.append(current.normalize(event))
-    sessions = [
+    sessions: list[JsonValue] = [
         current.patch_outgoing_session(session) for session in input_value["sessions"]
     ]
-    return JSON.validate_python({"emitted": emitted, "sessions": sessions})
+    answer: dict[str, JsonValue] = {"emitted": emitted, "sessions": sessions}
+    return JSON.validate_python(answer)
 
 
 def connection_answer(input_value: Input) -> JsonValue:
@@ -178,5 +178,5 @@ def connection_answer(input_value: Input) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["kind"] == "sequence":
-        return sequence_answer(input_value)
+        return sequence_answer(XAIRealtimeNormalizer(), input_value)
     return connection_answer(input_value)

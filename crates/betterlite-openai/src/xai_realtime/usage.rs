@@ -6,27 +6,24 @@ const RESPONSE_CREATED: &str = "response.created";
 const RESPONSE_DONE: &str = "response.done";
 
 #[must_use]
-pub fn normalize_response_usage(event: Json, event_type: Option<&str>) -> Json {
+pub fn normalize_response_usage(mut event: Json, event_type: Option<&str>) -> Json {
     let empty_as_null = match event_type {
         Some(RESPONSE_CREATED) => true,
         Some(RESPONSE_DONE) => false,
         Some(_) | None => return event,
     };
-    match event {
-        Json::Object(mut fields) => {
-            let usage = match fields.get_mut("response") {
-                Some(Json::Object(response)) => response.get("usage").cloned(),
-                _ => None,
-            };
-            if let Some(usage) = usage
-                && let Some(Json::Object(response)) = fields.get_mut("response")
-            {
-                response.insert(String::from("usage"), normalize_usage(usage, empty_as_null));
-            }
-            Json::Object(fields)
+    if let Json::Object(fields) = &mut event {
+        let reported = match fields.get_mut("response") {
+            Some(Json::Object(response)) => response.get("usage").cloned(),
+            _ => None,
+        };
+        if let Some(usage) = reported
+            && let Some(Json::Object(response)) = fields.get_mut("response")
+        {
+            response.insert(String::from("usage"), normalize_usage(usage, empty_as_null));
         }
-        other => other,
     }
+    event
 }
 
 fn normalize_usage(usage: Json, empty_as_null: bool) -> Json {
@@ -38,12 +35,12 @@ fn normalize_usage(usage: Json, empty_as_null: bool) -> Json {
                 default_usage()
             }
         }
-        Json::Object(entries) => normalized_usage(entries),
-        _ => Json::Null,
+        Json::Object(entries) => normalized_usage(&entries),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Json::Null,
     }
 }
 
-fn normalized_usage(entries: IndexMap<String, Json>) -> Json {
+fn normalized_usage(entries: &IndexMap<String, Json>) -> Json {
     let mut normalized = IndexMap::new();
     normalized.insert(
         String::from("total_tokens"),
@@ -79,13 +76,10 @@ fn normalized_usage(entries: IndexMap<String, Json>) -> Json {
 
 fn token_details(details: Option<&Json>) -> Json {
     let mut merged = zero_details();
-    match details {
-        Some(Json::Object(entries)) => {
-            for (name, value) in entries {
-                merged.insert(name.clone(), value.clone());
-            }
+    if let Some(Json::Object(entries)) = details {
+        for (name, value) in entries {
+            merged.insert(name.clone(), value.clone());
         }
-        Some(_) | None => {}
     }
     Json::Object(merged)
 }

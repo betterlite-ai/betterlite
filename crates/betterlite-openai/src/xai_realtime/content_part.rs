@@ -67,12 +67,12 @@ impl ContentPartCache {
             .map(|(_, part)| part.clone());
         let updated = match existing {
             Some(Json::Object(entries)) => {
-                let mut entries = entries;
-                entries
+                let mut merged = entries;
+                merged
                     .entry(String::from("type"))
                     .or_insert_with(|| Json::Text(part_type.to_owned()));
-                entries.insert(field.to_owned(), value.clone());
-                Json::Object(entries)
+                merged.insert(field.to_owned(), value.clone());
+                Json::Object(merged)
             }
             _ => Json::Object(IndexMap::from([
                 (String::from("type"), Json::Text(part_type.to_owned())),
@@ -109,8 +109,8 @@ impl ContentPartCache {
             .iter_mut()
             .find(|entry| entry.0 == key)
             .map(|entry| &mut entry.1);
-        if let Some(existing) = existing {
-            *existing = part;
+        if let Some(slot) = existing {
+            *slot = part;
             return Ok(());
         }
         if self.parts.len() >= MAX_CACHED_CONTENT_PARTS {
@@ -124,26 +124,23 @@ impl ContentPartCache {
 }
 
 pub fn normalize_event(
-    event: Json,
+    mut event: Json,
     event_type: Option<&str>,
     cache: &mut ContentPartCache,
 ) -> Result<Json, XaiRealtimeError> {
-    match event {
-        Json::Object(mut fields) => {
-            match event_type {
-                Some(CONTENT_PART_ADDED | CONTENT_PART_DONE) => {
-                    cache.remember(&fields)?;
-                    if !matches!(fields.get("part"), Some(Json::Object(_))) {
-                        let part = cache.resolve(&fields);
-                        fields.insert(String::from("part"), part);
-                    }
+    if let Json::Object(fields) = &mut event {
+        match event_type {
+            Some(CONTENT_PART_ADDED | CONTENT_PART_DONE) => {
+                cache.remember(fields)?;
+                if !matches!(fields.get("part"), Some(Json::Object(_))) {
+                    let part = cache.resolve(fields);
+                    fields.insert(String::from("part"), part);
                 }
-                Some(TEXT_DONE) => cache.update(&fields, "text", "text")?,
-                Some(TRANSCRIPT_DONE) => cache.update(&fields, "audio", "transcript")?,
-                Some(_) | None => {}
             }
-            Ok(Json::Object(fields))
+            Some(TEXT_DONE) => cache.update(fields, "text", "text")?,
+            Some(TRANSCRIPT_DONE) => cache.update(fields, "audio", "transcript")?,
+            Some(_) | None => {}
         }
-        other => Ok(other),
     }
+    Ok(event)
 }

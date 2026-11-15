@@ -762,7 +762,7 @@ fn connection_uses_the_xai_origin_and_authorization_only() {
     assert_eq!(connection.ssl, RealtimeSsl::Shared);
     assert_eq!(connection.max_message_size_bytes, MAX_SIZE);
     assert!(connection.force_transcription_model.is_none());
-    assert_eq!(logger.calls, vec![connection.url.clone()]);
+    assert_eq!(logger.calls, vec![connection.url]);
 }
 
 #[test]
