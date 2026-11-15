@@ -191,26 +191,37 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
 }
 
 pub fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
-    let (left, right) = run_pair(&case.call, &case.env, self_check)?;
-    let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) else {
-        writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
-        return Ok(HelperRun::Match);
-    };
-    let pointer = difference.pointer;
-    let (left_name, right_name) = match left_side(self_check) {
-        HelperLeft::Native => ("betterlite", "litellm"),
-        HelperLeft::Python => ("first litellm run", "second litellm run"),
-    };
-    let left_value = value_at(&left, &pointer);
-    let right_value = value_at(&right, &pointer);
-    writeln!(
-        io::stderr().lock(),
-        "FAIL {}: {pointer} ({})\n     {left_name}: {left_value}\n     {right_name}: {right_value}",
-        case.name,
-        difference.message
-    )
-    .map_err(OracleError::Output)?;
-    Ok(HelperRun::Difference)
+    let total = case.calls.len().saturating_add(1);
+    for (index, call) in std::iter::once(&case.call)
+        .chain(case.calls.iter())
+        .enumerate()
+    {
+        let label = if total > 1 {
+            format!("{} call {index}", case.name)
+        } else {
+            case.name.clone()
+        };
+        let (left, right) = run_pair(call, &case.env, self_check)?;
+        let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) else {
+            continue;
+        };
+        let pointer = difference.pointer;
+        let (left_name, right_name) = match left_side(self_check) {
+            HelperLeft::Native => ("betterlite", "litellm"),
+            HelperLeft::Python => ("first litellm run", "second litellm run"),
+        };
+        let left_value = value_at(&left, &pointer);
+        let right_value = value_at(&right, &pointer);
+        writeln!(
+            io::stderr().lock(),
+            "FAIL {label}: {pointer} ({})\n     {left_name}: {left_value}\n     {right_name}: {right_value}",
+            difference.message
+        )
+        .map_err(OracleError::Output)?;
+        return Ok(HelperRun::Difference);
+    }
+    writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
+    Ok(HelperRun::Match)
 }
 
 fn value_at(output: &HelperOutput, pointer: &str) -> String {

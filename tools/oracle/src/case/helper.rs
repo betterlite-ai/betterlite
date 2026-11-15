@@ -13,6 +13,9 @@ pub struct HelperCase {
     pub(crate) kind: HelperKind,
     pub(crate) name: String,
     pub(crate) call: HelperCall,
+    // the same case checks these after `call`, so one case file covers several inputs
+    #[serde(default)]
+    pub(crate) calls: Vec<HelperCall>,
     pub(crate) env: BTreeMap<String, String>,
     pub(crate) compare: HelperCompare,
 }
