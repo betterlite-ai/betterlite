@@ -255,9 +255,8 @@ fn result(item: &Json) -> Result<VoyageRerankResult, VoyageRerankError> {
             "text".to_owned(),
             Json::Text(text.clone()),
         )])),
-        other
-        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            other.clone()
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            value.clone()
         }
     });
     Ok(VoyageRerankResult {
