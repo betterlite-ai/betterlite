@@ -1,0 +1,18 @@
+kind: helper
+name: database-diagnostics-json-enabled-seed
+call:
+  database_diagnostics:
+    function: json_enabled
+    format_scenarios: []
+    enabled_scenarios:
+      - mode: attribute
+        global_enabled: false
+        json_logs: "true"
+      - mode: import_error
+        global_enabled: false
+        json_logs: "TRUE"
+      - mode: missing_attribute
+        global_enabled: false
+        json_logs: null
+env: {}
+compare: {ignore: []}
