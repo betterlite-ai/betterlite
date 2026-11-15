@@ -9,8 +9,10 @@ mod tests;
 
 const POLLING_VARIABLE: &str = "PROXY_BATCH_POLLING_ENABLED";
 
-// env-only section: no YAML key is read here, and the box keeps the map value type non-zero-sized for clippy
-pub type Raw = BTreeMap<String, Box<IgnoredAny>>;
+// env-only section: no YAML key is read here, and the newtype keeps this Section impl off openai_realtime's map type
+#[derive(Default, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Settings {
