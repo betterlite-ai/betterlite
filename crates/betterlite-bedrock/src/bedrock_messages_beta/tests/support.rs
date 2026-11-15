@@ -92,17 +92,17 @@ pub(super) fn js(text: &str) -> Json {
 }
 
 pub(super) fn obj(text: &str) -> Object {
-    match js(text) {
-        Json::Object(object) => object,
-        other => panic!("fixture JSON is an object, not {other:?}"),
-    }
+    let Json::Object(object) = js(text) else {
+        panic!("fixture JSON is an object");
+    };
+    object
 }
 
 pub(super) fn list(text: &str) -> Vec<Json> {
-    match js(text) {
-        Json::List(items) => items,
-        other => panic!("fixture JSON is a list, not {other:?}"),
-    }
+    let Json::List(items) = js(text) else {
+        panic!("fixture JSON is a list");
+    };
+    items
 }
 
 pub(super) fn headers(text: &str) -> BTreeMap<String, BetaHeader> {
