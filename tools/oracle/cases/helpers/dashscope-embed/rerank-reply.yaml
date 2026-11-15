@@ -1,0 +1,9 @@
+kind: helper
+name: dashscope-rerank-reply
+call:
+  b8171:
+    function: rerank_reply
+    body: '{"id":"rerank-9","results":[{"index":0,"relevance_score":0.75,"document":{"text":"kept"}},{"index":1,"relevance_score":0.25,"document":"plain"}],"usage":{"total_tokens":12}}'
+    status: 200
+env: {}
+compare: {ignore: []}
