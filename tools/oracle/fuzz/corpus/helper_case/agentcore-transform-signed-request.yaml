@@ -1,0 +1,13 @@
+kind: helper
+name: agentcore-transform-signed-request-seed
+call:
+  b4804:
+    {
+      "function": "signed_request",
+      "request_id": "req-1",
+      "params": {"message": {"kind": "message", "role": "user", "parts": [], "contextId": "0123456789abcdef0123456789abcdef"}},
+      "litellm_params": {"model": "bedrock/agentcore/arn:aws:bedrock-agentcore:us-west-2:123456789012:runtime/agent_runtime", "api_key": "jwt-token"},
+      "agent_extra_headers": {"authorization": "spoof", "x-request-id": "abc"},
+    }
+env: {}
+compare: {ignore: []}

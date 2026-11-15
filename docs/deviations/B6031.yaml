@@ -1,0 +1,19 @@
+task: B6031
+deviations:
+  - what: >-
+      A JSON object whose only key is "$serde_json::private::Number" and whose value spells a number reaches the
+      guardrail Rust code as that number, so request data or a guardrail response carrying that key as data keeps
+      the number where LiteLLM keeps the object.
+    why: >-
+      serde_json's arbitrary_precision feature, on for the whole workspace, hands every JSON number to an untagged
+      value as that one-key object, and the bridge reads it back as the number it was. Nothing in a working LiteLLM
+      setup sends that key as data.
+    link: ""
+  - what: >-
+      A request body or guardrail response carrying an integer literal outside the 64-bit range, such as a 30-digit
+      id, is refused with a NativeGuardrailError of kind InvalidJson, where LiteLLM passes the Python int through
+      unchanged.
+    why: >-
+      The shared GuardrailValue type holds i64, u64 and f64 only, so the digits cannot be carried through, and
+      quietly rounding them to a float would hand the provider and the logs a different number.
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L343-L417"
