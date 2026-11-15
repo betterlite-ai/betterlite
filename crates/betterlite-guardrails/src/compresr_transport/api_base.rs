@@ -94,6 +94,10 @@ fn parse_integer_literal(text: &str) -> Option<u128> {
     };
     // A base prefix is the one place Python's int(text, 0) lets an underscore open the digits
     let cleaned = digits_without_underscores(digits, radix != 10)?;
+    // from_str_radix accepts a leading '+' that Python's int(text, 0) refuses after a base prefix
+    if radix != 10 && (cleaned.starts_with('+') || cleaned.starts_with('-')) {
+        return None;
+    }
     if radix == 10 && cleaned.len() > 1 && cleaned.starts_with('0') {
         return None;
     }
