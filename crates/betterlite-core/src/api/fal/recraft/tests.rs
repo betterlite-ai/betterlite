@@ -99,6 +99,8 @@ fn recraft_custom_dimensions_become_integer_objects(
 #[case::trailing_x("1024x1024x")]
 #[case::words("axb")]
 #[case::past_i64("999999999999999999999999x1")]
+#[case::min_i64("-9223372036854775808x20")]
+#[case::non_ascii_digits("١٠٢٤x٧٦٨")]
 fn recraft_unreadable_sizes_become_square_hd(#[case] size: &str) {
     assert_eq!(map_image_size(size), text(SQUARE_HD));
 }

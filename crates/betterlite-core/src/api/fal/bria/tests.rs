@@ -117,8 +117,19 @@ fn bria_ratio_intervals_keep_the_pinned_order(#[case] size: &str, #[case] ratio:
 #[case::empty("", "1:1")]
 #[case::auto("auto", "1:1")]
 #[case::past_i64("999999999999999999999999x1", "1:1")]
+#[case::min_i64("-9223372036854775808x20", "1:1")]
+#[case::non_ascii_digits("١٠٢٤x٧٦٨", "1:1")]
 fn bria_unreadable_sizes_become_square(#[case] size: &str, #[case] ratio: &str) {
     assert_eq!(map_aspect_ratio(size), ratio);
+}
+
+// a deviation: Python divides the exact integers, betterlite rounds each dimension to f64 first
+#[test]
+fn bria_wide_dimensions_round_before_dividing() {
+    assert_eq!(
+        map_aspect_ratio("15312238733059686x9007199254740993"),
+        "16:9"
+    );
 }
 
 #[test]
