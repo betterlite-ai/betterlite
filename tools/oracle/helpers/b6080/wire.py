@@ -33,11 +33,6 @@ class ResponseInput(TypedDict):
     cases: list[ReplyCase]
 
 
-class EmbeddingReplyInput(TypedDict):
-    op: Literal["embedding_reply"]
-    cases: list[ReplyCase]
-
-
 class RecordOut(TypedDict):
     object: str
     embedding: list[float] | str

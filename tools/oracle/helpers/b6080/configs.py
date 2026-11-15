@@ -3,7 +3,6 @@ from typing import Protocol
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging as LiteLLMLoggingObj
-from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.openrouter.chat.transformation import OpenrouterConfig
 from litellm.llms.openrouter.decisions.transformation import OpenRouterDecisionsConfig
 from litellm.llms.openrouter.embedding.transformation import OpenrouterEmbeddingConfig
@@ -34,10 +33,6 @@ class SupportedConfig(Protocol):
 
 
 class ChatConfig(SupportedConfig, Protocol):
-    def get_error_class(
-        self, error_message: str, status_code: int, headers: dict[str, str]
-    ) -> BaseLLMException: ...
-
     def transform_request(
         self,
         model: str,

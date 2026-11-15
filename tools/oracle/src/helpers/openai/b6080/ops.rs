@@ -1,7 +1,6 @@
 use betterlite_models::decisions::ir::{DecisionResponse, DecisionUsage};
 use betterlite_models::decisions::{Extra, Json as ModelJson, TokenCount};
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig;
-use betterlite_openai::openrouter_chat::error::get_error_class;
 use betterlite_openai::openrouter_decisions::OpenRouterDecisionsConfig;
 use betterlite_openai::openrouter_embedding::{
     SUPPORTED_OPENAI_PARAMS, get_complete_url as embedding_url, map_openai_params,
@@ -16,41 +15,25 @@ use rust_decimal::prelude::ToPrimitive as _;
 use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use crate::helpers::{HelperResult, OrHelperError as _};
 
-use super::chat::{chat_params, chunk, config, prompt_object};
-use super::input::{DecisionsCase, EmbeddingCase, Input, ResponsesCase};
+use super::chat::{chat_params, chunk};
+use super::input::{DecisionsCase, EmbeddingCase, Input, ReplyCase, ResponsesCase};
 use super::wire::{embedding_replies, requests, responses as chat_responses};
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::Supported { models } => Ok(json!(
-            models
-                .iter()
-                .map(|model| config().supported_params(model))
-                .collect::<Vec<_>>()
-        )),
         Input::ChatParams { cases } => chat_params(cases),
         Input::Chunk { cases } => Ok(Value::Array(cases.iter().map(chunk).collect())),
-        Input::Embedding { cases } => embedding(cases),
+        Input::Embedding { cases, replies } => embedding(cases, replies),
         Input::Responses { cases } => responses(cases),
         Input::Decisions { cases } => decisions(cases),
-        Input::ErrorClass { cases } => Ok(Value::Array(
-            cases
-                .iter()
-                .map(|case| {
-                    let error = get_error_class(&case.message, case.status, case.headers.clone());
-                    json!({"message": error.message, "status": error.status_code})
-                })
-                .collect(),
-        )),
         Input::Request { cases } => requests(cases),
         Input::Response { cases } => chat_responses(cases),
-        Input::EmbeddingReply { cases } => embedding_replies(cases),
     }
 }
 
-fn embedding(cases: &[EmbeddingCase]) -> HelperResult {
+fn embedding(cases: &[EmbeddingCase], replies: &[ReplyCase]) -> HelperResult {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
         let key = case.api_key.clone().map(SecretString::from);
@@ -60,13 +43,9 @@ fn embedding(cases: &[EmbeddingCase]) -> HelperResult {
             case.environment.get("OR_SITE_URL").map(String::as_str),
             case.environment.get("OR_APP_NAME").map(String::as_str),
         );
-        let request = transform_embedding_request(
-            &case.model,
-            &case.input,
-            &prompt_object(&case.optional_params),
-        );
+        let request = transform_embedding_request(&case.model, &case.input, &case.optional_params);
         let mut params = Object::new();
-        map_openai_params(&prompt_object(&case.non_default_params), &mut params);
+        map_openai_params(&case.non_default_params, &mut params);
         results.push(json!({
             "supported": SUPPORTED_OPENAI_PARAMS,
             "headers": headers,
@@ -75,7 +54,10 @@ fn embedding(cases: &[EmbeddingCase]) -> HelperResult {
             "params": serde_json::to_value(&params).or_value_error()?,
         }));
     }
-    Ok(Value::Array(results))
+    Ok(json!({
+        "requests": results,
+        "replies": embedding_replies(replies)?,
+    }))
 }
 
 fn responses(cases: &[ResponsesCase]) -> HelperResult {
@@ -106,22 +88,18 @@ fn responses(cases: &[ResponsesCase]) -> HelperResult {
 
 fn decisions(cases: &[DecisionsCase]) -> HelperResult {
     let decisions = OpenRouterDecisionsConfig;
+    let mut costs = Vec::with_capacity(cases.len());
+    for case in cases {
+        costs.push(cost(&decisions, &case.cost)?);
+    }
     Ok(json!({
         "path": OpenRouterDecisionsConfig::PATH,
         "api_key_env": OpenRouterDecisionsConfig::API_KEY_ENV,
         "api_base_env": OpenRouterDecisionsConfig::API_BASE_ENV,
         "default_api_base": decisions.get_default_api_base(),
         "complete_url": decisions.get_complete_url("https://openrouter.ai/api/v1", "m"),
-        "costs": reported_costs(&decisions, cases)?,
+        "costs": costs,
     }))
-}
-
-fn reported_costs(decisions: &OpenRouterDecisionsConfig, cases: &[DecisionsCase]) -> HelperResult {
-    let costs = cases
-        .iter()
-        .map(|case| cost(decisions, &case.cost))
-        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
-    Ok(Value::Array(costs))
 }
 
 fn cost(decisions: &OpenRouterDecisionsConfig, cost: &Value) -> HelperResult {

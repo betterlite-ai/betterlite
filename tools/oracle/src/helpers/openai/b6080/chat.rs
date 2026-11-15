@@ -41,10 +41,12 @@ impl ChatPolicy for OpenAiPolicy {
     }
 
     fn request_body(&self, request: BaseRequest<'_>) -> Result<Object, OpenRouterError> {
-        let messages = serde_json::to_value(request.messages).map_err(|error| failure(&error))?;
+        let messages = serde_json::to_value(request.messages)
+            .and_then(serde_json::from_value::<Json>)
+            .map_err(|error| failure(&error))?;
         let mut body = Object::new();
         body.insert(String::from("model"), Json::Text(request.model.to_owned()));
-        body.insert(String::from("messages"), prompt_json(&messages));
+        body.insert(String::from("messages"), messages);
         body.extend(request.optional_params.clone());
         Ok(body)
     }
@@ -85,34 +87,12 @@ pub(super) fn config() -> OpenrouterConfig<impl ChatPolicy> {
     }
 }
 
-pub(super) fn prompt_object(fields: &Map<String, Value>) -> Object {
-    fields
-        .iter()
-        .map(|(name, value)| (name.clone(), prompt_json(value)))
-        .collect()
-}
-
-fn prompt_json(value: &Value) -> Json {
-    match value {
-        Value::Null => Json::Null,
-        Value::Bool(flag) => Json::Bool(*flag),
-        Value::Number(number) => Json::Number(number.clone()),
-        Value::String(text) => Json::Text(text.clone()),
-        Value::Array(items) => Json::List(items.iter().map(prompt_json).collect()),
-        Value::Object(fields) => Json::Object(prompt_object(fields)),
-    }
-}
-
 pub(super) fn chat_params(cases: &[ChatParamsCase]) -> HelperResult {
     let config = config();
     let mut mapped = Vec::with_capacity(cases.len());
     for case in cases {
         let mut optional_params = Object::new();
-        config.map_openai_params(
-            &case.model,
-            &prompt_object(&case.requested),
-            &mut optional_params,
-        );
+        config.map_openai_params(&case.model, &case.requested, &mut optional_params);
         mapped.push(serde_json::to_value(&optional_params).or_value_error()?);
     }
     Ok(Value::Array(mapped))

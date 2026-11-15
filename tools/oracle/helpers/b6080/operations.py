@@ -18,11 +18,10 @@ from .inputs import (
     ChunkOut,
     DecisionsCase,
     EmbeddingCase,
-    ErrorCase,
     Input,
     ResponsesCase,
 )
-from .wire import JSON, embedding_replies, requests, responses
+from .wire import JSON, ReplyCase, embedding_replies, requests, responses
 
 
 class ChunkParser(Protocol):
@@ -72,7 +71,7 @@ def embedding_answer(case: EmbeddingCase) -> JsonValue:
         case["api_base"], case["api_key"], case["model"], empty, empty
     )
     body: dict[str, JsonValue] = EMBEDDING.transform_embedding_request(
-        case["model"], case["input"], empty, headers
+        case["model"], case["input"], case["optional_params"], headers
     )
     params: dict[str, JsonValue] = EMBEDDING.map_openai_params(
         Params(case["non_default_params"]), empty, case["model"], drop_params=False
@@ -87,9 +86,11 @@ def embedding_answer(case: EmbeddingCase) -> JsonValue:
     }
 
 
-def embeddings(cases: list[EmbeddingCase]) -> JsonValue:
+def embeddings(cases: list[EmbeddingCase], replies: list[ReplyCase]) -> JsonValue:
     answers: list[JsonValue] = [embedding_answer(case) for case in cases]
-    return JSON.validate_python(answers)
+    return JSON.validate_python(
+        {"requests": answers, "replies": embedding_replies(replies)}
+    )
 
 
 def response_answer(case: ResponsesCase) -> JsonValue:
@@ -140,40 +141,21 @@ def decisions(cases: list[DecisionsCase]) -> JsonValue:
     return JSON.validate_python(values)
 
 
-def error_classes(cases: list[ErrorCase]) -> JsonValue:
-    errors: list[JsonValue] = []
-    for case in cases:
-        error = CHAT.get_error_class(case["message"], case["status"], case["headers"])
-        errors.append({"message": error.message, "status": error.status_code})
-    return JSON.validate_python(errors)
-
-
-def supported_models(models: list[str]) -> JsonValue:
-    params: list[list[str]] = [CHAT.get_supported_openai_params(model) for model in models]
-    return JSON.validate_python(params)
-
-
 def run(input_value: Input) -> JsonValue:
     result: JsonValue
-    if input_value["op"] == "supported":
-        result = supported_models(input_value["models"])
-    elif input_value["op"] == "chat_params":
+    if input_value["op"] == "chat_params":
         result = chat_params(input_value["cases"])
     elif input_value["op"] == "chunk":
         handler = OpenRouterChatCompletionStreamingHandler(iter([]), sync_stream=True)
         result = chunks(input_value["cases"], handler)
     elif input_value["op"] == "embedding":
-        result = embeddings(input_value["cases"])
+        result = embeddings(input_value["cases"], input_value["replies"])
     elif input_value["op"] == "responses":
         result = responses_cases(input_value["cases"])
     elif input_value["op"] == "decisions":
         result = decisions(input_value["cases"])
     elif input_value["op"] == "request":
         result = requests(input_value["cases"])
-    elif input_value["op"] == "response":
-        result = responses(input_value["cases"])
-    elif input_value["op"] == "embedding_reply":
-        result = embedding_replies(input_value["cases"])
     else:
-        result = error_classes(input_value["cases"])
+        result = responses(input_value["cases"])
     return result

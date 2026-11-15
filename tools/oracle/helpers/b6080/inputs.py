@@ -2,12 +2,7 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from pydantic import JsonValue
 
-from .wire import EmbeddingReplyInput, RequestInput, ResponseInput
-
-
-class SupportedInput(TypedDict):
-    op: Literal["supported"]
-    models: list[str]
+from .wire import ReplyCase, RequestInput, ResponseInput
 
 
 class ChatParamsCase(TypedDict):
@@ -76,6 +71,7 @@ class EmbeddingCase(TypedDict):
 class EmbeddingInput(TypedDict):
     op: Literal["embedding"]
     cases: list[EmbeddingCase]
+    replies: list[ReplyCase]
 
 
 class ResponsesCase(TypedDict):
@@ -101,19 +97,7 @@ class DecisionsInput(TypedDict):
     cases: list[DecisionsCase]
 
 
-class ErrorCase(TypedDict):
-    message: str
-    status: int
-    headers: dict[str, str]
-
-
-class ErrorInput(TypedDict):
-    op: Literal["error_class"]
-    cases: list[ErrorCase]
-
-
 Input: TypeAlias = (
-    SupportedInput
-    | ChatParamsInput | ChunkInput | EmbeddingInput | ResponsesInput
-    | DecisionsInput | ErrorInput | RequestInput | ResponseInput | EmbeddingReplyInput
+    ChatParamsInput | ChunkInput | EmbeddingInput | ResponsesInput
+    | DecisionsInput | RequestInput | ResponseInput
 )

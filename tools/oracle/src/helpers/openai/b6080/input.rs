@@ -3,22 +3,35 @@ use std::collections::BTreeMap;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::embedding::EmbeddingInput;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
-    Supported { models: Vec<String> },
-    ChatParams { cases: Vec<ChatParamsCase> },
-    Chunk { cases: Vec<ChunkCase> },
-    Embedding { cases: Vec<EmbeddingCase> },
-    Responses { cases: Vec<ResponsesCase> },
-    Decisions { cases: Vec<DecisionsCase> },
-    ErrorClass { cases: Vec<ErrorCase> },
-    Request { cases: Vec<RequestCase> },
-    Response { cases: Vec<ReplyCase> },
-    EmbeddingReply { cases: Vec<ReplyCase> },
+    ChatParams {
+        cases: Vec<ChatParamsCase>,
+    },
+    Chunk {
+        cases: Vec<ChunkCase>,
+    },
+    Embedding {
+        cases: Vec<EmbeddingCase>,
+        replies: Vec<ReplyCase>,
+    },
+    Responses {
+        cases: Vec<ResponsesCase>,
+    },
+    Decisions {
+        cases: Vec<DecisionsCase>,
+    },
+    Request {
+        cases: Vec<RequestCase>,
+    },
+    Response {
+        cases: Vec<ReplyCase>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,18 +55,9 @@ pub(crate) struct DecisionsCase {
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ErrorCase {
-    pub(crate) message: String,
-    pub(crate) status: u16,
-    #[serde(default)]
-    pub(crate) headers: Headers,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub(crate) struct ChatParamsCase {
     pub(crate) model: String,
-    pub(crate) requested: Map<String, Value>,
+    pub(crate) requested: Object,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,8 +77,8 @@ pub(crate) struct EmbeddingCase {
     pub(crate) api_base: Option<String>,
     pub(crate) model: String,
     pub(crate) input: EmbeddingInput,
-    pub(crate) optional_params: Map<String, Value>,
-    pub(crate) non_default_params: Map<String, Value>,
+    pub(crate) optional_params: Object,
+    pub(crate) non_default_params: Object,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,7 +86,7 @@ pub(crate) struct EmbeddingCase {
 pub(crate) struct RequestCase {
     pub(crate) model: String,
     pub(crate) messages: Vec<ChatMessage>,
-    pub(crate) optional_params: Map<String, Value>,
+    pub(crate) optional_params: Object,
 }
 
 #[derive(Debug, Deserialize)]

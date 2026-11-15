@@ -52,6 +52,32 @@ call:
           model: override
           dimensions: 8
         non_default_params: {}
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: m
+        input: x
+        optional_params: {}
+        non_default_params:
+          timeout: 30
+          dimensions: 8
+          encoding_format: float
+          user: u1
+          temperature: 0.2
+          input: ignored
+      - headers: {}
+        api_key: sk-1
+        environment: {}
+        api_base: null
+        model: m
+        input: x
+        optional_params: {}
+        non_default_params:
+          dimensions: null
+          user: ""
+    replies:
+      - body: '{"object":"list","data":[{"object":"embedding","embedding":[0.5,-0.25],"index":0}],"model":"m","usage":{"prompt_tokens":2,"total_tokens":2}}'
 env: {}
 compare:
   ignore: []

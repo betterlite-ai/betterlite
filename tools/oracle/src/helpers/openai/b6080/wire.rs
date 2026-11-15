@@ -1,32 +1,28 @@
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_openai::openai_base_config::Headers;
-use betterlite_openai::openrouter_chat::policy::ChatPolicy;
-use betterlite_openai::openrouter_chat::{ChatRequest, OpenrouterConfig};
-use betterlite_openai::openrouter_embedding::transform_embedding_response;
+use betterlite_openai::openrouter_chat::ChatRequest;
+use betterlite_openai::openrouter_embedding::{EmbeddingDecodeError, transform_embedding_response};
 use betterlite_prompts::arguments::json::Object;
 use serde_json::{Value, json};
 
 use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
 
-use super::chat::{config, prompt_object};
+use super::chat::config;
 use super::input::{ReplyCase, RequestCase};
 
 const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 
 pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
     let config = config();
-    let litellm_params = Object::new();
-    let headers = Headers::new();
     let mut bodies = Vec::with_capacity(cases.len());
     for case in cases {
-        let optional_params = prompt_object(&case.optional_params);
         let body = config
             .transform_request(&ChatRequest {
                 model: &case.model,
                 messages: &case.messages,
-                optional_params: &optional_params,
-                litellm_params: &litellm_params,
-                headers: &headers,
+                optional_params: &case.optional_params,
+                litellm_params: &Object::new(),
+                headers: &Headers::new(),
             })
             .or_value_error()?;
         bodies.push(serde_json::to_value(&body).or_value_error()?);
@@ -36,32 +32,44 @@ pub(super) fn requests(cases: &[RequestCase]) -> HelperResult {
 
 pub(super) fn responses(cases: &[ReplyCase]) -> HelperResult {
     let config = config();
-    let costs = cases
-        .iter()
-        .map(|case| cost_header(&config, case))
-        .collect::<Result<Vec<Value>, Box<HelperError>>>()?;
+    let mut costs = Vec::with_capacity(cases.len());
+    for case in cases {
+        let reply = config
+            .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
+            .or_value_error()?;
+        let cost = match reply.additional_headers.get(COST_HEADER) {
+            Some(cost) => serde_json::to_value(cost).or_value_error()?,
+            None => Value::Null,
+        };
+        costs.push(json!({"cost": cost}));
+    }
     Ok(Value::Array(costs))
-}
-
-fn cost_header<P: ChatPolicy>(config: &OpenrouterConfig<P>, case: &ReplyCase) -> HelperResult {
-    let reply = config
-        .transform_response(case.body.as_bytes(), AdditionalHeaders::new())
-        .or_value_error()?;
-    let cost = match reply.additional_headers.get(COST_HEADER) {
-        Some(cost) => serde_json::to_value(cost).or_value_error()?,
-        None => Value::Null,
-    };
-    Ok(json!({"cost": cost}))
 }
 
 pub(super) fn embedding_replies(cases: &[ReplyCase]) -> HelperResult {
     let mut replies = Vec::with_capacity(cases.len());
     for case in cases {
         let mut logged = Vec::new();
-        let reply = transform_embedding_response(case.body.as_bytes(), &mut |text: &str| {
+        let decoded = transform_embedding_response(case.body.as_bytes(), &mut |text: &str| {
             logged.push(text.to_owned());
-        })
-        .or_value_error()?;
+        });
+        let reply = match decoded {
+            Ok(reply) => reply,
+            Err(EmbeddingDecodeError::Provider {
+                message,
+                status_code,
+            }) => {
+                return Err(Box::new(HelperError {
+                    class: String::from("ProviderError"),
+                    status: Some(status_code),
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message,
+                }));
+            }
+            Err(other) => return Err(other).or_value_error(),
+        };
         let data: Vec<Value> = reply
             .data
             .iter()
