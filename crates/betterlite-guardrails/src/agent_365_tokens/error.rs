@@ -56,7 +56,10 @@ pub enum Agent365TokenError {
         source: serde_json::Error,
     },
     #[error("the Entra token endpoint returned a non-object JSON body")]
-    NonObjectBody,
+    NonObjectBody {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("the Entra token endpoint returned no access_token")]
     MissingAccessToken,
     #[error("the Entra token endpoint returned a non-string access_token")]

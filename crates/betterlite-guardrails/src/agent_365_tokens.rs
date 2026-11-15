@@ -75,10 +75,21 @@ impl Agent365Guardrail {
                 supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
                 event_hook: settings.event_hook.clone(),
                 default_on: settings.default_on,
+                mask_request_content: false,
+                mask_response_content: false,
+                violation_message_template: None,
+                end_session_after_n_fails: None,
+                on_violation: None,
+                realtime_violation_message: None,
+                on_sensitive_data: None,
+                sensitive_data_route_to_model: None,
+                sticky_session_routing: true,
                 // LiteLLM constructs this guardrail with run_in_parallel=True
                 run_in_parallel: true,
+                scan_raw_request: false,
+                only_scan_new_messages: false,
+                timeout: None,
                 switches: AGENT_365_SWITCHES,
-                ..GuardrailSettings::default()
             },
             strict_modes,
         )?;

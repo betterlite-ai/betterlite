@@ -69,7 +69,7 @@ pub fn decode_token_reply(body: &[u8]) -> Result<TokenReply, Agent365TokenError>
     serde_json::from_slice(body).map_err(|source| {
         // serde reports a valid JSON body of the wrong shape as a data error and broken JSON as a syntax error
         if source.classify() == Category::Data {
-            Agent365TokenError::NonObjectBody
+            Agent365TokenError::NonObjectBody { source }
         } else {
             Agent365TokenError::NonJsonBody { source }
         }
