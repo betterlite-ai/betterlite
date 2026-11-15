@@ -92,7 +92,7 @@ fn reported_cost_bypasses_token_pricing(
 }
 
 #[test]
-fn an_unparseable_reported_total_is_an_error() {
+fn an_unparsable_reported_total_is_an_error() {
     let mut usage = usage(10, 2);
     usage.cost = Some(cost_value(json!({"total_cost": "not a price"})));
     let error = run(rates(), &usage).expect_err("the invalid total");
@@ -128,6 +128,22 @@ fn citation_tokens_add_to_the_prompt_cost() {
     .expect("the citation charge");
     assert_eq!(result.prompt_cost, dec("0.0001016"));
     assert_eq!(result.completion_cost, dec("0.0001"));
+}
+
+#[test]
+fn one_citation_token_adds_its_rate() {
+    let mut usage = usage(100, 50);
+    usage.citation_tokens = Some(1);
+    let result = run(
+        json!({
+            "input_cost_per_token": "0.000001",
+            "output_cost_per_token": "0.000002",
+            "citation_cost_per_token": "0.0000002"
+        }),
+        &usage,
+    )
+    .expect("the citation charge");
+    assert_eq!(result.prompt_cost, dec("0.0001002"));
 }
 
 #[test]
@@ -175,6 +191,21 @@ fn top_level_reasoning_tokens_are_split_at_the_reasoning_rate() {
     )
     .expect("the reasoning split");
     assert_eq!(result.completion_cost, dec("11"));
+}
+
+#[test]
+fn one_reasoning_token_is_split_at_the_reasoning_rate() {
+    let mut usage = usage(10, 10);
+    usage.reasoning_tokens = Some(1);
+    let result = run(
+        json!({
+            "output_cost_per_token": "0.5",
+            "output_cost_per_reasoning_token": "2"
+        }),
+        &usage,
+    )
+    .expect("the reasoning split");
+    assert_eq!(result.completion_cost, dec("6.5"));
 }
 
 #[test]
@@ -251,6 +282,27 @@ fn the_search_charge_is_added_to_the_completion_cost() {
 }
 
 #[test]
+fn one_search_request_adds_its_rate() {
+    let mut usage = usage(10, 10);
+    usage.tokens.prompt_details = Some(PromptDetails {
+        text_tokens: None,
+        audio_tokens: None,
+        image_tokens: None,
+        video_tokens: None,
+        web_search_requests: Some(1),
+    });
+    let result = run(
+        json!({
+            "output_cost_per_token": "0.5",
+            "search_context_cost_per_query": {"search_context_size_low": "0.005"}
+        }),
+        &usage,
+    )
+    .expect("the search charge");
+    assert_eq!(result.completion_cost, dec("5.005"));
+}
+
+#[test]
 fn search_queries_cost_per_query_wins_over_the_context_object() {
     let mut usage = usage(10, 10);
     usage.tokens.prompt_details = Some(PromptDetails {
@@ -316,7 +368,7 @@ fn a_context_object_without_the_low_size_charges_nothing() {
 }
 
 #[test]
-fn an_unparseable_search_rate_charges_nothing() {
+fn an_unparsable_search_rate_charges_nothing() {
     let mut usage = usage(10, 10);
     usage.tokens.prompt_details = Some(PromptDetails {
         text_tokens: None,

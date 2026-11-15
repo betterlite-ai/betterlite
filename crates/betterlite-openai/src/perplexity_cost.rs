@@ -12,8 +12,6 @@ use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
 use thiserror::Error;
 
-use crate::perplexity_chat::json_truthy;
-
 #[derive(Debug, Error)]
 pub enum PerplexityCostError {
     #[error("the reported Perplexity cost is not a number")]
@@ -50,7 +48,7 @@ pub fn cost_per_token(
     let rates = off_peak_rates(model_info, current_time, database)?;
     let mut prompt_cost = charge(usage.tokens.prompt_tokens, rates.input_rate)?;
     let citation_tokens = usage.citation_tokens.unwrap_or(0);
-    if citation_tokens > 0 {
+    if citation_tokens >= 1 {
         let citation_rate = rate(model_info, "citation_cost_per_token");
         prompt_cost = prompt_cost
             .checked_add(charge(citation_tokens, citation_rate)?)
@@ -62,7 +60,7 @@ pub fn cost_per_token(
         .prompt_details
         .and_then(|details| details.web_search_requests)
         .unwrap_or(0);
-    if search_requests > 0
+    if search_requests >= 1
         && let Some(search_rate) = search_rate(model_info)
     {
         completion_cost = completion_cost
@@ -141,7 +139,7 @@ fn completion_charge(
         model_info.get("output_cost_per_reasoning_token"),
         None | Some(Json::Null)
     );
-    if reasoning_tokens > 0 && configured {
+    if reasoning_tokens >= 1 && configured {
         let non_reasoning = usage
             .tokens
             .completion_tokens
@@ -159,7 +157,7 @@ fn completion_charge(
 fn search_rate(model_info: &Object) -> Option<Decimal> {
     let chosen = model_info
         .get("search_queries_cost_per_query")
-        .filter(|value| json_truthy(value))
+        .filter(|value| value.is_truthy())
         .or_else(|| model_info.get("search_context_cost_per_query"))
         .filter(|value| !matches!(value, Json::Null))?;
     Some(match chosen {
