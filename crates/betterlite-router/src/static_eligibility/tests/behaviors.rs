@@ -95,6 +95,7 @@ enum Behavior {
     ParamsSkipsWithoutResponseFormat,
     ParamsSkipsWithDropParams,
     ParamsKeepsAnUnresolvedProvider,
+    ContextErrorWhenParamsRemoveTheRest,
     OrderKeepsTheSmallestGroup,
     OrderTakesTheTargetGroup,
     SingleDeploymentIsSelected,
@@ -119,6 +120,7 @@ enum Behavior {
 #[case::params_skip_without_response_format(Behavior::ParamsSkipsWithoutResponseFormat)]
 #[case::params_skip_with_drop_params(Behavior::ParamsSkipsWithDropParams)]
 #[case::params_keep_unresolved(Behavior::ParamsKeepsAnUnresolvedProvider)]
+#[case::context_error_after_params(Behavior::ContextErrorWhenParamsRemoveTheRest)]
 #[case::order_smallest_group(Behavior::OrderKeepsTheSmallestGroup)]
 #[case::order_target_group(Behavior::OrderTakesTheTargetGroup)]
 #[case::single_selected(Behavior::SingleDeploymentIsSelected)]
@@ -148,6 +150,9 @@ fn static_eligibility_behaviors(#[case] behavior: Behavior) {
         Behavior::ParamsSkipsWithoutResponseFormat => params_skips_without_response_format(),
         Behavior::ParamsSkipsWithDropParams => params_skips_with_drop_params(),
         Behavior::ParamsKeepsAnUnresolvedProvider => params_keeps_an_unresolved_provider(),
+        Behavior::ContextErrorWhenParamsRemoveTheRest => {
+            context_error_when_params_remove_the_rest()
+        }
         Behavior::OrderKeepsTheSmallestGroup => order_selection(
             &[
                 ("one", Some(2)),
@@ -483,6 +488,39 @@ fn params_keeps_an_unresolved_provider() {
     assert_eq!(ids(&result.deployments), ["legacy"]);
 }
 
+// LiteLLM raises the context error when every pre-call candidate is invalid and one left over its window.
+fn context_error_when_params_remove_the_rest() {
+    let facts = RequestFacts {
+        input_token_count: Some(9),
+        response_format: true,
+        ..message_facts("hello")
+    };
+    let error = run(
+        pool(vec![
+            spec(
+                "gpt",
+                "windowed",
+                "openai/gpt-4o",
+                r#"{"max_input_tokens":4}"#,
+            ),
+            spec("gpt", "legacy", "openai/gpt-4", ""),
+        ]),
+        &facts,
+        true,
+        &unsupporting(),
+    )
+    .unwrap_err();
+    match error {
+        EligibilityError::ContextWindow(window) => {
+            assert_eq!(
+                window.causes,
+                "Model=openai/gpt-4o, Max Input Tokens=4, Got=9"
+            );
+        }
+        other => panic!("expected a context window error, got {other:?}"),
+    }
+}
+
 fn order_selection(rows: &[(&str, Option<i64>)], target: Option<i64>, expected: &[&str]) {
     let mut deployments = Vec::new();
     for (id, order) in rows {
@@ -521,6 +559,8 @@ fn optional_checks_union_and_toggle() {
     enabled.add(&[
         OptionalPreCallCheck::DeploymentAffinity,
         OptionalPreCallCheck::PromptCaching,
+        OptionalPreCallCheck::EnforceModelRateLimits,
+        OptionalPreCallCheck::EncryptedContentAffinity,
     ]);
     enabled.add(&[OptionalPreCallCheck::DeploymentAffinity]);
     assert!(
@@ -533,6 +573,16 @@ fn optional_checks_union_and_toggle() {
             .checks
             .contains(&OptionalPreCallCheck::PromptCaching)
     );
+    assert!(
+        enabled
+            .checks
+            .contains(&OptionalPreCallCheck::EnforceModelRateLimits)
+    );
+    assert!(
+        enabled
+            .checks
+            .contains(&OptionalPreCallCheck::EncryptedContentAffinity)
+    );
     enabled.replace(Some(&[OptionalPreCallCheck::RouterBudgetLimiting]));
     assert!(
         enabled
@@ -543,6 +593,16 @@ fn optional_checks_union_and_toggle() {
         !enabled
             .checks
             .contains(&OptionalPreCallCheck::PromptCaching)
+    );
+    assert!(
+        !enabled
+            .checks
+            .contains(&OptionalPreCallCheck::EnforceModelRateLimits)
+    );
+    assert!(
+        !enabled
+            .checks
+            .contains(&OptionalPreCallCheck::EncryptedContentAffinity)
     );
     assert!(
         enabled
@@ -592,6 +652,30 @@ async fn async_pre_call_checks_record_the_cooldown_then_fail() {
         .lock()
         .unwrap_or_else(|error| error.into_inner());
     assert_eq!(*recorded, [(String::from("d1"), 429)]);
+}
+
+// Only a rate limit records the cooldown; any other failure goes up with the cooldown untouched.
+#[tokio::test]
+async fn async_pre_call_checks_do_not_record_a_plain_failure() {
+    let check = Check {
+        outcome: Err(PreCallError::Failed {
+            message: "over budget".to_owned(),
+        }),
+    };
+    let view: &dyn DeploymentPreCallCheck = &check;
+    let cooldown = Cooldown::default();
+    let deployment = spec("gpt", "d1", "openai/gpt-4o", "");
+    assert_eq!(
+        async_routing_strategy_checks(&deployment, &[view], &cooldown).await,
+        Err(PreCallError::Failed {
+            message: "over budget".to_owned(),
+        })
+    );
+    let recorded = cooldown
+        .recorded
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    assert!(recorded.is_empty());
 }
 
 #[tokio::test]
@@ -718,34 +802,30 @@ async fn count_request_tokens_counts_a_system_block_list_once() {
     assert_eq!(count_request_tokens(&empty, &counter).await.unwrap(), 1);
 }
 
-#[test]
-fn optional_check_names_map_to_their_checks() {
-    let names = [
-        (
-            "deployment_affinity",
-            OptionalPreCallCheck::DeploymentAffinity,
-        ),
-        (
-            "responses_api_deployment_check",
-            OptionalPreCallCheck::ResponsesApiDeploymentCheck,
-        ),
-        ("session_affinity", OptionalPreCallCheck::SessionAffinity),
-        (
-            "encrypted_content_affinity",
-            OptionalPreCallCheck::EncryptedContentAffinity,
-        ),
-        ("prompt_caching", OptionalPreCallCheck::PromptCaching),
-        (
-            "router_budget_limiting",
-            OptionalPreCallCheck::RouterBudgetLimiting,
-        ),
-        (
-            "enforce_model_rate_limits",
-            OptionalPreCallCheck::EnforceModelRateLimits,
-        ),
-    ];
-    for (name, check) in names {
-        assert_eq!(OptionalPreCallCheck::from_name(name), Some(check));
-    }
-    assert_eq!(OptionalPreCallCheck::from_name("unknown"), None);
+#[rstest]
+#[case::deployment_affinity("deployment_affinity", Some(OptionalPreCallCheck::DeploymentAffinity))]
+#[case::responses_api_deployment_check(
+    "responses_api_deployment_check",
+    Some(OptionalPreCallCheck::ResponsesApiDeploymentCheck)
+)]
+#[case::session_affinity("session_affinity", Some(OptionalPreCallCheck::SessionAffinity))]
+#[case::encrypted_content_affinity(
+    "encrypted_content_affinity",
+    Some(OptionalPreCallCheck::EncryptedContentAffinity)
+)]
+#[case::prompt_caching("prompt_caching", Some(OptionalPreCallCheck::PromptCaching))]
+#[case::router_budget_limiting(
+    "router_budget_limiting",
+    Some(OptionalPreCallCheck::RouterBudgetLimiting)
+)]
+#[case::enforce_model_rate_limits(
+    "enforce_model_rate_limits",
+    Some(OptionalPreCallCheck::EnforceModelRateLimits)
+)]
+#[case::unknown("unknown", None)]
+fn optional_check_names_map_to_their_checks(
+    #[case] name: &str,
+    #[case] expected: Option<OptionalPreCallCheck>,
+) {
+    assert_eq!(OptionalPreCallCheck::from_name(name), expected);
 }

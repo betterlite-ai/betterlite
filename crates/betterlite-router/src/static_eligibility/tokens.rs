@@ -46,7 +46,7 @@ struct SystemMessage<'content> {
 
 // anthropic_system_to_openai_message: a non-empty system string or block list counts as one system message.
 fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountError> {
-    let content = match system {
+    let selected = match system {
         Some(Json::Text(text)) if !text.is_empty() => system,
         Some(Json::List(items)) if !items.is_empty() => system,
         Some(
@@ -59,7 +59,7 @@ fn system_message(system: Option<&Json>) -> Result<Option<Message>, TokenCountEr
         )
         | None => None,
     };
-    let Some(content) = content else {
+    let Some(content) = selected else {
         return Ok(None);
     };
     let value = serde_json::to_value(SystemMessage {
@@ -76,20 +76,20 @@ pub async fn count_request_tokens<C>(
     counter: &C,
 ) -> Result<usize, TokenCountError>
 where
-    C: TokenCounter + ?Sized,
+    C: TokenCounter + Sync + ?Sized,
 {
     let Some(messages) = payload.messages else {
         return Err(TokenCountError::NoInput);
     };
-    let mut counted = Vec::new();
+    let mut wire_messages = Vec::new();
     if let Some(message) = system_message(payload.system)? {
-        counted.push(message);
+        wire_messages.push(message);
     }
     for message in messages {
         let value = serde_json::to_value(message)?;
-        counted.push(serde_json::from_value(value)?);
+        wire_messages.push(serde_json::from_value(value)?);
     }
-    counter.count_messages(&counted, payload.tools).await
+    counter.count_messages(&wire_messages, payload.tools).await
 }
 
 // The off-loop pre-call count: no messages or no declared limit skips it, and a failed count leaves the deployments unfiltered.
@@ -101,12 +101,10 @@ pub async fn count_for_pre_call_checks<L, C>(
     counter: &C,
 ) -> Option<usize>
 where
-    L: TokenLimits + ?Sized,
-    C: TokenCounter + ?Sized,
+    L: TokenLimits + Sync + ?Sized,
+    C: TokenCounter + Sync + ?Sized,
 {
-    if payload.messages.is_none() {
-        return None;
-    }
+    payload.messages?;
     if !deployments
         .iter()
         .any(|deployment| limits.max_input_tokens(deployment, model).is_some())
@@ -130,42 +128,51 @@ pub struct ContextWindowExceeded {
     pub causes: String,
 }
 
-// The context-window arm of _pre_call_checks: an over-window deployment is out, and no deployment left is the error.
+// What the context window kept, and the rejected-deployment text _pre_call_checks reports when every candidate is invalid.
+#[must_use]
+#[derive(Debug)]
+pub struct ContextWindowFiltered {
+    pub deployments: Vec<DeploymentSpec>,
+    pub rejected: String,
+}
+
+// The context-window arm of _pre_call_checks: an over-window deployment leaves the pool and contributes its error text.
 pub fn filter_context_window<L>(
     model: &str,
     deployments: Vec<DeploymentSpec>,
     input_tokens: Option<usize>,
     limits: &L,
     causes: &mut Vec<Cause>,
-) -> Result<Vec<DeploymentSpec>, ContextWindowExceeded>
+) -> ContextWindowFiltered
 where
     L: TokenLimits + ?Sized,
 {
-    let Some(input_tokens) = input_tokens else {
-        return Ok(deployments);
+    let Some(count) = input_tokens else {
+        return ContextWindowFiltered {
+            deployments,
+            rejected: String::new(),
+        };
     };
     let mut kept = Vec::new();
     let mut rejected: Vec<String> = Vec::new();
     for deployment in deployments {
         match limits.max_input_tokens(&deployment, model) {
-            Some(maximum) if input_tokens > maximum => {
+            Some(maximum) if count > maximum => {
                 causes.push(Cause::ContextWindow {
                     model_name: deployment.model_name.clone(),
                     max_input_tokens: maximum,
-                    input_tokens,
+                    input_tokens: count,
                 });
                 rejected.push(format!(
-                    "Model={}, Max Input Tokens={maximum}, Got={input_tokens}",
+                    "Model={}, Max Input Tokens={maximum}, Got={count}",
                     declared_model(&deployment).unwrap_or(model)
                 ));
             }
             Some(_) | None => kept.push(deployment),
         }
     }
-    if !rejected.is_empty() && kept.is_empty() {
-        return Err(ContextWindowExceeded {
-            causes: rejected.concat(),
-        });
+    ContextWindowFiltered {
+        deployments: kept,
+        rejected: rejected.concat(),
     }
-    Ok(kept)
 }

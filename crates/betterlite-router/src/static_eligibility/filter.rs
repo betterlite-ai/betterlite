@@ -8,7 +8,9 @@ use crate::static_eligibility::environment::active_in_environment;
 use crate::static_eligibility::error::EligibilityError;
 use crate::static_eligibility::params::filter_supported_params;
 use crate::static_eligibility::request::RequestFacts;
-use crate::static_eligibility::tokens::{TokenLimits, filter_context_window};
+use crate::static_eligibility::tokens::{
+    ContextWindowExceeded, TokenLimits, filter_context_window,
+};
 use crate::static_eligibility::web_search::filter_web_search;
 
 // Why a candidate left the pool; the empty result tells the caller which filter took the last one.
@@ -110,6 +112,41 @@ fn active_candidates(
     Ok(active)
 }
 
+// The context-window and supported-parameter filters, and the context error when together they invalidate every candidate.
+fn pre_call_filters(
+    model: &str,
+    facts: &RequestFacts,
+    drop_params: bool,
+    services: &EligibilityServices<'_>,
+    pool: Vec<DeploymentSpec>,
+) -> Result<(Vec<DeploymentSpec>, Vec<Cause>), EligibilityError> {
+    let mut causes = Vec::new();
+    let mut rejected = String::new();
+    let mut deployments = pool;
+    if !facts.compaction_pending {
+        let window = filter_context_window(
+            model,
+            deployments,
+            facts.input_token_count,
+            services.limits,
+            &mut causes,
+        );
+        deployments = window.deployments;
+        rejected = window.rejected;
+    }
+    let deployments = filter_supported_params(
+        deployments,
+        facts,
+        drop_params,
+        services.params,
+        &mut causes,
+    );
+    if deployments.is_empty() && !rejected.is_empty() {
+        return Err(ContextWindowExceeded { causes: rejected }.into());
+    }
+    Ok((deployments, causes))
+}
+
 // The static half of async_get_healthy_deployments: the environment gate at construction, then the filters a request applies.
 pub fn eligible(
     input: EligibilityInput<'_>,
@@ -117,36 +154,29 @@ pub fn eligible(
 ) -> Result<EligibilityResult, EligibilityError> {
     let single = matches!(&input.candidates, Candidates::Single(_));
     let mut causes = Vec::new();
-    let deployments = match input.candidates {
+    let candidates = match input.candidates {
         Candidates::Single(deployment) => vec![*deployment],
         Candidates::Pool(pool) => pool,
     };
-    let active = active_candidates(deployments, input.environment, &mut causes)?;
+    let active = active_candidates(candidates, input.environment, &mut causes)?;
     if single {
         return single_eligibility(input.model, active, causes);
     }
     let mut deployments = filter_web_search(active, &input.facts.tools, &mut causes)?;
     if input.enable_pre_call_checks && input.facts.messages.is_some() {
-        if !input.facts.compaction_pending {
-            deployments = filter_context_window(
-                input.model,
-                deployments,
-                input.facts.input_token_count,
-                services.limits,
-                &mut causes,
-            )?;
-        }
-        deployments = filter_supported_params(
-            deployments,
+        let (filtered, pre_call_causes) = pre_call_filters(
+            input.model,
             input.facts,
             input.drop_params,
-            services.params,
-            &mut causes,
-        );
+            services,
+            deployments,
+        )?;
+        deployments = filtered;
+        causes.extend(pre_call_causes);
     }
-    let deployments = get_order_filtered_deployments(deployments, input.facts.target_order);
+    let ordered = get_order_filtered_deployments(deployments, input.facts.target_order);
     Ok(EligibilityResult {
-        deployments,
+        deployments: ordered,
         causes,
     })
 }
