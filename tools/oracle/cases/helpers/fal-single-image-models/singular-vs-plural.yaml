@@ -24,6 +24,10 @@ call:
         headers: {}
         body: '{}'
         existing: []
+      - status: 200
+        headers: {}
+        body: '{"image": {"url": 5, "b64_json": null}}'
+        existing: []
     recraft:
       - status: 200
         headers: {x-request-id: req-2}
@@ -41,6 +45,10 @@ call:
         headers: {}
         body: '{"images": ["https://a.test/1.png"]}'
         existing: ["https://first.test/0.png"]
+      - status: 200
+        headers: {}
+        body: '{"images": [{"url": true}]}'
+        existing: []
 env: {}
 compare:
   ignore: []
