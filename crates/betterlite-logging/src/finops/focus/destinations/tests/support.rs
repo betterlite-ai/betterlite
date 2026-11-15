@@ -343,7 +343,7 @@ impl FakeGcsHttp {
             .iter()
             .map(|request| match request {
                 GcsRequest::Post(post) => post.clone(),
-                other @ GcsRequest::Get(_) | other @ GcsRequest::Delete(_) => {
+                other @ (GcsRequest::Get(_) | GcsRequest::Delete(_)) => {
                     panic!("the destination sent a request that is not a POST: {other:?}")
                 }
             })
