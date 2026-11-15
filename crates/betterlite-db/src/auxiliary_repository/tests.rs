@@ -96,9 +96,9 @@ async fn default_read_and_explicit_writer() {
         recording_publisher(&journal),
         AutoRouterSessionTable,
     );
-    let access = routed.access().unwrap();
-    assert!(eq(access.read, &case.reader));
-    assert!(eq(access.write, &case.writer));
+    let routed_access = routed.access().unwrap();
+    assert!(eq(routed_access.read, &case.reader));
+    assert!(eq(routed_access.write, &case.writer));
 
     let pinned = PrismaTableRepository::<AutoRouterSessionTable>::new(
         Some(case.client()),
@@ -106,16 +106,16 @@ async fn default_read_and_explicit_writer() {
         AutoRouterSessionTable,
     )
     .with_writer();
-    let access = pinned.access().unwrap();
-    assert!(eq(access.read, &case.writer));
-    assert!(eq(access.write, &case.writer));
+    let pinned_access = pinned.access().unwrap();
+    assert!(eq(pinned_access.read, &case.writer));
+    assert!(eq(pinned_access.write, &case.writer));
 
     case.availability
         .reader_unavailable
         .store(true, Ordering::SeqCst);
-    let access = routed.access().unwrap();
-    assert!(eq(access.read, &case.writer));
-    assert!(eq(access.write, &case.writer));
+    let fallback_access = routed.access().unwrap();
+    assert!(eq(fallback_access.read, &case.writer));
+    assert!(eq(fallback_access.write, &case.writer));
     case.close().await;
 }
 
@@ -693,14 +693,14 @@ async fn postgres_latest_session_exact_key_partition() {
         .await
         .unwrap();
     assert_eq!(latest.as_deref(), Some("router-two"));
-    let latest = latest_model(&repository, "key-b", "session-1")
+    let other_key = latest_model(&repository, "key-b", "session-1")
         .await
         .unwrap();
-    assert_eq!(latest.as_deref(), Some("other-key"));
-    let latest = latest_model(&repository, "key-a", "session-2")
+    assert_eq!(other_key.as_deref(), Some("other-key"));
+    let other_session = latest_model(&repository, "key-a", "session-2")
         .await
         .unwrap();
-    assert_eq!(latest.as_deref(), Some("other-session"));
+    assert_eq!(other_session.as_deref(), Some("other-session"));
     let missing = latest_model(&repository, "key-c", "session-1")
         .await
         .unwrap();

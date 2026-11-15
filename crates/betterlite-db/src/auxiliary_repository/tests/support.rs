@@ -170,9 +170,9 @@ impl Journal {
 }
 
 pub(crate) fn recording_publisher(journal: &Journal) -> PublishChange<TableError> {
-    let journal = journal.clone();
+    let entries = journal.clone();
     Arc::new(move |object_type: &str| {
-        journal.record(&format!("publish:{object_type}"));
+        entries.record(&format!("publish:{object_type}"));
         let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
         future
     })
@@ -193,14 +193,14 @@ pub(crate) fn observing_publisher(
     journal: &Journal,
     store: &PostgresStore,
 ) -> PublishChange<TableError> {
-    let journal = journal.clone();
-    let store = store.clone();
+    let entries = journal.clone();
+    let pool = store.clone();
     Arc::new(move |object_type: &str| {
-        let journal = journal.clone();
-        let store = store.clone();
+        let task_entries = entries.clone();
+        let task_pool = pool.clone();
         let name = object_type.to_owned();
         let future: PublishFuture<TableError> = Box::pin(async move {
-            let client = store.session().await?;
+            let client = task_pool.session().await?;
             let row = client
                 .query_opt(
                     "SELECT 1 FROM \"LiteLLM_UISettings\" WHERE id = 'user_banner'",
@@ -208,7 +208,7 @@ pub(crate) fn observing_publisher(
                 )
                 .await
                 .map_err(|source| TableError::Database(backend(source)))?;
-            journal.record(&format!("publish:{name}:visible={}", row.is_some()));
+            task_entries.record(&format!("publish:{name}:visible={}", row.is_some()));
             Ok(())
         });
         future
