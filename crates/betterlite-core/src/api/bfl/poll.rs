@@ -156,19 +156,7 @@ where
             if self.clock.now().saturating_sub(started) >= DEFAULT_MAX_POLLING_TIME {
                 return Err(PollError::TimedOut);
             }
-            let response = self
-                .transport
-                .get(url.clone(), polling_headers.clone())
-                .await
-                .map_err(|source| PollError::PollTransport { source })?;
-            if response.status != 200 {
-                return Err(PollError::PollStatus {
-                    status: response.status,
-                    body: response_text(&response.body),
-                });
-            }
-            let reply = decode_bfl_reply(&response.body)
-                .map_err(|source| PollError::PollDecode { source })?;
+            let reply = self.get_reply(&url, &polling_headers).await?;
             match reply.status.as_deref() {
                 Some("Ready") => return Ok(reply),
                 Some(state @ ("Error" | "Failed" | "Content Moderated" | "Request Moderated")) => {
@@ -179,6 +167,21 @@ where
                 _ => self.sleeper.sleep(DEFAULT_POLLING_INTERVAL).await,
             }
         }
+    }
+
+    async fn get_reply(&self, url: &Url, headers: &HeaderMap) -> Result<BflReply, PollError> {
+        let response = self
+            .transport
+            .get(url.clone(), headers.clone())
+            .await
+            .map_err(|source| PollError::PollTransport { source })?;
+        if response.status != 200 {
+            return Err(PollError::PollStatus {
+                status: response.status,
+                body: response_text(&response.body),
+            });
+        }
+        decode_bfl_reply(&response.body).map_err(|source| PollError::PollDecode { source })
     }
 }
 

@@ -100,6 +100,13 @@ impl Script {
             .cloned()
             .expect("a submission is recorded")
     }
+
+    pub fn post_count(&self) -> usize {
+        self.posts
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
 }
 
 struct Token(Arc<AtomicBool>);

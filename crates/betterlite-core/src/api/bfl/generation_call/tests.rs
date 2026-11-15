@@ -481,21 +481,8 @@ async fn a_sync_call_uses_a_sync_supplied_transport() {
         .await;
 
     assert!(result.is_ok());
-    assert_eq!(
-        supplied
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .len(),
-        1
-    );
-    assert!(
-        provider
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .is_empty()
-    );
+    assert_eq!(supplied.post_count(), 1);
+    assert_eq!(provider.post_count(), 0);
 }
 
 #[tokio::test]
@@ -528,21 +515,8 @@ async fn a_sync_call_discards_an_async_supplied_transport() {
         .await;
 
     assert!(result.is_ok());
-    assert_eq!(
-        provider
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .len(),
-        1
-    );
-    assert!(
-        supplied
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .is_empty()
-    );
+    assert_eq!(provider.post_count(), 1);
+    assert_eq!(supplied.post_count(), 0);
 }
 
 #[tokio::test]
@@ -576,21 +550,8 @@ async fn an_async_call_discards_a_sync_supplied_transport() {
         .await;
 
     assert!(result.is_ok());
-    assert_eq!(
-        provider
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .len(),
-        1
-    );
-    assert!(
-        supplied
-            .posts
-            .lock()
-            .expect("the posts lock is not poisoned")
-            .is_empty()
-    );
+    assert_eq!(provider.post_count(), 1);
+    assert_eq!(supplied.post_count(), 0);
 }
 
 #[test]
