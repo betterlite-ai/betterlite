@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use crate::auxiliary_repository::repository::TableError;
+use crate::mcp_stored_contracts::JsonValue;
 use crate::search_tools::registry::SearchToolRegistry;
 use crate::search_tools::tests::fakes::{
     FakeReconnect, FakeTable, stored_record, transport_failure,
@@ -138,7 +139,7 @@ async fn list_error_text_carries_the_source_chain() {
 #[tokio::test]
 async fn list_names_the_field_of_an_unreadable_column() {
     let mut record = stored_record("tool-1", "web");
-    record.search_tool_info = Some(crate::mcp_stored_contracts::JsonValue::Bool(true));
+    record.search_tool_info = Some(JsonValue::Bool(true));
     let table = FakeTable::with_rows(vec![record]);
     let error = SearchToolRegistry::get_all_search_tools_from_db::<_, FakeReconnect>(&table, None)
         .await

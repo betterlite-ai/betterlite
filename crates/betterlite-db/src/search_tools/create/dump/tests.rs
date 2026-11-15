@@ -29,7 +29,8 @@ fn create_dump_walks_arrays_objects_and_scalars() {
 
 #[test]
 fn create_dump_accepts_the_deepest_stored_document_and_refuses_one_more() {
-    assert!(safe_dumps(&nested(64)).is_ok());
+    let expected = format!("{}null{}", "[".repeat(64), "]".repeat(64));
+    assert_eq!(safe_dumps(&nested(64)).unwrap(), expected);
     let error = safe_dumps(&nested(65)).unwrap_err();
     assert!(error.to_string().contains("exceeds depth 64"));
 }

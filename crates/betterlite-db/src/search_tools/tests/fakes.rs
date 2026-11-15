@@ -1,7 +1,8 @@
 use std::collections::VecDeque;
 use std::future::Future;
+use std::future::ready;
 use std::pin::Pin;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use chrono::{DateTime, TimeDelta, Utc};
 
@@ -63,6 +64,11 @@ pub(crate) fn transport_failure() -> TableError {
     TableError::Database(NativeDbError::NoDbConnected)
 }
 
+// A poisoned lock in a fake still holds every write the test made, so its contents come back
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
 #[derive(Default)]
 pub(crate) struct FakeTable {
     pub(crate) journal: Mutex<Vec<String>>,
@@ -76,21 +82,21 @@ pub(crate) struct FakeTable {
 impl FakeTable {
     pub(crate) fn with_rows(rows: Vec<SearchToolRecord>) -> Self {
         let table = Self::default();
-        table.rows.lock().unwrap().extend(rows);
+        lock(&table.rows).extend(rows);
         table
     }
 
     pub(crate) fn fail(&self, operation: &'static str, failure: TableError) {
-        self.failures.lock().unwrap().push((operation, failure));
+        lock(&self.failures).push((operation, failure));
     }
 
     pub(crate) fn calls(&self) -> Vec<String> {
-        self.journal.lock().unwrap().clone()
+        lock(&self.journal).clone()
     }
 
     fn enter(&self, operation: &'static str, entry: String) -> Result<(), TableError> {
-        self.journal.lock().unwrap().push(entry);
-        let mut failures = self.failures.lock().unwrap();
+        lock(&self.journal).push(entry);
+        let mut failures = lock(&self.failures);
         let Some(position) = failures.iter().position(|(name, _)| *name == operation) else {
             return Ok(());
         };
@@ -101,30 +107,32 @@ impl FakeTable {
         &self,
         operation: &'static str,
         entry: String,
-    ) -> Result<MutexGuard<'_, Vec<SearchToolRecord>>, TableError> {
+    ) -> Result<Vec<SearchToolRecord>, TableError> {
         self.enter(operation, entry)?;
-        Ok(self.rows.lock().unwrap())
+        Ok(lock(&self.rows).clone())
     }
-}
 
-impl SearchToolTableClient for FakeTable {
-    async fn create(&self, data: SearchToolCreate) -> Result<SearchToolRecord, TableError> {
+    fn create_row(
+        &self,
+        data: SearchToolCreate,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Result<SearchToolRecord, TableError> {
         self.enter("create", "create".to_owned())?;
-        let shift = TimeDelta::milliseconds(1);
         let record = SearchToolRecord {
             search_tool_id: "generated-id".to_owned(),
             search_tool_name: data.search_tool_name.clone(),
             litellm_params: json(&data.litellm_params),
             search_tool_info: Some(json(&data.search_tool_info)),
-            created_at: data.created_at.checked_add_signed(shift).unwrap(),
-            updated_at: data.updated_at.checked_add_signed(shift).unwrap(),
+            created_at,
+            updated_at,
         };
-        self.created.lock().unwrap().push(data);
-        self.rows.lock().unwrap().push(record.clone());
+        lock(&self.created).push(data);
+        lock(&self.rows).push(record.clone());
         Ok(record)
     }
 
-    async fn find_unique(
+    fn find_unique_row(
         &self,
         search_tool_id: &str,
     ) -> Result<Option<SearchToolRecord>, TableError> {
@@ -135,41 +143,80 @@ impl SearchToolTableClient for FakeTable {
             .cloned())
     }
 
-    async fn find_many(
+    fn many_rows(
         &self,
         order: Option<CreatedAtOrder>,
     ) -> Result<Vec<SearchToolRecord>, TableError> {
-        self.journal
-            .lock()
-            .unwrap()
-            .push(format!("find_many:{order:?}"));
-        let scripted = self.many.lock().unwrap().pop_front();
-        scripted.unwrap_or_else(|| Ok(self.rows.lock().unwrap().clone()))
+        lock(&self.journal).push(format!("find_many:{order:?}"));
+        let scripted = lock(&self.many).pop_front();
+        scripted.unwrap_or_else(|| Ok(lock(&self.rows).clone()))
     }
 
-    async fn update(
+    fn replace_row(
         &self,
         search_tool_id: &str,
         data: SearchToolUpdate,
     ) -> Result<SearchToolRecord, TableError> {
-        let record = {
-            let mut rows = self.rows_for("update", format!("update:{search_tool_id}"))?;
-            let index = row_position(&rows, search_tool_id)?;
-            let row = &mut rows[index];
-            row.search_tool_name.clone_from(&data.search_tool_name);
-            row.litellm_params = json(&data.litellm_params);
-            row.search_tool_info = Some(json(&data.search_tool_info));
-            row.updated_at = data.updated_at;
-            row.clone()
-        };
-        self.updated.lock().unwrap().push(data);
+        let mut rows = self.rows_for("update", format!("update:{search_tool_id}"))?;
+        let index = row_position(&rows, search_tool_id)?;
+        let row = rows.get_mut(index).ok_or(TableError::MissingRow)?;
+        row.search_tool_name.clone_from(&data.search_tool_name);
+        row.litellm_params = json(&data.litellm_params);
+        row.search_tool_info = Some(json(&data.search_tool_info));
+        row.updated_at = data.updated_at;
+        let record = row.clone();
+        *lock(&self.rows) = rows;
+        lock(&self.updated).push(data);
         Ok(record)
     }
 
-    async fn delete(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
+    fn delete_row(&self, search_tool_id: &str) -> Result<SearchToolRecord, TableError> {
         let mut rows = self.rows_for("delete", format!("delete:{search_tool_id}"))?;
         let index = row_position(&rows, search_tool_id)?;
-        Ok(rows.remove(index))
+        let removed = rows.remove(index);
+        *lock(&self.rows) = rows;
+        Ok(removed)
+    }
+}
+
+impl SearchToolTableClient for FakeTable {
+    fn create(
+        &self,
+        data: SearchToolCreate,
+    ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
+        let after_insert = TimeDelta::milliseconds(1);
+        let created_at = data.created_at.checked_add_signed(after_insert).unwrap();
+        let updated_at = data.updated_at.checked_add_signed(after_insert).unwrap();
+        ready(self.create_row(data, created_at, updated_at))
+    }
+
+    fn find_unique(
+        &self,
+        search_tool_id: &str,
+    ) -> impl Future<Output = Result<Option<SearchToolRecord>, TableError>> + Send {
+        ready(self.find_unique_row(search_tool_id))
+    }
+
+    fn find_many(
+        &self,
+        order: Option<CreatedAtOrder>,
+    ) -> impl Future<Output = Result<Vec<SearchToolRecord>, TableError>> + Send {
+        ready(self.many_rows(order))
+    }
+
+    fn update(
+        &self,
+        search_tool_id: &str,
+        data: SearchToolUpdate,
+    ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
+        ready(self.replace_row(search_tool_id, data))
+    }
+
+    fn delete(
+        &self,
+        search_tool_id: &str,
+    ) -> impl Future<Output = Result<SearchToolRecord, TableError>> + Send {
+        ready(self.delete_row(search_tool_id))
     }
 }
 
