@@ -238,7 +238,7 @@ fn advisor_blocks_follow_tool() {
 }
 
 #[test]
-fn case_3_thinking_history() {
+fn case_3_thinking_history_warning() {
     unpaired_thinking_is_dropped();
     thinking_survives_the_rest();
 }
@@ -717,7 +717,7 @@ fn additions_keep_the_call_order() {
 }
 
 #[test]
-fn case_10_option_cleanup() {
+fn case_10_assembly_option_cleanup() {
     max_tokens_defaults();
     internal_options_are_removed();
     top_k_sampling_gate();
