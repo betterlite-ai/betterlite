@@ -59,10 +59,9 @@ pub(super) async fn query_one<R>(
 where
     R: DeserializeOwned,
 {
-    match fetch_optional(store, sql, params).await? {
-        Some(row) => decode_row(&row).map(Some),
-        None => Ok(None),
-    }
+    fetch_optional(store, sql, params)
+        .await?
+        .map_or_else(|| Ok(None), |row| decode_row(&row).map(Some))
 }
 
 pub(super) async fn execute_count(

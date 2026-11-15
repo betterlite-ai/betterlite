@@ -17,9 +17,9 @@ use crate::resource_rows::credential::CredentialItem;
 use crate::resource_rows::model::ProxyModelTable;
 
 use super::support::{
-    Case, cipher, defaults_actions, execute, field, insert_budget, insert_config,
-    insert_credential, insert_model, insert_permission, keyed, seal, seal_with, text_row,
-    text_rows, value, write, written,
+    Case, batch, cipher, defaults_actions, field, insert_budget, insert_config, insert_credential,
+    insert_model, insert_permission, keyed, seal, seal_with, text_row, text_rows, value, write,
+    written,
 };
 
 fn model_repository(case: &Case, key: Option<SecretString>) -> ModelRepository<'_> {
@@ -123,12 +123,12 @@ pub(crate) async fn excluded_model_id(case: &Case) {
     assert!(ids.contains(&"excluded-keep"));
     assert!(!ids.contains(&"excluded-skip"));
     let all = repository.find_all_except("excluded-absent").await.unwrap();
-    let ids: Vec<&str> = all
+    let all_ids: Vec<&str> = all
         .iter()
         .map(|model| model.fields.model_id.as_str())
         .collect();
-    assert!(ids.contains(&"excluded-keep"));
-    assert!(ids.contains(&"excluded-skip"));
+    assert!(all_ids.contains(&"excluded-keep"));
+    assert!(all_ids.contains(&"excluded-skip"));
 }
 
 pub(crate) async fn model_json_columns(case: &Case) {
@@ -181,10 +181,10 @@ pub(crate) async fn model_decrypt_valid_plaintext_and_corrupt(case: &Case) {
         &repository.find_all_except("absent").await.unwrap(),
         "sealed",
     );
-    let params = &models[0].fields.litellm_params.0;
-    assert_eq!(params["api_key"], value("\"decrypted-value\""));
-    assert_eq!(params["plain"], value("\"ordinary-text\""));
-    assert_eq!(params["corrupt"], value("\"v2:gcm:bm90LXJlYWw\""));
+    let stored = &models[0].fields.litellm_params.0;
+    assert_eq!(stored["api_key"], value("\"decrypted-value\""));
+    assert_eq!(stored["plain"], value("\"ordinary-text\""));
+    assert_eq!(stored["corrupt"], value("\"v2:gcm:bm90LXJlYWw\""));
     assert!(
         logs.text()
             .contains("Error decrypting value for key: corrupt")
@@ -203,9 +203,9 @@ pub(crate) async fn constructor_key_not_read_key(case: &Case) {
         &repository.find_all_except("absent").await.unwrap(),
         "constructor",
     );
-    let params = &models[0].fields.litellm_params.0;
-    assert_eq!(params["api_key"], value("\"cipher-secret\""));
-    assert_eq!(params["caller"], JsonData::String(caller_value));
+    let stored = &models[0].fields.litellm_params.0;
+    assert_eq!(stored["api_key"], value("\"cipher-secret\""));
+    assert_eq!(stored["caller"], JsonData::String(caller_value));
 }
 
 pub(crate) async fn budget_id_column(case: &Case) {
@@ -246,21 +246,31 @@ async fn budget_b700_actions(case: &Case) {
     assert_eq!(one.len(), 1);
     let no_data = ();
     let update = KeyAction::Update(&no_data);
-    let key = Key {
+    let update_key = Key {
         column: KeyColumn::Id,
         value: &"budget-one",
     };
-    assert!(b700.by_key(update, key).await.unwrap().is_some());
-    let key = Key {
+    assert!(b700.by_key(update, update_key).await.unwrap().is_some());
+    let delete_key = Key {
         column: KeyColumn::Id,
         value: &"budget-two",
     };
-    assert!(b700.by_key(KeyAction::Delete, key).await.unwrap().is_some());
-    let key = Key {
+    assert!(
+        b700.by_key(KeyAction::Delete, delete_key)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    let find_key = Key {
         column: KeyColumn::Id,
         value: &"budget-two",
     };
-    assert!(b700.by_key(KeyAction::Find, key).await.unwrap().is_none());
+    assert!(
+        b700.by_key(KeyAction::Find, find_key)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 pub(crate) async fn permission_writer_choice(case: &Case) {
@@ -308,8 +318,11 @@ pub(crate) async fn config_writer_choice(case: &Case) {
             .is_none()
     );
     let writing = config_repository(case, true);
-    let shared = writing.get_param("config-shared").await.unwrap().unwrap();
-    assert_eq!(shared.param_value, JsonData::String("writer".to_owned()));
+    let writer_shared = writing.get_param("config-shared").await.unwrap().unwrap();
+    assert_eq!(
+        writer_shared.param_value,
+        JsonData::String("writer".to_owned())
+    );
     let only = writing
         .get_param("config-writer-only")
         .await
@@ -353,7 +366,7 @@ pub(crate) async fn config_missing(case: &Case) {
             .unwrap()
             .is_none()
     );
-    execute(
+    batch(
         &case.writer,
         "INSERT INTO \"LiteLLM_Config\" (param_name, param_value) VALUES ('config-null', NULL)",
     )
@@ -366,7 +379,7 @@ pub(crate) async fn config_missing(case: &Case) {
             param_value: JsonData::Null
         }
     );
-    execute(
+    batch(
         &case.writer,
         "INSERT INTO \"LiteLLM_Config\" (param_name, param_value) VALUES ('config-object', '{\"k\":1}'::jsonb)",
     )
@@ -380,7 +393,7 @@ pub(crate) async fn config_missing(case: &Case) {
 }
 
 pub(crate) async fn config_create_update_fields(case: &Case) {
-    execute(
+    batch(
         &case.writer,
         "INSERT INTO \"LiteLLM_Config\" (param_name, param_value, last_run_at, reload_revision) \
          VALUES ('config-tracked', to_jsonb('\"old\"'::text), '2026-02-03 04:05:06', 7)",
@@ -453,9 +466,9 @@ pub(crate) async fn config_verbatim_string(case: &Case) {
     let returned = repository.set_param("config-bare", bare).await.unwrap();
     assert_eq!(returned.param_value, JsonData::String("abc".to_owned()));
     let quoted = JsonData::String("\"hello\"".to_owned());
-    let returned = repository.set_param("config-quoted", quoted).await.unwrap();
+    let quoted_returned = repository.set_param("config-quoted", quoted).await.unwrap();
     assert_eq!(
-        returned.param_value,
+        quoted_returned.param_value,
         JsonData::String("\"hello\"".to_owned())
     );
     let read = repository
@@ -714,8 +727,8 @@ pub(crate) async fn empty_document_write(case: &Case) {
         .unwrap();
     assert_eq!(field(&changed, "param_value"), &value("\"value\""));
     let permissions = permission_repository(case, false);
-    let table = permissions.table().unwrap();
-    let upserted = table
+    let permission_table = permissions.table().unwrap();
+    let upserted = permission_table
         .upsert("perm-empty-upsert".to_owned(), RowWrite::default())
         .await
         .unwrap();
@@ -723,7 +736,7 @@ pub(crate) async fn empty_document_write(case: &Case) {
         field(&upserted, "object_permission_id"),
         &value("\"perm-empty-upsert\"")
     );
-    let updated = table
+    let updated = permission_table
         .update(RowWrite::default(), "perm-empty-upsert".to_owned())
         .await
         .unwrap()

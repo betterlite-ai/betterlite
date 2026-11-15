@@ -96,7 +96,7 @@ impl<'db> ModelRepository<'db> {
             };
             if let Some(StoredValue::Text(opened)) = self.cipher.decrypt_value(stored, name, policy)
             {
-                *text = opened.expose_secret().to_owned();
+                opened.expose_secret().clone_into(text);
             }
         }
         Ok(model)

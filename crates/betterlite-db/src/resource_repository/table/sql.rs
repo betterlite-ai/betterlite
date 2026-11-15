@@ -1,11 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::auxiliary_repository::repository::TableError;
 use crate::budget_permission_rows::JsonData;
-use crate::postgres_store::session::PostgresStore;
 
-use super::query::query_one;
-use super::{DocumentData, ResourceBinding};
+use super::ResourceBinding;
 
 fn quoted_columns(document: &BTreeMap<String, JsonData>) -> Vec<String> {
     document
@@ -23,7 +20,10 @@ fn value_list(document: &BTreeMap<String, JsonData>) -> String {
 }
 
 #[must_use]
-pub(super) fn select_one_statement<B: ResourceBinding>() -> String {
+pub(super) fn select_one_statement<B>() -> String
+where
+    B: ResourceBinding,
+{
     format!(
         "SELECT row_to_json(t)::text FROM \"{}\" AS t WHERE t.\"{}\" = $1",
         B::TABLE,
@@ -32,7 +32,10 @@ pub(super) fn select_one_statement<B: ResourceBinding>() -> String {
 }
 
 #[must_use]
-pub(super) fn delete_statement<B: ResourceBinding>() -> String {
+pub(super) fn delete_statement<B>() -> String
+where
+    B: ResourceBinding,
+{
     format!(
         "DELETE FROM \"{}\" AS t WHERE t.\"{}\" = $1",
         B::TABLE,
@@ -41,13 +44,19 @@ pub(super) fn delete_statement<B: ResourceBinding>() -> String {
 }
 
 #[must_use]
-pub(super) fn delete_returning_statement<B: ResourceBinding>() -> String {
+pub(super) fn delete_returning_statement<B>() -> String
+where
+    B: ResourceBinding,
+{
     let mut sql = delete_statement::<B>();
     sql.push_str(" RETURNING row_to_json(t)::text");
     sql
 }
 
-pub(super) fn generate_id<B: ResourceBinding>(document: &mut BTreeMap<String, JsonData>) {
+pub(super) fn generate_id<B>(document: &mut BTreeMap<String, JsonData>)
+where
+    B: ResourceBinding,
+{
     let Some(id) = B::ID else {
         return;
     };
@@ -60,9 +69,10 @@ pub(super) fn generate_id<B: ResourceBinding>(document: &mut BTreeMap<String, Js
 }
 
 #[must_use]
-pub(super) fn create_statement<B: ResourceBinding>(
-    document: &BTreeMap<String, JsonData>,
-) -> String {
+pub(super) fn create_statement<B>(document: &BTreeMap<String, JsonData>) -> String
+where
+    B: ResourceBinding,
+{
     let table = format!("\"{}\"", B::TABLE);
     if document.is_empty() {
         return format!("INSERT INTO {table} AS t DEFAULT VALUES RETURNING row_to_json(t)::text");
@@ -76,7 +86,10 @@ pub(super) fn create_statement<B: ResourceBinding>(
 }
 
 #[must_use]
-fn update_assignments<B: ResourceBinding>(document: &BTreeMap<String, JsonData>) -> Vec<String> {
+fn update_assignments<B>(document: &BTreeMap<String, JsonData>) -> Vec<String>
+where
+    B: ResourceBinding,
+{
     let mut assignments: Vec<String> = quoted_columns(document)
         .into_iter()
         .map(|column| format!("{column} = r.{column}"))
@@ -91,9 +104,10 @@ fn update_assignments<B: ResourceBinding>(document: &BTreeMap<String, JsonData>)
 }
 
 #[must_use]
-pub(super) fn update_statement<B: ResourceBinding>(
-    document: &BTreeMap<String, JsonData>,
-) -> String {
+pub(super) fn update_statement<B>(document: &BTreeMap<String, JsonData>) -> String
+where
+    B: ResourceBinding,
+{
     let table = format!("\"{}\"", B::TABLE);
     let key = format!("\"{}\"", B::KEY);
     let assignments = update_assignments::<B>(document).join(", ");
@@ -104,21 +118,11 @@ pub(super) fn update_statement<B: ResourceBinding>(
     )
 }
 
-pub(super) async fn update_one<B: ResourceBinding>(
-    store: &PostgresStore,
-    data: B::Update,
-    filter: &str,
-) -> Result<Option<JsonData>, TableError> {
-    let record = data.into_document()?;
-    let sql = update_statement::<B>(&record);
-    let json = serde_json::to_string(&record).map_err(TableError::Row)?;
-    query_one(store, &sql, &[&json, &filter]).await
-}
-
 #[must_use]
-pub(super) fn upsert_statement<B: ResourceBinding>(
-    document: &BTreeMap<String, JsonData>,
-) -> String {
+pub(super) fn upsert_statement<B>(document: &BTreeMap<String, JsonData>) -> String
+where
+    B: ResourceBinding,
+{
     let table = format!("\"{}\"", B::TABLE);
     let key = format!("\"{}\"", B::KEY);
     let columns = quoted_columns(document).join(", ");
@@ -135,10 +139,10 @@ pub(super) fn upsert_statement<B: ResourceBinding>(
     if assignments.is_empty() {
         assignments.push(format!("{key} = EXCLUDED.{key}"));
     }
-    let assignments = assignments.join(", ");
+    let assignment_clause = assignments.join(", ");
     format!(
         "INSERT INTO {table} AS t ({columns}) SELECT {values} FROM \
          jsonb_populate_record(NULL::{table}, $1::jsonb) AS r \
-         ON CONFLICT ({key}) DO UPDATE SET {assignments} RETURNING row_to_json(t)::text"
+         ON CONFLICT ({key}) DO UPDATE SET {assignment_clause} RETURNING row_to_json(t)::text"
     )
 }

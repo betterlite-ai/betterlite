@@ -435,12 +435,7 @@ pub(crate) async fn insert_credential(
     values: &str,
     info: Option<&str>,
 ) {
-    let client = store.session().await.unwrap();
-    let params: [&(dyn ToSql + Sync); 4] = [&id, &name, &values, &info];
-    client
-        .execute(INSERT_CREDENTIAL_SQL, &params)
-        .await
-        .unwrap();
+    execute(store, INSERT_CREDENTIAL_SQL, &[&id, &name, &values, &info]).await;
 }
 
 const INSERT_PERMISSION_SQL: &str = "INSERT INTO \"LiteLLM_ObjectPermissionTable\" \

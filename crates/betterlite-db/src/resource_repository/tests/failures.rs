@@ -19,7 +19,7 @@ use crate::resource_rows::ResourceRowsError;
 use super::support::{
     Case, Journal, NO_DB, batch, captured_logs, cipher, dead_redis, failing_publisher, field,
     insert_config, insert_credential, insert_model, observing_publisher, recording_publisher,
-    text_row, text_rows, value, write, written,
+    text_row, value, write, written,
 };
 
 pub(crate) async fn missing_client_before_query(_case: &Case) {
@@ -72,32 +72,32 @@ pub(crate) async fn invalid_model_json(case: &Case) {
 pub(crate) async fn config_bare_string_read_failure(case: &Case) {
     insert_config(&case.writer, "config-bare-failure", "abc").await;
     let repository = ConfigRepository::new(Some(case.client()), false);
-    let error = repository
+    let bare_error = repository
         .get_param("config-bare-failure")
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        bare_error,
         ConfigError::Json(ConfigDecodeError::Json(_))
     ));
     let deep = format!("{}{}", "[".repeat(65), "]".repeat(65));
     insert_config(&case.writer, "config-deep-failure", &deep).await;
-    let error = repository
+    let deep_error = repository
         .get_param("config-deep-failure")
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        deep_error,
         ConfigError::Json(ConfigDecodeError::TooDeep)
     ));
     let long = "a".repeat(MAX_CONFIG_VALUE_BYTES + 1);
     insert_config(&case.writer, "config-long-failure", &long).await;
-    let error = repository
+    let long_error = repository
         .get_param("config-long-failure")
         .await
         .unwrap_err();
     assert!(matches!(
-        error,
+        long_error,
         ConfigError::Json(ConfigDecodeError::TooLarge { len }) if len == MAX_CONFIG_VALUE_BYTES + 1
     ));
 }

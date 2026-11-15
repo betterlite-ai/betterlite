@@ -16,7 +16,7 @@ use crate::postgres_store::errors::backend;
 use self::query::{execute_count, query_all, query_one};
 use self::sql::{
     create_statement, delete_returning_statement, delete_statement, generate_id,
-    select_one_statement, update_one, update_statement, upsert_statement,
+    select_one_statement, update_statement, upsert_statement,
 };
 
 pub trait DocumentData: Serialize {
@@ -54,7 +54,7 @@ pub struct ResourceActions<'db, B: ResourceBinding> {
     binding: PhantomData<B>,
 }
 
-impl<'db, B: ResourceBinding> ResourceActions<'db, B> {
+impl<'db, B: ResourceBinding + Sync> ResourceActions<'db, B> {
     #[must_use]
     pub const fn new(access: TableAccess<'db>) -> Self {
         Self {
@@ -145,7 +145,10 @@ impl<B: ResourceBinding + Send + Sync> TableActions for ResourceActions<'_, B> {
         data: Self::UpdateData,
         filter: Self::Filter,
     ) -> Result<Option<Self::Row>, Self::Failure> {
-        update_one::<B>(self.access.write, data, &filter).await
+        let record = data.into_document()?;
+        let sql = update_statement::<B>(&record);
+        let json = serde_json::to_string(&record).map_err(TableError::Row)?;
+        query_one(self.access.write, &sql, &[&json, &filter]).await
     }
 
     async fn update_many(

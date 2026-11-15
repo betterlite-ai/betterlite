@@ -187,7 +187,11 @@ impl<'db> ConfigRepository<'db> {
         };
         let param_value = match row.param_value {
             JsonData::String(raw) => decode_config_json(raw.as_bytes())?,
-            other => other,
+            other @ (JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_)) => other,
         };
         Ok(Some(ConfigParam {
             param_name: param_name.to_owned(),
@@ -202,7 +206,11 @@ impl<'db> ConfigRepository<'db> {
     ) -> Result<ConfigParam, ConfigError> {
         let value_json = match &param_value {
             JsonData::String(text) => text.clone(),
-            other => serde_json::to_string(other).map_err(TableError::Row)?,
+            other @ (JsonData::Null
+            | JsonData::Bool(_)
+            | JsonData::Number(_)
+            | JsonData::Array(_)
+            | JsonData::Object(_)) => serde_json::to_string(other).map_err(TableError::Row)?,
         };
         let write = ConfigWrite {
             param_name: param_name.to_owned(),
