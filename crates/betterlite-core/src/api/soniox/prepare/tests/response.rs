@@ -29,7 +29,7 @@ fn projects_the_status_fields() {
     assert_eq!(meta.status.as_deref(), Some("completed"));
     assert_eq!(meta.error_message.as_deref(), Some("none"));
     assert_eq!(meta.error_type.as_deref(), Some("provider"));
-    assert_eq!(meta.audio_duration_ms, Some(json!(1500)));
+    assert_eq!(meta.audio_duration_ms, Some(json!(1_500_i32)));
     assert_eq!(meta.raw.get("extra"), Some(&json!(true)));
 }
 
@@ -68,7 +68,7 @@ fn projects_a_transcript() {
     assert_eq!(decoded.text.as_deref(), Some("hi"));
     assert_eq!(decoded.tokens.len(), 1);
     assert_eq!(decoded.tokens[0].text_string(), "hi");
-    assert_eq!(decoded.raw.get("extra"), Some(&json!(2)));
+    assert_eq!(decoded.raw.get("extra"), Some(&json!(2_i32)));
 }
 
 #[rstest]
@@ -116,7 +116,9 @@ fn bounds_the_token_count_before_decoding() {
     let malformed = r#"{"tokens": [{"speaker": {"who": 1}}, {"speaker": {"who": 2}}, {"speaker": {"who": 3}}]}"#;
     let at_limit = r#"{"tokens": [{}, {}]}"#;
 
-    assert!(transcript(&reply(at_limit), &limited(2)).is_ok());
+    let decoded = transcript(&reply(at_limit), &limited(2))
+        .expect("the transcript at the token limit decodes");
+    assert_eq!(decoded.tokens.len(), 2);
     assert!(matches!(
         transcript(&reply(malformed), &limited(2)),
         Err(ReplyError::TooManyTokens {

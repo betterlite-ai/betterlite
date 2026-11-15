@@ -131,7 +131,7 @@ fn refuses_a_missing_key_before_it_reads_options() {
     })
     .expect_err("the key is missing");
 
-    assert!(matches!(error, PrepareError::Auth(ref auth) if auth.status_code == 401));
+    assert!(matches!(&error, PrepareError::Auth(auth) if auth.status_code == 401));
 }
 
 #[rstest]
@@ -151,7 +151,7 @@ fn treats_an_unusable_environment_key_as_missing(#[case] value: &str) {
     })
     .expect_err("the key is unset");
 
-    assert!(matches!(error, PrepareError::Auth(ref auth) if auth.status_code == 401));
+    assert!(matches!(&error, PrepareError::Auth(auth) if auth.status_code == 401));
 }
 
 #[rstest]
@@ -189,7 +189,7 @@ fn leaves_the_callers_params_untouched() {
     })
     .expect("the params are accepted");
 
-    assert_eq!(params.get("soniox_polling_interval"), Some(&json!(2)));
+    assert_eq!(params.get("soniox_polling_interval"), Some(&json!(2_i32)));
     assert!(params.contains_key("language"));
     assert!(params.contains_key("filename"));
     assert!(!prepared.params.contains_key("language"));

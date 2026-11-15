@@ -20,7 +20,8 @@ fn reply(status: i64, body: &str) -> SonioxReply {
 #[case::redirect(302)]
 #[case::below_error(399)]
 fn passes_a_successful_status(#[case] status: i64) {
-    assert!(raise_for_response(&reply(status, "{}"), "poll transcription").is_ok());
+    raise_for_response(&reply(status, "{}"), "poll transcription")
+        .expect("the successful status passes");
 }
 
 #[rstest]

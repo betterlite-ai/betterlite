@@ -1,6 +1,7 @@
 use betterlite_openai::openai_base_config::Object;
 use rstest::rstest;
-use rust_decimal::prelude::ToPrimitive as _;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive as _;
 
 use super::super::error::PrepareError;
 use super::super::options::{
@@ -16,12 +17,10 @@ fn options_of(text: &str) -> Result<HandlerOptions, PrepareError> {
     extract_options(&mut params)
 }
 
-fn interval_of(text: &str) -> f64 {
-    let options = options_of(text).expect("the case interval is accepted");
-    options
+fn interval_of(text: &str) -> Decimal {
+    options_of(text)
+        .expect("the case interval is accepted")
         .poll_interval
-        .to_f64()
-        .expect("the interval converts back to f64")
 }
 
 fn attempts_of(text: &str) -> i64 {
@@ -49,6 +48,8 @@ fn attempts_of(text: &str) -> i64 {
 #[case::negative_infinite_text("{\"soniox_polling_interval\": \"-infinity\"}", 1.0_f64)]
 #[case::nan_text("{\"soniox_polling_interval\": \"nan\"}", 1.0_f64)]
 fn clamps_the_poll_interval(#[case] input: &str, #[case] expected: f64) {
+    let expected = Decimal::from_f64(expected).expect("the expected interval is a decimal");
+
     assert_eq!(interval_of(input), expected);
 }
 
@@ -70,7 +71,8 @@ fn refuses_an_interval_that_cannot_convert(#[case] input: &str) {
 
 #[test]
 fn refuses_an_interval_from_an_integer_past_f64() {
-    let digits = String::from("1") + &String::from("0").repeat(400);
+    let mut digits = String::from("1");
+    digits.push_str(&String::from("0").repeat(400));
     let input = format!("{{\"soniox_polling_interval\": {digits}}}");
 
     let error = options_of(&input).expect_err("the integer does not fit an f64");

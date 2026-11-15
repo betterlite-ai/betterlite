@@ -25,7 +25,8 @@ fn writes_the_model_and_non_null_options() {
 
     assert_eq!(body.get("model"), Some(&json!("override")));
     assert_eq!(body.get("language_hints"), Some(&json!(["en"])));
-    assert_eq!(body.get("context"), Some(&json!({"topic": "a"})));
+    let context = body.get("context").map(ToString::to_string);
+    assert_eq!(context, Some(String::from(r#"{"topic":"a"}"#)));
     assert!(!body.contains_key("client_reference_id"));
     assert_eq!(body.len(), 3);
 }
