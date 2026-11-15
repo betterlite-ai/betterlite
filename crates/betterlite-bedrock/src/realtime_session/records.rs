@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 pub const AUDIO_MEDIA_TYPE: &str = "audio/lpcm";
 pub const AUDIO_ENCODING: &str = "base64";
@@ -14,6 +14,18 @@ pub struct ExactDecimal(#[serde(with = "rust_decimal::serde::arbitrary_precision
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct Setting<T>(pub Option<T>);
+
+// A key that is present with a null value is not the same as a key that is absent
+pub fn nullable_setting<'de, D, T>(deserializer: D) -> Result<Option<Setting<T>>, D::Error>
+where
+    D: Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Option::<T>::deserialize(deserializer)?.map_or_else(
+        || Ok(Some(Setting(None))),
+        |value| Ok(Some(Setting(Some(value)))),
+    )
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -31,8 +43,8 @@ pub enum Infinite {
 // LiteLLM's configuration marker keeps its snake_case keys around the camelCase event payloads
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SessionConfiguration {
-    pub session_start: SessionStartEvent,
-    pub prompt_start: PromptStartEvent,
+    pub session_start: SessionStartFrame,
+    pub prompt_start: PromptStartFrame,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -118,8 +130,8 @@ pub struct Tool {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolSpec {
-    pub name: String,
-    pub description: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
     pub input_schema: ToolInputSchema,
 }
 
@@ -220,7 +232,6 @@ pub enum UpdateFrame {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct SessionEvent {
     pub event_id: String,
     pub session: SessionObject,

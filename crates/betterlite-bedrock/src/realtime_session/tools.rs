@@ -1,7 +1,7 @@
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use super::records::{Setting, Tool, ToolInputSchema, ToolSpec};
+use super::records::{Setting, Tool, ToolInputSchema, ToolSpec, nullable_setting};
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct ToolDefinition {
@@ -13,11 +13,11 @@ pub struct ToolDefinition {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 pub struct FunctionDefinition {
-    #[serde(default)]
-    pub name: Option<String>,
-    #[serde(default)]
-    pub description: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "nullable_setting")]
+    pub name: Option<Setting<String>>,
+    #[serde(default, deserialize_with = "nullable_setting")]
+    pub description: Option<Setting<String>>,
+    #[serde(default, deserialize_with = "nullable_setting")]
     pub parameters: Option<Setting<Box<RawValue>>>,
 }
 
@@ -34,16 +34,10 @@ pub fn transform(tools: &[ToolDefinition]) -> Vec<Tool> {
 }
 
 fn transform_one(tool: &ToolDefinition) -> Tool {
-    let function = tool.function.as_ref();
-    let name = match function {
-        Some(function) => function.name.clone().unwrap_or_default(),
-        None => String::new(),
-    };
-    let description = match function {
-        Some(function) => function.description.clone().unwrap_or_default(),
-        None => String::new(),
-    };
-    let json = match function.and_then(|function| function.parameters.as_ref()) {
+    let definition = tool.function.as_ref();
+    let name = setting_text(definition.and_then(|function| function.name.as_ref()));
+    let description = setting_text(definition.and_then(|function| function.description.as_ref()));
+    let json = match definition.and_then(|function| function.parameters.as_ref()) {
         Some(Setting(Some(parameters))) => parameters.get().to_owned(),
         Some(Setting(None)) => "null".to_owned(),
         None => "{}".to_owned(),
@@ -54,5 +48,13 @@ fn transform_one(tool: &ToolDefinition) -> Tool {
             description,
             input_schema: ToolInputSchema { json },
         },
+    }
+}
+
+fn setting_text(value: Option<&Setting<String>>) -> Option<String> {
+    match value {
+        Some(Setting(Some(text))) => Some(text.clone()),
+        Some(Setting(None)) => None,
+        None => Some(String::new()),
     }
 }

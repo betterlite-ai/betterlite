@@ -6,15 +6,13 @@ use rust_decimal::Decimal;
 
 use crate::agentcore_stream::IdSource;
 use records::{
-    AUDIO_MEDIA_TYPE, AudioOutputConfiguration, AudioSettings, ContentEnd, ContentEndEvent,
-    ContentEndFrame, ContentRole, ContentStart, ContentStartEvent, ContentStartFrame, ContentType,
-    ExactDecimal, InferenceConfiguration, MaxResponseTokens, MediaType, PromptStart,
-    PromptStartEvent, PromptStartFrame, SessionConfiguration, SessionEvent, SessionEventType,
-    SessionObject, SessionStart, SessionStartEvent, SessionStartFrame, Setting, TEXT_MEDIA_TYPE,
-    TOOL_MEDIA_TYPE, TextInput, TextInputConfiguration, TextInputEvent, TextInputFrame,
+    AUDIO_MEDIA_TYPE, AudioOutputConfiguration, AudioSettings, ExactDecimal,
+    InferenceConfiguration, MaxResponseTokens, MediaType, PromptStart, PromptStartEvent,
+    PromptStartFrame, SessionConfiguration, SessionEvent, SessionEventType, SessionObject,
+    SessionStart, SessionStartEvent, SessionStartFrame, Setting, TEXT_MEDIA_TYPE, TOOL_MEDIA_TYPE,
     ToolConfiguration, UpdateFrame, UsageEvent,
 };
-use update::{SessionConfig, SessionUpdate};
+use update::{SessionConfig, SessionUpdate, instruction_frames};
 
 mod tests;
 
@@ -98,11 +96,15 @@ impl RealtimeSession {
         tools: Option<&[tools::ToolDefinition]>,
     ) -> SessionConfiguration {
         SessionConfiguration {
-            session_start: SessionStartEvent {
-                session_start: self.session_start(),
+            session_start: SessionStartFrame {
+                event: SessionStartEvent {
+                    session_start: self.session_start(),
+                },
             },
-            prompt_start: PromptStartEvent {
-                prompt_start: self.prompt_start(tools),
+            prompt_start: PromptStartFrame {
+                event: PromptStartEvent {
+                    prompt_start: self.prompt_start(tools),
+                },
             },
         }
     }
@@ -123,81 +125,33 @@ impl RealtimeSession {
             }),
         ];
         self.prompt_started = true;
-        let Some(text) = instruction_text(update.session.instructions.as_ref()) else {
-            return frames;
-        };
-        let content_name = ids.next_id().to_string();
-        frames.push(UpdateFrame::ContentStart(ContentStartFrame {
-            event: ContentStartEvent {
-                content_start: ContentStart {
-                    prompt_name: self.names.prompt.clone(),
-                    content_name: content_name.clone(),
-                    content_type: ContentType::Text,
-                    interactive: false,
-                    role: ContentRole::System,
-                    text_input_configuration: TextInputConfiguration {
-                        media_type: self.text_media_type.clone(),
-                    },
-                },
-            },
-        }));
-        frames.push(UpdateFrame::TextInput(TextInputFrame {
-            event: TextInputEvent {
-                text_input: TextInput {
-                    prompt_name: self.names.prompt.clone(),
-                    content_name: content_name.clone(),
-                    content: text.to_owned(),
-                },
-            },
-        }));
-        frames.push(UpdateFrame::ContentEnd(ContentEndFrame {
-            event: ContentEndEvent {
-                content_end: ContentEnd {
-                    prompt_name: self.names.prompt.clone(),
-                    content_name,
-                },
-            },
-        }));
+        frames.extend(instruction_frames(
+            self,
+            update.session.instructions.as_ref(),
+            ids,
+        ));
         frames
     }
 
     #[must_use]
-    pub fn session_created_event(
-        model: Option<&str>,
-        trace_id: &str,
-        ids: &dyn IdSource,
-    ) -> SessionEvent {
-        let modalities = vec!["text".to_owned(), "audio".to_owned()];
-        SessionEvent {
-            event_id: ids.next_id().to_string(),
-            session: SessionObject {
-                id: trace_id.to_owned(),
-                modalities,
-                model: model.map(str::to_owned),
-            },
-            event_type: SessionEventType::Created,
-        }
-    }
-
-    #[must_use]
-    pub fn session_updated_event(
+    pub fn session_event(
+        event_type: SessionEventType,
         model: Option<&str>,
         trace_id: &str,
         modalities: Option<&[String]>,
         ids: &dyn IdSource,
     ) -> SessionEvent {
-        let modalities = match modalities {
-            Some(values) => values.to_vec(),
-            None => vec!["text".to_owned(), "audio".to_owned()],
-        };
         SessionEvent {
             event_id: ids.next_id().to_string(),
             session: SessionObject {
                 id: trace_id.to_owned(),
-                modalities,
+                modalities: modalities.map_or_else(
+                    || vec!["text".to_owned(), "audio".to_owned()],
+                    <[String]>::to_vec,
+                ),
                 model: model.map(str::to_owned),
             },
-            event_type: SessionEventType::Updated,
+            event_type,
         }
     }
 
@@ -237,12 +191,12 @@ impl RealtimeSession {
 
     fn prompt_start(&self, tools: Option<&[tools::ToolDefinition]>) -> PromptStart {
         let (tool_use_output_configuration, tool_configuration) = match tools {
-            Some(tools) if !tools.is_empty() => (
+            Some(available) if !available.is_empty() => (
                 Some(MediaType {
                     media_type: TOOL_MEDIA_TYPE.to_owned(),
                 }),
                 Some(ToolConfiguration {
-                    tools: tools::transform(tools),
+                    tools: tools::transform(available),
                 }),
             ),
             Some(_) | None => (None, None),
@@ -267,13 +221,6 @@ impl RealtimeSession {
     }
 }
 
-fn instruction_text(instructions: Option<&Setting<String>>) -> Option<&str> {
-    match instructions {
-        Some(Setting(Some(text))) if !text.is_empty() => Some(text),
-        Some(Setting(Some(_) | None)) | None => None,
-    }
-}
-
 fn audio_rate(format: &Setting<String>, is_output: bool) -> i64 {
     match format {
         Setting(Some(name)) if name == "g711_ulaw" || name == "g711_alaw" => 8000,
@@ -287,8 +234,8 @@ const fn default_rate(is_output: bool) -> i64 {
 
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
-    match api_base {
-        Some(base) => base.to_owned(),
-        None => String::new(),
-    }
+    let Some(base) = api_base else {
+        return String::new();
+    };
+    base.to_owned()
 }
