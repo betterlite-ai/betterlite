@@ -177,3 +177,10 @@ path = "fuzz_targets/gcp_iam_token.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "audit_record"
+path = "fuzz_targets/audit_record.rs"
+test = false
+doc = false
+bench = false
