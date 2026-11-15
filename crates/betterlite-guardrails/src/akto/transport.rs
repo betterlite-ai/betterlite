@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -58,19 +59,22 @@ impl AktoMirroring {
         payload: &AktoPayload,
     ) -> Result<AktoAnswer, AktoError> {
         let endpoint = format!("{}{HTTP_PROXY_PATH}", self.base_url);
-        let body = serde_json::to_string(payload).map_err(|source| AktoError::Encode { source })?;
-        let response = self
+        let request_body =
+            serde_json::to_string(payload).map_err(|source| AktoError::Encode { source })?;
+        let mut response = self
             .client
             .post(endpoint)
             .query(&build_query_params(flags))
             .headers(prepare_headers(&self.api_key)?)
             .timeout(self.timeout)
-            .body(body)
+            .body(request_body)
             .send()
             .await
             .map_err(|source| AktoError::Transport { source })?;
         let status = response.status();
-        let body = read_body(response).await?;
+        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(read_error)?;
         Ok(AktoAnswer { status, body })
     }
 
@@ -84,14 +88,7 @@ impl AktoMirroring {
                 status: answer.status,
             });
         }
-        let parsed: GuardrailValue = serde_json::from_slice(&answer.body).map_err(|source| {
-            tracing::error!(
-                bytes = answer.body.len(),
-                "Akto returned a non-JSON body for status 200"
-            );
-            AktoError::ResponseJson { source }
-        })?;
-        verdict_from(&parsed)
+        parse_verdict(&answer.body)
     }
 
     pub async fn fire_and_forget_request(&self, flags: AktoCallFlags, payload: &AktoPayload) {
@@ -106,6 +103,18 @@ impl AktoMirroring {
             }
         }
     }
+}
+
+// Public so the fuzz target and the corpus replay feed arbitrary bytes through the one parse the transport uses.
+pub fn parse_verdict(body: &[u8]) -> Result<GuardrailVerdict, AktoError> {
+    let parsed: GuardrailValue = serde_json::from_slice(body).map_err(|source| {
+        tracing::error!(
+            bytes = body.len(),
+            "Akto returned a non-JSON body for status 200"
+        );
+        AktoError::ResponseJson { source }
+    })?;
+    verdict_from(&parsed)
 }
 
 fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {
@@ -143,19 +152,9 @@ fn verdict_from(value: &GuardrailValue) -> Result<GuardrailVerdict, AktoError> {
     Ok(GuardrailVerdict { allowed, reason })
 }
 
-async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, AktoError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|source| AktoError::Transport { source })?
-    {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(AktoError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
+fn read_error(error: ReadError) -> AktoError {
+    match error {
+        ReadError::TooLarge { limit } => AktoError::ResponseTooLarge { limit },
+        ReadError::Failed(source) => AktoError::Transport { source },
     }
-    Ok(body)
 }

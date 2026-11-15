@@ -223,7 +223,7 @@ where
     if resolved.is_empty() && is_reference {
         return Ok(UnreachableFallback::default());
     }
-    match resolved.as_str() {
+    match resolved.to_ascii_lowercase().as_str() {
         "fail_closed" => Ok(UnreachableFallback::FailClosed),
         "fail_open" => Ok(UnreachableFallback::FailOpen),
         _ => Err(ConfigError::Yaml {

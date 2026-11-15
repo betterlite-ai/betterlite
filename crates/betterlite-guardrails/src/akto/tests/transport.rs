@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::future::IntoFuture as _;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ use super::{fixed_clock, guardrail, guardrail_at, inputs, log_path, log_to};
 use crate::akto::AktoMirroring;
 use crate::akto::error::AktoError;
 use crate::akto::payload::AktoPayload;
-use crate::akto::transport::{AktoAnswer, AktoCallFlags};
+use crate::akto::transport::{AktoAnswer, AktoCallFlags, parse_verdict};
 
 struct Recorded {
     path: String,
@@ -238,6 +239,17 @@ async fn akto_guardrail_send_request_times_out_at_the_guardrail_timeout() {
         .await
         .expect_err("timeout");
     assert!(matches!(error, AktoError::Transport { .. }));
+}
+
+#[test]
+fn replays_the_akto_response_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/akto_response");
+    let paths: Vec<_> = fs::read_dir(corpus).expect("corpus").collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.expect("corpus entry").path()).expect("corpus file");
+        parse_verdict(&bytes).is_ok()
+    }));
 }
 
 #[tokio::test]

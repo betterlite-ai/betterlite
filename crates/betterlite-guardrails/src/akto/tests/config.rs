@@ -65,6 +65,27 @@ fn akto_guardrail_config_keeps_configured_ids() {
 }
 
 #[test]
+fn akto_guardrail_config_prefers_configured_values_over_the_environment() {
+    let lookup = BTreeMap::from([
+        (
+            "AKTO_GUARDRAIL_API_BASE".to_owned(),
+            "http://env.test".to_owned(),
+        ),
+        ("AKTO_API_KEY".to_owned(), "env-key".to_owned()),
+        ("AKTO_ACCOUNT_ID".to_owned(), "1111".to_owned()),
+        ("AKTO_VXLAN_ID".to_owned(), "2222".to_owned()),
+    ]);
+    let source = config_source(
+        "      akto_base_url: http://configured.test\n      akto_api_key: configured-key\n      akto_account_id: '3333'\n      akto_vxlan_id: '4444'\n",
+    );
+    let configured = load_entry(&source, lookup);
+    assert_eq!(configured.api_base, "http://configured.test");
+    assert_eq!(configured.api_key.expose_secret(), "configured-key");
+    assert_eq!(configured.account_id, "3333");
+    assert_eq!(configured.vxlan_id, "4444");
+}
+
+#[test]
 fn akto_guardrail_config_requires_a_base_url() {
     let source = config_source("      akto_api_key: key\n");
     let error = ConfigLoader {
@@ -96,6 +117,7 @@ fn akto_guardrail_config_requires_an_api_key() {
 #[case::fail_open("fail_open", UnreachableFallback::FailOpen)]
 #[case::fail_closed("fail_closed", UnreachableFallback::FailClosed)]
 #[case::environment("os.environ/AKTO_FALLBACK", UnreachableFallback::FailOpen)]
+#[case::uppercase("FAIL_OPEN", UnreachableFallback::FailOpen)]
 fn akto_guardrail_config_reads_the_fallback(
     #[case] value: &str,
     #[case] expected: UnreachableFallback,
@@ -103,7 +125,7 @@ fn akto_guardrail_config_reads_the_fallback(
     let source = config_source(&format!(
         "      akto_base_url: http://akto.test\n      akto_api_key: key\n      unreachable_fallback: {value}\n"
     ));
-    let lookup = BTreeMap::from([("AKTO_FALLBACK".to_owned(), "fail_open".to_owned())]);
+    let lookup = BTreeMap::from([("AKTO_FALLBACK".to_owned(), "FAIL_OPEN".to_owned())]);
     assert_eq!(load_entry(&source, lookup).unreachable_fallback, expected);
 }
 
