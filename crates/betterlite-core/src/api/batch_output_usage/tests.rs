@@ -505,13 +505,15 @@ fn vertex_native_usage(
             {"request": {"contents": []}},
         ]},
     }));
-    let result = run(&decoded, &FakeVertex).expect("the batch is costed");
+    let (outcome, logs) = run_captured(&decoded, &FakeVertex);
+    let result = outcome.expect("the batch is costed");
     assert_eq!(result.usage, totals(10, 5, 15));
     assert_eq!(result.cost, cost);
     assert_eq!(result.models, models);
     assert_eq!(result.successful_requests, 1);
     assert_eq!(result.failed_requests, 1);
     assert!(result.diagnostics.is_empty());
+    assert!(logged(&logs, Level::INFO, "vertex_ai batch cost"));
 }
 
 #[test]
@@ -568,6 +570,7 @@ fn malformed_output_line_warning() {
         Level::WARN,
         "skipping non-object batch output line"
     ));
+    assert!(logged(&logs, Level::DEBUG, "batch output aggregate"));
 }
 
 #[test]
