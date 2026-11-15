@@ -287,6 +287,19 @@ fn refusal_text_forces_refusal() {
 }
 
 #[test]
+fn provider_specific_refusal_becomes_a_text_block() {
+    let record = response(&format!(
+        r#"{{"id": "{RESPONSE_ID}", "choices": [{{"message": {{"content": "hi",
+            "provider_specific_fields": {{"refusal": "no"}}}}}}]}}"#
+    ));
+    let translated = response_message(&record, None, None).expect("translates");
+    assert_rendered(
+        &translated.content,
+        r#"[{"type": "text", "text": "hi"}, {"type": "text", "text": "no"}]"#,
+    );
+}
+
+#[test]
 fn refusal_after_a_second_choice_still_counts() {
     let record = response(&format!(
         r#"{{"id": "{RESPONSE_ID}", "choices": [

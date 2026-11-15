@@ -59,6 +59,21 @@ fn block_selection_opens_an_empty_text_block_for_text_or_refusal() {
 }
 
 #[test]
+fn a_falsy_thinking_value_reads_as_empty() {
+    let choices = choices(
+        r#"[{"delta": {"thinking_blocks": [{"type": "thinking", "thinking": false, "signature": ""}]}}]"#,
+    );
+    assert_rendered(
+        &content_block(&choices, &fixed_ids()).expect("selects a block"),
+        r#"{"type": "thinking", "thinking": "", "signature": ""}"#,
+    );
+    assert_rendered(
+        &delta(&choices).expect("projects a delta"),
+        r#"{"type": "text_delta", "text": ""}"#,
+    );
+}
+
+#[test]
 fn block_selection_opens_a_typed_thinking_block() {
     let choices = choices(
         r#"[{"delta": {"thinking_blocks": [{"type": "thinking", "thinking": "why", "signature": "sig"}]}}]"#,
@@ -100,6 +115,17 @@ fn block_selection_uses_reasoning_only_without_thinking_blocks() {
     let suppressed = choices(r#"[{"delta": {"reasoning_content": "why", "thinking_blocks": []}}]"#);
     assert_rendered(
         &content_block(&suppressed, &fixed_ids()).expect("selects a block"),
+        r#"{"type": "text", "text": ""}"#,
+    );
+}
+
+#[test]
+fn block_selection_stops_at_a_text_choice() {
+    let choices = choices(
+        r#"[{"delta": {"content": "hi"}}, {"delta": {"tool_calls": [{"id": "t1", "function": {"name": "n"}}]}}]"#,
+    );
+    assert_rendered(
+        &content_block(&choices, &fixed_ids()).expect("selects a block"),
         r#"{"type": "text", "text": ""}"#,
     );
 }

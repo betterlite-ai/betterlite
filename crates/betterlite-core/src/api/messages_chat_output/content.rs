@@ -13,10 +13,10 @@ use crate::api::messages_content_primitives::signatures::{
     FunctionFields, ToolCallFields, compaction_blocks, tool_call_signature,
 };
 
+// "stop" and every unknown reason share end_turn, and a dedicated "stop" arm would only add a dead mutant.
 #[must_use]
 pub const fn anthropic_finish_reason(reason: &str) -> AnthropicStopReason {
     match reason {
-        "stop" => AnthropicStopReason::EndTurn,
         "length" => AnthropicStopReason::MaxTokens,
         "tool_calls" => AnthropicStopReason::ToolUse,
         "content_filter" | "refusal" => AnthropicStopReason::Refusal,

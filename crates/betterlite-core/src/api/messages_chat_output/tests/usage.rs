@@ -43,6 +43,10 @@ use super::support::{RESPONSE_ID, assert_rendered, polyfill_result, response, us
     r#"{"input_tokens": 97, "output_tokens": 0, "cache_read_input_tokens": 3}"#
 )]
 #[case(
+    r#"{"prompt_tokens": 100, "cache_read_input_tokens": 0, "_cache_read_input_tokens": 9}"#,
+    r#"{"input_tokens": 91, "output_tokens": 0, "cache_read_input_tokens": 9}"#
+)]
+#[case(
     r#"{"prompt_tokens": 100, "cache_read_input_tokens": 0, "_cache_read_input_tokens": -2,
            "prompt_tokens_details": {"cached_tokens": 0}}"#,
     r#"{"input_tokens": 100, "output_tokens": 0}"#
@@ -63,6 +67,11 @@ use super::support::{RESPONSE_ID, assert_rendered, polyfill_result, response, us
 )]
 #[case(
     r#"{"prompt_tokens": 100, "prompt_tokens_details": {"cache_write_tokens": 40}}"#,
+    r#"{"input_tokens": 60, "output_tokens": 0, "cache_creation_input_tokens": 40}"#
+)]
+#[case(
+    r#"{"prompt_tokens": 100, "prompt_tokens_details": {"cache_creation_tokens": 0,
+           "cache_write_tokens": 40}}"#,
     r#"{"input_tokens": 60, "output_tokens": 0, "cache_creation_input_tokens": 40}"#
 )]
 #[case(
