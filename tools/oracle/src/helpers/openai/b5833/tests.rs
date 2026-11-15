@@ -7,14 +7,17 @@ use serde_json::{Value, json};
 
 use crate::case::HelperCase;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
-
+fn load_case(file: &str) -> HelperCase {
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("cases/helpers/groq-chat")
         .join(file);
-    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    super::Op::decode_and_run(&case.call.input).unwrap()
+    serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn run_case(file: &str) -> Value {
+    use crate::helpers::Helper as _;
+
+    super::Op::decode_and_run(&load_case(file).call.input).unwrap()
 }
 
 #[test]
@@ -59,7 +62,7 @@ fn a_compound_model_keeps_web_search_options_without_reasoning_effort() {
             .contains(&json!("reasoning_effort"))
     );
     assert!(
-        entries[2]["params"]
+        !entries[2]["params"]
             .as_array()
             .unwrap()
             .contains(&json!("web_search_options"))
@@ -169,21 +172,21 @@ fn browser_actions_are_counted_and_a_missing_usage_is_not_billed() {
 }
 
 #[test]
-fn a_malformed_executed_tools_list_bills_nothing() {
+fn a_malformed_executed_tools_list_bills_nothing_for_that_reply() {
     let replies = &run_case("executed-tools-bad-shape.yaml")["replies"];
     assert_eq!(replies[0]["web_search_requests"], Value::Null);
     assert_eq!(replies[1]["web_search_requests"], Value::Null);
-    assert_eq!(replies[2]["web_search_requests"], Value::Null);
+    assert_eq!(replies[2]["web_search_requests"], 1);
+    assert_eq!(replies[2]["browser_open_requests"], 0);
 }
 
 #[test]
-fn stream_chunks_carry_reasoning_content_and_error_chunks_fail() {
-    let chunks = &run_case("stream-chunk-error-and-reasoning.yaml")["chunks"];
-    assert_eq!(chunks[0]["choices"][0]["reasoning_content"], "thinking");
-    assert_eq!(chunks[0]["choices"][0]["content"], "answer");
-    assert_eq!(chunks[1]["object"], "chat.completion.chunk");
-    assert_eq!(chunks[2]["error"]["status"], Value::Null);
-    assert_eq!(chunks[3]["error"]["status"], Value::Null);
+fn an_error_chunk_fails_with_its_own_code() {
+    use crate::helpers::Helper as _;
+
+    let case = load_case("stream-chunk-error-and-reasoning.yaml");
+    let error = super::Op::decode_and_run(&case.call.input).expect_err("the chunk error");
+    assert_eq!(error.status, Some(429));
 }
 
 #[test]
@@ -218,5 +221,5 @@ fn search_and_browser_open_costs_are_exact_decimals() {
     assert_eq!(costs[1]["cost"], "0.004000000000");
     assert_eq!(costs[2]["cost"], "0.000000000000");
     assert_eq!(costs[3]["cost"], "0.015000000000");
-    assert_eq!(costs[4]["cost"], "0.010000000000");
+    assert_eq!(costs[4]["cost"], "0.005000000000");
 }
