@@ -24,6 +24,14 @@ class Deployment(Strict):
     model_info: dict[str, JsonValue]
 
 
+def deployment_entry(deployment: Deployment) -> dict[str, JsonValue]:
+    return {
+        "model_name": deployment.model_name,
+        "litellm_params": {"model": deployment.backend_model},
+        "model_info": deployment.model_info,
+    }
+
+
 class CostOutput(Strict):
     cost: float | None
 
@@ -74,12 +82,7 @@ class ReservationCost(Operation):
     def build_router(self) -> Router | None:
         if not self.model_list:
             return None
-        model_list: list[dict[str, JsonValue]] = [
-            {
-                "model_name": deployment.model_name,
-                "litellm_params": {"model": deployment.backend_model},
-                "model_info": deployment.model_info,
-            }
-            for deployment in self.model_list
+        entries: list[dict[str, JsonValue]] = [
+            deployment_entry(deployment) for deployment in self.model_list
         ]
-        return Router(model_list=model_list)
+        return Router(model_list=entries)

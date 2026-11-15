@@ -73,12 +73,11 @@ def install_model_cost(entries: dict[str, dict[str, JsonValue]]) -> None:
 def build_router(deployments: list[Deployment]) -> Router | None:
     if not deployments:
         return None
-    model_list: list[dict[str, JsonValue]] = [
-        {
-            "model_name": deployment["model_name"],
-            "litellm_params": {"model": deployment["backend_model"]},
-            "model_info": deployment["model_info"],
-        }
-        for deployment in deployments
-    ]
-    return Router(model_list=model_list)
+    entries: list[dict[str, JsonValue]] = []
+    for deployment in deployments:
+        entry: dict[str, JsonValue] = {}
+        entry["model_name"] = deployment["model_name"]
+        entry["litellm_params"] = {"model": deployment["backend_model"]}
+        entry["model_info"] = deployment["model_info"]
+        entries.append(entry)
+    return Router(model_list=entries)
