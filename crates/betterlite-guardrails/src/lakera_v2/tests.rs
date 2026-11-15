@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::future::IntoFuture as _;
+use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
@@ -897,6 +898,55 @@ async fn call_v2_guard_records_an_answer_without_a_payload_key() {
         panic!("the recorded response is not an object");
     };
     assert!(recorded.get("payload").is_none(), "{recorded:?}");
+}
+
+#[derive(Clone, Default)]
+struct CapturedLog(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn call_v2_guard_logs_no_request_or_answer_body() {
+    let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = chat_data();
+    let sink = CollectingSink::default();
+    let suppressed = BTreeSet::new();
+    let mut call = invocation(&data);
+    let mut call_context = context(ScopeFlags::default(), &mut call, &sink, &suppressed);
+    let captured = CapturedLog::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _guard = tracing::subscriber::set_default(subscriber);
+    guardrail
+        .call_v2_guard(
+            &[lakera_message("user", "email a@example.com")],
+            &mut data,
+            GuardrailEventHooks::PreCall,
+            &mut call_context,
+        )
+        .await
+        .expect("a decoded response");
+    let logged = String::from_utf8(captured.0.lock().unwrap().clone()).expect("utf-8 logs");
+    assert!(
+        !logged.contains("a@example.com"),
+        "the guard logged the request body: {logged}"
+    );
 }
 
 mod coverage;
