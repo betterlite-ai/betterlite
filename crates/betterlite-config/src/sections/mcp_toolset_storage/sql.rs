@@ -2,14 +2,15 @@ use std::sync::Arc;
 
 use betterlite_db::auxiliary_repository::bindings::MCPToolsetTable;
 use betterlite_db::auxiliary_repository::repository::{
-    PrismaClient, PrismaTableRepository, TableAccess, TableError,
+    PrismaClient, PrismaTableRepository, TableError,
 };
-use betterlite_db::postgres_store::errors::backend;
+use betterlite_db::postgres_store::errors::{DbError, backend};
 use betterlite_redis::config_sync::publish::PublishChange;
 use chrono::NaiveDateTime;
 use tokio_postgres::Row;
 use tokio_postgres::types::ToSql;
 
+use super::MCPToolsetStorageError;
 use super::table::{Patch, ToolsetFilter, ToolsetRow, ToolsetTable, ToolsetUpdate};
 
 const CREATE_SQL: &str = "INSERT INTO \"LiteLLM_MCPToolsetTable\" (toolset_id, toolset_name, description, tools, created_by, updated_by) VALUES ($1, $2, $3, to_jsonb($4::text), $5, $6) RETURNING toolset_id, toolset_name, description, tools #>> '{}'::text[], created_at, created_by, updated_at, updated_by";
@@ -27,30 +28,33 @@ const UPDATE_SQL: &str = "UPDATE \"LiteLLM_MCPToolsetTable\" SET toolset_name = 
 const DELETE_SQL: &str = "DELETE FROM \"LiteLLM_MCPToolsetTable\" WHERE toolset_id = $1 RETURNING toolset_id, toolset_name, description, tools #>> '{}'::text[], created_at, created_by, updated_at, updated_by";
 
 pub struct MCPToolsetRepository<'db> {
-    client: Option<PrismaClient<'db>>,
-    publish: PublishChange<TableError>,
+    pub client: Option<PrismaClient<'db>>,
+    pub publish: PublishChange<TableError>,
 }
 
 impl<'db> MCPToolsetRepository<'db> {
-    #[must_use]
-    pub fn new(client: Option<PrismaClient<'db>>, publish: PublishChange<TableError>) -> Self {
-        Self { client, publish }
-    }
-
     fn table(&self, use_writer: bool) -> PrismaTableRepository<'db, MCPToolsetTable> {
         let base =
             PrismaTableRepository::new(self.client, Arc::clone(&self.publish), MCPToolsetTable);
         if use_writer { base.with_writer() } else { base }
     }
+}
 
-    fn access(&self, use_writer: bool) -> Result<TableAccess<'db>, TableError> {
-        Ok(self.table(use_writer).access()?)
+impl From<DbError> for MCPToolsetStorageError {
+    fn from(source: DbError) -> Self {
+        Self::Table(TableError::Database(source))
+    }
+}
+
+impl From<tokio_postgres::Error> for MCPToolsetStorageError {
+    fn from(source: tokio_postgres::Error) -> Self {
+        Self::Table(TableError::Database(backend(source)))
     }
 }
 
 impl ToolsetTable for MCPToolsetRepository<'_> {
-    async fn create(&self, row: ToolsetRow) -> Result<ToolsetRow, TableError> {
-        let client = self.access(false)?.write.session().await?;
+    async fn create(&self, row: ToolsetRow) -> Result<ToolsetRow, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.write.session().await?;
         let params: [&(dyn ToSql + Sync); 6] = [
             &row.toolset_id,
             &row.toolset_name,
@@ -59,34 +63,29 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
             &row.created_by,
             &row.updated_by,
         ];
-        let stored = client
-            .query_opt(CREATE_SQL, &params)
-            .await
-            .map_err(driver)?;
-        match stored {
+        match client.query_opt(CREATE_SQL, &params).await? {
             Some(stored) => toolset_row(&stored),
-            None => Err(TableError::MissingRow),
+            None => Err(MCPToolsetStorageError::Table(TableError::MissingRow)),
         }
     }
 
-    async fn find_unique(&self, toolset_id: &str) -> Result<Option<ToolsetRow>, TableError> {
-        let client = self.access(false)?.read.session().await?;
-        let found = client
-            .query_opt(SELECT_BY_ID_SQL, &[&toolset_id])
-            .await
-            .map_err(driver)?;
+    async fn find_unique(
+        &self,
+        toolset_id: &str,
+    ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.read.session().await?;
+        let found = client.query_opt(SELECT_BY_ID_SQL, &[&toolset_id]).await?;
         found.as_ref().map(toolset_row).transpose()
     }
 
     async fn find_first_by_name(
         &self,
         toolset_name: &str,
-    ) -> Result<Option<ToolsetRow>, TableError> {
-        let client = self.access(false)?.read.session().await?;
+    ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.read.session().await?;
         let found = client
             .query_opt(SELECT_BY_NAME_SQL, &[&toolset_name])
-            .await
-            .map_err(driver)?;
+            .await?;
         found.as_ref().map(toolset_row).transpose()
     }
 
@@ -94,14 +93,11 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
         &self,
         filter: ToolsetFilter,
         use_writer: bool,
-    ) -> Result<Vec<ToolsetRow>, TableError> {
-        let client = self.access(use_writer)?.read.session().await?;
+    ) -> Result<Vec<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(use_writer).access()?.read.session().await?;
         let rows = match filter {
-            ToolsetFilter::All => client.query(SELECT_ALL_SQL, &[]).await.map_err(driver)?,
-            ToolsetFilter::Ids(ids) => client
-                .query(SELECT_IDS_SQL, &[&ids])
-                .await
-                .map_err(driver)?,
+            ToolsetFilter::All => client.query(SELECT_ALL_SQL, &[]).await?,
+            ToolsetFilter::Ids(ids) => client.query(SELECT_IDS_SQL, &[&ids]).await?,
         };
         rows.iter().map(toolset_row).collect()
     }
@@ -110,8 +106,8 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
         &self,
         toolset_id: &str,
         update: ToolsetUpdate,
-    ) -> Result<Option<ToolsetRow>, TableError> {
-        let client = self.access(false)?.write.session().await?;
+    ) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.write.session().await?;
         let (description_set, description): (bool, Option<&str>) = match &update.description {
             Patch::Keep => (false, None),
             Patch::Clear => (true, None),
@@ -125,42 +121,26 @@ impl ToolsetTable for MCPToolsetRepository<'_> {
             &update.tools,
             &update.updated_by,
         ];
-        let stored = client
-            .query_opt(UPDATE_SQL, &params)
-            .await
-            .map_err(driver)?;
+        let stored = client.query_opt(UPDATE_SQL, &params).await?;
         stored.as_ref().map(toolset_row).transpose()
     }
 
-    async fn delete(&self, toolset_id: &str) -> Result<Option<ToolsetRow>, TableError> {
-        let client = self.access(false)?.write.session().await?;
-        let removed = client
-            .query_opt(DELETE_SQL, &[&toolset_id])
-            .await
-            .map_err(driver)?;
+    async fn delete(&self, toolset_id: &str) -> Result<Option<ToolsetRow>, MCPToolsetStorageError> {
+        let client = self.table(false).access()?.write.session().await?;
+        let removed = client.query_opt(DELETE_SQL, &[&toolset_id]).await?;
         removed.as_ref().map(toolset_row).transpose()
     }
 }
 
-fn driver(source: tokio_postgres::Error) -> TableError {
-    TableError::Database(backend(source))
-}
-
-fn toolset_row(row: &Row) -> Result<ToolsetRow, TableError> {
+fn toolset_row(row: &Row) -> Result<ToolsetRow, MCPToolsetStorageError> {
     Ok(ToolsetRow {
-        toolset_id: row.try_get(0).map_err(driver)?,
-        toolset_name: row.try_get(1).map_err(driver)?,
-        description: row.try_get(2).map_err(driver)?,
-        tools: row.try_get(3).map_err(driver)?,
-        created_at: row
-            .try_get::<_, NaiveDateTime>(4)
-            .map_err(driver)
-            .map(Some)?,
-        created_by: row.try_get(5).map_err(driver)?,
-        updated_at: row
-            .try_get::<_, NaiveDateTime>(6)
-            .map_err(driver)
-            .map(Some)?,
-        updated_by: row.try_get(7).map_err(driver)?,
+        toolset_id: row.try_get(0)?,
+        toolset_name: row.try_get(1)?,
+        description: row.try_get(2)?,
+        tools: row.try_get(3)?,
+        created_at: row.try_get::<_, NaiveDateTime>(4).map(Some)?,
+        created_by: row.try_get(5)?,
+        updated_at: row.try_get::<_, NaiveDateTime>(6).map(Some)?,
+        updated_by: row.try_get(7)?,
     })
 }

@@ -1,6 +1,5 @@
 use std::future::Future;
 
-use betterlite_db::auxiliary_repository::repository::TableError;
 use chrono::NaiveDateTime;
 use serde::{Deserialize, Deserializer};
 
@@ -43,41 +42,44 @@ where
     D: Deserializer<'de>,
     T: Deserialize<'de>,
 {
-    Ok(Option::<T>::deserialize(deserializer)?.map_or(Patch::Clear, Patch::Set))
+    match Option::<T>::deserialize(deserializer)? {
+        Some(value) => Ok(Patch::Set(value)),
+        None => Ok(Patch::Clear),
+    }
 }
 
 pub trait ToolsetTable: Send + Sync {
     fn create(
         &self,
         row: ToolsetRow,
-    ) -> impl Future<Output = Result<ToolsetRow, TableError>> + Send;
+    ) -> impl Future<Output = Result<ToolsetRow, MCPToolsetStorageError>> + Send;
 
     fn find_unique(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send;
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send;
 
     fn find_first_by_name(
         &self,
         toolset_name: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send;
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send;
 
     fn find_many(
         &self,
         filter: ToolsetFilter,
         use_writer: bool,
-    ) -> impl Future<Output = Result<Vec<ToolsetRow>, TableError>> + Send;
+    ) -> impl Future<Output = Result<Vec<ToolsetRow>, MCPToolsetStorageError>> + Send;
 
     fn update(
         &self,
         toolset_id: &str,
         update: ToolsetUpdate,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send;
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send;
 
     fn delete(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send;
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send;
 }
 
 pub fn toolset_from_row(row: ToolsetRow) -> Result<MCPToolset, MCPToolsetStorageError> {

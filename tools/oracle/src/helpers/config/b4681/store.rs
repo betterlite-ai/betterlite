@@ -1,6 +1,7 @@
 use std::future::{Future, ready};
-use std::sync::{Mutex, MutexGuard, PoisonError};
+use std::sync::{Mutex, MutexGuard};
 
+use betterlite_config::sections::mcp_toolset_storage::MCPToolsetStorageError;
 use betterlite_config::sections::mcp_toolset_storage::table::{
     Patch, ToolsetFilter, ToolsetRow, ToolsetTable, ToolsetUpdate,
 };
@@ -28,19 +29,25 @@ impl Store {
     }
 
     pub(crate) fn seen(&self) -> String {
-        lock(&self.seen).first().cloned().unwrap_or_default()
+        match lock(&self.seen).first() {
+            Some(label) => label.clone(),
+            None => String::new(),
+        }
     }
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poison) => poison.into_inner(),
+    }
 }
 
 impl ToolsetTable for Store {
     fn create(
         &self,
         row: ToolsetRow,
-    ) -> impl Future<Output = Result<ToolsetRow, TableError>> + Send {
+    ) -> impl Future<Output = Result<ToolsetRow, MCPToolsetStorageError>> + Send {
         let stored = ToolsetRow {
             created_at: Some(self.timestamp),
             updated_at: Some(self.timestamp),
@@ -53,7 +60,7 @@ impl ToolsetTable for Store {
     fn find_unique(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let found = {
             let reader = lock(&self.reader);
             reader
@@ -67,7 +74,7 @@ impl ToolsetTable for Store {
     fn find_first_by_name(
         &self,
         toolset_name: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let found = {
             let reader = lock(&self.reader);
             reader
@@ -82,7 +89,7 @@ impl ToolsetTable for Store {
         &self,
         filter: ToolsetFilter,
         use_writer: bool,
-    ) -> impl Future<Output = Result<Vec<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Vec<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let matched = {
             let rows = if use_writer {
                 lock(&self.writer)
@@ -101,7 +108,9 @@ impl ToolsetTable for Store {
             }
         };
         if self.fail {
-            return ready(Err(TableError::Database(DbError::NoDbConnected)));
+            return ready(Err(MCPToolsetStorageError::Table(TableError::Database(
+                DbError::NoDbConnected,
+            ))));
         }
         ready(Ok(matched))
     }
@@ -110,7 +119,7 @@ impl ToolsetTable for Store {
         &self,
         toolset_id: &str,
         update: ToolsetUpdate,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let result = {
             let mut writer = lock(&self.writer);
             writer
@@ -139,7 +148,7 @@ impl ToolsetTable for Store {
     fn delete(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let removed = {
             let mut writer = lock(&self.writer);
             let index = writer.iter().position(|row| row.toolset_id == toolset_id);

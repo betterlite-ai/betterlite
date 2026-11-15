@@ -166,8 +166,11 @@ where
     serde_json::from_value(value.clone()).or_value_error()
 }
 
-fn required<'a>(value: Option<&'a str>) -> Result<&'a str, Box<HelperError>> {
-    value.ok_or_else(|| value_error("the case names no toolset"))
+fn required(value: Option<&str>) -> Result<&str, Box<HelperError>> {
+    match value {
+        Some(name) => Ok(name),
+        None => Err(value_error("the case names no toolset")),
+    }
 }
 
 fn optional(found: Option<MCPToolset>) -> HelperResult {

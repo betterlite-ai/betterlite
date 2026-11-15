@@ -11,7 +11,9 @@ use tracing::{Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
-use super::table::{Patch, ToolsetFilter, ToolsetRow, ToolsetTable, ToolsetUpdate};
+use super::table::{
+    Patch, ToolsetFilter, ToolsetRow, ToolsetTable, ToolsetUpdate, toolset_from_row,
+};
 use super::{
     MCPToolsetStorageError, MCPToolsetTool, NewMCPToolsetRequest, UpdateMCPToolsetRequest,
     create_mcp_toolset, delete_mcp_toolset, get_mcp_toolset, get_mcp_toolset_by_name,
@@ -62,8 +64,9 @@ impl FakeTable {
 
     fn failing() -> Self {
         Self {
+            rows: Mutex::new(Vec::new()),
+            filters: Mutex::new(Vec::new()),
             fail_reads: true,
-            ..Self::default()
         }
     }
 
@@ -76,7 +79,7 @@ impl ToolsetTable for FakeTable {
     fn create(
         &self,
         row: ToolsetRow,
-    ) -> impl Future<Output = Result<ToolsetRow, TableError>> + Send {
+    ) -> impl Future<Output = Result<ToolsetRow, MCPToolsetStorageError>> + Send {
         let stored = ToolsetRow {
             created_at: Some(clock()),
             updated_at: Some(clock()),
@@ -89,7 +92,7 @@ impl ToolsetTable for FakeTable {
     fn find_unique(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let found = self
             .rows
             .lock()
@@ -103,7 +106,7 @@ impl ToolsetTable for FakeTable {
     fn find_first_by_name(
         &self,
         toolset_name: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let found = self
             .rows
             .lock()
@@ -118,7 +121,7 @@ impl ToolsetTable for FakeTable {
         &self,
         filter: ToolsetFilter,
         use_writer: bool,
-    ) -> impl Future<Output = Result<Vec<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Vec<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let (ids, rows) = {
             let mut filters = self.filters.lock().unwrap();
             match &filter {
@@ -133,7 +136,7 @@ impl ToolsetTable for FakeTable {
             (ids, rows)
         };
         if self.fail_reads {
-            return ready(Err(TableError::MissingRow));
+            return ready(Err(MCPToolsetStorageError::Table(TableError::MissingRow)));
         }
         let matched = match ids {
             Some(ids) => rows
@@ -149,7 +152,7 @@ impl ToolsetTable for FakeTable {
         &self,
         toolset_id: &str,
         update: ToolsetUpdate,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let result = {
             let mut rows = self.rows.lock().unwrap();
             rows.iter_mut()
@@ -177,7 +180,7 @@ impl ToolsetTable for FakeTable {
     fn delete(
         &self,
         toolset_id: &str,
-    ) -> impl Future<Output = Result<Option<ToolsetRow>, TableError>> + Send {
+    ) -> impl Future<Output = Result<Option<ToolsetRow>, MCPToolsetStorageError>> + Send {
         let removed = {
             let mut rows = self.rows.lock().unwrap();
             let index = rows.iter().position(|row| row.toolset_id == toolset_id);
@@ -462,7 +465,7 @@ fn toolset_from_row_parses_the_stored_tools_json() {
     row.tools = Some(
         r#"[{"server_id":"s1","tool_name":"t1"},{"server_id":"s2","tool_name":"t2"}]"#.to_owned(),
     );
-    let parsed = super::table::toolset_from_row(row).unwrap();
+    let parsed = toolset_from_row(row).unwrap();
     assert_eq!(parsed.tools, vec![tool("s1", "t1"), tool("s2", "t2")]);
 }
 
@@ -470,7 +473,7 @@ fn toolset_from_row_parses_the_stored_tools_json() {
 fn toolset_from_row_reads_a_null_tools_column_as_an_empty_list() {
     let mut row = toolset_row("id-1", "alpha");
     row.tools = None;
-    let parsed = super::table::toolset_from_row(row).unwrap();
+    let parsed = toolset_from_row(row).unwrap();
     assert!(parsed.tools.is_empty());
 }
 
@@ -478,6 +481,6 @@ fn toolset_from_row_reads_a_null_tools_column_as_an_empty_list() {
 fn toolset_from_row_rejects_unreadable_tools_json() {
     let mut row = toolset_row("id-1", "alpha");
     row.tools = Some("not json".to_owned());
-    let error = super::table::toolset_from_row(row).unwrap_err();
+    let error = toolset_from_row(row).unwrap_err();
     assert!(matches!(error, MCPToolsetStorageError::Tools(_)));
 }

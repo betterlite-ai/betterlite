@@ -16,7 +16,9 @@ use chrono::NaiveDateTime;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
+use tokio_postgres::types::ToSql;
 
+use crate::loader::startup::process_environment;
 use crate::sections::mcp_toolset_storage::sql::MCPToolsetRepository;
 use crate::sections::mcp_toolset_storage::{
     NewMCPToolsetRequest, UpdateMCPToolsetRequest, create_mcp_toolset, delete_mcp_toolset,
@@ -26,17 +28,14 @@ use crate::sections::mcp_toolset_storage::{
 use super::tool;
 
 fn configured_url() -> Option<SecretString> {
-    crate::loader::startup::process_environment()
+    process_environment()
         .get("POSTGRES_TEST_URL")
         .cloned()
         .map(SecretString::from)
 }
 
 fn no_publish() -> PublishChange<TableError> {
-    Arc::new(|_object_type: &str| {
-        let future: PublishFuture<TableError> = Box::pin(async { Ok(()) });
-        future
-    })
+    Arc::new(|_object_type: &str| -> PublishFuture<TableError> { Box::pin(async { Ok(()) }) })
 }
 
 struct Case {
@@ -75,10 +74,13 @@ impl Case {
             reader: &self.store,
             availability: &self.availability,
         };
-        MCPToolsetRepository::new(Some(client), no_publish())
+        MCPToolsetRepository {
+            client: Some(client),
+            publish: no_publish(),
+        }
     }
 
-    async fn execute(&self, sql: &str, params: &[&(dyn tokio_postgres::types::ToSql + Sync)]) {
+    async fn execute(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) {
         let client = self.store.session().await.unwrap();
         client.execute(sql, params).await.unwrap();
     }
@@ -151,32 +153,32 @@ async fn postgres_round_trip_keeps_every_field() {
 async fn postgres_lists_only_the_requested_ids() {
     let case = Case::new().await;
     let repository = case.repository();
-    let mut toolsets = Vec::new();
-    for name in ["alpha", "beta"] {
-        let request: NewMCPToolsetRequest =
-            serde_json::from_str(&format!(r#"{{"toolset_name": "{name}"}}"#)).unwrap();
-        toolsets.push(
-            create_mcp_toolset(&repository, &request, "creator")
-                .await
-                .unwrap(),
-        );
-    }
-    let ids = vec![toolsets[1].toolset_id.clone()];
+    let request: NewMCPToolsetRequest =
+        serde_json::from_str(r#"{"toolset_name": "alpha"}"#).unwrap();
+    create_mcp_toolset(&repository, &request, "creator")
+        .await
+        .unwrap();
+    let request: NewMCPToolsetRequest =
+        serde_json::from_str(r#"{"toolset_name": "beta"}"#).unwrap();
+    let beta = create_mcp_toolset(&repository, &request, "creator")
+        .await
+        .unwrap();
+    let ids = vec![beta.toolset_id.clone()];
     let listed = list_mcp_toolsets(&repository, Some(&ids), false)
         .await
         .unwrap();
-    assert_eq!(listed, vec![toolsets[1].clone()]);
-    let fetched = get_mcp_toolset(&repository, &toolsets[1].toolset_id)
+    assert_eq!(listed, vec![beta.clone()]);
+    let fetched = get_mcp_toolset(&repository, &beta.toolset_id)
         .await
         .unwrap();
-    assert_eq!(fetched, Some(toolsets[1].clone()));
+    assert_eq!(fetched, Some(beta.clone()));
     let by_name = get_mcp_toolset_by_name(&repository, "beta").await.unwrap();
-    assert_eq!(by_name, Some(toolsets[1].clone()));
+    assert_eq!(by_name, Some(beta.clone()));
     assert_eq!(
         list_mcp_toolsets(&repository, Some(&ids), true)
             .await
             .unwrap(),
-        vec![toolsets[1].clone()]
+        vec![beta.clone()]
     );
     assert_eq!(
         list_mcp_toolsets(&repository, None, true)
@@ -184,6 +186,40 @@ async fn postgres_lists_only_the_requested_ids() {
             .unwrap()
             .len(),
         2
+    );
+    case.close().await;
+}
+
+#[tokio::test]
+async fn postgres_lists_from_the_writer_when_asked() {
+    let case = Case::new().await;
+    let missing_reader = PostgresStore { pool: None };
+    let client = PrismaClient {
+        writer: &case.store,
+        reader: &missing_reader,
+        availability: &case.availability,
+    };
+    let repository = MCPToolsetRepository {
+        client: Some(client),
+        publish: no_publish(),
+    };
+    let request: NewMCPToolsetRequest =
+        serde_json::from_str(r#"{"toolset_name": "alpha"}"#).unwrap();
+    create_mcp_toolset(&repository, &request, "creator")
+        .await
+        .unwrap();
+    assert!(
+        list_mcp_toolsets(&repository, None, false)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(
+        list_mcp_toolsets(&repository, None, true)
+            .await
+            .unwrap()
+            .len(),
+        1
     );
     case.close().await;
 }
@@ -309,7 +345,7 @@ async fn postgres_reads_a_tools_column_stored_as_a_json_array() {
     let case = Case::new().await;
     let repository = case.repository();
     case.execute(
-        "INSERT INTO \"LiteLLM_MCPToolsetTable\" (toolset_id, toolset_name, tools) VALUES ($1, $2, $3::jsonb)",
+        "INSERT INTO \"LiteLLM_MCPToolsetTable\" (toolset_id, toolset_name, tools) VALUES ($1, $2, $3::text::jsonb)",
         &[&"id-array", &"alpha", &r#"[{"server_id": "s1", "tool_name": "t1"}]"#],
     )
     .await;
