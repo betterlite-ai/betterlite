@@ -1,0 +1,69 @@
+kind: helper
+name: anthropic-request-billing-metadata-policy
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: 'x-anthropic-billing-header: abc'
+      role: system
+    - content: kept
+      role: system
+    - content:
+      - text: 'x-anthropic-billing-header: x'
+        type: text
+      - text: ' x-anthropic-billing-header: y'
+        type: text
+      - text: 'X-anthropic-billing-header: z'
+        type: text
+      - text: KEEP
+        type: text
+      role: system
+    - content: hi
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: true
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: 'x-anthropic-billing-header: abc'
+      role: system
+    - content: kept
+      role: system
+    - content:
+      - text: 'x-anthropic-billing-header: x'
+        type: text
+      - text: ' x-anthropic-billing-header: y'
+        type: text
+      - text: 'X-anthropic-billing-header: z'
+        type: text
+      - text: KEEP
+        type: text
+      role: system
+    - content: hi
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []

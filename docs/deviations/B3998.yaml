@@ -1,0 +1,99 @@
+task: B3998
+deviations:
+  - what: >-
+      GCSBucketLogger.__init__ (lines 48-51) and async_log_success_event (lines 58-61) raise ValueError
+      when premium_user is not True. Betterlite has no paid tier and removes both checks, so a GCS
+      bucket logger always constructs and always enqueues.
+    why: >-
+      The paid-tier gate is enforced by LiteLLM's enterprise package, which betterlite does not ship. Every
+      feature is available to every user, so nothing in betterlite consults premium_user.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L48-L61
+  - what: >-
+      An upload reply outside 2xx counts as a failure even when its body is valid JSON. LiteLLM's
+      _log_json_data_on_gcs only logs a non-200 status and then returns response.json(); the 4xx and 5xx cases
+      still fail because the shared httpx handler raises on them, but a 3xx reply with a JSON body (httpx does not
+      follow a redirect that carries no Location header) is reported as a delivered group and every item in it is
+      counted as sent.
+    why: >-
+      A status a client would read as a redirect is not a stored object, so counting it as delivered loses log
+      data without any signal. Betterlite checks the status before reading the body, so the group's success and
+      error counts stay honest.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L321-L328
+  - what: >-
+      An event that arrives while the queue is at its configured capacity flushes once, and when the queue is
+      still full after that flush the new event is dropped with an error log, so the queue never holds more than
+      LITELLM_ASYNCIO_QUEUE_MAXSIZE items. LiteLLM awaits asyncio.Queue.put after its flush, so the logging
+      callback blocks until a later periodic flush makes room.
+    why: >-
+      A logging callback must never hold the request path, and a queue that grows past its capacity is the memory
+      leak the capacity exists to prevent. The check and the push happen under one lock, so concurrent events
+      cannot overrun the cap between them. A flush frees room unless another event refilled the queue first, so
+      the drop is the rare path and the flush-before-put no-loss property of LiteLLM holds in the usual one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L71-L74
+  - what: >-
+      A drained batch whose standard_callback_dynamic_params is not an object is dropped with an error log.
+      LiteLLM's _group_items_by_config calls .get on that value and raises AttributeError, which escapes
+      async_send_batch and ends the periodic_flush task, so no later periodic flush runs.
+    why: >-
+      One malformed event must not stop the logger from uploading the events that follow it. The drained
+      batch is lost in LiteLLM as well, so the only difference is that betterlite's flush loop keeps running.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L272-L276
+  - what: >-
+      A GCS_BATCH_SIZE or GCS_FLUSH_INTERVAL of 0 becomes 512 and 5 seconds, the values of
+      litellm.DEFAULT_BATCH_SIZE and DEFAULT_FLUSH_INTERVAL_SECONDS. Betterlite does not read the DEFAULT_BATCH_SIZE
+      and DEFAULT_FLUSH_INTERVAL_SECONDS environment variables that LiteLLM lets override those two constants.
+    why: >-
+      The replacement itself is LiteLLM's (CustomBatchLogger.__init__ writes batch_size or the default), and it keeps
+      a zero from stopping the drain or spinning the flush loop. The two constants are fixed because no
+      betterlite setting reads those variables.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L40-L41
+  - what: >-
+      In individual mode, a success event whose standard logging payload carries no response object is queued with
+      an empty response id and uploaded as "{date}/". LiteLLM reads response_obj.get("id", "") from the event
+      argument, raises AttributeError when that argument is null, and _send_single_log_item catches the exception
+      and drops the log.
+    why: >-
+      Dropping the payload loses a log line for a success event LiteLLM accepted. Betterlite derives the response
+      id from the payload it stores, so the object lands under the same "{date}/" key LiteLLM uses for a response
+      object without an id, and nothing is lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L289-L293
+  - what: >-
+      GCS_USE_BATCHED_LOGGING is read as a boolean word: "true", "1", "yes" and "on" turn batching on,
+      "false", "0", "no" and "off" turn it off, and any other value fails construction. A negative
+      GCS_BATCH_SIZE, GCS_FLUSH_INTERVAL or LITELLM_ASYNCIO_QUEUE_MAXSIZE also fails construction.
+      LiteLLM compares the lowercased GCS_USE_BATCHED_LOGGING string with "true", so "yes" and "1" disable
+      batching and an unrecognized word leaves it enabled, and int() accepts negative numbers, which leave
+      the drain loop empty, make the periodic flush spin, and give the queue an unbounded size.
+    why: >-
+      Betterlite reads the values into the declared boolean and unsigned types, so a misspelling or a
+      negative size is an error that names the setting instead of a configuration that silently stops
+      draining logs or spins the flush loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L32-L46
+  - what: >-
+      A GCS_PATH_SERVICE_ACCOUNT document whose type is external_account or impersonated_service_account
+      is refused with an error that names the type. LiteLLM hands any credential document to
+      VertexBase.load_auth, which builds workload identity pool credentials for external_account
+      and falls through to the service account reader for any other type.
+    why: >-
+      The GCS logging token is built from the shared typed credential decoder and google-cloud-auth
+      builders, the same pair betterlite-vertex uses for service accounts and authorized users. The
+      workload identity exchange and its AWS and executable credential sources are not wired into this
+      logger, so the document is refused up front with its type named instead of failing inside a token
+      exchange.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_llm_base.py#L124-L210
+kept_bugs:
+  - what: >-
+      A group whose upload fails, and a single item whose send raises, are logged and dropped. Nothing is requeued,
+      so the payload exists only in the logger's error line.
+    why: >-
+      A working setup sees the same loss on a GCS error today, and requeuing would change the drain, flush and
+      queue-capacity behavior every other case pins.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L216-L220
+  - what: >-
+      A success event whose response object carries no id is uploaded under the object name "{date}/", an empty
+      last path segment, instead of a generated name.
+    why: >-
+      LiteLLM reads response_obj.get("id", "") and appends it unconditionally. A setup that logs an event without a
+      response id already stores that key, and betterlite keeps the same name so the object stays where a lookup
+      and a client expect it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L289-L293

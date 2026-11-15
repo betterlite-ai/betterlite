@@ -1,0 +1,30 @@
+kind: helper
+name: policy-list-response-total-count
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyListResponse
+    value:
+      policies:
+        healthcare:
+          inherit: baseline
+          scope:
+            teams: [healthcare-team]
+            keys: []
+            models: []
+            tags: [prod]
+          guardrails:
+            add: [hipaa]
+            remove: [pii]
+          resolved_guardrails: [hipaa]
+          inheritance_chain: [baseline, healthcare]
+        baseline:
+          scope: {}
+          guardrails:
+            add: [pii]
+          resolved_guardrails: [pii]
+          inheritance_chain: [baseline]
+      total_count: 2
+env: {}
+compare: {ignore: []}

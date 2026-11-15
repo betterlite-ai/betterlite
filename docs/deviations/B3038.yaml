@@ -1,0 +1,33 @@
+task: B3038
+deviations:
+  - what: >-
+      key_owns_tpm_from_request_metadata returns a typed ModelDescriptorsError when the request metadata values do
+      not fit the UserAPIKeyAuth field types, where LiteLLM's model_validate raises a pydantic ValidationError out
+      of the success callback.
+    why: The error type is Rust's and B3045 decides how the callback reports it; request metadata the proxy built
+      itself always fits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3366-L3379
+  - what: >-
+      The descriptors are built by methods on ModelDescriptorBuilder that take the caller and append to a &mut
+      Vec<RateLimitDescriptor>, where LiteLLM's methods belong to the limiter object and append to its list.
+    why: The limiter object is B3055's; this builder holds only the window size and the group resolver these
+      methods read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2794-L2835
+  - what: >-
+      key_model_descriptor returns a typed error from B745's get_key_model_rpm_limit and get_key_model_tpm_limit,
+      where LiteLLM's readers only raise for a deployment limit that int() cannot convert.
+    why: B745 reports a deployment limit it cannot convert as a Result, so the descriptor carries that error
+      instead of panicking.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L950-L976
+  - what: >-
+      key_model_descriptor passes no deployment catalog to B745, so a deployment's default_api_key_rpm_limit and
+      default_api_key_tpm_limit do not reach model_per_key until a caller supplies a catalog.
+    why: The builder the task specifies holds only the window size and the group resolver, and the tree has no
+      production DeploymentLimitCatalog yet; B745 already accepts one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L950-L976
+kept_bugs:
+  - what: >-
+      A descriptor value formats an absent id as "None", so keys with no team, projects with no id and models with
+      no organization all share a "None:<group>" counter exactly as LiteLLM's f-strings do.
+    why: Two callers LiteLLM charges one counter must be charged one counter here too, or their limits diverge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3394-L3404
