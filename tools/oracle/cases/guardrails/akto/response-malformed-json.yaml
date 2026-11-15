@@ -1,0 +1,13 @@
+kind: helper
+name: response-malformed-json
+call:
+  b3751:
+    op: response
+    settings:
+      akto_base_url: http://akto.invalid
+      akto_api_key: oracle-key
+    answer:
+      status: 200
+      raw_body: not json
+env: {}
+compare: {ignore: []}

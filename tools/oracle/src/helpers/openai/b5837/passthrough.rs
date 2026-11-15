@@ -1,0 +1,71 @@
+use secrecy::SecretString;
+use serde_json::{Value, json};
+
+use super::Case;
+use betterlite_openai::nvidia_nim_passthrough::{
+    NvidiaNimPassthroughConfig, validate_environment as merge_headers,
+};
+use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use betterlite_openai::passthrough::transformation::types::{
+    PassthroughTarget, PassthroughUrlRequest,
+};
+
+const PROVIDER: &str = "nvidia_nim";
+
+fn metadata(model_group: Option<&str>) -> Object {
+    let mut params = Object::new();
+    if let Some(group) = model_group {
+        params.insert("litellm_metadata".to_owned(), json!({"model_group": group}));
+    }
+    params
+}
+
+fn url_case(case: &Case) -> Value {
+    let config = NvidiaNimPassthroughConfig {
+        api_base_env: case.env_base.clone(),
+        api_key_env: None,
+    };
+    let litellm_params = metadata(case.model_group.as_deref());
+    let target = PassthroughTarget {
+        model: &case.model,
+        custom_llm_provider: PROVIDER,
+        endpoint: &case.endpoint,
+    };
+    let request = PassthroughUrlRequest {
+        api_base: case.api_base.as_deref(),
+        api_key: None,
+        target,
+        request_query_params: None,
+        litellm_params: &litellm_params,
+    };
+    match config.get_complete_url(&request) {
+        Ok((url, root)) => json!({"ok": true, "url": url.as_str(), "root": root}),
+        Err(_) => json!({"ok": false}),
+    }
+}
+
+pub(crate) fn urls(cases: &[Case]) -> Value {
+    let mut urls = Vec::with_capacity(cases.len());
+    for case in cases {
+        urls.push(url_case(case));
+    }
+    json!({"urls": urls})
+}
+
+pub(crate) fn credentials(cases: &[Case]) -> Value {
+    let config = NvidiaNimPassthroughConfig::default();
+    let mut headers = Vec::with_capacity(cases.len());
+    let mut streaming = Vec::with_capacity(cases.len());
+    for case in cases {
+        let api_key = case.api_key.as_deref().map(SecretString::from);
+        let merged = merge_headers(case.headers.clone(), api_key.as_ref());
+        let request_data =
+            super::object(json!({"stream": case.stream.clone().unwrap_or(Value::Null)}));
+        headers.push(json!(merged));
+        streaming.push(json!(
+            config.is_streaming_request("chat/completions", &request_data)
+        ));
+    }
+    json!({"headers": headers, "streaming": streaming})
+}
