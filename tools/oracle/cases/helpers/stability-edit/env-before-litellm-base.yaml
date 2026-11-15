@@ -1,0 +1,23 @@
+kind: helper
+name: stability-edit-env-before-litellm-base
+call:
+  stability_edit:
+    calls:
+      - function: url
+        model: stability/inpaint
+        environment:
+          STABILITY_API_BASE: https://env.example
+        litellm_params:
+          api_base: https://params.example
+      - function: url
+        model: stability/inpaint
+        environment: {}
+        litellm_params:
+          api_base: https://params.example
+      - function: url
+        model: stability/inpaint
+        api_base: https://explicit.example
+        environment:
+          STABILITY_API_BASE: https://env.example
+env: {}
+compare: {ignore: []}

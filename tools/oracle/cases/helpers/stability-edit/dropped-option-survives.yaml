@@ -1,0 +1,28 @@
+kind: helper
+name: stability-edit-dropped-option-survives
+call:
+  stability_edit:
+    calls:
+      - function: map
+        model: stability/inpaint
+        options:
+          quality: high
+        drop_params: true
+      - function: map
+        model: stability/inpaint
+        options:
+          quality: high
+        drop_params: false
+      - function: map
+        model: stability/inpaint
+        options:
+          n: 2
+          response_format: b64_json
+          quality: high
+        drop_params: true
+      - function: map
+        model: stability/inpaint
+        options:
+          size: 1024x1024
+env: {}
+compare: {ignore: []}

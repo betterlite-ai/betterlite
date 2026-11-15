@@ -1,0 +1,73 @@
+task: B1523
+deviations:
+  - what: >-
+      A model record without output_cost_per_image attaches a 0.0 header, where LiteLLM attaches no header at
+      all. get_model_info fills every known cost key with None first, so the .get("output_cost_per_image", 0)
+      default never fires and the None value suppresses the header.
+    why: >-
+      The task names this exact distinction: a missing value is zero and an explicit null suppresses the
+      header. The Rust model record keeps absent and null apart, so the declared default applies to the absent
+      key. No working Stability setup depends on a zero-cost header being absent, and an oracle case cannot
+      compare the two implementations on a model the bundled catalog has no price for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
+  - what: >-
+      A cost value that is text parsing to a non-finite float, such as "nan" or "inf", fails with a typed
+      CostValue error, where LiteLLM's float() accepts it and the hidden header carries a value no JSON
+      response can represent.
+    why: >-
+      The header value is a JSON number, so a non-finite float cannot reach a caller intact; naming the field
+      is better than a response body whose header value is not JSON, and no working catalog entry carries a
+      non-finite price.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L306-L312
+  - what: >-
+      An empty image list fails with a typed MissingFile error for the image part, where LiteLLM indexes
+      image[0] and raises IndexError.
+    why: >-
+      An image edit with no image cannot be sent, and a named field beats an IndexError surfacing as a 500;
+      no working setup sends an empty image list, and the task asks for a failed empty image list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L192-L197
+  - what: >-
+      An empty mask, init_image or style_image list fails with a typed MissingFile error, where LiteLLM keeps
+      the empty list as the part value because its len() > 0 guard skips the first-member pick but still
+      assigns the key.
+    why: >-
+      A file part needs exactly one file, and an empty list has none to upload; the task keeps only a
+      nonempty list's first member, and no working setup sends an empty file list.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L206-L221
+  - what: >-
+      A file-valued edit option carrying plain JSON instead of file parts fails with a typed RequestField
+      error, where LiteLLM puts the value into the files mapping and leaves the transport to deal with it.
+    why: >-
+      mask, init_image and style_image are declared as files in betterlite's request records, and a JSON
+      value there cannot be uploaded as a part; naming the field beats a transport error, and no working
+      setup sends a string path in a multipart proxy request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L206-L221
+  - what: >-
+      A litellm_params.api_base that is not text falls through to STABILITY_API_BASE or the default, where
+      LiteLLM passes it to rstrip and raises AttributeError.
+    why: >-
+      The declared type of the value is text; a number there cannot be a base URL, and falling back to the
+      next base is what the precedence chain does for an absent value. No working setup stores a non-string
+      base.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L134-L143
+kept_bugs:
+  - what: >-
+      A model name containing style-transfer resolves to /v2beta/stable-image/control/style, not
+      /control/style-transfer, because the table's style entry is checked first.
+    why: >-
+      A working setup that calls a style-transfer model today reaches /control/style, and the task fixes that
+      order on purpose so the request path does not change under it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/stability.py#L213-L228
+  - what: >-
+      An output_format sent as an edit option is ignored and png is always sent.
+    why: >-
+      The body's fixed output_format is the multipart contract a working setup already gets, and the task
+      keeps the text allowlist without output_format so the caller's value never replaces png.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L185-L187
+  - what: >-
+      With drop_params true the unsupported options stay in the mapped parameters even though the source
+      comment says they are dropped, and later body construction decides whether they are sent.
+    why: >-
+      That copy is how aspect_ratio, seed and the other Stability-only fields reach the multipart body at
+      all; deleting them would silently drop options every working Stability setup sends with drop_params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/stability/image_edit/transformations.py#L91-L105

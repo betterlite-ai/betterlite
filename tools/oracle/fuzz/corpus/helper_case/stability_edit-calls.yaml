@@ -1,0 +1,31 @@
+kind: helper
+name: stability-edit-seed-calls
+call:
+  stability_edit:
+    calls:
+      - function: map
+        model: stability/inpaint
+        options:
+          size: 1024x1024
+      - function: url
+        model: stability/inpaint
+        environment:
+          STABILITY_API_BASE: https://env.example
+      - function: environment
+        model: stability/inpaint
+        headers: {}
+      - function: request
+        model: stability/inpaint
+        prompt: a cat
+        image:
+          - content_base64: aGVsbG8=
+        options:
+          aspect_ratio: "1:1"
+        drop_params: true
+      - function: response
+        model: stability/inpaint
+        status: 200
+        body: '{"image": "abc", "finish_reason": "SUCCESS"}'
+        created: 1
+env: {}
+compare: {ignore: []}

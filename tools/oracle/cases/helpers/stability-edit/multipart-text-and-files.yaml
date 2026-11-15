@@ -1,0 +1,38 @@
+kind: helper
+name: stability-edit-multipart-text-and-files
+call:
+  stability_edit:
+    calls:
+      - function: request
+        model: stability/outpaint
+        prompt: a cat
+        image:
+          - content_base64: aGVsbG8=
+        options:
+          negative_prompt: blurry
+          aspect_ratio: "16:9"
+          seed: 7
+          mode: text
+          strength: 0.5
+          style_preset: cinematic
+          left: 1
+          bottom: 2
+          right: 3
+          top: 4
+          creativity: 0.4
+          search_prompt: sky
+          grow_mask: 5
+          select_prompt: cat
+          control_strength: 0.6
+          composition_fidelity: 0.7
+          change_strength: 0.8
+        files:
+          mask:
+            - content_base64: bWFzaw==
+          init_image:
+            - content_base64: aW5pdA==
+          style_image:
+            - content_base64: c3R5bGU=
+        drop_params: true
+env: {}
+compare: {ignore: []}

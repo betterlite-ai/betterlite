@@ -1,0 +1,17 @@
+kind: helper
+name: stability-edit-output-format-stays-png
+call:
+  stability_edit:
+    calls:
+      - function: request
+        model: stability/inpaint
+        prompt: a dog
+        options:
+          output_format: webp
+        drop_params: true
+      - function: request
+        model: stability/inpaint
+        prompt: ""
+        options: {}
+env: {}
+compare: {ignore: []}
