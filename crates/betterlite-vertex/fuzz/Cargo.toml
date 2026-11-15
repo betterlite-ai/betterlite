@@ -101,6 +101,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "partner_count"
+path = "fuzz_targets/partner_count.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "studio_agent_payload"
 path = "fuzz_targets/studio_agent_payload.rs"
 test = false
