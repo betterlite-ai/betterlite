@@ -13,10 +13,29 @@ fn a_log_with_what_why_and_an_https_link_passes() {
     let log = folder.path().join("B003.yaml");
     fs::write(
         &log,
-        "task: B003\ndeviations:\n  - what: keeps the header\n    why: LiteLLM drops it\n    link: https://example.com/a\n  - what: rejects a string ttl\n    why: the field is an int\n    link: \"\"\n",
+        "task: B003\ndeviations:\n  - what: keeps the header\n    why: LiteLLM drops it\n    link: https://example.com/a\n  - what: rejects a string ttl\n    why: the field is an int\n    link: \"\"\nkept_bugs:\n  - what: a null ttl caches forever\n    why: setups send null to mean no expiry\n    link: https://example.com/b\n",
     )
     .unwrap();
     assert!(file_problems(&log, &backlog).is_empty());
+}
+
+#[test]
+fn a_kept_bug_needs_an_https_link() {
+    let (backlog, _) = read_backlog(&Path::new(env!("CARGO_MANIFEST_DIR")).join("..")).unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let log = folder.path().join("B003.yaml");
+    fs::write(
+        &log,
+        "task: B003\ndeviations: []\nkept_bugs:\n  - what: a null ttl caches forever\n    why: setups send null to mean no expiry\n    link: \"\"\n",
+    )
+    .unwrap();
+    assert_eq!(
+        file_problems(&log, &backlog),
+        vec![format!(
+            "{}: every kept bug needs what, why, and an https link to the LiteLLM line",
+            log.display()
+        )]
+    );
 }
 
 #[test]

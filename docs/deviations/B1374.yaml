@@ -1,0 +1,11 @@
+task: B1374
+deviations:
+  - what: A batch key or managed GCS url whose percent-decoded bytes are not UTF-8 is refused with a typed error, where LiteLLM replaces the bad bytes with U+FFFD and keeps the identifier.
+    why: betterlite refuses bytes it cannot read instead of mangling an identifier or a path that a later step matches against.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L227
+  - what: Numbered raw-label chunks and the fan-out suffix of a key are read as ASCII digits with 64-bit chunk numbers and 32-bit positions, where LiteLLM's isdigit and \d accept every Unicode digit and its ints are unbounded.
+    why: A generated label or key only ever carries ASCII digits, and a position past the bound cannot address an element of the batch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L408
+  - what: A summed embedding prompt token count outside 0 through 4294967295 is refused with a typed error, where LiteLLM keeps the unbounded integer, a negative one included, in the usage.
+    why: The B006 embedding usage record holds unsigned 32-bit token counts, so a negative or larger count has no representation.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/files/transformation.py#L467

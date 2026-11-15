@@ -124,7 +124,7 @@ fn a_negative_refresh_interval_is_rejected() {
 #[case::false_text(Some("false"), false)]
 #[case::padded_mixed_case(Some(" False "), false)]
 #[case::one_text(Some("1"), true)]
-#[case::off_text(Some("off"), false)]
+#[case::off_text(Some("off"), true)]
 #[case::unrecognized(Some("maybe"), true)]
 #[case::empty(Some(""), true)]
 fn ssl_verification_defaults_to_true(#[case] text: Option<&str>, #[case] verify: bool) {

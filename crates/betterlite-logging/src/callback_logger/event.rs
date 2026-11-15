@@ -17,6 +17,7 @@ pub struct GuardrailRequestSnapshot {
 pub struct LoggerEvent {
     pub payload: Arc<StandardLoggingPayload>,
     pub dynamic_params: Arc<StandardCallbackDynamicParams>,
+    pub litellm_metadata: Arc<IndexMap<String, Json>>,
     pub stream: bool,
     pub guardrail_snapshot: Option<Arc<GuardrailRequestSnapshot>>,
 }

@@ -1,0 +1,19 @@
+kind: helper
+name: chat-no-query
+call:
+  b4119:
+    operation: build_chat_plan
+    model: gpt-4o
+    messages:
+      - role: user
+        content: hi
+    tool_calls:
+      - id: call_1
+        type: function
+        name: litellm_web_search
+        input: {}
+    searches: []
+    optional_params: {}
+    kwargs: {}
+env: {}
+compare: {ignore: []}
