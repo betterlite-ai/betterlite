@@ -25,7 +25,7 @@ pub(crate) enum Shape {
     Boolean,
     Choice(&'static [&'static str]),
     List(&'static [&'static str]),
-    Mapping(&'static [&'static str], &'static Shape),
+    Mapping(&'static [&'static str], &'static Self),
     Nested(&'static Model),
     RawObject,
     Other,
@@ -80,7 +80,10 @@ fn build_field(field: &Field) -> FormField {
         extra: FormExtra {
             ui_type: field.extra.ui_type.map(str::to_owned),
             type_override: None,
-            options: field.extra.options.map(strings),
+            options: field
+                .extra
+                .options
+                .map(|options| options.iter().copied().map(Value::from).collect()),
             min: field.extra.min.map(Value::from),
             max: field.extra.max.map(Value::from),
             step: field.extra.step.map(Value::from),
@@ -96,12 +99,14 @@ fn build_shape(shape: &Shape) -> FormShape {
         Shape::Boolean => FormShape::Boolean,
         Shape::RawObject => FormShape::RawObject,
         Shape::Other => FormShape::Other,
-        Shape::Choice(options) => FormShape::Choice(strings(options)),
+        Shape::Choice(options) => {
+            FormShape::Choice(options.iter().copied().map(Value::from).collect())
+        }
         Shape::List(options) => FormShape::List {
-            options: strings(options),
+            options: options.iter().copied().map(Value::from).collect(),
         },
         Shape::Mapping(keys, value) => FormShape::Mapping {
-            keys: strings(keys),
+            keys: keys.iter().copied().map(Value::from).collect(),
             value: Box::new(build_shape(value)),
         },
         Shape::Nested(model) => FormShape::Nested(Box::new(build_model(model))),
@@ -117,8 +122,4 @@ fn build_default(default: &Initial) -> Option<Value> {
         Initial::Float(number) => Some(Value::from(*number)),
         Initial::Text(text) => Some(Value::from(*text)),
     }
-}
-
-fn strings(items: &[&str]) -> Vec<Value> {
-    items.iter().copied().map(Value::from).collect()
 }
