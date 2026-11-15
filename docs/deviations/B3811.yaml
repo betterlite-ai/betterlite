@@ -1,0 +1,55 @@
+task: B3811
+deviations:
+  - what: >-
+      When a matching rule has allowed_param_patterns and the tool call's arguments are missing, cannot be
+      parsed as JSON, or parse to a value that is not a JSON object, evaluation continues with the next rule
+      instead of returning a denial from that rule, and the argument error never becomes the returned
+      message; only the last pattern failure message is carried into a fallback denial.
+    why: >-
+      The task text pins this fallthrough so a diagnostic argument error does not by itself decide the tool
+      call. LiteLLM returns (False, rule.id, message) at the first such error, so a later allow rule or an
+      allowing default_action can now allow a tool call that LiteLLM denied.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L418-L433
+  - what: >-
+      When several allowed_param_patterns paths fail for one rule, the failure message names the first
+      failing path in sorted key order; LiteLLM names the first failing path in the configuration file's
+      insertion order.
+    why: >-
+      The rule's pattern map is a BTreeMap here, so key order is sorted rather than the order the keys were
+      written in. Only the wording of the reported failure differs; the allow or deny decision is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L380-L393
+  - what: >-
+      A violation message template used on the fallback denial does not receive a rule_id value, because no
+      rule decided the call; a template that names {rule_id} falls back to the default message. LiteLLM
+      formats the same template with rule_id set to None and prints "None".
+    why: >-
+      The shared renderer takes string context pairs and cannot carry a null, and printing "None" would put
+      Python's spelling of an absent value into a message a caller reads.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L452-L462
+  - what: >-
+      A JSON integer outside the i64 and u64 ranges is compared as its nearest f64 value, so a pattern
+      sees the float's text and a failure message prints that text instead of the exact digits.
+    why: >-
+      GuardrailValue holds i64, u64 and f64 only, while Python's json.loads keeps an arbitrary precision
+      int. An allowed_param_patterns entry anchored to the exact digits of such an argument no longer
+      matches, and the last-pattern-failure message for it carries the float's text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L380-L393
+  - what: >-
+      An argument object whose only key is "$serde_json::private::Number" and whose value there is a
+      numeric string is read as that number, not as an object with that key.
+    why: >-
+      serde_json with arbitrary_precision writes every non-integer JSON number as exactly that one-entry
+      map, and after parsing that number cannot be told apart from a caller's object using the reserved
+      key. Reading the key as the number keeps the value LiteLLM's json.loads gives a float argument.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L307-L337
+kept_bugs:
+  - what: >-
+      A tool call evaluated against a rule whose id repeats checks that rule against the parameter patterns
+      compiled under the id: the last duplicate that had any, or the earlier duplicate's patterns when the
+      later one has none. An earlier duplicate can therefore be checked against another rule's
+      allowed_param_patterns.
+    why: >-
+      LiteLLM compiles patterns into a lookup keyed by rule id and a working config that repeats an id
+      relies on the surviving entry; B3810's deviation log records the compile side and this task keeps the
+      evaluation side reading that map.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L125-L160
