@@ -4,6 +4,7 @@ from typing import Final, Literal, NotRequired, Protocol, TypedDict
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.tool_permission import ToolPermissionGuardrail
+from litellm.types.utils import CallTypesLiteral
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
 
@@ -58,8 +59,8 @@ class PreCallHook(Protocol):
         user_api_key_dict: UserAPIKeyAuth,
         cache: DualCache,
         data: dict[str, JsonValue],
-        call_type: str,
-    ) -> JsonValue: ...
+        call_type: CallTypesLiteral,
+    ) -> Exception | str | dict[str, JsonValue] | None: ...
 
 
 DETAIL: Final = TypeAdapter(Detail)
@@ -85,7 +86,11 @@ def run(input_value: Input) -> Output:
     except HTTPException as error:
         blocked = {"status": error.status_code, "detail": DETAIL.validate_python(error.detail)}
     buckets = BUCKETS.validate_python(data)
-    bucket = buckets.get("litellm_metadata") if "litellm_metadata" in data else buckets.get("metadata")
+    bucket = (
+        buckets.get("litellm_metadata")
+        if "litellm_metadata" in data
+        else buckets.get("metadata")
+    )
     applied: list[str] | None = None
     if bucket is not None and "applied_guardrails" in bucket:
         applied = bucket["applied_guardrails"]

@@ -48,39 +48,41 @@ fn legacy_functions_yield_their_names() {
 }
 
 #[rstest]
-#[case::auto(r#""auto""#, None)]
-#[case::none(r#""none""#, None)]
-#[case::required(r#""required""#, None)]
-#[case::null("null", None)]
-#[case::string_name(r#""Bash""#, Some("Bash"))]
-#[case::function_object(r#"{"type": "function", "function": {"name": "Bash"}}"#, Some("Bash"))]
-#[case::non_function_object(r#"{"type": "custom", "function": {"name": "Bash"}}"#, None)]
-#[case::object_without_a_type(r#"{"function": {"name": "Bash"}}"#, None)]
-#[case::object_without_a_function(r#"{"type": "function"}"#, None)]
-#[case::object_without_a_name(r#"{"type": "function", "function": {}}"#, None)]
-fn tool_choice_names_a_tool_only_when_it_forces_one(
-    #[case] choice: &str,
+#[case::tool_choice_auto("tool_choice", r#""auto""#, None)]
+#[case::tool_choice_none("tool_choice", r#""none""#, None)]
+#[case::tool_choice_required("tool_choice", r#""required""#, None)]
+#[case::tool_choice_null("tool_choice", "null", None)]
+#[case::tool_choice_string_name("tool_choice", r#""Bash""#, Some("Bash"))]
+#[case::tool_choice_function_object(
+    "tool_choice",
+    r#"{"type": "function", "function": {"name": "Bash"}}"#,
+    Some("Bash")
+)]
+#[case::tool_choice_non_function_object(
+    "tool_choice",
+    r#"{"type": "custom", "function": {"name": "Bash"}}"#,
+    None
+)]
+#[case::tool_choice_object_without_a_type("tool_choice", r#"{"function": {"name": "Bash"}}"#, None)]
+#[case::tool_choice_object_without_a_function("tool_choice", r#"{"type": "function"}"#, None)]
+#[case::tool_choice_object_without_a_name(
+    "tool_choice",
+    r#"{"type": "function", "function": {}}"#,
+    None
+)]
+#[case::function_call_auto("function_call", r#""auto""#, None)]
+#[case::function_call_none("function_call", r#""none""#, None)]
+#[case::function_call_required_is_a_name("function_call", r#""required""#, Some("required"))]
+#[case::function_call_null("function_call", "null", None)]
+#[case::function_call_string_name("function_call", r#""lookup""#, Some("lookup"))]
+#[case::function_call_object_name("function_call", r#"{"name": "lookup"}"#, Some("lookup"))]
+#[case::function_call_object_without_a_name("function_call", r#"{"arguments": "{}"}"#, None)]
+fn a_forced_choice_names_a_tool_only_when_it_forces_one(
+    #[case] key: &str,
+    #[case] value: &str,
     #[case] expected: Option<&str>,
 ) {
-    let extracted = extract_request_tools(&request(&[("tool_choice", choice)])).unwrap();
-    assert_eq!(extracted.tool_choice.as_deref(), expected);
-    assert_eq!(extracted.names(), expected.into_iter().collect::<Vec<_>>());
-}
-
-#[rstest]
-#[case::auto(r#""auto""#, None)]
-#[case::none(r#""none""#, None)]
-#[case::required_is_a_name_here(r#""required""#, Some("required"))]
-#[case::null("null", None)]
-#[case::string_name(r#""lookup""#, Some("lookup"))]
-#[case::object_name(r#"{"name": "lookup"}"#, Some("lookup"))]
-#[case::object_without_a_name(r#"{"arguments": "{}"}"#, None)]
-fn function_call_names_a_function_only_when_it_forces_one(
-    #[case] call: &str,
-    #[case] expected: Option<&str>,
-) {
-    let extracted = extract_request_tools(&request(&[("function_call", call)])).unwrap();
-    assert_eq!(extracted.function_call.as_deref(), expected);
+    let extracted = extract_request_tools(&request(&[(key, value)])).unwrap();
     assert_eq!(extracted.names(), expected.into_iter().collect::<Vec<_>>());
 }
 

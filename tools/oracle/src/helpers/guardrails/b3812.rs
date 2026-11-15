@@ -72,28 +72,32 @@ fn applied_guardrails(data: &BTreeMap<String, GuardrailValue>) -> Option<Vec<Str
     )
 }
 
+fn build_guardrail(input: &Input) -> Result<ToolPermissionGuardrail, Box<HelperError>> {
+    let settings = ToolPermissionConfigModel {
+        optional_params: None,
+        rules: None,
+        default_action: input.default_action.clone(),
+        on_disallowed_action: input.on_disallowed_action.clone(),
+    }
+    .resolve()
+    .or_value_error()?;
+    let args = ToolPermissionArgs {
+        name: GUARDRAIL_NAME.to_owned(),
+        event_hook: LitellmParamsMode::One(input.event_hook.clone()),
+        rules: Some(input.rules.clone()),
+        default_action: settings.default_action,
+        on_disallowed_action: settings.on_disallowed_action,
+        default_on: input.default_on,
+        violation_message_template: input.violation_message_template.clone(),
+    };
+    ToolPermissionGuardrail::new(args).or_value_error()
+}
+
 impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let settings = ToolPermissionConfigModel {
-            optional_params: None,
-            rules: None,
-            default_action: input.default_action.clone(),
-            on_disallowed_action: input.on_disallowed_action.clone(),
-        }
-        .resolve()
-        .or_value_error()?;
-        let args = ToolPermissionArgs {
-            name: GUARDRAIL_NAME.to_owned(),
-            event_hook: LitellmParamsMode::One(input.event_hook.clone()),
-            rules: Some(input.rules.clone()),
-            default_action: settings.default_action,
-            on_disallowed_action: settings.on_disallowed_action,
-            default_on: input.default_on,
-            violation_message_template: input.violation_message_template.clone(),
-        };
-        let guardrail = ToolPermissionGuardrail::new(args).or_value_error()?;
+        let guardrail = build_guardrail(input)?;
         let mut data = input.data.clone();
         let blocked = match pre_call_hook(&guardrail, &mut data, &BTreeSet::new()) {
             Ok(()) => None,

@@ -7,6 +7,7 @@ use crate::tool_permission::types::{mapping_value, object_mapping};
 
 type Data = BTreeMap<String, GuardrailValue>;
 type NameReader = fn(&GuardrailValue, &str) -> Result<Option<String>, RequestToolsError>;
+type ObjectNameReader = fn(&GuardrailValue) -> Result<Option<String>, RequestToolsError>;
 
 // Each slot keeps the position of its entry in the request list, so a rewrite drops the same entries; a tool has a name only when it is a function tool
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,8 +38,15 @@ pub fn extract_request_tools(data: &Data) -> Result<RequestTools, RequestToolsEr
     Ok(RequestTools {
         tools: list_names(data, "tools", tool_name)?,
         functions: list_names(data, "functions", function_name)?,
-        tool_choice: named_tool_choice(data)?,
-        function_call: named_function_call(data)?,
+        tool_choice: forced_name(
+            data,
+            "tool_choice",
+            &["auto", "none", "required"],
+            tool_choice_object_name,
+        )?,
+        function_call: forced_name(data, "function_call", &["auto", "none"], |call| {
+            Ok(text_field(call, "name", "function_call")?.map(str::to_owned))
+        })?,
     })
 }
 
@@ -79,14 +87,19 @@ fn object_field<'value>(
     key: &str,
     path: &str,
 ) -> Result<Option<&'value GuardrailValue>, RequestToolsError> {
-    match mapping_value(value, key) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(object @ GuardrailValue::Object(_)) => Ok(Some(object)),
-        Some(_) => Err(RequestToolsError::WrongType(
+    let Some(field) = mapping_value(value, key) else {
+        return Ok(None);
+    };
+    if matches!(field, GuardrailValue::Null) {
+        return Ok(None);
+    }
+    if object_mapping(field).is_none() {
+        return Err(RequestToolsError::WrongType(
             format!("{path}.{key}"),
             "an object",
-        )),
+        ));
     }
+    Ok(Some(field))
 }
 
 // LiteLLM's _get_request_tool_name: only a function tool carries a name
@@ -114,46 +127,35 @@ fn function_name(
     Ok(text_field(function, "name", path)?.map(str::to_owned))
 }
 
-// LiteLLM's _get_named_tool_choice: auto, none and required force nothing
-fn named_tool_choice(data: &Data) -> Result<Option<String>, RequestToolsError> {
-    match data.get("tool_choice") {
+// LiteLLM's _get_named_tool_choice and _get_named_function_call: a string names the forced tool unless it is one of the values that force nothing
+fn forced_name(
+    data: &Data,
+    field: &str,
+    unforced: &[&str],
+    object_name: ObjectNameReader,
+) -> Result<Option<String>, RequestToolsError> {
+    match data.get(field) {
         None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(choice)) => {
-            let forces_nothing = matches!(choice.as_str(), "auto" | "none" | "required");
-            Ok((!forces_nothing).then(|| choice.clone()))
+        Some(GuardrailValue::Text(name)) => {
+            Ok((!unforced.contains(&name.as_str())).then(|| name.clone()))
         }
-        Some(choice @ GuardrailValue::Object(_)) => {
-            if text_field(choice, "type", "tool_choice")? != Some("function") {
-                return Ok(None);
-            }
-            let Some(function) = object_field(choice, "function", "tool_choice")? else {
-                return Ok(None);
-            };
-            Ok(text_field(function, "name", "tool_choice.function")?.map(str::to_owned))
-        }
+        Some(object @ GuardrailValue::Object(_)) => object_name(object),
         Some(_) => Err(RequestToolsError::WrongType(
-            "tool_choice".to_owned(),
+            field.to_owned(),
             "a string or an object",
         )),
     }
 }
 
-// LiteLLM's _get_named_function_call: auto and none force nothing
-fn named_function_call(data: &Data) -> Result<Option<String>, RequestToolsError> {
-    match data.get("function_call") {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(GuardrailValue::Text(call)) => {
-            let forces_nothing = matches!(call.as_str(), "auto" | "none");
-            Ok((!forces_nothing).then(|| call.clone()))
-        }
-        Some(call @ GuardrailValue::Object(_)) => {
-            Ok(text_field(call, "name", "function_call")?.map(str::to_owned))
-        }
-        Some(_) => Err(RequestToolsError::WrongType(
-            "function_call".to_owned(),
-            "a string or an object",
-        )),
+// A tool_choice object forces a tool only when its type is function
+fn tool_choice_object_name(choice: &GuardrailValue) -> Result<Option<String>, RequestToolsError> {
+    if text_field(choice, "type", "tool_choice")? != Some("function") {
+        return Ok(None);
     }
+    let Some(function) = object_field(choice, "function", "tool_choice")? else {
+        return Ok(None);
+    };
+    Ok(text_field(function, "name", "tool_choice.function")?.map(str::to_owned))
 }
 
 mod tests;
