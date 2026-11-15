@@ -176,20 +176,32 @@ def _passthrough_chunk(step: PassthroughStep) -> str:
             return bytes(step["value"]).decode("utf-8")
 
 
+def _error_view(
+    error: RuntimeError | AttributeError | KeyError | TypeError | ValueError,
+) -> JsonValue:
+    match error:
+        case RuntimeError():
+            return {"error": _runtime_label(error)}
+        case AttributeError() | KeyError() | TypeError() | ValueError():
+            return {"error": "event"}
+
+
+def _poll_sync(source: SyncSource) -> JsonValue | None:
+    try:
+        item = next(source)
+    except StopIteration:
+        return None
+    except (RuntimeError, AttributeError, KeyError, TypeError, ValueError) as error:
+        return _error_view(error)
+    return _item_view(item)
+
+
 def _run_sync(input_value: Input) -> JsonValue:
     source: SyncSource = _iterator(input_value, FakeSyncSource(input_value["steps"]))
     outcomes: list[JsonValue] = []
-    while True:
-        try:
-            item = next(source)
-        except StopIteration:
-            return outcomes
-        except RuntimeError as error:
-            outcomes.append({"error": _runtime_label(error)})
-        except (AttributeError, KeyError, TypeError, ValueError):
-            outcomes.append({"error": "event"})
-        else:
-            outcomes.append(_item_view(item))
+    while (outcome := _poll_sync(source)) is not None:
+        outcomes.append(outcome)
+    return outcomes
 
 
 async def _drain_async(source: AsyncSource) -> JsonValue:
@@ -197,15 +209,12 @@ async def _drain_async(source: AsyncSource) -> JsonValue:
     outcomes: list[JsonValue] = []
     while True:
         try:
-            item = await iterator.__anext__()
+            outcomes.append(_item_view(await iterator.__anext__()))
         except StopAsyncIteration:
-            return outcomes
-        except RuntimeError as error:
-            outcomes.append({"error": _runtime_label(error)})
-        except (AttributeError, KeyError, TypeError, ValueError):
-            outcomes.append({"error": "event"})
-        else:
-            outcomes.append(_item_view(item))
+            break
+        except (RuntimeError, AttributeError, KeyError, TypeError, ValueError) as error:
+            outcomes.append(_error_view(error))
+    return outcomes
 
 
 def _run_async(input_value: Input) -> JsonValue:
@@ -216,11 +225,9 @@ def _run_async(input_value: Input) -> JsonValue:
 def _run_passthrough(input_value: Input) -> JsonValue:
     iterator = _iterator(input_value, FakeSyncSource([]))
     outcomes: list[JsonValue] = []
-    for index in range(len(input_value["passthrough"])):
+    for step in input_value["passthrough"]:
         try:
-            chunk = iterator.convert_str_chunk_to_generic_chunk(
-                _passthrough_chunk(input_value["passthrough"][index])
-            )
+            chunk = iterator.convert_str_chunk_to_generic_chunk(_passthrough_chunk(step))
         except UnicodeDecodeError:
             outcomes.append({"error": "utf8"})
         except json.JSONDecodeError:
