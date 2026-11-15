@@ -42,6 +42,7 @@ impl ScanCacheStore for Store {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.last.clone_from(&hashes);
         state.entries.insert(key.to_owned(), hashes);
+        drop(state);
         ready(Ok(()))
     }
 }
