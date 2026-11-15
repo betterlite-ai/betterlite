@@ -1,0 +1,22 @@
+kind: helper
+name: bfl-jobs-deadline-before-get
+call:
+  bfl_jobs:
+    jobs:
+      - model: black_forest_labs/flux-pro-1.1
+        prompt: a cat
+        optional_params: {}
+        litellm_params: {api_key: sk-request, api_base: https://api.bfl.ai}
+        params_kind: dict
+        extra_headers: {}
+        timeout_millis: null
+        configured: {api_key: null, api_base: https://api.bfl.ai}
+        clock: {start_millis: 0, tick_millis: 300000, sleep_advance_millis: 1500}
+        submission:
+          status: 200
+          body: '{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}'
+        polls:
+          - status: 200
+            body: '{"status":"Pending"}'
+env: {}
+compare: {ignore: []}

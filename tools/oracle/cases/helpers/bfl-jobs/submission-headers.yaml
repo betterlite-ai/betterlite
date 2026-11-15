@@ -1,0 +1,39 @@
+kind: helper
+name: bfl-jobs-submission-headers
+call:
+  bfl_jobs:
+    jobs:
+      - model: black_forest_labs/flux-pro-1.1
+        prompt: a cat
+        optional_params: {output_format: jpeg}
+        litellm_params: {api_key: sk-request, api_base: https://api.bfl.ai}
+        params_kind: dict
+        extra_headers:
+          x-key: caller-key
+          X-Trace: t-1
+        timeout_millis: 12500
+        configured: {api_key: null, api_base: https://api.bfl.ai}
+        clock: {start_millis: 0, tick_millis: 0, sleep_advance_millis: 1500}
+        submission:
+          status: 201
+          body: '{"id":"job-1","polling_url":"https://gateway.bfl.ai/v1/get_result?id=1"}'
+        polls:
+          - status: 200
+            body: '{"status":"Ready","result":{"sample":"https://delivery.test/a.png"}}'
+      - model: black_forest_labs/flux-pro-1.1
+        prompt: a dog
+        optional_params: {}
+        litellm_params: {api_key: sk-request, api_base: https://api.bfl.ai}
+        params_kind: typed
+        extra_headers: {}
+        timeout_millis: null
+        configured: {api_key: null, api_base: https://api.bfl.ai}
+        clock: {start_millis: 0, tick_millis: 0, sleep_advance_millis: 1500}
+        submission:
+          status: 200
+          body: '{"id":"job-2","polling_url":"https://gateway.bfl.ai/v1/get_result?id=2"}'
+        polls:
+          - status: 200
+            body: '{"status":"Ready","result":{"sample":"https://delivery.test/b.png"}}'
+env: {}
+compare: {ignore: []}
