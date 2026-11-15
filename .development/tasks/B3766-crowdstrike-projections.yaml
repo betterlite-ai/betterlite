@@ -28,6 +28,12 @@ description: >-
   task's oracle checks can pass.
 scope:
   paths:
+    - "tools/oracle/helpers/b8153.py"
+    - "tools/oracle/helpers/b6413.py"
+    - "tools/oracle/helpers"
+    - "tools/oracle"
+    - "crates/betterlite-guardrails/src/lakera_v2/scope.rs"
+    - "crates/betterlite-guardrails/src/content_inspection.rs"
     - crates/betterlite-guardrails/Cargo.toml
     - crates/betterlite-guardrails/src/crowdstrike_aidr.rs
     - crates/betterlite-guardrails/src/crowdstrike_aidr/**
