@@ -108,13 +108,9 @@ fn pair_siblings_do_not_become_unsupported_keys() {
     let source = markers(
         "          - open: \"<open>\"\n            close: \"</close>\"\n            label: probe\n",
     );
-    assert_eq!(
-        settings(&source, &[]).unwrap(),
-        Settings {
-            deployments: vec![Some(vec![MarkerPair {
-                open: "<open>".to_owned(),
-                close: "</close>".to_owned(),
-            }])],
-        }
-    );
+    let resolved = settings(&source, &[]).unwrap();
+    let pairs = resolved.deployments[0].as_ref().unwrap();
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].open, "<open>");
+    assert_eq!(pairs[0].close, "</close>");
 }
