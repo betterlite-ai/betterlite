@@ -606,6 +606,23 @@ fn single_without_active_environment() {
     assert_eq!(model, "paused");
 }
 
+// The flag filter runs after the pre-call checks: the flagged deployment's failure does not matter, the unflagged survivor fails the flag filter.
+fn mixed_pool_is_not_configured() {
+    let mut world = shuffle(vec![
+        with_param(spec(MODEL, "plain", "openai/gpt-4o"), "weight", number(1)),
+        with_param(
+            flagged(spec(MODEL, "legacy", "openai/gpt-4")),
+            "weight",
+            number(1),
+        ),
+    ]);
+    world.enable_pre_call_checks = true;
+    assert_not_configured(
+        world.call(&mut Picker::default(), &ask(MODEL, &json_mode())),
+        MODEL,
+    );
+}
+
 #[rstest]
 #[case::flag_absent(Boundary::FlagAbsent)]
 #[case::flag_null(Boundary::FlagNull)]
@@ -636,6 +653,7 @@ fn single_without_active_environment() {
 #[case::alias_map_does_not_steer_routing(Boundary::AliasMapDoesNotSteerRouting)]
 #[case::alias_empty_target(Boundary::AliasEmptyTarget)]
 #[case::single_without_active_environment(Boundary::SingleWithoutActiveEnvironment)]
+#[case::mixed_pool_is_not_configured(Boundary::MixedPoolIsNotConfigured)]
 fn passthrough_selection_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::FlagAbsent => flag_value(None),
@@ -671,6 +689,7 @@ fn passthrough_selection_boundaries(#[case] boundary: Boundary) {
         Boundary::AliasMapDoesNotSteerRouting => alias_map_does_not_steer_routing(),
         Boundary::AliasEmptyTarget => alias_empty_target_keeps_the_model(),
         Boundary::SingleWithoutActiveEnvironment => single_without_active_environment(),
+        Boundary::MixedPoolIsNotConfigured => mixed_pool_is_not_configured(),
     }
 }
 
@@ -705,4 +724,5 @@ enum Boundary {
     AliasMapDoesNotSteerRouting,
     AliasEmptyTarget,
     SingleWithoutActiveEnvironment,
+    MixedPoolIsNotConfigured,
 }
