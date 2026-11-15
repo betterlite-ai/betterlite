@@ -5,13 +5,10 @@ use super::projection::ProjectionServices;
 use super::records::LegacyChunk;
 
 mod completion;
-mod completion_entry;
+pub mod completion_entry;
 mod scope;
 mod streaming;
-mod streaming_entry;
-
-pub use self::completion_entry::complete;
-pub use self::streaming_entry::stream;
+pub mod streaming_entry;
 
 pub type LegacyChunkStream = BoxStream<'static, Result<LegacyChunk, LegacyPredictionError>>;
 
