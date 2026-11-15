@@ -1,0 +1,6 @@
+model_list:
+- model_name: nova
+  litellm_params:
+    model: bedrock/amazon.nova-pro-v1:0
+    maxTokens: not-a-number
+    stopSequences: [1, 2]
