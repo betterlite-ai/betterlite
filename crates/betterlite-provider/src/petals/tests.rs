@@ -347,11 +347,11 @@ async fn a_custom_prompt_entry_missing_a_field_fails(#[case] wire: &str, #[case]
         )
         .await
         .unwrap_err();
+    assert_eq!(error.status(), None);
     assert!(matches!(
         error,
         PetalsSetupError::CustomPromptField { model, field: found } if model == "m" && found == field
     ));
-    assert_eq!(error.status(), None);
 }
 
 #[tokio::test]

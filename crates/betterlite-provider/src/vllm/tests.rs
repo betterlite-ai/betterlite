@@ -198,26 +198,32 @@ fn streaming_is_the_presence_of_the_stream_key(#[case] wire: &str, #[case] strea
 #[rstest]
 #[case::plain(
     None,
-    "http://vllm.test",
+    Some("http://vllm.test"),
     "/v1/models",
     "{}",
     "http://vllm.test/v1/models"
 )]
 #[case::trailing_slash(
     None,
-    "http://vllm.test/",
+    Some("http://vllm.test/"),
     "v1/models",
     "{}",
     "http://vllm.test/v1/models"
 )]
 #[case::leading_slash_on_base(
     None,
-    "http://vllm.test//",
+    Some("http://vllm.test//"),
     "//v1/models",
     "{}",
     "http://vllm.test/v1/models"
 )]
-#[case::environment_base(None, None, "/v1/models", "{}", "http://env.test/v1/models")]
+#[case::environment_base(
+    None,
+    Some("http://env.test"),
+    "/v1/models",
+    "{}",
+    "http://env.test/v1/models"
+)]
 #[case::query(
     Some("http://vllm.test"),
     None,
@@ -227,28 +233,28 @@ fn streaming_is_the_presence_of_the_stream_key(#[case] wire: &str, #[case] strea
 )]
 #[case::number_query(
     None,
-    "http://vllm.test",
+    Some("http://vllm.test"),
     "/v1/models",
     r#"{"limit":3}"#,
     "http://vllm.test/v1/models?limit=3"
 )]
 #[case::space_query(
     None,
-    "http://vllm.test",
+    Some("http://vllm.test"),
     "/v1/models",
     r#"{"a":"b c"}"#,
     "http://vllm.test/v1/models?a=b+c"
 )]
 #[case::empty_query(
     None,
-    "http://vllm.test",
+    Some("http://vllm.test"),
     "/v1/models",
     "{}",
     "http://vllm.test/v1/models"
 )]
 #[case::existing_query(
     None,
-    "http://vllm.test",
+    Some("http://vllm.test"),
     "/v1/models?x=1",
     r#"{"a":"b"}"#,
     "http://vllm.test/v1/models?a=b"
