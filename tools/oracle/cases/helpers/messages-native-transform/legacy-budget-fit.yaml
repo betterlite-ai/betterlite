@@ -1,0 +1,30 @@
+kind: helper
+name: messages-native-transform-legacy-budget-fit
+call:
+  messages_native_transform:
+    model_cost:
+      claude-sonnet-4-5: {litellm_provider: anthropic, supports_reasoning: true, supports_adaptive_thinking: false, supports_output_config: false, supports_legacy_thinking: false, supports_xhigh_reasoning_effort: false, supports_max_reasoning_effort: false, thinking_always_on: false}
+    packaged: {}
+    calls:
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 1500, reasoning_effort: medium}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 1024, reasoning_effort: medium, thinking: {type: enabled, budget_tokens: 1500}, output_config: {format: {type: json_schema}}}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 0, reasoning_effort: medium}
+        strips_billing_metadata: false
+      - model: claude-sonnet-4-5
+        custom_llm_provider: anthropic
+        messages: [{role: user, content: hello}]
+        optional_params: {max_tokens: 1025, reasoning_effort: medium}
+        strips_billing_metadata: false
+env: {}
+compare: {ignore: []}
