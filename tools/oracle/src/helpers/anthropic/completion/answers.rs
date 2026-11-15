@@ -4,7 +4,7 @@ use betterlite_anthropic::completion::error::{CompletionError, anthropic_text_er
 use betterlite_anthropic::completion::headers::validate_environment;
 use betterlite_anthropic::completion::model;
 use betterlite_anthropic::completion::options::{
-    OptionDefaults, SUPPORTED_OPENAI_PARAMS, map_openai_params,
+    SUPPORTED_OPENAI_PARAMS, map_openai_params, resolve_defaults,
 };
 use betterlite_anthropic::completion::request::transform_request;
 use betterlite_anthropic::completion::response::{ResponseInput, transform_response};
@@ -27,10 +27,7 @@ const DEFAULT_MAX_TOKENS: i64 = 4096;
 const CREATED_FLOOR: u64 = 1_000_000_000;
 
 pub(super) fn select(models: &[String]) -> Value {
-    let selected: Vec<bool> = models
-        .iter()
-        .map(|name| model::select(name).is_some())
-        .collect();
+    let selected: Vec<bool> = models.iter().map(|name| model::selects(name)).collect();
     json!({ "selected": selected })
 }
 
@@ -50,7 +47,7 @@ pub(super) fn prompts(fixture: &Fixture, cases: &[PromptCase]) -> HelperResult {
                 &case.model,
                 &case.messages,
                 IndexMap::new(),
-                &OptionDefaults::default(),
+                &OptionValues::default(),
             ))
             .or_value_error()?;
         let Some(Json::Text(prompt)) = body.get("prompt") else {
@@ -106,8 +103,7 @@ pub(super) fn options(
         top_k: constructor.top_k,
         metadata: constructor.metadata.clone(),
     };
-    let defaults =
-        OptionDefaults::resolve(&configured, &OptionValues::default(), DEFAULT_MAX_TOKENS);
+    let defaults = resolve_defaults(&configured, &OptionValues::default(), DEFAULT_MAX_TOKENS);
     let custom_prompt_dict = BTreeMap::new();
     let source = fixture.source(&custom_prompt_dict);
     let mut answers = Vec::new();

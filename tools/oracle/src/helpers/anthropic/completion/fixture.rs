@@ -8,7 +8,7 @@ use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use betterlite_tokenizer::engine::Engine;
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
-use chrono::{DateTime, TimeZone as _, Utc};
+use chrono::{DateTime, Utc};
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
@@ -27,9 +27,7 @@ impl Fixture {
             .enable_all()
             .build()
             .or_value_error()?;
-        let now = Utc
-            .with_ymd_and_hms(2024, 1, 2, 3, 4, 5)
-            .single()
+        let now = DateTime::from_timestamp(1_704_164_645, 0)
             .ok_or("the fixed clock is not a valid time")
             .or_value_error()?;
         let factory = PromptFactory {
@@ -65,16 +63,11 @@ pub(super) fn tiktoken() -> Result<Engine, Box<HelperError>> {
 }
 
 pub(super) fn blank_response(content: &str) -> Result<ChatResponse, Box<HelperError>> {
-    serde_json::from_value(json!({
-        "id": "chatcmpl-kept",
-        "object": "chat.completion",
-        "created": 1,
-        "model": "unset",
-        "choices": [{
-            "index": 0,
-            "message": { "role": "assistant", "content": content },
-            "finish_reason": null,
-        }],
-    }))
-    .or_value_error()
+    let body = json!({
+        "id": "chatcmpl-kept", "object": "chat.completion", "created": 1, "model": "unset",
+        "choices": [
+            {"index": 0, "message": {"role": "assistant", "content": content}, "finish_reason": null},
+        ],
+    });
+    serde_json::from_value(body).or_value_error()
 }
