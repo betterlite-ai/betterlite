@@ -43,7 +43,7 @@ pub(super) async fn scan<T: ArmorTokens>(
     };
     let sanitized = scan_text(hooks, data, &content, phase.hook_name()).await?;
     if guardrail.base.settings.mask_request_content {
-        request_masking::apply(data, &messages, &content, sanitized)?;
+        request_masking::apply(data, &messages, &content, sanitized);
     }
     Ok(())
 }

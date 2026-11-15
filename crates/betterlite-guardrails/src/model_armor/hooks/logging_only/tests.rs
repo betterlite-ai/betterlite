@@ -9,8 +9,8 @@ use rstest::rstest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::model_armor::hooks::error_handling::HookError;
 use crate::model_armor::hooks::tests::support::{
-    API_ERROR, BLOCKED, CLEAN, Recorder, armor, armor_with, blocked, bucket, field, no_texts,
-    offline_armor, prompt_data, records, settings_for, text, texts, value,
+    API_ERROR, BLOCKED, CLEAN, Recorder, SANITIZED_TEXT, armor, armor_with, blocked, bucket, field,
+    no_texts, offline_armor, prompt_data, records, settings_for, text, texts, value,
 };
 use crate::model_armor::transport::error::TransportError;
 
@@ -312,4 +312,31 @@ async fn logging_only_scans_response_inputs_through_the_model_response_endpoint(
         .expect("clean");
     assert!(fixture.request(0).path.ends_with(":sanitizeModelResponse"));
     assert_eq!(fixture.request_text(0), "hello");
+}
+
+#[tokio::test]
+async fn logging_only_redacts_the_recorded_response_when_sanitizing() {
+    let fixture = armor_with(
+        vec![(StatusCode::OK, SANITIZED_TEXT.to_owned())],
+        settings_for(&["pre_call"]),
+        true,
+    )
+    .await;
+    let hooks = fixture.hooks();
+    let mut request = prompt_data();
+    let mut recorder = Recorder::new(None);
+    hooks
+        .apply_guardrail(
+            texts(&["hello"]),
+            &mut request,
+            GuardrailInputType::Request,
+            &mut recorder.context(),
+        )
+        .await
+        .expect("clean");
+    let entries = records(&request, "metadata");
+    assert_eq!(
+        field(&entries[0], "guardrail_response"),
+        value(r#"{"sanitizedText":"[REDACTED]"}"#)
+    );
 }

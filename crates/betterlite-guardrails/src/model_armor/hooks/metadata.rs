@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_models::call_helpers::metadata::MetadataSlots;
+use betterlite_models::call_helpers::metadata::{
+    MetadataBucket, MetadataMap, MetadataSlots, metadata_variable_name,
+};
 use betterlite_prompts::message_content::Message;
 
 use crate::guardrail_records::record::GuardrailStatus;
@@ -13,8 +15,6 @@ use crate::model_armor::transport::tokens::ArmorTokens;
 use super::Data;
 use super::error_handling::{FieldError, HookError};
 
-const METADATA_KEY: &str = "metadata";
-const LITELLM_METADATA_KEY: &str = "litellm_metadata";
 const STATUS_KEY: &str = "_model_armor_status";
 const RESPONSE_KEY: &str = "_model_armor_response";
 const START_TIME_KEY: &str = "start_time";
@@ -25,11 +25,13 @@ pub(super) const SUCCESS: &str = "success";
 
 // LiteLLM's get_metadata_variable_name_from_kwargs: the newer key wins whenever the request carries it
 pub(super) fn bucket_key(data: &Data) -> &'static str {
-    if data.contains_key(LITELLM_METADATA_KEY) {
-        LITELLM_METADATA_KEY
-    } else {
-        METADATA_KEY
-    }
+    let slots = MetadataSlots {
+        metadata: None,
+        litellm_metadata: data
+            .contains_key(MetadataBucket::LitellmMetadata.key())
+            .then(MetadataMap::new),
+    };
+    metadata_variable_name(&slots).key()
 }
 
 fn bucket(data: &Data) -> Option<&BTreeMap<String, GuardrailValue>> {
@@ -96,6 +98,7 @@ pub(super) fn request_start_time(data: &Data) -> Result<Option<f64>, FieldError>
         Some(value) => number_of(value).map(Some).ok_or(FieldError {
             field: START_TIME_KEY,
             expected: "a number",
+            source: None,
         }),
     }
 }

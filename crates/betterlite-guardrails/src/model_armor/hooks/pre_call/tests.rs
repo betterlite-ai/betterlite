@@ -41,7 +41,7 @@ async fn pre_call_scans_the_last_user_message_and_records_a_clean_verdict() {
 
 #[tokio::test]
 async fn pre_call_blocks_a_flagged_prompt_with_the_400_detail() {
-    let fixture = armor(vec![(StatusCode::OK, BLOCKED.to_owned())]).await;
+    let fixture = armor_with(vec![(StatusCode::OK, BLOCKED.to_owned())], settings(), true).await;
     let hooks = fixture.hooks();
     let mut request = prompt_data();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
@@ -83,6 +83,48 @@ async fn pre_call_block_detail_carries_the_response_when_not_sanitized() {
         .expect_err("blocked");
     let (_, detail) = blocked(error);
     assert_eq!(detail.get("model_armor_response"), Some(&value(BLOCKED)));
+}
+
+#[tokio::test]
+async fn pre_call_redacts_the_stored_response_when_sanitizing() {
+    let fixture = armor_with(
+        vec![(StatusCode::OK, SANITIZED_TEXT.to_owned())],
+        settings(),
+        true,
+    )
+    .await;
+    let hooks = fixture.hooks();
+    let mut request = prompt_data();
+    let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
+    hooks
+        .pre_call(&mut request, None, &mut recorder.context())
+        .await
+        .expect("clean");
+    assert_eq!(
+        bucket(&request, "metadata").get("_model_armor_response"),
+        Some(&value(r#"{"sanitizedText":"[REDACTED]"}"#))
+    );
+}
+
+#[tokio::test]
+async fn pre_call_keeps_the_stored_response_whole_when_not_sanitizing() {
+    let fixture = armor_with(
+        vec![(StatusCode::OK, SANITIZED_TEXT.to_owned())],
+        settings(),
+        false,
+    )
+    .await;
+    let hooks = fixture.hooks();
+    let mut request = prompt_data();
+    let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
+    hooks
+        .pre_call(&mut request, None, &mut recorder.context())
+        .await
+        .expect("clean");
+    assert_eq!(
+        bucket(&request, "metadata").get("_model_armor_response"),
+        Some(&value(SANITIZED_TEXT))
+    );
 }
 
 #[tokio::test]

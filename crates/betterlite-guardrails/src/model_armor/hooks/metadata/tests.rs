@@ -7,7 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use super::super::Data;
-use super::super::error_handling::{FieldError, HookError};
+use super::super::error_handling::HookError;
 use super::{
     bucket_key, record_text_scan, recorded_response, recorded_status, request_start_time,
     scan_files,
@@ -150,18 +150,19 @@ fn metadata_scan_replaces_a_bucket_that_is_not_an_object() {
 #[case::integer(r#"{"start_time":7}"#, Ok(Some(7.0)))]
 #[case::text(
     r#"{"start_time":"soon"}"#,
-    Err(FieldError { field: "start_time", expected: "a number" })
+    Err(("start_time", "a number"))
 )]
 #[case::boolean(
     r#"{"start_time":true}"#,
-    Err(FieldError { field: "start_time", expected: "a number" })
+    Err(("start_time", "a number"))
 )]
 fn metadata_reads_the_request_start_time(
     #[case] source: &str,
-    #[case] expected: Result<Option<f64>, FieldError>,
+    #[case] expected: Result<Option<f64>, (&str, &str)>,
 ) {
     let request = data(source);
-    assert_eq!(request_start_time(&request), expected);
+    let read = request_start_time(&request).map_err(|error| (error.field, error.expected));
+    assert_eq!(read, expected);
 }
 
 #[test]

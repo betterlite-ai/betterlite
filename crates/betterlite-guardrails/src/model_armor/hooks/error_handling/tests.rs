@@ -104,6 +104,7 @@ fn error_handling_other_errors_follow_fail_on_error(#[case] fail_on_error: bool)
     let error = HookError::Field(FieldError {
         field: "messages",
         expected: "a list of messages with a string role",
+        source: None,
     });
     let outcome = hook_outcome(Err(error), fail_on_error, "pre-call");
     if fail_on_error {

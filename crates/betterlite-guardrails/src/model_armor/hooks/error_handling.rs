@@ -14,11 +14,13 @@ use crate::model_armor::request_files::ScanError;
 use crate::model_armor::transport::ArmorResponse;
 use crate::model_armor::transport::error::{ArmorCallError, TransportError};
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Error)]
 #[error("the request field {field} must be {expected}")]
 pub struct FieldError {
     pub field: &'static str,
     pub expected: &'static str,
+    #[source]
+    pub source: Option<serde_json::Error>,
 }
 
 #[derive(Debug, Error)]
