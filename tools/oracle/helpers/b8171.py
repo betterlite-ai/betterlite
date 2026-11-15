@@ -39,7 +39,7 @@ class EmbeddingConfig(Protocol):
         _non_default_params: dict[str, JsonValue],
         _optional_params: dict[str, JsonValue],
         _model: str,
-        _drop_params: Literal[False],
+        _drop_params: bool,
         /,
     ) -> dict[str, JsonValue]: ...
 
@@ -88,14 +88,14 @@ class RerankConfig(Protocol):
         self,
         _non_default_params: dict[str, JsonValue] | None,
         _model: str,
-        _drop_params: Literal[False],
+        _drop_params: bool,
         _query: str,
         _documents: list[str | dict[str, JsonValue]],
         /,
         *,
         top_n: int | None,
         rank_fields: list[str] | None,
-        return_documents: Literal[True, False] | None,
+        return_documents: bool | None,
     ) -> dict[str, JsonValue]: ...
 
     def transform_rerank_request(
