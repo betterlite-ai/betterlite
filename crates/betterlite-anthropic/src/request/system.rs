@@ -74,7 +74,10 @@ fn push_parts(
         if is_text && !text.is_some_and(Json::is_truthy) {
             continue;
         }
-        if strips_billing_metadata && is_text && text.is_some_and(is_billing_header) {
+        let billing = text
+            .and_then(Json::as_str)
+            .is_some_and(|raw| raw.starts_with(BILLING_HEADER_PREFIX));
+        if strips_billing_metadata && is_text && billing {
             continue;
         }
         contents.push(AnthropicSystemMessageContent {
@@ -82,12 +85,5 @@ fn push_parts(
             text: text.cloned().unwrap_or(Json::Null),
             cache_control: part.fields.get(CACHE_CONTROL).cloned(),
         });
-    }
-}
-
-fn is_billing_header(value: &Json) -> bool {
-    match value.as_str() {
-        Some(text) => text.starts_with(BILLING_HEADER_PREFIX),
-        None => false,
     }
 }

@@ -223,7 +223,7 @@ impl Records {
             defaults: &defaults,
             catalog: &self.typed,
             default_chat_max_tokens: DEFAULT_MAX_TOKENS,
-            strips_billing_metadata: input.strips_billing_metadata,
+            billing_header: input.strips_billing_metadata,
             modify_params: input.modify_params,
             global_drop_params: input.global_drop_params,
         };

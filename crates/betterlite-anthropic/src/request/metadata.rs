@@ -58,7 +58,7 @@ fn apply_control_user_id(
 }
 
 // Python's re.match raises TypeError for a value that is neither null nor text, and the request fails there
-fn invalid_control_user_id(value: &Json) -> Result<(), MetadataError> {
+const fn invalid_control_user_id(value: &Json) -> Result<(), MetadataError> {
     match value {
         Json::Null => Ok(()),
         Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {

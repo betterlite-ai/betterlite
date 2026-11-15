@@ -24,10 +24,10 @@ where
         &mut self,
         catalogs: &CatalogSources<'_>,
     ) -> Result<(), RequestError<FileFailure>> {
-        let speed = match self.optional_params.get("speed") {
-            Some(value) => SpeedParam::Present(value),
-            None => SpeedParam::Absent,
-        };
+        let speed = self
+            .optional_params
+            .get("speed")
+            .map_or(SpeedParam::Absent, SpeedParam::Present);
         let request = SpeedRequest {
             model: self.model,
             speed,

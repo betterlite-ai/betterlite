@@ -15,7 +15,7 @@ use super::super::error::RequestError;
 use super::super::tool_list::tool_entries;
 use super::Preparation;
 
-impl<FileFailure> Preparation<'_, FileFailure>
+impl<'tools, FileFailure> Preparation<'tools, FileFailure>
 where
     FileFailure: StdError + Send + Sync + 'static,
 {
@@ -23,10 +23,10 @@ where
     pub(super) fn rewrite_tool_names(&mut self) -> Result<(), RequestError<FileFailure>> {
         let mut record = wire::RequestParams::default();
         if let Some(tools) = self.optional_params.get("tools") {
-            record.head.tools = Some(convert::encode(tools)?);
+            record.head.tools = Some(serde_json::from_str(&serde_json::to_string(tools)?)?);
         }
         if let Some(choice) = self.optional_params.get("tool_choice") {
-            record.head.tool_choice = Some(convert::encode(choice)?);
+            record.head.tool_choice = Some(serde_json::from_str(&serde_json::to_string(choice)?)?);
         }
         let maps = sanitize_tool_names_in_request(&mut record);
         if maps.forward.is_empty() {
@@ -43,12 +43,14 @@ where
         record: &wire::RequestParams,
     ) -> Result<(), RequestError<FileFailure>> {
         if let Some(tools) = &record.head.tools {
+            let encoded = serde_json::to_string(tools)?;
             self.optional_params
-                .insert("tools".to_owned(), convert::encode(tools)?);
+                .insert("tools".to_owned(), serde_json::from_str(&encoded)?);
         }
         if let Some(choice) = &record.head.tool_choice {
+            let encoded = serde_json::to_string(choice)?;
             self.optional_params
-                .insert("tool_choice".to_owned(), convert::encode(choice)?);
+                .insert("tool_choice".to_owned(), serde_json::from_str(&encoded)?);
         }
         Ok(())
     }
@@ -57,16 +59,9 @@ where
         &mut self,
         forward: &BTreeMap<String, String>,
     ) -> Result<(), RequestError<FileFailure>> {
-        let records: Vec<wire::Message> = self
-            .messages
-            .iter()
-            .map(convert::encode::<_, wire::Message>)
-            .collect::<Result<_, _>>()?;
+        let records: Vec<wire::Message> = convert::convert_each(&self.messages)?;
         let rewritten = rewrite_tool_names_in_messages(&records, forward);
-        self.messages = rewritten
-            .iter()
-            .map(convert::encode)
-            .collect::<Result<_, _>>()?;
+        self.messages = convert::convert_each(&rewritten)?;
         Ok(())
     }
 

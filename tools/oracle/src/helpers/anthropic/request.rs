@@ -1,4 +1,4 @@
-use betterlite_anthropic::request::PreparedRequest;
+use betterlite_anthropic::request::{BillingHeader, PreparedRequest};
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
@@ -33,7 +33,7 @@ pub(crate) struct Input {
     #[serde(default)]
     headers: IndexMap<String, String>,
     #[serde(default)]
-    strips_billing_metadata: bool,
+    strips_billing_metadata: BillingHeader,
     #[serde(default)]
     modify_params: bool,
     #[serde(default)]

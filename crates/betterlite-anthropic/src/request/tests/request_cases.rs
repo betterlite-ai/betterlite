@@ -104,7 +104,7 @@ fn mid_system_becomes_user_turn(model: &str) {
     let outcome = Scenario::new(model, MID_CONVERSATION).run().ok();
     expect_absent(&outcome, "system");
     let note = serde_json::to_string(CONVERTED_SYSTEM_NOTE).expect("note");
-    let expected = r#"[{"role":"user","content":[{"type":"text","text":"u"}]},{"role":"assistant","content":[{"type":"text","text":"a"}]},{"role":"user","content":[{"type":"text","text":"__NOTE__"},{"type":"text","text":"reminder"},{"type":"text","text":"u2"}]}]"#
+    let expected = r#"[{"role":"user","content":[{"type":"text","text":"u"}]},{"role":"assistant","content":[{"type":"text","text":"a"}]},{"role":"user","content":[{"type":"text","text":__NOTE__},{"type":"text","text":"reminder"},{"type":"text","text":"u2"}]}]"#
         .replace("__NOTE__", &note);
     expect_field(&outcome, "messages", &expected);
 }
@@ -126,6 +126,7 @@ fn empty_history_needs_modify() {
 fn case_2_missing_tool_definition() {
     dummy_tools_fill_missing();
     declared_tools_are_renamed();
+    valid_names_keep_no_reverse_map();
     advisor_blocks_follow_tool();
     unreadable_tools_are_named();
 }
@@ -135,9 +136,10 @@ fn unreadable_tools_are_named() {
     assert_eq!(status, Some(400));
     assert_eq!(message, "tools must be a list");
 
-    let (status, message) = refused(one_user("plain-model").optional(r#"{"tools":[5]}"#).run());
-    assert_eq!(status, Some(400));
-    assert_eq!(message, "tools entry 0 is not an object");
+    let (entry_status, entry_message) =
+        refused(one_user("plain-model").optional(r#"{"tools":[5]}"#).run());
+    assert_eq!(entry_status, Some(400));
+    assert_eq!(entry_message, "tools entry 0 is not an object");
 }
 
 fn dummy_tools_fill_missing() {
@@ -196,7 +198,9 @@ fn declared_tools_are_renamed() {
         BTreeMap::from([("my_tool".to_owned(), "my.tool".to_owned())])
     );
     expect_absent(&outcome, "_anthropic_tool_name_map");
+}
 
+fn valid_names_keep_no_reverse_map() {
     let valid = one_user("plain-model")
         .optional(
             r#"{"tools":[{"type":"custom","name":"plain_tool","input_schema":{"type":"object","properties":{}}}]}"#,
@@ -557,13 +561,13 @@ fn context_management_betas() {
     assert_eq!(status, Some(400));
     assert_eq!(message, "context_management.edits must be a list");
 
-    let (status, message) = refused(
+    let (entry_status, entry_message) = refused(
         one_user("plain-model")
             .optional(r#"{"context_management":{"edits":[5]}}"#)
             .run(),
     );
-    assert_eq!(status, Some(400));
-    assert_eq!(message, "context_management edit 0 is not an object");
+    assert_eq!(entry_status, Some(400));
+    assert_eq!(entry_message, "context_management edit 0 is not an object");
 }
 
 fn compaction_betas() {
@@ -724,6 +728,7 @@ fn case_10_assembly_option_cleanup() {
     speed_follows_the_speed_gate();
     disabled_thinking_dropped();
     output_config_is_applied_last();
+    format_survives_effort_drop();
     options_override_body_keys();
 }
 
@@ -850,15 +855,16 @@ fn output_config_is_applied_last() {
         "{message}"
     );
 
-    let (status, message) = refused(
+    let (xhigh_status, xhigh_message) = refused(
         one_user("plain-model")
             .optional(r#"{"output_config":{"effort":"xhigh"}}"#)
             .run(),
     );
-    assert_eq!(status, Some(400));
+    assert_eq!(xhigh_status, Some(400));
     assert!(
-        message.contains("effort='xhigh' is not supported by this model. Got model: plain-model"),
-        "{message}"
+        xhigh_message
+            .contains("effort='xhigh' is not supported by this model. Got model: plain-model"),
+        "{xhigh_message}"
     );
 
     let permissive = one_user("plain-model")
@@ -872,7 +878,9 @@ fn output_config_is_applied_last() {
         .run()
         .ok();
     expect_field(&effort, "output_config", r#"{"effort":"xhigh"}"#);
+}
 
+fn format_survives_effort_drop() {
     let preserved = one_user("plain-model")
         .optional(
             r#"{"output_config":{"format":{"type":"json_schema","schema":{"type":"object"}},"effort":"high"}}"#,

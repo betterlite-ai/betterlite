@@ -7,8 +7,8 @@ import litellm
 from litellm.exceptions import BadRequestError
 from litellm.llms.anthropic.chat.transformation import AnthropicConfig
 from litellm.llms.anthropic.common_utils import AnthropicError
+from pydantic import BaseModel, TypeAdapter
 from pydantic import JsonValue as Json
-from pydantic import TypeAdapter
 from typing_extensions import override
 
 REVERSE_MAP_KEY: Final = "_anthropic_tool_name_map"
@@ -16,9 +16,11 @@ Transform = Callable[
     [str, list[Json], dict[str, Json], dict[str, Json], dict[str, Json]],
     Coroutine[Json, Json, dict[str, Json]],
 ]
-# LiteLLM types the messages as AllMessageValues, whose Any members mypy rejects; this validates
-# the bound method into the JSON-facing signature the helper calls it with
+# the message type carries Any, so the bound method enters through this JSON-facing signature
 TRANSFORM = TypeAdapter(Transform)
+# the exception classes carry Any, so they enter through annotated names
+BAD_REQUEST: Final[type[Exception]] = BadRequestError
+ANTHROPIC_FAILURE: Final[type[Exception]] = AnthropicError
 
 
 class Fixture(TypedDict):
@@ -37,6 +39,10 @@ class Input(TypedDict):
     strips_billing_metadata: bool
     modify_params: bool
     global_drop_params: bool
+
+
+class Rejection(BaseModel):
+    status_code: int
 
 
 class CaseConfig(AnthropicConfig):
@@ -77,7 +83,8 @@ def answer(input_value: Input) -> Json:
     if provider is None:
         provider = "anthropic"
     config = CaseConfig(provider=provider, strips_billing=input_value["strips_billing_metadata"])
-    transform = TRANSFORM.validate_python(config.async_transform_request)
+    method: object = config.async_transform_request
+    transform = TRANSFORM.validate_python(method)
     messages: list[Json] = list(input_value["messages"])
     optional_params: dict[str, Json] = dict(input_value["optional_params"])
     litellm_params: dict[str, Json] = dict(input_value["litellm_params"])
@@ -94,10 +101,9 @@ def answer(input_value: Input) -> Json:
                 headers,
             )
         )
-    except BadRequestError as error:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L219
-        return {"raised": True, "status": error.status_code}
-    except AnthropicError as error:  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/common_utils.py#L309
-        return {"raised": True, "status": error.status_code}
+    except (BAD_REQUEST, ANTHROPIC_FAILURE) as error:
+        rejection = Rejection.model_validate(error, from_attributes=True)
+        return {"raised": True, "status": rejection.status_code}
     reverse: Json = None
     if REVERSE_MAP_KEY in litellm_params:
         reverse = litellm_params[REVERSE_MAP_KEY]

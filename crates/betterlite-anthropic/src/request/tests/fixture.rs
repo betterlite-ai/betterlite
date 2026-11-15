@@ -29,6 +29,7 @@ use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use indexmap::IndexMap;
+use tokio::runtime::Builder;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level, Subscriber};
@@ -39,7 +40,7 @@ use crate::headers::AnthropicHeaders;
 use crate::option_primitives::OptionDefaults;
 use crate::params::DEFAULT_MAX_TOKENS;
 use crate::request::error::RequestError;
-use crate::request::{AnthropicRequest, PreparedRequest};
+use crate::request::{AnthropicRequest, BillingHeader, PreparedRequest};
 
 pub(crate) const MODELS: &str = r#"{
     "plain-model": {"litellm_provider": "anthropic"},
@@ -340,7 +341,7 @@ pub(crate) struct Scenario {
     pub(crate) headers: IndexMap<String, String>,
     pub(crate) defaults: OptionDefaults,
     pub(crate) default_chat_max_tokens: i64,
-    pub(crate) strips_billing_metadata: bool,
+    pub(crate) billing_header: BillingHeader,
     pub(crate) modify_params: bool,
     pub(crate) global_drop_params: bool,
 }
@@ -356,7 +357,7 @@ impl Scenario {
             headers: IndexMap::new(),
             defaults: OptionDefaults::default(),
             default_chat_max_tokens: DEFAULT_MAX_TOKENS,
-            strips_billing_metadata: false,
+            billing_header: BillingHeader::Keep,
             modify_params: false,
             global_drop_params: false,
         }
@@ -393,7 +394,7 @@ impl Scenario {
     }
 
     pub(crate) fn strip_billing(mut self) -> Self {
-        self.strips_billing_metadata = true;
+        self.billing_header = BillingHeader::Strip;
         self
     }
 
@@ -416,7 +417,7 @@ impl Scenario {
         let fixture = Fixture::new(MODELS);
         let mut session = Session::new(&fixture);
         let (guard, warnings) = capture_warnings();
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .expect("runtime");
@@ -450,7 +451,7 @@ impl Scenario {
             defaults: &self.defaults,
             catalog,
             default_chat_max_tokens: self.default_chat_max_tokens,
-            strips_billing_metadata: self.strips_billing_metadata,
+            billing_header: self.billing_header,
             modify_params: self.modify_params,
             global_drop_params: self.global_drop_params,
         };

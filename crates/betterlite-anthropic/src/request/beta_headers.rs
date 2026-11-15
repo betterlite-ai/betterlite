@@ -174,7 +174,7 @@ fn add_tool_betas(headers: &mut AnthropicHeaders, tools: &[PromptJson]) {
     for tool in tools {
         match tool_kind(tool) {
             Some(kind) if kind.starts_with(WEB_FETCH) => {
-                ensure_beta_header(headers, WEB_FETCH_BETA)
+                ensure_beta_header(headers, WEB_FETCH_BETA);
             }
             Some(kind) if kind.starts_with(MEMORY) => {
                 ensure_beta_header(headers, CONTEXT_MANAGEMENT_BETA);
@@ -206,20 +206,21 @@ fn add_speed_beta(headers: &mut AnthropicHeaders, params: &IndexMap<String, Json
 }
 
 pub(super) fn tool_kind(tool: &PromptJson) -> Option<&str> {
-    let fields = tool.as_object()?;
-    fields.get(TYPE).and_then(PromptJson::as_str)
+    tool.as_object()
+        .and_then(|fields| fields.get(TYPE))
+        .and_then(PromptJson::as_str)
 }
 
-fn object(value: &Json) -> Option<&IndexMap<String, Json>> {
+const fn object(value: &Json) -> Option<&IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
-fn text(value: &Json) -> Option<&str> {
+const fn text(value: &Json) -> Option<&str> {
     match value {
-        Json::Text(value) => Some(value.as_str()),
+        Json::Text(content) => Some(content.as_str()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => None,
     }
 }

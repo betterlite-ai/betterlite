@@ -10,7 +10,6 @@ use crate::params::error::ParamsError;
 use crate::tools::ToolsError;
 
 use super::beta_headers::BetaHeaderError;
-use super::convert::ConvertError;
 use super::metadata::MetadataError;
 use super::tool_list::ToolListError;
 
@@ -46,7 +45,7 @@ where
     #[error(transparent)]
     Metadata(#[from] MetadataError),
     #[error(transparent)]
-    Convert(#[from] ConvertError),
+    Convert(#[from] serde_json::Error),
 }
 
 impl<FileFailure> RequestError<FileFailure>
@@ -57,8 +56,7 @@ where
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::Media(_) | Self::Messages(_) => Some(400),
-            Self::Prompt { .. } => Some(400),
+            Self::Media(_) | Self::Messages(_) | Self::Prompt { .. } => Some(400),
             Self::Speed(error) => error.status_code(),
             Self::Sampling(error) => error.status_code(),
             Self::Parameters(error) => error.status_code(),

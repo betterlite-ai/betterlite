@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::marker::PhantomData;
+use std::mem;
 
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
@@ -30,6 +31,7 @@ use crate::params::output_config::{self, OutputConfigRequest};
 use crate::tools::map_tools;
 
 use super::AnthropicRequest;
+use super::BillingHeader;
 use super::PreparedRequest;
 use super::convert;
 use super::error::RequestError;
@@ -90,7 +92,7 @@ where
             catalog: request.catalog,
             default_chat_max_tokens: request.default_chat_max_tokens,
             control_metadata: request.litellm_params.get("metadata").cloned(),
-            strips_billing_metadata: request.strips_billing_metadata,
+            strips_billing_metadata: request.billing_header == BillingHeader::Strip,
             modify_params: request.modify_params,
             drop: DropParams {
                 global: request.global_drop_params,
@@ -156,8 +158,9 @@ where
         }
         let dummy: Vec<PromptJson> = convert::convert_each(&DUMMY_TOOLS)?;
         let mapping = map_tools(&dummy)?;
+        let encoded = serde_json::to_string(&mapping.tools)?;
         self.optional_params
-            .insert("tools".to_owned(), convert::encode(&mapping.tools)?);
+            .insert("tools".to_owned(), serde_json::from_str(&encoded)?);
         Ok(())
     }
 
@@ -188,8 +191,9 @@ where
         let (mut leading, later) = split_leading_system_run(&typed);
         let blocks = translate_system_message(&mut leading, self.strips_billing_metadata);
         if !blocks.is_empty() {
+            let encoded = serde_json::to_string(&blocks)?;
             self.optional_params
-                .insert("system".to_owned(), convert::encode(&blocks)?);
+                .insert("system".to_owned(), serde_json::from_str(&encoded)?);
         }
         let request = CapabilityRequest {
             model: self.model,
@@ -259,7 +263,7 @@ where
         Ok(PreparedRequest {
             body,
             headers: self.headers.clone(),
-            tool_name_reverse: std::mem::take(&mut self.tool_name_reverse),
+            tool_name_reverse: mem::take(&mut self.tool_name_reverse),
         })
     }
 }

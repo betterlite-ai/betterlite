@@ -2,7 +2,6 @@ use betterlite_prompts::arguments::json::Json;
 use serde::Serialize;
 
 use super::beta_headers::tool_kind;
-use super::convert::{self, ConvertError};
 
 const CODE_EXECUTION: &str = "code_execution";
 const CODE_EXECUTION_TYPE: &str = "code_execution_20250522";
@@ -20,7 +19,7 @@ pub struct AnthropicCodeExecutionTool {
 pub fn add_code_execution_tool(
     messages: &[Json],
     tools: &mut Vec<Json>,
-) -> Result<(), ConvertError> {
+) -> Result<(), serde_json::Error> {
     if !has_container_upload(messages) {
         return Ok(());
     }
@@ -34,7 +33,7 @@ pub fn add_code_execution_tool(
         name: CODE_EXECUTION.to_owned(),
         kind: CODE_EXECUTION_TYPE.to_owned(),
     };
-    tools.push(convert::encode::<_, Json>(&tool)?);
+    tools.push(serde_json::from_str(&serde_json::to_string(&tool)?)?);
     Ok(())
 }
 
