@@ -136,19 +136,19 @@ fn provider_config_value(call: &ProviderConfigReadCall) -> Value {
     })
 }
 
-fn arn_value(route: &str, batch_id: &str) -> Value {
-    json!({ "provider": "bedrock", "route": route, "batch_id": batch_id })
-}
-
 fn call_value(result: &BatchProviderReadResult) -> HelperResult {
     Ok(match &result.call {
         BatchProviderReadCall::ProviderConfig(call) => provider_config_value(call),
-        BatchProviderReadCall::BedrockAsyncInvoke(call) => {
-            arn_value("async_invoke", &call.batch_id)
-        }
-        BatchProviderReadCall::BedrockModelInvocationJob(call) => {
-            arn_value("model_invocation_job", &call.batch_id)
-        }
+        BatchProviderReadCall::BedrockAsyncInvoke(call) => json!({
+            "provider": "bedrock",
+            "route": "async_invoke",
+            "batch_id": call.batch_id,
+        }),
+        BatchProviderReadCall::BedrockModelInvocationJob(call) => json!({
+            "provider": "bedrock",
+            "route": "model_invocation_job",
+            "batch_id": call.batch_id,
+        }),
         BatchProviderReadCall::Xai(call) => xai_value(call),
         BatchProviderReadCall::OpenAiCompatible(call) => openai_value(call),
         BatchProviderReadCall::Azure(call) => azure_value(call),
