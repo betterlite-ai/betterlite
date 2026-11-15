@@ -246,8 +246,8 @@ deviations:
     500 (source message Managed files hook not found); LiteLLM-executed batch creation without ManagedBatchStore
     fails HTTP 400, type invalid_request_error, param None, code 400, with the source database-required message
     even if DATABASE_URL is set.
-  why: Keep the open-source behavior while Max decides whether betterlite should implement managed files and batches
-    independently. The pinned enterprise hook is absent; native S3 support does not supply it.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
+    The pinned enterprise hook is absent, and native S3 support does not supply it.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L470-L483
 out_of_scope:
 - B080-B099 own public endpoint routes and resource lifecycles; this task installs typed provider dispatch only.

@@ -46,6 +46,7 @@ out_of_scope:
   - Python awaitable and client-object bindings are B157; the native facade accepts typed clients and runtime handles.
   - B1316 owns HTTP operations; B031 selects this provider from main.py; earlier configuration/response methods are B1305/B1308-B1316/B1322/B1323/B1326.
 pitfalls:
+  - Request media is fetched as LiteLLM fetches it (decision 2026-10-31), so build B5083's Fetcher once from the route's UserUrlFetcher, B173's shared client and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB and pass it to B9965's request media pass for Vertex and AI Studio Gemini, never a refusing fetcher.
   - stream is removed from the caller's option map before cache/body transformation observes it.
   - A supplied AsyncHTTPHandler cannot serve the synchronous client branch.
   - stream=1 is not the literal True check modeled by the typed boolean option.
