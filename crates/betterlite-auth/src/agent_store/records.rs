@@ -10,6 +10,24 @@ pub(super) const HUMAN_KIND: &str = "human";
 pub(super) const MICROSOFT_ENTRA_PROVIDER: &str = "microsoft_entra";
 pub(super) const SSO_INTERACTIVE: &str = "sso_interactive";
 
+pub type FindResult<Record> = Result<Option<Record>, AgentStoreError>;
+
+// Prisma's provider_tenant_id_client_id input, shared by the identity and retired tables
+#[derive(Clone, Copy, Debug)]
+pub struct BindingKey<'key> {
+    pub provider: &'key str,
+    pub tenant_id: &'key str,
+    pub client_id: &'key str,
+}
+
+// Prisma's issuer_tenant_id_oid input of the verified-subject table
+#[derive(Clone, Copy, Debug)]
+pub struct SubjectKey<'key> {
+    pub issuer: &'key str,
+    pub tenant_id: &'key str,
+    pub oid: &'key str,
+}
+
 // find_unique returns the composite-key row; only its agent_id reaches a caller
 #[derive(Clone, Debug)]
 pub struct IdentityRecord {
@@ -69,17 +87,12 @@ pub struct InteractiveEnrollment<'enrollment> {
 
 #[async_trait]
 pub trait AgentRecords: Send + Sync {
-    async fn find_unique(&self, agent_id: &str) -> Result<Option<AgentResponse>, AgentStoreError>;
+    async fn find_unique(&self, agent_id: &str) -> FindResult<AgentResponse>;
 }
 
 #[async_trait]
 pub trait IdentityRecords: Send + Sync {
-    async fn find_unique(
-        &self,
-        provider: &str,
-        tenant_id: &str,
-        client_id: &str,
-    ) -> Result<Option<IdentityRecord>, AgentStoreError>;
+    async fn find_unique(&self, key: &BindingKey<'_>) -> FindResult<IdentityRecord>;
 
     async fn update_many(
         &self,
@@ -90,12 +103,7 @@ pub trait IdentityRecords: Send + Sync {
 
 #[async_trait]
 pub trait VerifiedSubjectRecords: Send + Sync {
-    async fn find_unique(
-        &self,
-        issuer: &str,
-        tenant_id: &str,
-        oid: &str,
-    ) -> Result<Option<VerifiedSubjectRow>, AgentStoreError>;
+    async fn find_unique(&self, key: &SubjectKey<'_>) -> FindResult<VerifiedSubjectRow>;
 
     async fn upsert(
         &self,
@@ -105,18 +113,10 @@ pub trait VerifiedSubjectRecords: Send + Sync {
 
 #[async_trait]
 pub trait RetiredIdentityRecords: Send + Sync {
-    async fn find_unique(
-        &self,
-        provider: &str,
-        tenant_id: &str,
-        client_id: &str,
-    ) -> Result<Option<RetiredIdentityRecord>, AgentStoreError>;
+    async fn find_unique(&self, key: &BindingKey<'_>) -> FindResult<RetiredIdentityRecord>;
 }
 
 #[async_trait]
 pub trait RetiredAgentRecords: Send + Sync {
-    async fn find_unique(
-        &self,
-        agent_id: &str,
-    ) -> Result<Option<RetiredAgentRecord>, AgentStoreError>;
+    async fn find_unique(&self, agent_id: &str) -> FindResult<RetiredAgentRecord>;
 }

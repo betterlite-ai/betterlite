@@ -1,16 +1,16 @@
-mod agent;
-mod authentication;
+pub mod agent;
+pub mod authentication;
 mod binding;
 pub mod cache;
-mod enrollment;
+pub mod enrollment;
 pub mod error;
 pub mod records;
 mod repository;
 pub mod resolve;
-mod retired;
-mod subject;
+pub mod retired;
+pub mod subject;
 mod tests;
-mod unbound;
+pub mod unbound;
 
 use std::sync::Arc;
 

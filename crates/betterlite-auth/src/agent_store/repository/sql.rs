@@ -1,3 +1,7 @@
+pub(super) const RETIRED_AGENT_SQL: &str = r#"SELECT original_agent_id
+FROM "LiteLLM_RetiredAgent"
+WHERE original_agent_id = $1"#;
+
 // Prisma's find_unique with the identity and object_permission includes, decoded as AgentResponse
 pub(super) const AGENT_SQL: &str = r#"SELECT jsonb_build_object(
     'agent_id', a.agent_id,
@@ -59,7 +63,3 @@ RETURNING to_jsonb("LiteLLM_VerifiedSubject".*)::text"#;
 pub(super) const RETIRED_IDENTITY_SQL: &str = r#"SELECT binding_id
 FROM "LiteLLM_RetiredAgentIdentity"
 WHERE provider = $1 AND tenant_id = $2 AND client_id = $3"#;
-
-pub(super) const RETIRED_AGENT_SQL: &str = r#"SELECT original_agent_id
-FROM "LiteLLM_RetiredAgent"
-WHERE original_agent_id = $1"#;
