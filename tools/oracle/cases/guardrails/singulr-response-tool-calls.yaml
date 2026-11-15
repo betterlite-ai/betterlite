@@ -1,0 +1,35 @@
+kind: helper
+name: singulr-response-tool-calls
+call:
+  b8215:
+    scenarios:
+      - name: response-with-tool-calls
+        settings:
+          api_key: oracle-key
+          api_base: "http://localhost:8003"
+          application_id: application-1
+          guardrail_id: guardrail-1
+          block_on_error: true
+          timeout: 5.0
+        inputs:
+          texts: ["first part", "second part"]
+          model: gpt-4o
+          tool_calls:
+            - {id: call-1, type: function, function: {name: weather, arguments: '{"city": "Paris"}'}}
+            - {id: call-2, function: {name: clock, arguments: "now"}}
+            - {id: call-3, function: {name: "", arguments: "{}"}}
+            - {id: call-4, function: {name: missing_arguments}}
+        request_data:
+          litellm_call_id: call-3
+          model: gpt-4o
+          messages:
+            - {role: user, content: "what is the weather"}
+          metadata:
+            user_api_key_user_id: user-3
+        input_type: response
+        answer:
+          status: 200
+          headers: {}
+          body: {should_block: false}
+env: {}
+compare: {ignore: []}

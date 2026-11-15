@@ -6,15 +6,21 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }
 betterlite-models = { path = "../betterlite-models" }
+betterlite-openai = { path = "../betterlite-openai" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 chrono.workspace = true
+indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
+serde.workspace = true
+serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
 thiserror.workspace = true
 tracing.workspace = true
 
@@ -22,6 +28,7 @@ tracing.workspace = true
 rstest = "=0.27.0"
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+tokio.workspace = true
 
 [lints]
 workspace = true
