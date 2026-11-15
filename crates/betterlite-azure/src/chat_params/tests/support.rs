@@ -212,6 +212,18 @@ pub(super) fn resolves_none(model: &str) -> bool {
     runtime().block_on(effort_resolves_to_none(&mut azure, model, None))
 }
 
+pub(super) fn supports_response_schema(model: &str) -> bool {
+    let mut capabilities = fixture();
+    let mut azure = AzureCapabilities {
+        inner: &mut capabilities,
+    };
+    let request = CapabilityRequest {
+        model,
+        custom_llm_provider: Some("azure"),
+    };
+    runtime().block_on(azure.supports_response_schema(&request))
+}
+
 pub(super) fn resolves_none_with(map_text: &str, model: &str) -> bool {
     let entries: BTreeMap<String, Json> = serde_json::from_str(map_text).unwrap();
     let chat_models = entries.keys().cloned().collect();
