@@ -41,6 +41,24 @@ fn rows_json(rows: &[SkillTable]) -> Result<Value, Box<crate::helpers::HelperErr
         .map(Value::Array)
 }
 
+fn invalid(step: &Step) -> Value {
+    json!({"action": step.action.as_str(), "error": "invalid_input"})
+}
+
+fn error_answer(action: &str, error: &StoreError) -> Value {
+    json!({"action": action, "error": token(error)})
+}
+
+fn row_answer(
+    action: &str,
+    outcome: Result<SkillTable, StoreError>,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    match outcome {
+        Ok(row) => row_json(&row).map(|row| json!({"action": action, "row": row})),
+        Err(error) => Ok(error_answer(action, &error)),
+    }
+}
+
 pub(super) async fn run_steps<R: SkillRepository>(
     store: &HostedSkillStore<R>,
     steps: &[Step],
@@ -57,33 +75,23 @@ async fn run_step<R: SkillRepository>(
     step: &Step,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let caller = step.principal.as_ref().map(principal_of).transpose()?;
-    match step.action.as_str() {
-        "create" => create_step(store, step, caller.as_ref()).await,
-        "list" | "search" => list_step(store, step, caller.as_ref()).await,
-        "get" => get_step(store, step, caller.as_ref()).await,
-        "delete" => delete_step(store, step, caller.as_ref()).await,
-        "fetch" => fetch_step(store, step, caller.as_ref()).await,
-        action => Ok(json!({"action": action, "error": "invalid_input"})),
-    }
-}
-
-async fn create_step<R: SkillRepository>(
-    store: &HostedSkillStore<R>,
-    step: &Step,
-    caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
     let action = step.action.as_str();
+    match action {
+        "list" | "search" => return list_step(store, step, caller.as_ref()).await,
+        "get" | "delete" | "fetch" => return skill_step(store, step, caller.as_ref()).await,
+        "create" => {}
+        _ => return Ok(json!({"action": action, "error": "invalid_input"})),
+    }
     let Some(fields) = step.data.as_ref() else {
-        return Ok(json!({"action": action, "error": "invalid_input"}));
+        return Ok(invalid(step));
     };
     let data = new_skill(fields)?;
-    match store
-        .create_skill(&data, step.user_id.as_deref(), caller)
-        .await
-    {
-        Ok(row) => Ok(json!({"action": action, "row": row_json(&row)?})),
-        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
-    }
+    row_answer(
+        action,
+        store
+            .create_skill(&data, step.user_id.as_deref(), caller.as_ref())
+            .await,
+    )
 }
 
 async fn list_step<R: SkillRepository>(
@@ -92,61 +100,40 @@ async fn list_step<R: SkillRepository>(
     caller: Option<&Principal>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let action = step.action.as_str();
-    let result = if action == "search" {
+    let outcome = if action == "search" {
         store.list_skills_for_search(caller).await
     } else {
         store.list_skills(page_of(step), caller).await
     };
-    match result {
-        Ok(rows) => Ok(json!({"action": action, "rows": rows_json(&rows)?})),
-        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
+    match outcome {
+        Ok(rows) => rows_json(&rows).map(|rows| json!({"action": action, "rows": rows})),
+        Err(error) => Ok(error_answer(action, &error)),
     }
 }
 
-async fn get_step<R: SkillRepository>(
+async fn skill_step<R: SkillRepository>(
     store: &HostedSkillStore<R>,
     step: &Step,
     caller: Option<&Principal>,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let action = step.action.as_str();
     let Some(skill_id) = step.skill_id.as_deref() else {
-        return Ok(json!({"action": action, "error": "invalid_input"}));
+        return Ok(invalid(step));
     };
-    match store.get_skill(skill_id, caller).await {
-        Ok(row) => Ok(json!({"action": action, "row": row_json(&row)?})),
-        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
-    }
-}
-
-async fn delete_step<R: SkillRepository>(
-    store: &HostedSkillStore<R>,
-    step: &Step,
-    caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
     let action = step.action.as_str();
-    let Some(skill_id) = step.skill_id.as_deref() else {
-        return Ok(json!({"action": action, "error": "invalid_input"}));
-    };
-    match store.delete_skill(skill_id, caller).await {
-        Ok(deleted) => Ok(json!({
-            "action": action,
-            "result": {"id": deleted.id, "type": deleted.r#type},
-        })),
-        Err(error) => Ok(json!({"action": action, "error": token(&error)})),
+    if action == "get" {
+        return row_answer(action, store.get_skill(skill_id, caller).await);
     }
-}
-
-async fn fetch_step<R: SkillRepository>(
-    store: &HostedSkillStore<R>,
-    step: &Step,
-    caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let action = step.action.as_str();
-    let Some(skill_id) = step.skill_id.as_deref() else {
-        return Ok(json!({"action": action, "error": "invalid_input"}));
-    };
-    match store.fetch_skill_from_db(skill_id, caller).await {
-        Some(row) => Ok(json!({"action": action, "row": row_json(&row)?})),
-        None => Ok(json!({"action": action, "row": null})),
+    if action == "delete" {
+        return match store.delete_skill(skill_id, caller).await {
+            Ok(deleted) => Ok(json!({
+                "action": action,
+                "result": {"id": deleted.id, "type": deleted.r#type},
+            })),
+            Err(error) => Ok(error_answer(action, &error)),
+        };
     }
+    let Some(row) = store.fetch_skill_from_db(skill_id, caller).await else {
+        return Ok(json!({"action": action, "row": null}));
+    };
+    row_json(&row).map(|row| json!({"action": action, "row": row}))
 }

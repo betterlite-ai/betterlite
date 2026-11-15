@@ -80,6 +80,14 @@ impl Scripted {
         })
     }
 
+    fn push_effect(&self, effect: Value) {
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .effects
+            .push(effect);
+    }
+
     fn failure(&self, kind: &str) -> Result<(), TableError> {
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let faulted = state.faults.get(kind).copied().unwrap_or(false);
@@ -163,15 +171,10 @@ impl SkillRepository for Scripted {
     }
 
     async fn find_unique(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
-        let found = {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state
-                .effects
-                .push(json!({"kind": "find_unique", "where": {"skill_id": skill_id}}));
-            state.rows.get(skill_id).cloned()
-        };
+        self.push_effect(json!({"kind": "find_unique", "where": {"skill_id": skill_id}}));
         self.failure("find_unique")?;
-        Ok(found)
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(state.rows.get(skill_id).cloned())
     }
 
     async fn find_many(
@@ -195,11 +198,7 @@ impl SkillRepository for Scripted {
     }
 
     async fn delete(&self, skill_id: &str) -> Result<(), TableError> {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .effects
-            .push(json!({"kind": "delete", "where": {"skill_id": skill_id}}));
+        self.push_effect(json!({"kind": "delete", "where": {"skill_id": skill_id}}));
         self.failure("delete")?;
         self.state
             .lock()

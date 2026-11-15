@@ -9,10 +9,10 @@ use super::{NewSkillFields, PrincipalFields};
 pub(super) fn principal_of(
     fields: &PrincipalFields,
 ) -> Result<Principal, Box<crate::helpers::HelperError>> {
-    let teams = match &fields.team_id {
-        Some(id) => json!([{"id": id}]),
-        None => json!([]),
-    };
+    let mut teams = Vec::new();
+    if let Some(id) = &fields.team_id {
+        teams.push(json!({"id": id}));
+    }
     let roles = if fields.admin {
         json!(["platform_admin"])
     } else {
@@ -31,21 +31,25 @@ pub(super) fn principal_of(
     serde_json::from_value(value).map_err(|error| super::invalid_input(error.to_string()))
 }
 
+fn decode_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box<crate::helpers::HelperError>> {
+    let Some(text) = text else {
+        return Ok(None);
+    };
+    STANDARD
+        .decode(text)
+        .map(Some)
+        .map_err(|error| super::invalid_input(error.to_string()))
+}
+
 pub(super) fn new_skill(
     fields: &NewSkillFields,
 ) -> Result<NewSkill, Box<crate::helpers::HelperError>> {
-    let file_content = fields
-        .file_content
-        .as_ref()
-        .map(|text| STANDARD.decode(text))
-        .transpose()
-        .map_err(|error| super::invalid_input(error.to_string()))?;
     Ok(NewSkill {
         display_title: fields.display_title.clone(),
         description: fields.description.clone(),
         instructions: fields.instructions.clone(),
         metadata: fields.metadata.clone(),
-        file_content,
+        file_content: decode_content(fields.file_content.as_deref())?,
         file_name: fields.file_name.clone(),
         file_type: fields.file_type.clone(),
     })
