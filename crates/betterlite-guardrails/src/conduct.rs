@@ -33,7 +33,7 @@ pub struct ConductDecision {
     pub rule_id: Option<String>,
 }
 
-pub trait ConductCheck {
+pub trait ConductCheck: Sync {
     fn call(
         &self,
         data: &BTreeMap<String, GuardrailValue>,
@@ -104,10 +104,10 @@ pub fn record_decision(
     context: &mut GuardrailRecordContext<'_>,
     decision: &ConductDecision,
 ) -> Result<(), GuardrailRecordError> {
-    let rule_id = match &decision.rule_id {
-        Some(rule_id) => GuardrailValue::Text(rule_id.clone()),
-        None => GuardrailValue::Null,
-    };
+    let rule_id = decision
+        .rule_id
+        .clone()
+        .map_or(GuardrailValue::Null, GuardrailValue::Text);
     let response = GuardrailValue::Object(BTreeMap::from([
         (
             VERDICT_KEY.to_owned(),
@@ -139,7 +139,7 @@ pub async fn apply_conduct_guardrail<C, R>(
 ) -> Result<GuardrailApiInputs, ConductError>
 where
     C: ConductCheck,
-    R: FnMut(&ConductDecision) -> Result<(), GuardrailRecordError>,
+    R: FnMut(&ConductDecision) -> Result<(), GuardrailRecordError> + Send,
 {
     let Some(payload) = request_payload(&inputs, enforcement.request_data, input_type) else {
         return Ok(inputs);
