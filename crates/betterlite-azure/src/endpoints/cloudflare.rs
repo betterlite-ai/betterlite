@@ -119,7 +119,7 @@ fn resolve_scope(request: &CloudflareRequest<'_>) -> Option<String> {
                 .lookup("AZURE_SCOPE")
                 .unwrap_or_else(|| DEFAULT_SCOPE.to_owned()),
         ),
-        ParamEntry::Null => None,
+        ParamEntry::Null(()) => None,
         ParamEntry::Value(text) => Some(text.clone()),
     }
 }
@@ -182,7 +182,7 @@ fn dict_get(
 ) -> Option<String> {
     match value {
         ParamEntry::Absent => environment.lookup(name),
-        ParamEntry::Null => None,
+        ParamEntry::Null(()) => None,
         ParamEntry::Value(text) => Some(text.clone()),
     }
 }

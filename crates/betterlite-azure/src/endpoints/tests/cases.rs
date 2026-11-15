@@ -210,15 +210,15 @@ fn cloudflare_dict_get() {
         .0
         .insert("AZURE_CLIENT_ID".to_owned(), "env-client".to_owned());
     let params = CloudflareParams {
-        tenant_id: ParamEntry::Null,
+        tenant_id: ParamEntry::Null(()),
         client_id: ParamEntry::Absent,
         azure_scope: ParamEntry::Absent,
     };
     let parsed: CloudflareParams =
         serde_json::from_str(r#"{"tenant_id": null, "azure_scope": null}"#).unwrap();
-    assert_eq!(parsed.tenant_id, ParamEntry::Null);
+    assert_eq!(parsed.tenant_id, ParamEntry::Null(()));
     assert_eq!(parsed.client_id, ParamEntry::Absent);
-    assert_eq!(parsed.azure_scope, ParamEntry::Null);
+    assert_eq!(parsed.azure_scope, ParamEntry::Null(()));
     let sources = Sources::default();
     let oidc = secret("oidc/assertion");
     let mut request = cloudflare(&params, &environment, &sources);
@@ -243,7 +243,7 @@ fn cloudflare_oidc_scope() {
     let null_scope = CloudflareParams {
         tenant_id: ParamEntry::Value("explicit-tenant".to_owned()),
         client_id: ParamEntry::Value("explicit-client".to_owned()),
-        azure_scope: ParamEntry::Null,
+        azure_scope: ParamEntry::Null(()),
     };
     let rows = [
         (
