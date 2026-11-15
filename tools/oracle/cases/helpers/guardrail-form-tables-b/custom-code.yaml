@@ -1,0 +1,8 @@
+kind: helper
+name: custom-code
+call:
+  b6562:
+    provider: custom_code
+env: {}
+compare:
+  ignore: []

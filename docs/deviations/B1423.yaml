@@ -1,0 +1,27 @@
+task: B1423
+deviations:
+  - what: A Jina api_base that is not an absolute URL with a host, such as `localhost:8000` or `nope`, is an error. An empty api_base still gives `/v1/rerank`.
+    why: httpx builds a relative or broken URL from such a base and the request then fails later with no hint of the cause. No working setup can rely on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L68-L76
+  - what: Usage counters that LiteLLM drops are kept in the response's hidden parameters under `usage`.
+    why: The extension record is bounded by the decoder limits and nothing reads it unless a caller asks, so no behavior changes for the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L105-L107
+  - what: A rerank body whose bytes are not UTF-8 is refused and the text betterlite reads, logs and reports for it is `<n> bytes that are not UTF-8`. LiteLLM reads response.text, which decodes any bytes with replacement characters.
+    why: Lossy text would log and parse a body the provider never sent; the byte count says what arrived instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L98-L101
+  - what: A usage counter beyond 64 bits, and an Infinity total_tokens minus prompt_tokens that does not fit in 64 bits, is a typed error. LiteLLM keeps Python integers of any size.
+    why: betterlite reads JSON numbers into 64-bit integers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/rerank/transformation.py#L115-L122
+  - what: A Jina rerank reply is refused before it is parsed when its body is larger than 8 MiB, holds more than 200,000 JSON items, or nests deeper than 128 levels, where LiteLLM calls raw_response.json() on whatever body arrives.
+    why: The rerank body is untrusted provider input and a working reply stays far below these caps, so the shared decoder bounds memory for a hostile or broken upstream without refusing a real answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L103
+  - what: An Infinity rerank reply is refused under the same byte, item and depth caps before it is parsed, where LiteLLM parses whatever body arrives through _parse_rerank_response.
+    why: The rerank body is untrusted provider input and a working reply stays far below these caps, so the shared decoder bounds memory for a hostile or broken upstream without refusing a real answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/rerank/transformation.py#L110-L113
+  - what: A Jina input cost where input_cost_per_token times total_tokens does not fit an exact decimal is an explicit CostOverflow error instead of a huge or infinite float product.
+    why: A float product past rust_decimal's range has no exact value, and clamping it would quietly undercharge, so the caller gets an error to turn into a bad gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/jina_ai/rerank/transformation.py#L172
+kept_bugs:
+  - what: Infinity's output_tokens is total_tokens minus prompt_tokens with no clamp, so a total below the prompt reports a negative count. betterlite reports the same negative count.
+    why: LiteLLM callers already see these signed counts and a working setup that reads usage must keep seeing them after the switch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/infinity/rerank/transformation.py#L116-L122

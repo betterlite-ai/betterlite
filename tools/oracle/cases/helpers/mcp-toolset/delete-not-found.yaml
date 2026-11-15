@@ -1,0 +1,12 @@
+kind: helper
+name: delete_not_found
+call:
+  b4681:
+    operation: delete
+    timestamp: '2026-01-02T03:04:05'
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha}
+    toolset_id: missing
+env: {}
+compare:
+  ignore: []

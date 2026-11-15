@@ -1,0 +1,27 @@
+kind: helper
+name: policy-match-detail-matched-via
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyMatchDetail
+    value:
+      policy_name: baseline
+      matched_via: "scope:*"
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyMatchDetail
+      value:
+        policy_name: healthcare
+        matched_via: "tag:healthcare"
+        guardrails_added: [hipaa]
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyMatchDetail
+      value:
+        policy_name: baseline
+env: {}
+compare: {ignore: []}

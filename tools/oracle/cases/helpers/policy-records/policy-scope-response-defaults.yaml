@@ -1,0 +1,23 @@
+kind: helper
+name: policy-scope-response-defaults
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyScopeResponse
+    value: {}
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: project_scope
+      scope: {}
+  - b3242:
+      group: policy_records_records
+      operation: project_scope
+      scope:
+        teams: []
+        keys: ["dev-key-*"]
+        models: ["*"]
+        tags: []
+env: {}
+compare: {ignore: []}
