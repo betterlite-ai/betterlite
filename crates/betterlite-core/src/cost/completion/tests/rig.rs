@@ -26,6 +26,7 @@ use betterlite_models::tool_fees::ports::{ToolPricePolicy, ToolPriceSource};
 use betterlite_models::tool_fees::prices::ToolPrices;
 use betterlite_models::tool_signals::response::{OtherView, ToolBillingResponse};
 use betterlite_tokenizer::count::error::CountError;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use jiff::tz::TimeZoneDatabase;
 use rust_decimal::Decimal;
@@ -33,14 +34,16 @@ use serde_json::Number;
 
 use crate::cost::call_price::policy::ProviderPricePolicy;
 use crate::cost::completion::args::{
-    ChargeInputs, CompletionArgs, CostCalculator, ResponseParts, SpecialBorrows, ToolBorrows,
-    ToolInputs,
+    ChargeInputs, CompletionArgs, CostCalculator, ResponseParts, SpecialBorrows, SyncImage,
+    ToolBorrows, ToolInputs,
 };
 use crate::cost::completion::completion_cost;
 use crate::cost::completion::error::CompletionCostError;
 use crate::cost::context::ProviderInference;
 use crate::cost::image_dispatch::options::SizePattern;
-use crate::cost::image_dispatch::policy::{ImagePricePolicy, ImageResponseView, ImageRoute};
+use crate::cost::image_dispatch::policy::{
+    ImagePricePolicy, ImageResponseView, ImageRoute, PricedImage,
+};
 use crate::cost::prepare::{
     BillingTokenCounter, CompletionBillingInput, DictionaryResponse, ResponseView, TypedResponse,
 };
@@ -146,6 +149,40 @@ impl ImagePricePolicy for Images {
     fn image_cost(&self, _route: &ImageRoute<'_>) -> Result<Decimal, Infallible> {
         Ok(Decimal::ZERO)
     }
+}
+
+// A policy that reads the moment it was built with and the route it was handed, so the Sync adapter's forwarding shows.
+struct Stamped(DateTime<Utc>);
+
+impl ImagePricePolicy for Stamped {
+    type Error = Infallible;
+
+    fn image_cost(&self, route: &ImageRoute<'_>) -> Result<Decimal, Infallible> {
+        let width = i64::try_from(route.adapter().len()).expect("the adapter name is short");
+        Ok(Decimal::from(self.0.timestamp() + width))
+    }
+}
+
+#[test]
+fn the_sync_image_builds_the_policy_from_its_moment_and_forwards_the_route() {
+    let rig = rig(&[]);
+    let image = SyncImage {
+        build: |_lookup, _database, moment| Stamped(moment),
+        lookup: &rig.catalog,
+        database: &rig.database,
+        moment: DateTime::from_timestamp(7, 0).expect("the moment is in range"),
+    };
+    let route = ImageRoute::VertexAi(PricedImage {
+        model: "gpt-image-1",
+        response: ImageResponseView::Other,
+        prices: None,
+    });
+    assert_eq!(
+        image
+            .image_cost(&route)
+            .expect("the probe policy cannot fail"),
+        dec("16")
+    );
 }
 
 // No provider formula is installed: every policy operation answers with its unavailable adapter.
