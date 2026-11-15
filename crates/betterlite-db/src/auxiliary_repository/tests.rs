@@ -252,6 +252,45 @@ async fn banner_actions_return_rows_and_change_counts() {
 }
 
 #[tokio::test]
+async fn banner_create_many_and_delete_many_count_rows() {
+    let case = Case::new().await;
+    let journal = Journal::default();
+    let base = PrismaTableRepository::<UISettings>::new(
+        Some(case.client()),
+        recording_publisher(&journal),
+        UISettings,
+    );
+    let table = base.table(|access| BannerActions { access }).unwrap();
+    let rows = vec![
+        UiSettingsRow {
+            id: "many-one".to_owned(),
+            ui_settings: "one".to_owned(),
+        },
+        UiSettingsRow {
+            id: "many-two".to_owned(),
+            ui_settings: "two".to_owned(),
+        },
+    ];
+    assert_eq!(table.create_many(rows).await.unwrap(), 2);
+    assert_eq!(table.delete_many("many-one".to_owned()).await.unwrap(), 1);
+    assert_eq!(table.delete_many("missing-id".to_owned()).await.unwrap(), 0);
+    assert_eq!(journal.entries().len(), 3);
+    let client = case.writer.session().await.unwrap();
+    let stored = client
+        .query(
+            "SELECT id, ui_settings::text FROM \"LiteLLM_UISettings\" ORDER BY id",
+            &[],
+        )
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].try_get::<_, String>(0).unwrap(), "many-two");
+    assert_eq!(stored[0].try_get::<_, String>(1).unwrap(), "\"two\"");
+    drop(client);
+    case.close().await;
+}
+
+#[tokio::test]
 async fn redis_missing_is_noop() {
     let case = Case::new().await;
     let repository = UserBannerRepository::new(
