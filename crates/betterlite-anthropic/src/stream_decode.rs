@@ -121,7 +121,8 @@ where
             .next();
         let end = match front {
             Some(Err(error)) if error.classify() != Category::Eof => {
-                prefix_end(trimmed).unwrap_or(trimmed.len())
+                // A zero end would spin the loop, so every drop advances at least one.
+                prefix_end(trimmed).unwrap_or(trimmed.len()).max(1)
             }
             Some(_) | None => break,
         };
