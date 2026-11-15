@@ -159,6 +159,12 @@ fn text_video_prompt() {
         prompt(r#"[{"content":[{"type":"text","text":null},"a"]}]"#),
         "user:  a"
     );
+    assert!(matches!(
+        convert_messages_to_prompt(&prompt_messages(
+            r#"[{"content":[{"type":"text","text":5}]}]"#
+        )),
+        Err(PegasusError::NotText { field: "text" })
+    ));
 }
 
 fn response_format_json() {

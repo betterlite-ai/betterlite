@@ -30,3 +30,6 @@ deviations:
   - what: 'A list content block whose type is text and whose text is null contributes an empty fragment, where LiteLLM appends None and the space join then raises TypeError.'
     why: 'LiteLLM builds no prompt at all for that message, so nothing relies on the crash; a null text reads as a fragment with no text, the value its absent text key already gives.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L168-L169
+  - what: 'A list content block whose type is text and whose text is a non-string value, 5 for example, fails with "the text field must be a string", where LiteLLM appends the value and the space join then raises TypeError.'
+    why: 'A fragment text is a string in betterlite, so a number or a list on that field is a malformed message; LiteLLM builds no prompt for it either, and the typed error names the field instead of leaving the join TypeError unhandled.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/amazon_twelvelabs_pegasus_transformation.py#L168-L169
