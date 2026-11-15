@@ -82,7 +82,7 @@ fn a_request_without_tools_gets_no_header() {
 }
 
 #[test]
-fn a_guardrail_without_a_name_adds_no_header() {
+fn a_guardrail_with_an_empty_name_still_records_it() {
     let mut unnamed = args(
         RULES,
         ToolDefaultAction::Deny,
@@ -91,5 +91,8 @@ fn a_guardrail_without_a_name_adds_no_header() {
     unnamed.name = String::new();
     let mut body = request(&[("tools", &tools(&["Read"]))]);
     run(&guardrail_from(unnamed), &mut body).unwrap();
-    assert!(!body.contains_key("metadata"));
+    assert_eq!(
+        body.get("metadata"),
+        request(&[("metadata", r#"{"applied_guardrails": [""]}"#)]).get("metadata")
+    );
 }

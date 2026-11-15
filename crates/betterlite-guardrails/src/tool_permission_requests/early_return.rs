@@ -2,13 +2,13 @@ use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use crate::tool_permission::{SUPPORTED_EVENT_HOOKS, ToolPermissionGuardrail};
 
-// The base state LiteLLM's should_run_guardrail reads; the initializer stores a missing guardrail name as an empty one
+// The base state LiteLLM's should_run_guardrail reads; LiteLLM passes an unset name as an empty string
 #[must_use]
 pub fn guardrail_base(guardrail: &ToolPermissionGuardrail) -> GuardrailBase {
     let args = &guardrail.args;
     GuardrailBase {
         settings: GuardrailSettings {
-            guardrail_name: Some(args.name.clone()).filter(|name| !name.is_empty()),
+            guardrail_name: Some(args.name.clone()),
             supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
             event_hook: Some(args.event_hook.clone()),
             default_on: args.default_on,

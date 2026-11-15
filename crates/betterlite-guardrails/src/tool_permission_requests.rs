@@ -47,9 +47,6 @@ pub fn pre_call_hook(
     let denied = denied_tool_names(guardrail, names)?;
     rewrite_forbidden_tools(data, &extracted, &denied);
     tracing::debug!("Tool Permission Guardrail Pre-Call Hook: All tools allowed");
-    // LiteLLM skips a guardrail without a name, which the initializer stores as an empty one
-    if !guardrail.args.name.is_empty() {
-        record_applied_guardrail(data, &guardrail.args.name);
-    }
+    record_applied_guardrail(data, &guardrail.args.name);
     Ok(())
 }
