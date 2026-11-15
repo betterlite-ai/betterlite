@@ -91,7 +91,7 @@ class EnvironmentKey:
     def __init__(self, api_key: str | None) -> None:
         self._api_key = api_key
 
-    def lookup(self, _name: str, _default: str | bool | None = None) -> str | None:
+    def __call__(self, _name: str, _default: str | bool | None = None) -> str | None:
         return self._api_key
 
 
@@ -195,7 +195,7 @@ def url(config: EmbeddingConfig, call: UrlCall) -> JsonValue:
 
 
 def headers(config: EmbeddingConfig, call: HeadersCall) -> JsonValue:
-    transformation.get_secret_str = EnvironmentKey(call["env_api_key"]).lookup
+    transformation.get_secret_str = EnvironmentKey(call["env_api_key"])
     validated = config.validate_environment(
         dict(call["headers"]), MODEL, [], {}, {}, call["api_key"], None
     )
@@ -214,7 +214,7 @@ def request(config: EmbeddingConfig, call: RequestCall) -> JsonValue:
 def logging() -> Logging:
     return Logging(
         model=MODEL,
-        messages=[],
+        messages=None,
         stream=False,
         call_type=CallTypes.embedding,
         start_time=STARTED,
