@@ -123,6 +123,18 @@ fn jina_headers_are_lowercase_and_replace_the_caller(#[case] key: &str, #[case] 
     ));
 }
 
+#[test]
+fn a_missing_key_or_base_keeps_the_litellm_message() {
+    assert_eq!(
+        HostRerankError::MissingApiKey.to_string(),
+        "api_key is required. Set via `api_key` parameter or `JINA_API_KEY` environment variable."
+    );
+    assert_eq!(
+        HostRerankError::MissingApiBase.to_string(),
+        "api_base is required for Infinity rerank"
+    );
+}
+
 #[rstest]
 #[case::appended("http://h/v1", "http://h/v1/rerank")]
 #[case::slashes_stripped("http://h/v1///", "http://h/v1/rerank")]
