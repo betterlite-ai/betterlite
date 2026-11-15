@@ -8,3 +8,7 @@ deviations:
       LiteLLM falls off prompt_factory's if/elif chain with None and sends an inputs value of null, and every later reply
       fails on the prompt comparison. An error at request time is the same outcome for the caller, named earlier.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L5325-L5385
+kept_bugs:
+  - what: The TGI validate_environment drops every caller header and returns only a Content-Type header set to application/json, because LiteLLM reassigns its headers argument before merging it.
+    why: A working setup can rely on caller headers never reaching the SageMaker request, so forwarding them would change what the provider receives; the task keeps the quirk on purpose.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/transformation.py#L267-L272
