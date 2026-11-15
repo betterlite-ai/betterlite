@@ -1,7 +1,10 @@
 from typing import Final
 
 from litellm.router import Router
-from litellm.router_strategy.complexity_router.complexity_router import ComplexityRouter
+from litellm.router_strategy.complexity_router.complexity_router import (
+    ComplexityRouter,
+    _extract_current_ask_and_system_prompt,
+)
 from pydantic import Field, JsonValue
 from typing_extensions import override
 
@@ -31,9 +34,11 @@ class Output(Strict):
 
 class ProbeRouter(ComplexityRouter):
     def ask_and_system_prompt(
-        self, messages: list[dict[str, object]]
+        self,
+        messages: list[dict[str, object]],
+        markers: tuple[tuple[str, str], ...],
     ) -> tuple[str | None, str | None]:
-        return self._extract_user_message_and_system_prompt(messages)
+        return _extract_current_ask_and_system_prompt(messages, markers)
 
     def selected_markers(self, request_kwargs: dict[str, object]) -> tuple[tuple[str, str], ...]:
         return self._reminder_markers_for_request(request_kwargs)
@@ -74,11 +79,11 @@ class ClassifierMessageText(Operation):
         messages: list[dict[str, object]] = [
             {"role": message.role, "content": message.content} for message in self.messages
         ]
-        ask, system_prompt = router.ask_and_system_prompt(messages)
         request_kwargs: dict[str, object] = {"proxy_server_request": {"body": self.body}}
         if self.user_agent is not None:
             request_kwargs["metadata"] = {"user_agent": self.user_agent}
         markers = router.selected_markers(request_kwargs)
+        ask, system_prompt = router.ask_and_system_prompt(messages, markers)
         return Output(
             ask=ask,
             system_prompt=system_prompt,

@@ -8,5 +8,5 @@ probes:
         user_agent: "codex_cli_rs/1.0"
         messages:
           - role: user
-            content: "<system-reminder>outer <system-reminder>inner</system-reminder> tail</system-reminder> keep <system-reminder>unclosed"
+            content: "<system-reminder>outer <system-reminder>inner</system-reminder> tail</system-reminder> keep <environment_context>ctx</environment_context> <system-reminder>unclosed"
 compare: {ignore: []}
