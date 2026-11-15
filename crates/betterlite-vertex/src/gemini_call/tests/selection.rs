@@ -62,7 +62,11 @@ fn params(source: &str) -> Object {
         streaming: true
     }
 )]
-fn selection_modes(acompletion: bool, stream: Option<bool>, expected: CallSelection) {
+fn selection_modes(
+    #[case] acompletion: bool,
+    #[case] stream: Option<bool>,
+    #[case] expected: CallSelection,
+) {
     assert_eq!(select(acompletion, stream), expected);
 }
 
@@ -126,6 +130,9 @@ fn selection_rejects_a_stream_flag_that_is_not_boolean() {
     })
 )]
 #[case::absent_timeout(None, ClientTimeout::HandlerDefault)]
-fn selection_sync_client_timeout(timeout: Option<Duration>, expected: ClientTimeout) {
+fn selection_sync_client_timeout(
+    #[case] timeout: Option<Duration>,
+    #[case] expected: ClientTimeout,
+) {
     assert_eq!(sync_client_timeout(timeout), expected);
 }

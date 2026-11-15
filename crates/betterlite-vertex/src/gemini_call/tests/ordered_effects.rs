@@ -166,8 +166,8 @@ fn ordered_effects_async_stream_defers_the_open() {
 )]
 #[case::supplied_sync_client_keeps_its_timeout(ClientKind::Sync, ClientTimeout::HandlerDefault)]
 fn ordered_effects_supplied_client_matches_the_sync_branch(
-    kind: ClientKind,
-    expected: ClientTimeout,
+    #[case] kind: ClientKind,
+    #[case] expected: ClientTimeout,
 ) {
     let fixture = supplied_fixture(
         kind,
@@ -197,7 +197,7 @@ fn ordered_effects_supplied_client_matches_the_sync_branch(
 #[rstest]
 #[case::supplied_sync_client_opens_on_its_own_transport(ClientKind::Sync)]
 #[case::supplied_async_client_opens_on_the_pooled_transport(ClientKind::Async)]
-fn ordered_effects_supplied_client_matches_the_stream_branch(kind: ClientKind) {
+fn ordered_effects_supplied_client_matches_the_stream_branch(#[case] kind: ClientKind) {
     let fixture = supplied_fixture(
         kind,
         (
@@ -254,8 +254,8 @@ fn ordered_effects_supplied_client_matches_the_stream_branch(kind: ClientKind) {
 )]
 #[case::absent_timeout(None, ClientTimeout::HandlerDefault)]
 fn ordered_effects_sync_completion_carries_the_timeout(
-    timeout: Option<Duration>,
-    expected: ClientTimeout,
+    #[case] timeout: Option<Duration>,
+    #[case] expected: ClientTimeout,
 ) {
     let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
     let reply = fixture.run(Setup {
@@ -271,8 +271,8 @@ fn ordered_effects_sync_completion_carries_the_timeout(
 #[case::explicit_timeout(Some(THIRTY_SECONDS), THIRTY_SECONDS)]
 #[case::absent_timeout(None, HANDLER_DEFAULT_TIMEOUT.total)]
 fn ordered_effects_sync_cache_deadline_follows_the_call_timeout(
-    timeout: Option<Duration>,
-    expected: Duration,
+    #[case] timeout: Option<Duration>,
+    #[case] expected: Duration,
 ) {
     let fixture = pooled_fixture(Vec::new(), Vec::new());
     let setup = Setup {
@@ -381,11 +381,18 @@ fn ordered_effects_sync_stream_surfaces_a_chunk_error_once() {
 #[case::async_stream(true, Some(true))]
 #[case::sync_complete(false, None)]
 #[case::sync_stream(false, Some(true))]
-fn ordered_effects_target_error_precedes_the_transform(acompletion: bool, stream: Option<bool>) {
+fn ordered_effects_target_error_precedes_the_transform(
+    #[case] acompletion: bool,
+    #[case] stream: Option<bool>,
+) {
     let fixture = pooled_fixture(Vec::new(), Vec::new());
     let variation = Variation {
+        provider: None,
         location: Some("us central1"),
-        ..Variation::default()
+        api_base: None,
+        gemini_api_key: None,
+        extra_headers: BTreeMap::new(),
+        use_psc_endpoint_format: None,
     };
     let reply = fixture.run_with(
         Setup {
@@ -409,8 +416,12 @@ fn ordered_effects_target_error_precedes_the_transform(acompletion: bool, stream
 fn ordered_effects_sync_completion_posts_the_caller_headers() {
     let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
     let variation = Variation {
+        provider: None,
+        location: None,
+        api_base: None,
+        gemini_api_key: None,
         extra_headers: BTreeMap::from([("x-goog-user-project".to_owned(), "other".to_owned())]),
-        ..Variation::default()
+        use_psc_endpoint_format: None,
     };
     let reply = fixture.run_with(
         Setup {
@@ -444,12 +455,18 @@ fn ordered_effects_sync_completion_posts_the_caller_headers() {
     None,
     "https://psc.example.com/v1/projects/project-p/locations/us-central1/publishers/google/models/gemini-2.5-flash:generateContent"
 )]
-fn ordered_effects_sync_completion_reads_the_psc_flag(flag: Option<bool>, expected: &str) {
+fn ordered_effects_sync_completion_reads_the_psc_flag(
+    #[case] flag: Option<bool>,
+    #[case] expected: &str,
+) {
     let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
     let variation = Variation {
+        provider: None,
+        location: None,
         api_base: Some("https://psc.example.com"),
+        gemini_api_key: None,
+        extra_headers: BTreeMap::new(),
         use_psc_endpoint_format: flag,
-        ..Variation::default()
     };
     let reply = fixture.run_with(
         Setup {
@@ -468,8 +485,11 @@ fn ordered_effects_sync_gemini_posts_to_studio_with_the_api_key() {
     let fixture = pooled_fixture(vec![complete_reply(200, ANSWER)], Vec::new());
     let variation = Variation {
         provider: Some(VertexCapabilityProvider::Gemini),
+        location: None,
+        api_base: None,
         gemini_api_key: Some(SecretString::from("studio-key")),
-        ..Variation::default()
+        extra_headers: BTreeMap::new(),
+        use_psc_endpoint_format: None,
     };
     let reply = fixture.run_with(
         Setup {
