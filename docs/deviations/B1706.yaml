@@ -1,0 +1,16 @@
+task: B1706
+deviations:
+  - what: The index-row measurement renders a start_time in UTC, where LiteLLM's json.dumps(row, default=str) prints the request's own UTC offset.
+    why: betterlite carries one instant per transaction and prints it the way str(datetime) prints a UTC time, so an offset that carries seconds (+05:30:15) measures three bytes more in LiteLLM than here. The stored instant and the day bucket are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_batching.py#L60
+  - what: A daily tool rollup sums spend as an exact decimal, where LiteLLM sums Python floats.
+    why: Money is a Decimal in betterlite from the request cost to the rollup, so repeated fractional-cent charges roll up to their decimal sum instead of carrying a float's rounding error in the last bits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_tool_index.py#L142
+  - what: A trimmed queue's running byte total stops at zero, where LiteLLM's integer arithmetic can return a negative total when the supplied total is smaller than the summed sizes of the rows it drops.
+    why: The total is a usize in betterlite, so it cannot go negative; the caller's next append then fits once at zero, the same way a negative total fits on every following check in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_batching.py#L101
+
+kept_bugs:
+  - what: The rollup day is the date prefix of the request's start-time string, so a request at 00:30+02:00 lands in the day its local clock named, not the UTC day of the instant that is stored.
+    why: LiteLLM derives the bucket this way to land in the same day as the daily user spend writer, and every dashboard that reads both tables depends on the two agreeing, so betterlite copies the prefix rule rather than switching to the UTC day.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/spend_log_tool_index.py#L93

@@ -1,0 +1,18 @@
+kind: helper
+name: create_new
+call:
+  b4681:
+    operation: create
+    timestamp: '2026-01-02T03:04:05'
+    touched_by: tester
+    rows: []
+    request:
+      toolset_name: alpha
+      description: first
+      tools:
+        - {server_id: s1, tool_name: t1}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/toolset_id
+      why: each side mints a fresh uuid4 for the created toolset

@@ -1,0 +1,15 @@
+kind: helper
+name: update_not_found
+call:
+  b4681:
+    operation: update
+    timestamp: '2026-01-02T03:04:05'
+    touched_by: tester
+    rows:
+      - {toolset_id: ts-1, toolset_name: alpha}
+    request:
+      toolset_id: missing
+      description: changed
+env: {}
+compare:
+  ignore: []

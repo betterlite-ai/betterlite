@@ -1,0 +1,26 @@
+kind: helper
+name: xai-realtime-ping-and-index-sets
+call:
+  xai_realtime:
+    kind: sequence
+    events:
+      - {type: ping}
+      - {type: response.output_item.added, item: {type: message, id: item-1}}
+      - {type: ping, event_id: keepalive-1}
+      - {type: response.function_call_arguments.done, item_id: item-2, arguments: "{}"}
+      - {type: response.output_text.done, response_id: response-1, item_id: item-1, text: hello}
+      - {type: response.output_audio.delta, response_id: response-1, item_id: item-1, delta: aGk=}
+      - {type: response.output_audio_transcript.delta, response_id: response-1, item_id: item-1, delta: hi}
+      - {type: response.output_audio.done, response_id: response-1, item_id: item-1}
+      - {type: response.content_part.added, response_id: response-1, item_id: item-1, part: {type: text, text: ""}}
+      - {type: response.output_item.done, item: {type: message, id: item-1}, output_index: null}
+      - {type: response.function_call_arguments.delta, item_id: item-2, delta: "{}", output_index: 2, content_index: 4}
+      - {type: response.output_text.delta, response_id: response-1, item_id: item-1, delta: more}
+      - {type: ping}
+    sessions: []
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}

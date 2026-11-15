@@ -1,0 +1,22 @@
+kind: helper
+name: xai-realtime-tool-role-on-nonfunction-item
+call:
+  xai_realtime:
+    kind: sequence
+    events:
+      - {type: conversation.item.added, item: {type: message, role: tool, content: []}}
+      - {type: conversation.item.added, item: {type: function_call, role: tool, call_id: call-1, name: lookup}}
+      - {type: conversation.item.added, item: {type: function_call_output, role: tool, call_id: call-1}}
+      - {type: conversation.item.added, item: {role: tool}}
+      - {type: conversation.item.added, item: {type: message, role: user}}
+      - {type: conversation.item.added, item: {type: message, role: assistant}}
+      - {type: conversation.item.added}
+      - {type: conversation.item.done, item: {type: function_call, role: tool}}
+      - {type: conversation.item.retrieved, item: {type: message, role: tool}}
+    sessions: []
+    model: grok-4-1-fast-non-reasoning
+    api_key: null
+    scope_headers: []
+    max_message_size_bytes: 1048576
+env: {}
+compare: {ignore: []}
