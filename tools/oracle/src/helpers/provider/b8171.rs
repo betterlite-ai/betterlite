@@ -94,7 +94,7 @@ impl Helper for Op {
         match input {
             Input::EmbeddingParamsAndUrl(inner) => embedding_params_and_url(inner),
             Input::EmbeddingReply(inner) => embedding_reply(inner),
-            Input::RerankBase(inner) => rerank_base(inner),
+            Input::RerankBase(inner) => Ok(rerank_base(inner)),
             Input::RerankUrlAndHeaders(inner) => rerank_url_and_headers(inner),
             Input::RerankRequest(inner) => rerank_request(inner),
             Input::RerankReply(inner) => rerank_reply(inner),
@@ -127,13 +127,13 @@ fn embedding_reply(input: &EmbeddingReplyInput) -> HelperResult {
     }))
 }
 
-fn rerank_base(input: &RerankBaseInput) -> HelperResult {
+fn rerank_base(input: &RerankBaseInput) -> serde_json::Value {
     let base = resolve_rerank_base(
         input.api_base.as_deref(),
         &input.env_value,
         &input.default_rerank_base,
     );
-    Ok(json!({"base": base}))
+    json!({"base": base})
 }
 
 fn rerank_url_and_headers(input: &RerankUrlAndHeadersInput) -> HelperResult {
@@ -233,14 +233,14 @@ fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError
 }
 
 fn rerank_failure(error: DashscopeRerankError) -> Box<HelperError> {
-    match &error {
+    match error {
         DashscopeRerankError::Provider(provider) => failure(
             DASHSCOPE_EXCEPTION,
             Some(provider.status_code),
-            provider.message.clone(),
+            provider.message,
         ),
-        DashscopeRerankError::Key(_)
+        other @ (DashscopeRerankError::Key(_)
         | DashscopeRerankError::MissingQuery
-        | DashscopeRerankError::MissingDocuments => failure("ValueError", None, error.to_string()),
+        | DashscopeRerankError::MissingDocuments) => failure("ValueError", None, other.to_string()),
     }
 }
