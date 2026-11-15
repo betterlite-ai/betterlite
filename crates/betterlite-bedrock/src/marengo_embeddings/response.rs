@@ -97,13 +97,13 @@ pub struct MarengoBilledRequest {
     pub multi_input: Option<MarengoBilledMultiInput>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PromptTokensDetails {
     pub query_count: Option<u64>,
     pub image_count: Option<u64>,
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MarengoUsage {
     pub prompt_tokens: u64,
     pub completion_tokens: u64,
@@ -121,7 +121,7 @@ pub struct EmbeddingRecord {
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct MarengoEmbeddingResponse {
     pub data: Vec<EmbeddingRecord>,
-    pub model: Option<String>,
+    pub model: String,
     pub usage: MarengoUsage,
     pub invocation_arn: Option<Field>,
 }
@@ -143,7 +143,7 @@ pub fn transform_response(
     }
     Ok(MarengoEmbeddingResponse {
         data,
-        model: Some(model.to_owned()),
+        model: model.to_owned(),
         usage: billed_usage(batch_data)?,
         invocation_arn: None,
     })
@@ -161,7 +161,7 @@ pub fn transform_async_response(response: &Params, model: &str) -> MarengoEmbedd
             index: 0,
             object: "embedding",
         }],
-        model: Some(model.to_owned()),
+        model: model.to_owned(),
         usage: MarengoUsage {
             prompt_tokens: 0,
             completion_tokens: 0,
