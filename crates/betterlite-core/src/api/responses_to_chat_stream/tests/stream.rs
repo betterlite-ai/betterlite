@@ -125,8 +125,13 @@ fn stream_logs_each_translation_step() {
             .chunk_parser(&json!({"type": "response.created", "response": {"id": "resp_a"}}))
             .unwrap()
     });
+    // the response-id decoder logs its own debug line for an id that is not an encoded envelope
+    let translated: Vec<String> = lines
+        .into_iter()
+        .filter(|line| line.starts_with("Chat provider: "))
+        .collect();
     assert_eq!(
-        lines,
+        translated,
         vec![
             "Chat provider: transform_streaming_response called with chunk: {'type': 'response.created', 'response': {'id': 'resp_a'}}".to_owned(),
             "Chat provider: Processing event type: response.created".to_owned(),
