@@ -6,6 +6,8 @@ use serde_json::{Number, error::Category};
 use thiserror::Error;
 
 use crate::embedding::{EmbeddingInput, EmbeddingResponse};
+use crate::hosted_vllm::embedding::error::HostedVllmEmbeddingError;
+use crate::hosted_vllm::embedding::transform_embedding_response as hosted_embedding_response;
 use crate::openai_base_config::Headers;
 
 const DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
@@ -28,6 +30,8 @@ pub enum EmbeddingDecodeError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("{message}")]
+    Provider { message: String, status_code: u16 },
 }
 
 #[must_use]
@@ -92,25 +96,20 @@ fn input_json(input: &EmbeddingInput) -> Json {
     match input {
         EmbeddingInput::Text(text) => Json::List(vec![Json::Text(text.clone())]),
         EmbeddingInput::Texts(texts) => Json::List(texts.iter().cloned().map(Json::Text).collect()),
-        EmbeddingInput::Tokens(tokens) => Json::List(
-            tokens
-                .iter()
-                .map(|token| Json::Number(Number::from(*token)))
-                .collect(),
-        ),
-        EmbeddingInput::TokenLists(lists) => Json::List(
-            lists
-                .iter()
-                .map(|list| {
-                    Json::List(
-                        list.iter()
-                            .map(|token| Json::Number(Number::from(*token)))
-                            .collect(),
-                    )
-                })
-                .collect(),
-        ),
+        EmbeddingInput::Tokens(tokens) => token_list(tokens),
+        EmbeddingInput::TokenLists(lists) => {
+            Json::List(lists.iter().map(|list| token_list(list)).collect())
+        }
     }
+}
+
+fn token_list(tokens: &[u32]) -> Json {
+    Json::List(
+        tokens
+            .iter()
+            .map(|token| Json::Number(Number::from(*token)))
+            .collect(),
+    )
 }
 
 pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Object) {
@@ -122,6 +121,19 @@ pub fn map_openai_params(non_default_params: &Object, optional_params: &mut Obje
 }
 
 pub fn decode_embedding_response(raw: &[u8]) -> Result<EmbeddingResponse, EmbeddingDecodeError> {
+    // LiteLLM checks a successful reply for an error object before it builds the response, and
+    // hosted_vllm::embedding keeps the crate's one public port of that check
+    if let Err(HostedVllmEmbeddingError::Provider {
+        message,
+        status_code,
+        ..
+    }) = hosted_embedding_response(raw, &mut |_text: &str| {})
+    {
+        return Err(EmbeddingDecodeError::Provider {
+            message,
+            status_code,
+        });
+    }
     serde_json::from_slice(raw).map_err(|source| {
         if source.classify() == Category::Data {
             EmbeddingDecodeError::Shape { source }

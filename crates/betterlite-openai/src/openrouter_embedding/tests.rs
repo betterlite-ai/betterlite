@@ -216,6 +216,57 @@ fn decode_embedding_response_reports_the_failure_kind(#[case] raw: &str, #[case]
     }
 }
 
+#[rstest::rstest]
+#[case::numeric_code(
+    r#"{"error": {"message": "rate limited", "code": 429}}"#,
+    429,
+    "rate limited"
+)]
+#[case::missing_code(r#"{"error": {"message": "bad model"}}"#, 422, "bad model")]
+#[case::string_code(
+    r#"{"error": {"message": "bad model", "code": "429"}}"#,
+    422,
+    "bad model"
+)]
+#[case::null_code(
+    r#"{"error": {"message": "bad model", "code": null}}"#,
+    422,
+    "bad model"
+)]
+#[case::empty_message(r#"{"error": {"message": "", "code": 500}}"#, 500, "")]
+#[case::string_error(r#"{"error": "boom"}"#, 422, "Error in response object")]
+fn decode_embedding_response_raises_a_provider_error(
+    #[case] raw: &str,
+    #[case] status_code: u16,
+    #[case] message: &str,
+) {
+    let error = decode_embedding_response(raw.as_bytes()).unwrap_err();
+    let EmbeddingDecodeError::Provider {
+        message: text,
+        status_code: status,
+    } = error
+    else {
+        panic!("the reply did not raise a provider error");
+    };
+    assert_eq!(status, status_code);
+    assert_eq!(text, message);
+}
+
+#[rstest::rstest]
+#[case::empty_object(
+    r#"{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0},"error":{}}"#
+)]
+#[case::null_error(
+    r#"{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0},"error":null}"#
+)]
+#[case::empty_string(
+    r#"{"object":"list","data":[],"model":"m","usage":{"prompt_tokens":0,"total_tokens":0},"error":""}"#
+)]
+fn decode_embedding_response_ignores_an_empty_error(#[case] raw: &str) {
+    let response = decode_embedding_response(raw.as_bytes()).unwrap();
+    assert_eq!(response.model, "m");
+}
+
 #[test]
 fn transform_embedding_response_hands_the_text_to_the_post_call_hook() {
     let mut seen = Vec::new();
