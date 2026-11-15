@@ -788,7 +788,9 @@ fn selection_model_info_factory_kinds() {
     let vertex = VertexModelInfo {
         settings: VertexSettings {
             project: Some("model-info-project".to_owned()),
-            ..VertexSettings::default()
+            location: None,
+            credentials: None,
+            adc: AdcEnvironment::default(),
         },
     };
     let studio = GeminiModelInfo {
