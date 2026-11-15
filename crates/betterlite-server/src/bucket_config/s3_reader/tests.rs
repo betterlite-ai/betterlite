@@ -7,18 +7,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use axum::Router;
 use axum::http::StatusCode;
 use axum::routing::get;
-use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::s3_transport::download::EMPTY_SHA256;
+use betterlite_logging::s3_transport::signing::{Clock, Credentials, SystemClock};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::{
-    Clock, DEFAULT_REGION, EMPTY_SHA256, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest,
-    S3Reader, S3TransportFailure, SystemClock, credential_settings, region_from_environment,
+    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest, S3Reader,
+    S3TransportFailure, credential_settings, region_from_environment,
 };
 use crate::bucket_config::object::BucketObjectReader;
 use crate::bucket_config::test_support::{

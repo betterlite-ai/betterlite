@@ -1,21 +1,12 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use async_trait::async_trait;
-use aws_credential_types::Credentials as SigningCredentials;
-use aws_sigv4::http_request::{
-    PayloadChecksumKind, PercentEncodingMode, SessionTokenMode, SignableBody, SignableRequest,
-    SignatureLocation, SigningError, SigningParams, SigningSettings, UriPathNormalizationMode,
-    sign,
-};
-use aws_sigv4::sign::v4;
-use aws_sigv4::sign::v4::signing_params::BuildError;
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
 use aws_smithy_async::time::SharedTimeSource;
 use aws_smithy_http_client::tls::{Provider, rustls_provider::CryptoMode};
-use aws_smithy_runtime_api::client::identity::Identity;
 use aws_types::os_shim_internal::Fs;
 use betterlite_bedrock::aws_settings::sources::{Credentials, NativeSources, SourceError};
 use betterlite_config::proxy::ProxyPolicy;
@@ -24,10 +15,14 @@ use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_logging::s3_transport::download::EMPTY_SHA256;
+use betterlite_logging::s3_transport::error::S3TransportError;
+use betterlite_logging::s3_transport::signing::{
+    Clock, Credentials as SigningCredentials, RequestToSign, SystemClock, sign_request,
+};
 use http::Method;
 use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
-use secrecy::ExposeSecret as _;
 use url::Url;
 
 use super::object::BucketObjectReader;
@@ -35,10 +30,8 @@ use super::object::BucketObjectReader;
 pub const DEFAULT_REGION: &str = "us-east-1";
 pub const REGION_VARIABLE: &str = "AWS_DEFAULT_REGION";
 
-const SERVICE: &str = "s3";
 const METHOD: &str = "GET";
 const CONTENT_SHA256_HEADER: &str = "x-amz-content-sha256";
-const EMPTY_SHA256: &str = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
 const CREDENTIALS_TIMEOUT: Duration = Duration::from_secs(60);
 
@@ -139,31 +132,10 @@ impl S3Get for ProxiedS3Get {
     }
 }
 
-pub trait Clock: Send + Sync + Debug {
-    fn now(&self) -> SystemTime;
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> SystemTime {
-        SystemTime::now()
-    }
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum S3SigningError {
-    #[error("the SigV4 signing parameters for S3 are not valid")]
-    Parameters(#[source] BuildError),
-    #[error("the S3 request could not be signed")]
-    Signing(#[source] SigningError),
-}
-
 pub struct S3Reader {
     pub bucket_name: String,
     pub region: String,
-    pub credentials: Option<Credentials>,
+    pub credentials: Option<SigningCredentials>,
     pub transport: Arc<dyn S3Get>,
     pub clock: Arc<dyn Clock>,
 }
@@ -177,7 +149,11 @@ impl S3Reader {
     ) -> Self {
         let region = region_from_environment(environment);
         let credentials = match resolve_credentials(&region, environment).await {
-            Ok(credentials) => Some(credentials),
+            Ok(credentials) => Some(SigningCredentials {
+                access_key_id: credentials.access_key_id,
+                secret_access_key: credentials.secret_access_key,
+                session_token: credentials.session_token,
+            }),
             Err(error) => {
                 tracing::error!(
                     bucket_name,
@@ -208,56 +184,21 @@ impl S3Reader {
     fn signed_headers(
         &self,
         url: &str,
-        credentials: &Credentials,
-    ) -> Result<Vec<(String, String)>, S3SigningError> {
-        let identity = Identity::from(SigningCredentials::new(
-            credentials.access_key_id.expose_secret().to_owned(),
-            credentials.secret_access_key.expose_secret().to_owned(),
-            credentials
-                .session_token
-                .as_ref()
-                .map(|token| token.expose_secret().to_owned()),
-            None,
-            "betterlite-server",
-        ));
-        let mut settings = SigningSettings::default();
-        // botocore's S3 signer leaves the path as sent, so the canonical form must not normalize it
-        settings.uri_path_normalization_mode = UriPathNormalizationMode::Disabled;
-        settings.percent_encoding_mode = PercentEncodingMode::Single;
-        settings.payload_checksum_kind = PayloadChecksumKind::NoHeader;
-        settings.signature_location = SignatureLocation::Headers;
-        settings.session_token_mode = SessionTokenMode::Include;
-        let parameters = v4::SigningParams::builder()
-            .identity(&identity)
-            .region(&self.region)
-            .name(SERVICE)
-            .time(self.clock.now())
-            .settings(settings)
-            .build()
-            .map_err(S3SigningError::Parameters)?;
-        let prepared = [(CONTENT_SHA256_HEADER, EMPTY_SHA256)];
-        let signable = SignableRequest::new(
-            METHOD,
+        credentials: &SigningCredentials,
+    ) -> Result<Vec<(String, String)>, S3TransportError> {
+        let prepared = [(CONTENT_SHA256_HEADER.to_owned(), EMPTY_SHA256.to_owned())];
+        let request = RequestToSign {
+            method: METHOD,
             url,
-            prepared.iter().copied(),
-            SignableBody::Precomputed(EMPTY_SHA256.to_owned()),
-        )
-        .map_err(S3SigningError::Signing)?;
-        let output =
-            sign(signable, &SigningParams::from(parameters)).map_err(S3SigningError::Signing)?;
-        let (instructions, _signature) = output.into_parts();
-        let (signed, _query) = instructions.into_parts();
-        let mut headers = Vec::with_capacity(signed.len().saturating_add(prepared.len()));
-        headers.extend(
-            prepared
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned())),
-        );
-        headers.extend(
-            signed
-                .into_iter()
-                .map(|header| (header.name().to_owned(), header.value().to_owned())),
-        );
+            headers: &prepared,
+            content_sha256: EMPTY_SHA256,
+            region: &self.region,
+            now: self.clock.now(),
+        };
+        let signed = sign_request(&request, credentials)?;
+        let mut headers = Vec::with_capacity(prepared.len().saturating_add(signed.len()));
+        headers.extend(prepared);
+        headers.extend(signed);
         Ok(headers)
     }
 
