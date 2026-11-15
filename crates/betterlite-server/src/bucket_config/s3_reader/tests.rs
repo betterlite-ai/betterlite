@@ -19,8 +19,8 @@ use tokio::task::JoinSet;
 
 use super::addressing::object_url;
 use super::{
-    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3Get, S3GetRequest, S3Reader,
-    S3TransportFailure, credential_settings, region_from_environment,
+    DEFAULT_REGION, ProxiedS3Get, REGION_VARIABLE, S3GetRequest, S3Reader, S3TransportFailure,
+    credential_settings, region_from_environment,
 };
 use crate::bucket_config::object::BucketObjectReader;
 use crate::bucket_config::test_support::{
@@ -204,9 +204,9 @@ async fn initialize_reads_the_region_from_the_environment() {
     let mut environment = credential_environment();
     environment.insert(REGION_VARIABLE.to_owned(), "eu-west-1".to_owned());
     let transport = FakeS3::answering(200, b"ok");
-    let transport_trait: Arc<dyn S3Get> = Arc::clone(&transport);
+    let transport_handle = Arc::clone(&transport);
 
-    let reader = S3Reader::initialize("bucket", &environment, transport_trait).await;
+    let reader = S3Reader::initialize("bucket", &environment, transport_handle).await;
 
     assert_eq!(reader.region, "eu-west-1");
     assert_eq!(
@@ -223,9 +223,9 @@ async fn initialize_reads_the_region_from_the_environment() {
 async fn a_reader_without_resolvable_credentials_reads_nothing() {
     let environment = environment_without_keys();
     let transport = Arc::new(FakeS3::default());
-    let transport_trait: Arc<dyn S3Get> = Arc::clone(&transport);
+    let transport_handle = Arc::clone(&transport);
 
-    let reader = S3Reader::initialize("bucket", &environment, transport_trait).await;
+    let reader = S3Reader::initialize("bucket", &environment, transport_handle).await;
 
     assert!(reader.credentials.is_none());
     assert!(reader.read_object("config.yaml").await.is_none());
