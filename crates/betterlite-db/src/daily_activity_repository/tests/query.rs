@@ -1,8 +1,8 @@
 #![cfg(test)]
 
 use super::support::{
-    DailyCall, FakeDatabase, FakeReads, RawReply, capture_logs, count, entity_row, grouping_row,
-    key_spend_row, repository, scope, text_row, with_column, without,
+    DailyCall, FakeDatabase, FakeFailure, FakeReads, RawReply, capture_logs, count, entity_row,
+    grouping_row, key_spend_row, repository, scope, text_row, with_column, without,
 };
 use crate::daily_activity_contracts::SqlParameter;
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
@@ -12,11 +12,13 @@ use rstest::rstest;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Barrier;
+use tokio::time::timeout;
+use tracing::subscriber::set_default;
 
 #[tokio::test]
 async fn query_debug_first_line_only() {
     let (logs, subscriber) = capture_logs();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let database = FakeDatabase::default();
     let repository = repository(database, FakeReads::default());
     repository
@@ -43,6 +45,18 @@ async fn query_none_is_empty() {
 }
 
 #[tokio::test]
+async fn query_invalid_record_error_propagates() {
+    let database = FakeDatabase::default();
+    database.push_raw(RawReply::Failure(FakeFailure::InvalidRow));
+    let repository = repository(database, FakeReads::default());
+    let error = repository
+        .key_page(&scope(DailyActivityTable::User), 0, 10)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("invalid database record"));
+}
+
+#[tokio::test]
 async fn aggregated_entity_query_optional() {
     let database = FakeDatabase::default();
     let repository = repository(database, FakeReads::default());
@@ -62,15 +76,18 @@ async fn aggregated_entity_query_optional() {
 
 #[tokio::test]
 async fn aggregate_queries_concurrent() {
-    let mut database = FakeDatabase::default();
-    database.aggregate_barrier = Some(Arc::new(Barrier::new(2)));
+    let database = FakeDatabase {
+        aggregate_barrier: Some(Arc::new(Barrier::new(2))),
+        ..Default::default()
+    };
     let repository = repository(database, FakeReads::default());
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_secs(5),
         repository.aggregated(&scope(DailyActivityTable::User), true, 10),
     )
     .await;
-    assert!(outcome.is_ok());
+    let aggregated = outcome.unwrap().unwrap();
+    assert_eq!(aggregated.distinct_api_keys, 0);
     assert_eq!(repository.database.query_count(), 2);
 }
 
@@ -88,9 +105,9 @@ async fn first_nonnull_distinct_count_including_zero() {
         .await
         .unwrap();
     assert_eq!(first.distinct_api_keys, 0);
-    let database = FakeDatabase::default();
-    database.set_raw_rows(vec![grouping_row(None)]);
-    let repository = repository(database, FakeReads::default());
+    let database_none = FakeDatabase::default();
+    database_none.set_raw_rows(vec![grouping_row(None)]);
+    let repository = repository(database_none, FakeReads::default());
     let none = repository
         .aggregated(&scope(DailyActivityTable::User), false, 10)
         .await
@@ -195,29 +212,29 @@ async fn key_page_first_count_only() {
 async fn key_page_missing_null_count_zero() {
     let missing = FakeDatabase::default();
     missing.set_raw_rows(vec![key_spend_row("a")]);
-    let page = repository(missing, FakeReads::default())
+    let missing_page = repository(missing, FakeReads::default())
         .key_page(&scope(DailyActivityTable::User), 0, 10)
         .await
         .unwrap();
-    assert_eq!(page.total_api_keys, 0);
+    assert_eq!(missing_page.total_api_keys, 0);
     let null = FakeDatabase::default();
     null.set_raw_rows(vec![with_column(
         key_spend_row("a"),
         "total_api_keys",
         DatabaseValue::Null,
     )]);
-    let page = repository(null, FakeReads::default())
+    let null_page = repository(null, FakeReads::default())
         .key_page(&scope(DailyActivityTable::User), 0, 10)
         .await
         .unwrap();
-    assert_eq!(page.total_api_keys, 0);
+    assert_eq!(null_page.total_api_keys, 0);
     let empty = FakeDatabase::default();
-    let page = repository(empty, FakeReads::default())
+    let empty_page = repository(empty, FakeReads::default())
         .key_page(&scope(DailyActivityTable::User), 0, 10)
         .await
         .unwrap();
-    assert_eq!(page.total_api_keys, 0);
-    assert!(page.rows.is_empty());
+    assert_eq!(empty_page.total_api_keys, 0);
+    assert!(empty_page.rows.is_empty());
 }
 
 #[tokio::test]
@@ -271,11 +288,11 @@ async fn malformed_retained_row_fails() {
         with_column(key_spend_row("key"), "total_api_keys", count(1)),
         "completion_tokens",
     )]);
-    let error = repository(bad_row, FakeReads::default())
+    let row_error = repository(bad_row, FakeReads::default())
         .key_page(&scope(DailyActivityTable::User), 0, 10)
         .await
         .unwrap_err();
-    assert!(error.to_string().contains("completion_tokens"));
+    assert!(row_error.to_string().contains("completion_tokens"));
 }
 
 #[tokio::test]
@@ -334,14 +351,17 @@ async fn count_and_rows_share_predicates() {
 
 #[tokio::test]
 async fn daily_rows_count_barrier() {
-    let mut database = FakeDatabase::default();
-    database.daily_barrier = Some(Arc::new(Barrier::new(2)));
+    let database = FakeDatabase {
+        daily_barrier: Some(Arc::new(Barrier::new(2))),
+        ..Default::default()
+    };
     let repository = repository(database, FakeReads::default());
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_secs(5),
         repository.daily_rows(&scope(DailyActivityTable::User), 1, 10),
     )
     .await;
-    assert!(outcome.is_ok());
+    let page = outcome.unwrap().unwrap();
+    assert_eq!(page.total_count, 0);
     assert_eq!(repository.database.daily_call_count(), 2);
 }

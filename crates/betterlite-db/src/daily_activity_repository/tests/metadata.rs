@@ -9,8 +9,10 @@ use crate::daily_activity_contracts::{DailyActivityProxyReads, KeyMetadataRow, S
 use crate::daily_activity_repository::DailyActivityRepository;
 use crate::daily_activity_repository::metadata::{metadata_row, metadata_tags};
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::Future;
+use std::future::{Future, ready};
 use std::time::{Duration, SystemTime};
+use tokio::time::timeout;
+use tracing::subscriber::set_default;
 
 struct PanickingReads;
 
@@ -21,7 +23,7 @@ impl DailyActivityProxyReads for PanickingReads {
         _api_keys: &BTreeSet<String>,
         _window: Option<SpendLogsWindow>,
     ) -> impl Future<Output = BTreeMap<String, KeyMetadataRow>> + Send {
-        async move { panic!("the recovery port failed") }
+        ready(panic!("the recovery port failed"))
     }
 }
 
@@ -45,12 +47,10 @@ async fn active_failure_stops_recovery() {
     let database = FakeDatabase::default();
     *database.active.lock().unwrap() = Err(FakeFailure::Unavailable);
     let repository = repository(database, FakeReads::default());
-    assert!(
-        repository
-            .key_metadata(&keys(&["key"]), None)
-            .await
-            .is_err()
-    );
+    repository
+        .key_metadata(&keys(&["key"]), None)
+        .await
+        .unwrap_err();
     assert!(repository.database.deleted_call_args().is_empty());
     assert_eq!(repository.proxy_reads.call_count(), 0);
 }
@@ -83,11 +83,8 @@ async fn newest_deleted_record_selected() {
         .await
         .unwrap();
     let call = repository.proxy_reads.last_call();
-    assert_eq!(
-        call.resolved.get("key").unwrap().key_alias.as_deref(),
-        Some("new")
-    );
-    assert!(!call.resolved.get("key").unwrap().key_exists);
+    assert_eq!(call.resolved["key"].key_alias.as_deref(), Some("new"));
+    assert!(!call.resolved["key"].key_exists);
 }
 
 #[tokio::test]
@@ -103,16 +100,13 @@ async fn equal_deletion_time_first_row_wins() {
         .await
         .unwrap();
     let call = repository.proxy_reads.last_call();
-    assert_eq!(
-        call.resolved.get("key").unwrap().key_alias.as_deref(),
-        Some("first")
-    );
+    assert_eq!(call.resolved["key"].key_alias.as_deref(), Some("first"));
 }
 
 #[tokio::test]
 async fn deleted_failure_warns_then_recovers() {
     let (logs, subscriber) = capture_logs();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let database = FakeDatabase::default();
     *database.deleted.lock().unwrap() = Err(FakeFailure::Unavailable);
     let repository = repository(database, FakeReads::default());
@@ -131,15 +125,17 @@ async fn deleted_failure_warns_then_recovers() {
 
 #[tokio::test]
 async fn deleted_cancel_propagates() {
-    let mut database = FakeDatabase::default();
-    database.deleted_pending = true;
+    let database = FakeDatabase {
+        deleted_pending: true,
+        ..Default::default()
+    };
     let repository = repository(database, FakeReads::default());
-    let outcome = tokio::time::timeout(
+    let outcome = timeout(
         Duration::from_millis(50),
         repository.key_metadata(&keys(&["key"]), None),
     )
     .await;
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
     assert_eq!(repository.proxy_reads.call_count(), 0);
 }
 
@@ -156,7 +152,7 @@ async fn active_metadata_precedes_archive() {
         .await
         .unwrap();
     let call = repository.proxy_reads.last_call();
-    let row = call.resolved.get("key").unwrap();
+    let row = &call.resolved["key"];
     assert_eq!(row.key_alias.as_deref(), Some("active"));
     assert!(row.key_exists);
 }
@@ -234,7 +230,10 @@ async fn recovery_error_propagates() {
         proxy_reads: PanickingReads,
         clock: super::support::fixed_now,
     };
-    let _ = repository.key_metadata(&keys(&["key"]), None).await;
+    repository
+        .key_metadata(&keys(&["key"]), None)
+        .await
+        .unwrap();
 }
 
 #[test]

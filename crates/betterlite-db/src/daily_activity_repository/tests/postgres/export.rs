@@ -1,9 +1,49 @@
 use super::super::support::scope;
-use super::support::{PostgresRepository, Usage, insert, insert_all, repository, run, usage};
+use super::support::{PostgresRepository, insert, repository, run, usage};
+use crate::daily_activity_contracts::ExportRow;
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
-use crate::daily_activity_contracts::{DailyActivityScope, ExportRow, ExportType};
-use crate::daily_activity_sql::PTU_SENTINEL_API_KEY;
+use crate::daily_activity_contracts::{DailyActivityScope, ExportType};
 use rust_decimal::prelude::ToPrimitive as _;
+
+const EXPORT_SEED: &str = "INSERT INTO \"LiteLLM_DailyTeamSpend\" (id, team_id, date, api_key, model, spend, prompt_tokens, completion_tokens, cache_read_input_tokens, api_requests, successful_requests, failed_requests, updated_at) VALUES
+    ('a', 't1', '2026-08-01', 'k1', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('b', 't1', '2026-08-01', 'k2', 'm2', 2.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('c', 't1', '2026-08-02', 'k1', 'm1', 4.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('d', 't2', '2026-08-01', 'k1', NULL, 8.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('s', 't1', '2026-08-01', '__ptu_flat_cost__', NULL, 0.0, 10, 5, 0, 1, 1, 0, NOW());
+UPDATE \"LiteLLM_DailyTeamSpend\" SET ptu_flat_cost = 5 WHERE id = 's';
+INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('u1', 'u1@example.com');
+INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias, user_id) VALUES ('k1', 'alias1', 'u1');
+INSERT INTO \"LiteLLM_DeletedVerificationToken\" (id, token, key_alias, user_id) VALUES
+    ('x1', 'k1', 'stale', 'u9'),
+    ('x2', 'k2', 'alias2', 'u2')";
+
+const DAILY_EXPORT: [&str; 3] = [
+    "2026-08-01|t1|-|-|-|-|-|3|5",
+    "2026-08-01|t2|-|-|-|-|-|8|0",
+    "2026-08-02|t1|-|-|-|-|-|4|0",
+];
+
+const KEY_EXPORT: [&str; 4] = [
+    "2026-08-01|t1|k1|-|u1|alias1|u1@example.com|1|0",
+    "2026-08-01|t1|k2|-|u2|alias2|-|2|0",
+    "2026-08-01|t2|k1|-|u1|alias1|u1@example.com|8|0",
+    "2026-08-02|t1|k1|-|u1|alias1|u1@example.com|4|0",
+];
+
+const MODEL_EXPORT: [&str; 4] = [
+    "2026-08-01|t1|-|m1|-|-|-|1|0",
+    "2026-08-01|t1|-|m2|-|-|-|2|0",
+    "2026-08-01|t2|-|-|-|-|-|8|0",
+    "2026-08-02|t1|-|m1|-|-|-|4|0",
+];
+
+const USER_EXPORT: [&str; 4] = [
+    "2026-08-01|t1|-|-|u1|-|u1@example.com|1|0",
+    "2026-08-01|t1|-|-|u2|-|-|2|0",
+    "2026-08-01|t2|-|-|u1|-|u1@example.com|8|0",
+    "2026-08-02|t1|-|-|u1|-|u1@example.com|4|0",
+];
 
 async fn collected(
     repository: &PostgresRepository<'_>,
@@ -37,87 +77,44 @@ fn rendered(rows: &[ExportRow]) -> Vec<String> {
         .collect()
 }
 
+async fn assert_export(
+    repository: &PostgresRepository<'_>,
+    range: &DailyActivityScope,
+    export_type: ExportType,
+    expected: &[&str],
+) -> Vec<ExportRow> {
+    let rows = collected(repository, range, export_type).await;
+    assert_eq!(rendered(&rows), expected);
+    rows
+}
+
 #[tokio::test]
 async fn postgres_four_export_types() {
     run(|pool| async move {
         let client = pool.get().await.unwrap();
         let repository = repository(&client, None);
         let table = DailyActivityTable::Team;
-        insert_all(
-            &client,
-            table,
-            [
-            Usage {
-                model: Some("m1"),
-                ..usage("a", Some("t1"), "2026-08-01", "k1", 1.0)
-            },
-            Usage {
-                model: Some("m2"),
-                ..usage("b", Some("t1"), "2026-08-01", "k2", 2.0)
-            },
-            Usage {
-                model: Some("m1"),
-                ..usage("c", Some("t1"), "2026-08-02", "k1", 4.0)
-            },
-            usage("d", Some("t2"), "2026-08-01", "k1", 8.0),
-            usage("s", Some("t1"), "2026-08-01", PTU_SENTINEL_API_KEY, 0.0),
-            ],
-        )
-        .await;
-        client
-            .batch_execute(
-                "UPDATE \"LiteLLM_DailyTeamSpend\" SET ptu_flat_cost = 5 WHERE id = 's';
-                 INSERT INTO \"LiteLLM_UserTable\" (user_id, user_email) VALUES ('u1', 'u1@example.com');
-                 INSERT INTO \"LiteLLM_VerificationToken\" (token, key_alias, user_id) VALUES ('k1', 'alias1', 'u1');
-                 INSERT INTO \"LiteLLM_DeletedVerificationToken\" (id, token, key_alias, user_id) VALUES
-                    ('x1', 'k1', 'stale', 'u9'),
-                    ('x2', 'k2', 'alias2', 'u2');",
-            )
-            .await
-            .unwrap();
+        client.batch_execute(EXPORT_SEED).await.unwrap();
         let range = scope(table);
-        let daily = collected(&repository, &range, ExportType::Daily).await;
-        assert_eq!(
-            rendered(&daily),
-            [
-                "2026-08-01|t1|-|-|-|-|-|3|5",
-                "2026-08-01|t2|-|-|-|-|-|8|0",
-                "2026-08-02|t1|-|-|-|-|-|4|0",
-            ]
-        );
+        let daily = assert_export(&repository, &range, ExportType::Daily, &DAILY_EXPORT).await;
         assert_eq!(daily[0].prompt_tokens, 30);
         assert_eq!(daily[0].completion_tokens, 15);
         assert_eq!(daily[0].api_requests, 3);
-        let keys = collected(&repository, &range, ExportType::DailyWithKeys).await;
-        assert_eq!(
-            rendered(&keys),
-            [
-                "2026-08-01|t1|k1|-|u1|alias1|u1@example.com|1|0",
-                "2026-08-01|t1|k2|-|u2|alias2|-|2|0",
-                "2026-08-01|t2|k1|-|u1|alias1|u1@example.com|8|0",
-                "2026-08-02|t1|k1|-|u1|alias1|u1@example.com|4|0",
-            ]
-        );
-        let models = collected(&repository, &range, ExportType::DailyWithModels).await;
-        assert_eq!(
-            rendered(&models),
-            [
-                "2026-08-01|t1|-|m1|-|-|-|1|0",
-                "2026-08-01|t1|-|m2|-|-|-|2|0",
-                "2026-08-01|t2|-|-|-|-|-|8|0",
-                "2026-08-02|t1|-|m1|-|-|-|4|0",
-            ]
-        );
-        let users = collected(&repository, &range, ExportType::DailyWithUsers).await;
-        assert_eq!(
-            rendered(&users),
-            [
-                "2026-08-01|t1|-|-|u1|-|u1@example.com|1|0",
-                "2026-08-01|t1|-|-|u2|-|-|2|0",
-                "2026-08-01|t2|-|-|u1|-|u1@example.com|8|0",
-                "2026-08-02|t1|-|-|u1|-|u1@example.com|4|0",
-            ]
-        );
+        assert_export(&repository, &range, ExportType::DailyWithKeys, &KEY_EXPORT).await;
+        assert_export(
+            &repository,
+            &range,
+            ExportType::DailyWithModels,
+            &MODEL_EXPORT,
+        )
+        .await;
+        assert_export(
+            &repository,
+            &range,
+            ExportType::DailyWithUsers,
+            &USER_EXPORT,
+        )
+        .await;
     })
     .await;
 }

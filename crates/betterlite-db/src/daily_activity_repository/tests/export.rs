@@ -97,11 +97,11 @@ async fn export_short_batch_stops() {
     let repository = repository(database, FakeReads::default());
     let user_scope = scope(DailyActivityTable::User);
     let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
-    let mut seen = 0;
+    let mut seen = 0_usize;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
     }
-    assert_eq!(seen, 2);
+    assert_eq!(seen, 2_usize);
     assert_eq!(repository.database.query_count(), 1);
 }
 
@@ -114,11 +114,11 @@ async fn export_exact_thousand_fetches_empty_page() {
     let repository = repository(database, FakeReads::default());
     let user_scope = scope(DailyActivityTable::User);
     let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
-    let mut seen = 0;
+    let mut seen = 0_usize;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
     }
-    assert_eq!(seen, 1000);
+    assert_eq!(seen, 1000_usize);
     assert_eq!(repository.database.query_count(), 2);
 }
 
@@ -129,7 +129,7 @@ async fn export_batch_validated_before_yield() {
     let repository = repository(database, FakeReads::default());
     let user_scope = scope(DailyActivityTable::User);
     let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
-    assert!(rows.next_row().await.is_err());
+    rows.next_row().await.unwrap_err();
 }
 
 #[tokio::test]
@@ -141,12 +141,12 @@ async fn export_later_error_keeps_prior_yields() {
     let repository = repository(database, FakeReads::default());
     let user_scope = scope(DailyActivityTable::User);
     let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
-    let mut seen = 0;
+    let mut seen = 0_usize;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
     }
-    assert_eq!(seen, 1000);
-    assert!(rows.next_row().await.is_err());
+    assert_eq!(seen, 1000_usize);
+    rows.next_row().await.unwrap_err();
 }
 
 #[tokio::test]

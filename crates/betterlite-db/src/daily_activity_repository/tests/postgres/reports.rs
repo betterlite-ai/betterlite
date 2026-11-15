@@ -3,13 +3,42 @@ use super::support::{
     PostgresRepository, Usage, insert, insert_all, repository, run, scope_with, texts, usage,
 };
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
-use crate::daily_activity_contracts::{DailyActivityScope, GroupingSetsRow};
+use crate::daily_activity_contracts::{AggregatedRows, DailyActivityScope, GroupingSetsRow};
 use crate::daily_activity_sql::PTU_SENTINEL_API_KEY;
 use deadpool_postgres::Client;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive as _, ToPrimitive as _};
 use std::collections::{BTreeMap, BTreeSet};
-use std::ops::Range;
+
+const MODEL_SEED: &str = "INSERT INTO \"LiteLLM_DailyUserSpend\" (id, user_id, date, api_key, model, spend, prompt_tokens, completion_tokens, cache_read_input_tokens, api_requests, successful_requests, failed_requests, updated_at) VALUES
+    ('a', NULL, '2026-08-01', 'k1', 'm1', 1.0, 100, 5, 90, 1, 1, 0, NOW()),
+    ('b', NULL, '2026-08-01', 'k2', 'm1', 3.0, 50, 5, 0, 1, 1, 0, NOW()),
+    ('c', NULL, '2026-08-01', 'k3', 'm2', 2.0, 70, 5, 10, 1, 1, 0, NOW()),
+    ('d', NULL, '2026-08-01', 'k4', 'm2', 9.0, 5, 5, 5, 1, 1, 0, NOW());
+UPDATE \"LiteLLM_DailyUserSpend\" SET model_group = 'grp' WHERE id = 'c'";
+
+const FILTER_SEED: &str = "INSERT INTO \"LiteLLM_DailyUserSpend\" (id, user_id, date, api_key, model, spend, prompt_tokens, completion_tokens, cache_read_input_tokens, api_requests, successful_requests, failed_requests, updated_at) VALUES
+    ('a', 'u1', '2026-08-01', 'k1', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('b', 'u2', '2026-08-03', 'k2', 'm2', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('c', NULL, '2026-08-03', 'k1', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('d', 'u1', '2026-08-05', 'k3', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('e', 'u1', '2026-07-31', 'k1', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW()),
+    ('f', 'u1', '2026-08-06', 'k1', 'm1', 1.0, 10, 5, 0, 1, 1, 0, NOW())";
+
+const GROUPING_LINES: [&str; 12] = [
+    "127|-|-|-|3.75|30",
+    "15|2026-08-01|k1|m1|1.5|10",
+    "15|2026-08-01|k2|m2|2|10",
+    "15|2026-08-02|k1|m1|0.25|10",
+    "31|2026-08-01|k1|-|1.5|10",
+    "31|2026-08-01|k2|-|2|10",
+    "31|2026-08-02|k1|-|0.25|10",
+    "47|2026-08-01|-|m1|1.5|10",
+    "47|2026-08-01|-|m2|2|10",
+    "47|2026-08-02|-|m1|0.25|10",
+    "63|2026-08-01|-|-|3.5|20",
+    "63|2026-08-02|-|-|0.25|10",
+];
 
 fn rendered(rows: &[GroupingSetsRow], levels: &[i64]) -> Vec<String> {
     let mut lines: Vec<String> = rows
@@ -29,6 +58,14 @@ fn rendered(rows: &[GroupingSetsRow], levels: &[i64]) -> Vec<String> {
         .collect();
     lines.sort();
     lines
+}
+
+fn total_row(aggregated: &AggregatedRows) -> &GroupingSetsRow {
+    aggregated
+        .grouping_rows
+        .iter()
+        .find(|row| row.group_level == 127)
+        .unwrap()
 }
 
 async fn check_table(
@@ -63,11 +100,7 @@ async fn check_table(
         .aggregated(&scope(table), true, 10)
         .await
         .unwrap();
-    let total = aggregated
-        .grouping_rows
-        .iter()
-        .find(|row| row.group_level == 127)
-        .unwrap();
+    let total = total_row(&aggregated);
     assert_eq!(total.metrics.spend, Decimal::from_f64(4.0), "{relation}");
     assert_eq!(aggregated.distinct_api_keys, 2, "{relation}");
     assert!(aggregated.entity_rows.is_some(), "{relation}");
@@ -88,6 +121,16 @@ async fn postgres_all_six_daily_tables() {
         check_table(&client, &repository, DailyActivityTable::Agent).await;
     })
     .await;
+}
+
+fn assert_grouping_lines(aggregated: &AggregatedRows) {
+    let lines = rendered(&aggregated.grouping_rows, &[127, 63, 47, 31, 15]);
+    assert_eq!(lines, GROUPING_LINES);
+    let total = total_row(aggregated);
+    assert_eq!(total.metrics.api_requests, Some(3));
+    assert_eq!(total.metrics.completion_tokens, Some(15));
+    assert_eq!(aggregated.distinct_api_keys, 2);
+    assert!(aggregated.entity_rows.is_none());
 }
 
 #[tokio::test]
@@ -119,35 +162,29 @@ async fn postgres_grouping_metrics_and_masks() {
             .aggregated(&scope(table), false, 10)
             .await
             .unwrap();
-        let lines = rendered(&aggregated.grouping_rows, &[127, 63, 47, 31, 15]);
-        assert_eq!(
-            lines,
-            [
-                "127|-|-|-|3.75|30",
-                "15|2026-08-01|k1|m1|1.5|10",
-                "15|2026-08-01|k2|m2|2|10",
-                "15|2026-08-02|k1|m1|0.25|10",
-                "31|2026-08-01|k1|-|1.5|10",
-                "31|2026-08-01|k2|-|2|10",
-                "31|2026-08-02|k1|-|0.25|10",
-                "47|2026-08-01|-|m1|1.5|10",
-                "47|2026-08-01|-|m2|2|10",
-                "47|2026-08-02|-|m1|0.25|10",
-                "63|2026-08-01|-|-|3.5|20",
-                "63|2026-08-02|-|-|0.25|10",
-            ]
-        );
-        let total = aggregated
-            .grouping_rows
-            .iter()
-            .find(|row| row.group_level == 127)
-            .unwrap();
-        assert_eq!(total.metrics.api_requests, Some(3));
-        assert_eq!(total.metrics.completion_tokens, Some(15));
-        assert_eq!(aggregated.distinct_api_keys, 2);
-        assert!(aggregated.entity_rows.is_none());
+        assert_grouping_lines(&aggregated);
     })
     .await;
+}
+
+fn assert_ptu_totals(aggregated: &AggregatedRows) {
+    let total = total_row(aggregated);
+    assert_eq!(total.metrics.ptu_flat_cost, Decimal::from_f64(5.0));
+    assert_eq!(total.metrics.spend, Decimal::from_f64(4.5));
+    assert_eq!(aggregated.distinct_api_keys, 3);
+    let keys: BTreeSet<&str> = aggregated
+        .grouping_rows
+        .iter()
+        .filter_map(|row| row.metrics.api_key.as_deref())
+        .collect();
+    assert_eq!(keys, BTreeSet::from(["k1", "k2"]));
+}
+
+async fn assert_top_key_page(repository: &PostgresRepository<'_>, table: DailyActivityTable) {
+    let page = repository.key_page(&scope(table), 0, 10).await.unwrap();
+    let ranked: Vec<&str> = page.rows.iter().map(|row| row.api_key.as_str()).collect();
+    assert_eq!(page.total_api_keys, 3);
+    assert_eq!(ranked, ["k1", "k2", "k3"]);
 }
 
 #[tokio::test]
@@ -178,26 +215,23 @@ async fn postgres_ptu_totals_and_global_top_keys() {
             .aggregated(&scope(table), false, 2)
             .await
             .unwrap();
-        let total = aggregated
-            .grouping_rows
-            .iter()
-            .find(|row| row.group_level == 127)
-            .unwrap();
-        assert_eq!(total.metrics.ptu_flat_cost, Decimal::from_f64(5.0));
-        assert_eq!(total.metrics.spend, Decimal::from_f64(4.5));
-        assert_eq!(aggregated.distinct_api_keys, 3);
-        let keys: BTreeSet<&str> = aggregated
-            .grouping_rows
-            .iter()
-            .filter_map(|row| row.metrics.api_key.as_deref())
-            .collect();
-        assert_eq!(keys, BTreeSet::from(["k1", "k2"]));
-        let page = repository.key_page(&scope(table), 0, 10).await.unwrap();
-        let ranked: Vec<&str> = page.rows.iter().map(|row| row.api_key.as_str()).collect();
-        assert_eq!(page.total_api_keys, 3);
-        assert_eq!(ranked, ["k1", "k2", "k3"]);
+        assert_ptu_totals(&aggregated);
+        assert_top_key_page(&repository, table).await;
     })
     .await;
+}
+
+async fn counted_entity_keys(client: &Client) -> BTreeMap<String, i64> {
+    client
+        .query(
+            "SELECT COALESCE(user_id, '') AS entity, COUNT(DISTINCT api_key)::bigint AS keys FROM \"LiteLLM_DailyUserSpend\" GROUP BY 1",
+            &[],
+        )
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| (row.get::<_, String>("entity"), row.get::<_, i64>("keys")))
+        .collect()
 }
 
 #[tokio::test]
@@ -210,10 +244,10 @@ async fn postgres_entity_counts_and_null_groups() {
             &client,
             table,
             [
-            usage("a", None, "2026-08-01", "k1", 1.0),
-            usage("b", Some("u1"), "2026-08-01", "k1", 1.0),
-            usage("c", Some("u1"), "2026-08-02", "k2", 1.0),
-            usage("d", Some("u1"), "2026-08-02", "k1", 1.0),
+                usage("a", None, "2026-08-01", "k1", 1.0),
+                usage("b", Some("u1"), "2026-08-01", "k1", 1.0),
+                usage("c", Some("u1"), "2026-08-02", "k2", 1.0),
+                usage("d", Some("u1"), "2026-08-02", "k1", 1.0),
             ],
         )
         .await;
@@ -221,25 +255,12 @@ async fn postgres_entity_counts_and_null_groups() {
             .aggregated(&scope(table), true, 10)
             .await
             .unwrap();
-        let found: BTreeMap<String, i64> = aggregated
-            .entity_rows
-            .unwrap()
-            .into_iter()
-            .filter(|row| row.api_key_rolled == 1)
-            .map(|row| (row.entity_id.unwrap(), row.distinct_api_keys.unwrap()))
-            .collect();
-        let counted = client
-            .query(
-                "SELECT COALESCE(user_id, '') AS entity, COUNT(DISTINCT api_key)::bigint AS keys FROM \"LiteLLM_DailyUserSpend\" GROUP BY 1",
-                &[],
-            )
-            .await
-            .unwrap();
-        let expected: BTreeMap<String, i64> = counted
-            .iter()
-            .map(|row| (row.get("entity"), row.get("keys")))
-            .collect();
-        assert_eq!(found, expected);
+        let rows = aggregated.entity_rows.unwrap();
+        let mut found: BTreeMap<String, i64> = BTreeMap::new();
+        for row in rows.into_iter().filter(|row| row.api_key_rolled == 1) {
+            found.insert(row.entity_id.unwrap(), row.distinct_api_keys.unwrap());
+        }
+        assert_eq!(found, counted_entity_keys(&client).await);
         assert_eq!(
             found,
             BTreeMap::from([(String::new(), 1), ("u1".to_owned(), 2)])
@@ -254,15 +275,18 @@ async fn assert_page(
     ranked: &[String],
     offset: i64,
     limit: i64,
-    range: Range<usize>,
 ) {
     let page = repository
         .key_page(&scope(table), offset, limit)
         .await
         .unwrap();
     let keys: Vec<String> = page.rows.iter().map(|row| row.api_key.clone()).collect();
+    let start = usize::try_from(offset).unwrap().min(ranked.len());
+    let end = start
+        .saturating_add(usize::try_from(limit).unwrap())
+        .min(ranked.len());
     assert_eq!(page.total_api_keys, 3, "offset {offset}");
-    assert_eq!(keys, ranked[range], "offset {offset}");
+    assert_eq!(keys, ranked[start..end], "offset {offset}");
 }
 
 #[tokio::test]
@@ -278,9 +302,9 @@ async fn postgres_key_page_empty_and_past_end() {
             &client,
             table,
             [
-            usage("a", None, "2026-08-01", "k1", 3.0),
-            usage("b", None, "2026-08-01", "k2", 1.0),
-            usage("c", None, "2026-08-01", "k3", 2.0),
+                usage("a", None, "2026-08-01", "k1", 3.0),
+                usage("b", None, "2026-08-01", "k2", 1.0),
+                usage("c", None, "2026-08-01", "k3", 2.0),
             ],
         )
         .await;
@@ -290,9 +314,9 @@ async fn postgres_key_page_empty_and_past_end() {
         )
         .await;
         assert_eq!(ranked, ["k1", "k3", "k2"]);
-        assert_page(&repository, table, &ranked, 0, 2, 0..2).await;
-        assert_page(&repository, table, &ranked, 2, 2, 2..3).await;
-        assert_page(&repository, table, &ranked, 10, 2, 3..3).await;
+        assert_page(&repository, table, &ranked, 0, 2).await;
+        assert_page(&repository, table, &ranked, 2, 2).await;
+        assert_page(&repository, table, &ranked, 10, 2).await;
     })
     .await;
 }
@@ -349,82 +373,58 @@ async fn postgres_literal_search_active_deleted() {
     .await;
 }
 
+async fn assert_model_top_keys(repository: &PostgresRepository<'_>, range: &DailyActivityScope) {
+    let by_model = repository
+        .model_top_keys(range, "m1", false, 10)
+        .await
+        .unwrap();
+    let model_keys: Vec<&str> = by_model.iter().map(|row| row.api_key.as_str()).collect();
+    assert_eq!(model_keys, ["k2", "k1"]);
+    assert_eq!(by_model[0].spend, Decimal::from_f64(3.0).unwrap());
+    let by_group = repository
+        .model_top_keys(range, "grp", true, 10)
+        .await
+        .unwrap();
+    let group_keys: Vec<&str> = by_group.iter().map(|row| row.api_key.as_str()).collect();
+    assert_eq!(group_keys, ["k3"]);
+    let group_name_as_model = repository
+        .model_top_keys(range, "grp", false, 10)
+        .await
+        .unwrap();
+    assert!(group_name_as_model.is_empty());
+    let truncated = repository
+        .model_top_keys(range, "m1", false, 1)
+        .await
+        .unwrap();
+    assert_eq!(truncated.len(), 1);
+}
+
+async fn assert_cache_leakage(
+    repository: &PostgresRepository<'_>,
+    range: &DailyActivityScope,
+    client: &Client,
+) {
+    let leakage = repository.cache_leakage_keys(range, 10).await.unwrap();
+    let ranked = texts(
+        client,
+        "SELECT api_key FROM \"LiteLLM_DailyUserSpend\" GROUP BY api_key HAVING SUM(prompt_tokens) - SUM(cache_read_input_tokens) > 0 ORDER BY SUM(prompt_tokens) - SUM(cache_read_input_tokens) DESC, api_key",
+    )
+    .await;
+    let leakage_keys: Vec<String> = leakage.iter().map(|row| row.api_key.clone()).collect();
+    assert_eq!(leakage_keys, ranked);
+    assert_eq!(leakage_keys, ["k3", "k2", "k1"]);
+}
+
 #[tokio::test]
 async fn postgres_model_and_leakage_ranking() {
     run(|pool| async move {
         let client = pool.get().await.unwrap();
         let repository = repository(&client, None);
         let table = DailyActivityTable::User;
-        insert_all(
-            &client,
-            table,
-            [
-            Usage {
-                model: Some("m1"),
-                prompt: 100,
-                cache_read: 90,
-                ..usage("a", None, "2026-08-01", "k1", 1.0)
-            },
-            Usage {
-                model: Some("m1"),
-                prompt: 50,
-                ..usage("b", None, "2026-08-01", "k2", 3.0)
-            },
-            Usage {
-                model: Some("m2"),
-                prompt: 70,
-                cache_read: 10,
-                ..usage("c", None, "2026-08-01", "k3", 2.0)
-            },
-            Usage {
-                model: Some("m2"),
-                prompt: 5,
-                cache_read: 5,
-                ..usage("d", None, "2026-08-01", "k4", 9.0)
-            },
-            ],
-        )
-        .await;
-        client
-            .execute(
-                "UPDATE \"LiteLLM_DailyUserSpend\" SET model_group = 'grp' WHERE id = 'c'",
-                &[],
-            )
-            .await
-            .unwrap();
-        let scope = scope(table);
-        let by_model = repository
-            .model_top_keys(&scope, "m1", false, 10)
-            .await
-            .unwrap();
-        let keys: Vec<&str> = by_model.iter().map(|row| row.api_key.as_str()).collect();
-        assert_eq!(keys, ["k2", "k1"]);
-        assert_eq!(by_model[0].spend, Decimal::from_f64(3.0).unwrap());
-        let by_group = repository
-            .model_top_keys(&scope, "grp", true, 10)
-            .await
-            .unwrap();
-        let keys: Vec<&str> = by_group.iter().map(|row| row.api_key.as_str()).collect();
-        assert_eq!(keys, ["k3"]);
-        let group_name_as_model = repository
-            .model_top_keys(&scope, "grp", false, 10)
-            .await
-            .unwrap();
-        assert!(group_name_as_model.is_empty());
-        let truncated = repository
-            .model_top_keys(&scope, "m1", false, 1)
-            .await
-            .unwrap();
-        assert_eq!(truncated.len(), 1);
-        let leakage = repository.cache_leakage_keys(&scope, 10).await.unwrap();
-        let ranked = texts(
-            &client,
-            "SELECT api_key FROM \"LiteLLM_DailyUserSpend\" GROUP BY api_key HAVING SUM(prompt_tokens) - SUM(cache_read_input_tokens) > 0 ORDER BY SUM(prompt_tokens) - SUM(cache_read_input_tokens) DESC, api_key",
-        )
-        .await;
-        let keys: Vec<String> = leakage.iter().map(|row| row.api_key.clone()).collect();
-        assert_eq!(keys, ranked);
-        assert_eq!(keys, ["k3", "k2", "k1"]);
+        client.batch_execute(MODEL_SEED).await.unwrap();
+        let range = scope(table);
+        assert_model_top_keys(&repository, &range).await;
+        assert_cache_leakage(&repository, &range, &client).await;
     })
     .await;
 }
@@ -445,107 +445,93 @@ async fn assert_filter(
     );
 }
 
+async fn page_totals(
+    repository: &PostgresRepository<'_>,
+    range: &DailyActivityScope,
+) -> (i64, Vec<String>) {
+    let page = repository.daily_rows(range, 1, 10).await.unwrap();
+    (
+        page.total_count,
+        page.rows.into_iter().map(|row| row.id).collect(),
+    )
+}
+
+async fn assert_entity_filters(repository: &PostgresRepository<'_>, table: DailyActivityTable) {
+    assert_filter(
+        repository,
+        "no filter",
+        &scope(table),
+        &["d", "b", "c", "a"],
+    )
+    .await;
+    assert_filter(
+        repository,
+        "entity_ids",
+        &scope_with(table, |input| {
+            input.entity_ids = Some(vec!["u1".to_owned()]);
+        }),
+        &["d", "a"],
+    )
+    .await;
+    assert_filter(
+        repository,
+        "empty entity_ids",
+        &scope_with(table, |input| input.entity_ids = Some(Vec::new())),
+        &[],
+    )
+    .await;
+    assert_filter(
+        repository,
+        "excluded keeps null",
+        &scope_with(table, |input| {
+            input.exclude_entity_ids = vec!["u1".to_owned()];
+        }),
+        &["b", "c"],
+    )
+    .await;
+}
+
+async fn assert_field_filters(repository: &PostgresRepository<'_>, table: DailyActivityTable) {
+    let model = scope_with(table, |input| input.model = Some("m2".to_owned()));
+    assert_eq!(
+        page_totals(repository, &model).await,
+        (1, vec!["b".to_owned()])
+    );
+    let empty_model = scope_with(table, |input| input.model = Some(String::new()));
+    assert_eq!(
+        page_totals(repository, &empty_model).await,
+        (
+            4,
+            vec![
+                "d".to_owned(),
+                "b".to_owned(),
+                "c".to_owned(),
+                "a".to_owned()
+            ]
+        )
+    );
+    let keys = scope_with(table, |input| input.api_keys = Some(vec!["k1".to_owned()]));
+    assert_eq!(
+        page_totals(repository, &keys).await,
+        (2, vec!["c".to_owned(), "a".to_owned()])
+    );
+    let empty_keys = scope_with(table, |input| input.api_keys = Some(Vec::new()));
+    assert_eq!(page_totals(repository, &empty_keys).await, (0, Vec::new()));
+}
+
 #[tokio::test]
 async fn postgres_daily_row_filters_and_order() {
     run(|pool| async move {
         let client = pool.get().await.unwrap();
         let repository = repository(&client, None);
         let table = DailyActivityTable::User;
-        insert_all(
-            &client,
-            table,
-            [
-                Usage {
-                    model: Some("m1"),
-                    ..usage("a", Some("u1"), "2026-08-01", "k1", 1.0)
-                },
-                Usage {
-                    model: Some("m2"),
-                    ..usage("b", Some("u2"), "2026-08-03", "k2", 1.0)
-                },
-                Usage {
-                    model: Some("m1"),
-                    ..usage("c", None, "2026-08-03", "k1", 1.0)
-                },
-                Usage {
-                    model: Some("m1"),
-                    ..usage("d", Some("u1"), "2026-08-05", "k3", 1.0)
-                },
-                Usage {
-                    model: Some("m1"),
-                    ..usage("e", Some("u1"), "2026-07-31", "k1", 1.0)
-                },
-                Usage {
-                    model: Some("m1"),
-                    ..usage("f", Some("u1"), "2026-08-06", "k1", 1.0)
-                },
-            ],
-        )
-        .await;
+        client.batch_execute(FILTER_SEED).await.unwrap();
         let second = repository.daily_rows(&scope(table), 2, 3).await.unwrap();
         assert_eq!(second.total_count, 4);
         assert_eq!(second.rows.len(), 1);
         assert_eq!(second.rows[0].id, "a");
-        assert_filter(
-            &repository,
-            "no filter",
-            &scope(table),
-            &["d", "b", "c", "a"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "entity_ids",
-            &scope_with(table, |input| {
-                input.entity_ids = Some(vec!["u1".to_owned()])
-            }),
-            &["d", "a"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "empty entity_ids",
-            &scope_with(table, |input| input.entity_ids = Some(Vec::new())),
-            &[],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "excluded keeps null",
-            &scope_with(table, |input| {
-                input.exclude_entity_ids = vec!["u1".to_owned()];
-            }),
-            &["b", "c"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "model",
-            &scope_with(table, |input| input.model = Some("m2".to_owned())),
-            &["b"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "empty model ignored",
-            &scope_with(table, |input| input.model = Some(String::new())),
-            &["d", "b", "c", "a"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "api_keys",
-            &scope_with(table, |input| input.api_keys = Some(vec!["k1".to_owned()])),
-            &["c", "a"],
-        )
-        .await;
-        assert_filter(
-            &repository,
-            "empty api_keys",
-            &scope_with(table, |input| input.api_keys = Some(Vec::new())),
-            &[],
-        )
-        .await;
+        assert_entity_filters(&repository, table).await;
+        assert_field_filters(&repository, table).await;
     })
     .await;
 }

@@ -1,5 +1,31 @@
+use super::super::support::RecoveryCall;
 use super::support::{repository, run};
 use std::collections::BTreeSet;
+
+fn assert_resolved(call: &RecoveryCall, wanted: &BTreeSet<String>) {
+    assert_eq!(&call.api_keys, wanted);
+    assert!(call.window.is_none());
+    let found: Vec<&str> = call.resolved.keys().map(String::as_str).collect();
+    assert_eq!(found, ["sk-bad-tags", "sk-gone", "sk-null", "sk-tags"]);
+
+    let null_metadata = &call.resolved["sk-null"];
+    assert!(null_metadata.key_exists);
+    assert_eq!(null_metadata.key_alias.as_deref(), Some("active-alias"));
+    assert_eq!(null_metadata.team_id.as_deref(), Some("team-1"));
+    assert_eq!(null_metadata.user_id.as_deref(), Some("user-1"));
+    assert!(null_metadata.tags.is_empty());
+
+    let tagged = &call.resolved["sk-tags"];
+    assert!(tagged.key_exists);
+    assert_eq!(tagged.tags, ["a", "b"]);
+
+    assert!(call.resolved["sk-bad-tags"].tags.is_empty());
+
+    let archived = &call.resolved["sk-gone"];
+    assert!(!archived.key_exists);
+    assert_eq!(archived.key_alias.as_deref(), Some("gone-new"));
+    assert_eq!(archived.tags, ["new"]);
+}
 
 #[tokio::test]
 async fn postgres_active_null_metadata_no_archive_fallback() {
@@ -31,28 +57,7 @@ async fn postgres_active_null_metadata_no_archive_fallback() {
         .collect();
         repository.key_metadata(&wanted, None).await.unwrap();
         let call = repository.proxy_reads.last_call();
-        assert_eq!(call.api_keys, wanted);
-        assert!(call.window.is_none());
-        let found: Vec<&str> = call.resolved.keys().map(String::as_str).collect();
-        assert_eq!(found, ["sk-bad-tags", "sk-gone", "sk-null", "sk-tags"]);
-
-        let null_metadata = &call.resolved["sk-null"];
-        assert!(null_metadata.key_exists);
-        assert_eq!(null_metadata.key_alias.as_deref(), Some("active-alias"));
-        assert_eq!(null_metadata.team_id.as_deref(), Some("team-1"));
-        assert_eq!(null_metadata.user_id.as_deref(), Some("user-1"));
-        assert!(null_metadata.tags.is_empty());
-
-        let tagged = &call.resolved["sk-tags"];
-        assert!(tagged.key_exists);
-        assert_eq!(tagged.tags, ["a", "b"]);
-
-        assert!(call.resolved["sk-bad-tags"].tags.is_empty());
-
-        let archived = &call.resolved["sk-gone"];
-        assert!(!archived.key_exists);
-        assert_eq!(archived.key_alias.as_deref(), Some("gone-new"));
-        assert_eq!(archived.tags, ["new"]);
+        assert_resolved(&call, &wanted);
     })
     .await;
 }

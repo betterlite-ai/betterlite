@@ -7,16 +7,19 @@ use super::super::rows::{DatabaseRow, DatabaseValue, RowError};
 use crate::budget_permission_rows::JsonData;
 use crate::daily_activity_contracts::identifiers::DailyActivityTable;
 use crate::daily_activity_contracts::{
-    DailyActivityProxyReads, DailyActivityScope, DailyActivityScopeInput, KeyMetadataRow,
-    SpendLogsWindow, SqlQuery,
+    DailyActivityProxyReads, DailyActivityRow, DailyActivityScope, DailyActivityScopeInput,
+    KeyMetadataRow, SpendLogsWindow, SqlQuery,
 };
 use crate::postgres_store::errors::DbError;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use rust_decimal::Decimal;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::future::ready;
+use std::future::{pending, ready};
+use std::io::{self, Result as IoResult, Write};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tokio::sync::Barrier;
+use tracing_subscriber::fmt::MakeWriter;
 
 pub(crate) type FakeResult<T> = Result<T, FakeFailure>;
 type CountReply<'database> = DatabaseFuture<'database, i64>;
@@ -43,7 +46,6 @@ pub(crate) enum RawReply {
     Rows(Vec<DatabaseRow>),
     None,
     Failure(FakeFailure),
-    Pending,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -58,12 +60,12 @@ pub(crate) struct FakeDatabase {
     pub(crate) raw: Mutex<VecDeque<RawReply>>,
     pub(crate) queries: Mutex<Vec<SqlQuery>>,
     pub(crate) active: Mutex<FakeResult<Vec<VerificationTokenRow>>>,
-    pub(crate) active_calls: Mutex<usize>,
+    pub(crate) active_calls: AtomicUsize,
     pub(crate) deleted: Mutex<FakeResult<Vec<DeletedVerificationTokenRow>>>,
     pub(crate) deleted_pending: bool,
     pub(crate) deleted_calls: Mutex<Vec<Vec<String>>>,
     pub(crate) count: Mutex<FakeResult<i64>>,
-    pub(crate) rows: Mutex<FakeResult<Vec<crate::daily_activity_contracts::DailyActivityRow>>>,
+    pub(crate) rows: Mutex<FakeResult<Vec<DailyActivityRow>>>,
     pub(crate) daily_calls: Mutex<Vec<DailyCall>>,
     pub(crate) daily_barrier: Option<Arc<Barrier>>,
     pub(crate) aggregate_barrier: Option<Arc<Barrier>>,
@@ -75,7 +77,7 @@ impl Default for FakeDatabase {
             raw: Mutex::new(VecDeque::new()),
             queries: Mutex::new(Vec::new()),
             active: Mutex::new(Ok(Vec::new())),
-            active_calls: Mutex::new(0),
+            active_calls: AtomicUsize::new(0),
             deleted: Mutex::new(Ok(Vec::new())),
             deleted_pending: false,
             deleted_calls: Mutex::new(Vec::new()),
@@ -101,12 +103,8 @@ impl FakeDatabase {
         self.queries.lock().unwrap().len()
     }
 
-    pub(crate) fn last_query(&self) -> SqlQuery {
-        self.queries.lock().unwrap().last().cloned().unwrap()
-    }
-
     pub(crate) fn active_call_count(&self) -> usize {
-        *self.active_calls.lock().unwrap()
+        self.active_calls.load(Ordering::Relaxed)
     }
 
     pub(crate) fn deleted_call_args(&self) -> Vec<Vec<String>> {
@@ -133,7 +131,7 @@ impl DailyActivityDatabase for FakeDatabase {
         query: &'database SqlQuery,
     ) -> DatabaseFuture<'database, Option<Vec<DatabaseRow>>> {
         self.queries.lock().unwrap().push(query.clone());
-        let barrier = self.aggregate_barrier.clone();
+        let aggregate_barrier = self.aggregate_barrier.clone();
         let reply = self
             .raw
             .lock()
@@ -141,17 +139,13 @@ impl DailyActivityDatabase for FakeDatabase {
             .pop_front()
             .unwrap_or(RawReply::Rows(Vec::new()));
         Box::pin(async move {
-            if let Some(barrier) = barrier {
+            if let Some(barrier) = aggregate_barrier {
                 barrier.wait().await;
             }
             match reply {
                 RawReply::Rows(rows) => Ok(Some(rows)),
                 RawReply::None => Ok(None),
                 RawReply::Failure(failure) => Err(fake_error(failure)),
-                RawReply::Pending => {
-                    std::future::pending::<()>().await;
-                    Ok(None)
-                }
             }
         })
     }
@@ -160,7 +154,7 @@ impl DailyActivityDatabase for FakeDatabase {
         &'database self,
         _tokens: &'database [String],
     ) -> DatabaseFuture<'database, Vec<VerificationTokenRow>> {
-        *self.active_calls.lock().unwrap() += 1;
+        self.active_calls.fetch_add(1, Ordering::Relaxed);
         reply_future(self.active.lock().unwrap().clone())
     }
 
@@ -169,11 +163,11 @@ impl DailyActivityDatabase for FakeDatabase {
         tokens: &'database [String],
     ) -> DatabaseFuture<'database, Vec<DeletedVerificationTokenRow>> {
         self.deleted_calls.lock().unwrap().push(tokens.to_vec());
-        let pending = self.deleted_pending;
+        let deleted_pending = self.deleted_pending;
         let reply = self.deleted.lock().unwrap().clone();
         Box::pin(async move {
-            if pending {
-                std::future::pending::<()>().await;
+            if deleted_pending {
+                pending::<()>().await;
             }
             match reply {
                 Ok(rows) => Ok(rows),
@@ -188,7 +182,7 @@ impl DailyActivityDatabase for FakeDatabase {
         predicate: &'database SqlQuery,
     ) -> CountReply<'database> {
         self.record_daily(table, predicate, 0, 0);
-        let reply = self.count.lock().unwrap().clone();
+        let reply = *self.count.lock().unwrap();
         barrier_reply(self.daily_barrier.clone(), reply)
     }
 
@@ -198,7 +192,7 @@ impl DailyActivityDatabase for FakeDatabase {
         predicate: &'database SqlQuery,
         skip: i64,
         take: i64,
-    ) -> DatabaseFuture<'database, Vec<crate::daily_activity_contracts::DailyActivityRow>> {
+    ) -> DatabaseFuture<'database, Vec<DailyActivityRow>> {
         self.record_daily(table, predicate, skip, take);
         barrier_reply(
             self.daily_barrier.clone(),
@@ -214,15 +208,12 @@ where
     barrier_reply(None, reply)
 }
 
-fn barrier_reply<T>(
-    barrier: Option<Arc<Barrier>>,
-    reply: FakeResult<T>,
-) -> DatabaseFuture<'static, T>
+fn barrier_reply<T>(gate: Option<Arc<Barrier>>, reply: FakeResult<T>) -> DatabaseFuture<'static, T>
 where
     T: Send + 'static,
 {
     Box::pin(async move {
-        if let Some(barrier) = barrier {
+        if let Some(barrier) = gate {
             barrier.wait().await;
         }
         match reply {
@@ -465,18 +456,21 @@ impl CapturedLogs {
     }
 }
 
-impl std::io::Write for CapturedLogs {
-    fn write(&mut self, buffer: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buffer);
-        Ok(buffer.len())
+impl Write for CapturedLogs {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
-    fn flush(&mut self) -> std::io::Result<()> {
+    fn flush(&mut self) -> IoResult<()> {
         Ok(())
     }
 }
 
-impl<'writer> tracing_subscriber::fmt::MakeWriter<'writer> for CapturedLogs {
+impl<'writer> MakeWriter<'writer> for CapturedLogs {
     type Writer = Self;
 
     fn make_writer(&'writer self) -> Self::Writer {

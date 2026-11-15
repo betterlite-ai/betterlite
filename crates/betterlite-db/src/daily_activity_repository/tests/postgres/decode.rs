@@ -2,6 +2,64 @@ use super::support::run;
 use crate::daily_activity_repository::rows::{DatabaseRow, RowError};
 use rust_decimal::Decimal;
 
+fn assert_text_and_integer_columns(row: &DatabaseRow) {
+    assert_eq!(row.optional::<String>("t").unwrap().as_deref(), Some("a"));
+    assert_eq!(row.optional::<String>("v").unwrap().as_deref(), Some("b"));
+    assert_eq!(row.optional::<String>("b").unwrap().as_deref(), Some("c"));
+    assert_eq!(row.optional::<String>("n").unwrap().as_deref(), Some("d"));
+    assert_eq!(row.optional::<i64>("i8").unwrap(), Some(8));
+    assert_eq!(row.optional::<i64>("i4").unwrap(), Some(4));
+    assert_eq!(row.optional::<i64>("i2").unwrap(), Some(2));
+}
+
+fn assert_numeric_columns(row: &DatabaseRow) {
+    assert_eq!(
+        row.optional::<Decimal>("f8").unwrap(),
+        Some(Decimal::new(15, 1))
+    );
+    assert_eq!(
+        row.optional::<Decimal>("f4").unwrap(),
+        Some(Decimal::new(25, 2))
+    );
+    assert_eq!(
+        row.optional::<Decimal>("num").unwrap(),
+        Some(Decimal::new(45, 1))
+    );
+}
+
+fn assert_null_columns(row: &DatabaseRow) {
+    assert_eq!(row.optional::<String>("nt").unwrap(), None);
+    assert_eq!(row.optional::<i64>("ni").unwrap(), None);
+    assert_eq!(row.optional::<Decimal>("nf").unwrap(), None);
+    assert_eq!(row.optional::<Decimal>("nnum").unwrap(), None);
+    assert_eq!(row.integer_if_present("i8").unwrap(), Some(8));
+    assert_eq!(row.integer_if_present("ni").unwrap(), None);
+    assert_eq!(row.integer_if_present("absent").unwrap(), None);
+}
+
+fn assert_type_errors(row: &DatabaseRow) {
+    assert!(matches!(
+        row.optional::<String>("absent"),
+        Err(RowError::MissingColumn { .. })
+    ));
+    assert!(matches!(
+        row.optional::<String>("i8"),
+        Err(RowError::ColumnType { .. })
+    ));
+    assert!(matches!(
+        row.optional::<i64>("t"),
+        Err(RowError::ColumnType { .. })
+    ));
+    assert!(matches!(
+        row.optional::<Decimal>("t"),
+        Err(RowError::ColumnType { .. })
+    ));
+    assert!(matches!(
+        row.integer_if_present("t"),
+        Err(RowError::ColumnType { .. })
+    ));
+}
+
 #[tokio::test]
 async fn postgres_decode_every_column_type() {
     run(|pool| async move {
@@ -18,52 +76,10 @@ async fn postgres_decode_every_column_type() {
             .await
             .unwrap();
         let row = DatabaseRow::decode(&rows[0]).unwrap();
-        assert_eq!(row.optional::<String>("t").unwrap().as_deref(), Some("a"));
-        assert_eq!(row.optional::<String>("v").unwrap().as_deref(), Some("b"));
-        assert_eq!(row.optional::<String>("b").unwrap().as_deref(), Some("c"));
-        assert_eq!(row.optional::<String>("n").unwrap().as_deref(), Some("d"));
-        assert_eq!(row.optional::<i64>("i8").unwrap(), Some(8));
-        assert_eq!(row.optional::<i64>("i4").unwrap(), Some(4));
-        assert_eq!(row.optional::<i64>("i2").unwrap(), Some(2));
-        assert_eq!(
-            row.optional::<Decimal>("f8").unwrap(),
-            Some(Decimal::new(15, 1))
-        );
-        assert_eq!(
-            row.optional::<Decimal>("f4").unwrap(),
-            Some(Decimal::new(25, 2))
-        );
-        assert_eq!(
-            row.optional::<Decimal>("num").unwrap(),
-            Some(Decimal::new(45, 1))
-        );
-        assert_eq!(row.optional::<String>("nt").unwrap(), None);
-        assert_eq!(row.optional::<i64>("ni").unwrap(), None);
-        assert_eq!(row.optional::<Decimal>("nf").unwrap(), None);
-        assert_eq!(row.optional::<Decimal>("nnum").unwrap(), None);
-        assert_eq!(row.integer_if_present("i8").unwrap(), Some(8));
-        assert_eq!(row.integer_if_present("ni").unwrap(), None);
-        assert_eq!(row.integer_if_present("absent").unwrap(), None);
-        assert!(matches!(
-            row.optional::<String>("absent"),
-            Err(RowError::MissingColumn { .. })
-        ));
-        assert!(matches!(
-            row.optional::<String>("i8"),
-            Err(RowError::ColumnType { .. })
-        ));
-        assert!(matches!(
-            row.optional::<i64>("t"),
-            Err(RowError::ColumnType { .. })
-        ));
-        assert!(matches!(
-            row.optional::<Decimal>("t"),
-            Err(RowError::ColumnType { .. })
-        ));
-        assert!(matches!(
-            row.integer_if_present("t"),
-            Err(RowError::ColumnType { .. })
-        ));
+        assert_text_and_integer_columns(&row);
+        assert_numeric_columns(&row);
+        assert_null_columns(&row);
+        assert_type_errors(&row);
     })
     .await;
 }
