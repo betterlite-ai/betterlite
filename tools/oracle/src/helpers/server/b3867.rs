@@ -198,7 +198,7 @@ fn principal(auth: &AuthInput) -> Result<Principal, Box<HelperError>> {
     let roles = match auth.user_role.as_deref() {
         Some("proxy_admin") => json!(["platform_admin"]),
         Some("proxy_admin_view_only") => json!(["platform_viewer"]),
-        Some(_unrecognized) | None => json!([]),
+        Some(_) | None => json!([]),
     };
     let teams = match &auth.team_id {
         Some(id) => json!([{"id": id}]),
