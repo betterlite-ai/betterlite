@@ -78,11 +78,11 @@ fn decode_reply(
     reply: Option<&Reply>,
     hook: &mut Vec<Value>,
 ) -> Result<Option<RerankResponse>, Box<HelperError>> {
-    let decoded = reply.map(|reply| {
+    let decoded = reply.map(|answer| {
         decode_host_rerank(
             provider,
-            reply.status,
-            reply.body.as_bytes(),
+            answer.status,
+            answer.body.as_bytes(),
             || Uuid::from_u128(FALLBACK_ID),
             |text| hook.push(json!(text)),
         )
