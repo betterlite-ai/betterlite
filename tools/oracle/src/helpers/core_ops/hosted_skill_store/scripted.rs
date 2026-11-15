@@ -140,14 +140,14 @@ impl Scripted {
         let metadata = write
             .metadata
             .as_deref()
-            .map(serde_json::from_str::<Value>)
+            .map(serde_json::from_str)
             .transpose()
             .map_err(TableError::Row)?;
         self.record_create(write, metadata.as_ref());
         self.failure("create")?;
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let stored = metadata.unwrap_or_else(|| Value::Object(Map::new()));
-        let row = serde_json::from_value::<SkillTable>(json!({
+        let row = serde_json::from_value(json!({
             "skill_id": &write.skill_id,
             "display_title": &write.display_title,
             "description": &write.description,
@@ -164,9 +164,14 @@ impl Scripted {
             "updated_by": &write.updated_by,
         }))
         .map_err(TableError::Row)?;
-        state.rows.insert(write.skill_id.clone(), row.clone());
+        let stored_row = state
+            .rows
+            .entry(write.skill_id.clone())
+            .insert_entry(row)
+            .get()
+            .clone();
         drop(state);
-        Ok(row)
+        Ok(stored_row)
     }
 
     fn found_row(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
