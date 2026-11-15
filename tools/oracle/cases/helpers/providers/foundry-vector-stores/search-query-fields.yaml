@@ -38,4 +38,7 @@ call:
           extra_body: null
           embedding: null
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - pointer: /value/searches/2/url
+      why: betterlite percent-encodes the store id as one path segment while LiteLLM interpolates it literally, a recorded deviation (docs/deviations/B558.yaml)

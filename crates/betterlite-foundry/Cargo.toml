@@ -15,6 +15,7 @@ betterlite-openai = { path = "../betterlite-openai" }
 chrono.workspace = true
 indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+percent-encoding.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true

@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
@@ -12,6 +13,12 @@ const DEFAULT_TOP_K: i64 = 10;
 const DEFAULT_SEARCH: &str = "*";
 const DEFAULT_SELECT: &str = "id,content";
 const VECTOR_KIND: &str = "vector";
+// the store id fills one path segment: unreserved bytes stay as written and every other byte is escaped
+const STORE_ID_ENCODE_SET: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'-')
+    .remove(b'.')
+    .remove(b'_')
+    .remove(b'~');
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -101,7 +108,8 @@ fn build_search_call(
     Ok(SearchCall {
         url: format!(
             "{}/indexes/{}/docs/search?api-version={SEARCH_API_VERSION}",
-            request.api_base, request.vector_store_id
+            request.api_base,
+            utf8_percent_encode(request.vector_store_id, STORE_ID_ENCODE_SET)
         ),
         body: SearchBody {
             search: DEFAULT_SEARCH,

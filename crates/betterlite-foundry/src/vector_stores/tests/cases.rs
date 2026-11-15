@@ -348,7 +348,10 @@ fn search_query_fields_options() {
     assert_eq!(call.body.top, 3);
     assert_eq!(call.body.vector_queries[0].top_k, 3);
     assert_eq!(call.body.vector_queries[0].fields, "customVector");
-    assert!(call.url.contains("/indexes/store/with?literal/docs/search"));
+    assert!(
+        call.url
+            .contains("/indexes/store%2Fwith%3Fliteral/docs/search")
+    );
     assert_eq!(executor.calls()[0].query, "first  third");
     assert_eq!(
         executor.calls()[0].configuration.get("dimensions"),
@@ -452,7 +455,30 @@ fn vector_query_with_embedding() {
         call.url,
         "https://foundry-search.example/indexes/store-2/docs/search?api-version=2024-07-01"
     );
+    vector_query_with_embedding_encodes_store_id();
     vector_query_with_embedding_async();
+}
+
+// the store id fills one path segment, so a traversal or query id cannot retarget the request (docs/deviations/B558.yaml)
+fn vector_query_with_embedding_encodes_store_id() {
+    let executor = FixtureExecutor::new(vec![0.5]);
+    let litellm_params = embedding_params();
+    let query = SearchQuery::Text("encoded".to_owned());
+    let mut logging = SearchLogging::default();
+    let call = search_request(AzureSearchStoreRequest {
+        vector_store_id: "../../indexes/other/docs/search?api-version=2024-07-01&x=",
+        query: &query,
+        optional_params: &Params::new(),
+        api_base: API_BASE,
+        litellm_params: &litellm_params,
+        logging: &mut logging,
+        embedding_executor: &executor,
+    })
+    .expect("search");
+    assert_eq!(
+        call.url,
+        "https://foundry-search.example/indexes/..%2F..%2Findexes%2Fother%2Fdocs%2Fsearch%3Fapi-version%3D2024-07-01%26x%3D/docs/search?api-version=2024-07-01"
+    );
 }
 
 fn vector_query_with_embedding_async() {
