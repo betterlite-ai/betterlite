@@ -31,14 +31,14 @@ pub struct ModelDescriptorBuilder {
 impl ModelDescriptorBuilder {
     #[must_use]
     pub fn rated_model(&self, requested: Option<&str>) -> Option<RateLimitedModel> {
-        let requested = requested.filter(|name| !name.is_empty())?;
+        let wanted = requested.filter(|name| !name.is_empty())?;
         let group = self
             .resolver
-            .resolve(requested)
+            .resolve(wanted)
             .filter(|group| !group.is_empty())
-            .unwrap_or_else(|| requested.to_owned());
+            .unwrap_or_else(|| wanted.to_owned());
         Some(RateLimitedModel {
-            requested: requested.to_owned(),
+            requested: wanted.to_owned(),
             group,
         })
     }

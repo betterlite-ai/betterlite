@@ -33,15 +33,15 @@ fn builder(window_size: i64, aliases: &[(&str, &str)]) -> ModelDescriptorBuilder
 }
 
 fn auth(fields: &str) -> UserAPIKeyAuth {
-    let fields: BTreeMap<String, JsonData> = serde_json::from_str(fields).expect("auth fields");
-    UserAPIKeyAuth::construct(AuthInput::Dict(fields)).expect("the auth fixture builds")
+    let values: BTreeMap<String, JsonData> = serde_json::from_str(fields).expect("auth fields");
+    UserAPIKeyAuth::construct(AuthInput::Dict(values)).expect("the auth fixture builds")
 }
 
 fn metadata(fields: &str) -> BTreeMap<String, JsonData> {
     serde_json::from_str(fields).expect("request metadata fields")
 }
 
-fn rate_limit(
+const fn rate_limit(
     requests_per_unit: Option<i64>,
     tokens_per_unit: Option<i64>,
     window_size: i64,

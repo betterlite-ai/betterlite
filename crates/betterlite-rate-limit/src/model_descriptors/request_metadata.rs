@@ -38,6 +38,6 @@ impl ModelDescriptorBuilder {
 fn request_metadata_value(value: Option<&JsonData>) -> JsonData {
     match value {
         None | Some(JsonData::Null) => JsonData::Object(BTreeMap::new()),
-        Some(value) => value.clone(),
+        Some(present) => present.clone(),
     }
 }
