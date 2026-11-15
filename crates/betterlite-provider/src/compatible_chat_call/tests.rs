@@ -328,14 +328,14 @@ fn a_wrong_option_type_names_the_field(#[case] field: &str, #[case] value: Json)
 }
 
 #[rstest]
-#[case(true, None, false)]
-#[case(true, Some(true), true)]
-#[case(true, Some(false), false)]
-#[case(false, None, true)]
+#[case(true, None, None)]
+#[case(true, Some(true), Some(true))]
+#[case(true, Some(false), Some(false))]
+#[case(false, None, Some(true))]
 fn sync_stream_inserts_the_stream_key_only_without_fake_stream(
     #[case] fake_stream: bool,
     #[case] extra: Option<bool>,
-    #[case] expected: bool,
+    #[case] expected: Option<bool>,
 ) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let (mut state, env) = logging(&redactor);
@@ -349,7 +349,7 @@ fn sync_stream_inserts_the_stream_key_only_without_fake_stream(
         );
     }
     let plan = plan(&call, &mut state, &env);
-    assert_eq!(plan.body.contains_key("stream"), expected);
+    assert_eq!(plan.body.get("stream"), expected.map(Json::Bool).as_ref());
 }
 
 #[test]
