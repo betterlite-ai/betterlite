@@ -13,21 +13,20 @@ pub struct AccountLimits<'auth> {
     pub organization_tpm_limit: Option<i64>,
 }
 
-impl UserAPIKeyAuth {
-    #[must_use]
-    pub fn account_limits(&self) -> AccountLimits<'_> {
-        AccountLimits {
-            hashed_api_key: self
-                .extra
-                .api_key
-                .0
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            org_id: self.view.token.org_id.as_deref(),
-            team_id: self.view.token.team_id.as_deref(),
-            project_id: self.view.token.project_id.as_deref(),
-            organization_rpm_limit: self.view.organization_rpm_limit,
-            organization_tpm_limit: self.view.organization_tpm_limit,
-        }
+// The type keeps its one impl block in resolved_key, so the readers are a free function.
+#[must_use]
+pub fn account_limits(auth: &UserAPIKeyAuth) -> AccountLimits<'_> {
+    AccountLimits {
+        hashed_api_key: auth
+            .extra
+            .api_key
+            .0
+            .as_ref()
+            .map(ExposeSecret::expose_secret),
+        org_id: auth.view.token.org_id.as_deref(),
+        team_id: auth.view.token.team_id.as_deref(),
+        project_id: auth.view.token.project_id.as_deref(),
+        organization_rpm_limit: auth.view.organization_rpm_limit,
+        organization_tpm_limit: auth.view.organization_tpm_limit,
     }
 }

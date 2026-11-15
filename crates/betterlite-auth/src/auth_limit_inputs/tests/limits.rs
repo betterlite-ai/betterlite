@@ -199,7 +199,7 @@ fn absent_router_or_models() {
 #[case::bool_false(DeploymentLimitValue::Bool(false), 0)]
 #[case::integer(DeploymentLimitValue::Integer(12), 12)]
 #[case::unsigned(DeploymentLimitValue::Unsigned(12), 12)]
-fn integer_string_bytes_bool(value: DeploymentLimitValue, expected: i64) {
+fn integer_string_bytes_bool(#[case] value: DeploymentLimitValue, #[case] expected: i64) {
     let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
     let limits = get_key_model_rpm_limit(
         &support::auth(&[]),
@@ -217,7 +217,7 @@ fn integer_string_bytes_bool(value: DeploymentLimitValue, expected: i64) {
 #[case::truncates_half_up(2.5, 2)]
 #[case::truncates_half_down(-2.5, -2)]
 #[case::keeps_whole(3.0, 3)]
-fn decimal_truncation(value: f64, expected: i64) {
+fn decimal_truncation(#[case] value: f64, #[case] expected: i64) {
     let catalog = support::catalog(
         "gpt-4",
         vec![support::deployment(
@@ -266,7 +266,7 @@ fn malformed_limit_skipped() {
 #[rstest]
 #[case::infinite(DeploymentLimitValue::Float(f64::INFINITY))]
 #[case::unsigned_too_large(DeploymentLimitValue::Unsigned(u64::MAX))]
-fn overflow_propagates(value: DeploymentLimitValue) {
+fn overflow_propagates(#[case] value: DeploymentLimitValue) {
     let catalog = support::catalog("gpt-4", vec![support::deployment(Some(value), None)]);
     let failure = get_key_model_rpm_limit(
         &support::auth(&[]),
@@ -321,9 +321,10 @@ fn returned_map_not_model_filtered() {
             ),
         ]),
     )]);
-    let limits = get_key_model_rpm_limit(&budget, &support::query(Some("gpt-4"), None)).unwrap();
+    let budget_limits =
+        get_key_model_rpm_limit(&budget, &support::query(Some("gpt-4"), None)).unwrap();
     assert_eq!(
-        limits,
+        budget_limits,
         Some(support::limits(&[("gpt-4", 10), ("gpt-3", 5)]))
     );
 }

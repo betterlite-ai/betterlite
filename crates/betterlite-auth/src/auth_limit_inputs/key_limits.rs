@@ -167,7 +167,9 @@ fn limit_integer(value: &JsonData) -> Option<i64> {
 }
 
 fn json_integer(number: &Number) -> Option<i64> {
-    number
-        .as_i64()
-        .or_else(|| number.as_u64().and_then(|value| i64::try_from(value).ok()))
+    if let Some(value) = number.as_i64() {
+        return Some(value);
+    }
+    let value = number.as_u64()?;
+    i64::try_from(value).ok()
 }

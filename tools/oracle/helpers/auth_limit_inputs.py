@@ -1,5 +1,5 @@
 from logging import Handler, Logger, LogRecord, getLogger
-from typing import Literal, NotRequired, TypeAlias, TypedDict, override
+from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.proxy import proxy_server
 from litellm.proxy._types import UpdateKeyRequest, UserAPIKeyAuth
@@ -17,6 +17,7 @@ from litellm.proxy.auth.auth_utils import (
 from litellm.router import Router
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from starlette.exceptions import HTTPException
+from typing_extensions import override
 
 
 class DeploymentInput(TypedDict):

@@ -91,13 +91,11 @@ fn estimate_from_metadata(
 }
 
 fn validated_estimate(raw: &JsonData) -> Option<i64> {
-    match positive_int(raw) {
-        Some(estimate) => Some(estimate),
-        None => {
-            warn_ignored(ESTIMATED_OUTPUT_TOKENS_FIELD);
-            None
-        }
-    }
+    let Some(estimate) = positive_int(raw) else {
+        warn_ignored(ESTIMATED_OUTPUT_TOKENS_FIELD);
+        return None;
+    };
+    Some(estimate)
 }
 
 fn validated_estimates(raw: &JsonData) -> Option<BTreeMap<String, i64>> {
@@ -178,16 +176,17 @@ fn requested_estimates(
     } else {
         existing_metadata
     };
-    let global = match request.estimate {
-        Some(estimate) => Some(JsonData::Number(Number::from(estimate))),
-        None => base
-            .get(ESTIMATED_OUTPUT_TOKENS_FIELD)
-            .and_then(present_value),
-    };
-    let per_model = match request.estimate_per_model {
-        Some(estimates) => Some(estimate_map_value(estimates)),
-        None => base.get(ESTIMATE_PER_MODEL_FIELD).and_then(present_value),
-    };
+    let global = request.estimate.map_or_else(
+        || {
+            base.get(ESTIMATED_OUTPUT_TOKENS_FIELD)
+                .and_then(present_value)
+        },
+        |estimate| Some(JsonData::Number(Number::from(estimate))),
+    );
+    let per_model = request.estimate_per_model.map_or_else(
+        || base.get(ESTIMATE_PER_MODEL_FIELD).and_then(present_value),
+        |estimates| Some(estimate_map_value(estimates)),
+    );
     (global, per_model)
 }
 
@@ -209,36 +208,34 @@ pub(super) fn present_value(value: &JsonData) -> Option<JsonData> {
 pub(super) fn same_value(left: Option<&JsonData>, right: Option<&JsonData>) -> bool {
     match (left, right) {
         (None, None) => true,
-        (Some(left), Some(right)) => left == right || numbers_equal(left, right),
+        (Some(first), Some(second)) => first == second || numbers_equal(first, second),
         (Some(_), None) | (None, Some(_)) => false,
     }
 }
 
 fn numbers_equal(left: &JsonData, right: &JsonData) -> bool {
-    let (JsonData::Number(left), JsonData::Number(right)) = (left, right) else {
+    let (JsonData::Number(first), JsonData::Number(second)) = (left, right) else {
         return false;
     };
-    number_equals(left, right)
+    number_equals(first, second)
 }
 
 // Python compares 2000 and 2000.0 equal, so a stored float must not look like a change
 fn number_equals(left: &Number, right: &Number) -> bool {
-    if let (Some(left), Some(right)) = (left.as_i64(), right.as_i64()) {
-        return left == right;
+    if let (Some(first), Some(second)) = (left.as_i64(), right.as_i64()) {
+        return first == second;
     }
-    if let (Some(left), Some(right)) = (left.as_u64(), right.as_u64()) {
-        return left == right;
+    if let (Some(first), Some(second)) = (left.as_u64(), right.as_u64()) {
+        return first == second;
     }
-    match (left.as_f64(), right.as_f64()) {
-        (Some(left), Some(right)) => {
-            match (
-                Decimal::from_f64_retain(left),
-                Decimal::from_f64_retain(right),
-            ) {
-                (Some(left), Some(right)) => left == right,
-                _ => false,
-            }
-        }
-        _ => false,
-    }
+    let (Some(first), Some(second)) = (left.as_f64(), right.as_f64()) else {
+        return false;
+    };
+    let (Some(first_decimal), Some(second_decimal)) = (
+        Decimal::from_f64_retain(first),
+        Decimal::from_f64_retain(second),
+    ) else {
+        return false;
+    };
+    first_decimal == second_decimal
 }

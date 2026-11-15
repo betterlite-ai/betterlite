@@ -51,10 +51,9 @@ pub fn model_limit_from_metadata(
     accessor: MetadataAccessor,
     rate_limit_key: ModelRateLimitKey,
 ) -> Option<ModelLimits> {
-    match accessor.metadata(auth) {
-        Some(metadata) => limit_from(metadata, rate_limit_key.field()),
-        None => None,
-    }
+    accessor
+        .metadata(auth)
+        .and_then(|metadata| limit_from(metadata, rate_limit_key.field()))
 }
 
 #[must_use]
@@ -67,10 +66,10 @@ pub fn get_key_mcp_rpm_limit(auth: &UserAPIKeyAuth) -> Option<ModelLimits> {
 
 #[must_use]
 pub fn get_team_mcp_rpm_limit(auth: &UserAPIKeyAuth) -> Option<ModelLimits> {
-    match auth.view.team_metadata.as_ref() {
-        Some(payload) => limit_from(&payload.0, MCP_RPM_LIMIT_FIELD),
-        None => None,
-    }
+    auth.view
+        .team_metadata
+        .as_ref()
+        .and_then(|payload| limit_from(&payload.0, MCP_RPM_LIMIT_FIELD))
 }
 
 #[must_use]

@@ -1,3 +1,4 @@
+use crate::auth_limit_inputs::account::account_limits;
 use crate::auth_limit_inputs::tests::support;
 
 #[test]
@@ -10,7 +11,7 @@ fn account_limits_readers() {
         ("organization_rpm_limit", support::number(100)),
         ("organization_tpm_limit", support::number(1000)),
     ]);
-    let limits = auth.account_limits();
+    let limits = account_limits(&auth);
     assert!(limits.hashed_api_key.is_some_and(|key| !key.is_empty()));
     assert_eq!(limits.org_id, Some("org-1"));
     assert_eq!(limits.team_id, Some("team-1"));
@@ -22,7 +23,7 @@ fn account_limits_readers() {
 #[test]
 fn account_limits_absent_fields_are_none() {
     let auth = support::auth(&[]);
-    let limits = auth.account_limits();
+    let limits = account_limits(&auth);
     assert_eq!(limits.hashed_api_key, None);
     assert_eq!(limits.org_id, None);
     assert_eq!(limits.team_id, None);

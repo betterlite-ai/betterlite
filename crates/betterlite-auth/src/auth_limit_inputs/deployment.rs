@@ -1,3 +1,5 @@
+use std::str;
+
 use betterlite_models::decisions::Json;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
@@ -36,10 +38,10 @@ fn number_value(number: &Number) -> DeploymentLimitValue {
     if let Some(value) = number.as_u64() {
         return DeploymentLimitValue::Unsigned(value);
     }
-    match number.as_f64() {
-        Some(value) => DeploymentLimitValue::Float(value),
-        None => DeploymentLimitValue::Unsupported,
-    }
+    number.as_f64().map_or(
+        DeploymentLimitValue::Unsupported,
+        DeploymentLimitValue::Float,
+    )
 }
 
 // The two per-deployment defaults, with absent and null both unset.
@@ -114,10 +116,9 @@ fn converted_limit(value: &DeploymentLimitValue) -> ConvertedLimit {
         DeploymentLimitValue::Bool(flag) => ConvertedLimit::Value(i64::from(*flag)),
         DeploymentLimitValue::Float(number) => float_limit(*number),
         DeploymentLimitValue::Text(text) => parsed_integer(text),
-        DeploymentLimitValue::Bytes(bytes) => match std::str::from_utf8(bytes) {
-            Ok(text) => parsed_integer(text),
-            Err(_) => ConvertedLimit::Skipped,
-        },
+        DeploymentLimitValue::Bytes(bytes) => {
+            str::from_utf8(bytes).map_or(ConvertedLimit::Skipped, parsed_integer)
+        }
         DeploymentLimitValue::Unsupported => ConvertedLimit::Skipped,
     }
 }
@@ -129,12 +130,9 @@ fn float_limit(number: f64) -> ConvertedLimit {
     if !number.is_finite() {
         return ConvertedLimit::Overflow;
     }
-    match Decimal::from_f64_retain(number).map(|value| value.trunc()) {
-        Some(truncated) => truncated
-            .to_i64()
-            .map_or(ConvertedLimit::Overflow, ConvertedLimit::Value),
-        None => ConvertedLimit::Overflow,
-    }
+    Decimal::from_f64_retain(number)
+        .and_then(|value| value.trunc().to_i64())
+        .map_or(ConvertedLimit::Overflow, ConvertedLimit::Value)
 }
 
 // int() takes surrounding whitespace, a sign, decimal digits and single underscores between them
@@ -144,8 +142,8 @@ fn parsed_integer(text: &str) -> ConvertedLimit {
     if digits.starts_with('_') || digits.ends_with('_') || digits.contains("__") {
         return ConvertedLimit::Skipped;
     }
-    match trimmed.replace('_', "").parse::<i64>() {
-        Ok(number) => ConvertedLimit::Value(number),
-        Err(_) => ConvertedLimit::Skipped,
-    }
+    trimmed
+        .replace('_', "")
+        .parse::<i64>()
+        .map_or(ConvertedLimit::Skipped, ConvertedLimit::Value)
 }

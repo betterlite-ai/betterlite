@@ -30,7 +30,7 @@ fn estimate(
 #[case::whole_float(support::float(12.0), 12)]
 #[case::signed_string(support::text("+12"), 12)]
 #[case::underscored_with_zero_fraction(support::text("1_0.00"), 10)]
-fn positive_int_coercion(value: JsonData, expected: i64) {
+fn positive_int_coercion(#[case] value: JsonData, #[case] expected: i64) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
     let (estimate, warnings) = estimate(&auth, None);
     assert_eq!(estimate, Some(expected));
@@ -41,7 +41,7 @@ fn positive_int_coercion(value: JsonData, expected: i64) {
 #[case::zero(JsonData::Number(serde_json::Number::from(0)))]
 #[case::negative(JsonData::Number(serde_json::Number::from(-5)))]
 #[case::bool_false(JsonData::Bool(false))]
-fn zero_negative_invalid_warn(value: JsonData) {
+fn zero_negative_invalid_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
     let (estimate, warnings) = estimate(&auth, None);
     assert_eq!(estimate, None);
@@ -60,7 +60,7 @@ fn zero_negative_invalid_warn(value: JsonData) {
 #[case::sign_only(support::text("+"))]
 #[case::list(JsonData::Array(Vec::new()))]
 #[case::map(JsonData::Object(std::collections::BTreeMap::new()))]
-fn malformed_scalar_warn(value: JsonData) {
+fn malformed_scalar_warn(#[case] value: JsonData) {
     let auth = support::auth(&[("metadata", global_metadata(value))]);
     let (estimate, warnings) = estimate(&auth, None);
     assert_eq!(estimate, None);
