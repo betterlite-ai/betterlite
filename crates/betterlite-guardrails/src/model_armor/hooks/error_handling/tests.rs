@@ -73,9 +73,9 @@ fn error_handling_a_response_passes_through() {
 #[case::api(CallFailure::Api)]
 #[case::transport(CallFailure::Transport)]
 fn error_handling_call_errors_follow_fail_on_error(#[case] kind: CallFailure) {
-    let closed = call_outcome(call_error(kind), true, "pre-call");
+    let closed = call_outcome(Err(call_error(kind)), true, "pre-call");
     assert!(closed_matches(kind, &closed));
-    let open = call_outcome(call_error(kind), false, "pre-call");
+    let open = call_outcome(Err(call_error(kind)), false, "pre-call");
     assert!(open.expect("fail open").is_none());
 }
 

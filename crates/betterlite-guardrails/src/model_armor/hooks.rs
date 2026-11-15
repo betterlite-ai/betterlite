@@ -2,12 +2,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::time::SystemTime;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
-use crate::guardrail_base::inputs::GuardrailLogTarget;
+use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 use crate::guardrail_records::invocation::GuardrailInvocation;
 use crate::guardrail_records::record::GuardrailSpanSink;
+use crate::guardrail_selection::gate::GuardrailSelection as _;
 use crate::model_armor::config::ModelArmorGuardrail;
 use crate::model_armor::decisions::model_response::CallResponse;
+use crate::model_armor::decisions::{
+    build_block_error_detail, build_logging_response, should_block_content,
+};
 use crate::model_armor::transport::ModelArmorTransport;
 use crate::model_armor::transport::tokens::ArmorTokens;
 
@@ -28,6 +34,7 @@ mod timing;
 
 use error_handling::HookError;
 use events::HookPhase;
+use logging_information::ApplyVerdict;
 
 pub const MODEL_ARMOR_PROVIDER: &str = "model_armor";
 
@@ -78,7 +85,7 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
     ) -> Result<(), HookError<T::Error>> {
         let scanned = post_call::scan(self, data, response, context).await;
         error_handling::hook_outcome(scanned, self.fail_on_error, "post-call")?;
-        self.process_response(data, context)
+        logging::process_response(self, data, context)
     }
 
     // LiteLLM's `except` clauses around a hook and its _process_response call on the way out
@@ -90,7 +97,60 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
         context: &mut HookContext<'_>,
     ) -> Result<(), HookError<T::Error>> {
         error_handling::hook_outcome(scanned, self.fail_on_error, phase.hook_name())?;
-        self.process_response(data, context)
+        logging::process_response(self, data, context)
+    }
+
+    // LiteLLM's apply_guardrail: scan, record the verdict, and block only outside logging_only mode
+    pub async fn apply_guardrail(
+        &self,
+        inputs: GuardrailApiInputs,
+        data: &mut Data,
+        input_type: GuardrailInputType,
+        context: &mut HookContext<'_>,
+    ) -> Result<GuardrailApiInputs, HookError<T::Error>> {
+        let text = logging_only::joined_texts(&inputs);
+        if text.is_empty() {
+            logging::process_response(self, data, context)?;
+            return Ok(inputs);
+        }
+        let started_at = (self.clock)();
+        let result = self
+            .transport
+            .make_model_armor_request(Some(&text), logging_only::source(input_type), None)
+            .await;
+        let times = timing::between(started_at, (self.clock)());
+        let armor = match result {
+            Ok(armor) => armor,
+            Err(error) => {
+                let verdict = logging_only::failure_verdict(error)?;
+                logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
+                return Ok(inputs);
+            }
+        };
+        let flagged = should_block_content(&armor.verdict, false);
+        let response = build_logging_response(&armor.body, self.guardrail.sanitize_error_detail);
+        let verdict = if flagged {
+            ApplyVerdict::Flagged { response }
+        } else {
+            ApplyVerdict::Success { response }
+        };
+        logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
+        if flagged
+            && !self
+                .guardrail
+                .base
+                .event_hook_is_event_type(GuardrailEventHooks::LoggingOnly)
+        {
+            return Err(HookError::Blocked {
+                status: 400,
+                detail: build_block_error_detail(
+                    logging_only::block_message(input_type),
+                    &armor.body,
+                    self.guardrail.sanitize_error_detail,
+                ),
+            });
+        }
+        Ok(inputs)
     }
 }
 

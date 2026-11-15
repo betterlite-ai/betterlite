@@ -443,10 +443,11 @@ where
     }
 }
 
-pub(crate) fn field<'value>(value: &'value GuardrailValue, name: &str) -> &'value GuardrailValue {
+pub(crate) fn field(value: &GuardrailValue, name: &str) -> GuardrailValue {
     match value {
         GuardrailValue::Object(fields) => fields
             .get(name)
+            .cloned()
             .unwrap_or_else(|| panic!("no field {name} in {value:?}")),
         other => panic!("expected an object, got {other:?}"),
     }

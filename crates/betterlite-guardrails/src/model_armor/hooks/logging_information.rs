@@ -55,7 +55,7 @@ where
         guardrail_mode: Some(GuardrailRecordMode::Event(GuardrailEventHooks::PostCall)),
         guardrail_response: logged,
         guardrail_status: GuardrailStatus::Success,
-        start_time: metadata::request_start_time(data)?,
+        start_time: metadata::request_start_time(data),
         end_time: None,
         duration: None,
         masked_entity_count: None,

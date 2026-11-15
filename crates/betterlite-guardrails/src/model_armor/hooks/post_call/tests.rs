@@ -42,7 +42,7 @@ async fn post_call_blocks_a_flagged_response_with_the_400_detail() {
     assert_eq!(field(&entries[0], "guardrail_status"), text("success"));
     assert_eq!(
         field(
-            field(&entries[0], "guardrail_response"),
+            &field(&entries[0], "guardrail_response"),
             "model_armor_status"
         ),
         text("blocked")
@@ -73,8 +73,8 @@ async fn post_call_records_the_standard_logging_entry() {
     assert_eq!(field(entry, "duration"), GuardrailValue::Null);
     assert_eq!(field(entry, "masked_entity_count"), GuardrailValue::Null);
     let logged = field(entry, "guardrail_response");
-    assert_eq!(field(logged, "model_armor_response"), value(CLEAN));
-    assert_eq!(field(logged, "model_armor_status"), text("success"));
+    assert_eq!(field(&logged, "model_armor_response"), value(CLEAN));
+    assert_eq!(field(&logged, "model_armor_status"), text("success"));
 }
 
 #[tokio::test]
@@ -243,9 +243,9 @@ async fn post_call_does_not_mask_without_the_setting() {
 }
 
 #[tokio::test]
-async fn post_call_rejects_a_start_time_that_is_not_a_number() {
-    let fixture = armor(vec![(StatusCode::OK, CLEAN.to_owned())]).await;
-    let hooks = fixture.hooks();
+async fn post_call_blocks_a_flagged_response_whatever_the_start_time_is() {
+    let fixture = armor(vec![(StatusCode::OK, BLOCKED.to_owned())]).await;
+    let hooks = fixture.hooks_fail_open();
     let mut request = prompt_data();
     request.insert("start_time".to_owned(), text("soon"));
     let mut response = model_response(r#"{"choices":[{"message":{"content":"hello"}}]}"#);
@@ -253,6 +253,13 @@ async fn post_call_rejects_a_start_time_that_is_not_a_number() {
     let error = hooks
         .post_call_success(&mut request, &mut response, &mut recorder.context())
         .await
-        .expect_err("field error");
-    assert!(matches!(error, HookError::Field(_)));
+        .expect_err("blocked");
+    let (status, detail) = blocked(error);
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail.get("error"),
+        Some(&text("Response blocked by Model Armor"))
+    );
+    let entries = standard_records(&recorder);
+    assert_eq!(field(&entries[0], "start_time"), GuardrailValue::Null);
 }

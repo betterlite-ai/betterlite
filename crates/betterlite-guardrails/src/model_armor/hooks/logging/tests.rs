@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
 
+use crate::model_armor::hooks::logging::process_response;
 use crate::model_armor::hooks::tests::support::{
     RECORDS, Recorder, armor, armor_with, data, field, prompt_data, records, settings_for, text,
     value,
@@ -17,9 +18,7 @@ async fn logging_records_the_stored_response_and_the_intervened_status() {
     let mut request =
         data(r#"{"metadata":{"_model_armor_response":{"x":1},"_model_armor_status":"blocked"}}"#);
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PostCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "metadata");
     assert_eq!(entries.len(), 1);
     let entry = &entries[0];
@@ -42,9 +41,7 @@ async fn logging_defaults_to_an_empty_response_and_success() {
     let hooks = fixture.hooks();
     let mut request = prompt_data();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "metadata");
     assert_eq!(entries.len(), 1);
     assert_eq!(
@@ -63,9 +60,7 @@ async fn logging_reads_the_litellm_metadata_bucket_first() {
         r#"{"metadata":{"_model_armor_response":"old","_model_armor_status":"success"},"litellm_metadata":{"_model_armor_response":"new","_model_armor_status":"blocked"}}"#,
     );
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PostCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "litellm_metadata");
     assert_eq!(entries.len(), 1);
     assert_eq!(field(&entries[0], "guardrail_response"), text("new"));
@@ -82,9 +77,7 @@ async fn logging_without_an_event_type_records_the_configured_mode() {
     let hooks = fixture.hooks();
     let mut request = prompt_data();
     let mut recorder = Recorder::new(None);
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "metadata");
     assert_eq!(
         field(&entries[0], "guardrail_mode"),
@@ -98,9 +91,7 @@ async fn logging_records_the_invocation_event_type_over_the_configured_hook() {
     let hooks = fixture.hooks();
     let mut request = prompt_data();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PostCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "metadata");
     assert_eq!(field(&entries[0], "guardrail_mode"), text("post_call"));
 }
@@ -111,9 +102,7 @@ async fn logging_syncs_the_records_into_the_log_target() {
     let hooks = fixture.hooks();
     let mut request = prompt_data();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PostCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let target = recorder.log_target.as_ref().expect("target");
     let params = target.litellm_params.as_ref().expect("params");
     let Some(GuardrailValue::Object(metadata)) = params.get("metadata") else {
@@ -132,9 +121,7 @@ async fn logging_without_a_log_target_still_records() {
     let mut request = prompt_data();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PostCall));
     recorder.log_target = None;
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     assert_eq!(records(&request, "metadata").len(), 1);
 }
 
@@ -146,9 +133,7 @@ async fn logging_appends_to_the_existing_records() {
         r#"{"metadata":{"standard_logging_guardrail_information":[{"guardrail_name":"first"}]}}"#,
     );
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
-    hooks
-        .process_response(&mut request, &mut recorder.context())
-        .expect("record");
+    process_response(&hooks, &mut request, &mut recorder.context()).expect("record");
     let entries = records(&request, "metadata");
     assert_eq!(entries.len(), 2);
     assert_eq!(field(&entries[0], "guardrail_name"), text("first"));

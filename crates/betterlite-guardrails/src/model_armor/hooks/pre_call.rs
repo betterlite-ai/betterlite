@@ -18,7 +18,7 @@ pub(super) async fn scan<T>(
     data: &mut Data,
     phase: HookPhase,
     call_type: Option<&str>,
-    context: &mut HookContext<'_>,
+    context: &HookContext<'_>,
 ) -> Result<(), HookError<T::Error>>
 where
     T: ArmorTokens,

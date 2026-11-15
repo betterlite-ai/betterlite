@@ -144,40 +144,28 @@ fn metadata_scan_replaces_a_bucket_that_is_not_an_object() {
 }
 
 #[rstest]
-#[case::absent("{}", Ok(None))]
-#[case::null(r#"{"start_time":null}"#, Ok(None))]
-#[case::fraction(r#"{"start_time":1.5}"#, Ok(Some(1.5)))]
-#[case::integer(r#"{"start_time":7}"#, Ok(Some(7.0)))]
-#[case::text(
-    r#"{"start_time":"soon"}"#,
-    Err(("start_time", "a number"))
+#[case::absent("{}", None)]
+#[case::null(r#"{"start_time":null}"#, None)]
+#[case::fraction(r#"{"start_time":1.5}"#, Some(1.5))]
+#[case::integer(r#"{"start_time":7}"#, Some(7.0))]
+#[case::text(r#"{"start_time":"soon"}"#, None)]
+#[case::boolean(r#"{"start_time":true}"#, None)]
+#[case::marker_with_other_keys(
+    r#"{"start_time":{"$serde_json::private::Number":"1.5","extra":true}}"#,
+    None
 )]
-#[case::boolean(
-    r#"{"start_time":true}"#,
-    Err(("start_time", "a number"))
-)]
-fn metadata_reads_the_request_start_time(
-    #[case] source: &str,
-    #[case] expected: Result<Option<f64>, (&str, &str)>,
-) {
+fn metadata_reads_the_request_start_time(#[case] source: &str, #[case] expected: Option<f64>) {
     let request = data(source);
-    let read = request_start_time(&request).map_err(|error| (error.field, error.expected));
-    assert_eq!(read, expected);
-}
-
-#[test]
-fn metadata_rejects_a_number_marker_with_other_keys() {
-    let request = data(r#"{"start_time":{"$serde_json::private::Number":"1.5","extra":true}}"#);
-    assert!(request_start_time(&request).is_err());
+    assert_eq!(request_start_time(&request), expected);
 }
 
 #[test]
 fn metadata_reads_a_start_time_that_came_from_a_stored_record() {
     let mut request = Data::new();
     request.insert("start_time".to_owned(), GuardrailValue::Decimal(2.5));
-    assert_eq!(request_start_time(&request).expect("start"), Some(2.5));
+    assert_eq!(request_start_time(&request), Some(2.5));
     let marker = data(r#"{"start_time":3.25}"#);
-    assert_eq!(request_start_time(&marker).expect("start"), Some(3.25));
+    assert_eq!(request_start_time(&marker), Some(3.25));
 }
 
 #[tokio::test]

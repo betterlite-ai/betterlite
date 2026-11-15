@@ -108,7 +108,7 @@ async fn logging_information_post_call_sanitizes_the_logged_response() {
     let entries = entries_of(&details);
     assert_eq!(
         field(
-            field(&entries[0], "guardrail_response"),
+            &field(&entries[0], "guardrail_response"),
             "model_armor_response"
         ),
         value(r#"{"sanitizedText":"[REDACTED]"}"#)

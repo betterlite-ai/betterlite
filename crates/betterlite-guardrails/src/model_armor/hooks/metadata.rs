@@ -13,7 +13,7 @@ use crate::model_armor::transport::ModelArmorTransport;
 use crate::model_armor::transport::tokens::ArmorTokens;
 
 use super::Data;
-use super::error_handling::{FieldError, HookError};
+use super::error_handling::HookError;
 
 const STATUS_KEY: &str = "_model_armor_status";
 const RESPONSE_KEY: &str = "_model_armor_response";
@@ -91,16 +91,9 @@ pub(super) fn record_text_scan(data: &mut Data, response: GuardrailValue, blocke
     data.insert(key.to_owned(), GuardrailValue::Object(bucket));
 }
 
-// LiteLLM reads the request's start_time as it is; the record field is a float, so a number is the whole input
-pub(super) fn request_start_time(data: &Data) -> Result<Option<f64>, FieldError> {
-    match data.get(START_TIME_KEY) {
-        None | Some(GuardrailValue::Null) => Ok(None),
-        Some(value) => number_of(value).map(Some).ok_or(FieldError {
-            field: START_TIME_KEY,
-            expected: "a number",
-            source: None,
-        }),
-    }
+// LiteLLM copies the request's start_time into the record unchecked; the record field is a float, so a non-number logs as null
+pub(super) fn request_start_time(data: &Data) -> Option<f64> {
+    data.get(START_TIME_KEY).and_then(number_of)
 }
 
 fn number_of(value: &GuardrailValue) -> Option<f64> {
