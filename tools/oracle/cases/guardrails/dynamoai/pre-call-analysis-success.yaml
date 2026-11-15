@@ -1,0 +1,21 @@
+kind: helper
+name: dynamoai-pre-call-analysis-success
+call:
+  b3768:
+    mode: pre_call
+    env:
+      DYNAMOAI_POLICY_IDS: policy-1,policy-2
+      DYNAMOAI_MODEL_ID: model-1
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: hello}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body: {finalAction: NONE}
+env: {}
+compare: {ignore: []}

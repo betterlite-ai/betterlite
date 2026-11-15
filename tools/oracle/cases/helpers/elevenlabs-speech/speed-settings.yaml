@@ -1,0 +1,20 @@
+kind: helper
+name: elevenlabs-speech-speed-settings
+call:
+  elevenlabs_speech:
+    calls:
+    - {function: map_params, voice: alloy, optional_params: {speed: 1.5}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: 2}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: " 0.75 "}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: "\u001f0.75\u001c"}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: true}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: fast}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: [1]}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: {a: 1}}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: null}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: 1.2, voice_settings: {stability: 0.4}}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: 1.2, voice_settings: calm}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: fast, voice_settings: {stability: 0.4}}, kwargs: {}}
+    - {function: map_params, voice: alloy, optional_params: {speed: 1.1, voice_settings: {speed: 0.5, similarity_boost: 0.9}}, kwargs: {}}
+compare: {ignore: []}
+env: {}

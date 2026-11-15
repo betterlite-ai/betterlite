@@ -8,8 +8,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::azure_arc_identity::error::ArcIdentityError;
 use crate::azure_arc_identity::{
-    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcResponse, ArcTransport,
-    acquire_arc_token,
+    ArcAccessToken, ArcHost, ArcIdentity, ArcPlatform, ArcTransport, MetadataRequest,
+    MetadataResponse, acquire_arc_token,
 };
 
 pub(super) const ENDPOINT: &str = "http://localhost:40342/metadata/identity/oauth2/token";
@@ -114,12 +114,12 @@ impl Recorded {
 }
 
 pub(super) struct FixtureTransport {
-    replies: Mutex<VecDeque<ArcResponse>>,
+    replies: Mutex<VecDeque<MetadataResponse>>,
     requests: Mutex<Vec<Recorded>>,
 }
 
 impl FixtureTransport {
-    pub(super) fn new(replies: Vec<ArcResponse>) -> Self {
+    pub(super) fn new(replies: Vec<MetadataResponse>) -> Self {
         Self {
             replies: Mutex::new(VecDeque::from(replies)),
             requests: Mutex::new(Vec::new()),
@@ -139,21 +139,17 @@ impl FixtureTransport {
 }
 
 impl ArcTransport for FixtureTransport {
-    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
+    fn get(&self, request: &MetadataRequest) -> io::Result<MetadataResponse> {
         self.requests
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
             .push(Recorded {
                 url: request.url.clone(),
-                query: request
-                    .query
-                    .iter()
-                    .map(|(name, value)| ((*name).to_owned(), value.clone()))
-                    .collect(),
+                query: request.query.clone(),
                 headers: request
                     .headers
                     .iter()
-                    .map(|(name, value)| ((*name).to_owned(), value.expose_secret().to_owned()))
+                    .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
                     .collect(),
             });
         self.replies
@@ -164,8 +160,8 @@ impl ArcTransport for FixtureTransport {
     }
 }
 
-pub(super) fn response(status: u16, headers: &[(&str, &str)], body: &str) -> ArcResponse {
-    ArcResponse {
+pub(super) fn response(status: u16, headers: &[(&str, &str)], body: &str) -> MetadataResponse {
+    MetadataResponse {
         status,
         headers: headers
             .iter()

@@ -148,7 +148,8 @@ async fn max_connections_reaches_the_concurrency_limit() {
     let server = FakeServer::start().await;
     server.silence("PING");
     let mut fields = direct_fields(&server.host(), server.port());
-    fields.socket_timeout = Some(0.3_f64);
+    // long enough that the observer sees the first command before it times out and frees the slot
+    fields.socket_timeout = Some(2.0_f64);
     fields.max_connections = Some(1);
     let client = factory(None)
         .open_async(&RedisClient::Direct(fields), None)
@@ -162,7 +163,14 @@ async fn max_connections_reaches_the_concurrency_limit() {
         )
     };
     let observing = async {
-        sleep(Duration::from_millis(100)).await;
+        let started = Instant::now();
+        while server.commands_named("PING").is_empty() {
+            assert!(
+                started.elapsed() < Duration::from_secs(30),
+                "the first PING never arrived"
+            );
+            sleep(Duration::from_millis(5)).await;
+        }
         assert_eq!(
             server.commands_named("PING").len(),
             1,

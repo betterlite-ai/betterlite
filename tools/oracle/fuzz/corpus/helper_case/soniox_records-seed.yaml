@@ -1,0 +1,20 @@
+kind: helper
+name: soniox-records-seed
+call:
+  soniox_records:
+    calls:
+    - {function: supported_params}
+    - {function: map_params, non_default_params: {language: es}, optional_params: {language_hints: [en]}}
+    - {function: validate_environment, headers: {Authorization: "Bearer caller"}, api_key: explicit, environment: {SONIOX_API_KEY: environment}}
+    - {function: complete_url, api_base: null, environment: {SONIOX_API_BASE: "https://env.test/"}}
+    - {function: error, message: boom, status_code: 500}
+    - function: response
+      payload:
+        transcription: {audio_duration_ms: 1500}
+        transcript:
+          tokens:
+          - {text: Hello, speaker: 1, language: en, start_ms: 0, end_ms: 500}
+          - {text: Hola, language: es, translation_status: translation}
+      response_format: verbose_json
+compare: {ignore: []}
+env: {}

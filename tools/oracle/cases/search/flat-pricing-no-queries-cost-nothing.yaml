@@ -1,0 +1,11 @@
+kind: helper
+name: flat-pricing-no-queries-cost-nothing
+call:
+  b3274:
+    model_cost: {"tavily/search": {"litellm_provider": "tavily", "mode": "search", "input_cost_per_query": 0.007}}
+    model: "tavily/search"
+    custom_llm_provider: "tavily"
+    number_of_queries: 0
+    optional_params: {}
+env: {}
+compare: {ignore: []}
