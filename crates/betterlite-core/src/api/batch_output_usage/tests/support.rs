@@ -166,7 +166,7 @@ pub(super) fn output_input(
     let info = model_info_field(model_info);
     parse_input(
         &[
-            r#"{"kind":"output_usage","provider":"#,
+            r#"{"kind":"output_usage","provider":""#,
             provider,
             r#"","#,
             name.as_str(),
@@ -190,7 +190,7 @@ pub(super) fn output_bytes(
     let encoded = format!("{bytes:?}");
     parse_input(
         &[
-            r#"{"kind":"output_usage","provider":"#,
+            r#"{"kind":"output_usage","provider":""#,
             provider,
             r#"","#,
             name.as_str(),
