@@ -10,8 +10,8 @@ use betterlite_bedrock::marengo_embeddings::response::{
 };
 use betterlite_bedrock::marengo_three::error::Marengo3Error;
 use betterlite_context::non_default_params::mapper::DropPolicy;
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use thiserror::Error;
 
@@ -128,24 +128,28 @@ fn async_reply(call: &Call) -> Option<&Field> {
     })
 }
 
-fn parse_record<T: DeserializeOwned, S: Serialize>(value: &S) -> Result<T, Failure> {
-    let json = serde_json::to_value(value)?;
-    serde_json::from_value(json).map_err(Failure::from)
+fn parse_all<T: DeserializeOwned>(values: &[Value]) -> Result<Vec<T>, Failure> {
+    values
+        .iter()
+        .cloned()
+        .map(serde_json::from_value)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Failure::from)
 }
 
 fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
     let response: MarengoEmbeddingResponse = match async_reply(call) {
         Some(reply) => {
-            let parsed: Params = parse_record(reply)?;
+            let reply_json = serde_json::to_value(reply)?;
+            let parsed: Params = serde_json::from_value(reply_json)?;
             transform_async_response(&parsed, &call.model)
         }
         None => {
-            let responses = call
-                .replies
-                .iter()
-                .take(call.input.len())
-                .map(parse_record)
-                .collect::<Result<Vec<MarengoInvokeResponse>, Failure>>()?;
+            let replies = call.replies.iter().take(call.input.len());
+            let encoded: Vec<Value> = replies
+                .map(serde_json::to_value)
+                .collect::<Result<_, serde_json::Error>>()?;
+            let responses: Vec<MarengoInvokeResponse> = parse_all(&encoded)?;
             let batch = batch_value(call, requests)?;
             transform_response(&responses, &call.model, Some(&batch))?
         }
@@ -154,15 +158,15 @@ fn response_value(call: &Call, requests: &[Value]) -> Result<Value, Failure> {
 }
 
 fn batch_value(call: &Call, requests: &[Value]) -> Result<Vec<MarengoBilledRequest>, Failure> {
-    let entries: Vec<Value> = if call.batch.is_empty() {
-        requests.to_vec()
-    } else {
-        call.batch
-            .iter()
-            .map(|entry| Ok(serde_json::to_value(entry)?))
-            .collect::<Result<Vec<_>, Failure>>()?
-    };
-    entries.iter().map(parse_record).collect()
+    if call.batch.is_empty() {
+        return parse_all(requests);
+    }
+    let encoded: Vec<Value> = call
+        .batch
+        .iter()
+        .map(serde_json::to_value)
+        .collect::<Result<_, serde_json::Error>>()?;
+    parse_all(&encoded)
 }
 
 impl From<Failure> for Box<HelperError> {
