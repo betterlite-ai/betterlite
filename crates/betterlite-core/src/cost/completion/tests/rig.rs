@@ -166,7 +166,7 @@ impl ImagePricePolicy for Stamped {
 #[test]
 fn the_sync_image_builds_the_policy_from_its_moment_and_forwards_the_route() {
     let fixture = rig(&[]);
-    let image = SyncImage {
+    let image: SyncImage<'_, Stamped> = SyncImage {
         build: |_lookup, _database, moment| Stamped(moment),
         lookup: &fixture.catalog,
         database: &fixture.database,
