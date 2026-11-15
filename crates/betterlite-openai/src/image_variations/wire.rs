@@ -164,8 +164,7 @@ fn image_part(prepared: &PreparedImageVariation) -> MultipartPart {
 fn uploaded_name(file_name: &str) -> String {
     file_name
         .split('/')
-        .filter(|part| !part.is_empty() && *part != ".")
-        .next_back()
+        .rfind(|part| !part.is_empty() && *part != ".")
         .unwrap_or_default()
         .to_owned()
 }
