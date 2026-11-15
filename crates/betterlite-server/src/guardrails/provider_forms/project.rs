@@ -67,7 +67,6 @@ fn insert_scalar(entry: &mut Map<String, Value>, field: &FormField) {
     }
     entry.insert("type".to_owned(), Value::String(field_type.to_owned()));
     insert_type_details(entry, field, field_type);
-    insert_options(entry, field, field_type);
     insert_limits(entry, field);
 }
 
@@ -88,25 +87,16 @@ fn insert_type_details(entry: &mut Map<String, Value>, field: &FormField, field_
             );
         }
     }
-    if field_type == "array"
-        && let FormShape::List { options } = &field.shape
-        && !options.is_empty()
-    {
-        entry.insert("options".to_owned(), Value::Array(options.clone()));
-        entry.insert("type".to_owned(), Value::String("multiselect".to_owned()));
-    }
-}
-
-fn insert_options(entry: &mut Map<String, Value>, field: &FormField, field_type: &str) {
-    if let Some(options) = &field.extra.options {
-        entry.insert("options".to_owned(), Value::Array(options.clone()));
-    }
-    if field.extra.options.is_none()
-        && field_type == "select"
-        && let FormShape::Choice(values) = &field.shape
-        && !values.is_empty()
-    {
-        entry.insert("options".to_owned(), Value::Array(values.clone()));
+    let derived = match (&field.shape, field_type) {
+        (FormShape::List { options }, "array") if !options.is_empty() => {
+            entry.insert("type".to_owned(), Value::String("multiselect".to_owned()));
+            Some(options.clone())
+        }
+        (FormShape::Choice(values), "select") if !values.is_empty() => Some(values.clone()),
+        _ => None,
+    };
+    if let Some(options) = field.extra.options.clone().or(derived) {
+        entry.insert("options".to_owned(), Value::Array(options));
     }
 }
 
