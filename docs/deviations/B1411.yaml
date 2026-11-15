@@ -1,0 +1,5 @@
+task: B1411
+deviations:
+  - what: A Mistral file, file-list, delete or batch-job reply larger than the caller's JSON byte cap is refused before parsing, where LiteLLM decodes whatever arrived.
+    why: The decoder holds the whole provider reply in memory, so an unbounded body is a memory-exhaustion input; the resource executors pass their bounded WireDecodeLimits, and the corpus test feeds one byte past the cap to prove the guard.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/files/transformation.py#L240-L246
