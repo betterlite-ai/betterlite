@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use crate::databricks_auth::Headers;
 use crate::databricks_auth::environment::DatabricksEnv;
 use crate::databricks_auth::error::{DatabricksError, SDK_API_BASE, SDK_CREDENTIALS};
 use crate::databricks_auth::oauth::{OauthReply, OauthTokenRequest, OauthTokenSource};
@@ -7,9 +8,10 @@ use crate::databricks_responses::{DatabricksResponsesAPIConfig, ResponsesHeaders
 use async_trait::async_trait;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::response_input::ResponsesInput;
-use betterlite_prompts::arguments::json::Object;
+use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Runtime};
 
 const VERSION: &str = "1.105.1";
 
@@ -36,13 +38,17 @@ fn key() -> SecretString {
     SecretString::from("pat".to_owned())
 }
 
+fn runtime() -> Runtime {
+    Builder::new_current_thread()
+        .build()
+        .expect("the runtime builds")
+}
+
 fn resolve_headers(
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
-) -> Result<crate::databricks_auth::Headers, DatabricksError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+) -> Result<Headers, DatabricksError> {
+    let runtime = runtime();
     runtime.block_on(DatabricksResponsesAPIConfig.headers(
         ResponsesHeaders {
             api_key,
@@ -88,9 +94,7 @@ fn headers_fall_back_to_the_env_base() {
     let mut env = env();
     env.api_base = Some("https://env-host".to_owned());
     let pat = key();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+    let runtime = runtime();
     let headers = runtime
         .block_on(DatabricksResponsesAPIConfig.headers(
             ResponsesHeaders {
@@ -160,9 +164,7 @@ fn the_request_strips_the_databricks_prefix() {
         .expect("the request transforms");
     assert_eq!(
         body.get("model"),
-        Some(&betterlite_prompts::arguments::json::Json::Text(
-            "databricks-gpt-5".to_owned()
-        ))
+        Some(&Json::Text("databricks-gpt-5".to_owned()))
     );
 }
 
@@ -187,10 +189,5 @@ fn a_model_without_the_prefix_is_kept(#[case] model: &str, #[case] expected: &st
     let body = DatabricksResponsesAPIConfig
         .create_request(model, &input(r#""hi""#), &Object::new(), None)
         .expect("the request transforms");
-    assert_eq!(
-        body.get("model"),
-        Some(&betterlite_prompts::arguments::json::Json::Text(
-            expected.to_owned()
-        ))
-    );
+    assert_eq!(body.get("model"), Some(&Json::Text(expected.to_owned())));
 }

@@ -12,6 +12,8 @@ use async_trait::async_trait;
 use betterlite_prompts::arguments::json::{Json, Object};
 use rstest::rstest;
 use secrecy::SecretString;
+use serde_json::Number;
+use tokio::runtime::{Builder, Runtime};
 
 const VERSION: &str = "1.105.1";
 
@@ -45,14 +47,18 @@ fn params(entries: &[(&str, Json)]) -> Object {
         .collect()
 }
 
+fn runtime() -> Runtime {
+    Builder::new_current_thread()
+        .build()
+        .expect("the runtime builds")
+}
+
 fn prepare(
     optional_params: Object,
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
 ) -> Result<PreparedEmbedding, DatabricksError> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+    let runtime = runtime();
     runtime.block_on(prepare_embedding(
         EmbeddingPreparation {
             optional_params,
@@ -109,7 +115,7 @@ fn a_non_empty_user_agent_is_popped_and_databricks_user_agent_stays() {
         params(&[
             ("user_agent", Json::Text("acme/1.0".to_owned())),
             ("databricks_user_agent", Json::Text("other/2.0".to_owned())),
-            ("dimensions", Json::Number(serde_json::Number::from(5))),
+            ("dimensions", Json::Number(Number::from(5_i32))),
         ]),
         Some(&pat),
         Some("https://host"),
@@ -126,7 +132,7 @@ fn a_non_empty_user_agent_is_popped_and_databricks_user_agent_stays() {
     assert!(prepared.optional_params.get("user_agent").is_none());
     assert_eq!(
         prepared.optional_params.get("dimensions"),
-        Some(&Json::Number(serde_json::Number::from(5)))
+        Some(&Json::Number(Number::from(5_i32)))
     );
 }
 
@@ -157,9 +163,7 @@ fn the_env_override_applies_when_no_user_agent_is_set() {
     let mut env = env();
     env.user_agent_override = Some("env_partner/3".to_owned());
     let pat = key();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+    let runtime = runtime();
     let prepared = runtime
         .block_on(prepare_embedding(
             EmbeddingPreparation {
@@ -198,9 +202,7 @@ fn the_embedding_url_gets_the_embeddings_suffix() {
 #[test]
 fn a_custom_embedding_endpoint_keeps_the_base() {
     let pat = key();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+    let runtime = runtime();
     let prepared = runtime
         .block_on(prepare_embedding(
             EmbeddingPreparation {
@@ -221,7 +223,7 @@ fn a_custom_embedding_endpoint_keeps_the_base() {
 fn a_wrongly_typed_user_agent_is_a_400_naming_the_field() {
     let pat = key();
     let Err(error) = prepare(
-        params(&[("user_agent", Json::Number(serde_json::Number::from(5)))]),
+        params(&[("user_agent", Json::Number(Number::from(5_i32)))]),
         Some(&pat),
         Some("https://host"),
     ) else {
@@ -250,9 +252,7 @@ fn the_base_comes_from_the_argument_then_the_env(
     let mut env = env();
     env.api_base = Some("https://from-env".to_owned());
     let pat = key();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("the runtime builds");
+    let runtime = runtime();
     let prepared = runtime
         .block_on(prepare_embedding(
             EmbeddingPreparation {

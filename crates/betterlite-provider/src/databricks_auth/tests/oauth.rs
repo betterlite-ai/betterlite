@@ -1,4 +1,5 @@
 use std::fs;
+use std::str::from_utf8;
 use std::time::Duration;
 
 use crate::databricks_auth::oauth::{
@@ -8,6 +9,7 @@ use crate::databricks_auth::oauth::{
 use async_trait::async_trait;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::Builder;
 
 struct FixedSource(OauthReply);
 
@@ -100,7 +102,7 @@ fn a_non_200_reply_keeps_its_status_and_body() {
 fn a_transport_error_becomes_a_500() {
     let source = FixedSource(OauthReply::Transport("timed out".to_owned()));
     let request = oauth_token_request("https://host", "id", "secret");
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .expect("the runtime builds");
     let outcome = runtime.block_on(request_oauth_token(&request, &source));
@@ -116,7 +118,7 @@ fn a_failing_reply_keeps_its_own_status() {
         body: SecretString::from("denied"),
     });
     let request = oauth_token_request("https://host", "id", "secret");
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .expect("the runtime builds");
     let outcome = runtime.block_on(request_oauth_token(&request, &source));
@@ -135,10 +137,10 @@ fn replays_the_databricks_oauth_reply_corpus() {
             let Some((&status, body)) = bytes.split_first() else {
                 return;
             };
-            let Ok(body) = std::str::from_utf8(body) else {
+            let Ok(payload) = from_utf8(body) else {
                 return;
             };
-            let _token = parse_oauth_token_reply(u16::from(status), body);
+            let _token = parse_oauth_token_reply(u16::from(status), payload);
         })
         .count();
     assert!(seen > 0_usize);

@@ -42,13 +42,13 @@ impl DatabricksEmbeddingConfig {
 
     #[must_use]
     #[cfg_attr(test, mutants::skip)]
-    pub fn get_supported_openai_params(&self) -> Vec<String> {
+    pub const fn get_supported_openai_params(&self) -> Vec<String> {
         // LiteLLM's Databricks config supports no optional OpenAI embedding parameter
         Vec::new()
     }
 
     #[must_use]
-    pub fn map_openai_params(&self, optional_params: Object) -> Object {
+    pub const fn map_openai_params(&self, optional_params: Object) -> Object {
         // the source hands optional_params back untouched, so non-default params never reach the body
         optional_params
     }

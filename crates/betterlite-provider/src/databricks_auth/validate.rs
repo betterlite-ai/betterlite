@@ -53,45 +53,42 @@ async fn authenticate(
         debug!("Using OAuth M2M authentication for Databricks");
         let token_request = oauth_token_request(base, client_id, client_secret.expose_secret());
         let token = request_oauth_token(&token_request, tokens).await?;
-        let map = headers.get_or_insert_with(BTreeMap::new);
-        map.insert(
-            "Authorization".to_owned(),
-            format!("Bearer {}", token.expose_secret()),
-        );
-        map.insert("Content-Type".to_owned(), "application/json".to_owned());
+        headers = Some(oauth_headers(headers, token.expose_secret()));
     }
     if oauth.is_none()
         && request.api_key.is_none()
-        && headers.as_ref().is_none_or(|map| map.is_empty())
+        && headers.as_ref().is_none_or(BTreeMap::is_empty)
     {
-        return Err(DatabricksError {
-            status_code: 400,
-            message: if request.custom_endpoint {
-                MISSING_API_KEY
-            } else {
-                SDK_CREDENTIALS
-            }
-            .to_owned(),
-            headers: None,
-        });
+        let message = if request.custom_endpoint {
+            MISSING_API_KEY
+        } else {
+            SDK_CREDENTIALS
+        };
+        return Err(DatabricksError::new(400, message.to_owned()));
     }
     let Some(base) = request.api_base else {
-        return Err(DatabricksError {
-            status_code: 400,
-            message: if request.custom_endpoint {
-                MISSING_API_BASE
-            } else {
-                SDK_CREDENTIALS
-            }
-            .to_owned(),
-            headers: None,
-        });
+        let message = if request.custom_endpoint {
+            MISSING_API_BASE
+        } else {
+            SDK_CREDENTIALS
+        };
+        return Err(DatabricksError::new(400, message.to_owned()));
     };
     Ok((base, with_api_key(request.api_key, headers)))
 }
 
+// LiteLLM's OAuth branch adds the bearer token and the JSON content type to the request headers
+fn oauth_headers(headers: Option<Headers>, token: &str) -> Headers {
+    let mut resolved = headers.unwrap_or_default();
+    resolved.extend([
+        ("Authorization".to_owned(), format!("Bearer {token}")),
+        ("Content-Type".to_owned(), "application/json".to_owned()),
+    ]);
+    resolved
+}
+
 fn with_api_key(api_key: Option<&SecretString>, headers: Option<Headers>) -> Headers {
-    let mut headers = headers.unwrap_or_else(|| {
+    let mut resolved = headers.unwrap_or_else(|| {
         // a missing key is spelled out because LiteLLM writes the f-string over a None
         BTreeMap::from([
             ("Authorization".to_owned(), "Bearer None".to_owned()),
@@ -99,12 +96,12 @@ fn with_api_key(api_key: Option<&SecretString>, headers: Option<Headers>) -> Hea
         ])
     });
     if let Some(key) = api_key {
-        headers.insert(
+        resolved.insert(
             "Authorization".to_owned(),
             format!("Bearer {}", key.expose_secret()),
         );
     }
-    headers
+    resolved
 }
 
 pub async fn validate_environment(

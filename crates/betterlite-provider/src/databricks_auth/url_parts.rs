@@ -6,7 +6,7 @@ struct UrlParts<'value> {
 
 fn split(url: &str) -> UrlParts<'_> {
     let end = url.find(['?', '#']).unwrap_or(url.len());
-    let rest = &url[..end];
+    let (rest, _) = url.split_at(end);
     if let Some((scheme, after)) = rest.split_once("://")
         && is_scheme(scheme)
     {
@@ -33,10 +33,9 @@ fn split(url: &str) -> UrlParts<'_> {
 }
 
 fn split_authority(after: &str) -> (&str, &str) {
-    match after.find('/') {
-        Some(index) => (&after[..index], &after[index..]),
-        None => (after, ""),
-    }
+    after
+        .find('/')
+        .map_or((after, ""), |index| after.split_at(index))
 }
 
 fn is_scheme(text: &str) -> bool {

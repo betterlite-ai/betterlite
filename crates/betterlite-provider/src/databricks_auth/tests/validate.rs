@@ -12,6 +12,7 @@ use crate::databricks_auth::validate::{ValidationRequest, validate_environment};
 use async_trait::async_trait;
 use rstest::rstest;
 use secrecy::SecretString;
+use tokio::runtime::{Builder, Runtime};
 
 const VERSION: &str = "1.105.1";
 
@@ -54,8 +55,8 @@ impl OauthTokenSource for FakeTokens {
     }
 }
 
-fn runtime() -> tokio::runtime::Runtime {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Runtime {
+    Builder::new_current_thread()
         .build()
         .expect("the runtime builds")
 }

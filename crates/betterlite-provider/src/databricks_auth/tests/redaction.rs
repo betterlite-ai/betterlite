@@ -3,18 +3,19 @@ use std::collections::BTreeMap;
 use crate::databricks_auth::Headers;
 use crate::databricks_auth::redaction::{redact_headers_for_logging, redact_sensitive_data};
 use betterlite_prompts::arguments::json::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
-use serde_json::json;
+use serde_json::Number;
 
 fn text(value: &str) -> Json {
-    serde_json::from_value(json!(value)).expect("a text fixture parses")
+    Json::Text(value.to_owned())
 }
 
 fn redacted(value: &str) -> String {
-    match redact_sensitive_data(&text(value)) {
-        Json::Text(text) => text,
-        other => panic!("a text stays text, found {other:?}"),
-    }
+    let Json::Text(content) = redact_sensitive_data(&text(value)) else {
+        panic!("a text stays text");
+    };
+    content
 }
 
 #[rstest]
@@ -60,31 +61,51 @@ fn a_short_dapi_word_stays() {
 
 #[test]
 fn a_field_names_a_secret_even_when_its_value_is_not_a_string() {
-    let value: Json = serde_json::from_value(json!({"access_token": {"nested": "Bearer x"}}))
-        .expect("a fixture parses");
+    let value = Json::Object(IndexMap::from([(
+        "access_token".to_owned(),
+        Json::Object(IndexMap::from([(
+            "nested".to_owned(),
+            Json::Text("Bearer x".to_owned()),
+        )])),
+    )]));
     assert_eq!(
         redact_sensitive_data(&value),
-        serde_json::from_value::<Json>(json!({"access_token": "[REDACTED]"})).expect("expected")
+        Json::Object(IndexMap::from([(
+            "access_token".to_owned(),
+            Json::Text("[REDACTED]".to_owned()),
+        )]))
     );
 }
 
 #[test]
 fn a_key_matches_sensitive_parts_as_a_substring() {
-    let value: Json =
-        serde_json::from_value(json!({"max_tokens": 5, "note": "plain"})).expect("a fixture");
+    let value = Json::Object(IndexMap::from([
+        ("max_tokens".to_owned(), Json::Number(Number::from(5_i32))),
+        ("note".to_owned(), Json::Text("plain".to_owned())),
+    ]));
     assert_eq!(
         redact_sensitive_data(&value),
-        serde_json::from_value::<Json>(json!({"max_tokens": "[REDACTED]", "note": "plain"}))
-            .expect("expected")
+        Json::Object(IndexMap::from([
+            ("max_tokens".to_owned(), Json::Text("[REDACTED]".to_owned())),
+            ("note".to_owned(), Json::Text("plain".to_owned())),
+        ]))
     );
 }
 
 #[test]
 fn a_list_is_walked_in_order() {
-    let value: Json = serde_json::from_value(json!(["Bearer a", 1, null])).expect("a fixture");
+    let value = Json::List(vec![
+        Json::Text("Bearer a".to_owned()),
+        Json::Number(Number::from(1_i32)),
+        Json::Null,
+    ]);
     assert_eq!(
         redact_sensitive_data(&value),
-        serde_json::from_value::<Json>(json!(["Bearer [REDACTED]", 1, null])).expect("expected")
+        Json::List(vec![
+            Json::Text("Bearer [REDACTED]".to_owned()),
+            Json::Number(Number::from(1_i32)),
+            Json::Null,
+        ])
     );
 }
 

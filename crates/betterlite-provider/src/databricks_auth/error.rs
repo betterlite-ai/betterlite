@@ -17,6 +17,17 @@ pub struct DatabricksError {
     pub headers: Option<BTreeMap<String, String>>,
 }
 
+impl DatabricksError {
+    #[must_use]
+    pub(crate) const fn new(status_code: u16, message: String) -> Self {
+        Self {
+            status_code,
+            message,
+            headers: None,
+        }
+    }
+}
+
 impl From<DatabricksError> for ProviderError {
     fn from(error: DatabricksError) -> Self {
         let headers: Option<Vec<(String, String)>> = error

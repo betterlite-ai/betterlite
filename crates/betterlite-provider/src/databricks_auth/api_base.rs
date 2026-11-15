@@ -5,7 +5,7 @@ pub fn get_api_base(
     api_base: Option<&str>,
     use_ai_gateway: bool,
 ) -> Result<String, DatabricksError> {
-    let Some(api_base) = api_base else {
+    let Some(base) = api_base else {
         return Err(DatabricksError {
             status_code: 400,
             message: SDK_API_BASE.to_owned(),
@@ -13,9 +13,9 @@ pub fn get_api_base(
         });
     };
     if !use_ai_gateway {
-        return Ok(api_base.to_owned());
+        return Ok(base.to_owned());
     }
-    let normalized = api_base.trim_end_matches('/');
+    let normalized = base.trim_end_matches('/');
     if normalized.ends_with("/ai-gateway/mlflow/v1") {
         return Ok(normalized.to_owned());
     }
@@ -26,5 +26,5 @@ pub fn get_api_base(
         return Ok(format!("{normalized}/ai-gateway/mlflow/v1"));
     }
     // only the matching branches use the trimmed copy, so a non-matching base keeps its trailing slash
-    Ok(api_base.to_owned())
+    Ok(base.to_owned())
 }

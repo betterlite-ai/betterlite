@@ -53,14 +53,6 @@ struct TokenReply {
     access_token: Option<String>,
 }
 
-fn oauth_failure(status_code: u16, message: String) -> DatabricksError {
-    DatabricksError {
-        status_code,
-        message,
-        headers: None,
-    }
-}
-
 #[must_use]
 pub fn oauth_token_request(
     api_base: &str,
@@ -80,22 +72,21 @@ pub fn oauth_token_request(
 
 pub fn parse_oauth_token_reply(status: u16, body: &str) -> Result<SecretString, DatabricksError> {
     if status != 200 {
-        return Err(oauth_failure(
+        return Err(DatabricksError::new(
             status,
             format!("OAuth M2M token request failed: {body}"),
         ));
     }
     // LiteLLM reads response.json()["access_token"], so a reply without the field is a typed 500 here
     let reply: TokenReply = serde_json::from_str(body).map_err(|source| {
-        oauth_failure(
+        DatabricksError::new(
             500,
             format!("the OAuth M2M reply has no access_token: {source}"),
         )
     })?;
-    reply
-        .access_token
-        .map(SecretString::from)
-        .ok_or_else(|| oauth_failure(500, "the OAuth M2M reply has no access_token".to_owned()))
+    reply.access_token.map(SecretString::from).ok_or_else(|| {
+        DatabricksError::new(500, "the OAuth M2M reply has no access_token".to_owned())
+    })
 }
 
 pub async fn request_oauth_token(
@@ -104,7 +95,7 @@ pub async fn request_oauth_token(
 ) -> Result<SecretString, DatabricksError> {
     match tokens.send(request).await {
         OauthReply::Reply { status, body } => parse_oauth_token_reply(status, body.expose_secret()),
-        OauthReply::Transport(error) => Err(oauth_failure(
+        OauthReply::Transport(error) => Err(DatabricksError::new(
             500,
             format!("OAuth M2M token request failed: {error}"),
         )),

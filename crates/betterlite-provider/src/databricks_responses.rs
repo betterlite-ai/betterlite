@@ -64,8 +64,8 @@ impl DatabricksResponsesAPIConfig {
         api_base: Option<&str>,
         env: &DatabricksEnv,
     ) -> Result<String, DatabricksError> {
-        let base = api_base.map(str::to_owned).or_else(|| env.api_base.clone());
-        let base = get_api_base(base.as_deref(), false)?;
+        let candidate = api_base.map(str::to_owned).or_else(|| env.api_base.clone());
+        let base = get_api_base(candidate.as_deref(), false)?;
         Ok(format!("{}/responses", base.trim_end_matches('/')))
     }
 
@@ -76,8 +76,9 @@ impl DatabricksResponsesAPIConfig {
         optional_params: &Object,
         model_info: Option<&Object>,
     ) -> Result<Object, ResponseInputError> {
-        let model = model.strip_prefix(PROVIDER_PREFIX).unwrap_or(model);
+        let name = model.strip_prefix(PROVIDER_PREFIX).unwrap_or(model);
         transform_responses_request(
+            name,
             model,
             input,
             optional_params,

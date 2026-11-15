@@ -8,11 +8,7 @@ pub fn build_user_agent(custom_user_agent: Option<&str>, version: &str) -> Strin
             .chars()
             .filter(|letter| *letter != '_' && *letter != '-')
             .collect();
-        if !partner_letters.is_empty()
-            && partner_letters
-                .chars()
-                .all(|letter| letter.is_alphanumeric())
-        {
+        if !partner_letters.is_empty() && partner_letters.chars().all(char::is_alphanumeric) {
             return format!("{partner}_litellm/{version}");
         }
     }
