@@ -95,8 +95,8 @@ async fn export_short_batch_stops() {
     let database = FakeDatabase::default();
     database.set_raw_rows(vec![export_row(1), export_row(2)]);
     let repository = repository(database, FakeReads::default());
-    let table = scope(DailyActivityTable::User);
-    let mut rows = repository.export_rows(&table, ExportType::Daily);
+    let user_scope = scope(DailyActivityTable::User);
+    let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     let mut seen = 0;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
@@ -112,8 +112,8 @@ async fn export_exact_thousand_fetches_empty_page() {
     database.set_raw_rows(batch);
     database.set_raw_rows(Vec::new());
     let repository = repository(database, FakeReads::default());
-    let table = scope(DailyActivityTable::User);
-    let mut rows = repository.export_rows(&table, ExportType::Daily);
+    let user_scope = scope(DailyActivityTable::User);
+    let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     let mut seen = 0;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
@@ -127,8 +127,8 @@ async fn export_batch_validated_before_yield() {
     let database = FakeDatabase::default();
     database.set_raw_rows(vec![export_row(1), without(export_row(2), "flat_cost")]);
     let repository = repository(database, FakeReads::default());
-    let table = scope(DailyActivityTable::User);
-    let mut rows = repository.export_rows(&table, ExportType::Daily);
+    let user_scope = scope(DailyActivityTable::User);
+    let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     assert!(rows.next_row().await.is_err());
 }
 
@@ -139,8 +139,8 @@ async fn export_later_error_keeps_prior_yields() {
     database.set_raw_rows(batch);
     database.push_raw(RawReply::Failure(FakeFailure::Unavailable));
     let repository = repository(database, FakeReads::default());
-    let table = scope(DailyActivityTable::User);
-    let mut rows = repository.export_rows(&table, ExportType::Daily);
+    let user_scope = scope(DailyActivityTable::User);
+    let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     let mut seen = 0;
     while rows.next_row().await.unwrap().is_some() {
         seen += 1;
@@ -155,8 +155,8 @@ async fn dropped_export_stops_queries() {
     let batch: Vec<_> = (0..1000_usize).map(export_row).collect();
     database.set_raw_rows(batch);
     let repository = repository(database, FakeReads::default());
-    let table = scope(DailyActivityTable::User);
-    let mut rows = repository.export_rows(&table, ExportType::Daily);
+    let user_scope = scope(DailyActivityTable::User);
+    let mut rows = repository.export_rows(&user_scope, ExportType::Daily);
     assert!(rows.next_row().await.unwrap().is_some());
     drop(rows);
     assert_eq!(repository.database.query_count(), 1);
