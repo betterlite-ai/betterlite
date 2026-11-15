@@ -1,0 +1,84 @@
+kind: helper
+name: anthropic-request-mid-conversation-system
+call:
+  anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        mid-model:
+          litellm_provider: anthropic
+          supports_mid_conversation_system: true
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: a
+      role: assistant
+    - content: reminder
+      role: system
+    - content: u2
+      role: user
+    model: mid-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+calls:
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages:
+    - content: u
+      role: user
+    - content: a
+      role: assistant
+    - content: reminder
+      role: system
+    - content: u2
+      role: user
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages: []
+    model: plain-model
+    modify_params: false
+    optional_params: {}
+    strips_billing_metadata: false
+- anthropic_request:
+    custom_llm_provider: null
+    fixture:
+      model_cost:
+        plain-model:
+          litellm_provider: anthropic
+      packaged: {}
+    global_drop_params: false
+    headers: {}
+    litellm_params: {}
+    messages: []
+    model: plain-model
+    modify_params: true
+    optional_params: {}
+    strips_billing_metadata: false
+env: {}
+compare:
+  ignore: []
