@@ -51,6 +51,9 @@ const LOGGED_WITH_EMPTY_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"s
 const LOGGED_WITH_NULL_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":null}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
 const LOGGED_WITH_STRING_INFORMATION: &str = r#"{"litellm_params":{"metadata":{"standard_logging_guardrail_information":"yes"}},"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{}}"#;
 const LOGGED_WITH_DICT_INFORMATION: &str = r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{"id":"call-1","guardrail_information":{"guardrail_name":"older"}}}"#;
+const LOGGED_WITH_EXISTING_ENTRY: &str = r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":{"id":"call-1","guardrail_information":[{"guardrail_name":"older"}]}}"#;
+const LOGGED_WITH_NON_OBJECT: &str =
+    r#"{"messages":[{"role":"user","content":"hello"}],"standard_logging_object":"not-an-object"}"#;
 
 static CLOCK_TICKS: AtomicU64 = AtomicU64::new(0);
 
@@ -83,6 +86,10 @@ enum Case {
     LoggingScansNullInformation,
     LoggingSkipsStringInformation,
     LoggingReplacesNonListEntry,
+    LoggingAppendsToExistingList,
+    LoggingSwallowedNonObject,
+    GroundingPasses,
+    UnrepresentableTimeout,
 }
 
 #[rstest]
@@ -113,6 +120,10 @@ enum Case {
 #[case::logging_scans_null_information(Case::LoggingScansNullInformation)]
 #[case::logging_skips_string_information(Case::LoggingSkipsStringInformation)]
 #[case::logging_replaces_non_list_entry(Case::LoggingReplacesNonListEntry)]
+#[case::logging_appends_to_existing_list(Case::LoggingAppendsToExistingList)]
+#[case::logging_swallowed_non_object(Case::LoggingSwallowedNonObject)]
+#[case::grounding_passes(Case::GroundingPasses)]
+#[case::unrepresentable_timeout(Case::UnrepresentableTimeout)]
 #[tokio::test]
 async fn xecguard_runtime_cases(#[case] case: Case) {
     match case {
@@ -143,6 +154,10 @@ async fn xecguard_runtime_cases(#[case] case: Case) {
         Case::LoggingScansNullInformation => logging_scans_null_information().await,
         Case::LoggingSkipsStringInformation => logging_skips_string_information().await,
         Case::LoggingReplacesNonListEntry => logging_replaces_non_list_entry().await,
+        Case::LoggingAppendsToExistingList => logging_appends_to_existing_list().await,
+        Case::LoggingSwallowedNonObject => logging_swallowed_non_object().await,
+        Case::GroundingPasses => grounding_passes().await,
+        Case::UnrepresentableTimeout => unrepresentable_timeout(),
     }
 }
 
@@ -741,6 +756,65 @@ async fn logging_replaces_non_list_entry() {
     let entries = logged_entries(&kwargs);
     assert_eq!(entries.len(), 1);
     assert_eq!(text(field(&entries[0], "guardrail_mode")), "logging_only");
+}
+
+async fn logging_appends_to_existing_list() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_EXISTING_ENTRY);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    let entries = logged_entries(&kwargs);
+    assert_eq!(entries.len(), 2);
+    assert_eq!(text(field(&entries[0], "guardrail_name")), "older");
+    assert_eq!(text(field(&entries[1], "guardrail_mode")), "logging_only");
+}
+
+async fn logging_swallowed_non_object() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut kwargs = logged(LOGGED_WITH_NON_OBJECT);
+    let before = values(&kwargs);
+    guard
+        .async_logging_hook(&mut kwargs, &chat_body("answer"))
+        .await;
+    assert_eq!(values(&kwargs), before);
+    assert_eq!(seen(&mock).len(), 1);
+}
+
+async fn grounding_passes() {
+    let mock = mock((200, SAFE), (200, SAFE));
+    let guard = guard_at(&mock.base);
+    let mut data = request_data(GROUNDING_REQUEST);
+    let original = inputs(&["answer"]);
+    let returned = guard
+        .apply_guardrail(
+            original.clone(),
+            &mut data,
+            GuardrailInputType::Response,
+            None,
+        )
+        .await
+        .expect("a grounded pass");
+    assert_eq!(returned, original);
+    let seen = seen(&mock);
+    assert_eq!(seen.len(), 2);
+    assert_eq!(text(field(&seen[1].body, "strictness")), "BALANCED");
+}
+
+fn unrepresentable_timeout() {
+    let error = XecGuardGuard::new(
+        &args(),
+        &RuntimeSettings::default(),
+        base(Some(GUARDRAIL_NAME), Some(-1.0)),
+        client(),
+    )
+    .expect_err("a negative timeout is not a duration");
+    assert_eq!(
+        error.to_string(),
+        "the XecGuard timeout is not a representable duration"
+    );
 }
 
 type Reply = (u16, &'static str);
