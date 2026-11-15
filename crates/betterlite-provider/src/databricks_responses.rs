@@ -79,7 +79,6 @@ impl DatabricksResponsesAPIConfig {
         let name = model.strip_prefix(PROVIDER_PREFIX).unwrap_or(model);
         transform_responses_request(
             name,
-            model,
             input,
             optional_params,
             ProviderId::Databricks,

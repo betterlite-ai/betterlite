@@ -72,21 +72,26 @@ pub fn oauth_token_request(
 
 pub fn parse_oauth_token_reply(status: u16, body: &str) -> Result<SecretString, DatabricksError> {
     if status != 200 {
-        return Err(DatabricksError::new(
-            status,
-            format!("OAuth M2M token request failed: {body}"),
-        ));
+        return Err(DatabricksError {
+            status_code: status,
+            message: format!("OAuth M2M token request failed: {body}"),
+            headers: None,
+        });
     }
     // LiteLLM reads response.json()["access_token"], so a reply without the field is a typed 500 here
-    let reply: TokenReply = serde_json::from_str(body).map_err(|source| {
-        DatabricksError::new(
-            500,
-            format!("the OAuth M2M reply has no access_token: {source}"),
-        )
+    let reply: TokenReply = serde_json::from_str(body).map_err(|source| DatabricksError {
+        status_code: 500,
+        message: format!("the OAuth M2M reply has no access_token: {source}"),
+        headers: None,
     })?;
-    reply.access_token.map(SecretString::from).ok_or_else(|| {
-        DatabricksError::new(500, "the OAuth M2M reply has no access_token".to_owned())
-    })
+    reply
+        .access_token
+        .map(SecretString::from)
+        .ok_or_else(|| DatabricksError {
+            status_code: 500,
+            message: "the OAuth M2M reply has no access_token".to_owned(),
+            headers: None,
+        })
 }
 
 pub async fn request_oauth_token(
@@ -95,9 +100,10 @@ pub async fn request_oauth_token(
 ) -> Result<SecretString, DatabricksError> {
     match tokens.send(request).await {
         OauthReply::Reply { status, body } => parse_oauth_token_reply(status, body.expose_secret()),
-        OauthReply::Transport(error) => Err(DatabricksError::new(
-            500,
-            format!("OAuth M2M token request failed: {error}"),
-        )),
+        OauthReply::Transport(error) => Err(DatabricksError {
+            status_code: 500,
+            message: format!("OAuth M2M token request failed: {error}"),
+            headers: None,
+        }),
     }
 }
