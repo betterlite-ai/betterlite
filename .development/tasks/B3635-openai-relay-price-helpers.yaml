@@ -22,6 +22,7 @@ description: >-
   This task does not call the shared chat handler, which consumes its config selector; they compose at the logging level instead.
 scope:
   paths:
+    - "crates/betterlite-core/src/openai_classification*"
     - crates/betterlite-core/src/openai_classification.rs
     - crates/betterlite-core/src/openai_classification/**
     - crates/betterlite-core/src/openai_pricing.rs
