@@ -80,9 +80,25 @@ where
     }
 
     async fn run(&self, request: &RunCode<'_>) -> AdapterResult<CodeExecutionResult> {
-        self.arun_code(open_run(request), None)
-            .await
-            .map_err(SandboxLifecycleError::OpenSandbox)
+        let container = open_container(request.container);
+        let options = open_options(
+            &request.call,
+            request.api_base,
+            request.use_server_proxy,
+            request.ready_timeout,
+            request.poll_interval,
+        );
+        self.arun_code(
+            OpenRun {
+                container,
+                code: request.code,
+                language: request.language,
+                options,
+            },
+            None,
+        )
+        .await
+        .map_err(SandboxLifecycleError::OpenSandbox)
     }
 
     async fn delete(&self, request: &DeleteSandbox<'_>) -> AdapterResult<bool> {
@@ -116,12 +132,10 @@ const fn e2b_delete<'call>(request: &DeleteSandbox<'call>) -> E2bDelete<'call> {
 }
 
 const fn e2b_ref(container: SandboxContainerRef<'_>) -> SandboxRef<'_> {
-    match container {
-        SandboxContainerRef::Id(id) => SandboxRef::Id(id),
-        SandboxContainerRef::Container(SandboxContainer::E2b(handle)) => SandboxRef::Handle(handle),
-        SandboxContainerRef::Container(SandboxContainer::OpenSandbox(handle)) => {
-            SandboxRef::Handle(&handle.container)
-        }
+    match open_container(container) {
+        OpenContainerRef::Id(id) => SandboxRef::Id(id),
+        OpenContainerRef::Handle(handle) => SandboxRef::Handle(handle),
+        OpenContainerRef::Cached(handle) => SandboxRef::Handle(&handle.container),
     }
 }
 
@@ -144,23 +158,6 @@ const fn open_create<'call>(request: &CreateSandbox<'call>) -> OpenCreate<'call>
             request.ready_timeout,
             request.poll_interval,
         ),
-    }
-}
-
-const fn open_run<'call>(request: &RunCode<'call>) -> OpenRun<'call> {
-    let container = open_container(request.container);
-    let options = open_options(
-        &request.call,
-        request.api_base,
-        request.use_server_proxy,
-        request.ready_timeout,
-        request.poll_interval,
-    );
-    OpenRun {
-        container,
-        code: request.code,
-        language: request.language,
-        options,
     }
 }
 
