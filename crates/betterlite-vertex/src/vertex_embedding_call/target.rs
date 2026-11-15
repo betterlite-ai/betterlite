@@ -57,6 +57,7 @@ const fn target_provider(provider: VertexCapabilityProvider) -> TargetProvider {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum HeaderMode {
     // VertexBase.set_headers writes its own headers first and the caller's after, so a caller header wins
     Text,
