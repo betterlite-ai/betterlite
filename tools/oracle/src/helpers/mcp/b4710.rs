@@ -17,6 +17,7 @@ use betterlite_secrets::secret_codec::{
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::{DeserializeOwned, Deserializer};
 use serde_json::Value;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -33,30 +34,46 @@ const JSON_TEXT_FIELDS: [&str; 7] = [
     "tool_name_to_display_name",
 ];
 
+// An internally tagged enum hands each field a ContentDeserializer, which cannot serve the
+// Box<RawValue> behind JsonValue, so these fields decode from a plain JSON value first.
+fn from_json_value<'de, D, T>(deserializer: D) -> Result<T, D::Error>
+where
+    D: Deserializer<'de>,
+    T: DeserializeOwned,
+{
+    let value = Value::deserialize(deserializer)?;
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     PrepareCreate {
         salt_key: String,
+        #[serde(deserialize_with = "from_json_value")]
         request: McpServerRequest,
     },
     PrepareUpdate {
         salt_key: String,
+        #[serde(deserialize_with = "from_json_value")]
         request: McpServerRequest,
         model_fields: Vec<String>,
         original_fields: Vec<String>,
     },
     EncryptCredentials {
         salt_key: String,
+        #[serde(deserialize_with = "from_json_value")]
         credentials: CredentialBlob,
         nonce_hex: String,
     },
     DecryptCredentials {
         salt_key: String,
+        #[serde(deserialize_with = "from_json_value")]
         credentials: CredentialBlob,
     },
     DecryptEnvVars {
         salt_key: String,
+        #[serde(deserialize_with = "from_json_value")]
         env_vars: Vec<JsonValue>,
     },
 }

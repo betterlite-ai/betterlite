@@ -254,7 +254,8 @@ def prepare_update(value: PrepareUpdate) -> JsonValue:
     table = RecordingTable()
     request = TypeAdapter(UpdateMCPServerRequest).validate_python(value["request"])
     original = set(value["original_fields"])
-    payload = recorded_write(table, update_mcp_server(FakeClient(table), request, "tester", fields_set=original))
+    write = update_mcp_server(FakeClient(table), request, "tester", fields_set=original)
+    payload = recorded_write(table, write)
     return TypeAdapter(JsonValue).validate_python(payload)
 
 
