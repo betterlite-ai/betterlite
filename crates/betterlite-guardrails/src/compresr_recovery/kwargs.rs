@@ -11,7 +11,7 @@ const OWN_KEY_PREFIX: &str = "_compresr";
 const METADATA_KEYS: [&str; 2] = ["metadata", "litellm_metadata"];
 
 // Other guardrails' pre-call markers go so they inspect the restored originals; the own one stays to avoid recompressing
-pub fn follow_up_kwargs(
+pub(super) fn follow_up_kwargs(
     kwargs: &JsonMap,
     own_marker: Option<&str>,
 ) -> Result<JsonMap, RecoveryError> {

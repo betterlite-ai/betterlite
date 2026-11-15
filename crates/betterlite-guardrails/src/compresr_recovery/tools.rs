@@ -34,7 +34,7 @@ pub enum CallKind {
 }
 
 // The gate's record of one compresr_retrieve call, as LiteLLM hands it to the plan builder
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RetrieveCall {
     pub id: Option<String>,
     #[serde(default, rename = "type")]
@@ -58,7 +58,10 @@ pub fn retrieve_calls(response: &ToolCallResponse) -> Vec<RetrieveCall> {
         .collect()
 }
 
-pub fn holds_retrieve_tool<Tool: Serialize>(tools: &[Tool]) -> bool {
+pub fn holds_retrieve_tool<Tool>(tools: &[Tool]) -> bool
+where
+    Tool: Serialize,
+{
     let Ok(encoded) = serde_json::to_value(tools) else {
         return false;
     };

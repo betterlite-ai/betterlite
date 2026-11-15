@@ -85,7 +85,7 @@ fn entry_lives_until_exactly_fifteen_minutes_ttl() {
     let store = seeded(&[("h1", "original")]);
     let own = key(SCOPE, CALL_ID);
     let expiry = NOW.saturating_add(ORIGINALS_TTL);
-    assert_eq!(ORIGINALS_TTL, Duration::from_secs(900));
+    assert_eq!(ORIGINALS_TTL, Duration::from_mins(15));
     assert!(
         store
             .retrieve(
@@ -154,17 +154,19 @@ fn oldest_call_leaves_past_the_call_limit_eviction(#[case] calls: usize, #[case]
             NO_CAP,
         );
     }
-    let state = store.state.lock().unwrap();
-    assert_eq!(state.entries.len(), kept);
-    assert_eq!(
-        state.entries.contains_key(&key(SCOPE, "call-0")),
-        calls == kept
-    );
-    assert!(
-        state
-            .entries
-            .contains_key(&key(SCOPE, &format!("call-{}", calls.saturating_sub(1))))
-    );
+    let (len, kept_first, kept_last) = {
+        let state = store.state.lock().unwrap();
+        (
+            state.entries.len(),
+            state.entries.contains_key(&key(SCOPE, "call-0")),
+            state
+                .entries
+                .contains_key(&key(SCOPE, &format!("call-{}", calls.saturating_sub(1)))),
+        )
+    };
+    assert_eq!(len, kept);
+    assert_eq!(kept_first, calls == kept);
+    assert!(kept_last);
 }
 
 #[rstest]

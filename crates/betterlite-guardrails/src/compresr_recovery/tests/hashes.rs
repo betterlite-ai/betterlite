@@ -7,8 +7,11 @@ use super::support::originals;
 
 #[rstest]
 #[case::empty("", "e3b0c44298fc1c149afbf4c8")]
-#[case::ascii("abc", "ba7816bf8f01cfea414140de")]
-#[case::multibyte("é", "4a99557e4033c3539de2eb65")]
+#[case::ascii(
+    "The quick brown fox jumps over the lazy dog",
+    "d7a8fbb307d7809469ca9abc"
+)]
+#[case::multibyte("\u{e9}", "4a99557e4033c3539de2eb65")]
 fn content_is_a_24_character_sha256_prefix_hash(#[case] text: &str, #[case] expected: &str) {
     assert_eq!(content_hash(text), expected);
 }
@@ -40,7 +43,7 @@ fn display_text_is_cut_past_32_characters_hash(#[case] count: usize, #[case] cut
 
 #[test]
 fn display_text_counts_characters_not_bytes_hash() {
-    assert_eq!(display_hash(&"é".repeat(32)), "é".repeat(32));
+    assert_eq!(display_hash(&"\u{e9}".repeat(32)), "\u{e9}".repeat(32));
 }
 
 #[test]
@@ -60,5 +63,5 @@ fn recovery_marker_names_the_hash_and_the_tool_hash() {
 
 #[test]
 fn entry_bytes_counts_utf8_bytes_of_every_original_hash() {
-    assert_eq!(entry_bytes(&originals(&[("a", "é"), ("b", "xyz")])), 5);
+    assert_eq!(entry_bytes(&originals(&[("a", "\u{e9}"), ("b", "xyz")])), 5);
 }

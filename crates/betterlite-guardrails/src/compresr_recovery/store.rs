@@ -120,13 +120,14 @@ impl RecoveryStore {
         max_bytes_per_call: usize,
     ) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let mut merged = Originals::new();
-        if let Some(previous) = state.entries.shift_remove(key) {
+        let mut merged = if let Some(previous) = state.entries.shift_remove(key) {
             state.total_bytes = state
                 .total_bytes
                 .saturating_sub(entry_bytes(&previous.originals));
-            merged = previous.originals;
-        }
+            previous.originals
+        } else {
+            Originals::new()
+        };
         merged.extend(originals);
         let bounded = bound_call_bytes(merged, max_bytes_per_call);
         state.insert(key, bounded, now.saturating_add(ORIGINALS_TTL));
@@ -159,13 +160,15 @@ impl RecoveryStore {
     #[must_use]
     pub fn retrieve(&self, key: Option<&StoreKey>, hash: &str, now: Duration) -> Option<String> {
         let present = key?;
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = state
-            .entries
-            .get(present)
-            .filter(|entry| entry.expires_at > now)
-            .and_then(|entry| entry.originals.get(hash))
-            .cloned();
+        let found = {
+            let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+            state
+                .entries
+                .get(present)
+                .filter(|entry| entry.expires_at > now)
+                .and_then(|entry| entry.originals.get(hash))
+                .cloned()
+        };
         if found.is_none() {
             tracing::warn!(
                 hash = %display_hash(hash),
