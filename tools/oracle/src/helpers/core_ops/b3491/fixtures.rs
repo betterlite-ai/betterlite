@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
+use std::vec::IntoIter;
 
 use async_trait::async_trait;
 use betterlite_core::api::interactions::contract::records::{InteractionsLogging, Params};
@@ -37,7 +38,7 @@ impl FakeAsyncResponse {
 }
 
 pub(crate) struct FakeAsyncLines {
-    lines: std::vec::IntoIter<Result<String, FixtureSourceError>>,
+    lines: IntoIter<Result<String, FixtureSourceError>>,
 }
 
 #[async_trait]
@@ -83,7 +84,7 @@ impl FakeSyncResponse {
 
 impl InteractionsSyncResponse for FakeSyncResponse {
     type Error = FixtureSourceError;
-    type Lines = std::vec::IntoIter<Result<String, FixtureSourceError>>;
+    type Lines = IntoIter<Result<String, FixtureSourceError>>;
 
     fn headers(&self) -> IndexMap<String, String> {
         IndexMap::new()
@@ -205,7 +206,7 @@ pub(crate) struct ApiBaseContexts<'context> {
     pub(crate) hooks: NoHooks,
 }
 
-pub(crate) fn api_resolver(contexts: &ApiBaseContexts<'_>) -> SharedApiBase<'_> {
+pub(crate) fn api_resolver<'a>(contexts: &'a ApiBaseContexts<'a>) -> SharedApiBase<'a> {
     SharedApiBase {
         context: ApiBaseContext {
             model_alias_map: &contexts.aliases,

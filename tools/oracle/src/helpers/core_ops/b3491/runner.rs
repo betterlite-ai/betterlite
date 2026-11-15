@@ -1,5 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error;
+use std::io;
+use std::iter::from_fn;
 
 use betterlite_core::api::interactions::contract::records::Params;
 use betterlite_core::api::interactions::streaming::async_iterator::InteractionsStreamIterator;
@@ -46,36 +48,49 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     let config = FixtureConfig;
     let resolver = api_resolver(&contexts);
     let mut logging = RecordingLogging::new(call_details(input));
-    let output = match input.mode {
-        Mode::Async => {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(runtime_failure)?;
-            runtime.block_on(collect_async(input, &mut logging, &config, &resolver))?
-        }
-        Mode::Sync => {
-            let mut iterator = SyncInteractionsStreamIterator::new(
-                FakeSyncResponse::new(&input.lines),
-                InteractionsStreamSetup {
-                    model: input.model.as_deref(),
-                    config: &config,
-                    logging: &mut logging,
-                    litellm_metadata: None,
-                    custom_llm_provider: None,
-                    api_base: &resolver,
-                },
-            )
-            .map_err(failure)?;
-            let events = std::iter::from_fn(|| iterator.next_chunk())
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(failure)?;
-            let finished = iterator.base.finished;
-            let completed = iterator.base.completed_response;
-            output(events, finished, completed, logging.records())
-        }
-    };
-    Ok(output)
+    match input.mode {
+        Mode::Async => async_output(input, &mut logging, &config, &resolver),
+        Mode::Sync => sync_output(input, &mut logging, &config, &resolver),
+    }
+}
+
+fn async_output(
+    input: &Input,
+    logging: &mut RecordingLogging,
+    config: &FixtureConfig,
+    resolver: &SharedApiBase<'_>,
+) -> crate::helpers::HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(runtime_failure)?;
+    runtime.block_on(collect_async(input, logging, config, resolver))
+}
+
+fn sync_output(
+    input: &Input,
+    logging: &mut RecordingLogging,
+    config: &FixtureConfig,
+    resolver: &SharedApiBase<'_>,
+) -> crate::helpers::HelperResult {
+    let mut iterator = SyncInteractionsStreamIterator::new(
+        FakeSyncResponse::new(&input.lines),
+        InteractionsStreamSetup {
+            model: input.model.as_deref(),
+            config,
+            logging: &mut *logging,
+            litellm_metadata: None,
+            custom_llm_provider: None,
+            api_base: resolver,
+        },
+    )
+    .map_err(failure)?;
+    let events = from_fn(|| iterator.next_chunk())
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(failure)?;
+    let finished = iterator.base.finished;
+    let completed = iterator.base.completed_response;
+    Ok(output(events, finished, completed, logging.records()))
 }
 
 async fn collect_async(
@@ -146,7 +161,7 @@ where
     })
 }
 
-fn runtime_failure(source: std::io::Error) -> Box<crate::helpers::HelperError> {
+fn runtime_failure(source: io::Error) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
         class: String::from("RuntimeError"),
         status: None,
