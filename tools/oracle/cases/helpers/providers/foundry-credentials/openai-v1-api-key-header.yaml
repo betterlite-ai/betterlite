@@ -1,0 +1,22 @@
+kind: helper
+name: openai-v1-api-key-header
+call:
+  foundry_credentials:
+    auth_headers:
+      - api_key: v1-key
+        header: api-key
+      - api_key: v1-key
+        header: Api-Key
+      - api_key: v1-key
+        header: Ocp-Apim-Subscription-Key
+      - api_key: v1-key
+      - api_key: v1-key
+        header: api-key
+        params: {tenant_id: tenant, client_id: client, client_secret: secret}
+      - api_key: v1-key
+        params: {tenant_id: tenant, client_id: client, client_secret: secret}
+      - api_key: bearer-key
+        header: Authorization
+        environment: {AZURE_AD_TOKEN: env-token}
+env: {}
+compare: {ignore: []}
