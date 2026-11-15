@@ -1,0 +1,41 @@
+kind: helper
+name: compatible-image-record-empty-data-masks-output-choices
+call:
+  compatible_image_record:
+    function: request
+    requests:
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {num_images: 2}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"data":[],"output":{"choices":[{"image_base64":"b64"}]},"images":[{"url":"https://mock/a.png"}]}'
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"data":{},"output":{"choices":[{"image_base64":"b64"}]},"images":[{"url":"https://mock/a.png"}]}'
+      - host: aiml
+        model: flux-pro
+        prompt: a cat
+        optional_params: {}
+        api_key: env-key
+        api_base: null
+        env: {}
+        reply:
+          status: 200
+          headers: {}
+          body: '{"output":{"choices":[{"image_base64":"b64"},{"url":"https://mock/b.png"}]}}'
+env: {}
+compare: {ignore: []}
