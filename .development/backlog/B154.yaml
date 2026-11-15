@@ -1,7 +1,7 @@
 id: B154
 milestone: M11 distribution
 title: Terraform deployment modules for AWS and GCP
-status: blocked
+status: todo
 depends_on: [B8143, B8147]
 file: tasks/B154-terraform-overview-parity.yaml
 covers:
@@ -10,5 +10,5 @@ parent: null
 split_from: null
 resolution: null
 superseded_by: null
-blocked_reason: "waits for Max: the gate has no pinned terraform 1.13.x, and terraform init needs registry network for the aws, google and random providers"
+blocked_reason: null
 pr: null
