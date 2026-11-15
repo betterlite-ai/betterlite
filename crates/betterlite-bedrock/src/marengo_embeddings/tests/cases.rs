@@ -117,6 +117,7 @@ fn verify_request_error(scenario: &Scenario, tag: &str) {
         Ok(built) => panic!("expected {tag}, built {built:?}"),
         Err(MarengoEmbeddingsError::AsyncRouteRequired { .. }) => assert_eq!(tag, "async_route"),
         Err(MarengoEmbeddingsError::EmptyOutputS3Uri) => assert_eq!(tag, "empty_output"),
+        Err(MarengoEmbeddingsError::Nova(_)) => panic!("unexpected nova error"),
         Err(MarengoEmbeddingsError::Marengo3(Marengo3Error::Provider { status, .. })) => {
             assert_eq!(tag, "marengo3");
             assert_eq!(status, 400_u16);

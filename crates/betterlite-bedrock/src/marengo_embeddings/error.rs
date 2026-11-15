@@ -1,6 +1,7 @@
 use thiserror::Error;
 
 use crate::marengo_three::error::Marengo3Error;
+use crate::nova_embeddings::error::NovaEmbeddingsError;
 
 #[derive(Debug, Error)]
 pub enum MarengoEmbeddingsError {
@@ -16,9 +17,23 @@ pub enum MarengoEmbeddingsError {
     VectorValue,
     #[error(transparent)]
     Marengo3(#[from] Marengo3Error),
+    #[error(transparent)]
+    Nova(NovaEmbeddingsError),
     #[error("invalid Marengo parameters")]
     Parameters {
         #[source]
         source: serde_json::Error,
     },
+}
+
+impl From<NovaEmbeddingsError> for MarengoEmbeddingsError {
+    fn from(error: NovaEmbeddingsError) -> Self {
+        match error {
+            NovaEmbeddingsError::OutputS3UriRequired => Self::EmptyOutputS3Uri,
+            other @ (NovaEmbeddingsError::InvalidDataUrl { .. }
+            | NovaEmbeddingsError::MissingComma { .. }
+            | NovaEmbeddingsError::MalformedField { .. }
+            | NovaEmbeddingsError::TokenOverflow) => Self::Nova(other),
+        }
+    }
 }

@@ -182,6 +182,7 @@ impl From<Failure> for Box<HelperError> {
             Failure::Embeddings(
                 MarengoEmbeddingsError::AsyncRouteRequired { .. }
                 | MarengoEmbeddingsError::EmptyOutputS3Uri
+                | MarengoEmbeddingsError::Nova(_)
                 | MarengoEmbeddingsError::UsageOverflow
                 | MarengoEmbeddingsError::VectorValue
                 | MarengoEmbeddingsError::Parameters { .. },

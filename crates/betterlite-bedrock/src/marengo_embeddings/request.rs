@@ -1,4 +1,3 @@
-use percent_encoding::percent_decode_str;
 use serde::Serialize;
 
 use betterlite_prompts::media::base64_string::get_base64_str;
@@ -8,6 +7,7 @@ use crate::marengo_three::build_marengo_3_request;
 use crate::marengo_three::is_marengo_3_model;
 use crate::marengo_three::params::RawParams;
 use crate::marengo_three::request::Marengo3Request;
+use crate::nova_embeddings::async_invoke::wrap_async_invoke_request;
 
 use super::error::MarengoEmbeddingsError;
 use super::params::resolved_input_type;
@@ -21,7 +21,6 @@ const CORE_FIELDS: [&str; 5] = [
 ];
 const S3_PREFIX: &str = "s3://";
 const DATA_PREFIX: &str = "data:";
-const ASYNC_INVOKE_PREFIX: &str = "async_invoke/";
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
@@ -30,30 +29,10 @@ pub enum MarengoModelInput {
     Nested(Marengo3Request),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct S3OutputDataConfig {
-    pub s3_uri: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OutputDataConfig {
-    pub s3_output_data_config: S3OutputDataConfig,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AsyncInvokeRequest {
-    pub model_id: String,
-    pub model_input: MarengoModelInput,
-    pub output_data_config: OutputDataConfig,
-}
-
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(untagged)]
 pub enum MarengoRequest {
-    Wrapped(AsyncInvokeRequest),
+    Wrapped(Params),
     Direct(MarengoModelInput),
 }
 
@@ -93,8 +72,12 @@ pub fn transform_request(
     if request.async_invoke_route
         && let Some(model_id) = request.model_id.filter(|value| !value.is_empty())
     {
+        let value = serde_json::to_value(model_input)
+            .map_err(|source| MarengoEmbeddingsError::Parameters { source })?;
+        let params = serde_json::from_value(value)
+            .map_err(|source| MarengoEmbeddingsError::Parameters { source })?;
         return Ok(MarengoRequest::Wrapped(wrap_async_invoke_request(
-            model_input,
+            params,
             model_id,
             request.output_s3_uri,
         )?));
@@ -160,30 +143,4 @@ fn marengo_3_params(inference_params: &Params) -> Result<RawParams, MarengoEmbed
     let value = serde_json::to_value(inference_params)
         .map_err(|source| MarengoEmbeddingsError::Parameters { source })?;
     serde_json::from_value(value).map_err(|source| MarengoEmbeddingsError::Parameters { source })
-}
-
-fn wrap_async_invoke_request(
-    model_input: MarengoModelInput,
-    model_id: &str,
-    output_s3_uri: Option<&str>,
-) -> Result<AsyncInvokeRequest, MarengoEmbeddingsError> {
-    let unquoted = percent_decode_str(model_id).decode_utf8_lossy();
-    let cleaned = if unquoted.starts_with(ASYNC_INVOKE_PREFIX) {
-        unquoted.replace(ASYNC_INVOKE_PREFIX, "")
-    } else {
-        unquoted.into_owned()
-    };
-    let destination = output_s3_uri.ok_or(MarengoEmbeddingsError::EmptyOutputS3Uri)?;
-    if destination.trim().is_empty() {
-        return Err(MarengoEmbeddingsError::EmptyOutputS3Uri);
-    }
-    Ok(AsyncInvokeRequest {
-        model_id: cleaned,
-        model_input,
-        output_data_config: OutputDataConfig {
-            s3_output_data_config: S3OutputDataConfig {
-                s3_uri: destination.to_owned(),
-            },
-        },
-    })
 }
