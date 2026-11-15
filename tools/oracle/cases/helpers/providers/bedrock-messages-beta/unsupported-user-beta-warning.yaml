@@ -1,0 +1,21 @@
+kind: helper
+name: bedrock-messages-beta-unsupported-user-beta-warning
+call:
+  bedrock_messages_beta:
+    function: beta_headers
+    model_cost:
+      bedrock/claude-sonnet-4-5: {litellm_provider: bedrock, supports_tool_search: false}
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    calls:
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        headers: {anthropic-beta: 'advanced-tool-use-2025-11-20,mystery-beta,'}
+      - model: fixture-tool-search
+        headers: {anthropic-beta: nope,alsonope}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: [{type: file, file: {file_id: file-abc}}]}]
+        headers: {anthropic-beta: nope}
+      - model: fixture-tool-search
+        headers: {anthropic-beta: nope,nope}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}
