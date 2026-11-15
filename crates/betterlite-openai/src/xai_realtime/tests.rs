@@ -381,10 +381,11 @@ fn cache_part(
 }
 
 fn fill_cache(normalizer: &mut XaiRealtimeNormalizer) {
-    let filled: Result<Vec<Json>, XaiRealtimeError> = (0..MAX_CACHED_CONTENT_PARTS)
+    let filled: Vec<Json> = (0..MAX_CACHED_CONTENT_PARTS)
         .map(|item| cache_part(normalizer, item))
-        .collect();
-    filled.expect("the cache fills to its bound");
+        .collect::<Result<Vec<Json>, XaiRealtimeError>>()
+        .expect("the cache fills to its bound");
+    assert_eq!(filled.len(), MAX_CACHED_CONTENT_PARTS);
 }
 
 #[test]
