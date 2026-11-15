@@ -5,6 +5,8 @@ use crate::guardrails::form_tables_b::tables_b;
 use crate::guardrails::provider_forms::project::project_model;
 use crate::guardrails::provider_forms::spec::{FormField, FormModel, FormShape};
 
+use super::expected::{expected, projected};
+
 const MAX_DEPTH: usize = 100;
 
 fn table(provider: &str) -> FormModel {
@@ -24,10 +26,10 @@ fn field<'model>(model: &'model FormModel, name: &str) -> &'model FormField {
 }
 
 fn nested<'model>(model: &'model FormModel, name: &str) -> &'model FormModel {
-    match &field(model, name).shape {
-        FormShape::Nested(inner) => inner.as_ref(),
-        other => panic!("{name} is a nested model, not {other:?}"),
-    }
+    let FormShape::Nested(inner) = &field(model, name).shape else {
+        panic!("{name} is not a nested model");
+    };
+    inner.as_ref()
 }
 
 #[test]
@@ -170,15 +172,15 @@ fn straiker_secret_flag_adds_nothing_to_the_output() {
     assert!(api_key.extra.step.is_none());
     assert!(api_key.extra.default_value.is_none());
     let fields = project_model(&model, MAX_DEPTH).expect("straiker nests below the limit");
-    assert_eq!(
-        fields["api_key"],
-        json!({
+    let want = expected(
+        r#"{"api_key": {
             "description": "Straiker DefendAI environment API key (Bearer token). Env: STRAIKER_API_KEY.",
             "required": true,
             "type": "string",
-            "default_value": null,
-        })
+            "default_value": null
+        }}"#,
     );
+    assert_eq!(projected(fields)["api_key"], want["api_key"]);
 }
 
 #[test]

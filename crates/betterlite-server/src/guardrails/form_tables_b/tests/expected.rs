@@ -9,14 +9,11 @@ pub(super) struct Field {
     description: String,
     required: bool,
     #[serde(rename = "type")]
-    field_type: String,
+    kind: String,
     #[serde(default)]
     options: Option<Vec<Scalar>>,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::rust::double_option::deserialize"
-    )]
-    default_value: Option<Option<Scalar>>,
+    #[serde(default)]
+    default_value: DefaultValue,
     #[serde(default)]
     dict_key_options: Option<Vec<Scalar>>,
     #[serde(default)]
@@ -28,15 +25,26 @@ pub(super) struct Field {
     #[serde(default)]
     step: Option<Scalar>,
     #[serde(default)]
-    fields: Option<BTreeMap<String, Field>>,
+    fields: Option<BTreeMap<String, Self>>,
 }
 
+// a key that is absent stays apart from an explicit null
+#[derive(Debug, Default, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub(super) enum DefaultValue {
+    #[default]
+    #[serde(skip_deserializing)]
+    Absent,
+    Null,
+    Value(Scalar),
+}
+
+// serde_json::Number keeps 30 and 30.0 apart and, unlike f64, survives untagged buffering under arbitrary_precision
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub(super) enum Scalar {
     Boolean(bool),
-    Integer(i64),
-    Number(f64),
+    Number(serde_json::Number),
     Text(String),
 }
 
