@@ -64,8 +64,7 @@ fn inherited_team_limit(
 struct ScopeDescriptor<'scope> {
     key: &'scope str,
     id: Option<&'scope str>,
-    requests: Option<i64>,
-    tokens: Option<i64>,
+    limits: (Option<i64>, Option<i64>),
 }
 
 impl ModelDescriptorBuilder {
@@ -108,15 +107,15 @@ impl ModelDescriptorBuilder {
         model: &RateLimitedModel,
         descriptor: ScopeDescriptor<'_>,
     ) {
-        if descriptor.requests.is_none() && descriptor.tokens.is_none() {
+        if descriptor.limits.0.is_none() && descriptor.limits.1.is_none() {
             return;
         }
         let value = format!("{}:{}", descriptor.id.unwrap_or(NONE_TEXT), model.group);
         out.push(self.descriptor(
             descriptor.key,
             value,
-            descriptor.requests,
-            descriptor.tokens,
+            descriptor.limits.0,
+            descriptor.limits.1,
         ));
     }
 
@@ -152,8 +151,7 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key: "model_per_organization",
                     id: account.org_id,
-                    requests,
-                    tokens,
+                    limits: (requests, tokens),
                 },
             );
         }
@@ -181,8 +179,7 @@ impl ModelDescriptorBuilder {
             ScopeDescriptor {
                 key: "model_per_key",
                 id: account_limits(auth).hashed_api_key,
-                requests,
-                tokens,
+                limits: (requests, tokens),
             },
         );
         Ok(())
@@ -204,14 +201,14 @@ impl ModelDescriptorBuilder {
         {
             *slot = inherited_team_limit(auth, &model, kind);
         }
+        let [requests, tokens] = limits;
         self.push_model_descriptor(
             out,
             &model,
             ScopeDescriptor {
                 key: "model_per_team",
                 id: account_limits(auth).team_id,
-                requests: limits[0],
-                tokens: limits[1],
+                limits: (requests, tokens),
             },
         );
     }
@@ -235,8 +232,7 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key: "model_per_project",
                     id: account_limits(auth).project_id,
-                    requests,
-                    tokens,
+                    limits: (requests, tokens),
                 },
             );
         }
@@ -270,8 +266,7 @@ impl ModelDescriptorBuilder {
                 ScopeDescriptor {
                     key,
                     id: Some(project_id),
-                    requests: None,
-                    tokens: limit,
+                    limits: (None, limit),
                 },
             );
         }
