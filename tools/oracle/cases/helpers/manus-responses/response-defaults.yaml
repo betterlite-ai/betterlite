@@ -29,3 +29,6 @@ call:
       - body: 'not json'
         status: 503
         headers: {}
+      - body: '{"id":"resp_1","created_at":5,"status":"failed","error":{"code":"x"},"output":[],"metadata":"bad"}'
+        status: 200
+        headers: {}
