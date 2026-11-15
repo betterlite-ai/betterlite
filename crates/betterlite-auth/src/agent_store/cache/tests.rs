@@ -15,7 +15,7 @@ fn local_cache(memory_ttl: Option<f64>) -> LocalCache {
     let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 1000.0_f64);
     let memory = Arc::new(LocalMemoryOps::new(1024, clock).expect("the local memory tier builds"));
     gateway_cache(
-        memory.clone(),
+        Arc::clone(&memory),
         memory,
         None,
         DualCacheSettings {

@@ -2,6 +2,8 @@
 
 pub(crate) mod support;
 
+use std::sync::Arc;
+
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_models::decisions::Json;
@@ -27,7 +29,7 @@ async fn init_from_client_keeps_the_management_cache() {
         state.value = Some(Json::Text(String::from("cached-agent")));
     }
     let client = PostgresStore { pool: None };
-    let store = AgentIdentityStore::from_client(&client, Some(cache.clone()));
+    let store = AgentIdentityStore::from_client(&client, Some(Arc::clone(&cache)));
     let bound = store
         .bound_agent_id("tenant-1", "client-1")
         .await

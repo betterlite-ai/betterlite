@@ -397,11 +397,11 @@ pub(crate) fn microsoft_subject() -> MicrosoftInteractiveSubject {
 
 pub(crate) fn store(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
     AgentIdentityStore {
-        agents: fake.clone(),
-        identities: fake.clone(),
-        humans: fake.clone(),
-        retired: Some(fake.clone()),
-        retired_agents: Some(fake.clone()),
+        agents: Arc::clone(fake),
+        identities: Arc::clone(fake),
+        humans: Arc::clone(fake),
+        retired: Some(Arc::clone(fake)),
+        retired_agents: Some(Arc::clone(fake)),
         cache: None,
         clock: fixed_clock,
     }
@@ -409,11 +409,11 @@ pub(crate) fn store(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
 
 pub(crate) fn store_without_retired(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
     AgentIdentityStore {
-        agents: fake.clone(),
-        identities: fake.clone(),
-        humans: fake.clone(),
+        agents: Arc::clone(fake),
+        identities: Arc::clone(fake),
+        humans: Arc::clone(fake),
         retired: None,
-        retired_agents: Some(fake.clone()),
+        retired_agents: Some(Arc::clone(fake)),
         cache: None,
         clock: fixed_clock,
     }
@@ -421,10 +421,10 @@ pub(crate) fn store_without_retired(fake: &Arc<FakeRecords>) -> AgentIdentitySto
 
 pub(crate) fn store_without_retired_agents(fake: &Arc<FakeRecords>) -> AgentIdentityStore {
     AgentIdentityStore {
-        agents: fake.clone(),
-        identities: fake.clone(),
-        humans: fake.clone(),
-        retired: Some(fake.clone()),
+        agents: Arc::clone(fake),
+        identities: Arc::clone(fake),
+        humans: Arc::clone(fake),
+        retired: Some(Arc::clone(fake)),
         retired_agents: None,
         cache: None,
         clock: fixed_clock,
@@ -436,12 +436,12 @@ pub(crate) fn store_with_cache(
     cache: &Arc<FakeCache>,
 ) -> AgentIdentityStore {
     AgentIdentityStore {
-        agents: fake.clone(),
-        identities: fake.clone(),
-        humans: fake.clone(),
-        retired: Some(fake.clone()),
-        retired_agents: Some(fake.clone()),
-        cache: Some(cache.clone()),
+        agents: Arc::clone(fake),
+        identities: Arc::clone(fake),
+        humans: Arc::clone(fake),
+        retired: Some(Arc::clone(fake)),
+        retired_agents: Some(Arc::clone(fake)),
+        cache: Some(Arc::clone(cache)),
         clock: fixed_clock,
     }
 }
