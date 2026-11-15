@@ -71,19 +71,34 @@ fn google_rpc_request_carries_the_bearer_token() {
     };
     let url = rpc_url("global", "x", "predict").expect("a url");
     let request =
-        rpc_request(auth, url.clone(), b"{}".to_vec(), Duration::from_secs(7)).expect("a request");
+        rpc_request(auth, url, b"{}".to_vec(), Duration::from_secs(7)).expect("a request");
     assert_eq!(request.method, Method::POST);
-    assert_eq!(request.url, url);
-    assert!(request.query.is_empty());
-    assert_eq!(request.deadline, Duration::from_secs(7));
-    assert!(matches!(&request.body, RequestBody::Json(bytes) if bytes == b"{}"));
-    assert_eq!(request.headers[CONTENT_TYPE], "application/json");
     assert_eq!(request.headers[AUTHORIZATION], "Bearer tok");
     assert!(request.headers[AUTHORIZATION].is_sensitive());
     assert_eq!(request.headers[GOOG_USER_PROJECT], "proj");
     assert!(request.headers[GOOG_USER_PROJECT].is_sensitive());
-    let headers = auth_headers(auth).expect("headers");
-    assert_eq!(headers[AUTHORIZATION], "Bearer tok");
+}
+
+#[test]
+fn google_rpc_request_encodes_the_body_and_deadline() {
+    let token = SecretString::from("tok");
+    let auth = RpcAuth {
+        token: &token,
+        project: "proj",
+    };
+    let url = rpc_url("global", "x", "predict").expect("a url");
+    let request =
+        rpc_request(auth, url.clone(), b"{}".to_vec(), Duration::from_secs(7)).expect("a request");
+    assert_eq!(request.url, url);
+    assert!(request.query.is_empty());
+    assert_eq!(request.deadline, Duration::from_secs(7));
+    assert_eq!(request.headers[CONTENT_TYPE], "application/json");
+    assert!(matches!(&request.body, RequestBody::Json(bytes) if bytes == b"{}"));
+}
+
+#[test]
+fn google_auth_headers_reject_control_characters() {
+    let token = SecretString::from("tok");
     assert!(matches!(
         auth_headers(RpcAuth {
             token: &SecretString::from("bad\ntoken"),
@@ -120,9 +135,9 @@ fn google_predict_requests_carry_the_quota_project() {
         endpoint: String::from("projects/p/locations/l/endpoints/e"),
         instances: Vec::new(),
     };
-    let headers = auth_headers(endpoint_auth(&endpoint)).expect("endpoint headers");
-    assert_eq!(headers[AUTHORIZATION], "Bearer tok");
-    assert_eq!(headers[GOOG_USER_PROJECT], "endpoint-project");
+    let endpoint_headers = auth_headers(endpoint_auth(&endpoint)).expect("endpoint headers");
+    assert_eq!(endpoint_headers[AUTHORIZATION], "Bearer tok");
+    assert_eq!(endpoint_headers[GOOG_USER_PROJECT], "endpoint-project");
 }
 
 #[rstest]

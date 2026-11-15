@@ -254,7 +254,7 @@ fn replied<T>(
 where
     T: Send,
 {
-    async move { reply.expect("a fixture reply") }
+    std::future::ready(reply.expect("a fixture reply"))
 }
 
 impl PredictionClient for FixtureClient {
