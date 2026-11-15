@@ -127,7 +127,7 @@ where
     };
     let text = reply.text;
     if call.stream && matches!(kind, PublisherCall::Text { fake_stream: true }) {
-        return fake_stream(call, text);
+        return fake_stream(call, &text);
     }
     let prediction = Prediction::Value(Json::Text(text));
     Ok(LegacyCompletion::Response(Box::new(result_of(
@@ -196,12 +196,12 @@ fn publisher_request(
 
 fn fake_stream(
     call: &SyncCall<'_, '_, '_>,
-    text: String,
+    text: &str,
 ) -> Result<LegacyCompletion, LegacyVertexError> {
-    let prediction = Prediction::Value(Json::Text(text.clone()));
+    let prediction = Prediction::Value(Json::Text(text.to_owned()));
     let result = result_of(call, Some(&prediction))?;
     // The source's fake stream is that whole response, yielded once by B596's iterator
-    let content = (!text.is_empty()).then_some(text.as_str());
+    let content = (!text.is_empty()).then_some(text);
     let response = fake_response::model_response(&result, content, call.identifier);
     let iterator = ModelResponseIterator::new(response, None)?;
     Ok(LegacyCompletion::FakeStream(iterator))
