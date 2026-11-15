@@ -69,7 +69,7 @@ fn an_explicit_base_and_key_win_over_the_environment() {
     );
     assert_eq!(base, "https://explicit.test/v1");
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("explicit-key".to_owned())
     );
 }
@@ -79,7 +79,7 @@ fn the_environment_key_is_used_when_the_call_has_none() {
     let environment_key = key("env-key");
     let (_, chosen) = provider_info(None, None, None, Some(&environment_key));
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("env-key".to_owned())
     );
 }

@@ -118,7 +118,7 @@ fn an_explicit_base_and_key_win_over_the_environment() {
     );
     assert_eq!(base, "https://explicit.test/v1");
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("explicit-key".to_owned())
     );
 }
@@ -134,7 +134,7 @@ fn the_environment_values_are_used_when_the_call_has_none() {
     );
     assert_eq!(base, "https://env.test/v1");
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("env-key".to_owned())
     );
 }
@@ -154,10 +154,12 @@ fn an_empty_value_counts_as_unset_at_every_step() {
 }
 
 #[rstest]
-#[case::none_effort(r#"{"type": "enabled"}"#, Some("none"), r#"{"type": "disabled"}"#)]
-#[case::high_effort(r#"{"type": "enabled"}"#, Some("high"), r#"{"type": "enabled"}"#)]
-#[case::empty_effort_is_enabled(r#"{"type": "enabled"}"#, Some(""), r#"{"type": "enabled"}"#)]
-#[case::thinking_object_wins(
+#[case::thinking_object_wins_over_a_none_effort(
+    r#"{"type": "enabled"}"#,
+    Some("none"),
+    r#"{"type": "enabled"}"#
+)]
+#[case::thinking_object_wins_over_a_high_effort(
     r#"{"type": "disabled", "budget_tokens": 3}"#,
     Some("high"),
     r#"{"type": "disabled", "budget_tokens": 3}"#
@@ -167,7 +169,7 @@ fn an_empty_value_counts_as_unset_at_every_step() {
     None,
     r#"{"type": "enabled", "display": "summarized"}"#
 )]
-fn a_thinking_object_is_the_payload_and_otherwise_the_effort_decides(
+fn a_thinking_object_is_the_payload_and_wins_over_the_effort(
     #[case] thinking: &str,
     #[case] effort: Option<&str>,
     #[case] expected: &str,
@@ -180,9 +182,24 @@ fn a_thinking_object_is_the_payload_and_otherwise_the_effort_decides(
 }
 
 #[rstest]
-#[case::non_string_effort(3)]
+#[case::none_effort(Some("none"), r#"{"type": "disabled"}"#)]
+#[case::high_effort(Some("high"), r#"{"type": "enabled"}"#)]
+#[case::empty_effort_is_enabled(Some(""), r#"{"type": "enabled"}"#)]
+fn the_effort_decides_when_no_thinking_object_is_given(
+    #[case] effort: Option<&str>,
+    #[case] expected: &str,
+) {
+    let effort_value = effort.map(|text| Value::String(text.to_owned()));
+    assert_eq!(
+        thinking_payload(None, effort_value.as_ref(), false),
+        Some(object(expected))
+    );
+}
+
+#[rstest]
+#[case::non_string_effort(Value::from(3_i64))]
 #[case::null_effort(Value::Null)]
-#[case::bool_effort(true)]
+#[case::bool_effort(Value::from(true))]
 fn a_non_string_effort_gives_no_payload(#[case] effort: Value) {
     assert_eq!(thinking_payload(None, Some(&effort), false), None);
 }

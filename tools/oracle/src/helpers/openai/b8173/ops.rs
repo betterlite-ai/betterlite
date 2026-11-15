@@ -35,7 +35,7 @@ fn info_value(base: String, key: Option<SecretString>) -> Value {
     value.insert(
         String::from("key"),
         key.map_or(Value::Null, |key| {
-            Value::String(key.expose_secret().clone())
+            Value::String(key.expose_secret().to_owned())
         }),
     );
     Value::Object(value)
@@ -101,9 +101,9 @@ fn tencent_cost(model: &str, prompt_tokens: i64, completion_tokens: i64) -> Help
             Box::new(HelperError {
                 class: String::from("Overflow"),
                 status: None,
-                error_type: None,
-                param: None,
-                code: None,
+                error_type: Some(None),
+                param: Some(None),
+                code: Some(None),
                 message: String::from("the token counts overflow"),
             })
         })?;
@@ -120,9 +120,9 @@ fn tencent_cost(model: &str, prompt_tokens: i64, completion_tokens: i64) -> Help
         Box::new(HelperError {
             class: String::from("UnknownModel"),
             status: None,
-            error_type: None,
-            param: None,
-            code: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
             message: error.to_string(),
         })
     })?;

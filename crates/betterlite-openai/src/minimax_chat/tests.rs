@@ -134,7 +134,7 @@ fn the_key_chain_ends_with_the_global_key() {
     let global = key("global-key");
     let (_, chosen) = provider_info(None, None, None, None, Some(&global));
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("global-key".to_owned())
     );
 }
@@ -152,7 +152,7 @@ fn an_explicit_key_wins_over_both_later_steps() {
         Some(&global),
     );
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("explicit-key".to_owned())
     );
 }
@@ -163,7 +163,7 @@ fn the_environment_key_wins_over_the_global_key() {
     let global = key("global-key");
     let (_, chosen) = provider_info(None, None, None, Some(&environment), Some(&global));
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("env-key".to_owned())
     );
 }
@@ -181,7 +181,7 @@ fn an_empty_key_counts_as_unset_at_every_step() {
         Some(&global),
     );
     assert_eq!(
-        chosen.map(|key| key.expose_secret().clone()),
+        chosen.map(|key| key.expose_secret().to_owned()),
         Some("global-key".to_owned())
     );
 }
