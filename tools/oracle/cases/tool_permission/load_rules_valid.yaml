@@ -1,0 +1,16 @@
+kind: helper
+name: load-rules-valid
+call:
+  b3810:
+    rules:
+      - {id: allow-read, tool_name: "  ^read_.*$  ", decision: ALLOW}
+      - id: deny-write
+        tool_name: null
+        tool_type: function
+        decision: deny
+        allowed_param_patterns: {path: "^/safe/.*$", "items[]": "^[a-z]+$"}
+      - {id: allow-any-read, tool_name: "^read_", decision: allow, allowed_param_patterns: null}
+    default_action: deny
+    on_disallowed_action: block
+env: {}
+compare: {ignore: []}
