@@ -11,7 +11,7 @@ use chrono::DateTime;
 use rust_decimal::Decimal;
 
 use super::index_rows::ToolIndexRow;
-use super::rollups::ToolDayRollup;
+use super::rollups::{ToolDayRollup, daily_rollups};
 use super::{
     FlushFuture, FlushPolicy, RetryPause, ToolSpendFailure, ToolSpendWriter,
     flush_tool_usage_transactions,
@@ -222,6 +222,18 @@ fn mixed_batch() -> [ToolUsageTransaction; 2] {
         transaction("req-1", "2026-01-02", &["search", "fetch"], (125, 2), 42),
         transaction("req-2", "2026-01-02", &["fetch"], (75, 2), 8),
     ]
+}
+
+#[test]
+fn daily_totals_add_money_exactly() {
+    let batch = [
+        transaction("req-1", "2026-01-02", &["search"], (1, 1), 3),
+        transaction("req-2", "2026-01-02", &["search"], (2, 1), 5),
+    ];
+    assert_eq!(
+        daily_rollups(&batch),
+        [rollup("2026-01-02", "search", (3, 1), 8, 2)]
+    );
 }
 
 #[test]
