@@ -11,6 +11,7 @@ use betterlite_anthropic::completion::response::{ResponseInput, transform_respon
 use betterlite_anthropic::completion::stream::chunk_parser;
 use betterlite_config::sections::anthropic_completion::OptionValues;
 use betterlite_models::decisions::Json;
+use betterlite_tokenizer::engine::Engine;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
@@ -34,8 +35,7 @@ pub(super) fn select(models: &[String]) -> Value {
 }
 
 // a registered template stays registered, so a case sees every custom prompt set up to itself
-pub(super) fn prompts(cases: &[PromptCase]) -> HelperResult {
-    let fixture = Fixture::new()?;
+pub(super) fn prompts(fixture: &Fixture, cases: &[PromptCase]) -> HelperResult {
     let mut custom_prompt_dict = BTreeMap::new();
     let mut texts = Vec::new();
     for case in cases {
@@ -62,8 +62,11 @@ pub(super) fn prompts(cases: &[PromptCase]) -> HelperResult {
 }
 
 pub(super) fn auth(cases: &[AuthCase]) -> HelperResult {
-    let results = cases.iter().map(auth_case).collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({ "results": results }))
+    cases
+        .iter()
+        .map(auth_case)
+        .collect::<Result<Vec<_>, _>>()
+        .map(|results| json!({ "results": results }))
 }
 
 fn auth_case(case: &AuthCase) -> Result<Value, Box<HelperError>> {
@@ -90,17 +93,21 @@ fn auth_case(case: &AuthCase) -> Result<Value, Box<HelperError>> {
     }
 }
 
-pub(super) fn options(constructor: &Constructor, cases: &[OptionCase]) -> HelperResult {
+pub(super) fn options(
+    fixture: &Fixture,
+    constructor: &Constructor,
+    cases: &[OptionCase],
+) -> HelperResult {
     let configured = OptionValues {
         max_tokens_to_sample: constructor.max_tokens_to_sample,
         stop_sequences: constructor.stop_sequences.clone(),
+        temperature: None,
+        top_p: None,
         top_k: constructor.top_k,
         metadata: constructor.metadata.clone(),
-        ..OptionValues::default()
     };
     let defaults =
         OptionDefaults::resolve(&configured, &OptionValues::default(), DEFAULT_MAX_TOKENS);
-    let fixture = Fixture::new()?;
     let custom_prompt_dict = BTreeMap::new();
     let source = fixture.source(&custom_prompt_dict);
     let mut answers = Vec::new();
@@ -122,51 +129,54 @@ pub(super) fn options(constructor: &Constructor, cases: &[OptionCase]) -> Helper
     Ok(json!({ "supported": SUPPORTED_OPENAI_PARAMS, "cases": answers }))
 }
 
-pub(super) fn replies(cases: &[ReplyCase]) -> HelperResult {
-    let fixture = Fixture::new()?;
+pub(super) fn replies(fixture: &Fixture, cases: &[ReplyCase]) -> HelperResult {
     let tokenizer = tiktoken()?;
+    let answers = cases
+        .iter()
+        .map(|case| reply(fixture, &tokenizer, case))
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(json!({ "replies": answers }))
+}
+
+fn reply(fixture: &Fixture, tokenizer: &Engine, case: &ReplyCase) -> HelperResult {
     let custom_prompt_dict = BTreeMap::new();
     let source = fixture.source(&custom_prompt_dict);
-    let mut answers = Vec::new();
-    for case in cases {
-        let input = ResponseInput {
-            model: &case.model,
-            messages: &case.messages,
-            status_code: case.status,
-            body: case.body.as_bytes(),
-        };
-        let response = blank_response(&case.initial_content)?;
-        let done = fixture
-            .runtime
-            .block_on(transform_response(&source, &input, response, &tokenizer));
-        answers.push(match done {
-            Ok(reply) => {
-                let choice = reply
-                    .choices
-                    .first()
-                    .ok_or("the reply has no choices")
-                    .or_value_error()?;
-                json!({
-                    "ok": true,
-                    "content": choice.message.content,
-                    "finish_reason": choice.finish_reason,
-                    "id": reply.id,
-                    "model": reply.model,
-                    "created_is_current": reply.created > CREATED_FLOOR,
-                    "usage": [
-                        reply.usage.prompt_tokens,
-                        reply.usage.completion_tokens,
-                        reply.usage.total_tokens,
-                    ],
-                })
-            }
-            Err(CompletionError::Upstream(error)) => {
-                json!({ "ok": false, "status": error.status_code, "message": error.message })
-            }
-            Err(error) => return Err(error).or_value_error(),
-        });
+    let input = ResponseInput {
+        model: &case.model,
+        messages: &case.messages,
+        status_code: case.status,
+        body: case.body.as_bytes(),
+    };
+    let response = blank_response(&case.initial_content)?;
+    let done = fixture
+        .runtime
+        .block_on(transform_response(&source, &input, response, tokenizer));
+    match done {
+        Ok(reply) => {
+            let choice = reply
+                .choices
+                .first()
+                .ok_or("the reply has no choices")
+                .or_value_error()?;
+            Ok(json!({
+                "ok": true,
+                "content": choice.message.content,
+                "finish_reason": choice.finish_reason,
+                "id": reply.id,
+                "model": reply.model,
+                "created_is_current": reply.created > CREATED_FLOOR,
+                "usage": [
+                    reply.usage.prompt_tokens,
+                    reply.usage.completion_tokens,
+                    reply.usage.total_tokens,
+                ],
+            }))
+        }
+        Err(CompletionError::Upstream(error)) => {
+            Ok(json!({ "ok": false, "status": error.status_code, "message": error.message }))
+        }
+        Err(error) => Err(error).or_value_error(),
     }
-    Ok(json!({ "replies": answers }))
 }
 
 pub(super) fn chunks(input: &[IndexMap<String, Json>]) -> HelperResult {
