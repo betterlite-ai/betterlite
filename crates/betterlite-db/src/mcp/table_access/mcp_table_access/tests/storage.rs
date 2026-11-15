@@ -5,6 +5,7 @@ use betterlite_redis::config_sync::table_actions::TableActions as _;
 
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
 use crate::database_replica::availability::Availability;
+use crate::mcp::table_access::_mcp_server_write_if_identifier_free;
 use crate::mcp::table_access::actions::_mcp_server_table_actions;
 use crate::mcp::table_access::filter::{FindServers, ServerFilter};
 use crate::mcp::table_access::rows::{
@@ -206,6 +207,14 @@ async fn a_pool_less_store_reports_no_database_for_reads_updates_and_locked_writ
     };
     let error = store
         .write_if_identifier_free(&write)
+        .await
+        .err()
+        .expect("no pool means no locks");
+    assert!(matches!(
+        error,
+        McpTableError::Database(DbError::NoDbConnected)
+    ));
+    let error = _mcp_server_write_if_identifier_free(&store, &write)
         .await
         .err()
         .expect("no pool means no locks");
