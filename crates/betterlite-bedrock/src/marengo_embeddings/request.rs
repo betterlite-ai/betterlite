@@ -57,14 +57,14 @@ pub enum MarengoRequest {
     Direct(MarengoModelInput),
 }
 
-#[derive(Debug)]
-pub struct TransformRequest<'a> {
-    pub model: Option<&'a str>,
-    pub input: &'a str,
-    pub inference_params: &'a Params,
+#[derive(Debug, Clone, Copy)]
+pub struct TransformRequest<'source> {
+    pub model: Option<&'source str>,
+    pub input: &'source str,
+    pub inference_params: &'source Params,
     pub async_invoke_route: bool,
-    pub model_id: Option<&'a str>,
-    pub output_s3_uri: Option<&'a str>,
+    pub model_id: Option<&'source str>,
+    pub output_s3_uri: Option<&'source str>,
     pub drop_params: bool,
 }
 
