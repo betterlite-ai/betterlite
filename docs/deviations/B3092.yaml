@@ -1,0 +1,26 @@
+task: B3092
+deviations:
+  - what: A date whose Z sits where the date and time separator belongs, such as 2026-01-05Z10:30:00, parses with Python's fromisoformat and contributes to the window, while betterlite drops it as unparseable.
+    why: spend_logs_window reuses the shared savings-evidence parser, which mirrors a caller's fromisoformat(value.replace("Z", "+00:00")); that replacement turns the separator into an invalid offset. A second fromisoformat port only to accept the separator is a duplicate of a parser betterlite already keeps, and no date field writes Z as a separator.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L460-L466
+  - what: A date set that mixes naive and offset-bearing values yields a window over the UTC instants, where LiteLLM sorts the parsed datetimes directly and raises TypeError for that mix.
+    why: Sorting a naive datetime against an aware one is a 500 on input a caller can send. Converting each parsed date to UTC compares the same instants and cannot fail, and no working setup relies on the exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L453-L457
+  - what: A date whose one-day subtraction or two-day addition leaves the representable calendar, such as 0001-01-01 or 9999-12-31, yields no window in betterlite, where LiteLLM's timedelta arithmetic raises OverflowError.
+    why: No window is the same handling an unparseable date gets, and the spend-log step is skipped rather than queried. A 500 for a date string the parser accepted is not something a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L453-L457
+  - what: spend_logs_window takes a set of date strings; a null date from a record is dropped by the caller before the call. LiteLLM's signature accepts AbstractSet[str | None] and _parse_spend_date ignores a non-string entry.
+    why: A Rust set of strings cannot hold a null, and the dates betterlite collects come from non-null date fields, so the null case carries no value to keep. The oracle helper filters nulls the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L453-L454
+  - what: A recovery step whose database row does not decode into its typed record is skipped with a warning and contributes no evidence, where LiteLLM reads the same row and uses the fields it finds.
+    why: betterlite decodes every row into a typed record and treats a row that fails to decode like a failed lookup, so one malformed user or token row cannot fail a daily activity read. No working setup relies on partially decoded attribution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L313-L327
+  - what: daily_activity_scope takes the six daily activity tables as a typed enum, so a table name outside them fails when the request decodes; LiteLLM raises ValueError from DailyActivityTable(table) inside the builder.
+    why: betterlite's request models are typed end to end and the enum keeps the six table names in one place. The builder still checks the entity field against the table and returns LiteLLM's message for a mismatch.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L556-L568
+  - what: daily_activity_repository takes the daily activity database adapter and the Postgres store as two arguments, where LiteLLM takes one Prisma client.
+    why: betterlite-db keeps typed daily activity reads and the recovery probes that use the generic store apart, and the factory is where the two meet. A caller that holds one Prisma client has the store on hand already.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/common_daily_activity.py#L552-L553
+  - what: Each repository value owns its spend-log metadata cache and query lock, so two reads made through two repository values do not share cached digests; LiteLLM's cache and lock are module-level and shared by every read in the process.
+    why: betterlite passes shared state through constructors, so the cache is the SpendLogHistory value the repository holds; a caller that wants sharing holds one repository, and the cached answers are identical either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/key_metadata_recovery.py#L463-L480
