@@ -1,0 +1,8 @@
+task: B731
+deviations:
+  - what: Gateway stderr remains B003's JSON format even when the database-tool formatter selects legacy text.
+    why: 'The database-tool diagnostic logger is a separate sink; its text selection never reaches the gateway subscriber. B003 keeps stderr structured JSON for every gateway log line. Proven by crates/betterlite-db/src/database_diagnostics/tests/formatting.rs native_gateway_stderr_stays_json, which formats the same record with the legacy text formatter and the JSON formatter and asserts the JSON output still parses with the three fields.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L34-L43
+  - what: Native exception records contain redacted typed causes rather than raw Python traceback text.
+    why: 'Python tracebacks name frames and paths that differ in Rust, and an arbitrary exception message may carry credentials. The formatter renders the typed kind and message through the shared Redactor, so a secret value never reaches the record. Proven by crates/betterlite-db/src/database_diagnostics/tests/redaction.rs native_database_diagnostics_redact_exception_values for both the JSON and the legacy formatter.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/_logging.py#L18-L20

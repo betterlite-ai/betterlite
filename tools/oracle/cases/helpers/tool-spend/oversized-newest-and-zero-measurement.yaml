@@ -1,0 +1,13 @@
+kind: helper
+name: oversized-newest-and-zero-measurement
+call:
+  tool_spend:
+    rows:
+      - {request_id: req-1, tool_name: search, start_time: "2026-01-02T00:00:00Z", refused: false}
+      - {request_id: req-refused, tool_name: refused, start_time: "2026-01-02T00:00:00Z", refused: true}
+      - {request_id: req-5, tool_name: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, start_time: "2026-01-05T09:15:30.123456Z", refused: false}
+    max_bytes: 100
+    max_rows: 100
+    queued_bytes: 239
+env: {}
+compare: {ignore: []}

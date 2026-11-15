@@ -1,0 +1,13 @@
+kind: helper
+name: host-rerank-record-jina-reply-and-hook
+call:
+  host_rerank_record:
+    provider: jina
+    model: jina-reranker-v2
+    api_key: jk
+    options: {query: q, documents: [a]}
+    reply:
+      status: 200
+      body: '{"id":"r","usage":{"total_tokens":8,"input_tokens":8},"results":[{"index":0,"relevance_score":0.5,"document":"a"}]}'
+env: {}
+compare: {ignore: []}
