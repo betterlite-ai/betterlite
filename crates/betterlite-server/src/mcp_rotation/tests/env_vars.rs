@@ -124,6 +124,11 @@ fn env_scope_and_falsey_values() {
     assert!(entries.contains(&env_entry("false-value", JsonValue::Bool(false))));
     assert!(entries.contains(&env_entry("list-value", json("[]"))));
     assert!(entries.contains(&env_entry("map-value", object(&[]))));
+    let inner = stored(&scope_entries()).unwrap();
+    let entries = rotated_entries(
+        reencrypt_global_env_values(stored(&string(&inner)).as_deref(), &old, &key).unwrap(),
+    );
+    assert_scope_rotation(&entries);
 }
 
 #[test]
