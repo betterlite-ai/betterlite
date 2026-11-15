@@ -169,11 +169,11 @@ fn values<Case>(cases: &[Case], convert: fn(&Case) -> Value) -> Value {
 fn route_value(case: &RouteCase) -> Value {
     let configured = ProxyOptions {
         api_base: case.environment_base.clone(),
-        api_key: case.environment_key.as_ref().map(SecretString::from),
+        api_key: case.environment_key.as_deref().map(SecretString::from),
         use_litellm_proxy: case.environment_use_litellm_proxy.unwrap_or(false)
             || case.global_use_litellm_proxy,
     };
-    let explicit_key = case.api_key.as_ref().map(SecretString::from);
+    let explicit_key = case.api_key.as_deref().map(SecretString::from);
     let route = configured.route(&case.model, case.api_base.as_deref(), explicit_key.as_ref());
     let static_key = configured.resolve_api_key(explicit_key.as_ref());
     json!({
@@ -181,17 +181,12 @@ fn route_value(case: &RouteCase) -> Value {
         "model": route.model,
         "provider": route.provider.to_string(),
         "api_base": route.api_base,
-        "api_key": revealed(route.api_key.as_ref()),
-        "get_api_key": revealed(static_key.as_ref()),
+        "api_key": route.api_key.as_ref().map(|key| key.expose_secret().to_owned()),
+        "get_api_key": static_key.as_ref().map(|key| key.expose_secret().to_owned()),
     })
 }
 
-fn revealed(key: Option<&SecretString>) -> Option<String> {
-    key.map(|key| key.expose_secret().to_owned())
-}
-
-// LiteLLM's proxy config inherits OpenAIGPTConfig; the inherited list and the constants only
-// need to agree on the names it accepts, which the mapping below checks
+// the mapping below only needs the inherited list to accept the proxy constant's names
 fn inherited_config() -> OpenAiConfig {
     OpenAiConfig {
         family: ConfigFamily::OpenAi,
@@ -230,7 +225,8 @@ fn chat_value(case: &ChatCase, catalog: &CatalogCapabilities) -> Result<Value, B
 fn responses_value(case: &ResponsesCase) -> Value {
     let options = ProxyOptions {
         api_base: case.environment_base.clone(),
-        ..ProxyOptions::default()
+        api_key: None,
+        use_litellm_proxy: false,
     };
     match responses_url(&options, case.api_base.as_deref()) {
         Ok(url) => json!({
@@ -246,10 +242,10 @@ fn responses_value(case: &ResponsesCase) -> Value {
 fn image_value(case: &ImageCase) -> Value {
     let options = ProxyOptions {
         api_base: case.environment_base.clone(),
-        api_key: case.environment_key.as_ref().map(SecretString::from),
-        ..ProxyOptions::default()
+        api_key: case.environment_key.as_deref().map(SecretString::from),
+        use_litellm_proxy: false,
     };
-    let explicit_key = case.api_key.as_ref().map(SecretString::from);
+    let explicit_key = case.api_key.as_deref().map(SecretString::from);
     match image_url(&options, case.api_base.as_deref(), case.endpoint.image()) {
         Ok(url) => json!({
             "ok": true,
@@ -275,14 +271,14 @@ fn models_values(params: &[ModelsCase]) -> HelperResult {
 fn models_value(runtime: &tokio::runtime::Runtime, case: &ModelsCase) -> Value {
     let options = ProxyOptions {
         api_base: case.environment_base.clone(),
-        api_key: case.environment_key.as_ref().map(SecretString::from),
-        ..ProxyOptions::default()
+        api_key: case.environment_key.as_deref().map(SecretString::from),
+        use_litellm_proxy: false,
     };
-    let explicit_key = case.api_key.as_ref().map(SecretString::from);
+    let explicit_key = case.api_key.as_deref().map(SecretString::from);
     let request = ModelsRequest {
         api_base: case.api_base.as_deref(),
         api_key: explicit_key.as_ref(),
-        environment_api_key: case.openai_api_key.as_ref().map(SecretString::from),
+        environment_api_key: case.openai_api_key.as_deref().map(SecretString::from),
         deadline: DEADLINE,
     };
     let script = Script::recording(case);
