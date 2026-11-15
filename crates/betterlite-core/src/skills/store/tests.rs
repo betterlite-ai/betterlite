@@ -23,7 +23,7 @@ fn store(repository: ScriptedRepository) -> HostedSkillStore<ScriptedRepository>
     HostedSkillStore::new(repository, support::fixed_ids(), support::fixed_clock()).unwrap()
 }
 
-fn stepping_clock() -> (Clock, Arc<Mutex<f64>>) {
+fn movable_clock() -> (Clock, Arc<Mutex<f64>>) {
     let value = Arc::new(Mutex::new(1000.0_f64));
     let reading = Arc::clone(&value);
     let clock: Clock = Arc::new(move || *reading.lock().unwrap_or_else(PoisonError::into_inner));
@@ -327,14 +327,14 @@ fn get_reads_once_then_serves_the_cache() {
 #[test]
 fn get_rereads_the_row_after_sixty_seconds() {
     support::runtime().block_on(async {
-        let (clock, now) = stepping_clock();
+        let (clock, now) = movable_clock();
         let repository = ScriptedRepository::with_row(stored_row("alice"));
         let store = HostedSkillStore::new(repository.clone(), support::fixed_ids(), clock).unwrap();
         store
             .get_skill(SKILL_ID, Some(&principal("alice")))
             .await
             .unwrap();
-        *now.lock().unwrap_or_else(PoisonError::into_inner) += 60.0;
+        *now.lock().unwrap_or_else(PoisonError::into_inner) = 1060.0_f64;
         store
             .get_skill(SKILL_ID, Some(&principal("alice")))
             .await
@@ -343,7 +343,7 @@ fn get_rereads_the_row_after_sixty_seconds() {
             page_effects(&repository),
             vec![Effect::FindUnique(SKILL_ID.to_owned())]
         );
-        *now.lock().unwrap_or_else(PoisonError::into_inner) += 1.0;
+        *now.lock().unwrap_or_else(PoisonError::into_inner) = 1061.0_f64;
         store
             .get_skill(SKILL_ID, Some(&principal("alice")))
             .await
