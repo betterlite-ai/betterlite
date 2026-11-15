@@ -8,8 +8,18 @@ use crate::guardrail_registry::changed::params_changed;
 use crate::guardrail_registry::error::RegistryError;
 use crate::guardrail_registry::handler::InMemoryGuardrailHandler;
 
-impl InMemoryGuardrailHandler {
-    pub fn reconcile_db_guardrails(&mut self, db_guardrail_ids: &BTreeSet<String>) -> Vec<String> {
+// the workspace denies multiple_inherent_impl, so the handler's two sync methods live on this trait
+pub trait GuardrailReconcile {
+    fn reconcile_db_guardrails(&mut self, db_guardrail_ids: &BTreeSet<String>) -> Vec<String>;
+
+    fn sync_guardrail_from_db(
+        &mut self,
+        guardrail: Guardrail,
+    ) -> Result<Option<Guardrail>, RegistryError>;
+}
+
+impl GuardrailReconcile for InMemoryGuardrailHandler {
+    fn reconcile_db_guardrails(&mut self, db_guardrail_ids: &BTreeSet<String>) -> Vec<String> {
         let stale_ids: Vec<String> = self
             .list_in_memory_guardrails()
             .into_iter()
@@ -28,7 +38,7 @@ impl InMemoryGuardrailHandler {
         stale_ids
     }
 
-    pub fn sync_guardrail_from_db(
+    fn sync_guardrail_from_db(
         &mut self,
         guardrail: Guardrail,
     ) -> Result<Option<Guardrail>, RegistryError> {

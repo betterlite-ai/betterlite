@@ -12,7 +12,7 @@ async fn from_config_starts_the_guardrails_in_file_order_as_config() {
         guardrail(Some("one"), "first", BEDROCK_PRE),
         guardrail(Some("two"), "second", BEDROCK_POST),
     ]);
-    let routed = runtime.start_from_config(&file).await.unwrap();
+    let routed = start_from_config(&runtime, &file).await.unwrap();
     let ids: Vec<Option<&str>> = routed.iter().map(|entry| entry.id.as_deref()).collect();
     assert_eq!(ids, [Some("one"), Some("two")]);
     let names: Vec<&str> = routed
@@ -41,7 +41,7 @@ async fn from_config_returns_the_router_entries_after_the_env_replacement() {
     let (runtime, _reads) = runtime_with(handler_with(env), Vec::new());
     let params = r#"{"guardrail":"bedrock","mode":"pre_call","api_key":"os.environ/GUARD_KEY","api_base":"os.environ/GUARD_BASE"}"#;
     let file = settings(vec![guardrail(Some("one"), "first", params)]);
-    let routed = runtime.start_from_config(&file).await.unwrap();
+    let routed = start_from_config(&runtime, &file).await.unwrap();
     let entry = routed.first().unwrap();
     assert_eq!(
         entry.api_key.as_ref().unwrap().expose_secret(),
@@ -64,9 +64,9 @@ async fn from_config_logs_and_skips_a_bad_entry_then_continues(#[case] bad: &str
         guardrail(Some("bad"), "broken", bad),
         guardrail(Some("three"), "third", BEDROCK_PRE),
     ]);
-    let routed = runtime.start_from_config(&file).await.unwrap();
+    let routed = start_from_config(&runtime, &file).await.unwrap();
     assert_eq!(routed.len(), 2);
-    assert_eq!(held_ids(&runtime.handler().read().await), ["one", "three"]);
+    assert_eq!(runtime_ids(&runtime).await, ["one", "three"]);
     let text = logged(&captured);
     assert!(text.contains("ERROR"), "{text}");
     assert!(
@@ -80,7 +80,7 @@ async fn from_config_logs_the_unsupported_kind_in_the_skip_line() {
     let (captured, _guard) = capture();
     let (runtime, _reads) = runtime_with(handler(), Vec::new());
     let file = settings(vec![guardrail(Some("bad"), "broken", UNSUPPORTED)]);
-    assert!(runtime.start_from_config(&file).await.unwrap().is_empty());
+    assert!(start_from_config(&runtime, &file).await.unwrap().is_empty());
     assert!(logged(&captured).contains("Unsupported guardrail: no-such-guardrail"));
 }
 
@@ -99,7 +99,7 @@ async fn from_config_logs_every_rejected_entry_and_still_starts_the_rest() {
             reason: "guardrail is required".to_owned(),
         },
     ];
-    let routed = runtime.start_from_config(&file).await.unwrap();
+    let routed = start_from_config(&runtime, &file).await.unwrap();
     assert_eq!(routed.len(), 1);
     let text = logged(&captured);
     assert!(text.contains("ERROR"), "{text}");
@@ -121,21 +121,20 @@ async fn from_config_stops_startup_on_the_hide_secrets_enterprise_error() {
         guardrail(Some("secrets"), "hide", HIDE_SECRETS),
         guardrail(Some("three"), "third", BEDROCK_PRE),
     ]);
-    let failed = runtime.start_from_config(&file).await.unwrap_err();
+    let failed = start_from_config(&runtime, &file).await.unwrap_err();
     assert!(matches!(
         &failed,
         StartupError::Guardrail { guardrail_name, source: RegistryError::Enterprise(_) }
             if guardrail_name == "hide"
     ));
-    assert_eq!(held_ids(&runtime.handler().read().await), ["one"]);
+    assert_eq!(runtime_ids(&runtime).await, ["one"]);
 }
 
 #[tokio::test]
 async fn from_config_with_nothing_to_start_returns_an_empty_list() {
     let (runtime, _reads) = runtime_with(handler(), Vec::new());
     assert!(
-        runtime
-            .start_from_config(&settings(Vec::new()))
+        start_from_config(&runtime, &settings(Vec::new()))
             .await
             .unwrap()
             .is_empty()

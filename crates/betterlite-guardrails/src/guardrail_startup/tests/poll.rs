@@ -14,7 +14,7 @@ async fn poll_syncs_each_active_row_as_a_db_guardrail() {
         row("row-2", "secrets", BEDROCK_POST),
     ])];
     let (runtime, reads) = runtime_with(handler(), polls);
-    runtime.poll_database().await;
+    poll_database(&runtime).await;
     assert_eq!(reads.load(Ordering::SeqCst), 1);
     let held = runtime.handler().read().await;
     assert_eq!(held_ids(&held), ["row-1", "row-2"]);
@@ -33,11 +33,8 @@ async fn poll_skips_a_bad_row_logs_it_and_syncs_the_rest() {
         row("row-3", "secrets", BEDROCK_PRE),
     ])];
     let (runtime, _reads) = runtime_with(handler(), polls);
-    runtime.poll_database().await;
-    assert_eq!(
-        held_ids(&runtime.handler().read().await),
-        ["row-1", "row-3"]
-    );
+    poll_database(&runtime).await;
+    assert_eq!(runtime_ids(&runtime).await, ["row-1", "row-3"]);
     let text = logged(&captured);
     assert!(text.contains("ERROR"), "{text}");
     assert!(
@@ -55,19 +52,16 @@ async fn poll_reconciles_stale_db_entries_and_leaves_config_ones() {
     ]);
     let polls = vec![Ok(vec![row("kept", "kept", BEDROCK_PRE)])];
     let (runtime, _reads) = runtime_with(seed, polls);
-    runtime.poll_database().await;
-    assert_eq!(
-        held_ids(&runtime.handler().read().await),
-        ["from-file", "kept"]
-    );
+    poll_database(&runtime).await;
+    assert_eq!(runtime_ids(&runtime).await, ["from-file", "kept"]);
 }
 
 #[tokio::test]
 async fn poll_with_an_empty_table_purges_every_db_entry() {
     let seed = seeded(&[("stale", GuardrailDefinitionLocation::Db)]);
     let (runtime, _reads) = runtime_with(seed, vec![Ok(Vec::new())]);
-    runtime.poll_database().await;
-    assert!(held_ids(&runtime.handler().read().await).is_empty());
+    poll_database(&runtime).await;
+    assert!(runtime_ids(&runtime).await.is_empty());
 }
 
 #[tokio::test]
@@ -78,12 +72,9 @@ async fn poll_failed_read_leaves_memory_alone_and_logs() {
         ("from-file", GuardrailDefinitionLocation::Config),
     ]);
     let (runtime, reads) = runtime_with(seed, vec![Err(RowsError::MissingRow)]);
-    runtime.poll_database().await;
+    poll_database(&runtime).await;
     assert_eq!(reads.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        held_ids(&runtime.handler().read().await),
-        ["db-entry", "from-file"]
-    );
+    assert_eq!(runtime_ids(&runtime).await, ["db-entry", "from-file"]);
     let text = logged(&captured);
     assert!(text.contains("ERROR"), "{text}");
     assert!(text.contains("Error getting guardrails from DB"), "{text}");
@@ -94,7 +85,7 @@ async fn poll_keeps_the_previous_entry_of_a_row_that_fails_to_sync() {
     let seed = seeded(&[("row-1", GuardrailDefinitionLocation::Db)]);
     let polls = vec![Ok(vec![row("row-1", "row-1", UNSUPPORTED)])];
     let (runtime, _reads) = runtime_with(seed, polls);
-    runtime.poll_database().await;
+    poll_database(&runtime).await;
     let held = runtime.handler().read().await;
     assert_eq!(held_ids(&held), ["row-1"]);
     assert_eq!(
@@ -111,10 +102,10 @@ async fn poll_waits_for_the_reconcile_mutex_before_it_reads() {
     let polls = vec![Ok(vec![row("row-1", "pii", BEDROCK_PRE)])];
     let (runtime, reads) = runtime_with(handler(), polls);
     let busy = runtime.reconcile_lock.lock().await;
-    let waited = timeout(Duration::from_millis(50), runtime.poll_database()).await;
+    let waited = timeout(Duration::from_millis(50), poll_database(&runtime)).await;
     assert!(waited.is_err());
     assert_eq!(reads.load(Ordering::SeqCst), 0);
     drop(busy);
-    runtime.poll_database().await;
+    poll_database(&runtime).await;
     assert_eq!(reads.load(Ordering::SeqCst), 1);
 }

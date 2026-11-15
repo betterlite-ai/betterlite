@@ -10,9 +10,10 @@ fn initialized(
 #[test]
 fn reconcile_removes_db_entries_missing_from_the_set_in_the_order_found() {
     let mut handler = handler();
-    for id in ["first", "second", "third", "fourth"] {
-        initialized(&mut handler, id, GuardrailDefinitionLocation::Db);
-    }
+    initialized(&mut handler, "first", GuardrailDefinitionLocation::Db);
+    initialized(&mut handler, "second", GuardrailDefinitionLocation::Db);
+    initialized(&mut handler, "third", GuardrailDefinitionLocation::Db);
+    initialized(&mut handler, "fourth", GuardrailDefinitionLocation::Db);
     let kept = BTreeSet::from(["second".to_owned()]);
     assert_eq!(
         handler.reconcile_db_guardrails(&kept),

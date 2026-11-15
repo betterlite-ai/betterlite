@@ -21,14 +21,12 @@ use betterlite_config::sections::guardrail_params::{RejectedGuardrail, Settings}
 use betterlite_config::sections::legacy_guardrails::{
     Raw as LegacyRaw, Settings as LegacySettings,
 };
-use betterlite_db::budget_permission_rows::Timestamp;
 use betterlite_logging::callback_config::{CallbackVars, FeatureFlags};
 use betterlite_logging::callback_logger::CallbackLogger;
 use betterlite_logging::callback_logger::resolver::LoggerResolver;
 use betterlite_logging::registry::CallbackRegistry;
 use betterlite_logging::registry::error::RegistryError as LoggingRegistryError;
 use betterlite_logging::registry::phases::CallbackList;
-use chrono::NaiveDateTime;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tokio::task::yield_now;
@@ -37,9 +35,12 @@ use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::error::StartupError;
+use super::from_config::start_from_config;
 use super::legacy::{
     LegacyCallbackStarter, LegacyPlan, plan_legacy_callbacks, start_legacy_guardrails,
 };
+use super::poll::poll_database;
+use super::reconcile::GuardrailReconcile;
 use super::router_list::router_guardrail_list;
 use super::runtime::GuardrailRuntime;
 use super::starter::RegistryStarter;
@@ -71,19 +72,11 @@ fn guardrail(id: Option<&str>, name: &str, params_json: &str) -> Guardrail {
 }
 
 fn row(id: &str, name: &str, params_json: &str) -> GuardrailRow {
-    let stamp = Timestamp::Naive(
-        NaiveDateTime::parse_from_str("2026-01-02T03:04:05", "%Y-%m-%dT%H:%M:%S").unwrap(),
+    let params = serde_json::to_string(params_json).unwrap();
+    let text = format!(
+        r#"{{"guardrail_id":"{id}","guardrail_name":"{name}","litellm_params":{params},"guardrail_info":"{{}}","team_id":null,"status":"active","created_at":"2026-01-02T03:04:05","updated_at":"2026-01-02T03:04:05"}}"#
     );
-    GuardrailRow {
-        guardrail_id: id.to_owned(),
-        guardrail_name: name.to_owned(),
-        litellm_params: Some(params_json.to_owned()),
-        guardrail_info: Some("{}".to_owned()),
-        team_id: None,
-        status: "active".to_owned(),
-        created_at: stamp,
-        updated_at: stamp,
-    }
+    serde_json::from_str(&text).unwrap()
 }
 
 struct NoPolicies;
@@ -226,6 +219,11 @@ fn held_ids(handler: &InMemoryGuardrailHandler) -> Vec<String> {
         .into_iter()
         .filter_map(|guardrail| guardrail.guardrail_id)
         .collect()
+}
+
+async fn runtime_ids(runtime: &GuardrailRuntime<FakeRows>) -> Vec<String> {
+    let guard = runtime.handler().read().await;
+    held_ids(&guard)
 }
 
 include!("tests/reconcile.rs");
