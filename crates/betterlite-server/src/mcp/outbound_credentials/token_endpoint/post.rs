@@ -39,6 +39,9 @@ impl TokenEndpointPost for HttpTokenPost {
         for (name, value) in form {
             encoded.append_pair(name, value.expose_secret());
         }
+        // The serializer borrows a closure that is not Sync, so it is gone before the request awaits.
+        let data = encoded.finish().into_bytes();
+        drop(encoded);
         let request = OutboundRequest {
             method: Method::POST,
             url,
@@ -46,7 +49,7 @@ impl TokenEndpointPost for HttpTokenPost {
             headers: HeaderMap::new(),
             body: RequestBody::Bytes {
                 content_type: HeaderValue::from_static(FORM_CONTENT_TYPE),
-                data: encoded.finish().into_bytes(),
+                data,
             },
             deadline: self.deadline,
         };
