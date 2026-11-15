@@ -1,0 +1,5 @@
+task: B1391
+deviations:
+  - what: An SSE payload that Python's json.loads accepts but serde_json refuses is skipped whole, so its candidate text never reaches the guardrail; that covers the NaN and Infinity literals, a lone surrogate escape such as "\ud800", and nesting deeper than 128 levels.
+    why: The scanner parses each payload as standard JSON, docs/compatibility.md makes standard JSON the rule, and serde_json's default recursion limit keeps provider bytes off the stack, as the bounded-inputs rule requires; a Gemini stream frame carrying such a value is nothing a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/google_genai/guardrail_translation/handler.py#L109-L116
