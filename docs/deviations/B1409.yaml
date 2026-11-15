@@ -3,4 +3,7 @@ deviations:
   - what: A non-streaming Mistral reply whose content list carries a thinking block keeps the last text block as content but never sends message.reasoning_content, while LiteLLM sets that field from the last thinking block.
     why: The shared chat reply type (ChatResponse and AssistantMessage, owned by B004) has no reasoning_content field, so the reasoning text the Mistral decoder extracts is dropped when the reply is converted for the client; extending that type is outside this task's scope.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L539
+  - what: The post-call log records original_response as null when the reply bytes are not valid UTF-8, while LiteLLM logs httpx's decoded text with replacement characters.
+    why: betterlite refuses bytes that are not UTF-8 instead of mangling them, which is why the workspace disallows String::from_utf8_lossy; the reply conversion fails with a JSON error either way, and only the logged field differs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/chat/transformation.py#L592
 kept_bugs: []
