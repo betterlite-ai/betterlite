@@ -77,6 +77,19 @@ fn a_missing_prompt_integration_is_rejected_where_the_spec_is_read() {
 }
 
 #[test]
+fn an_absent_prompt_info_gets_the_config_default() {
+    let body = r#"{"prompt_id":"greeting.v1","litellm_params":{"prompt_integration":"dotprompt","prompt_id":"repo/greeting"}}"#;
+    let prompt: PromptSpec = serde_json::from_str(body).expect("the row parses");
+    let (parsed, callback) = build_prompt_callback(&prompt).expect("dotprompt registers");
+    assert_eq!(parsed.prompt_info.prompt_type, "config");
+    assert_eq!(
+        parsed.litellm_params.prompt_id,
+        Some("repo/greeting".to_owned())
+    );
+    assert_eq!(callback, client(Some("repo/greeting")));
+}
+
+#[test]
 fn the_initializer_receives_the_spec_params() {
     let mut prompt = prompt_spec("greeting.v1", "development", "bitbucket");
     prompt.litellm_params.prompt_id = Some("repo/prompt".to_owned());
