@@ -60,6 +60,27 @@ pub fn open_sentence_prefix(previous: &str, head: &str, context_chars: usize) ->
     // a sentence longer than two contexts keeps its end, the part nearest the buffer
     let limit = context_chars.saturating_mul(2);
     let length = open.chars().count();
-    let start = length.saturating_sub(limit);
+    let start = word_end_bound(&open, length.saturating_sub(limit));
     char_slice(&open, start, length).to_owned()
+}
+
+// A bound that splits a word moves to the next non-word character, or stays when the sentence ends inside that word
+fn word_end_bound(open: &str, start: usize) -> usize {
+    if start == 0 {
+        return 0;
+    }
+    let before = open.chars().nth(start.saturating_sub(1));
+    let at = open.chars().nth(start);
+    let inside = matches!(
+        (before, at),
+        (Some(left), Some(right))
+            if (left.is_alphanumeric() || left == '_') && (right.is_alphanumeric() || right == '_')
+    );
+    if !inside {
+        return start;
+    }
+    open.chars()
+        .skip(start)
+        .position(|character| !(character.is_alphanumeric() || character == '_'))
+        .map_or(start, |offset| start.saturating_add(offset))
 }

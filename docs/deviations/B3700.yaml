@@ -3,10 +3,13 @@ deviations:
   - what: >-
       A streamed choice's buffer is trimmed even when an exception phrase or an
       unfinished conditional sentence would leave it, so the buffer stays near two
-      context lengths. The dropped phrases, the open sentence as its own text, and the
-      dropped prefix's first matching conditional, phrase pattern and category keyword
-      travel as per-choice state, so every yielded chunk and every recorded detection
-      stays what the untrimmed buffer gives.
+      context lengths. The dropped phrases travel as per-choice state and keep
+      suppressing category matches. The open sentence, as its own text, and the dropped
+      prefix's first matching conditional, phrase pattern and category keyword travel
+      too, but only while the cut is one LiteLLM's own check would defer. On a cut
+      LiteLLM commits the carry is cleared, so a match the trimmed buffer no longer
+      holds never wins over one it does, and the yielded chunks and recorded detections
+      stay what the untrimmed buffer gives.
     why: >-
       LiteLLM defers the trim while a phrase sits outside the tail or a conditional
       word sits in the sentence the cut splits. Once either is more than one context
@@ -14,14 +17,19 @@ deviations:
       the stream, the buffer holds the whole response and every chunk rescans it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1981-L1989
   - what: >-
-      The open sentence carried past a trim keeps at most two context lengths of text.
-      A conditional identifier or block word further than that behind the cut no longer
-      pairs with text that arrives later in the same sentence, so its detection is
-      missing where LiteLLM's untrimmed buffer still holds it.
+      The open sentence carried past a trim keeps at most two context lengths of text,
+      and a bound that lands inside a word moves forward to the next non-word character,
+      so the carried text never starts mid-word. A conditional identifier or block word
+      further than two contexts behind the cut no longer pairs with text that arrives
+      later in the same sentence, so its detection is missing where LiteLLM's untrimmed
+      buffer still holds it.
     why: >-
       Carrying the whole sentence would leave the per-choice state growing with the
       response, which this trim exists to prevent. Two contexts keep the carried text
-      near the size of the buffer the next scans rescan.
+      near the size of the buffer the next scans rescan. Starting the carried text on a
+      word boundary stops its first character from turning the tail of a longer word into
+      a whole block word, which would block where LiteLLM's real sentence matches
+      nothing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/litellm_content_filter/content_filter.py#L1991-L2026
   - what: >-
       The guardrail record lists a choice's detections in whole-buffer scan order:

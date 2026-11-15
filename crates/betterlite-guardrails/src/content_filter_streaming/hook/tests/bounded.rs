@@ -13,7 +13,7 @@ use super::{
     StreamCase, choice, choice_of, chunk, compiled_pattern, content_at, masked_word, record,
     response_detections, run_stream, stream_case, stream_source, text_field,
 };
-use crate::content_filter_actions::error::ContentFilterActionError;
+use crate::content_filter_actions::error::{ContentFilterActionError, ContentFilterBlockDetail};
 use crate::content_filter_actions::filter_single_text;
 use crate::content_filter_streaming::STREAM_HOLDBACK_CHARS;
 use crate::content_filter_streaming::error::StreamFilterError;
@@ -167,6 +167,27 @@ fn exception_category() -> CategoryLoadResult {
     categories
 }
 
+fn keyword_categories() -> CategoryLoadResult {
+    let mut categories = CategoryLoadResult::default();
+    categories.category_keywords.insert(
+        "alpha".to_owned(),
+        (
+            "alpha_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    categories.category_keywords.insert(
+        "beta".to_owned(),
+        (
+            "beta_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Block,
+        ),
+    );
+    categories
+}
+
 fn keyword_order_categories() -> CategoryLoadResult {
     let mut categories = child_categories(ContentFilterAction::Mask, "medium");
     categories.category_keywords.insert(
@@ -263,10 +284,14 @@ fn hook_keeps_the_buffer_bounded_while_an_exception_phrase_stays_behind_the_tail
 
 #[test]
 fn hook_keeps_the_buffer_bounded_while_an_open_conditional_sentence_has_no_end() {
-    let opening = format!("attack {}", "a".repeat(93));
-    let mut case = stream_case(padded_items(&opening, " the end"));
+    let sentence = format!("attack {}", "a".repeat(93));
+    let mut items = vec![chunk(vec![choice(Some(0), Some(sentence.as_str()), None)])];
+    for _ in 0..40_usize {
+        items.push(chunk(vec![choice(Some(0), Some(sentence.as_str()), None)]));
+    }
+    items.push(chunk(vec![choice(Some(0), Some(" the end"), Some("stop"))]));
+    let mut case = stream_case(items);
     case.categories = conditional_categories();
-    case.blocked_words = vec![masked_word("secret")];
     let driven = drive_chunks(&case);
     assert_buffer_bounded(&driven);
     let state = driven.states.get(&0).expect("choice 0 has a state");
@@ -286,6 +311,22 @@ fn hook_keeps_a_block_word_inside_a_longer_word_of_the_carried_sentence() {
     assert_stream_matches_untrimmed(&case, &driven);
 }
 
+#[tokio::test]
+async fn hook_does_not_pair_a_block_word_the_carried_truncation_splits() {
+    let opening = format!("aharm {}child", "w".repeat(1526));
+    let mut case = stream_case(vec![
+        chunk(vec![choice(Some(0), Some(opening.as_str()), None)]),
+        chunk(vec![choice(Some(0), Some(" done"), Some("stop"))]),
+    ]);
+    case.categories = child_categories(ContentFilterAction::Block, "high");
+    let run = run_stream(&case).await;
+    assert!(run.outcome.is_ok(), "the split word never pairs with child");
+    let (expected_contents, expected_detections) = untrimmed(&case);
+    assert_eq!(chunk_contents(&run.chunks), expected_contents);
+    assert!(expected_detections.is_empty());
+    assert!(response_detections(record(&run)).is_empty());
+}
+
 #[test]
 fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
     let opening = format!("alpha child {}", "x".repeat(955));
@@ -300,6 +341,25 @@ fn hook_keeps_the_dropped_prefixs_first_keyword_ahead_of_a_later_block() {
         .expect("the dropped keyword is carried");
     assert_eq!(carried.matched, "alpha");
     assert_stream_matches_untrimmed(&case, &driven);
+}
+
+#[tokio::test]
+async fn hook_drops_a_trimmed_keyword_when_litellm_would_commit_the_cut() {
+    let opening = format!("alpha {}", "x".repeat(960));
+    let mut case = stream_case(short_items(&opening, "beta done"));
+    case.categories = keyword_categories();
+    let run = run_stream(&case).await;
+    let Err(StreamFilterError::Blocked { detail }) = &run.outcome else {
+        panic!("the later beta keyword is the first match once alpha leaves the buffer");
+    };
+    let ContentFilterBlockDetail::CategoryKeyword { keyword, .. } = detail else {
+        panic!("the block comes from a category keyword");
+    };
+    assert_eq!(keyword.as_str(), "beta");
+    assert_eq!(
+        text_field(record(&run), &["guardrail_status"]),
+        Some("guardrail_intervened")
+    );
 }
 
 #[tokio::test]

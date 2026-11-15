@@ -99,6 +99,14 @@ fn plan() -> StreamedScanPlan {
     }
 }
 
+fn conditional_plan() -> StreamedScanPlan {
+    StreamedScanPlan {
+        context_chars: 512,
+        exception_phrases: Vec::new(),
+        conditional_words: vec!["child".to_owned(), "harm".to_owned()],
+    }
+}
+
 #[test]
 fn trim_returns_the_state_unchanged_while_the_buffer_fits_twice_the_context() {
     let categories = CategoryLoadResult::default();
@@ -535,12 +543,9 @@ fn trim_carries_the_dropped_prefixes_first_keyword() {
     let source = source(&categories, &[], &[]);
     let buffered = format!("alpha {}", "x".repeat(1080));
     let masked = format!("[KEYWORD_REDACTED] {}", "x".repeat(1080));
-    let trimmed = trim_streamed_choice_buffer(
-        &source,
-        state(&buffered, 1049, CarriedMatches::default()),
-        &masked,
-        &plan(),
-    );
+    let mut open_state = state(&buffered, 1049, CarriedMatches::default());
+    open_state.open_sentence = "child ".to_owned();
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &masked, &conditional_plan());
     assert_eq!(trimmed.buffered_text.len(), 512);
     let carried = trimmed
         .carried_matches
@@ -578,8 +583,9 @@ fn trim_keeps_the_carried_keyword_ahead_of_a_later_one_in_the_head() {
         phrase: None,
         keyword: Some(found("aaa", "alpha_policy", ContentFilterAction::Mask)),
     };
-    let trimmed =
-        trim_streamed_choice_buffer(&source, state(&buffered, 1051, carried), &masked, &plan());
+    let mut open_state = state(&buffered, 1051, carried);
+    open_state.open_sentence = "child ".to_owned();
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &masked, &conditional_plan());
     let winner = trimmed
         .carried_matches
         .keyword
@@ -615,8 +621,9 @@ fn trim_takes_the_heads_keyword_when_it_comes_first() {
         phrase: None,
         keyword: Some(found("zzz", "zeta_policy", ContentFilterAction::Mask)),
     };
-    let trimmed =
-        trim_streamed_choice_buffer(&source, state(&buffered, 1051, carried), &masked, &plan());
+    let mut open_state = state(&buffered, 1051, carried);
+    open_state.open_sentence = "child ".to_owned();
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &masked, &conditional_plan());
     let winner = trimmed
         .carried_matches
         .keyword
@@ -624,6 +631,36 @@ fn trim_takes_the_heads_keyword_when_it_comes_first() {
         .expect("the head's keyword is carried");
     assert_eq!(winner.matched, "aaa");
     assert_eq!(winner.category, "alpha_policy");
+}
+
+#[test]
+fn trim_clears_the_carry_when_litellm_commits_the_cut() {
+    let mut categories = CategoryLoadResult::default();
+    categories.category_keywords.insert(
+        "alpha".to_owned(),
+        (
+            "alpha_policy".to_owned(),
+            "high".to_owned(),
+            ContentFilterAction::Mask,
+        ),
+    );
+    let source = source(&categories, &[], &[]);
+    let buffered = format!("alpha {}", "x".repeat(1080));
+    let masked = format!("[KEYWORD_REDACTED] {}", "x".repeat(1080));
+    let carried = CarriedMatches {
+        conditional: None,
+        phrase: None,
+        keyword: Some(found("zeta", "zeta_policy", ContentFilterAction::Mask)),
+    };
+    let trimmed = trim_streamed_choice_buffer(
+        &source,
+        state(&buffered, 1049, carried),
+        &masked,
+        &conditional_plan(),
+    );
+    assert_eq!(trimmed.buffered_text.len(), 512);
+    assert!(trimmed.open_sentence.is_empty());
+    assert!(trimmed.carried_matches.keyword.is_none());
 }
 
 #[test]
@@ -645,8 +682,12 @@ fn trim_keeps_the_carried_conditional_ahead_of_the_same_category_in_the_head() {
         phrase: None,
         keyword: None,
     };
-    let trimmed =
-        trim_streamed_choice_buffer(&source, state(&buffered, 1049, carried), &buffered, &plan());
+    let trimmed = trim_streamed_choice_buffer(
+        &source,
+        state(&buffered, 1049, carried),
+        &buffered,
+        &conditional_plan(),
+    );
     let winner = trimmed
         .carried_matches
         .conditional
@@ -687,8 +728,12 @@ fn trim_takes_the_heads_conditional_when_its_category_comes_first() {
         phrase: None,
         keyword: None,
     };
-    let trimmed =
-        trim_streamed_choice_buffer(&source, state(&buffered, 1049, carried), &buffered, &plan());
+    let trimmed = trim_streamed_choice_buffer(
+        &source,
+        state(&buffered, 1049, carried),
+        &buffered,
+        &conditional_plan(),
+    );
     let winner = trimmed
         .carried_matches
         .conditional
@@ -716,8 +761,9 @@ fn trim_takes_the_heads_phrase_pattern_when_it_comes_first() {
         )),
         keyword: None,
     };
-    let trimmed =
-        trim_streamed_choice_buffer(&source, state(&buffered, 1034, carried), &buffered, &plan());
+    let mut open_state = state(&buffered, 1034, carried);
+    open_state.open_sentence = "child ".to_owned();
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &conditional_plan());
     let winner = trimmed
         .carried_matches
         .phrase
@@ -742,7 +788,7 @@ fn trim_bounds_the_carried_open_sentence_to_two_contexts() {
     let buffered = format!("{}{}", "x".repeat(1400), "y".repeat(512));
     let mut open_state = state(&buffered, 1862, CarriedMatches::default());
     open_state.open_sentence = "child ".to_owned();
-    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &plan());
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &conditional_plan());
     assert_eq!(trimmed.buffered_text.len(), 512);
     assert_eq!(trimmed.open_sentence, "x".repeat(1024));
 }
@@ -751,10 +797,10 @@ fn trim_bounds_the_carried_open_sentence_to_two_contexts() {
 fn trim_starts_the_open_sentence_after_the_heads_last_terminator() {
     let categories = CategoryLoadResult::default();
     let source = source(&categories, &[], &[]);
-    let buffered = format!("aa. bb {}", "x".repeat(1080));
+    let buffered = format!("aa. bb {} child", "x".repeat(1074));
     let mut open_state = state(&buffered, 1037, CarriedMatches::default());
     open_state.open_sentence = "gone ".to_owned();
-    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &plan());
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &conditional_plan());
     assert_eq!(trimmed.buffered_text.len(), 512);
     assert_eq!(trimmed.open_sentence, format!(" bb {}", "x".repeat(568)));
 }
@@ -766,7 +812,7 @@ fn trim_keeps_the_open_sentence_when_only_the_tail_ends_it() {
     let buffered = format!("child {}.{}", "x".repeat(1069), "y".repeat(500));
     let mut open_state = state(&buffered, 1526, CarriedMatches::default());
     open_state.open_sentence = "child ".to_owned();
-    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &plan());
+    let trimmed = trim_streamed_choice_buffer(&source, open_state, &buffered, &conditional_plan());
     assert_eq!(trimmed.buffered_text.len(), 512);
     assert_eq!(trimmed.open_sentence, "x".repeat(1024));
 }

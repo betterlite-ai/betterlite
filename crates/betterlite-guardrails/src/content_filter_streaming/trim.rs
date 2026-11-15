@@ -1,7 +1,9 @@
 use betterlite_config::sections::content_category::loading::CategoryLoadResult;
 
 use crate::content_filter_actions::{ContentFilterSource, filter_single_text};
-use crate::content_filter_streaming::context::{exception_phrases_in, open_sentence_prefix};
+use crate::content_filter_streaming::context::{
+    cut_breaks_wider_context, exception_phrases_in, open_sentence_prefix,
+};
 use crate::content_filter_streaming::filtering::{
     ScanInput, earlier_match, filter_streamed_text, source_with_categories,
 };
@@ -26,6 +28,7 @@ struct CutResult {
     head_scan: HeadScan,
     dropped_phrases: Vec<String>,
     open_sentence: String,
+    deferring: bool,
 }
 
 #[must_use]
@@ -52,22 +55,39 @@ pub fn trim_streamed_choice_buffer(
     // Python's buffer keeps every phrase and open sentence and its scan suppresses their category matches, so the dropped prefix travels as flags and text instead
     let dropped_phrases = exception_phrases_in(&state.buffered_text, plan);
     let suppression = !state.seen_exception_phrases.is_empty() || !dropped_phrases.is_empty();
+    let deferring = litellm_defers(&state, head, tail, plan);
     let cut = committable_cut(source, &state, (head, tail), masked_text, suppression);
     let open_sentence = open_sentence_prefix(&state.open_sentence, head, plan.context_chars);
     let next_trim_len = buffered_len.saturating_add(plan.context_chars);
     match cut {
         None => deferred(state, next_trim_len),
-        Some(head_scan) => trimmed(
-            source,
-            state,
-            CutResult {
-                tail: tail.to_owned(),
-                head_scan,
-                dropped_phrases,
-                open_sentence,
-            },
-        ),
+        Some(head_scan) => {
+            let tail = tail.to_owned();
+            trimmed(
+                source,
+                state,
+                CutResult {
+                    tail,
+                    head_scan,
+                    dropped_phrases,
+                    open_sentence,
+                    deferring,
+                },
+            )
+        }
     }
+}
+
+// The carried open sentence stands in for the part of LiteLLM's buffer an earlier trim already dropped
+fn litellm_defers(
+    state: &StreamedChoiceState,
+    head: &str,
+    tail: &str,
+    plan: &StreamedScanPlan,
+) -> bool {
+    let carried_head = format!("{}{head}", state.open_sentence);
+    let carried_text = format!("{}{}", state.open_sentence, state.buffered_text);
+    cut_breaks_wider_context(&carried_text, &carried_head, tail, plan)
 }
 
 // The buffer stays whole and only the bar for the next attempt moves, one context past its length
@@ -78,7 +98,7 @@ fn deferred(state: StreamedChoiceState, next_trim_len: usize) -> StreamedChoiceS
     }
 }
 
-// The dropped prefix leaves the buffer, its detections become committed, and its first matches stay
+// The dropped prefix leaves the buffer and its detections become committed; its first matches stay only when LiteLLM would have deferred this cut
 fn trimmed(
     source: &ContentFilterSource<'_>,
     state: StreamedChoiceState,
@@ -90,6 +110,14 @@ fn trimmed(
             seen_exception_phrases.push(phrase);
         }
     }
+    let (open_sentence, carried) = if cut.deferring {
+        (
+            cut.open_sentence,
+            carried_matches(source, &state.carried_matches, cut.head_scan.matches),
+        )
+    } else {
+        (String::new(), CarriedMatches::default())
+    };
     StreamedChoiceState {
         buffered_text: cut.tail,
         yielded_masked_text_len: state
@@ -104,8 +132,8 @@ fn trimmed(
         latest_detections: state.latest_detections,
         next_trim_len: 0,
         seen_exception_phrases,
-        open_sentence: cut.open_sentence,
-        carried_matches: carried_matches(source, &state.carried_matches, cut.head_scan.matches),
+        open_sentence,
+        carried_matches: carried,
     }
 }
 

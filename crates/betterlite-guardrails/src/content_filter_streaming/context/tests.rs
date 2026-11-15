@@ -184,3 +184,9 @@ fn open_sentence_prefix_keeps_a_sentence_that_fits_two_contexts() {
 fn open_sentence_prefix_keeps_the_end_of_a_sentence_over_two_contexts() {
     assert_eq!(open_sentence_prefix("", "0123456789", 4), "23456789");
 }
+
+#[test]
+fn open_sentence_prefix_moves_a_bound_that_splits_a_word() {
+    // the bound would land on the "harm" inside "aharm", where the sentence has no word start
+    assert_eq!(open_sentence_prefix("", "zzzzzzzaharm ch!", 4), " ch!");
+}
