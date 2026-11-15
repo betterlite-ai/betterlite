@@ -81,7 +81,6 @@ impl From<&CancelParams> for ResourceSdkRequestOptions {
 }
 
 // cancel_batch's only fallback the shared settings lack: the AD token get_azure_ad_token reads
-#[must_use]
 pub fn azure_ad_token<'settings>(
     params: &'settings CancelParams,
     settings: &'settings ResourceSdkSettings,
@@ -95,9 +94,8 @@ pub fn azure_ad_token<'settings>(
     .find(|token| !token.expose_secret().is_empty())
 }
 
-#[must_use]
 pub fn resolve_timeout(call: &CancelBatchCall) -> Result<FineTuningTimeout, TimeoutError> {
-    let provider = call.provider.wire_name();
+    let provider = call.provider.0.as_str();
     match configured(call.params.timeout.as_ref()) {
         Configured::Structured(timeout) => {
             resolve_fine_tuning_timeout(None, provider, Some(timeout))

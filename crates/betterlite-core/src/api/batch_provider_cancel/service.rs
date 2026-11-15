@@ -16,8 +16,8 @@ use super::async_invoke;
 use super::connection;
 use super::{
     AzureCancelCall, BatchCancelDispatch, BatchProviderCancelError, BatchProviderCancelInput,
-    BatchProviderCancelResult, BedrockCancelCall, CancelBatchCall, CancelCall, CancelProvider,
-    OpenAiCancelCall, VertexCancelCall, XaiCancelCall,
+    BatchProviderCancelResult, BedrockCancelCall, CancelBatchCall, CancelCall, CancelTarget,
+    CancelValues, OpenAiCancelCall, VertexCancelCall, XaiCancelCall,
 };
 
 pub struct BatchProviderCancel<Dispatch> {
@@ -41,7 +41,6 @@ where
     Dispatch: BatchCancelDispatch,
     Dispatch::Error: Error + Send + Sync + 'static,
 {
-    #[must_use]
     pub async fn run(
         &self,
         input: &BatchProviderCancelInput,
@@ -80,113 +79,76 @@ where
         })
     }
 
+    // cancel_batch branches on the provider's wire name; a name it doesn't declare answers 400
     async fn dispatch_branch(
         &self,
         call: &CancelBatchCall,
         prepared: &Prepared,
     ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        match &call.provider {
-            CancelProvider::Openai | CancelProvider::HostedVllm | CancelProvider::LitellmProxy => {
-                self.openai_branch(call, prepared).await
-            }
-            CancelProvider::Azure => self.azure_branch(call, prepared).await,
-            CancelProvider::VertexAi => self.vertex_branch(call, prepared).await,
-            CancelProvider::Xai => self.xai_branch(call, prepared).await,
-            CancelProvider::Bedrock => self.bedrock_branch(call).await,
-            CancelProvider::Other(provider) => Err(BatchProviderCancelError::Unsupported {
-                provider: provider.clone(),
-            }),
-        }
-    }
-
-    async fn openai_branch(
-        &self,
-        call: &CancelBatchCall,
-        prepared: &Prepared,
-    ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        let api_base = prepared.settings.openai_base(&prepared.options);
+        let Some(target) = cancel_target(call, prepared) else {
+            return Err(BatchProviderCancelError::Unsupported {
+                provider: call.provider.0.clone(),
+            });
+        };
         self.dispatch
-            .openai(OpenAiCancelCall {
-                is_async: prepared.is_async,
-                api_base: &api_base,
+            .cancel(target)
+            .await
+            .map_err(BatchProviderCancelError::Dispatch)
+    }
+}
+
+fn cancel_values<'call>(
+    call: &'call CancelBatchCall,
+    prepared: &'call Prepared,
+) -> CancelValues<'call> {
+    CancelValues {
+        is_async: prepared.is_async,
+        batch_id: &call.batch_id,
+        request: &prepared.request,
+        timeout: &prepared.timeout,
+        max_retries: call.params.max_retries,
+    }
+}
+
+// the five providers cancel_batch declares, each with the settings its request reads
+fn cancel_target<'call>(
+    call: &'call CancelBatchCall,
+    prepared: &'call Prepared,
+) -> Option<CancelTarget<'call>> {
+    let values = cancel_values(call, prepared);
+    match call.provider.0.as_str() {
+        "openai" | "hosted_vllm" | "litellm_proxy" => {
+            Some(CancelTarget::OpenAi(OpenAiCancelCall {
+                values,
+                api_base: prepared.settings.openai_base(&prepared.options),
                 api_key: prepared.settings.openai_api_key(&prepared.options),
                 organization: prepared.settings.openai_organization(&prepared.options),
-                request: &prepared.request,
-                timeout: &prepared.timeout,
-                max_retries: call.params.max_retries,
-            })
-            .await
-            .map_err(BatchProviderCancelError::Dispatch)
-    }
-
-    async fn azure_branch(
-        &self,
-        call: &CancelBatchCall,
-        prepared: &Prepared,
-    ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        self.dispatch
-            .azure(AzureCancelCall {
-                is_async: prepared.is_async,
-                api_base: prepared.settings.azure_base(&prepared.options),
-                api_key: prepared.settings.azure_api_key(&prepared.options),
-                api_version: prepared.settings.azure_version(&prepared.options),
-                azure_ad_token: connection::azure_ad_token(&call.params, &prepared.settings),
-                request: &prepared.request,
-                timeout: &prepared.timeout,
-                max_retries: call.params.max_retries,
-            })
-            .await
-            .map_err(BatchProviderCancelError::Dispatch)
-    }
-
-    async fn vertex_branch(
-        &self,
-        call: &CancelBatchCall,
-        prepared: &Prepared,
-    ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        self.dispatch
-            .vertex(VertexCancelCall {
-                is_async: prepared.is_async,
-                batch_id: &call.batch_id,
-                api_base: prepared.options.api_base.as_deref(),
-                vertex_project: prepared.settings.vertex_project(&prepared.options),
-                vertex_location: prepared.settings.vertex_location(&prepared.options),
-                vertex_credentials: prepared.settings.vertex_credentials(&prepared.options),
-                timeout: &prepared.timeout,
-                max_retries: call.params.max_retries,
-            })
-            .await
-            .map_err(BatchProviderCancelError::Dispatch)
-    }
-
-    async fn xai_branch(
-        &self,
-        call: &CancelBatchCall,
-        prepared: &Prepared,
-    ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        self.dispatch
-            .xai(XaiCancelCall {
-                is_async: prepared.is_async,
-                batch_id: &call.batch_id,
-                api_base: prepared.options.api_base.as_deref(),
-                api_key: prepared.options.api_key.as_ref(),
-                timeout: &prepared.timeout,
-            })
-            .await
-            .map_err(BatchProviderCancelError::Dispatch)
-    }
-
-    async fn bedrock_branch(
-        &self,
-        call: &CancelBatchCall,
-    ) -> Result<BatchObject, BatchProviderCancelError<Dispatch::Error>> {
-        self.dispatch
-            .bedrock(BedrockCancelCall {
-                batch_id: &call.batch_id,
-                params: &call.params,
-            })
-            .await
-            .map_err(BatchProviderCancelError::Dispatch)
+            }))
+        }
+        "azure" => Some(CancelTarget::Azure(AzureCancelCall {
+            values,
+            api_base: prepared.settings.azure_base(&prepared.options),
+            api_key: prepared.settings.azure_api_key(&prepared.options),
+            api_version: prepared.settings.azure_version(&prepared.options),
+            azure_ad_token: connection::azure_ad_token(&call.params, &prepared.settings),
+        })),
+        "vertex_ai" => Some(CancelTarget::Vertex(VertexCancelCall {
+            values,
+            api_base: prepared.options.api_base.as_deref(),
+            vertex_project: prepared.settings.vertex_project(&prepared.options),
+            vertex_location: prepared.settings.vertex_location(&prepared.options),
+            vertex_credentials: prepared.settings.vertex_credentials(&prepared.options),
+        })),
+        "xai" => Some(CancelTarget::Xai(XaiCancelCall {
+            values,
+            api_base: prepared.options.api_base.as_deref(),
+            api_key: prepared.options.api_key.as_ref(),
+        })),
+        "bedrock" => Some(CancelTarget::Bedrock(BedrockCancelCall {
+            values,
+            params: &call.params,
+        })),
+        _ => None,
     }
 }
 

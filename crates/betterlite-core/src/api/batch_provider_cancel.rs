@@ -19,56 +19,10 @@ mod tests;
 
 use connection::CancelParams;
 
-// cancel_batch's provider union: the declared literal names plus the str branch that answers 400
+// cancel_batch's provider is the declared literal names plus any other string, which answers 400
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(from = "String")]
-pub enum CancelProvider {
-    Openai,
-    HostedVllm,
-    LitellmProxy,
-    Azure,
-    VertexAi,
-    Bedrock,
-    Xai,
-    Other(String),
-}
-
-impl CancelProvider {
-    #[must_use]
-    pub fn from_name(name: &str) -> Self {
-        match name {
-            "openai" => Self::Openai,
-            "hosted_vllm" => Self::HostedVllm,
-            "litellm_proxy" => Self::LitellmProxy,
-            "azure" => Self::Azure,
-            "vertex_ai" => Self::VertexAi,
-            "bedrock" => Self::Bedrock,
-            "xai" => Self::Xai,
-            other => Self::Other(other.to_owned()),
-        }
-    }
-
-    // supports_httpx_timeout reads this name: only openai, azure and bedrock keep a structured timeout
-    #[must_use]
-    pub fn wire_name(&self) -> &str {
-        match self {
-            Self::Openai => "openai",
-            Self::HostedVllm => "hosted_vllm",
-            Self::LitellmProxy => "litellm_proxy",
-            Self::Azure => "azure",
-            Self::VertexAi => "vertex_ai",
-            Self::Bedrock => "bedrock",
-            Self::Xai => "xai",
-            Self::Other(name) => name,
-        }
-    }
-}
-
-impl From<String> for CancelProvider {
-    fn from(name: String) -> Self {
-        Self::from_name(&name)
-    }
-}
+#[serde(transparent)]
+pub struct CancelProvider(pub String);
 
 // acancel_batch sets the async flag and lets a model in its kwargs replace the argument
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
@@ -140,7 +94,6 @@ impl<DispatchError> BatchProviderCancelError<DispatchError>
 where
     DispatchError: Error + 'static,
 {
-    #[must_use]
     pub const fn error_fields(&self) -> Option<CancelErrorFields> {
         match self {
             Self::Unsupported { .. } => Some(CancelErrorFields {
@@ -154,82 +107,72 @@ where
     }
 }
 
+// the values every provider branch reads after the shared limit and timeout checks
 #[derive(Debug, Clone, Copy)]
-pub struct OpenAiCancelCall<'call> {
+pub struct CancelValues<'call> {
     pub is_async: bool,
-    pub api_base: &'call str,
-    pub api_key: Option<&'call SecretString>,
-    pub organization: Option<&'call str>,
+    pub batch_id: &'call str,
     pub request: &'call BatchIdRequest,
     pub timeout: &'call FineTuningTimeout,
     pub max_retries: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenAiCancelCall<'call> {
+    pub values: CancelValues<'call>,
+    // the openai branch always has a base: the call's, the settings' or the default
+    pub api_base: String,
+    pub api_key: Option<&'call SecretString>,
+    pub organization: Option<&'call str>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct AzureCancelCall<'call> {
-    pub is_async: bool,
+    pub values: CancelValues<'call>,
     pub api_base: Option<&'call str>,
     pub api_key: Option<&'call SecretString>,
     pub api_version: Option<&'call str>,
     pub azure_ad_token: Option<&'call SecretString>,
-    pub request: &'call BatchIdRequest,
-    pub timeout: &'call FineTuningTimeout,
-    pub max_retries: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct VertexCancelCall<'call> {
-    pub is_async: bool,
-    pub batch_id: &'call str,
+    pub values: CancelValues<'call>,
     pub api_base: Option<&'call str>,
     pub vertex_project: Option<&'call str>,
     pub vertex_location: Option<&'call str>,
     pub vertex_credentials: Option<&'call SecretString>,
-    pub timeout: &'call FineTuningTimeout,
-    pub max_retries: Option<i64>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct XaiCancelCall<'call> {
-    pub is_async: bool,
-    pub batch_id: &'call str,
+    pub values: CancelValues<'call>,
     pub api_base: Option<&'call str>,
     pub api_key: Option<&'call SecretString>,
-    pub timeout: &'call FineTuningTimeout,
 }
 
 // the source forwards its whole kwargs dict to the bedrock handler, which only names credential fields
 #[derive(Debug, Clone, Copy)]
 pub struct BedrockCancelCall<'call> {
-    pub batch_id: &'call str,
+    pub values: CancelValues<'call>,
     pub params: &'call CancelParams,
+}
+
+// cancel_batch's five branches; the provider's wire name decides which one a call takes
+#[derive(Debug, Clone)]
+pub enum CancelTarget<'call> {
+    OpenAi(OpenAiCancelCall<'call>),
+    Azure(AzureCancelCall<'call>),
+    Vertex(VertexCancelCall<'call>),
+    Xai(XaiCancelCall<'call>),
+    Bedrock(BedrockCancelCall<'call>),
 }
 
 pub trait BatchCancelDispatch: Send + Sync {
     type Error: Error + Send + Sync + 'static;
 
-    fn openai(
+    fn cancel(
         &self,
-        call: OpenAiCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send;
-
-    fn azure(
-        &self,
-        call: AzureCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send;
-
-    fn vertex(
-        &self,
-        call: VertexCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send;
-
-    fn xai(
-        &self,
-        call: XaiCancelCall<'_>,
-    ) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send;
-
-    fn bedrock(
-        &self,
-        call: BedrockCancelCall<'_>,
+        target: CancelTarget<'_>,
     ) -> impl Future<Output = Result<BatchObject, Self::Error>> + Send;
 }

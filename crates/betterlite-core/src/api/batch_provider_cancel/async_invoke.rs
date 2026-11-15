@@ -4,7 +4,6 @@ use betterlite_openai::batches::records::{
 use chrono::DateTime;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-use serde_json::Map;
 
 use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimitError, ApiLimits, EventBoundary};
 
@@ -41,7 +40,6 @@ pub struct AsyncInvokeS3Output {
     pub s3_uri: Option<String>,
 }
 
-#[must_use]
 pub fn normalize(
     status: &AsyncInvokeStatus,
     now: i64,
@@ -104,7 +102,7 @@ fn batch(
             failed: i64::from(normalized == BatchStatus::Failed),
         }),
         usage: None,
-        provider_fields: Map::new(),
+        provider_fields: <_>::default(),
     }
 }
 
