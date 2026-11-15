@@ -1,0 +1,18 @@
+kind: helper
+name: bedrock-services-realtime-output-user
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+    calls:
+      - {method: user_speech, start: true}
+      - {method: user_transcript, text: hello}
+      - {method: user_speech, start: false}
+      - {method: user_completed}
+env: {}
+compare: {ignore: []}

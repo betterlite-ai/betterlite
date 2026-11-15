@@ -1,0 +1,15 @@
+kind: helper
+name: tool-spend-offset-time-seed
+call:
+  tool_spend:
+    transaction:
+      request_id: req-1
+      start_time_iso: "2026-01-02T00:30:00+02:00"
+      mcp_namespaced_tool_name: null
+      spend: 0.5
+      total_tokens: 4
+      completion_response: null
+      realtime_tool_calls:
+        - function: {name: fetch}
+env: {}
+compare: {ignore: []}
