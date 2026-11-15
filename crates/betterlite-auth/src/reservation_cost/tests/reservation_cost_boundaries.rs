@@ -12,8 +12,10 @@ const TIERED: &str = r#"{"mode":"chat","max_input_tokens":1000000,"max_output_to
 async fn a_group_metadata_failure_returns_no_estimate() {
     let fixture = Fixture::new(r#"{"model":"flat-model","max_tokens":10}"#)
         .router(FixedRouter {
+            groups: BTreeMap::new(),
+            deployments: BTreeMap::new(),
+            deployment_infos: BTreeMap::new(),
             failing: Some(Failing::Group),
-            ..FixedRouter::default()
         })
         .model_info("flat-model", FLAT)
         .provided_count("flat-model", 1000);
@@ -25,8 +27,9 @@ async fn a_deployment_list_failure_returns_no_estimate() {
     let fixture = Fixture::new(r#"{"model":"grouped","max_tokens":10}"#)
         .router(FixedRouter {
             groups: BTreeMap::from([("grouped".to_owned(), json(FLAT))]),
+            deployments: BTreeMap::new(),
+            deployment_infos: BTreeMap::new(),
             failing: Some(Failing::Deployments),
-            ..FixedRouter::default()
         })
         .provided_count("grouped", 1000);
     assert_eq!(fixture.max_cost().await.unwrap(), None);
@@ -41,8 +44,8 @@ async fn a_deployment_info_failure_returns_no_estimate() {
                 "grouped".to_owned(),
                 vec![deployment(Some("dep-a"), Some("backend"))],
             )]),
+            deployment_infos: BTreeMap::new(),
             failing: Some(Failing::DeploymentInfo),
-            ..FixedRouter::default()
         })
         .provided_count("grouped", 1000);
     assert_eq!(fixture.max_cost().await.unwrap(), None);

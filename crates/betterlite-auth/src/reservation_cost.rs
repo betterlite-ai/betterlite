@@ -7,13 +7,13 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 pub mod error;
+pub mod input_cost;
 
 mod cost_info;
 mod estimates;
 mod rates;
 mod tokens;
 
-#[cfg(test)]
 mod tests;
 
 use crate::auth_request_models::RequestedModels;
@@ -83,43 +83,29 @@ pub async fn estimate_request_max_cost(
     sources: &EstimateSources<'_>,
     input_token_counts: Option<&IndexMap<String, usize>>,
 ) -> Result<Option<Decimal>, error::ReservationCostError> {
-    let models = request_models(request, sources)?;
     let mut best: Option<Decimal> = None;
-    for model in models {
-        let counted =
-            tokens::counted_input_tokens(request.body, sources.tokens, &model, input_token_counts)
-                .await;
-        let infos = cost_info::load(&model, sources.router, sources.model_info)?;
-        for info in &infos {
-            if let Some(cost) =
-                estimates::max_cost_for_info(request.body, request.route, counted, info)?
-            {
-                best = Some(best.map_or(cost, |current| current.max(cost)));
-            }
-        }
+    for (counted, info) in loaded_costs(request, sources, input_token_counts).await? {
+        let cost = estimates::max_cost_for_info(request.body, request.route, counted, &info)?;
+        best = best.max(cost);
     }
     Ok(best)
 }
 
-pub async fn estimate_request_input_cost(
+async fn loaded_costs(
     request: &EstimateRequest<'_>,
     sources: &EstimateSources<'_>,
     input_token_counts: Option<&IndexMap<String, usize>>,
-) -> Result<Option<Decimal>, error::ReservationCostError> {
-    let models = request_models(request, sources)?;
-    let mut best: Option<Decimal> = None;
-    for model in models {
+) -> Result<Vec<(Option<i64>, cost_info::CostInfo)>, error::ReservationCostError> {
+    let mut loaded = Vec::new();
+    for model in request_models(request, sources)? {
         let counted =
             tokens::counted_input_tokens(request.body, sources.tokens, &model, input_token_counts)
                 .await;
-        let infos = cost_info::load(&model, sources.router, sources.model_info)?;
-        for info in &infos {
-            if let Some(cost) = estimates::input_cost_for_info(counted, info)? {
-                best = Some(best.map_or(cost, |current| current.max(cost)));
-            }
+        for info in cost_info::load(&model, sources.router, sources.model_info)? {
+            loaded.push((counted, info));
         }
     }
-    Ok(best)
+    Ok(loaded)
 }
 
 pub async fn count_request_input_tokens(

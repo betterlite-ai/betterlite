@@ -80,8 +80,8 @@ fn base_cost_info(
     router: Option<&dyn RouterModelInfo>,
     source: &dyn ModelInfoSource,
 ) -> Result<Option<JsonObject>, ModelInfoError> {
-    if let Some(router) = router
-        && let Some(group_info) = router.cached_model_group_info(model)?
+    if let Some(lookup) = router
+        && let Some(group_info) = lookup.cached_model_group_info(model)?
     {
         return Ok(Some(group_info));
     }
@@ -92,16 +92,16 @@ fn deployment_tiered_tables(
     model: &str,
     router: Option<&dyn RouterModelInfo>,
 ) -> Result<Vec<Json>, ModelInfoError> {
-    let Some(router) = router else {
+    let Some(lookup) = router else {
         return Ok(Vec::new());
     };
     let mut tables = Vec::new();
-    for deployment in router.get_model_list(model)? {
+    for deployment in lookup.get_model_list(model)? {
         let (Some(model_id), Some(backend_model)) = (deployment.model_id, deployment.backend_model)
         else {
             continue;
         };
-        let Some(info) = router.cached_deployment_model_info(&model_id, &backend_model)? else {
+        let Some(info) = lookup.cached_deployment_model_info(&model_id, &backend_model)? else {
             continue;
         };
         if let Some(table @ Json::List(tiers)) = info.get("tiered_pricing")

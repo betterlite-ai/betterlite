@@ -8,16 +8,16 @@ use async_trait::async_trait;
 use betterlite_models::model_registration::JsonObject;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use crate::auth_request_models::catalog::{
     ManagedIdDecoders, ManagedIdError, ManagedIdFamily, ModelCatalog,
 };
 use crate::reservation_cost::error::{ModelInfoError, ReservationCostError};
+use crate::reservation_cost::input_cost::estimate_request_input_cost;
 use crate::reservation_cost::{
     EstimateRequest, EstimateSources, ModelInfoSource, ReservationTokens, RouterDeployment,
-    RouterModelInfo, count_request_input_tokens, estimate_request_input_cost,
-    estimate_request_max_cost,
+    RouterModelInfo, count_request_input_tokens, estimate_request_max_cost,
 };
 
 pub(crate) fn json(text: &str) -> JsonObject {
@@ -43,11 +43,18 @@ pub(crate) struct FixedRouter {
     pub(crate) failing: Option<Failing>,
 }
 
-impl RouterModelInfo for FixedRouter {
-    fn get_model_list(&self, model_name: &str) -> Result<Vec<RouterDeployment>, ModelInfoError> {
-        if self.failing == Some(Failing::Deployments) {
+impl FixedRouter {
+    fn ensure(&self, failing: Failing) -> Result<(), ModelInfoError> {
+        if self.failing == Some(failing) {
             return Err(ModelInfoError::Unavailable);
         }
+        Ok(())
+    }
+}
+
+impl RouterModelInfo for FixedRouter {
+    fn get_model_list(&self, model_name: &str) -> Result<Vec<RouterDeployment>, ModelInfoError> {
+        self.ensure(Failing::Deployments)?;
         Ok(self
             .deployments
             .get(model_name)
@@ -60,9 +67,7 @@ impl RouterModelInfo for FixedRouter {
         model_id: &str,
         _backend_model: &str,
     ) -> Result<Option<JsonObject>, ModelInfoError> {
-        if self.failing == Some(Failing::DeploymentInfo) {
-            return Err(ModelInfoError::Unavailable);
-        }
+        self.ensure(Failing::DeploymentInfo)?;
         Ok(self.deployment_infos.get(model_id).cloned())
     }
 
@@ -70,9 +75,7 @@ impl RouterModelInfo for FixedRouter {
         &self,
         model_name: &str,
     ) -> Result<Option<JsonObject>, ModelInfoError> {
-        if self.failing == Some(Failing::Group) {
-            return Err(ModelInfoError::Unavailable);
-        }
+        self.ensure(Failing::Group)?;
         Ok(self.groups.get(model_name).cloned())
     }
 }

@@ -82,23 +82,24 @@ impl RouterModelInfo for FakeRouter<'_> {
         &self,
         model_name: &str,
     ) -> Result<Option<JsonObject>, ModelInfoError> {
-        let Some(deployment) = self
+        Ok(self.group_snapshot(model_name))
+    }
+}
+
+impl FakeRouter<'_> {
+    fn group_snapshot(&self, model_name: &str) -> Option<JsonObject> {
+        let deployment = self
             .deployments
             .iter()
-            .find(|deployment| deployment.model_name == model_name)
-        else {
-            return Ok(None);
-        };
+            .find(|deployment| deployment.model_name == model_name)?;
         let mut info = self.merged_info(deployment);
         for field in GROUP_ONLY_ABSENT_FIELDS {
             info.shift_remove(field);
         }
         fill_paired_rates(&mut info);
-        Ok(Some(info))
+        Some(info)
     }
-}
 
-impl FakeRouter<'_> {
     fn merged_info(&self, deployment: &Deployment) -> JsonObject {
         let mut info = self
             .catalog_entry(&deployment.backend_model)

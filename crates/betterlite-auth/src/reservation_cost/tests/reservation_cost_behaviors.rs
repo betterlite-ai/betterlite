@@ -68,7 +68,7 @@ async fn one_model_counts_once_across_every_pricing_shape() {
                     )),
                 ),
             ]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .token_count("grouped", 1000);
     assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.0043")));
@@ -397,7 +397,7 @@ async fn input_cost_takes_the_maximum_across_pricing_shapes() {
                     r#"[{"input_cost_per_token":3e-06,"output_cost_per_token":2e-06,"range":[0,5000]}]"#,
                 )),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .provided_count("grouped", 1000);
     assert_eq!(fixture.input_cost().await.unwrap(), Some(dec("0.003")));
@@ -413,7 +413,9 @@ async fn the_router_group_info_is_preferred_over_the_catalog() {
                     r#"{"mode":"chat","max_input_tokens":100000,"max_output_tokens":1000,"input_cost_per_token":0.000004,"output_cost_per_token":0.000012}"#,
                 ),
             )]),
-            ..FixedRouter::default()
+            deployments: BTreeMap::new(),
+            deployment_infos: BTreeMap::new(),
+            failing: None,
         })
         .model_info("grouped", FLAT)
         .provided_count("grouped", 1000);
@@ -444,7 +446,7 @@ async fn a_deployment_tiered_table_is_a_candidate_shape() {
                     r#"[{"input_cost_per_token":1e-06,"output_cost_per_token":2e-06,"range":[0,1000]},{"input_cost_per_token":3e-06,"output_cost_per_token":4e-06,"range":[1000,100000]}]"#,
                 )),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .provided_count("grouped", 5000);
     assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.01504")));
@@ -465,7 +467,7 @@ async fn a_deployment_without_an_id_is_skipped() {
                     r#"[{"input_cost_per_token":9e-06,"range":[0,100000]}]"#,
                 )),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .provided_count("grouped", 5000);
     assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.0101")));
@@ -486,7 +488,7 @@ async fn a_deployment_without_a_backend_model_is_skipped() {
                     r#"[{"input_cost_per_token":9e-06,"range":[0,100000]}]"#,
                 )),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .provided_count("grouped", 5000);
     assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.0101")));
@@ -505,7 +507,7 @@ async fn an_empty_deployment_table_is_not_a_candidate() {
                 "dep-a".to_owned(),
                 json(r#"{"mode":"chat","tiered_pricing":[]}"#),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .provided_count("grouped", 5000);
     assert_eq!(fixture.max_cost().await.unwrap(), Some(dec("0.0101")));
@@ -515,6 +517,7 @@ async fn an_empty_deployment_table_is_not_a_candidate() {
 async fn an_empty_deployment_table_keeps_the_catalog_tiered_price() {
     let fixture = Fixture::new(r#"{"model":"grouped","max_tokens":10}"#)
         .router(FixedRouter {
+            groups: BTreeMap::new(),
             deployments: BTreeMap::from([(
                 "grouped".to_owned(),
                 vec![deployment(Some("dep-a"), Some("backend"))],
@@ -523,7 +526,7 @@ async fn an_empty_deployment_table_keeps_the_catalog_tiered_price() {
                 "dep-a".to_owned(),
                 json(r#"{"mode":"chat","tiered_pricing":[]}"#),
             )]),
-            ..FixedRouter::default()
+            failing: None,
         })
         .model_info(
             "grouped",

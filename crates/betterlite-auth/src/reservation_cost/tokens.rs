@@ -6,7 +6,7 @@ use super::ReservationTokens;
 use super::cost_info::CostInfo;
 use super::rates::int_of;
 
-pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 16384;
+pub(crate) const DEFAULT_MAX_OUTPUT_TOKENS: i64 = 0x4000;
 const REQUESTED_OUTPUT_FIELDS: [&str; 3] =
     ["max_completion_tokens", "max_tokens", "max_output_tokens"];
 const INPUT_ONLY_ROUTE_PARTS: [&str; 3] = ["embeddings", "rerank", "moderations"];
