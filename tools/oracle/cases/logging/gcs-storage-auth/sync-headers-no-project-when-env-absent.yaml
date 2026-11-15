@@ -1,0 +1,7 @@
+# sync headers pass no project when GOOGLE_SECRET_MANAGER_PROJECT_ID is unset
+kind: helper
+name: gcs-storage-auth-sync-headers-no-project-when-env-absent
+call:
+  b3997: {"action": "sync_headers", "environment": {"GCS_PATH_SERVICE_ACCOUNT": "/creds/service-account.json"}}
+env: {}
+compare: {ignore: []}

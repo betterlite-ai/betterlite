@@ -14,12 +14,15 @@ cargo-fuzz = true
 [dependencies]
 betterlite-config = { path = "../../betterlite-config" }
 betterlite-core = { path = ".." }
+betterlite-http = { path = "../../betterlite-http" }
 betterlite-models = { path = "../../betterlite-models" }
 betterlite-openai = { path = "../../betterlite-openai" }
 chrono = { version = "0.4.45", default-features = false }
+http = "1.5.0"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+uuid.workspace = true
 
 [[bin]]
 name = "anthropic_beta_config"
@@ -269,6 +272,13 @@ bench = false
 [[bin]]
 name = "transcription_protocol"
 path = "fuzz_targets/transcription_protocol.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "copilot_chat_reply"
+path = "fuzz_targets/copilot_chat_reply.rs"
 test = false
 doc = false
 bench = false
