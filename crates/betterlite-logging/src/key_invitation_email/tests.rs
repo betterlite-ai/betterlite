@@ -17,6 +17,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::KeyInvitationEmailer;
+use super::fixtures::{KEY_CREATED_HTML, KEY_CREATED_MISSING_HTML, USER_INVITED_HTML};
 use super::link::{InvitationCreator, InvitationId, construct_user_invitation_link};
 use super::templates::{
     KeyCreatedEmail, UserInvitedEmail, render_key_created_email, render_user_invited_email,
@@ -305,7 +306,7 @@ fn invited_email(base_url: &str) -> UserInvitedEmail<'_> {
 #[test]
 fn render_key_created_email_matches_the_litellm_template() {
     let html = render_key_created_email(&budget_email(Some(10.0)));
-    assert_eq!(html, include_str!("fixtures/key_created.html"));
+    assert_eq!(html, KEY_CREATED_HTML);
     assert_eq!(html.matches("sk-test-token").count(), 2);
     assert!(html.contains("base_url={base_url}"));
     assert!(!html.contains("proxy.example"));
@@ -328,7 +329,7 @@ fn render_key_created_email_prints_none_for_missing_values() {
         ..budget_email(None)
     };
     let html = render_key_created_email(&email);
-    assert_eq!(html, include_str!("fixtures/key_created_missing.html"));
+    assert_eq!(html, KEY_CREATED_MISSING_HTML);
     assert!(html.contains("<p> Hi None, <br/>"));
     assert!(html.contains("loaded with $None per month"));
     assert!(html.contains("Key: <pre>None</pre> <br>"));
@@ -339,7 +340,7 @@ fn render_key_created_email_prints_none_for_missing_values() {
 fn render_user_invited_email_matches_the_litellm_template() {
     let email = invited_email("https://proxy.example/ui/onboarding?invitation_id=inv-1");
     let html = render_user_invited_email(&email);
-    assert_eq!(html, include_str!("fixtures/user_invited.html"));
+    assert_eq!(html, USER_INVITED_HTML);
     assert!(html.contains("<p> Hi bob@example.com, <br/>"));
     assert!(
         html.contains("You were invited to use OpenAI Proxy API for team Alpha  <br /> <br />")

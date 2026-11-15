@@ -45,4 +45,5 @@ pub struct KeyInvitationEmailer<'deps, C> {
     pub invitation_creator: &'deps C,
 }
 
+mod fixtures;
 mod tests;
