@@ -100,7 +100,7 @@ fn assemble(
     tool_names: Vec<String>,
 ) -> SpendEvent {
     SpendEvent {
-        version: EventVersion,
+        version: EventVersion::One,
         litellm_call_id: kwargs.litellm_call_id,
         call_type: kwargs.call_type,
         model: kwargs.model,
@@ -109,8 +109,8 @@ fn assemble(
         complete_streaming_response: !kwargs.complete_streaming_response.is_missing(),
         cache_hit: kwargs.cache_hit,
         response_cost,
-        start_time: input.start_time,
-        end_time: input.end_time,
+        start_time: input.start_time.clone(),
+        end_time: input.end_time.clone(),
         completion_start_time: kwargs.completion_start_time,
         agent_id: kwargs.agent_id,
         litellm_trace_id: kwargs.litellm_trace_id,

@@ -3,41 +3,19 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use rust_decimal::serde::arbitrary_precision_option;
 use serde::{Deserialize, Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 use serde_with::{As, Same};
-use thiserror::Error;
 
-use crate::spend_event::SPEND_EVENT_VERSION;
 use crate::spend_event::response::CompactResponse;
 use crate::spend_event::time::EventTime;
 
 pub type Mapping = IndexMap<String, Json>;
 
-#[derive(Debug, Error)]
-pub enum EventVersionError {
-    #[error("unsupported spend event version {version}")]
-    Unsupported { version: u8 },
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(try_from = "u8", into = "u8")]
-pub struct EventVersion;
-
-impl From<EventVersion> for u8 {
-    fn from(_version: EventVersion) -> Self {
-        SPEND_EVENT_VERSION
-    }
-}
-
-impl TryFrom<u8> for EventVersion {
-    type Error = EventVersionError;
-
-    fn try_from(version: u8) -> Result<Self, Self::Error> {
-        if version == SPEND_EVENT_VERSION {
-            Ok(Self)
-        } else {
-            Err(EventVersionError::Unsupported { version })
-        }
-    }
+// Version 1 is the only wire version, so any other number is refused when the line is read
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize_repr, Serialize_repr)]
+#[repr(u8)]
+pub enum EventVersion {
+    One = 1,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]

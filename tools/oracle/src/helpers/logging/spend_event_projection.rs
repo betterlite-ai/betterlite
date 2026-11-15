@@ -161,8 +161,8 @@ fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
         kwargs: &kwargs,
         typed_auth: &typed,
         response: &response,
-        start_time: spec.start_time,
-        end_time: spec.end_time,
+        start_time: spec.start_time.clone(),
+        end_time: spec.end_time.clone(),
         store_bodies: spec.store_bodies,
         cache: spec.cache,
     });

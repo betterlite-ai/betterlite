@@ -17,10 +17,10 @@ pub enum EventTimeError {
     },
 }
 
-// A Python datetime is aware or naive, and the wire text keeps whichever it was
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct EventTime(pub SpendTimestamp);
+// The wire text of a Python datetime, aware or naive, always written the way pydantic writes it
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(try_from = "String")]
+pub struct EventTime(String);
 
 fn render(moment: &NaiveDateTime) -> String {
     let base = moment.format("%Y-%m-%dT%H:%M:%S");
@@ -30,17 +30,18 @@ fn render(moment: &NaiveDateTime) -> String {
     }
 }
 
-impl From<EventTime> for String {
-    fn from(time: EventTime) -> Self {
-        match time.0 {
-            SpendTimestamp::Aware(moment) if moment.offset().local_minus_utc() == 0_i32 => {
-                format!("{}Z", render(&moment.naive_local()))
+impl EventTime {
+    #[must_use]
+    pub fn new(moment: SpendTimestamp) -> Self {
+        Self(match moment {
+            SpendTimestamp::Aware(aware) if aware.offset().local_minus_utc() == 0_i32 => {
+                format!("{}Z", render(&aware.naive_local()))
             }
-            SpendTimestamp::Aware(moment) => {
-                format!("{}{}", render(&moment.naive_local()), moment.format("%:z"))
+            SpendTimestamp::Aware(aware) => {
+                format!("{}{}", render(&aware.naive_local()), aware.format("%:z"))
             }
-            SpendTimestamp::Naive(moment) => render(&moment),
-        }
+            SpendTimestamp::Naive(naive) => render(&naive),
+        })
     }
 }
 
@@ -49,12 +50,12 @@ impl TryFrom<String> for EventTime {
 
     fn try_from(text: String) -> Result<Self, Self::Error> {
         if let Ok(moment) = DateTime::parse_from_rfc3339(&text) {
-            return Ok(Self(SpendTimestamp::Aware(moment)));
+            return Ok(Self::new(SpendTimestamp::Aware(moment)));
         }
         match NaiveDateTime::parse_from_str(&text, NAIVE_FORMAT)
             .or_else(|_| NaiveDateTime::parse_from_str(&text, SPACED_FORMAT))
         {
-            Ok(moment) => Ok(Self(SpendTimestamp::Naive(moment))),
+            Ok(moment) => Ok(Self::new(SpendTimestamp::Naive(moment))),
             Err(source) => Err(EventTimeError::Invalid { text, source }),
         }
     }
