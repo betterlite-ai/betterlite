@@ -18,6 +18,7 @@ use secrecy::SecretString;
 
 use crate::realtime::connect::{RealtimeConnectSettings, prepare_connection};
 use crate::realtime::logging::PrePostLogger;
+use crate::realtime::url::QueryParams;
 
 #[derive(Default)]
 struct Sink(Mutex<Vec<LogRecord>>);
@@ -120,6 +121,42 @@ fn records_the_realtime_pre_call() {
         Some(&Json::Object(IndexMap::from([(
             String::from("model"),
             Json::Text(String::from("realtime-a")),
+        )])))
+    );
+}
+
+#[test]
+fn records_a_null_query_value_as_null() {
+    let (redactor, mut state) = state();
+    let sink = Sink::default();
+    let env = env(&redactor, &sink);
+    let key = SecretString::from("sk-test".to_owned());
+    let query: QueryParams = IndexMap::from([(String::from("intent"), None)]);
+    let settings = RealtimeConnectSettings {
+        api_base: None,
+        api_key: Some(&key),
+        model: "realtime-a",
+        query_params: Some(&query),
+        beta_realtime: false,
+        ssl_verification: &Verification::Enabled,
+        max_message_size_bytes: 4_096,
+    };
+    let mut logger = PrePostLogger {
+        state: &mut state,
+        env: &env,
+    };
+    prepare_connection(&settings, &mut logger).expect("the connection prepares");
+    let Some(Json::Object(arguments)) = state.model_call_details.get("additional_args") else {
+        panic!("the pre call records additional_args");
+    };
+    let Some(Json::Object(body)) = arguments.get("complete_input_dict") else {
+        panic!("the pre call records complete_input_dict");
+    };
+    assert_eq!(
+        body.get("query_params"),
+        Some(&Json::Object(IndexMap::from([(
+            String::from("intent"),
+            Json::Null,
         )])))
     );
 }

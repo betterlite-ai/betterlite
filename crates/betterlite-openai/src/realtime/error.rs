@@ -10,7 +10,7 @@ pub enum RealtimeError {
         #[source]
         source: url::ParseError,
     },
-    // LiteLLM reaches this failure inside the connection try and answers with the 1011 close below
+    // LiteLLM's pre_call runs inside the connection try, so its failure takes the generic 1011 close path
     #[error("the realtime pre-call logging failed")]
     Logging {
         #[source]
