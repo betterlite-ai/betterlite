@@ -90,24 +90,28 @@ fn call(input: &QohashCall) -> HelperResult {
         Some(&mut log_target),
     ));
     let recorded = finish(mock)?;
-    let path = recorded
-        .as_ref()
-        .map(|provider_call| provider_call.request.path.clone());
+    collect(result, recorded.as_ref(), nexus.guardrail_name)
+}
+
+fn collect(
+    result: Result<GuardrailApiInputs, GuardrailFailure>,
+    recorded: Option<&ProviderCall>,
+    guardrail_name: String,
+) -> HelperResult {
+    let path = recorded.map(|provider_call| provider_call.request.path.clone());
     let content_type = recorded
-        .as_ref()
         .and_then(|provider_call| provider_call.request.headers.get("content-type").cloned());
     let request: Option<CapturedRequest> = recorded
-        .as_ref()
         .and_then(|provider_call| serde_json::from_value(provider_call.request.body.clone()).ok());
     match result {
         Ok(inputs) => Ok(json!({
-            "guardrail_name": nexus.guardrail_name,
+            "guardrail_name": guardrail_name,
             "path": path,
             "content_type": content_type,
             "request": request,
             "inputs": inputs,
         })),
-        Err(error) => Err(helper_failure(error)),
+        Err(error) => Err(helper_failure(&error)),
     }
 }
 
@@ -160,11 +164,11 @@ fn finish(mock: Option<MockProvider>) -> Result<Option<ProviderCall>, Box<Helper
     Ok(calls.pop())
 }
 
-fn helper_failure(error: GuardrailFailure) -> Box<HelperError> {
+fn helper_failure(error: &GuardrailFailure) -> Box<HelperError> {
     let message = error.to_string();
     match error {
         GuardrailFailure::GuardrailRaised { status_code, .. } => {
-            failure("GuardrailRaisedException", Some(status_code), message)
+            failure("GuardrailRaisedException", Some(*status_code), message)
         }
         GuardrailFailure::ModifyResponse(_)
         | GuardrailFailure::BlockedPii { .. }

@@ -618,17 +618,12 @@ async fn apply_guardrail_fails_open_with_the_request_fields_but_drops_tool_calls
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
-    let mut params = nexus_params();
-    params.api_base = Some(base);
-    params.settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
-        provider_params: None,
+    let mut nexus = build_with_base(&base);
+    nexus.generic.settings = GenericGuardrailAPISettings::from_optional(Some(GuardrailOptions {
         unreachable_fallback: Some(UnreachableFallback::FailOpen),
         fail_on_error: Some(true),
-        streaming_end_of_stream_only: None,
-        streaming_sampling_rate: None,
-        streaming_transform_mode: None,
+        ..GuardrailOptions::default()
     }));
-    let nexus = build(params, &[]);
     let mut inputs = text_inputs(&["hello"]);
     inputs.images = Some(vec!["data:image/png;base64,AA".to_owned()]);
     inputs.tools = Some(vec![GuardrailToolParam {
@@ -656,8 +651,7 @@ async fn apply_guardrail_fails_open_with_the_request_fields_but_drops_tool_calls
     assert_eq!(result.images, inputs.images);
     assert_eq!(result.tools, inputs.tools);
     assert_eq!(result.structured_messages, inputs.structured_messages);
-    assert_eq!(result.tool_calls, None);
-    assert_eq!(result.model, None);
+    assert_eq!((result.tool_calls, result.model), (None, None));
     assert_eq!(result.stream_holdback_chars, None);
 }
 
