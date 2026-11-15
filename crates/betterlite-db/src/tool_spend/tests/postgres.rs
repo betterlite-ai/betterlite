@@ -6,6 +6,7 @@ use super::fixtures::{ToolSpendCase, unreachable_store};
 use super::{FixedJitter, REQUEST_TIME, RecordingPause, policy, transaction};
 use crate::tool_spend::ToolSpendWriter as _;
 use crate::tool_spend::flush_tool_usage_transactions;
+use crate::tool_spend::index_rows::ToolIndexRow;
 use crate::tool_spend::writer::{PostgresToolSpendWriter, ToolSpendWriteError};
 
 const REJECT_BLOCKED_SQL: &str = r#"CREATE FUNCTION reject_blocked_tool() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.tool_name = 'blocked' THEN RAISE EXCEPTION 'blocked tool'; END IF; RETURN NEW; END $$;
@@ -157,6 +158,36 @@ async fn retries_a_pool_that_cannot_connect_and_then_gives_up() {
             Duration::from_secs(4)
         ]
     );
+}
+
+#[tokio::test]
+async fn an_index_statement_skips_a_duplicate_row() {
+    let case = ToolSpendCase::new().await;
+    let writer = PostgresToolSpendWriter {
+        store: case.store.clone(),
+    };
+    let row = ToolIndexRow::new(
+        String::from("req-1"),
+        String::from("search"),
+        DateTime::from_timestamp(REQUEST_TIME, 0).expect("a test instant"),
+    );
+    writer
+        .write_index_rows(std::slice::from_ref(&row))
+        .await
+        .expect("the first index write");
+    writer
+        .write_index_rows(std::slice::from_ref(&row))
+        .await
+        .expect("a duplicate index row is skipped");
+    assert_eq!(
+        case.index_rows().await,
+        [(
+            String::from("req-1"),
+            String::from("search"),
+            request_time()
+        )]
+    );
+    case.close().await;
 }
 
 #[tokio::test]
