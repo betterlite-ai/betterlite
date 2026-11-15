@@ -563,7 +563,9 @@ pub(crate) async fn credential_upsert_preserves_id(case: &Case) {
     let row = table
         .upsert(
             "cred-upsert".to_owned(),
-            written(r#"{"credential_values":{"api_key":"after"}}"#),
+            written(
+                r#"{"credential_values":{"api_key":"after"},"created_by":"seed","updated_by":"seed"}"#,
+            ),
         )
         .await
         .unwrap();
