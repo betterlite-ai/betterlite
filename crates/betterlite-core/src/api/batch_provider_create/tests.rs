@@ -10,9 +10,8 @@ use betterlite_models::json_provider_registry::JSONProviderRegistry;
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
-use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::batches::records::{
-    BatchEndpoint, BatchObject, CompletionWindow, OutputExpiry,
+    BatchEndpoint, BatchObject, CompletionWindow, ExpiryAnchor, OutputExpiry,
 };
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -25,7 +24,7 @@ use super::{
     BatchProviderCreateInput, DEFAULT_OPENAI_BASE, DEFAULT_TIMEOUT_SECONDS, HttpTimeout,
     RequestTimeout, VertexCredentials,
 };
-use crate::api::api_boundaries::ApiLimits;
+use crate::api::api_boundaries::{ApiLimitError, ApiLimits};
 
 struct Resolution {
     catalog: ModelCatalog,
@@ -128,18 +127,9 @@ fn input(provider: BatchProvider) -> BatchProviderCreateInput {
     }
 }
 
-fn body_of(call: &BatchProviderCreateCall) -> &CreateBatchRequest {
-    match call {
-        BatchProviderCreateCall::ProviderConfig(call) => &call.body,
-        BatchProviderCreateCall::Xai(call) => &call.body,
-        BatchProviderCreateCall::OpenAiCompatible(call) => &call.body,
-        BatchProviderCreateCall::Azure(call) => &call.body,
-        BatchProviderCreateCall::VertexAi(call) => &call.body,
-    }
-}
-
 fn revealed(value: Option<&SecretString>) -> Option<String> {
-    value.map(|secret| secret.expose_secret().to_owned())
+    let secret = value?;
+    Some(secret.expose_secret().to_owned())
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -184,7 +174,7 @@ fn batch_create_body(#[case] case: BodyCase) {
     }
 }
 
-fn preserves_every_create_field() {
+fn full_request() -> BatchProviderCreateInput {
     let mut request = input(BatchProvider::Xai);
     request.metadata = Some(IndexMap::from([
         ("first".to_owned(), "one".to_owned()),
@@ -193,11 +183,19 @@ fn preserves_every_create_field() {
     request.extra_headers = Some(IndexMap::from([("x-a".to_owned(), "b".to_owned())]));
     request.extra_body = Some(IndexMap::from([("x-c".to_owned(), "d".to_owned())]));
     request.output_expires_after = Some(OutputExpiry {
-        anchor: betterlite_openai::batches::records::ExpiryAnchor::CreatedAt,
+        anchor: ExpiryAnchor::CreatedAt,
         seconds: 60,
     });
+    request
+}
+
+fn preserves_every_create_field() {
+    let request = full_request();
     let result = created(&request, &Settings::default());
-    let body = body_of(&result.call);
+    let BatchProviderCreateCall::Xai(call) = &result.call else {
+        panic!("xai owns its own branch");
+    };
+    let body = &call.body;
     assert_eq!(body.input_file_id.as_deref(), Some("file-1"));
     assert_eq!(body.endpoint, Some(BatchEndpoint::ChatCompletions));
     assert_eq!(body.completion_window, Some(CompletionWindow::Day));
@@ -222,7 +220,7 @@ fn preserves_every_create_field() {
     assert_eq!(
         body.output_expires_after,
         Some(OutputExpiry {
-            anchor: betterlite_openai::batches::records::ExpiryAnchor::CreatedAt,
+            anchor: ExpiryAnchor::CreatedAt,
             seconds: 60,
         })
     );
@@ -231,8 +229,11 @@ fn preserves_every_create_field() {
 
 fn output_expiry_is_optional() {
     let result = created(&input(BatchProvider::Openai), &Settings::default());
-    assert_eq!(body_of(&result.call).output_expires_after, None);
-    let encoded = serde_json::to_string(body_of(&result.call)).expect("the body encodes");
+    let BatchProviderCreateCall::OpenAiCompatible(call) = &result.call else {
+        panic!("openai owns its own branch");
+    };
+    assert_eq!(call.body.output_expires_after, None);
+    let encoded = serde_json::to_string(&call.body).expect("the body encodes");
     assert!(
         encoded.contains(r#""completion_window":"24h""#),
         "{encoded}"
@@ -248,7 +249,11 @@ fn metadata_keeps_its_order() {
         ("mike".to_owned(), "3".to_owned()),
     ]));
     let result = created(&request, &Settings::default());
-    let keys: Vec<&str> = body_of(&result.call)
+    let BatchProviderCreateCall::Xai(call) = &result.call else {
+        panic!("xai owns its own branch");
+    };
+    let keys: Vec<&str> = call
+        .body
         .metadata
         .as_ref()
         .map(|fields| fields.keys().map(String::as_str).collect())
@@ -346,7 +351,7 @@ fn outcome_is_overflow(
     matches!(
         outcome,
         Err(BatchProviderCreateError::Limit(
-            crate::api::api_boundaries::ApiLimitError::TooManyItems {
+            ApiLimitError::TooManyItems {
                 observed: seen,
                 limit: maximum
             }
@@ -359,7 +364,7 @@ fn vertex_credentials_accept_fields() {
     request.optional_params.vertex_credentials =
         Some(VertexCredentials::Fields(BTreeMap::from([(
             "client_email".to_owned(),
-            "svc@example.com".to_owned(),
+            SecretString::from("svc@example.com"),
         )])));
     let result = created(&request, &Settings::default());
     let BatchProviderCreateCall::VertexAi(call) = &result.call else {
@@ -368,9 +373,26 @@ fn vertex_credentials_accept_fields() {
     let Some(VertexCredentials::Fields(fields)) = &call.vertex_credentials else {
         panic!("the decoded service-account fields survive");
     };
-    assert_eq!(
-        fields.get("client_email").map(String::as_str),
-        Some("svc@example.com")
+    let Some(email) = fields.get("client_email") else {
+        panic!("the client_email field survives");
+    };
+    assert_eq!(email.expose_secret(), "svc@example.com");
+}
+
+// a service-account key travels as a SecretString, so Debug output redacts both shapes
+#[test]
+fn vertex_credentials_stay_out_of_debug_output() {
+    let text = VertexCredentials::Text(SecretString::from("private-key-material"));
+    let text_debug = format!("{text:?}");
+    assert!(!text_debug.contains("private-key-material"), "{text_debug}");
+    let fields = VertexCredentials::Fields(BTreeMap::from([(
+        "private_key".to_owned(),
+        SecretString::from("private-key-material"),
+    )]));
+    let fields_debug = format!("{fields:?}");
+    assert!(
+        !fields_debug.contains("private-key-material"),
+        "{fields_debug}"
     );
 }
 
@@ -410,7 +432,10 @@ fn completion_window(#[case] endpoint: BatchEndpoint) {
     let mut request = input(BatchProvider::Openai);
     request.endpoint = endpoint;
     let result = created(&request, &Settings::default());
-    let body = body_of(&result.call);
+    let BatchProviderCreateCall::OpenAiCompatible(call) = &result.call else {
+        panic!("openai owns its own branch");
+    };
+    let body = &call.body;
     assert_eq!(body.completion_window, Some(CompletionWindow::Day));
     assert_eq!(body.endpoint, Some(endpoint));
     let encoded = serde_json::to_string(body).expect("the body encodes");
@@ -464,7 +489,7 @@ fn timeout_precedence(
     let BatchProviderCreateCall::Xai(call) = &result.call else {
         panic!("xai owns the branch without credentials");
     };
-    assert_eq!(call.timeout, expected);
+    assert_eq!(call.timeout.to_bits(), expected.to_bits());
 }
 
 fn client_with_read(read: Option<f64>) -> Option<RequestTimeout> {
@@ -489,7 +514,7 @@ fn provider_create_error(#[case] provider: BatchProvider) {
         panic!("the error names the unsupported provider");
     };
     assert_eq!(named, provider);
-    assert_eq!(status, Some(400));
+    assert_eq!(status, 400);
     assert!(calls.is_empty());
 }
 
@@ -524,87 +549,96 @@ fn openai_compatible_providers_share_the_branch(#[case] provider: BatchProvider)
 #[case::xai(BatchProvider::Xai)]
 fn other_providers_own_their_branch(#[case] provider: BatchProvider) {
     let result = created(&input(provider), &Settings::default());
-    match (provider, &result.call) {
-        (BatchProvider::Azure, BatchProviderCreateCall::Azure(_)) => {}
-        (BatchProvider::VertexAi, BatchProviderCreateCall::VertexAi(_)) => {}
-        (BatchProvider::Xai, BatchProviderCreateCall::Xai(_)) => {}
-        (named, call) => panic!("{named} took the wrong branch: {call:?}"),
-    }
+    assert!(
+        matches!(
+            (provider, &result.call),
+            (BatchProvider::Azure, BatchProviderCreateCall::Azure(_))
+                | (
+                    BatchProvider::VertexAi,
+                    BatchProviderCreateCall::VertexAi(_)
+                )
+                | (BatchProvider::Xai, BatchProviderCreateCall::Xai(_))
+        ),
+        "{provider} took the wrong branch: {:?}",
+        result.call
+    );
 }
 
 type Probe = fn(&Settings, &BatchProviderCreateCall) -> Option<String>;
 
-fn openai_base(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::OpenAiCompatible(call) => call.api_base.clone(),
-        _other => None,
-    }
+fn openai_base(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::OpenAiCompatible(call) = record else {
+        return None;
+    };
+    call.api_base.clone()
 }
 
-fn openai_key(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::OpenAiCompatible(call) => revealed(call.api_key.as_ref()),
-        _other => None,
-    }
+fn openai_key(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::OpenAiCompatible(call) = record else {
+        return None;
+    };
+    revealed(call.api_key.as_ref())
 }
 
-fn openai_organization(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::OpenAiCompatible(call) => call.organization.clone(),
-        _other => None,
-    }
+fn openai_organization(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::OpenAiCompatible(call) = record else {
+        return None;
+    };
+    call.organization.clone()
 }
 
-fn azure_base(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::Azure(call) => call.api_base.clone(),
-        _other => None,
-    }
+fn azure_base(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::Azure(call) = record else {
+        return None;
+    };
+    call.api_base.clone()
 }
 
-fn azure_version(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::Azure(call) => call.api_version.clone(),
-        _other => None,
-    }
+fn azure_version(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::Azure(call) = record else {
+        return None;
+    };
+    call.api_version.clone()
 }
 
-fn azure_key(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::Azure(call) => revealed(call.api_key.as_ref()),
-        _other => None,
-    }
+fn azure_key(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::Azure(call) = record else {
+        return None;
+    };
+    revealed(call.api_key.as_ref())
 }
 
-fn vertex_base(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::VertexAi(call) => call.api_base.clone(),
-        _other => None,
-    }
+fn vertex_base(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::VertexAi(call) = record else {
+        return None;
+    };
+    call.api_base.clone()
 }
 
-fn vertex_project(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::VertexAi(call) => call.vertex_project.clone(),
-        _other => None,
-    }
+fn vertex_project(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::VertexAi(call) = record else {
+        return None;
+    };
+    call.vertex_project.clone()
 }
 
-fn vertex_location(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::VertexAi(call) => call.vertex_location.clone(),
-        _other => None,
-    }
+fn vertex_location(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::VertexAi(call) = record else {
+        return None;
+    };
+    call.vertex_location.clone()
 }
 
-fn vertex_credentials(_settings: &Settings, call: &BatchProviderCreateCall) -> Option<String> {
-    match call {
-        BatchProviderCreateCall::VertexAi(call) => match &call.vertex_credentials {
-            Some(VertexCredentials::Path(path)) => Some(path.clone()),
-            Some(VertexCredentials::Fields(fields)) => fields.get("client_email").cloned(),
-            None => None,
-        },
-        _other => None,
+fn vertex_credentials(_settings: &Settings, record: &BatchProviderCreateCall) -> Option<String> {
+    let BatchProviderCreateCall::VertexAi(call) = record else {
+        return None;
+    };
+    match &call.vertex_credentials {
+        Some(VertexCredentials::Text(text)) => Some(text.expose_secret().to_owned()),
+        Some(VertexCredentials::Fields(fields)) => fields
+            .get("client_email")
+            .map(|secret| secret.expose_secret().to_owned()),
+        None => None,
     }
 }
 
@@ -751,7 +785,8 @@ fn optional_with(entries: &[(&str, &str)]) -> BatchOptionalParams {
             "vertex_project" => optional.vertex_project = Some((*value).to_owned()),
             "vertex_location" => optional.vertex_location = Some((*value).to_owned()),
             "vertex_credentials" => {
-                optional.vertex_credentials = Some(VertexCredentials::Path((*value).to_owned()));
+                optional.vertex_credentials =
+                    Some(VertexCredentials::Text(SecretString::from(*value)));
             }
             _other => panic!("unknown optional key {key}"),
         }
@@ -759,42 +794,51 @@ fn optional_with(entries: &[(&str, &str)]) -> BatchOptionalParams {
     optional
 }
 
+struct Sources {
+    module: Vec<(&'static str, &'static str)>,
+    environment: Vec<(&'static str, &'static str)>,
+    optional: Vec<(&'static str, &'static str)>,
+}
+
 #[rstest]
-#[case::openai_base_optional_wins(BatchProvider::Openai, &[("api_base", "module")], &[("OPENAI_BASE_URL", "environment")], &[("api_base", "optional")], openai_base, Some("optional"))]
-#[case::openai_base_module_wins(BatchProvider::Openai, &[("api_base", "module")], &[("OPENAI_BASE_URL", "base-url"), ("OPENAI_API_BASE", "api-base")], &[], openai_base, Some("module"))]
-#[case::openai_base_environment_order(BatchProvider::Openai, &[], &[("OPENAI_BASE_URL", "base-url"), ("OPENAI_API_BASE", "api-base")], &[], openai_base, Some("base-url"))]
-#[case::openai_base_default(BatchProvider::Openai, &[], &[], &[], openai_base, Some(DEFAULT_OPENAI_BASE))]
-#[case::openai_key_optional_wins(BatchProvider::Openai, &[("api_key", "module")], &[], &[("api_key", "optional")], openai_key, Some("optional"))]
-#[case::openai_key_module_order(BatchProvider::Openai, &[("api_key", "module"), ("openai_key", "openai"), ("OPENAI_API_KEY", "environment")], &[], &[], openai_key, Some("module"))]
-#[case::openai_key_openai_key_wins(BatchProvider::Openai, &[("openai_key", "openai")], &[("OPENAI_API_KEY", "environment")], &[], openai_key, Some("openai"))]
-#[case::openai_key_environment(BatchProvider::Openai, &[], &[("OPENAI_API_KEY", "environment")], &[], openai_key, Some("environment"))]
-#[case::organization_optional_wins(BatchProvider::Openai, &[("organization", "module")], &[("OPENAI_ORGANIZATION", "environment")], &[("organization", "optional")], openai_organization, Some("optional"))]
-#[case::organization_module_wins(BatchProvider::Openai, &[("organization", "module")], &[("OPENAI_ORGANIZATION", "environment")], &[], openai_organization, Some("module"))]
-#[case::azure_base_optional_wins(BatchProvider::Azure, &[("api_base", "module")], &[("AZURE_API_BASE", "environment")], &[("api_base", "optional")], azure_base, Some("optional"))]
-#[case::azure_base_module_wins(BatchProvider::Azure, &[("api_base", "module")], &[("AZURE_API_BASE", "environment")], &[], azure_base, Some("module"))]
-#[case::azure_version_optional_wins(BatchProvider::Azure, &[("api_version", "module")], &[("AZURE_API_VERSION", "environment")], &[("api_version", "optional")], azure_version, Some("optional"))]
-#[case::azure_version_module_wins(BatchProvider::Azure, &[("api_version", "module")], &[("AZURE_API_VERSION", "environment")], &[], azure_version, Some("module"))]
-#[case::azure_key_module_order(BatchProvider::Azure, &[("api_key", "module"), ("azure_key", "azure")], &[("AZURE_OPENAI_API_KEY", "openai-environment")], &[], azure_key, Some("module"))]
-#[case::azure_key_azure_key_wins(BatchProvider::Azure, &[("azure_key", "azure")], &[("AZURE_OPENAI_API_KEY", "openai-environment")], &[], azure_key, Some("azure"))]
-#[case::azure_key_environment_order(BatchProvider::Azure, &[], &[("AZURE_OPENAI_API_KEY", "openai-environment"), ("AZURE_API_KEY", "environment")], &[], azure_key, Some("openai-environment"))]
-#[case::vertex_base_optional(BatchProvider::VertexAi, &[], &[], &[("api_base", "https://vertex.example")], vertex_base, Some("https://vertex.example"))]
-#[case::vertex_base_defaults_empty(BatchProvider::VertexAi, &[], &[], &[], vertex_base, Some(""))]
-#[case::vertex_project_optional_wins(BatchProvider::VertexAi, &[("vertex_project", "module")], &[("VERTEXAI_PROJECT", "environment")], &[("vertex_project", "optional")], vertex_project, Some("optional"))]
-#[case::vertex_project_module_wins(BatchProvider::VertexAi, &[("vertex_project", "module")], &[("VERTEXAI_PROJECT", "environment")], &[], vertex_project, Some("module"))]
-#[case::vertex_location_module_wins(BatchProvider::VertexAi, &[("vertex_location", "module")], &[("VERTEXAI_LOCATION", "environment")], &[], vertex_location, Some("module"))]
-#[case::vertex_credentials_optional_wins(BatchProvider::VertexAi, &[], &[("VERTEXAI_CREDENTIALS", "environment")], &[("vertex_credentials", "optional")], vertex_credentials, Some("optional"))]
-#[case::vertex_credentials_environment(BatchProvider::VertexAi, &[], &[("VERTEXAI_CREDENTIALS", "environment")], &[], vertex_credentials, Some("environment"))]
+#[case::openai_base_optional_wins(BatchProvider::Openai, Sources { module: vec![("api_base", "module")], environment: vec![("OPENAI_BASE_URL", "environment")], optional: vec![("api_base", "optional")] }, openai_base, Some("optional"))]
+#[case::openai_base_module_wins(BatchProvider::Openai, Sources { module: vec![("api_base", "module")], environment: vec![("OPENAI_BASE_URL", "base-url"), ("OPENAI_API_BASE", "api-base")], optional: vec![] }, openai_base, Some("module"))]
+#[case::openai_base_environment_order(BatchProvider::Openai, Sources { module: vec![], environment: vec![("OPENAI_BASE_URL", "base-url"), ("OPENAI_API_BASE", "api-base")], optional: vec![] }, openai_base, Some("base-url"))]
+#[case::openai_base_default(BatchProvider::Openai, Sources { module: vec![], environment: vec![], optional: vec![] }, openai_base, Some(DEFAULT_OPENAI_BASE))]
+#[case::openai_key_optional_wins(BatchProvider::Openai, Sources { module: vec![("api_key", "module")], environment: vec![], optional: vec![("api_key", "optional")] }, openai_key, Some("optional"))]
+#[case::openai_key_module_order(BatchProvider::Openai, Sources { module: vec![("api_key", "module"), ("openai_key", "openai")], environment: vec![("OPENAI_API_KEY", "environment")], optional: vec![] }, openai_key, Some("module"))]
+#[case::openai_key_openai_key_wins(BatchProvider::Openai, Sources { module: vec![("openai_key", "openai")], environment: vec![("OPENAI_API_KEY", "environment")], optional: vec![] }, openai_key, Some("openai"))]
+#[case::openai_key_environment(BatchProvider::Openai, Sources { module: vec![], environment: vec![("OPENAI_API_KEY", "environment")], optional: vec![] }, openai_key, Some("environment"))]
+#[case::organization_optional_wins(BatchProvider::Openai, Sources { module: vec![("organization", "module")], environment: vec![("OPENAI_ORGANIZATION", "environment")], optional: vec![("organization", "optional")] }, openai_organization, Some("optional"))]
+#[case::organization_module_wins(BatchProvider::Openai, Sources { module: vec![("organization", "module")], environment: vec![("OPENAI_ORGANIZATION", "environment")], optional: vec![] }, openai_organization, Some("module"))]
+#[case::azure_base_optional_wins(BatchProvider::Azure, Sources { module: vec![("api_base", "module")], environment: vec![("AZURE_API_BASE", "environment")], optional: vec![("api_base", "optional")] }, azure_base, Some("optional"))]
+#[case::azure_base_module_wins(BatchProvider::Azure, Sources { module: vec![("api_base", "module")], environment: vec![("AZURE_API_BASE", "environment")], optional: vec![] }, azure_base, Some("module"))]
+#[case::azure_version_optional_wins(BatchProvider::Azure, Sources { module: vec![("api_version", "module")], environment: vec![("AZURE_API_VERSION", "environment")], optional: vec![("api_version", "optional")] }, azure_version, Some("optional"))]
+#[case::azure_version_module_wins(BatchProvider::Azure, Sources { module: vec![("api_version", "module")], environment: vec![("AZURE_API_VERSION", "environment")], optional: vec![] }, azure_version, Some("module"))]
+#[case::azure_key_module_order(BatchProvider::Azure, Sources { module: vec![("api_key", "module"), ("azure_key", "azure")], environment: vec![("AZURE_OPENAI_API_KEY", "openai-environment")], optional: vec![] }, azure_key, Some("module"))]
+#[case::azure_key_azure_key_wins(BatchProvider::Azure, Sources { module: vec![("azure_key", "azure")], environment: vec![("AZURE_OPENAI_API_KEY", "openai-environment")], optional: vec![] }, azure_key, Some("azure"))]
+#[case::azure_key_environment_order(BatchProvider::Azure, Sources { module: vec![], environment: vec![("AZURE_OPENAI_API_KEY", "openai-environment"), ("AZURE_API_KEY", "environment")], optional: vec![] }, azure_key, Some("openai-environment"))]
+#[case::vertex_base_optional(BatchProvider::VertexAi, Sources { module: vec![], environment: vec![], optional: vec![("api_base", "https://vertex.example")] }, vertex_base, Some("https://vertex.example"))]
+#[case::vertex_base_defaults_empty(BatchProvider::VertexAi, Sources { module: vec![], environment: vec![], optional: vec![] }, vertex_base, Some(""))]
+#[case::vertex_project_optional_wins(BatchProvider::VertexAi, Sources { module: vec![("vertex_project", "module")], environment: vec![("VERTEXAI_PROJECT", "environment")], optional: vec![("vertex_project", "optional")] }, vertex_project, Some("optional"))]
+#[case::vertex_project_module_wins(BatchProvider::VertexAi, Sources { module: vec![("vertex_project", "module")], environment: vec![("VERTEXAI_PROJECT", "environment")], optional: vec![] }, vertex_project, Some("module"))]
+#[case::vertex_location_module_wins(BatchProvider::VertexAi, Sources { module: vec![("vertex_location", "module")], environment: vec![("VERTEXAI_LOCATION", "environment")], optional: vec![] }, vertex_location, Some("module"))]
+#[case::vertex_credentials_optional_wins(BatchProvider::VertexAi, Sources { module: vec![], environment: vec![("VERTEXAI_CREDENTIALS", "environment")], optional: vec![("vertex_credentials", "optional")] }, vertex_credentials, Some("optional"))]
+#[case::vertex_credentials_environment(BatchProvider::VertexAi, Sources { module: vec![], environment: vec![("VERTEXAI_CREDENTIALS", "environment")], optional: vec![] }, vertex_credentials, Some("environment"))]
 fn provider_credential_precedence(
     #[case] provider: BatchProvider,
-    #[case] module: &[(&str, &str)],
-    #[case] environment: &[(&str, &str)],
-    #[case] optional: &[(&str, &str)],
+    #[case] sources: Sources,
     #[case] probe: Probe,
     #[case] expected: Option<&str>,
 ) {
-    let settings = settings_with(module, environment);
+    let Sources {
+        module,
+        environment,
+        optional,
+    } = sources;
+    let settings = settings_with(&module, &environment);
     let mut request = input(provider);
-    request.optional_params = optional_with(optional);
+    request.optional_params = optional_with(&optional);
     let result = created(&request, &settings);
     assert_eq!(probe(&settings, &result.call).as_deref(), expected);
 }
@@ -802,20 +846,23 @@ fn provider_credential_precedence(
 #[test]
 fn xai_takes_only_the_request_credentials() {
     let settings = settings_with(&[("api_base", "module"), ("api_key", "module")], &[]);
-    let result = created(&input(BatchProvider::Xai), &settings);
-    let BatchProviderCreateCall::Xai(call) = &result.call else {
+    let configured = created(&input(BatchProvider::Xai), &settings);
+    let BatchProviderCreateCall::Xai(without_request) = &configured.call else {
         panic!("xai owns its own branch");
     };
-    assert_eq!(call.api_base, None);
-    assert_eq!(revealed(call.api_key.as_ref()), None);
+    assert_eq!(without_request.api_base, None);
+    assert_eq!(revealed(without_request.api_key.as_ref()), None);
     let mut request = input(BatchProvider::Xai);
     request.optional_params = optional_with(&[("api_base", "optional"), ("api_key", "key")]);
-    let result = created(&request, &settings);
-    let BatchProviderCreateCall::Xai(call) = &result.call else {
+    let requested = created(&request, &settings);
+    let BatchProviderCreateCall::Xai(with_request) = &requested.call else {
         panic!("xai owns its own branch");
     };
-    assert_eq!(call.api_base.as_deref(), Some("optional"));
-    assert_eq!(revealed(call.api_key.as_ref()).as_deref(), Some("key"));
+    assert_eq!(with_request.api_base.as_deref(), Some("optional"));
+    assert_eq!(
+        revealed(with_request.api_key.as_ref()).as_deref(),
+        Some("key")
+    );
 }
 
 #[rstest]
