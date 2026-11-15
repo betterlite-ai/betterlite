@@ -2,8 +2,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use super::Section;
+use super::guardrail_identity::item::GuardrailValue;
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::resolve::resolve_string;
+use crate::resolve::{resolve_secret, resolve_string};
 
 pub const DEFAULT_API_BASE: &str = "https://api.aim.security";
 const GUARDRAIL_KIND: &str = "aim";
@@ -29,7 +30,7 @@ struct Parameters {
     guardrail: String,
     api_key: Option<SecretString>,
     api_base: Option<String>,
-    inspect_embeddings: Option<bool>,
+    inspect_embeddings: Option<GuardrailValue>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -40,7 +41,7 @@ pub struct Settings {
 #[derive(Debug, Clone)]
 pub struct Configured {
     pub guardrail_name: Option<String>,
-    pub api_key: SecretString,
+    pub api_key: Option<SecretString>,
     pub api_base: String,
     pub inspect_embeddings: bool,
 }
@@ -62,43 +63,43 @@ impl Section for Raw {
     }
 }
 
-fn configured_value<L>(value: Option<String>, variable: &str, lookup: &L) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    value
-        .filter(|text| !text.is_empty())
-        .or_else(|| lookup.lookup(variable).filter(|text| !text.is_empty()))
-}
-
 impl Entry {
+    // LiteLLM builds each value as `param or os.environ[fallback] or default`, and the guardrail raises later when keyless
     fn resolve<L>(self, index: usize, lookup: &L) -> Result<Configured, ConfigError>
     where
         L: EnvironmentLookup,
     {
         let prefix = format!("guardrails.{index}.litellm_params");
         let parameters = self.litellm_params;
-        let Some(key) = configured_value(
-            parameters.api_key.map(|key| key.expose_secret().to_owned()),
-            "AIM_API_KEY",
-            lookup,
-        ) else {
-            return Err(ConfigError::MissingEnvironment {
-                variable: "AIM_API_KEY".to_owned(),
-                path: format!("{prefix}.api_key"),
+        let api_key = resolve_secret(parameters.api_key, &format!("{prefix}.api_key"), lookup)?
+            .filter(|key| !key.expose_secret().is_empty())
+            .or_else(|| {
+                lookup
+                    .lookup("AIM_API_KEY")
+                    .filter(|key| !key.is_empty())
+                    .map(SecretString::from)
             });
-        };
-        let api_key =
-            SecretString::from(resolve_string(key, &format!("{prefix}.api_key"), lookup)?);
-        let api_base = match configured_value(parameters.api_base, "AIM_API_BASE", lookup) {
-            Some(value) => resolve_string(value, &format!("{prefix}.api_base"), lookup)?,
-            None => DEFAULT_API_BASE.to_owned(),
-        };
+        let api_base = parameters
+            .api_base
+            .map(|value| resolve_string(value, &format!("{prefix}.api_base"), lookup))
+            .transpose()?
+            .filter(|value| !value.is_empty())
+            .or_else(|| {
+                lookup
+                    .lookup("AIM_API_BASE")
+                    .filter(|value| !value.is_empty())
+            })
+            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        // LiteLLM's `inspect_embeddings is True`: only the boolean true turns it on, every other value stays off
+        let inspect_embeddings = matches!(
+            parameters.inspect_embeddings,
+            Some(GuardrailValue::Boolean(true))
+        );
         Ok(Configured {
             guardrail_name: self.guardrail_name,
             api_key,
             api_base,
-            inspect_embeddings: parameters.inspect_embeddings.unwrap_or(false),
+            inspect_embeddings,
         })
     }
 }

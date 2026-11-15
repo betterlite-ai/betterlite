@@ -804,7 +804,10 @@ fn aim_guardrail_config_reads_the_api_key_and_default_base() {
     };
     let config = loader.load(source).unwrap();
     let configured = config.sections.aim_inspection.guardrails.first().unwrap();
-    assert_eq!(configured.api_key.expose_secret(), "config-key");
+    assert_eq!(
+        configured.api_key.as_ref().unwrap().expose_secret(),
+        "config-key"
+    );
     assert_eq!(configured.api_base, "https://api.aim.security");
     assert!(!configured.inspect_embeddings);
 }
