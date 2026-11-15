@@ -26,8 +26,20 @@ pub(super) fn passthrough_chunk(
     fields: &Fields,
     factory: ChunkFactory,
 ) -> Result<ChatChunk, ResponsesChatStreamError> {
-    let id = chunk_id(fields, factory)?;
-    let created = chunk_created(fields, factory)?;
+    let id = match fields.get("id") {
+        None | Some(Value::Null) => {
+            format!("{CHAT_COMPLETION_ID_PREFIX}{}", (factory.identifier)())
+        }
+        Some(Value::String(text)) => text.clone(),
+        Some(_) => return Err(ResponsesChatStreamError::Field { field: "id" }),
+    };
+    let created = match fields.get("created") {
+        None | Some(Value::Null) => (factory.clock)(),
+        Some(Value::Number(number)) => number
+            .as_i64()
+            .ok_or(ResponsesChatStreamError::Field { field: "created" })?,
+        Some(_) => return Err(ResponsesChatStreamError::Field { field: "created" }),
+    };
     let model = optional_text(fields.get("model"), "model")?;
     let system_fingerprint = optional_text(fields.get("system_fingerprint"), "system_fingerprint")?;
     let service_tier = optional_text(fields.get("service_tier"), "service_tier")?;
@@ -44,27 +56,6 @@ pub(super) fn passthrough_chunk(
         service_tier,
         extra: extra_fields(fields),
     })
-}
-
-fn chunk_id(fields: &Fields, factory: ChunkFactory) -> Result<String, ResponsesChatStreamError> {
-    match fields.get("id") {
-        None | Some(Value::Null) => Ok(format!(
-            "{CHAT_COMPLETION_ID_PREFIX}{}",
-            (factory.identifier)()
-        )),
-        Some(Value::String(text)) => Ok(text.clone()),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "id" }),
-    }
-}
-
-fn chunk_created(fields: &Fields, factory: ChunkFactory) -> Result<i64, ResponsesChatStreamError> {
-    match fields.get("created") {
-        None | Some(Value::Null) => Ok((factory.clock)()),
-        Some(Value::Number(number)) => number
-            .as_i64()
-            .ok_or(ResponsesChatStreamError::Field { field: "created" }),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "created" }),
-    }
 }
 
 fn chunk_usage(fields: &Fields) -> Result<Option<Value>, ResponsesChatStreamError> {

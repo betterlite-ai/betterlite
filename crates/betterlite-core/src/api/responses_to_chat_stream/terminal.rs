@@ -20,8 +20,22 @@ pub(super) fn terminal_chunk(
     factory: ChunkFactory,
 ) -> Result<ChatChunk, ResponsesChatStreamError> {
     let response_value = fields.get("response").unwrap_or(&Value::Null);
-    let response = response_payload(response_value)?;
-    let output = response_output(&response)?;
+    let response = match response_value {
+        Value::Null => Cow::Owned(Map::new()),
+        Value::Object(payload) => Cow::Borrowed(payload),
+        Value::Array(_) | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
+            return Err(ResponsesChatStreamError::Field { field: "response" });
+        }
+    };
+    let output = match response.get("output") {
+        Some(Value::Array(items)) => items.as_slice(),
+        None | Some(Value::Null) => &[],
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field {
+                field: "response.output",
+            });
+        }
+    };
     let mut delta = delta(Some(""));
     delta.reasoning_items = reasoning_items(output)?;
     let mut chunk = response_chunk(
@@ -31,32 +45,13 @@ pub(super) fn terminal_chunk(
         delta,
         Some(finish_reason(response_value, event_type, output).to_owned()),
     );
-    chunk.usage = Some(terminal_usage(&response)?.unwrap_or(Value::Null));
+    chunk.usage = Some(match response.get("usage") {
+        Some(value) if is_truthy(Some(value)) => usage::chat_usage(value)?,
+        None | Some(_) => Value::Null,
+    });
     chunk.provider_specific_fields = terminal_metadata(&response);
     chunk.service_tier = terminal_service_tier(&response);
     Ok(chunk)
-}
-
-fn response_payload(
-    response_value: &Value,
-) -> Result<Cow<'_, Map<String, Value>>, ResponsesChatStreamError> {
-    match response_value {
-        Value::Null => Ok(Cow::Owned(Map::new())),
-        Value::Object(payload) => Ok(Cow::Borrowed(payload)),
-        Value::Array(_) | Value::Bool(_) | Value::Number(_) | Value::String(_) => {
-            Err(ResponsesChatStreamError::Field { field: "response" })
-        }
-    }
-}
-
-fn response_output(response: &Map<String, Value>) -> Result<&[Value], ResponsesChatStreamError> {
-    match response.get("output") {
-        Some(Value::Array(items)) => Ok(items.as_slice()),
-        None | Some(Value::Null) => Ok(&[]),
-        Some(_) => Err(ResponsesChatStreamError::Field {
-            field: "response.output",
-        }),
-    }
 }
 
 fn finish_reason(
@@ -86,15 +81,6 @@ fn is_tool_call_item(item: &Value) -> bool {
                 Some("function_call" | "custom_tool_call")
             )
     )
-}
-
-fn terminal_usage(
-    response: &Map<String, Value>,
-) -> Result<Option<Value>, ResponsesChatStreamError> {
-    match response.get("usage") {
-        Some(value) if is_truthy(Some(value)) => Ok(Some(usage::chat_usage(value)?)),
-        None | Some(_) => Ok(None),
-    }
 }
 
 fn terminal_metadata(response: &Map<String, Value>) -> Option<Map<String, Value>> {

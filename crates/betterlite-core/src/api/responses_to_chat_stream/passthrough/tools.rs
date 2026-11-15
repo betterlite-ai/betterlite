@@ -17,7 +17,7 @@ pub(super) fn tool_calls(items: &[Value]) -> Result<Vec<ChatToolCall>, Responses
             });
         };
         let index = call_index(fields, &mut next_index)?;
-        calls.push(call_shape(fields, index)?);
+        calls.push(tool_call(fields, index)?);
     }
     Ok(calls)
 }
@@ -41,81 +41,70 @@ fn call_index(
     }
 }
 
-// ChatCompletionDeltaCustomToolCall: a nonnull custom payload picks the custom shape
-fn call_shape(
+fn tool_call(
     fields: &Fields,
     index: Option<i64>,
 ) -> Result<ChatToolCall, ResponsesChatStreamError> {
-    let custom = fields.get("custom").filter(|value| !value.is_null());
-    if let Some(custom) = custom {
-        return custom_tool_call(fields, custom, index);
-    }
-    function_tool_call(fields, index)
+    let (kind, function, custom) = call_parts(fields)?;
+    Ok(ChatToolCall {
+        id: optional_text(fields.get("id"), "id")?,
+        index,
+        kind,
+        function,
+        custom,
+        provider_specific_fields: None,
+        extra: tool_call_extra(fields),
+    })
 }
 
-fn custom_tool_call(
+// ChatCompletionDeltaCustomToolCall: a nonnull custom payload picks the custom shape
+fn call_parts(
     fields: &Fields,
-    custom: &Value,
-    index: Option<i64>,
-) -> Result<ChatToolCall, ResponsesChatStreamError> {
+) -> Result<(Option<Option<String>>, Option<Value>, Option<Value>), ResponsesChatStreamError> {
+    let Some(custom) = fields.get("custom").filter(|value| !value.is_null()) else {
+        let Some(Value::Object(call)) = fields.get("function") else {
+            return Err(ResponsesChatStreamError::Field { field: "function" });
+        };
+        let kind = match fields.get("type") {
+            Some(Value::String(text)) => Some(Some(text.clone())),
+            None | Some(Value::Null) => Some(Some("function".to_owned())),
+            Some(_) => {
+                return Err(ResponsesChatStreamError::Field { field: "type" });
+            }
+        };
+        return Ok((
+            kind,
+            Some(tool_function(call)?),
+            fields.get("custom").cloned(),
+        ));
+    };
     let Some(payload) = custom.as_object() else {
         return Err(ResponsesChatStreamError::Field { field: "custom" });
     };
+    if let Some(field) = invalid_custom_field(payload) {
+        return Err(ResponsesChatStreamError::Field { field });
+    }
+    let kind = match fields.get("type") {
+        Some(Value::String(text)) => Some(Some(text.clone())),
+        None => None,
+        Some(Value::Null) => Some(None),
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field { field: "type" });
+        }
+    };
+    Ok((kind, None, Some(custom.clone())))
+}
+
+fn invalid_custom_field(payload: &Map<String, Value>) -> Option<&'static str> {
     for (key, field) in [("name", "custom.name"), ("input", "custom.input")] {
         if payload
             .get(key)
             .is_some_and(|value| !value.is_null() && !value.is_string())
         {
-            return Err(ResponsesChatStreamError::Field { field });
+            return Some(field);
         }
     }
-    Ok(ChatToolCall {
-        id: optional_text(fields.get("id"), "id")?,
-        index,
-        kind: custom_kind(fields)?,
-        function: None,
-        custom: Some(custom.clone()),
-        provider_specific_fields: None,
-        extra: tool_call_extra(fields),
-    })
-}
-
-fn custom_kind(fields: &Fields) -> Result<Option<Option<String>>, ResponsesChatStreamError> {
-    match fields.get("type") {
-        Some(Value::String(text)) => Ok(Some(Some(text.clone()))),
-        None => Ok(None),
-        Some(Value::Null) => Ok(Some(None)),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "type" }),
-    }
-}
-
-fn function_tool_call(
-    fields: &Fields,
-    index: Option<i64>,
-) -> Result<ChatToolCall, ResponsesChatStreamError> {
-    let function = match fields.get("function") {
-        Some(Value::Object(call)) => tool_function(call)?,
-        _ => {
-            return Err(ResponsesChatStreamError::Field { field: "function" });
-        }
-    };
-    Ok(ChatToolCall {
-        id: optional_text(fields.get("id"), "id")?,
-        index,
-        kind: function_kind(fields)?,
-        function: Some(function),
-        custom: fields.get("custom").cloned(),
-        provider_specific_fields: None,
-        extra: tool_call_extra(fields),
-    })
-}
-
-fn function_kind(fields: &Fields) -> Result<Option<Option<String>>, ResponsesChatStreamError> {
-    match fields.get("type") {
-        Some(Value::String(text)) => Ok(Some(Some(text.clone()))),
-        None | Some(Value::Null) => Ok(Some(Some("function".to_owned()))),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "type" }),
-    }
+    None
 }
 
 fn tool_call_extra(fields: &Fields) -> Map<String, Value> {

@@ -3,7 +3,7 @@ use serde_json::{Map, Value};
 
 use super::super::error::ResponsesChatStreamError;
 use super::super::fields::{Fields, field};
-use super::super::records::{ChatChoice, ChatDelta, ChatToolCall};
+use super::super::records::{ChatChoice, ChatDelta};
 use super::optional_text;
 use super::tools;
 
@@ -40,36 +40,28 @@ fn choice(value: &Value) -> Result<ChatChoice, ResponsesChatStreamError> {
     let Value::Object(fields) = value else {
         return Err(ResponsesChatStreamError::Field { field: "choices" });
     };
+    // StreamingChoices defaults the index to 0, while an explicit null stays null in the dump
+    let index = if fields.contains_key("index") {
+        field::<i64>(fields, "index")?
+    } else {
+        Some(0)
+    };
+    let delta_value = match fields.get("delta") {
+        None | Some(Value::Null) => ChatDelta::default(),
+        Some(Value::Object(delta_fields)) => delta(delta_fields)?,
+        Some(_) => return Err(ResponsesChatStreamError::Field { field: "delta" }),
+    };
+    let finish_reason = match field::<&str>(fields, "finish_reason")? {
+        None | Some("") => None,
+        Some(text) => Some(mapped_finish_reason(text).to_owned()),
+    };
     Ok(ChatChoice {
-        index: choice_index(fields)?,
-        delta: choice_delta(fields)?,
-        finish_reason: choice_finish_reason(fields)?,
+        index,
+        delta: delta_value,
+        finish_reason,
         logprobs: choice_logprobs(fields.get("logprobs")),
         extra: choice_extra(fields),
     })
-}
-
-// StreamingChoices defaults the index to 0, while an explicit null stays null in the dump
-fn choice_index(fields: &Fields) -> Result<Option<i64>, ResponsesChatStreamError> {
-    if !fields.contains_key("index") {
-        return Ok(Some(0));
-    }
-    field::<i64>(fields, "index")
-}
-
-fn choice_finish_reason(fields: &Fields) -> Result<Option<String>, ResponsesChatStreamError> {
-    match field::<&str>(fields, "finish_reason")? {
-        None | Some("") => Ok(None),
-        Some(text) => Ok(Some(mapped_finish_reason(text).to_owned())),
-    }
-}
-
-fn choice_delta(fields: &Fields) -> Result<ChatDelta, ResponsesChatStreamError> {
-    match fields.get("delta") {
-        None | Some(Value::Null) => Ok(ChatDelta::default()),
-        Some(Value::Object(delta_fields)) => delta(delta_fields),
-        Some(_) => Err(ResponsesChatStreamError::Field { field: "delta" }),
-    }
 }
 
 // ChoiceLogprobs normalizes a null top_logprobs on every content token to an empty list
@@ -93,66 +85,58 @@ fn choice_logprobs(value: Option<&Value>) -> Option<Value> {
 
 // StreamingChoices sets enhancements only when it holds a value
 fn choice_extra(fields: &Fields) -> Map<String, Value> {
-    let mut extra = Map::new();
-    for (key, value) in fields {
-        let dropped = CHOICE_KEYS.contains(&key.as_str())
-            || (key.as_str() == "enhancements" && value.is_null());
-        if !dropped {
-            extra.insert(key.clone(), value.clone());
-        }
+    let mut extra = fields.clone();
+    for key in CHOICE_KEYS {
+        extra.remove(key);
+    }
+    if extra.get("enhancements").is_some_and(Value::is_null) {
+        extra.remove("enhancements");
     }
     extra
 }
 
 fn delta(fields: &Fields) -> Result<ChatDelta, ResponsesChatStreamError> {
+    let function_call = match fields.get("function_call") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(call)) => Some(function_call_value(call)?),
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field {
+                field: "function_call",
+            });
+        }
+    };
+    let tool_calls = match fields.get("tool_calls") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(items)) => Some(tools::tool_calls(items)?),
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field {
+                field: "tool_calls",
+            });
+        }
+    };
+    // reasoning_content wins, and an unset one falls back to the providers' reasoning key
+    let reasoning_content = match fields.get("reasoning_content") {
+        Some(Value::Null) | None => optional_text(fields.get("reasoning"), "reasoning")?.flatten(),
+        Some(Value::String(text)) => Some(text.clone()),
+        Some(_) => {
+            return Err(ResponsesChatStreamError::Field {
+                field: "reasoning_content",
+            });
+        }
+    };
     Ok(ChatDelta {
         content: optional_text(fields.get("content"), "content")?.flatten(),
         role: optional_text(fields.get("role"), "role")?.flatten(),
-        function_call: delta_function_call(fields)?,
-        tool_calls: delta_tool_calls(fields)?,
+        function_call,
+        tool_calls,
         audio: fields
             .get("audio")
             .filter(|value| !value.is_null())
             .cloned(),
-        reasoning_content: reasoning_content(fields)?,
+        reasoning_content,
         reasoning_items: None,
         extra: delta_extra(fields),
     })
-}
-
-fn delta_function_call(fields: &Fields) -> Result<Option<Value>, ResponsesChatStreamError> {
-    match fields.get("function_call") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Object(call)) => Ok(Some(function_call_value(call)?)),
-        Some(_) => Err(ResponsesChatStreamError::Field {
-            field: "function_call",
-        }),
-    }
-}
-
-fn delta_tool_calls(
-    fields: &Fields,
-) -> Result<Option<Vec<ChatToolCall>>, ResponsesChatStreamError> {
-    match fields.get("tool_calls") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::Array(items)) => Ok(Some(tools::tool_calls(items)?)),
-        Some(_) => Err(ResponsesChatStreamError::Field {
-            field: "tool_calls",
-        }),
-    }
-}
-
-// reasoning_content wins, and an unset one falls back to the providers' reasoning key
-fn reasoning_content(fields: &Fields) -> Result<Option<String>, ResponsesChatStreamError> {
-    match fields.get("reasoning_content") {
-        Some(Value::Null) | None => {
-            Ok(optional_text(fields.get("reasoning"), "reasoning")?.flatten())
-        }
-        Some(Value::String(text)) => Ok(Some(text.clone())),
-        Some(_) => Err(ResponsesChatStreamError::Field {
-            field: "reasoning_content",
-        }),
-    }
 }
 
 fn delta_extra(fields: &Fields) -> Map<String, Value> {
