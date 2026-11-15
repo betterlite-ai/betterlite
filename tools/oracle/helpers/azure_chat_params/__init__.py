@@ -1,6 +1,7 @@
 import io
 from contextlib import redirect_stdout
 
+import litellm
 from pydantic import JsonValue
 
 from .configs import GPT5, O_SERIES_PARAMS
@@ -13,6 +14,8 @@ from .values import (
     transform_value,
 )
 from .views import INPUT, Input
+
+litellm.suppress_debug_info = True
 
 
 def run(input_value: dict[str, JsonValue]) -> JsonValue:

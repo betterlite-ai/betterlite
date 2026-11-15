@@ -19,7 +19,6 @@ from .views import (
 
 
 def install(source: Install) -> None:
-    litellm.suppress_debug_info = True
     litellm.model_cost = source["model_cost"]
     litellm.open_ai_chat_completion_models = set(source["chat_models"])
     litellm.open_ai_text_completion_models = set(source["text_models"])
