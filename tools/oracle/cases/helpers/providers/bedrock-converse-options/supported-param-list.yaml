@@ -2,7 +2,7 @@ kind: helper
 name: supported-param-list
 call:
   bedrock_converse_options:
-    function: supported_params
+    function: params
     model_cost:
       anthropic.claude-sonnet-4-20250514-v1:0: {litellm_provider: bedrock, supports_reasoning: true, supports_function_calling: false, supports_tool_choice: true}
       amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_reasoning: false, supports_function_calling: true, supports_tool_choice: true}
@@ -34,8 +34,5 @@ call:
       - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-pro-v1:0'
       - 'arn:aws:bedrock:us-east-1:123456789012:application-inference-profile/abc123'
       - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/amazon.nova-2-lite-v1:0'
-calls:
-  - bedrock_converse_options:
-      function: auto_tool_choice
 env: {}
 compare: {ignore: []}

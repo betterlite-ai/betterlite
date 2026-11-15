@@ -5,10 +5,10 @@ call:
     function: clamp
     environment: {BEDROCK_MIN_THINKING_BUDGET_TOKENS: '2048'}
     cases:
-      - optional_params: {thinking: {type: enabled, budget_tokens: 1024}}
-      - optional_params: {thinking: {type: enabled, budget_tokens: 1500}}
-      - optional_params: {thinking: {type: enabled, budget_tokens: 2047}}
-      - optional_params: {thinking: {type: enabled, budget_tokens: 2048}}
-      - optional_params: {thinking: {type: enabled, budget_tokens: 4096}}
+      - {thinking: {type: enabled, budget_tokens: 1024}}
+      - {thinking: {type: enabled, budget_tokens: 1500}}
+      - {thinking: {type: enabled, budget_tokens: 2047}}
+      - {thinking: {type: enabled, budget_tokens: 2048}}
+      - {thinking: {type: enabled, budget_tokens: 4096}}
 env: {BEDROCK_MIN_THINKING_BUDGET_TOKENS: '2048'}
 compare: {ignore: []}

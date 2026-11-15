@@ -2,7 +2,8 @@ kind: helper
 name: sampling-capabilities
 call:
   bedrock_converse_options:
-    function: sampling
+    function: flags
+    kind: sampling
     model_cost:
       amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_sampling_params: false}
       us.amazon.nova-pro-v1:0: {litellm_provider: bedrock, supports_sampling_params: true}

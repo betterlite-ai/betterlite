@@ -2,7 +2,9 @@ kind: helper
 name: nova2-reasoning-config
 call:
   bedrock_converse_options:
-    function: nova2_models
+    function: flags
+    kind: nova2
+    model_cost: {}
     models:
       - amazon.nova-2-lite-v1:0
       - us.amazon.nova-2-lite-v1:0

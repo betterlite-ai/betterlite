@@ -2,17 +2,17 @@ kind: helper
 name: converse-class-defaults
 call:
   bedrock_converse_options:
-    function: class_defaults
+    function: defaults
     arguments: {}
 calls:
   - bedrock_converse_options:
-      function: class_defaults
+      function: defaults
       arguments: {maxTokens: 16, stopSequences: [], temperature: 0, topP: 1, topK: 0}
   - bedrock_converse_options:
-      function: class_defaults
+      function: defaults
       arguments: {maxTokens: null}
   - bedrock_converse_options:
-      function: class_defaults
+      function: defaults
       arguments: {stopSequences: [END, DONE], temperature: 1}
 env: {}
 compare: {ignore: []}

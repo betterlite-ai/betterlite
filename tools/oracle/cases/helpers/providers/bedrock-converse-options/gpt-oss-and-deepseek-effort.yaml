@@ -2,15 +2,28 @@ kind: helper
 name: gpt-oss-and-deepseek-effort
 call:
   bedrock_converse_options:
-    function: deepseek_flags
-    cases:
-      - {model: deepseek.v3-v1:0, base_model: deepseek.v3-v1:0}
-      - {model: us.deepseek.v3-v1:0, base_model: deepseek.v3-v1:0}
-      - {model: deepseek.r1-v1:0, base_model: deepseek.r1-v1:0}
-      - {model: us.deepseek.r1-v1:0, base_model: deepseek.r1-v1:0}
-      - {model: DeepSeek.V3, base_model: DeepSeek.V3}
-      - {model: fixture, base_model: deepseek.r1-v1:0}
-      - {model: deepseek.r1, base_model: deepseek.r1-v1:0}
+    function: params
+    model_cost:
+      deepseek.v3-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
+      deepseek.r1-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
+      openai.gpt-oss-120b-1:0: {litellm_provider: bedrock}
+      fixture-reasoning: {litellm_provider: bedrock, supports_reasoning: true}
+      fixture-plain: {litellm_provider: bedrock, supports_reasoning: false}
+    models:
+      - deepseek.v3-v1:0
+      - us.deepseek.v3-v1:0
+      - deepseek.r1-v1:0
+      - us.deepseek.r1-v1:0
+      - DeepSeek.V3
+      - deepseek.r1
+      - openai.gpt-oss-120b-1:0
+      - anthropic.claude-3-7-sonnet-20250219-v1:0
+      - us.anthropic.claude-sonnet-4-5-v1:0
+      - anthropic.claude-opus-4-1-v1:0
+      - fixture-reasoning
+      - us.fixture-reasoning
+      - fixture-plain
+      - fixture-unknown
 calls:
   - bedrock_converse_options:
       function: handle
@@ -33,22 +46,5 @@ calls:
       model: deepseek.r1-v1:0
       effort: high
       optional_params: {}
-  - bedrock_converse_options:
-      function: thinking_accepts
-      model_cost:
-        deepseek.v3-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
-        deepseek.r1-v1:0: {litellm_provider: bedrock, supports_reasoning: true}
-        fixture-reasoning: {litellm_provider: bedrock, supports_reasoning: true}
-        fixture-plain: {litellm_provider: bedrock, supports_reasoning: false}
-      cases:
-        - {model: deepseek.v3-v1:0, base_model: deepseek.v3-v1:0}
-        - {model: deepseek.r1-v1:0, base_model: deepseek.r1-v1:0}
-        - {model: anthropic.claude-3-7-sonnet-20250219-v1:0, base_model: anthropic.claude-3-7-sonnet-20250219-v1:0}
-        - {model: us.anthropic.claude-sonnet-4-5-v1:0, base_model: anthropic.claude-sonnet-4-5-v1:0}
-        - {model: anthropic.claude-opus-4-1-v1:0, base_model: anthropic.claude-opus-4-1-v1:0}
-        - {model: fixture-reasoning, base_model: fixture-reasoning}
-        - {model: us.fixture-reasoning, base_model: fixture-reasoning}
-        - {model: fixture-plain, base_model: fixture-plain}
-        - {model: fixture-unknown, base_model: fixture-unknown}
 env: {}
 compare: {ignore: []}

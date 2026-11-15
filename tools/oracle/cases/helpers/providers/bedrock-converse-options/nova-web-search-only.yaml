@@ -2,7 +2,9 @@ kind: helper
 name: nova-web-search-only
 call:
   bedrock_converse_options:
-    function: web_search
+    function: flags
+    kind: web_search
+    model_cost: {}
     models:
       - amazon.nova-pro-v1:0
       - us.amazon.nova-lite-v1:0

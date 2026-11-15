@@ -2,7 +2,9 @@ kind: helper
 name: gpt-reasoning-object
 call:
   bedrock_converse_options:
-    function: gpt_models
+    function: flags
+    kind: gpt
+    model_cost: {}
     models:
       - openai.gpt-5
       - openai.gpt-5.2
@@ -19,7 +21,9 @@ call:
       - novaanthropic.openai.gpt-7
 calls:
   - bedrock_converse_options:
-      function: min_max_tokens
+      function: flags
+      kind: minmax
+      model_cost: {}
       models:
         - openai.gpt-5
         - xai.grok-3
