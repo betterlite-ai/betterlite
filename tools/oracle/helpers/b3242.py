@@ -1,6 +1,6 @@
 import asyncio
 from datetime import datetime
-from typing import Literal, TypeAlias, TypedDict
+from typing import Literal, Protocol, TypeAlias, TypedDict
 
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.policy_engine.policy_registry import get_policy_registry
@@ -40,7 +40,12 @@ from pydantic import BaseModel, JsonValue, TypeAdapter
 
 DUMP = TypeAdapter(dict[str, JsonValue])
 
-RECORDS: dict[str, TypeAdapter[BaseModel]] = {
+
+class RecordAdapter(Protocol):
+    def validate_python(self, value: JsonValue, /) -> BaseModel: ...
+
+
+RECORDS: dict[str, RecordAdapter] = {
     "PolicyScopeResponse": TypeAdapter(PolicyScopeResponse),
     "PolicyGuardrailsResponse": TypeAdapter(PolicyGuardrailsResponse),
     "PolicyInfoResponse": TypeAdapter(PolicyInfoResponse),
