@@ -9,24 +9,23 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::HeaderMap as AxumHeaderMap;
-use axum::http::{StatusCode as AxumStatusCode, Uri};
+use axum::http::{StatusCode as AxumStatusCode, Uri, header};
 use axum::response::IntoResponse as _;
 use axum::routing::post;
-use betterlite_config::sections::Section as _;
-use betterlite_config::sections::alice_conduct_decisions::Raw;
-use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_params::base::UnreachableFallback as ConfigFallback;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Deserialize, Serialize};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
+use tracing::subscriber::set_default;
 
 use super::error::AliceError;
 use super::transport::MAX_RESPONSE_BYTES;
 use super::{
-    AliceConfigModel, AliceGuardrail, AliceGuardrailParams, DEFAULT_API_BASE,
-    DEFAULT_BLOCK_MESSAGE, EVALUATE_PATH, GUARDRAIL_NAME,
+    AliceGuardrail, AliceGuardrailParams, DEFAULT_API_BASE, DEFAULT_BLOCK_MESSAGE, EVALUATE_PATH,
+    GUARDRAIL_NAME,
 };
 use crate::generic_guardrail_contracts::{
     GuardrailInputType, GuardrailMessage, GuardrailToolParam, UnreachableFallback,
@@ -35,25 +34,28 @@ use crate::guardrail_base::contract::GuardrailContract;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 
+mod config_section;
+
 struct Recorded {
     path: String,
     af_api_key: Option<String>,
     content_type: Option<String>,
-    body: serde_json::Value,
+    body: Vec<u8>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SentPayload {
+    input_type: GuardrailInputType,
+    inputs: GuardrailApiInputs,
+    request_data: BTreeMap<String, GuardrailValue>,
 }
 
 type Recorder = Arc<Mutex<Vec<Recorded>>>;
 
 #[derive(Clone)]
 enum Answer {
-    Json {
-        status: u16,
-        body: serde_json::Value,
-    },
-    Raw {
-        status: u16,
-        body: String,
-    },
+    Json { status: u16, body: String },
+    Raw { status: u16, body: String },
     Timeout,
 }
 
@@ -75,19 +77,20 @@ async fn serve(answer: Answer) -> Harness {
     let handler_recorder = Arc::clone(&recorded);
     let handler = move |uri: Uri, headers: AxumHeaderMap, bytes: Bytes| {
         let recorder = Arc::clone(&handler_recorder);
-        let answer = answer.clone();
+        let scripted = answer.clone();
         async move {
             let entry = Recorded {
                 path: uri.path().to_owned(),
                 af_api_key: header_text(&headers, "af-api-key"),
                 content_type: header_text(&headers, "content-type"),
-                body: serde_json::from_slice(&bytes).unwrap_or(serde_json::Value::Null),
+                body: bytes.to_vec(),
             };
             recorder.lock().expect("the recorder").push(entry);
-            match answer {
+            match scripted {
                 Answer::Json { status, body } => (
                     AxumStatusCode::from_u16(status).expect("a status code"),
-                    axum::Json(body),
+                    [(header::CONTENT_TYPE, "application/json")],
+                    body,
                 )
                     .into_response(),
                 Answer::Raw { status, body } => (
@@ -96,7 +99,7 @@ async fn serve(answer: Answer) -> Harness {
                 )
                     .into_response(),
                 Answer::Timeout => {
-                    tokio::time::sleep(Duration::from_millis(200)).await;
+                    sleep(Duration::from_millis(200)).await;
                     (AxumStatusCode::OK, "late").into_response()
                 }
             }
@@ -143,18 +146,6 @@ fn guardrail(base: &str, fallback: UnreachableFallback, timeout: Duration) -> Al
         timeout,
     )
     .expect("the guardrail builds")
-}
-
-fn empty_inputs() -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: None,
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
-    }
 }
 
 fn text_inputs(values: &[&str]) -> GuardrailApiInputs {
@@ -225,8 +216,11 @@ fn raised(outcome: Outcome) -> (String, u16, bool) {
     }
 }
 
-fn answer(body: serde_json::Value) -> Answer {
-    Answer::Json { status: 200, body }
+fn answer(body: impl Serialize) -> Answer {
+    Answer::Json {
+        status: 200,
+        body: serde_json::to_string(&body).expect("the scripted answer serializes"),
+    }
 }
 
 #[tokio::test]
@@ -237,8 +231,8 @@ async fn alice_guardrail_empty_inputs_skip_the_call() {
         UnreachableFallback::FailClosed,
         Duration::from_secs(2),
     );
-    let outcome = apply(&instance, empty_inputs(), &BTreeMap::new()).await;
-    assert_eq!(returned_inputs(outcome), empty_inputs());
+    let outcome = apply(&instance, GuardrailApiInputs::default(), &BTreeMap::new()).await;
+    assert_eq!(returned_inputs(outcome), GuardrailApiInputs::default());
     assert!(
         harness.recorded.lock().expect("the recorder").is_empty(),
         "an empty batch never reaches Alice"
@@ -328,15 +322,28 @@ async fn alice_guardrail_posts_the_stripped_bounded_payload() {
     assert_eq!(request.path, EVALUATE_PATH);
     assert_eq!(request.af_api_key.as_deref(), Some("alice-key"));
     assert_eq!(request.content_type.as_deref(), Some("application/json"));
-    assert_eq!(request.body["input_type"], "request");
-    assert_eq!(request.body["inputs"]["texts"][0], "hello");
-    let sent = &request.body["request_data"];
-    assert!(sent.get("api_key").is_none());
-    assert!(sent.get("secret_fields").is_none());
-    assert_eq!(sent["metadata"]["keep"], 1);
-    assert!(sent["metadata"].get("headers").is_none());
-    assert_eq!(sent["list"][0]["ok"], true);
-    assert!(sent["list"][0].get("raw_headers").is_none());
+    let sent: SentPayload =
+        serde_json::from_slice(&request.body).expect("the evaluation body is JSON");
+    assert_eq!(sent.input_type, GuardrailInputType::Request);
+    assert_eq!(sent.inputs.texts, Some(vec!["hello".to_owned()]));
+    assert!(!sent.request_data.contains_key("api_key"));
+    assert!(!sent.request_data.contains_key("secret_fields"));
+    let Some(GuardrailValue::Object(metadata)) = sent.request_data.get("metadata") else {
+        panic!("metadata is sent as an object");
+    };
+    assert_eq!(
+        metadata.get("keep"),
+        Some(&GuardrailValue::SignedInteger(1))
+    );
+    assert!(!metadata.contains_key("headers"));
+    let Some(GuardrailValue::Array(list)) = sent.request_data.get("list") else {
+        panic!("list is sent as an array");
+    };
+    let Some(GuardrailValue::Object(first)) = list.first() else {
+        panic!("the first list item is an object");
+    };
+    assert_eq!(first.get("ok"), Some(&GuardrailValue::Boolean(true)));
+    assert!(!first.contains_key("raw_headers"));
 }
 
 #[tokio::test]
@@ -409,14 +416,18 @@ async fn alice_guardrail_mask_applies_replacements_in_order() {
 }
 
 #[rstest]
-#[case::out_of_range(serde_json::json!({"verdict": "MASK", "replacements": [{"index": 2, "text": "x"}]}))]
-#[case::missing_text(serde_json::json!({"verdict": "MASK", "replacements": [{"index": 0}]}))]
-#[case::missing_index(serde_json::json!({"verdict": "MASK", "replacements": [{"text": "x"}]}))]
-#[case::negative_index(serde_json::json!({"verdict": "MASK", "replacements": [{"index": -1, "text": "x"}]}))]
-#[case::no_replacements(serde_json::json!({"verdict": "MASK"}))]
+#[case::out_of_range(r#"{"verdict": "MASK", "replacements": [{"index": 2, "text": "x"}]}"#)]
+#[case::missing_text(r#"{"verdict": "MASK", "replacements": [{"index": 0}]}"#)]
+#[case::missing_index(r#"{"verdict": "MASK", "replacements": [{"text": "x"}]}"#)]
+#[case::negative_index(r#"{"verdict": "MASK", "replacements": [{"index": -1, "text": "x"}]}"#)]
+#[case::no_replacements(r#"{"verdict": "MASK"}"#)]
 #[tokio::test]
-async fn alice_guardrail_mask_refuses_a_malformed_verdict(#[case] body: serde_json::Value) {
-    let harness = serve(answer(body)).await;
+async fn alice_guardrail_mask_refuses_a_malformed_verdict(#[case] body: &str) {
+    let harness = serve(Answer::Json {
+        status: 200,
+        body: body.to_owned(),
+    })
+    .await;
     let instance = guardrail(
         &harness.base,
         UnreachableFallback::FailOpen,
@@ -474,7 +485,7 @@ async fn alice_guardrail_detect_logs_the_correlation_id_and_categories() {
         .with_max_level(tracing::Level::WARN)
         .with_writer(move || writer.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     let outcome = apply(&instance, text_inputs(&["watch me"]), &BTreeMap::new()).await;
     assert_eq!(returned_inputs(outcome), text_inputs(&["watch me"]));
     let text = captured.text();
@@ -516,7 +527,7 @@ async fn alice_guardrail_missing_verdict_fails_open_when_configured() {
 async fn alice_guardrail_a_redirect_propagates_instead_of_failing_open() {
     let harness = serve(Answer::Json {
         status: 304,
-        body: serde_json::json!({}),
+        body: "{}".to_owned(),
     })
     .await;
     let instance = guardrail(
@@ -534,7 +545,7 @@ async fn alice_guardrail_a_redirect_propagates_instead_of_failing_open() {
 async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy() {
     let harness = serve(Answer::Json {
         status: 401,
-        body: serde_json::json!({}),
+        body: "{}".to_owned(),
     })
     .await;
     let instance = guardrail(
@@ -549,11 +560,11 @@ async fn alice_guardrail_a_client_error_propagates_without_the_fallback_policy()
 }
 
 #[rstest]
-#[case::server_error(Answer::Json { status: 500, body: serde_json::json!({}) })]
-#[case::bad_gateway(Answer::Json { status: 502, body: serde_json::json!({}) })]
+#[case::server_error(Answer::Json { status: 500, body: "{}".to_owned() })]
+#[case::bad_gateway(Answer::Json { status: 502, body: "{}".to_owned() })]
 #[case::decode_error(Answer::Raw { status: 200, body: "{not json".to_owned() })]
-#[case::non_object_body(Answer::Json { status: 200, body: serde_json::json!("a string") })]
-#[case::malformed_verdict(Answer::Json { status: 200, body: serde_json::json!({"verdict": 7}) })]
+#[case::non_object_body(Answer::Json { status: 200, body: r#""a string""#.to_owned() })]
+#[case::malformed_verdict(Answer::Json { status: 200, body: r#"{"verdict": 7}"#.to_owned() })]
 #[tokio::test]
 async fn alice_guardrail_outages_fail_closed_by_default(#[case] scripted: Answer) {
     let harness = serve(scripted).await;
@@ -570,8 +581,8 @@ async fn alice_guardrail_outages_fail_closed_by_default(#[case] scripted: Answer
 }
 
 #[rstest]
-#[case::server_error(Answer::Json { status: 503, body: serde_json::json!({}) })]
-#[case::malformed_verdict(Answer::Json { status: 200, body: serde_json::json!({"verdict": 7}) })]
+#[case::server_error(Answer::Json { status: 503, body: "{}".to_owned() })]
+#[case::malformed_verdict(Answer::Json { status: 200, body: r#"{"verdict": 7}"#.to_owned() })]
 #[tokio::test]
 async fn alice_guardrail_outages_fail_open_when_configured(#[case] scripted: Answer) {
     let harness = serve(scripted).await;
@@ -617,7 +628,7 @@ async fn alice_guardrail_connection_failure_follows_the_policy() {
 async fn alice_guardrail_fail_open_logs_at_error_level() {
     let harness = serve(Answer::Json {
         status: 500,
-        body: serde_json::json!({}),
+        body: "{}".to_owned(),
     })
     .await;
     let instance = guardrail(
@@ -631,7 +642,7 @@ async fn alice_guardrail_fail_open_logs_at_error_level() {
         .with_max_level(tracing::Level::ERROR)
         .with_writer(move || writer.clone())
         .finish();
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = set_default(subscriber);
     let outcome = apply(&instance, text_inputs(&["x"]), &BTreeMap::new()).await;
     assert_eq!(returned_inputs(outcome), text_inputs(&["x"]));
     assert!(
@@ -738,125 +749,6 @@ fn alice_guardrail_defaults_api_base_and_fallback() {
     assert_eq!(
         instance.unreachable_fallback,
         UnreachableFallback::FailClosed
-    );
-}
-
-#[test]
-fn alice_guardrail_config_model_deserializes_the_litellm_fields() {
-    let model: AliceConfigModel = serde_json::from_str(r#"{"api_base": "https://alice.example"}"#)
-        .expect("the config model accepts an api_base");
-    assert!(model.api_key.is_none());
-    assert_eq!(model.api_base.as_deref(), Some("https://alice.example"));
-    assert_eq!(AliceConfigModel::ui_friendly_name(), "Alice");
-    let with_key: AliceConfigModel = serde_json::from_str(r#"{"api_key": "secret"}"#)
-        .expect("the config model accepts an api_key");
-    assert_eq!(
-        with_key
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("secret")
-    );
-}
-
-#[test]
-fn alice_guardrail_config_section_loads_values_and_environment() {
-    let yaml = r"
-guardrails:
-  - guardrail_name: alice-check
-    litellm_params:
-      guardrail: alice
-  - guardrail_name: not-alice
-    litellm_params:
-      guardrail: bedrock
-";
-    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
-    let environment = BTreeMap::from([
-        ("ALICE_API_KEY".to_owned(), "env-key".to_owned()),
-        (
-            "ALICE_API_BASE".to_owned(),
-            "https://env.example".to_owned(),
-        ),
-    ]);
-    let settings = raw.convert(&environment).expect("the section converts");
-    assert_eq!(settings.guardrails.len(), 1);
-    let configured = &settings.guardrails[0];
-    assert_eq!(configured.guardrail_name, "alice-check");
-    assert_eq!(
-        configured
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("env-key")
-    );
-    assert_eq!(configured.api_base.as_deref(), Some("https://env.example"));
-    assert_eq!(configured.unreachable_fallback, ConfigFallback::FailClosed);
-}
-
-#[test]
-fn alice_guardrail_config_section_prefers_config_and_defaults_are_litellm_s() {
-    let yaml = r"
-guardrails:
-  - guardrail_name: alice-check
-    litellm_params:
-      guardrail: alice
-      api_key: config-key
-      unreachable_fallback: fail_open
-";
-    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
-    let settings = raw.convert(&BTreeMap::new()).expect("the section converts");
-    let configured = &settings.guardrails[0];
-    assert_eq!(
-        configured
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
-        Some("config-key")
-    );
-    assert_eq!(configured.api_base, None);
-    assert_eq!(configured.unreachable_fallback, ConfigFallback::FailOpen);
-    assert_eq!(DEFAULT_API_BASE, "https://api.alice.io");
-}
-
-#[test]
-fn alice_guardrail_config_section_lowercases_the_fallback_value() {
-    let yaml = r"
-guardrails:
-  - guardrail_name: alice-check
-    litellm_params:
-      guardrail: alice
-      api_key: config-key
-      unreachable_fallback: FAIL_OPEN
-";
-    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
-    let settings = raw.convert(&BTreeMap::new()).expect("the section converts");
-    assert_eq!(
-        settings.guardrails[0].unreachable_fallback,
-        ConfigFallback::FailOpen
-    );
-}
-
-#[test]
-fn alice_guardrail_config_section_rejects_an_unknown_fallback_value() {
-    let yaml = r"
-guardrails:
-  - guardrail_name: alice-check
-    litellm_params:
-      guardrail: alice
-      api_key: config-key
-      unreachable_fallback: never
-";
-    let raw: Raw = serde_saphyr::from_str(yaml).expect("the section parses");
-    let error = raw
-        .convert(&BTreeMap::new())
-        .expect_err("an unknown fallback refuses the config");
-    assert!(
-        matches!(
-            error,
-            betterlite_config::loader::ConfigError::InvalidScalar { ref path, .. }
-                if path == "guardrails.0.litellm_params.unreachable_fallback"
-        ),
-        "{error:?}"
     );
 }
 
