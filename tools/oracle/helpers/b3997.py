@@ -16,7 +16,10 @@ PAYLOAD_KEYS = ("id", "trace_id", "call_type", "status", "total_tokens", "model"
 
 
 class Input(TypedDict):
-    action: Literal["initialize", "async_headers", "sync_headers", "upload", "logging_config", "vertex_instance"]
+    action: Literal[
+        "initialize", "async_headers", "sync_headers", "upload",
+        "logging_config", "vertex_instance",
+    ]
     environment: NotRequired[dict[str, str]]
     bucket: NotRequired[str]
     object_name: NotRequired[str]
@@ -252,8 +255,7 @@ def logging_config_case(input_value: Input) -> JsonValue:
     created = GCSBucketBase(bucket_name=input_value.get("bucket"))
     base: BucketView = created
     resolved = asyncio.run(read_config(created, input_value.get("dynamic")))
-    result: dict[str, JsonValue] = {"config": resolved, "cached_keys": cache_keys(base)}
-    return result
+    return {"config": resolved, "cached_keys": cache_keys(base)}
 
 
 async def compare_instances(base: BucketView, credentials: str | None) -> JsonValue:
@@ -267,8 +269,7 @@ def vertex_instance_case(input_value: Input) -> JsonValue:
     created = GCSBucketBase(bucket_name=input_value.get("bucket"))
     base: BucketView = created
     compared = asyncio.run(compare_instances(base, input_value.get("credentials")))
-    result: dict[str, JsonValue] = {"instances": compared, "cached_keys": cache_keys(base)}
-    return result
+    return {"instances": compared, "cached_keys": cache_keys(base)}
 
 
 def install_auth(module: MockModule) -> None:
