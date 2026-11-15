@@ -1,0 +1,20 @@
+task: B8104
+deviations:
+  - what: The generated unknown- id suffix is random in both implementations, so a reply with no id is compared with that id field ignored.
+    why: A uuid4 cannot be compared across two processes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L213-L217
+  - what: The lax-validation debug line names the validation error and omits the response body, where LiteLLM logs the whole raw_response_json.
+    why: A provider response can carry credentials, and betterlite never writes a response body into a log line.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L219-L225
+  - what: A reply that fails record validation is returned as a record built from every raw field that parses, with id, created_at, output, reasoning, text and usage replaced by their parseable-or-default value, and only a field that fails its type is dropped, where LiteLLM's model_construct carries every field as sent.
+    why: A Rust record has typed fields, so a mistyped field cannot be carried as-is; dropping the whole reply would lose a response LiteLLM returns, and dropping a well-typed field would lose one too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L219-L225
+  - what: A JSON body that is not an object raises the upstream-status OpenAI error, where LiteLLM raises an unhandled AttributeError outside its try block and returns a 500.
+    why: A working Manus setup sends a response object; a 500 for a body LiteLLM already fails is a bug no setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L192-L217
+  - what: The processed and raw response headers travel in the logging details under headers and additional_headers, where LiteLLM stores them on the response's private _hidden_params.
+    why: The B1114 contract returns only the typed reply record, so the provider config has no field for hidden params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L227-L230
+  - what: A response body that is not UTF-8 raises the upstream-status OpenAI error before the post-call record is written and names the decoding failure, where LiteLLM records the lossily decoded text, then fails in raw_response.json() and raises the same error with that text.
+    why: betterlite refuses bytes that are not UTF-8 instead of mangling them, so there is no text to record; the error class and status match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/manus/responses/transformation.py#L176-L189
