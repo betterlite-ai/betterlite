@@ -637,8 +637,9 @@ fn batch_cancel_rejects_an_unsupported_provider_with_400() {
     .expect_err("the provider is unsupported");
     let fields = error.error_fields().expect("an HTTP error");
     assert_eq!(fields.status, 400);
-    assert_eq!(fields.error_type, "bad_request_error");
-    assert_eq!(fields.code, "400");
+    assert_eq!(fields.error_type, None);
+    assert_eq!(fields.param, None);
+    assert_eq!(fields.code, None);
     assert!(error.to_string().contains("mistral"), "{error}");
     assert!(recorded(&calls).is_empty());
 }

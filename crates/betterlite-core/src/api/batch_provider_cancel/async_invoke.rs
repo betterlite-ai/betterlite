@@ -63,7 +63,8 @@ fn check_event_bytes(
 ) -> Result<(), ApiLimitError> {
     limits.check(ApiBoundariesInput::Event(EventBoundary {
         known_bytes: s3_uri.len().saturating_add(failure_message.len()),
-    }))
+    }))?;
+    Ok(())
 }
 
 // the OpenAI Batch object AWS's async invoke answer is projected onto

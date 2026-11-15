@@ -112,12 +112,13 @@ pub struct BatchProviderCancelResult {
     pub model: Option<String>,
 }
 
+// litellm's BadRequestError carries the status alone: openai's APIError leaves type, param and code null
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CancelErrorFields {
     pub status: u16,
-    pub error_type: &'static str,
-    pub param: &'static str,
-    pub code: &'static str,
+    pub error_type: Option<&'static str>,
+    pub param: Option<&'static str>,
+    pub code: Option<&'static str>,
 }
 
 #[derive(Debug, Error)]
@@ -144,9 +145,9 @@ where
         match self {
             Self::Unsupported { .. } => Some(CancelErrorFields {
                 status: 400,
-                error_type: "bad_request_error",
-                param: "None",
-                code: "400",
+                error_type: None,
+                param: None,
+                code: None,
             }),
             Self::Limits(_) | Self::Timeout(_) | Self::Dispatch(_) => None,
         }
