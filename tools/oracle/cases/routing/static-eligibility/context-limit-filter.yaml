@@ -1,0 +1,152 @@
+kind: probe
+name: context-limit-filter
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: big, max_input_tokens: 1000}
+          - {model_name: gpt, model: "openai/gpt-4o", id: small, max_input_tokens: 3}
+          - {model_name: gpt, model: "openai/gpt-4o", id: roomy, max_input_tokens: 100000}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: edge, max_input_tokens: 9}
+          - {model_name: gpt, model: "openai/gpt-4o", id: below, max_input_tokens: 8}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: four, max_input_tokens: 4}
+          - {model_name: gpt, model: "openai/gpt-4o", id: five, max_input_tokens: 5}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: one, max_input_tokens: 1}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - {model: gpt}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: over, max_input_tokens: 1}
+          - {model_name: gpt, model: "openai/gpt-4", id: legacy}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+            response_format: true
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: below, max_input_tokens: 1}
+          - {model_name: gpt, model: "openai/gpt-4o", id: roomy, max_input_tokens: 1000}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - {model: gpt, input: "hello world"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: below, max_input_tokens: 1}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - {model: gpt, input: "hello world"}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: below, max_input_tokens: 1}
+          - {model_name: gpt, model: "openai/gpt-4o", id: roomy, max_input_tokens: 1000}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            input: [{role: user, content: "hello world"}]
+            instructions: "be brief"
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      static_eligibility:
+        environment: production
+        enable_pre_call_checks: true
+        models:
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: wide, max_input_tokens: 1000}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: tiny, max_input_tokens: 3}
+          - {model_name: deviation, model: "openai/gpt-4o-mini", id: windowless}
+          - {model_name: gpt, model: "openai/gpt-4o", id: open}
+        lookups:
+          - {model: deviation, messages: [{role: user, content: "hello world"}]}
+          - model: gpt
+            messages: [{role: user, content: "hello world"}]
+compare:
+  ignore: []
+  expected_difference:
+    - pointer: /output/static_eligibility/lookups/0/selected
+      reference: ["wide"]
+      rust: ["wide", "windowless"]
+      why: Router init registers each deployment's model_info under the shared backend model key, and get_router_model_info reads it back through the lru-cached get_model_info, so a deployment with no window inherits whichever sibling registered last. That value depends on model_list and cache order, not on the deployment's config, so no working setup can rely on it; betterlite resolves each deployment's window from its own model info.
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10115-L10125

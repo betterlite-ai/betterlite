@@ -1,0 +1,21 @@
+kind: helper
+name: response-header-prefixes
+call:
+  anthropic_headers:
+    environment: {}
+    calls:
+      - function: response_headers
+        headers:
+          - {name: anthropic-ratelimit-requests-limit, value: "10"}
+          - {name: anthropic-ratelimit-requests-remaining, value: "9"}
+          - {name: anthropic-ratelimit-tokens-limit, value: "1000"}
+          - {name: anthropic-ratelimit-tokens-remaining, value: "999"}
+          - {name: request-id, value: req_1}
+          - {name: content-type, value: application/json}
+      - function: response_headers
+        headers:
+          - {name: request-id, value: req_2}
+      - function: response_headers
+        headers: []
+env: {}
+compare: {ignore: []}
