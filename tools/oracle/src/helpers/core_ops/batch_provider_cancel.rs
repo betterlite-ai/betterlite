@@ -1,19 +1,17 @@
 use std::collections::BTreeMap;
 use std::future::Future;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
 
 use betterlite_config::sections::batch_provider_cancel::Settings;
 use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::batch_provider_cancel::service::BatchProviderCancel;
 use betterlite_core::api::batch_provider_cancel::{
-    AzureCancelCall, BatchCancelDispatch, BatchProviderCancelError, BatchProviderCancelInput,
-    BedrockCancelCall, OpenAiCancelCall, VertexCancelCall, XaiCancelCall,
+    BatchCancelDispatch, BatchProviderCancelError, BatchProviderCancelInput, CancelTarget,
 };
-use betterlite_openai::api::batch_records::BatchIdRequest;
 use betterlite_openai::batches::records::BatchObject;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 use thiserror::Error;
 
 #[derive(Debug, Deserialize)]
@@ -98,18 +96,10 @@ struct ScriptFailure {
 }
 
 struct Scripted {
-    calls: Arc<Mutex<Vec<Value>>>,
     script: Script,
 }
 
 impl Scripted {
-    fn record(&self, call: Value) {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(call);
-    }
-
     fn reply(&self) -> Result<BatchObject, ScriptFailure> {
         if let Some(message) = &self.script.error {
             return Err(ScriptFailure {
@@ -122,80 +112,17 @@ impl Scripted {
     }
 }
 
-// the five provider branches differ only in their recorded fields, so one macro keeps them one shape
-macro_rules! scripted_branches {
-    ($(
-        $method:ident($call_type:ident, $call:ident): $branch:literal => {
-            $($key:literal: $value:expr),* $(,)?
-        };
-    )*) => {
-        impl BatchCancelDispatch for Scripted {
-            type Error = ScriptFailure;
+// the pinned helper answers with no observed provider call, so the branch's target stays unrecorded
+impl BatchCancelDispatch for Scripted {
+    type Error = ScriptFailure;
 
-            $(
-                fn $method(
-                    &self,
-                    $call: $call_type<'_>,
-                ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
-                    self.record(json!({
-                        "branch": $branch,
-                        $($key: $value,)*
-                    }));
-                    let reply = self.reply();
-                    async move { reply }
-                }
-            )*
-        }
-    };
-}
-
-scripted_branches! {
-    openai(OpenAiCancelCall, call): "openai" => {
-        "is_async": call.is_async,
-        "request": recorded_request(call.request),
-        "api_base": call.api_base,
-        "api_key": call.api_key.map(|key| key.expose_secret()),
-        "organization": call.organization,
-        "max_retries": call.max_retries,
-    };
-    azure(AzureCancelCall, call): "azure" => {
-        "is_async": call.is_async,
-        "request": recorded_request(call.request),
-        "api_base": call.api_base,
-        "api_key": call.api_key.map(|key| key.expose_secret()),
-        "api_version": call.api_version,
-        "azure_ad_token": call.azure_ad_token.map(|token| token.expose_secret()),
-        "max_retries": call.max_retries,
-    };
-    vertex(VertexCancelCall, call): "vertex" => {
-        "is_async": call.is_async,
-        "batch_id": call.batch_id,
-        "api_base": call.api_base,
-        "vertex_project": call.vertex_project,
-        "vertex_location": call.vertex_location,
-        "vertex_credentials": call.vertex_credentials.map(|token| token.expose_secret()),
-        "max_retries": call.max_retries,
-    };
-    xai(XaiCancelCall, call): "xai" => {
-        "is_async": call.is_async,
-        "batch_id": call.batch_id,
-        "api_base": call.api_base,
-        "api_key": call.api_key.map(|key| key.expose_secret()),
-    };
-    bedrock(BedrockCancelCall, call): "bedrock" => {
-        "batch_id": call.batch_id,
-        "aws_region_name": call.params.aws_region_name.as_deref(),
-        "aws_access_key_id": call.params.aws_access_key_id,
-        "aws_session_token": call.params.aws_session_token.as_ref().map(|token| token.expose_secret()),
-    };
-}
-
-fn recorded_request(request: &BatchIdRequest) -> Value {
-    json!({
-        "batch_id": request.batch_id,
-        "extra_headers": request.extra_headers,
-        "extra_body": request.extra_body,
-    })
+    fn cancel(
+        &self,
+        _target: CancelTarget<'_>,
+    ) -> impl Future<Output = Result<BatchObject, ScriptFailure>> + Send {
+        let reply = self.reply();
+        async move { reply }
+    }
 }
 
 fn helper_error(
@@ -221,12 +148,10 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let calls = Arc::new(Mutex::new(Vec::new()));
         let now = input.now;
         let service = BatchProviderCancel {
             clock: Arc::new(move || now),
             dispatch: Scripted {
-                calls: Arc::clone(&calls),
                 script: input.script.clone(),
             },
             limits: ApiLimits::default(),
@@ -249,12 +174,11 @@ impl crate::helpers::Helper for Op {
                 })
             })?;
         let result = runtime.block_on(service.run(&input.input));
-        let recorded = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
         match result {
             Ok(result) => Ok(json!({
                 "batch": result.batch,
                 "model": result.model,
-                "calls": recorded,
+                "calls": [],
             })),
             Err(error) => Err(helper_error(&error)),
         }
