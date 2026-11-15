@@ -33,6 +33,9 @@ deviations:
   - what: A logging-only scan that fails with a connection error records betterlite's typed transport error text, such as "the Model Armor request failed", as guardrail_response; LiteLLM records str(e) of the httpx exception.
     why: The typed error names the failing stage, and the httpx exception text depends on internals the transport does not expose; both record a failed verdict and let the request continue.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/model_armor/model_armor.py#L1259-L1269
+  - what: The hooks append a name to applied_guardrails with their own copy in model_armor/hooks/applied_guardrails.rs instead of calling model_armor/request_files.rs's record_applied_guardrail, which already does the same append-if-absent on the same key and warns on a non-list value with the same message.
+    why: request_files.rs belongs to the file-scan task and is outside this task's scope.paths, so this task cannot widen that helper's visibility or move it to a shared module. The hook copy also works on the request's typed GuardrailValue bucket, where the file-scan copy works on the JSON MetadataMap, so one shared helper has to convert between the two representations; a task that owns both files can merge them without changing behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L591-L599
 kept_bugs:
   - what: A post-call-only deployment logs a second standard_logging_guardrail_information entry whose guardrail_response is an empty object, because _process_response reads a metadata key only the pre-call and moderation hooks write.
     why: A working setup's log consumers see that entry on every post-call-only request, so betterlite keeps it rather than changing the log stream beyond this task.
