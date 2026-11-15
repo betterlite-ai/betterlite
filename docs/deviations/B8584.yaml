@@ -28,7 +28,7 @@ deviations:
     why: "betterlite is pydantic v2 only, and the fallback runs only when model_dump raises, which no working setup relies on; .dict is deprecated and ruff forbids it."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L678-L683
 kept_bugs:
-  - what: "GenericLiteLLMParams.preprocess_input_data silently drops the keys self, params and __class__ from litellm_params."
+  - what: "GenericLiteLLMParams silently drops the keys self, params and __class__ from litellm_params, self in __init__ and the other two in preprocess_input_data."
     why: "LiteLLM removes them so that a config carrying a key named params does not raise 'got multiple values for argument', and a working setup with such a key relies on the request succeeding without it; every other key stays."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L476-L491
   - what: "MockRouterTestingParams.from_kwargs pops the three mock keys out of the caller's request kwargs dict."
