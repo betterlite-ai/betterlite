@@ -11,3 +11,17 @@ deviations:
       non-video extension falls back to video/mp4 in both, so a working upload keeps its MIME
       for the common video extensions and its mp4 fallback everywhere else.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L605-L608
+  - what: >-
+      A payload with a completed padding quad in the middle decodes only up to that quad and the
+      rest of the input is ignored, so video_YWJjO2I7Yw==AA and video_YWJjO2I7Yw==AAAA both answer
+      provider abc, model b and video_id c. LiteLLM's decode_video_id_with_provider on the pinned
+      CPython 3.13 keeps decoding after the quad: the first payload comes back as a video_id of c
+      followed by two NUL bytes, and the second raises Incorrect padding and falls back with a
+      debug line.
+    why: >-
+      The padding quad closes the base64 group, and CPython 3.12 and earlier stopped there; the
+      review that defines this task's behavior specifies that rule. The two oracle calls in
+      decode-permissive-fields.yaml that differ on the pinned CPython 3.13 are ignored, and a
+      padding-in-the-middle payload only comes from a malformed identifier, not from a value a
+      provider or LiteLLM itself encodes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L75-L78
