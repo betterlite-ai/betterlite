@@ -255,6 +255,37 @@ fn a_type_only_rule_matches_on_the_tool_type(
 }
 
 #[test]
+fn a_tool_with_a_name_but_no_type_still_evaluates_rules() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![named_rule("read", ToolDecision::Allow, "^read$")],
+    );
+    let result = get_permission_for_tool_call(&guardrail, Some("read"), None, None);
+    assert!(result.is_allowed);
+    assert_eq!(result.rule_id.as_deref(), Some("read"));
+}
+
+#[test]
+fn a_tool_with_a_type_but_no_name_still_evaluates_rules() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![type_pattern_rule(
+            "typed",
+            ToolDecision::Allow,
+            "^function$",
+            &[],
+        )],
+    );
+    let result = get_permission_for_tool_call(&guardrail, None, Some("function"), None);
+    assert!(result.is_allowed);
+    assert_eq!(result.rule_id.as_deref(), Some("typed"));
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Tool 'function' allowed by rule 'typed'")
+    );
+}
+
+#[test]
 fn nested_dot_and_array_paths_are_collected() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),
@@ -514,6 +545,29 @@ fn missing_arguments_skip_a_rule_that_requires_patterns(#[case] arguments: Optio
     );
     assert!(!result.is_allowed);
     assert_eq!(result.rule_id.as_deref(), Some("deny-read"));
+}
+
+#[test]
+fn empty_argument_text_is_missing_not_malformed() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![
+            pattern_rule(
+                "needs-args",
+                ToolDecision::Allow,
+                "^read$",
+                &[("path", "^/safe$")],
+            ),
+            named_rule("deny-read", ToolDecision::Deny, "^read$"),
+        ],
+    );
+    let arguments = GuardrailValue::Text(String::new());
+    let (result, output) = captured_logs(tracing::Level::WARN, || {
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments))
+    });
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id.as_deref(), Some("deny-read"));
+    assert!(output.is_empty(), "unexpected log output {output}");
 }
 
 #[test]
