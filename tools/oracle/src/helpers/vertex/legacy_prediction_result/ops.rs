@@ -2,7 +2,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll, Waker};
 
 use betterlite_vertex::legacy_prediction::streamer::TextStreamer;
-use futures_util::Stream;
+use futures_util::Stream as _;
 use serde_json::{Value, json};
 
 use super::input::{Input, Step};
