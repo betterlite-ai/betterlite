@@ -52,7 +52,7 @@ sub bare {
     return $spec;
 }
 
-# the head before the first [[bin]] must be clean; each target comes once by name, main's copy when both sides have it
+# the head before the first [[bin]] must be clean; each target comes once by name, main's copy when both sides have it, and only while its file exists
 sub union_bins {
     my ($file, $text) = @_;
     my ($head) = $text =~ /\A(.*?)^\[\[bin\]\]\n/ms;
@@ -68,6 +68,8 @@ sub union_bins {
             my ($name) = $bin =~ /^name = "([^"]+)"/m;
             return $text unless defined $name;
             next if $seen{$name}++;
+            my ($path) = $bin =~ /^path = "([^"]+)"/m;
+            next if defined $path && !-e ($file =~ s{[^/]*\z}{}r) . $path;
             $bin =~ s/\s+\z/\n/;
             push @blocks, "[[bin]]\n$bin";
         }

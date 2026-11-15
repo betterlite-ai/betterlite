@@ -1,0 +1,12 @@
+kind: helper
+name: headers-merge
+call:
+  b5848:
+    steps:
+      - {kind: validate_environment, headers: {}, api_key: "sk-hf", api_base: null}
+      - {kind: validate_environment, headers: {x-call: kept}, api_key: "sk-hf", api_base: "https://unused.example"}
+      - {kind: validate_environment, headers: {accept: "text/plain", content-type: "text/xml"}, api_key: "sk-hf", api_base: null}
+      - {kind: validate_environment, headers: {Authorization: "Bearer caller", authorization: "bearer lower"}, api_key: "sk-hf", api_base: null}
+      - {kind: validate_environment, headers: {}, api_key: null, api_base: null}
+env: {HUGGINGFACE_API_KEY: ""}
+compare: {ignore: []}
