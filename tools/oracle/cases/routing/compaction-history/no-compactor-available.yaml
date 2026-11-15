@@ -26,4 +26,6 @@ probes:
                 max_input_tokens: 128000
                 max_output_tokens: 16384
 compare:
-  ignore: []
+  ignore:
+    - pointer: /output/compaction_history/reason
+      why: betterlite writes its own message, the status, code and type are the parity point

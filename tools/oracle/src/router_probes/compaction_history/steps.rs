@@ -10,11 +10,11 @@ use betterlite_anthropic::native_compaction::protocol::{
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
 use betterlite_router::compaction_history::blocks::field_text;
 use betterlite_router::compaction_history::compactor::{
-    CompactionCounter, CompactorConfig, compactor_input, compactor_model,
+    CompactionCounter, CompactorConfig, ParentInput, compactor_input, compactor_model,
 };
 use betterlite_router::compaction_history::contracts::{
-    Candidate, Conversation, Deployment, ModelLimits, NativeSupport, ParentPayload, SummaryRequest,
-    Surface,
+    Candidate, Conversation, Deployment, History, ModelLimits, NativeCapability, NativeSupport,
+    ParentPayload, SummaryRequest, Surface,
 };
 use betterlite_router::compaction_history::error::{CompactionError, ErrorKind};
 use betterlite_router::compaction_history::history::portable_history;
@@ -68,14 +68,36 @@ pub(super) async fn output(input: &Input) -> Result<Output, OperationError> {
     }
 }
 
-fn failure_kind(kind: ErrorKind) -> FailureKind {
+const fn failure_kind(kind: ErrorKind) -> FailureKind {
     match kind {
         ErrorKind::Unavailable => FailureKind::ContextWindowExceeded,
         ErrorKind::Rejected => FailureKind::BadRequest,
     }
 }
 
+struct FailureFields {
+    reason: Option<String>,
+    status: Option<u16>,
+    code: Option<String>,
+    kind: Option<FailureKind>,
+}
+
+fn failure_fields(error: &CompactionError) -> FailureFields {
+    FailureFields {
+        reason: Some(error.reason.clone()),
+        status: Some(400),
+        code: Some("400".to_owned()),
+        kind: Some(failure_kind(error.kind)),
+    }
+}
+
 fn history_failure(error: &CompactionError) -> Output {
+    let FailureFields {
+        reason,
+        status,
+        code,
+        kind,
+    } = failure_fields(error);
     Output::History {
         outcome: Outcome::Unavailable,
         instructions: 0,
@@ -83,10 +105,10 @@ fn history_failure(error: &CompactionError) -> Output {
         tail: 0,
         calls: Vec::new(),
         results: Vec::new(),
-        reason: Some(error.reason.clone()),
-        status: Some(400),
-        code: Some("400".to_owned()),
-        kind: Some(failure_kind(error.kind)),
+        reason,
+        status,
+        code,
+        kind,
     }
 }
 
@@ -126,15 +148,37 @@ fn history_output(input: &Input) -> Result<Output, OperationError> {
 }
 
 fn compactor_failure(error: &CompactionError, request: Option<SummaryRequest>) -> Output {
+    let FailureFields {
+        reason,
+        status,
+        code,
+        kind,
+    } = failure_fields(error);
     Output::Compactor {
         outcome: Outcome::Unavailable,
         model: None,
         request,
-        reason: Some(error.reason.clone()),
-        status: Some(400),
-        code: Some("400".to_owned()),
-        kind: Some(failure_kind(error.kind)),
+        reason,
+        status,
+        code,
+        kind,
     }
+}
+
+fn compactor_request(
+    input: &Input,
+    model: &str,
+    history: &History,
+    output: i64,
+) -> Result<SummaryRequest, CompactionError> {
+    let payload = ParentPayload {
+        model,
+        messages: input.messages.as_slice(),
+        tools: None,
+        system: None,
+        user: None,
+    };
+    compactor_input(&ParentInput::Chat(&payload), history, output)
 }
 
 async fn compactor_output(input: &Input) -> Output {
@@ -148,14 +192,10 @@ async fn compactor_output(input: &Input) -> Output {
         Ok(history) => history,
         Err(error) => return compactor_failure(&error, None),
     };
-    let payload = ParentPayload {
-        model: &model,
-        messages,
-        tools: None,
-        system: None,
-        user: None,
+    let request = match compactor_request(input, &model, &history, config.max_tokens) {
+        Ok(request) => request,
+        Err(error) => return compactor_failure(&error, None),
     };
-    let request = compactor_input(&payload, &history, config.max_tokens);
     let groups = candidates(input).await;
     let counter = CaseCounter {
         value: input.count.unwrap_or_default(),
@@ -200,13 +240,18 @@ async fn deployment_candidate(lookup: &CatalogLookup, deployment: &DeploymentInp
         custom_llm_provider,
     };
     let provider = get_native_compaction_provider(lookup, &params).await;
-    let supports = match &provider {
-        Some(provider) => provider.supports_native_compaction(&params).await,
-        None => false,
-    };
+    let mut supports = false;
+    if let Some(native) = &provider {
+        supports = native.supports_native_compaction(&params).await;
+    }
     let compatible_defaults = provider
         .as_ref()
-        .is_some_and(|provider| provider.compatible_defaults(&deployment.litellm_params));
+        .is_some_and(|native| native.compatible_defaults(&deployment.litellm_params));
+    let capability = match (supports, compatible_defaults) {
+        (false, _) => NativeCapability::Unsupported,
+        (true, false) => NativeCapability::IncompatibleDefaults,
+        (true, true) => NativeCapability::Supported,
+    };
     Deployment {
         model: model.to_owned(),
         custom_llm_provider: custom_llm_provider.map(str::to_owned),
@@ -216,8 +261,7 @@ async fn deployment_candidate(lookup: &CatalogLookup, deployment: &DeploymentInp
         },
         native: NativeSupport {
             provider: provider.is_some(),
-            supports,
-            compatible_defaults,
+            capability,
         },
     }
 }

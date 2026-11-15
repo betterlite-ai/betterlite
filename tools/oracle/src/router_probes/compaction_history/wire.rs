@@ -6,21 +6,21 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Function {
+pub(super) enum Function {
     History,
     Compactor,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct GroupInput {
+pub(super) struct GroupInput {
     pub model: String,
     pub deployments: Vec<DeploymentInput>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct DeploymentInput {
+pub(super) struct DeploymentInput {
     pub litellm_params: IndexMap<String, Json>,
     #[serde(default)]
     pub max_input_tokens: Option<i64>,
@@ -30,7 +30,7 @@ pub struct DeploymentInput {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct Input {
+pub(super) struct Input {
     pub function: Function,
     #[serde(default)]
     pub model: Option<String>,
@@ -56,21 +56,21 @@ pub struct Input {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum Outcome {
+pub(super) enum Outcome {
     Ok,
     Unavailable,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum FailureKind {
+pub(super) enum FailureKind {
     ContextWindowExceeded,
     BadRequest,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
-pub enum Output {
+pub(super) enum Output {
     History {
         outcome: Outcome,
         instructions: usize,
