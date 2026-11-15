@@ -1,11 +1,38 @@
 use super::support::{AUDIO_CONTENT, CONTENT, PROMPT, apply, prompt_start, session};
 use crate::realtime_session::records::{MediaType, Tool, UpdateFrame};
+use crate::realtime_session::tools::ToolDefinition;
 
 pub(super) fn tool_configuration() {
     no_tools_for_empty_or_null();
     tools_from_function_entries();
     tools_keep_null_and_absent_fields();
     unsupported_tools_are_filtered();
+    configuration_request_with_tools();
+}
+
+fn configuration_request_with_tools() {
+    let state = session(&[PROMPT, CONTENT, AUDIO_CONTENT]);
+    let definitions: Vec<ToolDefinition> = serde_json::from_str(
+        r#"[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]"#,
+    )
+    .expect("a tool definition fixture");
+    let configuration = state.configuration_request(Some(&definitions));
+    let prompt_start = &configuration.prompt_start.event.prompt_start;
+    assert_eq!(
+        prompt_start.tool_use_output_configuration,
+        Some(MediaType {
+            media_type: "application/json".to_owned(),
+        })
+    );
+    let tools = prompt_start
+        .tool_configuration
+        .as_ref()
+        .expect("the configuration lists tools")
+        .tools
+        .as_slice();
+    assert_eq!(tools.len(), 1);
+    assert_eq!(tools[0].tool_spec.name, Some("lookup".to_owned()));
+    assert_eq!(tools[0].tool_spec.input_schema.json, r#"{"type":"object"}"#);
 }
 
 fn no_tools_for_empty_or_null() {
