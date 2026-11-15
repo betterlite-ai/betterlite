@@ -29,6 +29,10 @@ description: >-
   code, 170 tests, 100 adapters and 90 fuzz/seed lines within 700.
 scope:
   paths:
+    - "tools/oracle/helpers/b6413.py"
+    - "crates/betterlite-vertex/src/lib.rs"
+    - "crates/betterlite-vertex/src/legacy_prediction/google.rs"
+    - "crates/betterlite-vertex/src/legacy_prediction"
     - crates/betterlite-vertex/Cargo.toml
     - crates/betterlite-vertex/src/vertex_agent_engine.rs
     - crates/betterlite-vertex/src/vertex_agent_engine/**
