@@ -22,7 +22,7 @@ use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::text_completion_execution::CompletionExecutor;
 use betterlite_openai::text_completion_execution::catalog::CompletionCatalog;
 use betterlite_openai::text_completion_execution::log::TracingCompletionLog;
-use betterlite_openai::text_completion_request::CompletionRequest;
+use betterlite_openai::text_completion_request::{CompletionRequest, CompletionRequestError};
 use uuid::Uuid;
 
 use crate::routing::simple_shuffle::pick_deployment;
@@ -54,6 +54,11 @@ pub(crate) fn routes(state: &Arc<ServerState>) -> Router {
             Arc::new(NoRules),
             Arc::new(TracingCallLog),
         )),
+        include_call_id: state
+            .config
+            .sections
+            .error_body_call_id
+            .include_call_id_in_error_body,
     })
 }
 
@@ -62,6 +67,7 @@ struct CompletionState {
     state: Arc<ServerState>,
     execution: Arc<CompletionExecutor>,
     dispatch: Arc<Dispatch>,
+    include_call_id: bool,
 }
 
 // one per request: LiteLLM's completion route answers a failure with the call id header alone, never with the provider's
@@ -121,7 +127,16 @@ async fn completions(
     let request = match CompletionRequest::parse(&body) {
         Ok(request) => request,
         Err(error) => {
-            return render(&FailureAnswer::request(error.to_string()), &call_id);
+            let mut include = state.include_call_id;
+            // LiteLLM's _read_request_body reads an empty body as {} and never builds a call id for a body it cannot parse
+            if let CompletionRequestError::Body { source } = &error {
+                include &= body.is_empty() || !(source.is_syntax() || source.is_eof());
+            }
+            return render(
+                &FailureAnswer::request(error.to_string()),
+                &call_id,
+                include,
+            );
         }
     };
     let model = path_model
@@ -130,7 +145,7 @@ async fn completions(
         .unwrap_or_else(|| String::from("None"));
     let Ok(deployment) = pick_deployment(&state.state.executor, &model) else {
         let missing = DispatchError::MissingDeployment { model_id: model };
-        return render(&failure_answer(missing), &call_id);
+        return render(&failure_answer(missing), &call_id, state.include_call_id);
     };
     execute(&state, request, deployment, &call_id, started).await
 }
@@ -169,9 +184,9 @@ async fn execute(
             let unbuilt = DispatchError::NotBuilt {
                 entry: "text_stream",
             };
-            render(&failure_answer(unbuilt), call_id)
+            render(&failure_answer(unbuilt), call_id, state.include_call_id)
         }
-        Err(error) => render(&failure_answer(error), call_id),
+        Err(error) => render(&failure_answer(error), call_id, state.include_call_id),
     }
 }
 

@@ -2,23 +2,10 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_core::dispatch::error::DispatchError;
-use serde::Serialize;
+use betterlite_error::envelope::error_body_call_id;
 
 use crate::routes::chat::headers::failure_headers;
-
-#[derive(Serialize)]
-struct ErrorBody {
-    error: ErrorObject,
-}
-
-#[derive(Serialize)]
-struct ErrorObject {
-    message: String,
-    #[serde(rename = "type")]
-    error_type: Option<String>,
-    param: Option<String>,
-    code: String,
-}
+use crate::server::{ErrorBody, ErrorObject};
 
 pub(super) struct FailureAnswer {
     pub(super) status: u16,
@@ -86,19 +73,20 @@ pub(super) fn failure_answer(error: DispatchError) -> FailureAnswer {
 }
 
 // proxy_server.py's completion except answers a failure with litellm_call_id_headers alone, so no provider or deployment header comes back
-pub(super) fn render(answer: &FailureAnswer, call_id: &str) -> Response {
-    let status_code =
-        StatusCode::from_u16(answer.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+pub(super) fn render(answer: &FailureAnswer, call_id: &str, include_call_id: bool) -> Response {
+    let status = StatusCode::from_u16(answer.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     let body = ErrorBody {
         error: ErrorObject {
             message: answer.message.clone(),
             error_type: answer.error_type.clone(),
             param: answer.param.clone(),
             code: answer.status.to_string(),
+            provider_specific_fields: None,
+            litellm_call_id: error_body_call_id(include_call_id, Some(call_id)).map(str::to_owned),
         },
     };
     (
-        status_code,
+        status,
         failure_headers(None, None, call_id, None),
         Json(body),
     )

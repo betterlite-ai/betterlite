@@ -98,6 +98,27 @@ async fn call(path: &str, body: &str, upstream_status: u16, upstream: &str) -> A
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let address = listener.local_addr().expect("address");
     let state = state(&format!("http://{address}/v1"));
+    answered(state, listener, path, body, (upstream_status, upstream)).await
+}
+
+async fn call_with_call_id_in_body(body: &str, include: bool) -> Answered {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let source = format!(
+        "general_settings: {{include_call_id_in_error_body: {include}}}\nmodel_list:\n  - model_name: text-model\n    litellm_params: {{model: openai/gpt-3.5-turbo-instruct, api_base: 'http://{address}/v1', api_key: oracle-key}}\n"
+    );
+    let state = crate::routes::tests::state_for(&config(&source));
+    answered(state, listener, "/v1/completions", body, (500, "")).await
+}
+
+async fn answered(
+    state: Arc<ServerState>,
+    listener: TcpListener,
+    path: &str,
+    body: &str,
+    upstream: (u16, &str),
+) -> Answered {
+    let (upstream_status, upstream) = upstream;
     let request = Request::post(path)
         .header("content-type", "application/json")
         .header("authorization", "Bearer oracle-master")
@@ -395,6 +416,62 @@ async fn stream_not_built() {
         Some("internal_server_error")
     );
     assert!(answered.sent.is_empty(), "no provider request");
+}
+
+#[tokio::test]
+async fn error_bodies_carry_the_call_id_when_the_setting_is_on() {
+    let enabled = call_with_call_id_in_body(r#"{"model":"text-model","prompt":[]}"#, true).await;
+    assert_eq!(enabled.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        enabled.raw.contains(r#""litellm_call_id":"caller-id""#),
+        "{}",
+        enabled.raw
+    );
+    assert_eq!(
+        enabled
+            .headers
+            .get("x-litellm-call-id")
+            .and_then(|value| value.to_str().ok()),
+        Some("caller-id")
+    );
+
+    let disabled = call_with_call_id_in_body(r#"{"model":"text-model","prompt":[]}"#, false).await;
+    assert!(
+        !disabled.raw.contains("litellm_call_id"),
+        "{}",
+        disabled.raw
+    );
+
+    // LiteLLM never parses this body, so it has no call id to put in the error body
+    let malformed = call_with_call_id_in_body("{", true).await;
+    assert_eq!(malformed.status, StatusCode::BAD_REQUEST);
+    assert!(
+        !malformed.raw.contains("litellm_call_id"),
+        "{}",
+        malformed.raw
+    );
+
+    // an empty body counts as {}, the way LiteLLM reads it, so its refusal keeps the id
+    let empty = call_with_call_id_in_body("", true).await;
+    assert_eq!(empty.status, StatusCode::BAD_REQUEST);
+    assert!(
+        empty.raw.contains(r#""litellm_call_id":"caller-id""#),
+        "{}",
+        empty.raw
+    );
+
+    // this body parsed, so its refusal carries the id LiteLLM had already resolved
+    let refused = call_with_call_id_in_body(
+        r#"{"model":"text-model","prompt":"hi","fallbacks":["b"]}"#,
+        true,
+    )
+    .await;
+    assert_eq!(refused.status, StatusCode::BAD_REQUEST);
+    assert!(
+        refused.raw.contains(r#""litellm_call_id":"caller-id""#),
+        "{}",
+        refused.raw
+    );
 }
 
 async fn auth_required() {

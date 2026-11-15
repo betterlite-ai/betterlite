@@ -6,15 +6,21 @@ deviations:
   - what: Client mock controls (mock_response, mock_tool_calls, mock_timeout, mock_delay) are dropped instead of answering with a mock completion.
     why: betterlite's mock framework is configured per deployment; a client-supplied mock response is not part of the completion route yet, matching the embeddings route's refusal to honor one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L656
-  - what: A completion parameter outside the text config's allowlist answers 400 invalid_request_error naming the parameter; LiteLLM raises UnsupportedParamsError, which the proxy answers with 500.
-    why: betterlite names the field and its own message, and docs/compatibility makes a value of the wrong type a named client error; the status differs only for a request that fails on both sides.
+  - what: A completion parameter outside the text config's allowlist answers 400 invalid_request_error naming the parameter; LiteLLM raises UnsupportedParamsError, which the proxy answers with 500. The same refusal names the fallbacks, model_list, custom_llm_provider and deployment_id controls, which LiteLLM acts on.
+    why: betterlite names the field and its own message, and docs/compatibility makes a value of the wrong type a named client error; the status differs only for a request that fails on both sides. A per-request fallback list, deployment list, provider or deployment id is not built, so refusing the control by name beats ignoring it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4509-L4540
+  - what: A body's api_version, engine, litellm_params, metadata and num_retries are read as controls and dropped.
+    why: None of them changes the OpenAI text provider request; retries arrive with B017 and call metadata belongs to logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7460-L7487
   - what: A request body carrying top_logprobs reaches the provider; LiteLLM lists the parameter as supported but its SDK call rejects it, so every such request answers 500 before any provider call.
     why: A working LiteLLM setup cannot rely on a parameter that always fails, and the text config names top_logprobs as supported; betterlite forwards it and the provider decides.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/completion/transformation.py#L121-L144
+  - what: A later content-block list in a string-first prompt, such as ["a",[{"type":"text","text":"x"}]], answers 500 internal_server_error; LiteLLM concatenates each block's text and forwards the prompt as two strings.
+    why: The completion prompt declares a later element as a string or a token list, and the text transform reads each element as a string; a block list is a message-content shape the OpenAI completion API does not declare.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L172-L179
 kept_bugs:
-  - what: A string-first prompt list holding a later non-string element answers 500 with a null type, because main.py wraps every element as a message and the file-id pass then raises TypeError.
-    why: The task follows main.py's prompt dispatch and the probes pin this shape; a working setup sends well-formed prompts.
+  - what: A string-first prompt list holding a later number or bool answers 500 with a null type, because the file-id pass iterates the content; a later list of token ids answers 500 internal_server_error, because convert_content_list_to_str calls .get on each string or int. A later empty array becomes the empty string and is forwarded.
+    why: main.py wraps every element as a message and the text transform cannot read the declared list element; the probes pin these shapes and a working setup sends strings.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7626-L7629
   - what: A token prompt or nested token prompt with a non-integer element answers 500 internal_server_error, because the transform falls back to convert_content_list_to_str and raises AttributeError.
     why: The oracle case invalid-mixed-prompt pins that shape and a working setup sends token ids.
