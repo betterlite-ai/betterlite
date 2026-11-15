@@ -1,3 +1,4 @@
+use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat_choices::wire::{
     ProviderField, StreamChoice, StreamDelta, StreamReply,
@@ -9,7 +10,7 @@ use crate::invoke_events::error::InvokeStreamError;
 
 struct Fields {
     generation: String,
-    stop_reason: Option<String>,
+    finish_reason: Option<String>,
     prompt_tokens: i64,
     generation_tokens: i64,
 }
@@ -33,7 +34,7 @@ pub(crate) fn chunk_parser(
         model: None,
         choices: vec![StreamChoice {
             index: 0,
-            finish_reason: fields.stop_reason,
+            finish_reason: fields.finish_reason,
             delta: StreamDelta {
                 role: None,
                 content,
@@ -62,14 +63,15 @@ fn fields(chunk: &Json) -> Result<Fields, InvokeStreamError> {
     let Some(Json::Text(generation)) = values.get("generation") else {
         return Err(invalid_chunk());
     };
-    let stop_reason = match values.get("stop_reason") {
+    let finish_reason = match values.get("stop_reason") {
         Some(Json::Null) => None,
-        Some(Json::Text(reason)) => Some(reason.clone()),
+        Some(Json::Text(reason)) if reason.is_empty() => None,
+        Some(Json::Text(reason)) => Some(map_finish_reason(reason).reason.as_str().to_owned()),
         Some(_) | None => return Err(invalid_chunk()),
     };
     Ok(Fields {
         generation: generation.clone(),
-        stop_reason,
+        finish_reason,
         prompt_tokens: token_count(values.get("prompt_token_count"))?,
         generation_tokens: token_count(values.get("generation_token_count"))?,
     })

@@ -364,13 +364,24 @@ pub(super) fn empty_tool_input() {
         ))
     );
 
-    let missing_usage = fake(
+    let mut missing_usage = fake(
         r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
         None,
     );
-    let error = missing_usage.into_iter().next().unwrap().unwrap_err();
+    let error = missing_usage.next().unwrap().unwrap_err();
     assert_eq!(error.status(), None);
     assert!(error.to_string().starts_with("Failed to decode chunk:"));
+    assert!(missing_usage.next().is_none());
+
+    let mut async_missing_usage = fake(
+        r#"{"choices":[{"message":{"content":"x"},"finish_reason":"stop"}]}"#,
+        None,
+    );
+    let error = block_on(futures_util::StreamExt::next(&mut async_missing_usage))
+        .unwrap()
+        .unwrap_err();
+    assert!(error.to_string().starts_with("Failed to decode chunk:"));
+    assert!(block_on(futures_util::StreamExt::next(&mut async_missing_usage)).is_none());
 
     let missing_choices = fake(
         r#"{"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}"#,
@@ -385,6 +396,7 @@ pub(super) fn deepseek_stream_chunks() {
     thinking_chunk(&mut decoder);
     transition_chunk(&mut decoder);
     answer_chunk(&mut decoder);
+    mapped_finish_reasons();
     literal_marker(&mut decoder);
     partial_marker();
     token_totals();
@@ -426,10 +438,30 @@ fn answer_chunk(decoder: &mut InvokeStreamDecoder) {
     ));
     assert_eq!(answer.choices[0].delta.content.as_deref(), Some("answer"));
     assert_eq!(answer.choices[0].delta.reasoning_content, None);
+    assert_eq!(answer.choices[0].finish_reason.as_deref(), Some("length"));
+}
+
+// StreamingChoices.__init__ maps a non-empty stop_reason through map_finish_reason and keeps None for empty.
+fn mapped_finish_reasons() {
+    let mut decoder = stream_decoder(Some("deepseek_r1"), &options(None, false));
+    let unknown = reply(parse(
+        &mut decoder,
+        r#"{"generation":"x","stop_reason":"something_new","prompt_token_count":0,"generation_token_count":0}"#,
+    ));
+    assert_eq!(unknown.choices[0].finish_reason.as_deref(), Some("stop"));
+    let guarded = reply(parse(
+        &mut decoder,
+        r#"{"generation":"x","stop_reason":"guardrail_intervened","prompt_token_count":0,"generation_token_count":0}"#,
+    ));
     assert_eq!(
-        answer.choices[0].finish_reason.as_deref(),
-        Some("max_tokens")
+        guarded.choices[0].finish_reason.as_deref(),
+        Some("content_filter")
     );
+    let empty = reply(parse(
+        &mut decoder,
+        r#"{"generation":"x","stop_reason":"","prompt_token_count":0,"generation_token_count":0}"#,
+    ));
+    assert_eq!(empty.choices[0].finish_reason, None);
 }
 
 fn literal_marker(decoder: &mut InvokeStreamDecoder) {
@@ -595,6 +627,15 @@ fn anthropic_selector() {
             .content,
         "hi"
     );
+
+    let json_tool = json(
+        r#"{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"j","name":"json_tool_call","input":{}}}"#,
+    );
+    let mut legacy_json_mode =
+        bedrock_event_stream_decoder(Some("anthropic"), &options(Some(true), true));
+    let suppressed = anthropic(legacy_json_mode.chunk_parser(&json_tool).unwrap());
+    assert!(suppressed.choices[0].delta.tool_calls.is_none());
+    assert_eq!(suppressed.choices[0].delta.content, "");
 }
 
 pub(super) fn openai_compatible_invoke_stream() {
@@ -695,9 +736,9 @@ fn frame_errors() {
         ],
     );
     assert_eq!(outcomes.len(), 2);
-    let mut outcomes = outcomes.into_iter();
-    assert_eq!(generic(outcomes.next().unwrap().unwrap()).text, "first");
-    let failure = error(outcomes.next().unwrap());
+    let mut remaining = outcomes.into_iter();
+    assert_eq!(generic(remaining.next().unwrap().unwrap()).text, "first");
+    let failure = error(remaining.next().unwrap());
     assert_eq!(failure.status(), None);
     assert!(failure.to_string().contains("not valid JSON"));
 
@@ -713,9 +754,9 @@ fn frame_errors() {
     truncated.truncate(truncated.len().saturating_sub(2));
     let outcomes = frame_outcomes(None, &[frame, truncated]);
     assert_eq!(outcomes.len(), 2);
-    let mut outcomes = outcomes.into_iter();
-    assert!(outcomes.next().unwrap().is_ok());
-    assert_eq!(error(outcomes.next().unwrap()).status(), Some(502));
+    let mut remaining = outcomes.into_iter();
+    assert!(remaining.next().unwrap().is_ok());
+    assert_eq!(error(remaining.next().unwrap()).status(), Some(502));
 }
 
 fn anthropic_frames() {
