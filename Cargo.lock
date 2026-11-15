@@ -2181,6 +2181,7 @@ name = "betterlite-logging-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-logging",
+ "betterlite-models",
  "chrono",
  "libfuzzer-sys",
  "serde_json",
