@@ -1,0 +1,31 @@
+task: B544
+deviations:
+  - what: >-
+      A tool whose "function" key holds a non-object is rejected with a named invalid-tool error and no HTTP
+      status, instead of the bare TypeError that LiteLLM's dictionary update raises for the same input.
+    why: >-
+      docs/compatibility.md makes a value of the wrong type an error that names the field, so the flattened-tool
+      copy refuses a non-mapping function instead of surfacing Python's untyped update failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L132-L136
+  - what: >-
+      A cancel reply that is not a JSON response record fails with the record decoder's error, where LiteLLM
+      raises pydantic's ValidationError; both carry no status and leave the HTTP status untouched.
+    why: >-
+      betterlite validates the same body with the shared serde response record rather than a pydantic model,
+      so the error class differs while the observable status of the failure is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L347-L353
+kept_bugs:
+  - what: >-
+      The websocket URL downgrades every non-https api_base to ws, including one that already starts with
+      wss://, so that base comes back as ws://.
+    why: >-
+      LiteLLM switches to wss only when the original scheme is exactly https, and a setup that passes a
+      wss:// base straight through relies on the same URL form, so betterlite keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L202-L203
+  - what: >-
+      The model name loses every occurrence of responses/, o_series/ and azure_ai/, not just a leading
+      routing prefix, so a deployment name that contains one of them mid-string is altered too.
+    why: >-
+      LiteLLM's get_stripped_model_name uses str.replace for each fragment, and a deployment named that way
+      reaches Azure with the stripped text today, so betterlite reproduces the rewrite.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L51-L52
