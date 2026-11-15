@@ -1,0 +1,41 @@
+task: B3729
+deviations:
+  - what: >-
+      The per-invocation billing counters are an explicit BillingUsage value the caller owns and passes into the
+      scan hooks and then into the process steps, not a ContextVar stash that the process step pops.
+    why: >-
+      Rust has no context-local storage, and the properties LiteLLM relies on come from the value's shape instead:
+      the accumulator is independent of request_data, so a decorator swap cannot lose it, and every entry point
+      resets it, so one invocation never bills another. Callers that never call the process steps simply drop it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L42-L47
+  - what: >-
+      An in-place update that carries no api_key or api_base leaves the running credential untouched; LiteLLM's
+      pydantic branch copies every attribute, so an absent field arrives as None and clears the running value.
+    why: >-
+      betterlite's update path hands the same LitellmParams type to config loading and to updates, where an absent
+      field and an explicit null both read as None. Clearing the credential on an update that never mentioned it
+      would break the running guardrail, while LiteLLM's own immediate PUT sync passes the raw DB dict, which only
+      sets present keys and therefore behaves as betterlite does here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L287-L293
+  - what: >-
+      Prompt Shield requests use the shared outbound Azure Content Safety transport, so they are attempted once,
+      do not follow redirects, and reject a response body larger than 1 MiB.
+    why: >-
+      The transport is B3728's and carries the same policy for every Azure guardrail; docs/deviations/B3728.yaml
+      states the reasons. A single-attempt, redirect-free POST keeps the content-safety subscription key on the
+      configured endpoint only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      The usage counted on the apply_guardrail path reaches a guardrail record only through this guardrail's
+      process step (process_outcome); the generic invocation record has no guardrail_usage, guardrail_cost or
+      guardrail_provider "azure".
+    why: >-
+      LiteLLM's log_guardrail_information decorator calls the overridden _process_response and _process_error after
+      every hook, so apply_guardrail runs are recorded with the Azure billing detail. betterlite's B3664 replaces
+      the decorator with GuardrailInvocation's finish_success and finish_failure, whose record carries no tracing
+      detail and never delegates to a guardrail's own process step. The code that finishes those apply_guardrail
+      invocations is B3680's unified hooks and B8392's execute_guardrail_hook, both still todo, so wiring a
+      provider's process step into them changes the invocation record rather than this guardrail; the
+      process_outcome entry point in crates/betterlite-guardrails/src/azure_prompt_shield/process.rs is what that
+      caller uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/azure/prompt_shield.py#L216-L232
