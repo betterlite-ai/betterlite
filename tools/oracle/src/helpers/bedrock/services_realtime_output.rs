@@ -71,10 +71,12 @@ struct UsageDelta {
 
 #[derive(Serialize)]
 struct TokenDetails {
-    audio_tokens: i64,
-    text_tokens: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cached_tokens: Option<i64>,
+    #[serde(rename = "audio_tokens")]
+    audio: i64,
+    #[serde(rename = "text_tokens")]
+    text: i64,
+    #[serde(rename = "cached_tokens", skip_serializing_if = "Option::is_none")]
+    cached: Option<i64>,
 }
 
 pub(crate) struct Op;
@@ -93,11 +95,11 @@ where
     })
 }
 
-fn token_delta(latest: &UsageTokens, prior: &UsageTokens) -> TokenDetails {
+const fn token_delta(latest: &UsageTokens, prior: &UsageTokens) -> TokenDetails {
     TokenDetails {
-        audio_tokens: latest.speech_tokens.saturating_sub(prior.speech_tokens),
-        text_tokens: latest.text_tokens.saturating_sub(prior.text_tokens),
-        cached_tokens: None,
+        audio: latest.speech_tokens.saturating_sub(prior.speech_tokens),
+        text: latest.text_tokens.saturating_sub(prior.text_tokens),
+        cached: None,
     }
 }
 
@@ -110,7 +112,7 @@ fn take_usage_delta(session: &mut RealtimeSession) -> Vec<UsageDelta> {
     let prior = &session.reported_usage;
     let mut input_token_details =
         token_delta(&latest.details.total.input, &prior.details.total.input);
-    input_token_details.cached_tokens = Some(0);
+    input_token_details.cached = Some(0);
     let delta = UsageDelta {
         input_tokens: latest
             .total_input_tokens

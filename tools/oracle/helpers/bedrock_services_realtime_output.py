@@ -135,11 +135,11 @@ class RealtimeConfig(Protocol):
 
     def transform_user_speech_event(self, *, is_speech_start: bool) -> EventList: ...
 
-    def transform_user_transcript_event(  # ast-grep-ignore: no-long-names
+    def transform_user_transcript_event(  # ast-grep-ignore
         self, transcript: str
     ) -> EventList: ...
 
-    def user_transcript_completed_events(self) -> EventList: ...  # ast-grep-ignore: no-long-names
+    def user_transcript_completed_events(self) -> EventList: ...  # ast-grep-ignore
 
     def transform_text_output_event(
         self,
