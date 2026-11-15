@@ -285,14 +285,16 @@ def decrypt_env(value: DecryptEnvVars) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
+    answer: JsonValue = None
     match input_value["function"]:
         case "prepare_create":
-            return prepare_create(input_value)
+            answer = prepare_create(input_value)
         case "prepare_update":
-            return prepare_update(input_value)
+            answer = prepare_update(input_value)
         case "encrypt_credentials":
-            return encrypt(input_value)
+            answer = encrypt(input_value)
         case "decrypt_credentials":
-            return decrypt(input_value)
+            answer = decrypt(input_value)
         case "decrypt_env_vars":
-            return decrypt_env(input_value)
+            answer = decrypt_env(input_value)
+    return answer
