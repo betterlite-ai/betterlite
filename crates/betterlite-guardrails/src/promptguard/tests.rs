@@ -806,21 +806,22 @@ async fn a_failed_call_returns_the_inputs_when_block_on_error_is_false() {
 async fn an_answer_cut_off_before_its_length_is_a_failed_call() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let answer = async {
+    let mut server = JoinSet::new();
+    server.spawn(async move {
         let (mut socket, _) = listener.accept().await.expect("accept");
         socket
             .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 64\r\n\r\n{\"decision\":\"allow\"}")
             .await
             .expect("write");
         socket.shutdown().await.expect("shutdown");
-    };
+    });
     let guardrail = guardrail_at(&base, true);
-    let (result, ()) = tokio::join!(
-        guardrail.apply_guardrail(text_inputs(), GuardrailInputType::Request),
-        answer
-    );
-    let error = result.unwrap_err();
+    let error = guardrail
+        .apply_guardrail(text_inputs(), GuardrailInputType::Request)
+        .await
+        .unwrap_err();
     assert!(matches!(error, PromptGuardError::Request { .. }));
+    server.shutdown().await;
 }
 
 #[tokio::test]
