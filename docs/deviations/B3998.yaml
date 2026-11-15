@@ -38,6 +38,18 @@ deviations:
       id from the payload it stores, so the object lands under the same "{date}/" key LiteLLM uses for a response
       object without an id, and nothing is lost.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L289-L293
+  - what: >-
+      GCS_USE_BATCHED_LOGGING is read as a boolean word: "true", "1", "yes" and "on" turn batching on,
+      "false", "0", "no" and "off" turn it off, and any other value fails construction. A negative
+      GCS_BATCH_SIZE, GCS_FLUSH_INTERVAL or LITELLM_ASYNCIO_QUEUE_MAXSIZE also fails construction.
+      LiteLLM compares the lowercased GCS_USE_BATCHED_LOGGING string with "true", so "yes" and "1" disable
+      batching and an unrecognized word leaves it enabled, and int() accepts negative numbers, which leave
+      the drain loop empty, make the periodic flush spin, and give the queue an unbounded size.
+    why: >-
+      Betterlite reads the values into the declared boolean and unsigned types, so a misspelling or a
+      negative size is an error that names the setting instead of a configuration that silently stops
+      draining logs or spins the flush loop.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket.py#L32-L46
 kept_bugs:
   - what: >-
       A group whose upload fails, and a single item whose send raises, are logged and dropped. Nothing is requeued,
