@@ -79,21 +79,21 @@ async fn dispatch(
     let counts = input.input_token_counts.as_ref();
     match input.function {
         Function::MaxCost => {
-            let amount = estimate_request_max_cost(&request, &sources, counts)
+            let amount = estimate_request_max_cost(request, sources, counts)
                 .await
                 .map_err(|error| helper_error("ReservationCostError", error))?
                 .and_then(|amount| amount.round_dp(9).to_f64());
             serde_json::to_value(amount).map_err(|error| helper_error("SerializationError", error))
         }
         Function::InputCost => {
-            let amount = estimate_request_input_cost(&request, &sources, counts)
+            let amount = estimate_request_input_cost(request, sources, counts)
                 .await
                 .map_err(|error| helper_error("ReservationCostError", error))?
                 .and_then(|amount| amount.round_dp(9).to_f64());
             serde_json::to_value(amount).map_err(|error| helper_error("SerializationError", error))
         }
         Function::Count => {
-            let counted = count_request_input_tokens(&request, &sources)
+            let counted = count_request_input_tokens(request, sources)
                 .await
                 .map_err(|error| helper_error("ReservationCostError", error))?;
             serde_json::to_value(counted).map_err(|error| helper_error("SerializationError", error))
