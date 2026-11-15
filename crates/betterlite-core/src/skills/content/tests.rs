@@ -724,6 +724,10 @@ fn tool_parameters_use_a_nonempty_metadata_object(
         serde_json::to_string(&convert_skill_to_tool(&skill).function.parameters).unwrap(),
         expected
     );
+    assert_eq!(
+        serde_json::to_string(&convert_skill_to_anthropic_tool(&skill).input_schema).unwrap(),
+        expected
+    );
 }
 
 #[test]
