@@ -1,0 +1,16 @@
+kind: helper
+name: azure-responses-cancel-response
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: cancel_response
+    replies:
+      - status: 200
+        body: '{"id":"resp_1","created_at":9,"output":[],"status":"cancelled","model":"gpt-5"}'
+      - status: 502
+        body: not json
+      - status: 200
+        body: '{"id":"resp_2","created_at":5,"output":"bad"}'
+      - status: 200
+        body: "[]"

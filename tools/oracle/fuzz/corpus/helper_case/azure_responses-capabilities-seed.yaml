@@ -1,0 +1,16 @@
+kind: helper
+name: azure-responses-capabilities-seed
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: azure_responses_capabilities
+    install:
+      model_cost:
+        azure/gpt-5: {supports_reasoning: true, supports_none_reasoning_effort: true, default_reasoning_effort: none}
+      chat_models: [azure/gpt-5]
+      text_models: []
+      drop_params: false
+    models: [gpt-5]
+    map_steps:
+      - {model: gpt-5, params: {max_output_tokens: 4}, drop_params: false, global_drop_params: false}

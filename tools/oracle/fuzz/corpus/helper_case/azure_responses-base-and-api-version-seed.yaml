@@ -1,0 +1,12 @@
+kind: helper
+name: azure-responses-base-and-api-version-seed
+env:
+  AZURE_DEFAULT_RESPONSES_API_VERSION: preview
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: base_and_api_version
+    default_api_version: preview
+    urls:
+      - {api_base: https://res.openai.azure.com, api_version: null, headers: {}, api_key: null}
+      - {api_base: null, api_version: null, headers: {}, api_key: null}

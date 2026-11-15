@@ -1,0 +1,10 @@
+kind: helper
+name: azure-responses-resource-id-before-query-seed
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: resource_id_before_query
+    resources:
+      - {endpoint: cancel, api_base: "https://host/a;params?x=1#f", response_id: resp_1}
+      - {endpoint: list, api_base: https://host/base?api-version=2024-10-21, response_id: resp_1}

@@ -1,0 +1,42 @@
+kind: helper
+name: azure-responses-base-and-api-version
+env:
+  AZURE_DEFAULT_RESPONSES_API_VERSION: preview
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: base_and_api_version
+    default_api_version: preview
+    urls:
+      - api_base: https://res.openai.azure.com
+        api_version: null
+        headers: {}
+        api_key: null
+      - api_base: https://res.openai.azure.com
+        api_version: "2024-10-21"
+        headers: {}
+        api_key: null
+      - api_base: "https://res.openai.azure.com/openai/responses?api-version=2024-05-01-preview"
+        api_version: "2024-10-21"
+        headers: {}
+        api_key: null
+      - api_base: https://res.openai.azure.com/base
+        api_version: ""
+        headers: {}
+        api_key: null
+      - api_base: null
+        api_version: null
+        headers: {}
+        api_key: null
+      - api_base: https://res.openai.azure.com
+        api_version: null
+        headers: {api-key: header-key}
+        api_key: body-key
+      - api_base: https://res.openai.azure.com
+        api_version: null
+        headers: {}
+        api_key: body-key
+      - api_base: https://res.openai.azure.com
+        api_version: null
+        headers: {Authorization: "Bearer existing"}
+        api_key: null

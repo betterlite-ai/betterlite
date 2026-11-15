@@ -1,0 +1,10 @@
+kind: helper
+name: azure-responses-cancel-response-seed
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: cancel_response
+    replies:
+      - {status: 200, body: '{"id":"resp_1","created_at":9,"output":[],"status":"cancelled"}'}
+      - {status: 502, body: not json}

@@ -1,0 +1,31 @@
+kind: helper
+name: azure-responses-resource-id-before-query
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: resource_id_before_query
+    resources:
+      - endpoint: get
+        api_base: "https://res.openai.azure.com/openai/responses?api-version=2024-10-21"
+        response_id: resp_1
+      - endpoint: delete
+        api_base: https://host/base/?x=1
+        response_id: resp 2
+      - endpoint: cancel
+        api_base: "https://host/a;params?x=1#f"
+        response_id: resp_1
+      - endpoint: get
+        api_base: https://host
+        response_id: ""
+      - endpoint: list
+        api_base: "https://host/base?api-version=2024-10-21"
+        response_id: resp_1
+      - endpoint: list
+        api_base: https://host
+        response_id: resp_1
+        after: a
+        before: b
+        include: [reasoning.encrypted_content, message]
+        limit: 5
+        order: asc

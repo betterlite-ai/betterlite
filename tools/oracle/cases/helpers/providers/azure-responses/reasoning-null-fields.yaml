@@ -1,0 +1,41 @@
+kind: helper
+name: azure-responses-reasoning-null-fields
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: reasoning_null_fields
+    transforms:
+      - model: azure/o_series/gpt-5
+        input:
+          - type: reasoning
+            id: rs_1
+            summary: [{type: summary_text, text: a, extra: null, y: 1}]
+            status: completed
+            encrypted_content: null
+            content: [{type: reasoning_text, text: t}]
+            znull: null
+            keep: {nested: null}
+          - {type: message, role: user, content: hi, status: completed}
+          - {role: user, content: hi, status: completed}
+          - type: reasoning
+            id: rs_2
+            reasoning_content: [{type: summary_text, text: b}]
+          - type: reasoning
+            id: rs_3
+            summary: [{type: summary_text, text: a}]
+            status: incomplete
+          - type: reasoning
+            id: rs_4
+            summary: [{type: summary_text, text: 5}]
+            status: completed
+            other: null
+          - {type: reasoning, id: rs_5, reasoning_content: plain text, status: completed, content: null}
+          - {type: reasoning, id: rs_6, summary: [], status: bogus}
+      - model: azure/responses/gpt-5
+        input:
+          - type: reasoning
+            id: rs_100
+            reasoning_content:
+              - {type: summary_text, text: a}
+              - {type: summary_text, text: b}

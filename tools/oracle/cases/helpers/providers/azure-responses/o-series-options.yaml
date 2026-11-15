@@ -1,0 +1,32 @@
+kind: helper
+name: azure-responses-o-series-options
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: o_series_options
+    install:
+      model_cost:
+        azure/gpt-5:
+          supports_reasoning: true
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: none
+        azure/gpt-5-plain: {supports_reasoning: true}
+        azure/o3: {supports_reasoning: true}
+        o3: {supports_reasoning: true}
+        o3-mini: {supports_reasoning: false}
+        deepseek-r1: {supports_reasoning: true}
+      chat_models: [azure/gpt-5, azure/gpt-5-plain, azure/o3, o3, o3-mini, deepseek-r1]
+      text_models: []
+      drop_params: false
+    models: [o3, o3-mini, azure/O_SERIES-x, gpt-4o, deepseek-r1, azure/o3]
+    o_series_steps:
+      - model: o3
+        params: {temperature: 0.2, top_p: 0.9}
+        drop_params: false
+      - model: o3
+        params: {temperature: 0.2, top_p: 0.9}
+        drop_params: true
+      - model: o1-preview
+        params: {input: [{role: user, content: x}], temperature: null}
+        drop_params: true

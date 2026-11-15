@@ -1,0 +1,11 @@
+kind: helper
+name: azure-responses-strip-model-prefix-seed
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: strip_model_prefix
+    transforms:
+      - model: azure_ai/responses/gpt-5
+        params: {tools: [{type: web_search}]}
+        input: hi

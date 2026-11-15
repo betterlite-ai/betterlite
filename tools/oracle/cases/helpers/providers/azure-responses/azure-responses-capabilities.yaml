@@ -1,0 +1,51 @@
+kind: helper
+name: azure-responses-capabilities
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: azure_responses_capabilities
+    install:
+      model_cost:
+        azure/gpt-5:
+          supports_reasoning: true
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: none
+        azure/gpt-5-plain: {supports_reasoning: true}
+        azure/o3: {supports_reasoning: true}
+        o3: {supports_reasoning: true}
+        o3-mini: {supports_reasoning: false}
+        deepseek-r1: {supports_reasoning: true}
+      chat_models: [azure/gpt-5, azure/gpt-5-plain, azure/o3, o3, o3-mini, deepseek-r1]
+      text_models: []
+      drop_params: false
+    models: [azure/gpt-5]
+    map_steps:
+      - model: gpt-5
+        params: {temperature: 0.2, reasoning: {effort: high}, top_p: 0.9}
+        drop_params: false
+        global_drop_params: false
+      - model: gpt-5
+        params: {temperature: 0.2, reasoning: {effort: high}, top_p: 0.9}
+        drop_params: true
+        global_drop_params: false
+      - model: gpt-5
+        params: {temperature: 0.2, reasoning: {effort: none}}
+        drop_params: false
+        global_drop_params: false
+      - model: gpt-5
+        params: {temperature: 1, top_p: 0.5}
+        drop_params: false
+        global_drop_params: false
+      - model: gpt-5
+        params: {max_output_tokens: 4}
+        drop_params: false
+        global_drop_params: false
+      - model: gpt-5-plain
+        params: {temperature: 0.2, reasoning: {effort: high}}
+        drop_params: false
+        global_drop_params: false
+      - model: azure/gpt-5
+        params: {temperature: 0.2, top_p: 0.9}
+        drop_params: false
+        global_drop_params: false

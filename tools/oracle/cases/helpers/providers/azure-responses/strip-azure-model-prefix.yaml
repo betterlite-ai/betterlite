@@ -1,0 +1,31 @@
+kind: helper
+name: azure-responses-strip-azure-model-prefix
+env: {}
+compare: {ignore: []}
+call:
+  azure_responses:
+    function: strip_model_prefix
+    transforms:
+      - model: azure_ai/responses/gpt-5
+        params:
+          temperature: 0.2
+          tools:
+            - type: function
+              name: outer
+              description: outer wins
+              parameters: {type: object, properties: {}}
+              function: {name: inner, description: inner loses, strict: true}
+            - type: web_search
+        input:
+          - type: reasoning
+            id: rs_1
+            summary: [{type: summary_text, text: a}]
+            status: completed
+            encrypted_content: null
+          - {type: message, role: user, content: hi, status: completed}
+          - {role: user, content: hi, status: incomplete}
+      - model: azure/o_series/my-deployment
+        input: hi
+      - model: responses/gpt-5
+        params: {tools: [{type: web_search}]}
+        input: [{"role": "user", "content": "hi"}]
