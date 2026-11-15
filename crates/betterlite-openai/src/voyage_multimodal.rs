@@ -38,7 +38,11 @@ pub fn request(
 ) -> Result<Value, VoyageMultimodalError> {
     let items = match input {
         Value::Array(items) => items,
-        scalar => vec![scalar],
+        scalar @ (Value::Null
+        | Value::Bool(_)
+        | Value::Number(_)
+        | Value::String(_)
+        | Value::Object(_)) => vec![scalar],
     };
     let normalized = items
         .into_iter()
@@ -72,7 +76,7 @@ fn normalize_input_item(item: Value) -> Result<Value, VoyageMultimodalError> {
             fields.insert("content".to_owned(), normalized);
             Ok(Value::Object(fields))
         }
-        other => Ok(other),
+        other @ (Value::Null | Value::Bool(_) | Value::Number(_) | Value::Array(_)) => Ok(other),
     }
 }
 
@@ -101,10 +105,10 @@ fn normalize_content_item(item: &Value) -> Result<Value, VoyageMultimodalError> 
     if let Some(Value::Object(nested)) = image_url {
         image_url = nested.get("url");
     }
-    let Some(image_url) = image_url.filter(|value| !value.is_null()) else {
+    let Some(resolved) = image_url.filter(|value| !value.is_null()) else {
         return Err(VoyageMultimodalError::MissingImageUrl);
     };
-    if let Value::String(text) = image_url
+    if let Value::String(text) = resolved
         && text.starts_with("data:image/")
     {
         let encoded = text.split_once(',').map_or("", |(_, tail)| tail);
@@ -115,7 +119,7 @@ fn normalize_content_item(item: &Value) -> Result<Value, VoyageMultimodalError> 
     }
     Ok(Value::Object(Map::from_iter([
         ("type".to_owned(), Value::String("image_url".to_owned())),
-        ("image_url".to_owned(), image_url.clone()),
+        ("image_url".to_owned(), resolved.clone()),
     ])))
 }
 

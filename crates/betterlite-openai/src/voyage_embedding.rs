@@ -150,13 +150,15 @@ pub fn voyage_api_key<F>(explicit: Option<&str>, lookup: F) -> Option<String>
 where
     F: Fn(&str) -> Option<String>,
 {
-    match explicit {
-        Some(key) => Some(key.to_owned()),
-        None => lookup("VOYAGE_API_KEY")
-            .filter(|value| !value.is_empty())
-            .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
-            .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty())),
-    }
+    explicit.map_or_else(
+        || {
+            lookup("VOYAGE_API_KEY")
+                .filter(|value| !value.is_empty())
+                .or_else(|| lookup("VOYAGE_AI_API_KEY").filter(|value| !value.is_empty()))
+                .or_else(|| lookup("VOYAGE_AI_TOKEN").filter(|value| !value.is_empty()))
+        },
+        |key| Some(key.to_owned()),
+    )
 }
 
 #[must_use]
