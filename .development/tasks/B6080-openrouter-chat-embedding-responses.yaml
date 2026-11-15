@@ -199,4 +199,4 @@ pitfalls:
   - The Responses key chain checks OR_API_KEY last and its base chain has no OR_ variant. The Responses headers get no Content-Type.
   - The decisions default base has no "/v1". B3511's URL join removes one trailing "/v1" and then adds "/alpha/decisions".
 review_level: standard
-budget: {max_changed_lines: 1500, max_new_expects: 0}
+budget: {max_changed_lines: 1700, max_new_expects: 6}
