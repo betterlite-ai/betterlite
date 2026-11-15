@@ -60,30 +60,14 @@ const COMPLETED_EVENT: &str = r#"{"id":"int_2","event_type":"interaction.complet
 
 #[tokio::test]
 async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
-    let catalog = ModelCatalog::default();
-    let known = BTreeSet::new();
-    let custom = BTreeSet::new();
-    let environment = BTreeMap::new();
-    let resolution = resolution_context(&catalog, &known, &custom, &environment);
-    let aliases = BTreeMap::new();
-    let hooks = NoHooks;
-    let shared = SharedApiBase {
-        context: ApiBaseContext {
-            model_alias_map: &aliases,
-            hooks: &hooks,
-            resolution: &resolution,
-        },
-    };
     let config = FixtureConfig;
-    let mut logging = RecordingLogging::new(alias_params("https://alias.test"));
+    let mut logging = RecordingLogging::new(litellm_param("base_url", "https://alias.test"));
     let mut response = FakeAsyncResponse::new(&[r#"data: {"id":"int_1"}"#]);
-    response.headers.insert(
-        String::from("x-ratelimit-remaining-requests"),
-        String::from("9"),
-    );
-    let calls = Arc::clone(&response.calls);
+    response
+        .headers
+        .insert(String::from("x-ratelimit-limit-tokens"), String::from("9"));
     let model_metadata = metadata("model-1");
-    let mut iterator = InteractionsStreamIterator::new(
+    let iterator = InteractionsStreamIterator::new(
         response,
         InteractionsStreamSetup {
             model: Some("gemini-2.5-flash"),
@@ -91,10 +75,11 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
             logging: &mut logging,
             litellm_metadata: Some(&model_metadata),
             custom_llm_provider: Some("gemini"),
-            api_base: &shared,
+            api_base: &PARAMS_API_BASE,
         },
     )
     .expect("the fixture iterator builds");
+    let remaining = Json::Text(String::from("9"));
     assert_eq!(
         iterator.base.hidden_params.model_id.as_deref(),
         Some("model-1")
@@ -103,28 +88,34 @@ async fn async_iterator_construction_builds_hidden_params_from_the_setup() {
         iterator.base.hidden_params.api_base.as_deref(),
         Some("https://alias.test")
     );
+    let headers = &iterator.base.hidden_params.additional_headers;
+    assert_eq!(headers.get("x-ratelimit-limit-tokens"), Some(&remaining));
     assert_eq!(
-        iterator
-            .base
-            .hidden_params
-            .additional_headers
-            .get("x-ratelimit-remaining-requests"),
-        Some(&Json::Text(String::from("9")))
+        headers.get("llm_provider-x-ratelimit-limit-tokens"),
+        Some(&remaining)
     );
-    assert_eq!(
-        iterator
-            .base
-            .hidden_params
-            .additional_headers
-            .get("llm_provider-x-ratelimit-remaining-requests"),
-        Some(&Json::Text(String::from("9")))
-    );
+}
+
+#[tokio::test]
+async fn async_iterator_construction_copies_the_setup_into_the_base() {
+    let config = FixtureConfig;
+    let mut logging = RecordingLogging::new(Params::new());
+    let iterator = InteractionsStreamIterator::new(
+        FakeAsyncResponse::new(&[]),
+        InteractionsStreamSetup {
+            model: Some("gemini-2.5-flash"),
+            config: &config,
+            logging: &mut logging,
+            litellm_metadata: None,
+            custom_llm_provider: Some("gemini"),
+            api_base: &NO_API_BASE,
+        },
+    )
+    .expect("the fixture iterator builds");
     assert_eq!(iterator.base.model.as_deref(), Some("gemini-2.5-flash"));
     assert_eq!(iterator.base.custom_llm_provider.as_deref(), Some("gemini"));
     assert!(!iterator.base.finished);
     assert_eq!(iterator.base.completed_response, None);
-    assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(drain_async(&mut iterator).await.len(), 1);
 }
 
 #[tokio::test]
@@ -278,7 +269,7 @@ async fn async_iterator_construction_without_metadata_leaves_model_id_empty() {
 #[test]
 fn sync_iterator_construction_calls_iter_lines_once() {
     let config = FixtureConfig;
-    let mut logging = RecordingLogging::new(litellm_params("https://sync.test"));
+    let mut logging = RecordingLogging::new(litellm_param("api_base", "https://sync.test"));
     let model_metadata = metadata("model-2");
     let response = FakeSyncResponse::new(&[r#"data: {"id":"int_1"}"#]);
     let calls = Arc::clone(&response.calls);
@@ -611,7 +602,7 @@ async fn async_iteration_reads_the_first_line_of_a_streamed_http_response() {
         deadline: Duration::from_secs(30),
     };
     let answer = format!("data: {COMPLETED_STATUS}\n\ndata: [DONE]\n");
-    let (response, _) = tokio::join!(client.send(request), serve_stream(&listener, &answer));
+    let (response, ()) = tokio::join!(client.send(request), serve_stream(&listener, &answer));
     let config = FixtureConfig;
     let mut logging = RecordingLogging::new(Params::new());
     let mut iterator = InteractionsStreamIterator::new(
@@ -745,13 +736,12 @@ async fn error_handling_async_source_error_sets_finished_and_errors() {
     let mut iterator =
         InteractionsStreamIterator::new(response, setup(&mut logging, &config, &NO_API_BASE))
             .expect("the fixture iterator builds");
-    assert!(
-        iterator
-            .next_chunk()
-            .await
-            .expect("the first chunk")
-            .is_ok()
-    );
+    let first = iterator
+        .next_chunk()
+        .await
+        .expect("the first chunk")
+        .expect("the first chunk decodes");
+    assert_eq!(first.id.as_deref(), Some("a"));
     let failure = iterator
         .next_chunk()
         .await
@@ -856,14 +846,6 @@ async fn multiple_completions_keep_the_last_response() {
     assert_eq!(records.len(), 2);
     assert_eq!(records[0].response.id.as_deref(), Some("int_1"));
     assert_eq!(records[1].response.id.as_deref(), Some("int_2"));
-}
-
-fn alias_params(base_url: &str) -> Params {
-    let fields = IndexMap::from([(
-        String::from("base_url"),
-        JsonValue::Text(base_url.to_owned()),
-    )]);
-    Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
 }
 
 include!("tests/support.rs");

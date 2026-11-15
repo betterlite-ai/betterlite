@@ -5,10 +5,9 @@ use std::iter::from_fn;
 
 use betterlite_core::api::interactions::contract::records::Params;
 use betterlite_core::api::interactions::streaming::async_iterator::InteractionsStreamIterator;
+use betterlite_core::api::interactions::streaming::base::InteractionsStreamBase;
 use betterlite_core::api::interactions::streaming::error::InteractionStreamError;
-use betterlite_core::api::interactions::streaming::records::{
-    InteractionsStreamSetup, SharedApiBase,
-};
+use betterlite_core::api::interactions::streaming::records::InteractionsStreamSetup;
 use betterlite_core::api::interactions::streaming::sync_iterator::SyncInteractionsStreamIterator;
 use betterlite_interactions::types::response::InteractionsStreamChunk;
 use betterlite_models::catalog::ModelCatalog;
@@ -26,6 +25,8 @@ use super::fixtures::{
     RecordingLogging, api_resolver,
 };
 use super::{Input, Mode};
+
+type Setup<'setup> = InteractionsStreamSetup<'setup, FixtureConfig, RecordingLogging>;
 
 pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     let catalog = ModelCatalog::default();
@@ -48,76 +49,56 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     let config = FixtureConfig;
     let resolver = api_resolver(&contexts);
     let mut logging = RecordingLogging::new(call_details(input));
-    match input.mode {
-        Mode::Async => async_output(input, &mut logging, &config, &resolver),
-        Mode::Sync => sync_output(input, &mut logging, &config, &resolver),
-    }
-}
-
-fn async_output(
-    input: &Input,
-    logging: &mut RecordingLogging,
-    config: &FixtureConfig,
-    resolver: &SharedApiBase<'_>,
-) -> crate::helpers::HelperResult {
+    let setup = InteractionsStreamSetup {
+        model: input.model.as_deref(),
+        config: &config,
+        logging: &mut logging,
+        litellm_metadata: None,
+        custom_llm_provider: None,
+        api_base: &resolver,
+    };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| runtime_failure(&error))?;
-    runtime.block_on(collect_async(input, logging, config, resolver))
+    runtime.block_on(drive(input, setup, input.mode))
 }
 
-fn sync_output(
-    input: &Input,
-    logging: &mut RecordingLogging,
-    config: &FixtureConfig,
-    resolver: &SharedApiBase<'_>,
-) -> crate::helpers::HelperResult {
-    let mut iterator = SyncInteractionsStreamIterator::new(
-        FakeSyncResponse::new(&input.lines),
-        InteractionsStreamSetup {
-            model: input.model.as_deref(),
-            config,
-            logging: &mut *logging,
-            litellm_metadata: None,
-            custom_llm_provider: None,
-            api_base: resolver,
-        },
-    )
-    .map_err(|error| failure(&error))?;
-    let events = from_fn(|| iterator.next_chunk())
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| failure(&error))?;
-    let finished = iterator.base.finished;
-    let completed = iterator.base.completed_response;
-    Ok(output(events, finished, completed, logging.records()))
-}
-
-async fn collect_async(
-    input: &Input,
-    logging: &mut RecordingLogging,
-    config: &FixtureConfig,
-    resolver: &SharedApiBase<'_>,
-) -> crate::helpers::HelperResult {
-    let mut iterator = InteractionsStreamIterator::new(
-        FakeAsyncResponse::new(&input.lines),
-        InteractionsStreamSetup {
-            model: input.model.as_deref(),
-            config,
-            logging: &mut *logging,
-            litellm_metadata: None,
-            custom_llm_provider: None,
-            api_base: resolver,
-        },
-    )
-    .map_err(|error| failure(&error))?;
-    let mut events = Vec::new();
-    while let Some(item) = iterator.next_chunk().await {
-        events.push(item.map_err(|error| failure(&error))?);
+async fn drive(input: &Input, setup: Setup<'_>, mode: Mode) -> crate::helpers::HelperResult {
+    match mode {
+        Mode::Async => {
+            let response = FakeAsyncResponse::new(&input.lines);
+            let mut iterator = InteractionsStreamIterator::new(response, setup)
+                .map_err(|error| failure(&error))?;
+            let mut events = Vec::new();
+            while let Some(item) = iterator.next_chunk().await {
+                events.push(item.map_err(|error| failure(&error))?);
+            }
+            finish(iterator.base, events)
+        }
+        Mode::Sync => {
+            let response = FakeSyncResponse::new(&input.lines);
+            let mut iterator = SyncInteractionsStreamIterator::new(response, setup)
+                .map_err(|error| failure(&error))?;
+            let events = from_fn(|| iterator.next_chunk())
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| failure(&error))?;
+            finish(iterator.base, events)
+        }
     }
-    let finished = iterator.base.finished;
-    let completed = iterator.base.completed_response;
-    Ok(output(events, finished, completed, logging.records()))
+}
+
+fn finish(
+    base: InteractionsStreamBase<'_, FixtureConfig, RecordingLogging>,
+    events: Vec<InteractionsStreamChunk>,
+) -> crate::helpers::HelperResult {
+    let dispatches = base.logging.records();
+    Ok(output(
+        events,
+        base.finished,
+        base.completed_response,
+        dispatches,
+    ))
 }
 
 fn output(

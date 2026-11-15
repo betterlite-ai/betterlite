@@ -91,9 +91,9 @@ fn check_corpus_expectation(name: &str, parsed: &[ParsedStreamChunk]) {
         "event" => assert_eq!(parsed, [event("int_1")]),
         "invalid-utf8" => assert_eq!(parsed, [event("\u{fffd}")]),
         "malformed-json" | "non-object" => assert_eq!(parsed, [ParsedStreamChunk::Skip]),
-        "split-utf8" => assert_eq!(parsed, [event("é")]),
+        "split-utf8" => assert_eq!(parsed, [event("\u{e9}")]),
         "unterminated-final" => {
-            assert_eq!(parsed, [event("a"), ParsedStreamChunk::Skip, event("b")])
+            assert_eq!(parsed, [event("a"), ParsedStreamChunk::Skip, event("b")]);
         }
         other => panic!("the corpus seed {other} has no expectation"),
     }

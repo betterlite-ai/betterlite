@@ -143,14 +143,10 @@ fn litellm_param_fields(
 }
 
 fn text_value(value: &JsonValue) -> Option<String> {
-    match value {
-        JsonValue::Text(content) => Some(content.clone()),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => None,
-    }
+    let JsonValue::Text(content) = value else {
+        return None;
+    };
+    Some(content.clone())
 }
 
 const fn flag_value(value: &JsonValue) -> Option<bool> {

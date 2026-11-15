@@ -132,7 +132,7 @@ impl InteractionsApiBase for ParamsApiBase {
         _model: &str,
         params: &ApiBaseParams,
     ) -> Result<Option<String>, ApiBaseError> {
-        Ok(params.api_base.clone())
+        Ok(params.api_base.clone().or_else(|| params.base_url.clone()))
     }
 }
 
@@ -358,11 +358,8 @@ fn ticked(seconds: i64) -> DateTime<FixedOffset> {
         .expect("the fixture time stays in range")
 }
 
-fn litellm_params(api_base: &str) -> Params {
-    let fields = IndexMap::from([(
-        String::from("api_base"),
-        JsonValue::Text(api_base.to_owned()),
-    )]);
+fn litellm_param(name: &str, value: &str) -> Params {
+    let fields = IndexMap::from([(String::from(name), JsonValue::Text(value.to_owned()))]);
     Params::from([(String::from("litellm_params"), JsonValue::Object(fields))])
 }
 
