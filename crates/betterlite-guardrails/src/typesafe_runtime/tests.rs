@@ -24,7 +24,7 @@ use tracing_subscriber::fmt;
 
 use super::apply::compact;
 use super::error::TypeSafeRuntimeError;
-use super::messages::message_rows;
+use super::messages::row;
 use super::{TypeSafeDefaults, TypeSafeGuard};
 use crate::generic_guardrail_contracts::{
     GuardrailInputType, GuardrailMessage, UnreachableFallback,
@@ -41,6 +41,7 @@ use crate::typesafe::{DEFAULT_API_BASE, DEFAULT_JEV_TIMEOUT, DROPPED_RESULT_TEXT
 const API_KEY: &str = "test-key";
 const FIRST_RESULT: &str = "結果: the first tool result";
 const SECOND_RESULT: &str = "the second tool result, still needed by the assistant";
+const FUNCTION_RESULT: &str = "the legacy function result that is no longer needed";
 const NO_CANDIDATES_LOG: &str = "TypeSafe: no completed tool exchanges eligible for evaluation";
 const ALL_RELEVANT_LOG: &str =
     "TypeSafe: all evaluated exchanges still relevant; request unchanged";
@@ -156,6 +157,33 @@ fn tool_result(call_id: &str, content: &str) -> GuardrailMessage {
             ),
         ]),
     }
+}
+
+fn function_result(call_id: &str, content: &str) -> GuardrailMessage {
+    GuardrailMessage {
+        role: "function".to_owned(),
+        extra: BTreeMap::from([
+            ("name".to_owned(), GuardrailValue::Text("lookup".to_owned())),
+            (
+                "tool_call_id".to_owned(),
+                GuardrailValue::Text(call_id.to_owned()),
+            ),
+            (
+                "content".to_owned(),
+                GuardrailValue::Text(content.to_owned()),
+            ),
+        ]),
+    }
+}
+
+fn function_exchange() -> Vec<GuardrailMessage> {
+    vec![
+        message("user", "look this up"),
+        call_message("call_f"),
+        function_result("call_f", FUNCTION_RESULT),
+        message("user", "now use what you found"),
+        message("assistant", "done"),
+    ]
 }
 
 fn two_exchanges() -> Vec<GuardrailMessage> {
@@ -702,6 +730,30 @@ async fn one_exchange_is_dropped_and_the_kept_one_is_untouched() {
 }
 
 #[tokio::test]
+async fn a_function_role_result_is_dropped_with_its_exchange() {
+    let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
+    let guard = guard_at(&base_url, args(&base_url));
+    let original = function_exchange();
+    let mut data = request_data();
+    let returned = apply_request(&guard, inputs(original.clone()), &mut data)
+        .await
+        .expect("compaction");
+    assert_eq!(
+        returned.structured_messages,
+        Some(dropped_once(&original, 2))
+    );
+    assert_eq!(question_ids(&requests.first()), ["e0".to_owned()]);
+    let record = &records(&data)[0];
+    assert_eq!(status_of(record), "success");
+    let removed = code_points(FUNCTION_RESULT).saturating_sub(code_points(DROPPED_RESULT_TEXT));
+    assert_eq!(
+        field(record, "guardrail_response"),
+        Some(&success_counts(removed, 1, 1))
+    );
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn an_exchange_without_an_answer_is_kept() {
     let (base_url, _requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
     let guard = guard_at(&base_url, args(&base_url));
@@ -789,7 +841,7 @@ async fn a_message_that_is_not_an_object_leaves_the_request_unchanged() {
     let (base_url, requests, mut server) = serve(StatusCode::OK, reply(&[("e0", 0.0)])).await;
     let guard = guard_at(&base_url, args(&base_url));
     let typed = two_exchanges();
-    let mut rows = message_rows(&typed);
+    let mut rows: Vec<Json> = typed.iter().map(row).collect();
     rows.push(Json::Text("not a message".to_owned()));
     let original = inputs(typed);
     let mut data = request_data();

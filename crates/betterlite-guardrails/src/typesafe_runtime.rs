@@ -9,6 +9,7 @@ use std::time::{Duration, SystemTime};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_prompts::anthropic_history::groups::group_tool_exchanges;
+use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback};
@@ -76,8 +77,13 @@ impl GuardrailContract for TypeSafeGuard {
         if input_type == GuardrailInputType::Response {
             return Ok(inputs);
         }
-        let rows =
-            messages::message_rows(inputs.structured_messages.as_deref().unwrap_or_default());
+        let rows: Vec<Json> = inputs
+            .structured_messages
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .map(messages::row)
+            .collect();
         apply::compact(self, inputs, &rows, request_data, logging_obj).await
     }
 }

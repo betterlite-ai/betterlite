@@ -5,11 +5,6 @@ use serde_json::Number;
 use crate::content_text::content_to_text;
 use crate::generic_guardrail_contracts::GuardrailMessage;
 
-// B3798 reads messages as the framework's JSON value, so each typed message converts one for one and keeps its index.
-pub(super) fn message_rows(messages: &[GuardrailMessage]) -> Vec<Json> {
-    messages.iter().map(row).collect()
-}
-
 // B3798's content pointer takes JSON while the framework's content_to_text takes a guardrail value.
 pub(super) fn content_text(content: Option<&Json>) -> String {
     let Some(content) = content else {
@@ -18,7 +13,8 @@ pub(super) fn content_text(content: Option<&Json>) -> String {
     content_to_text(&guardrail_value(content))
 }
 
-fn row(message: &GuardrailMessage) -> Json {
+// B3798 reads messages as the framework's JSON value, so each typed message converts one for one and keeps its index.
+pub(super) fn row(message: &GuardrailMessage) -> Json {
     let mut fields = Object::with_capacity(message.extra.len().saturating_add(1));
     fields.insert("role".to_owned(), Json::Text(message.role.clone()));
     for (key, value) in &message.extra {
