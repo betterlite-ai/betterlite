@@ -1,0 +1,17 @@
+kind: helper
+name: policy-version-status-update-request
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyVersionStatusUpdateRequest
+    value:
+      version_status: published
+calls:
+  - b3242:
+      group: policy_records_records
+      operation: validate
+      model: PolicyVersionStatusUpdateRequest
+      value: {}
+env: {}
+compare: {ignore: []}

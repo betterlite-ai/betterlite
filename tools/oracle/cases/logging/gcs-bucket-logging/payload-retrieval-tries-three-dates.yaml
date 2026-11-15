@@ -1,0 +1,7 @@
+# retrieval reads the start date, then the next day, then the previous day
+kind: helper
+name: gcs-bucket-logging-payload-retrieval-tries-three-dates
+call:
+  b3998: {"bucket": "logs-bucket", "request_id": "req-1", "start_time": 1715947200, "replies": [{"status": 404, "body": ""}, {"status": 404, "body": ""}, {"status": 200, "body": "{\"id\": \"payload-1\", \"cached\": true}"}], "steps": [{"do": "retrieve"}]}
+env: {}
+compare: {ignore: []}

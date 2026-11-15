@@ -1,0 +1,6 @@
+litellm_settings:
+  use_litellm_proxy: maybe
+model_list:
+  - litellm_params:
+      use_litellm_proxy:
+        - true

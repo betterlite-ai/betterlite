@@ -1,0 +1,42 @@
+kind: helper
+name: assistant-event-order
+call:
+  bedrock_services_realtime_output:
+    ids:
+      - 00000000-0000-4000-8000-000000000001
+      - 00000000-0000-4000-8000-000000000002
+      - 00000000-0000-4000-8000-000000000003
+      - 00000000-0000-4000-8000-000000000004
+      - 00000000-0000-4000-8000-000000000005
+      - 00000000-0000-4000-8000-000000000006
+      - 00000000-0000-4000-8000-000000000007
+      - 00000000-0000-4000-8000-000000000008
+      - 00000000-0000-4000-8000-000000000009
+      - 00000000-0000-4000-8000-000000000010
+      - 00000000-0000-4000-8000-000000000011
+      - 00000000-0000-4000-8000-000000000012
+      - 00000000-0000-4000-8000-000000000013
+    calls:
+      - method: content_start
+        event: {role: ASSISTANT, type: TEXT}
+        ids: {response: null, item: null, conversation: null}
+      - method: content_start
+        event: {role: ASSISTANT, type: AUDIO}
+        ids:
+          response: resp_00000000-0000-4000-8000-000000000001
+          item: item_00000000-0000-4000-8000-000000000002
+          conversation: conv_00000000-0000-4000-8000-000000000003
+      - method: content_start
+        event: {role: ASSISTANT}
+        ids:
+          response: resp_00000000-0000-4000-8000-000000000001
+          item: item_00000000-0000-4000-8000-000000000002
+          conversation: conv_00000000-0000-4000-8000-000000000003
+      - method: content_start
+        event: {role: ASSISTANT, type: text}
+        ids:
+          response: resp_00000000-0000-4000-8000-000000000001
+          item: item_00000000-0000-4000-8000-000000000002
+          conversation: conv_00000000-0000-4000-8000-000000000003
+env: {}
+compare: {ignore: []}
