@@ -5,17 +5,20 @@
 
 pub mod cloud;
 pub mod content;
+pub mod model;
 pub mod security;
 
+use crate::guardrails::form_tables_a::model::build_model;
 use crate::guardrails::provider_forms::spec::FormModel;
 
 #[must_use]
 pub fn tables_a() -> Vec<(&'static str, FormModel)> {
-    let mut tables = security::tables();
-    tables.extend(cloud::tables());
-    tables.extend(content::tables());
-    tables
+    security::TABLES
+        .iter()
+        .chain(cloud::TABLES)
+        .chain(content::TABLES)
+        .map(|(key, model)| (*key, build_model(model)))
+        .collect()
 }
 
-#[cfg(test)]
 mod tests;
