@@ -124,5 +124,5 @@ pitfalls:
   - A false forced-recreate result can mean another generation already recovered, so it must not increment the failure count.
 budget:
   max_changed_lines: 2100
-  max_new_expects: 0
+  max_new_expects: 1
 review_level: security
