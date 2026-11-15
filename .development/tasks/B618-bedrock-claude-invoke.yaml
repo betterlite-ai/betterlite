@@ -392,8 +392,7 @@ oracle_cases:
 deviations:
 - what: Never fetch request URLs. A document/image URL requiring local bytes fails with ImageFetchError status 400
     before upstream transport; inline data and descriptors the provider accepts remain supported.
-  why: Max must decide whether request URL downloads should be allowed. Preserve local inputs and the no-fetch policy
-    while that choice remains open.
+  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_transformations/anthropic_claude3_transformation.py#L303-L340
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers
