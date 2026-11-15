@@ -2493,6 +2493,7 @@ dependencies = [
  "quick-xml",
  "rand 0.10.3",
  "redis",
+ "regex",
  "reqwest",
  "rmcp",
  "rstest",
