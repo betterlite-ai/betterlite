@@ -176,12 +176,10 @@ def read_timeout(request: httpx.Request) -> int | None:
 
 
 def litellm_params(job: Job) -> GenericLiteLLMParams | dict[str, JsonValue]:
-    match job["params_kind"]:
-        case "typed":
-            typed = PARAMS.validate_python(job["litellm_params"])
-            return GenericLiteLLMParams(api_key=typed.get("api_key"), api_base=typed.get("api_base"))
-        case "dict":
-            return job["litellm_params"]
+    if job["params_kind"] == "typed":
+        typed = PARAMS.validate_python(job["litellm_params"])
+        return GenericLiteLLMParams(api_key=typed.get("api_key"), api_base=typed.get("api_base"))
+    return job["litellm_params"]
 
 
 def settle(pending: ImageResponse | Coroutine[object, object, ImageResponse]) -> ImageResponse:
