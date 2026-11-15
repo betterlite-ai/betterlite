@@ -246,14 +246,18 @@ fn empty_transcripts_without_a_turn_or_active_turn_are_ignored() {
 
 #[test]
 fn push_to_talk_transcripts_create_random_item_ids() {
-    let mut harness = Harness::default();
-    harness.mode = MuseMode::PushToTalk;
+    let mut harness = Harness {
+        transformer: MuseEventTransformer::default(),
+        ids: CountingIds::default(),
+        mode: MuseMode::PushToTalk,
+    };
     let events = harness.transform(r#"{"type":"transcript","transcript":"hi"}"#);
     assert_eq!(kinds(&events), vec!["started", "delta"]);
     let item_id = turn_item(&events[0]);
     let identifier = item_id.strip_prefix("item_").unwrap();
     assert_eq!(identifier.len(), 32);
-    assert!(Uuid::parse_str(identifier).is_ok());
+    let parsed = Uuid::parse_str(identifier).unwrap();
+    assert_eq!(parsed.get_version_num(), 4);
     assert_eq!(turn_item(&events[1]), item_id);
     drop(harness.transform(r#"{"type":"transcript","transcript":"hi there","final":true}"#));
     let next = harness.transform(r#"{"type":"transcript","transcript":"again"}"#);
@@ -293,7 +297,7 @@ fn audio_progress_accumulates_seconds_and_resets() {
     );
     drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":500}"#));
     drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":499}"#));
-    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1_500}"#));
+    drop(harness.transform(r#"{"type":"audioProgress","audioProcessedMs":1500}"#));
     assert_eq!(
         harness.transformer.take_unbilled_usage(),
         Some(TranscriptionUsage::Duration(DurationUsage { seconds: 1.0 }))
@@ -357,7 +361,7 @@ fn integer_turn_ids_render_the_way_python_prints_them() {
 }
 
 #[test]
-fn invalid_turn_ids_and_transcripts_are_errors() {
+fn invalid_turn_ids_are_errors() {
     let mut harness = Harness::default();
     let invalid_turn_ids = [
         r#"{"type":"speechStart","turnId":true}"#,
@@ -388,6 +392,11 @@ fn invalid_turn_ids_and_transcripts_are_errors() {
     assert_eq!(turn_item(&numeric[0]), "7");
     let padded = harness.transform(r#"{"type":"speechStart","turnId":" t2 "}"#);
     assert_eq!(turn_item(&padded[0]), "t2");
+}
+
+#[test]
+fn invalid_transcripts_are_errors() {
+    let mut harness = Harness::default();
     let bad_transcript = harness
         .try_transform(r#"{"type":"transcript","turnId":"t2","transcript":5}"#)
         .unwrap_err();

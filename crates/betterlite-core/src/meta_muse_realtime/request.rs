@@ -81,10 +81,10 @@ where
         api_key: Option<&str>,
         env_api_key: Option<&str>,
     ) -> Result<HeaderMap, MuseProtocolError> {
-        let Some(token) = api_key.or(env_api_key) else {
+        let Some(configured) = api_key.or(env_api_key) else {
             return Err(MuseProtocolError::ApiKeyMissing);
         };
-        let token = SecretString::from(token.to_owned());
+        let token = SecretString::from(configured.to_owned());
         self.access_token = Some(normalize_access_token(&token)?);
         Ok(headers)
     }
@@ -139,7 +139,7 @@ where
             Some(_) | None => Sub::sub(now, self.sent_duration),
         };
         let delay = Sub::sub(Add::add(effective_origin, self.sent_duration), now);
-        if delay > 0.0 {
+        if delay > 0.0_f64 {
             (self.sleep)(delay).await;
         }
         self.pacing_origin = Some(effective_origin);

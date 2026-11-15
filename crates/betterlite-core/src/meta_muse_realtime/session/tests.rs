@@ -130,7 +130,7 @@ fn builds_the_default_and_custom_realtime_urls() {
         ("wss://[::1]:9443/x", "wss://[::1]:9443/v1/asr/realtime"),
         // the url crate punycodes a non-ASCII host, while LiteLLM keeps the text urllib.parse reports
         (
-            "wss://bücher.example/x",
+            "wss://b\u{fc}cher.example/x",
             "wss://xn--bcher-kva.example/v1/asr/realtime",
         ),
         // the url crate drops a port that is the scheme default, so the rebuilt URL keeps the endpoint without it
@@ -293,9 +293,9 @@ fn rejects_non_server_vad_turn_detection() {
         "Muse Voice supports server_vad turn detection or null"
     );
     let numeric = r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{},"turn_detection":{"type":5}}}}}"#;
-    let rejected = configured(numeric).unwrap_err();
+    let numeric_rejected = configured(numeric).unwrap_err();
     assert!(matches!(
-        rejected,
+        numeric_rejected,
         MuseProtocolError::TurnDetectionUnsupported
     ));
 }

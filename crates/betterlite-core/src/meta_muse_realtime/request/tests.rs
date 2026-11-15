@@ -70,8 +70,7 @@ fn configure(config: &mut MetaRealtimeConfig<FixedIds>, payload: &str) -> Vec<Re
 
 fn configured_config(ticks: &[f64]) -> MetaRealtimeConfig<FixedIds> {
     let mut config = base_config(ticks);
-    let validated = validate(&mut config, Some("test-key"), None);
-    assert!(validated.is_ok());
+    drop(validate(&mut config, Some("test-key"), None).unwrap());
     let frames = configure(&mut config, SESSION);
     assert_eq!(frames, vec![RealtimeMessage::Text(HANDSHAKE.to_owned())]);
     config
@@ -174,7 +173,7 @@ fn configures_the_session_once_and_ignores_later_updates() {
 #[test]
 fn accepts_transcription_session_updates() {
     let mut config = base_config(&[]);
-    assert!(validate(&mut config, Some("test-key"), None).is_ok());
+    drop(validate(&mut config, Some("test-key"), None).unwrap());
     let payload = r#"{"type":"transcription_session.update","session":{"type":"transcription","input_audio_format":"pcm16","input_audio_transcription":{"model":"muse-voice-transcribe-1.0","language":"es"}}}"#;
     let frames = configure(&mut config, payload);
     assert_eq!(frames, vec![RealtimeMessage::Text(HANDSHAKE.to_owned())]);
@@ -183,7 +182,7 @@ fn accepts_transcription_session_updates() {
 #[test]
 fn rejects_a_session_update_that_changes_the_model() {
     let mut config = base_config(&[]);
-    assert!(validate(&mut config, Some("test-key"), None).is_ok());
+    drop(validate(&mut config, Some("test-key"), None).unwrap());
     let changed = r#"{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"meta/other"}}}}}"#;
     let rejected = config
         .transform_realtime_request(changed, MUSE_MODEL, None)
@@ -211,7 +210,7 @@ fn packetizes_appended_audio_into_80ms_frames() {
 #[test]
 fn flushes_push_to_talk_commits_with_the_end_stream() {
     let mut config = base_config(&[]);
-    assert!(validate(&mut config, Some("test-key"), None).is_ok());
+    drop(validate(&mut config, Some("test-key"), None).unwrap());
     let frames = configure(&mut config, PUSH_TO_TALK);
     assert_eq!(
         frames,
@@ -294,7 +293,14 @@ fn rejects_malformed_client_messages() {
 
 #[tokio::test]
 async fn paces_backend_sends_against_the_sent_duration() {
-    let ticks = [1_000.0, 1_000.0, 1_000.25, 1_001.0, 1_001.0, 1_001.0];
+    let ticks = [
+        1_000.0_f64,
+        1_000.0_f64,
+        1_000.25_f64,
+        1_001.0_f64,
+        1_001.0_f64,
+        1_001.0_f64,
+    ];
     let fakes = pacing_fakes(&ticks);
     let delays = Arc::clone(&fakes.delays);
     let mut config = MetaRealtimeConfig::new(
@@ -303,7 +309,7 @@ async fn paces_backend_sends_against_the_sent_duration() {
         ApiLimits::default(),
         FixedIds::from(IDS.as_slice()),
     );
-    assert!(validate(&mut config, Some("test-key"), None).is_ok());
+    drop(validate(&mut config, Some("test-key"), None).unwrap());
     let frames = configure(&mut config, SESSION);
     assert_eq!(frames, vec![RealtimeMessage::Text(HANDSHAKE.to_owned())]);
     let message = vec![0_u8; 12_000];
@@ -317,12 +323,12 @@ async fn paces_backend_sends_against_the_sent_duration() {
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone();
-    assert_eq!(recorded, vec![0.25_f64, 0.25, 0.25, 0.5]);
+    assert_eq!(recorded, vec![0.25_f64, 0.25_f64, 0.25_f64, 0.5_f64]);
 }
 
 #[tokio::test]
 async fn rejects_pacing_before_the_session_is_configured() {
-    let fakes = pacing_fakes(&[5.0]);
+    let fakes = pacing_fakes(&[5.0_f64]);
     let mut config = MetaRealtimeConfig::new(
         fakes.clock,
         fakes.sleep,
@@ -418,18 +424,18 @@ fn builds_provider_created_events_from_the_configured_session() {
         transform_response(&mut config, &text_frame(r#"{"sessionId":"provider-7"}"#)).unwrap();
     assert_eq!(rendered(&created), PROVIDER_CREATED);
     let mut push_to_talk = base_config(&[]);
-    assert!(validate(&mut push_to_talk, Some("test-key"), None).is_ok());
+    drop(validate(&mut push_to_talk, Some("test-key"), None).unwrap());
     let frames = configure(&mut push_to_talk, PUSH_TO_TALK);
     assert_eq!(
         frames,
         vec![RealtimeMessage::Text(PUSH_TO_TALK_HANDSHAKE.to_owned())]
     );
-    let created = transform_response(
+    let push_created = transform_response(
         &mut push_to_talk,
         &text_frame(r#"{"sessionId":" provider-8 "}"#),
     )
     .unwrap();
-    assert_eq!(rendered(&created), PUSH_TO_TALK_CREATED);
+    assert_eq!(rendered(&push_created), PUSH_TO_TALK_CREATED);
 }
 
 #[test]

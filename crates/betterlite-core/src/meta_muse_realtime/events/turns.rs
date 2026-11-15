@@ -6,12 +6,15 @@ use indexmap::map::Entry;
 use serde_json::Number;
 use uuid::Uuid;
 
-use super::super::{MuseMode, MuseProtocolError, TURN_LIMIT};
+use super::super::{MuseMode, MuseProtocolError, PROVIDER_ERROR_MESSAGE, TURN_LIMIT};
 use super::MuseEvent;
 use super::MuseEventTransformer;
+use super::SpeechKind;
+use super::text_field;
+use super::update_audio_progress;
 use crate::api::transcription_protocol::JsonObject;
 use crate::api::transcription_protocol::events::{
-    EventIdSource, SpeechEventType, completed_event, delta_event, speech_event,
+    EventIdSource, SpeechEventType, completed_event, delta_event, error_event, speech_event,
 };
 use crate::api::transcription_protocol::usage::{TranscriptionUsage, duration_usage};
 
@@ -20,23 +23,6 @@ enum Emitted {
     SpeechStarted,
     SpeechStopped,
     Completed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum SpeechKind<'a> {
-    Start,
-    End,
-    Complete { transcript: &'a str },
-}
-
-impl SpeechKind<'_> {
-    const fn label(self) -> &'static str {
-        match self {
-            Self::Start => "speechStart",
-            Self::End => "speechEnd",
-            Self::Complete { .. } => "speechComplete",
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -135,13 +121,43 @@ impl TurnState {
 }
 
 impl MuseEventTransformer {
+    pub fn transform<Ids>(
+        &mut self,
+        frame: &JsonObject,
+        mode: MuseMode,
+        ids: &mut Ids,
+    ) -> Result<Vec<MuseEvent>, MuseProtocolError>
+    where
+        Ids: EventIdSource + ?Sized,
+    {
+        match text_field(frame.get("type")) {
+            Some("error") => Ok(vec![MuseEvent::Error(error_event(PROVIDER_ERROR_MESSAGE))]),
+            Some("audioProgress") => {
+                update_audio_progress(&mut self.last_ms, &mut self.unbilled_seconds, frame)?;
+                Ok(Vec::new())
+            }
+            Some("speechStart") => self.speech(frame, SpeechKind::Start, ids),
+            Some("transcript") => self.transcript(frame, mode, ids),
+            Some("speechEnd") => self.speech(frame, SpeechKind::End, ids),
+            Some("speechComplete") => {
+                let Some(Json::Text(transcript)) = frame.get("transcript") else {
+                    return Err(MuseProtocolError::InvalidTranscript {
+                        event: "speechComplete",
+                    });
+                };
+                self.speech(frame, SpeechKind::Complete { transcript }, ids)
+            }
+            Some(_) | None => Ok(Vec::new()),
+        }
+    }
+
     #[must_use]
     // ast-grep-ignore: no-one-line-functions
     pub fn take_unbilled_usage(&mut self) -> Option<TranscriptionUsage> {
         take_usage(&mut self.unbilled_seconds)
     }
 
-    pub(super) fn speech<Ids>(
+    fn speech<Ids>(
         &mut self,
         frame: &JsonObject,
         kind: SpeechKind<'_>,
@@ -167,7 +183,7 @@ impl MuseEventTransformer {
         Ok(state.drain(ids, &mut self.unbilled_seconds))
     }
 
-    pub(super) fn transcript<Ids>(
+    fn transcript<Ids>(
         &mut self,
         frame: &JsonObject,
         mode: MuseMode,
@@ -211,10 +227,10 @@ fn release_active(active: &mut Option<String>, turn: &TurnState) {
 
 fn take_usage(unbilled: &mut f64) -> Option<TranscriptionUsage> {
     let seconds = *unbilled;
-    if seconds <= 0.0 {
+    if seconds <= 0.0_f64 {
         return None;
     }
-    *unbilled = 0.0;
+    *unbilled = 0.0_f64;
     Some(duration_usage(seconds))
 }
 
@@ -232,12 +248,12 @@ fn turn<'turns>(
 }
 
 fn required_turn_id(frame: &JsonObject, event: &'static str) -> Result<String, MuseProtocolError> {
-    let text = match frame.get("turnId") {
+    let candidate = match frame.get("turnId") {
         Some(Json::Text(text)) => Some(text.clone()),
         Some(Json::Number(number)) => integer_text(number),
         Some(Json::Null | Json::Bool(_) | Json::List(_) | Json::Object(_)) | None => None,
     };
-    let Some(text) = text else {
+    let Some(text) = candidate else {
         return Err(MuseProtocolError::InvalidTurnId { event });
     };
     let trimmed = text.trim();

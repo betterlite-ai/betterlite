@@ -89,7 +89,7 @@ fn random_identifier(text: &str, prefix: &str) -> bool {
 }
 
 pub(crate) fn idle_config() -> MuseConfig {
-    let clock: Monotonic = Arc::new(|| 0.0);
+    let clock: Monotonic = Arc::new(|| 0.0_f64);
     let sleep: Sleep = Arc::new(|_delay: f64| -> BoxFuture<'static, ()> { Box::pin(async {}) });
     MetaRealtimeConfig::new(clock, sleep, ApiLimits::default(), UuidEventIds)
 }

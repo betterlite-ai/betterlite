@@ -7,16 +7,12 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Serialize;
 
-use self::turns::SpeechKind;
 use self::turns::TurnState;
 use super::MILLIS_PER_SECOND;
-use super::MuseMode;
 use super::MuseProtocolError;
-use super::PROVIDER_ERROR_MESSAGE;
 use crate::api::transcription_protocol::JsonObject;
 use crate::api::transcription_protocol::events::{
-    CompletedEvent, DeltaEvent, ErrorEvent, EventIdSource, SpeechEvent,
-    TranscriptionSessionCreated, error_event,
+    CompletedEvent, DeltaEvent, ErrorEvent, SpeechEvent, TranscriptionSessionCreated,
 };
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -27,6 +23,23 @@ pub enum MuseEvent {
     Speech(SpeechEvent),
     Delta(DeltaEvent),
     Completed(CompletedEvent),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum SpeechKind<'text> {
+    Start,
+    End,
+    Complete { transcript: &'text str },
+}
+
+impl SpeechKind<'_> {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::Start => "speechStart",
+            Self::End => "speechEnd",
+            Self::Complete { .. } => "speechComplete",
+        }
+    }
 }
 
 pub fn event_json(event: &MuseEvent) -> Result<Json, MuseProtocolError> {
@@ -51,39 +64,6 @@ pub struct MuseEventTransformer {
     unbilled_seconds: f64,
 }
 
-impl MuseEventTransformer {
-    #[must_use]
-    pub fn transform<Ids>(
-        &mut self,
-        frame: &JsonObject,
-        mode: MuseMode,
-        ids: &mut Ids,
-    ) -> Result<Vec<MuseEvent>, MuseProtocolError>
-    where
-        Ids: EventIdSource + ?Sized,
-    {
-        match text_field(frame.get("type")) {
-            Some("error") => Ok(vec![MuseEvent::Error(error_event(PROVIDER_ERROR_MESSAGE))]),
-            Some("audioProgress") => {
-                update_audio_progress(&mut self.last_ms, &mut self.unbilled_seconds, frame)?;
-                Ok(Vec::new())
-            }
-            Some("speechStart") => self.speech(frame, SpeechKind::Start, ids),
-            Some("transcript") => self.transcript(frame, mode, ids),
-            Some("speechEnd") => self.speech(frame, SpeechKind::End, ids),
-            Some("speechComplete") => {
-                let Some(Json::Text(transcript)) = frame.get("transcript") else {
-                    return Err(MuseProtocolError::InvalidTranscript {
-                        event: "speechComplete",
-                    });
-                };
-                self.speech(frame, SpeechKind::Complete { transcript }, ids)
-            }
-            Some(_) | None => Ok(Vec::new()),
-        }
-    }
-}
-
 fn update_audio_progress(
     last_ms: &mut f64,
     unbilled: &mut f64,
@@ -94,7 +74,7 @@ fn update_audio_progress(
     };
     let Some(processed_ms) = number
         .as_f64()
-        .filter(|value| value.is_finite() && *value >= 0.0)
+        .filter(|value| value.is_finite() && *value >= 0.0_f64)
     else {
         return Err(MuseProtocolError::InvalidAudioProgress);
     };

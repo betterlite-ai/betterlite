@@ -76,10 +76,10 @@ pub fn normalize_access_token(api_key: &SecretString) -> Result<SecretString, Mu
 }
 
 pub fn build_muse_realtime_url(api_base: Option<&str>) -> Result<String, MuseProtocolError> {
-    let Some(api_base) = api_base else {
+    let Some(base) = api_base else {
         return Ok(DEFAULT_MUSE_REALTIME_URL.to_owned());
     };
-    let parsed = Url::parse(api_base.trim()).map_err(|_error| MuseProtocolError::InvalidApiBase)?;
+    let parsed = Url::parse(base.trim()).map_err(|_error| MuseProtocolError::InvalidApiBase)?;
     let scheme = match parsed.scheme() {
         "https" => "wss",
         other => other,
@@ -89,10 +89,9 @@ pub fn build_muse_realtime_url(api_base: Option<&str>) -> Result<String, MusePro
     if scheme != "wss" || authority.contains('@') || parsed.fragment().is_some() {
         return Err(MuseProtocolError::InvalidApiBase);
     }
-    let netloc = match parsed.port() {
-        Some(port) => format!("{host}:{port}"),
-        None => host.to_owned(),
-    };
+    let netloc = parsed
+        .port()
+        .map_or_else(|| host.to_owned(), |port| format!("{host}:{port}"));
     Ok(format!("{scheme}://{netloc}/v1/asr/realtime"))
 }
 

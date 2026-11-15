@@ -125,8 +125,12 @@ impl PacingFakes {
 
 pub(crate) fn pacing(fields: &PacingInput) -> HelperResult {
     let fakes = PacingFakes::new(&fields.ticks);
-    let mut config =
-        MetaRealtimeConfig::new(fakes.clock, fakes.sleep, ApiLimits::default(), UuidEventIds);
+    let mut config = MetaRealtimeConfig::new(
+        Arc::clone(&fakes.clock),
+        Arc::clone(&fakes.sleep),
+        ApiLimits::default(),
+        UuidEventIds,
+    );
     let headers = HeaderMap::new();
     drop(
         config
