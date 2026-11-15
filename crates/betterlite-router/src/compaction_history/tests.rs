@@ -36,9 +36,8 @@ fn runtime() -> Runtime {
 #[case::treats_thinking_blocks_as_unavailable("treats_thinking_blocks_as_unavailable")]
 #[case::treats_chat_thinking_blocks_as_unavailable("treats_chat_thinking_blocks_as_unavailable")]
 #[case::keeps_empty_thinking_blocks("keeps_empty_thinking_blocks")]
-#[case::treats_missing_or_null_responses_type_as_message(
-    "treats_missing_or_null_responses_type_as_message"
-)]
+#[case::treats_a_missing_responses_type_as_message("treats_a_missing_responses_type_as_message")]
+#[case::treats_a_null_responses_type_as_unavailable("treats_a_null_responses_type_as_unavailable")]
 #[case::budget_prefers_max_completion_tokens("budget_prefers_max_completion_tokens")]
 #[case::budget_prefers_max_output_tokens("budget_prefers_max_output_tokens")]
 #[case::budget_prefers_payload_max_tokens("budget_prefers_payload_max_tokens")]
@@ -59,6 +58,14 @@ fn runtime() -> Runtime {
 )]
 #[case::counts_the_summary_request("counts_the_summary_request")]
 #[case::propagates_a_counter_failure("propagates_a_counter_failure")]
+#[case::keeps_responses_function_tools("keeps_responses_function_tools")]
+#[case::keeps_output_text_and_text_blocks("keeps_output_text_and_text_blocks")]
+#[case::refuses_a_redacted_thinking_block("refuses_a_redacted_thinking_block")]
+#[case::refuses_a_compaction_block("refuses_a_compaction_block")]
+#[case::compactor_input_keeps_anthropic_tools("compactor_input_keeps_anthropic_tools")]
+#[case::treats_a_developer_instruction_as_unavailable(
+    "treats_a_developer_instruction_as_unavailable"
+)]
 fn compaction_history_behaviors(#[case] name: &str) {
     behaviors::run(name);
 }

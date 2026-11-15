@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_models::decisions::Json;
@@ -6,9 +6,9 @@ use betterlite_openai::chat::{ChatMessage, Tool};
 
 use crate::compaction_history::compactor::{CompactionCounter, ResponsesPrefix};
 use crate::compaction_history::contracts::{
-    Candidate, Deployment, ModelLimits, NativeSupport, SummaryRequest,
+    Candidate, Deployment, ModelLimits, NativeCapability, NativeSupport, SummaryRequest,
 };
-use crate::compaction_history::error::CompactionError;
+use crate::compaction_history::error::{CompactionError, ErrorKind};
 
 pub(super) fn messages(raw: &str) -> Vec<ChatMessage> {
     serde_json::from_str(raw).unwrap()
@@ -24,8 +24,7 @@ pub(super) fn items(raw: &str) -> Vec<Json> {
 
 pub(super) fn deployment(
     provider: bool,
-    supports: bool,
-    compatible_defaults: bool,
+    capability: NativeCapability,
     window: Option<i64>,
     output: Option<i64>,
 ) -> Deployment {
@@ -38,8 +37,7 @@ pub(super) fn deployment(
         },
         native: NativeSupport {
             provider,
-            supports,
-            compatible_defaults,
+            capability,
         },
     }
 }
@@ -82,7 +80,7 @@ impl CompactionCounter for RecordingCounter {
     async fn count(&self, request: &SummaryRequest) -> Result<i64, CompactionError> {
         self.seen
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(request.clone());
         Ok(0)
     }
@@ -94,30 +92,42 @@ pub(super) struct FailingCounter;
 impl CompactionCounter for FailingCounter {
     async fn count(&self, request: &SummaryRequest) -> Result<i64, CompactionError> {
         Err(CompactionError {
-            kind: crate::compaction_history::error::ErrorKind::Rejected,
+            kind: ErrorKind::Rejected,
             model: request.model.clone(),
             reason: "the counter failed".to_owned(),
+            source: None,
         })
     }
 }
 
 pub(super) struct CheckedConverter {
-    pub(super) older_items: usize,
-    pub(super) tools: usize,
+    pub(super) seen_items: Mutex<Vec<usize>>,
+    pub(super) seen_requests: Mutex<Vec<Json>>,
+    pub(super) seen_tools: Mutex<Vec<usize>>,
 }
 
 impl ResponsesPrefix for CheckedConverter {
     fn messages(
         &self,
         items: &[Json],
-        _request: &Json,
+        request: &Json,
     ) -> Result<Vec<ChatMessage>, CompactionError> {
-        assert_eq!(items.len(), self.older_items);
+        self.seen_items
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(items.len());
+        self.seen_requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.clone());
         Ok(messages(r#"[{"role":"user","content":"older"}]"#))
     }
 
     fn tools(&self, tools: &[Json]) -> Result<Vec<Tool>, CompactionError> {
-        assert_eq!(tools.len(), self.tools);
+        self.seen_tools
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(tools.len());
         Ok(Vec::new())
     }
 }

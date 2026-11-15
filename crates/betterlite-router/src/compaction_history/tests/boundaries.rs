@@ -1,13 +1,17 @@
 use betterlite_models::decisions::Json;
 
 use super::super::budget::budget;
-use super::super::compactor::{CompactorConfig, compactor_input, compactor_model};
+use super::super::compactor::{CompactorConfig, ParentInput, compactor_input, compactor_model};
 use super::super::contracts::{
-    Candidate, Conversation, History, InputBudget, ModelLimits, OutputAllowance, ParentPayload,
+    Candidate, Conversation, History, InputBudget, ModelLimits, NativeCapability, OutputAllowance,
+    ParentPayload,
 };
 use super::super::error::{CompactionError, ErrorKind};
 use super::super::history::portable_history;
 use super::support::{FixedCounter, candidate, deployment, items, messages, request};
+
+const NO_CLOSED_HISTORY: &str =
+    "No closed older conversation is available without changing the latest request";
 
 pub(super) fn run(name: &str) {
     match name {
@@ -28,7 +32,7 @@ pub(super) fn run(name: &str) {
             duplicate_results_without_calls_are_unavailable();
         }
         "any_unsupported_deployment_skips_the_group" => {
-            any_unsupported_deployment_skips_the_group()
+            any_unsupported_deployment_skips_the_group();
         }
         "only_the_first_deployment_provider_counts" => only_the_first_deployment_provider_counts(),
         "every_deployment_budget_is_checked" => every_deployment_budget_is_checked(),
@@ -47,46 +51,62 @@ pub(super) fn run(name: &str) {
     }
 }
 
-fn selected_with_needed(needed: i64) -> Result<String, CompactionError> {
-    let candidates = vec![candidate(
-        "large",
-        vec![deployment(true, true, true, Some(1000), Some(4096))],
-    )];
+fn outcome(
+    candidates: &[Candidate],
+    config_model: Option<&str>,
+    needed: i64,
+) -> Result<String, CompactionError> {
     let config = CompactorConfig {
-        model: None,
+        model: config_model,
         max_tokens: 512,
     };
     super::runtime()
         .block_on(compactor_model(
             &config,
-            &candidates,
+            candidates,
             &request(512),
             &FixedCounter { value: needed },
         ))
         .map(|selection| selection.model)
 }
 
+fn selected_with_needed(needed: i64) -> Result<String, CompactionError> {
+    let candidates = vec![candidate(
+        "large",
+        vec![deployment(
+            true,
+            NativeCapability::Supported,
+            Some(1000),
+            Some(4096),
+        )],
+    )];
+    outcome(&candidates, None, needed)
+}
+
 fn selects_at_exactly_the_budget(needed: i64, selects: bool) {
-    let outcome = selected_with_needed(needed);
-    assert_eq!(outcome.is_ok(), selects);
+    let result = selected_with_needed(needed);
+    assert_eq!(result.is_ok(), selects);
     if selects {
-        assert_eq!(outcome.unwrap(), "large");
+        assert_eq!(result.unwrap(), "large");
     }
 }
 
-fn truncates_the_window_ratio() {
+fn computed(window: i64, max_tokens: i64, ratio: f64) -> InputBudget {
     let limits = ModelLimits {
-        max_input_tokens: Some(101),
+        max_input_tokens: Some(window),
         max_output_tokens: None,
     };
     let allowance = OutputAllowance {
         max_completion_tokens: None,
         max_output_tokens: None,
-        max_tokens: Some(10),
+        max_tokens: Some(max_tokens),
     };
-    let computed = budget("parent-model", limits, allowance, 0.9).unwrap();
+    budget("parent-model", limits, allowance, ratio).unwrap()
+}
+
+fn truncates_the_window_ratio() {
     assert_eq!(
-        computed,
+        computed(101, 10, 0.9),
         InputBudget {
             window: Some(101),
             available: Some(80),
@@ -95,58 +115,34 @@ fn truncates_the_window_ratio() {
 }
 
 fn accepts_an_output_allowance_of_one() {
-    let limits = ModelLimits {
-        max_input_tokens: Some(10),
-        max_output_tokens: None,
-    };
-    let allowance = OutputAllowance {
-        max_completion_tokens: None,
-        max_output_tokens: None,
-        max_tokens: Some(1),
-    };
-    let computed = budget("parent-model", limits, allowance, 0.9).unwrap();
-    assert_eq!(computed.available, Some(8));
+    assert_eq!(computed(10, 1, 0.9).available, Some(8));
 }
 
 fn ratio_of_one_keeps_the_window() {
-    let limits = ModelLimits {
-        max_input_tokens: Some(100),
-        max_output_tokens: None,
-    };
-    let allowance = OutputAllowance {
-        max_completion_tokens: None,
-        max_output_tokens: None,
-        max_tokens: Some(10),
-    };
-    let computed = budget("parent-model", limits, allowance, 1.0).unwrap();
-    assert_eq!(computed.available, Some(90));
+    assert_eq!(computed(100, 10, 1.0).available, Some(90));
 }
 
 fn negative_available_is_not_clamped() {
-    let limits = ModelLimits {
-        max_input_tokens: Some(100),
-        max_output_tokens: None,
-    };
-    let allowance = OutputAllowance {
-        max_completion_tokens: None,
-        max_output_tokens: None,
-        max_tokens: Some(100),
-    };
-    let computed = budget("parent-model", limits, allowance, 0.9).unwrap();
-    assert_eq!(computed.available, Some(-10));
+    assert_eq!(computed(100, 100, 0.9).available, Some(-10));
 }
 
 fn error_renders_the_reason() {
     let error = CompactionError {
         kind: ErrorKind::Unavailable,
         model: "parent-model".to_owned(),
-        reason: "No closed older conversation is available without changing the latest request"
-            .to_owned(),
+        reason: NO_CLOSED_HISTORY.to_owned(),
+        source: None,
     };
     assert_eq!(
         error.to_string(),
         "Context compaction: No closed older conversation is available without changing the latest request"
     );
+}
+
+fn assert_error(error: &CompactionError, kind: ErrorKind, reason: &str) {
+    assert_eq!(error.kind, kind);
+    assert_eq!(error.model, "parent-model");
+    assert_eq!(error.reason, reason);
 }
 
 fn unavailable_error_fields() {
@@ -156,12 +152,7 @@ fn unavailable_error_fields() {
         "parent-model",
     )
     .unwrap_err();
-    assert_eq!(error.kind, ErrorKind::Unavailable);
-    assert_eq!(error.model, "parent-model");
-    assert_eq!(
-        error.reason,
-        "No closed older conversation is available without changing the latest request"
-    );
+    assert_error(&error, ErrorKind::Unavailable, NO_CLOSED_HISTORY);
 }
 
 fn rejected_error_fields() {
@@ -175,11 +166,10 @@ fn rejected_error_fields() {
         max_tokens: None,
     };
     let error = budget("parent-model", limits, allowance, 0.9).unwrap_err();
-    assert_eq!(error.kind, ErrorKind::Rejected);
-    assert_eq!(error.model, "parent-model");
-    assert_eq!(
-        error.reason,
-        "The output allowance must be a positive integer"
+    assert_error(
+        &error,
+        ErrorKind::Rejected,
+        "The output allowance must be a positive integer",
     );
 }
 
@@ -217,10 +207,7 @@ fn an_empty_tool_result_id_is_unavailable() {
     )
     .unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unavailable);
-    assert_eq!(
-        error.reason,
-        "No closed older conversation is available without changing the latest request"
-    );
+    assert_eq!(error.reason, NO_CLOSED_HISTORY);
 }
 
 fn duplicate_results_without_calls_are_unavailable() {
@@ -237,32 +224,23 @@ fn duplicate_results_without_calls_are_unavailable() {
         "parent-model",
     )
     .unwrap_err();
-    assert_eq!(
-        error.reason,
-        "No closed older conversation is available without changing the latest request"
-    );
+    assert_eq!(error.reason, NO_CLOSED_HISTORY);
 }
 
 fn any_unsupported_deployment_skips_the_group() {
     let candidates = vec![candidate(
         "large",
         vec![
-            deployment(true, true, true, Some(200_000), Some(4096)),
-            deployment(true, false, true, Some(200_000), Some(4096)),
+            deployment(true, NativeCapability::Supported, Some(200_000), Some(4096)),
+            deployment(
+                true,
+                NativeCapability::Unsupported,
+                Some(200_000),
+                Some(4096),
+            ),
         ],
     )];
-    let config = CompactorConfig {
-        model: None,
-        max_tokens: 512,
-    };
-    let error = super::runtime()
-        .block_on(compactor_model(
-            &config,
-            &candidates,
-            &request(512),
-            &FixedCounter { value: 1 },
-        ))
-        .unwrap_err();
+    let error = outcome(&candidates, None, 1).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unavailable);
 }
 
@@ -270,45 +248,28 @@ fn only_the_first_deployment_provider_counts() {
     let candidates = vec![candidate(
         "large",
         vec![
-            deployment(true, true, true, Some(200_000), Some(4096)),
-            deployment(false, true, true, Some(200_000), Some(4096)),
+            deployment(true, NativeCapability::Supported, Some(200_000), Some(4096)),
+            deployment(
+                false,
+                NativeCapability::Supported,
+                Some(200_000),
+                Some(4096),
+            ),
         ],
     )];
-    let config = CompactorConfig {
-        model: None,
-        max_tokens: 512,
-    };
-    let selected = super::runtime()
-        .block_on(compactor_model(
-            &config,
-            &candidates,
-            &request(512),
-            &FixedCounter { value: 1 },
-        ))
-        .unwrap();
-    assert_eq!(selected.model, "large");
+    let selected = outcome(&candidates, None, 1).unwrap();
+    assert_eq!(selected, "large");
 }
 
 fn every_deployment_budget_is_checked() {
     let candidates = vec![candidate(
         "large",
         vec![
-            deployment(true, true, true, Some(200_000), Some(4096)),
-            deployment(true, true, true, Some(1000), Some(4096)),
+            deployment(true, NativeCapability::Supported, Some(200_000), Some(4096)),
+            deployment(true, NativeCapability::Supported, Some(1000), Some(4096)),
         ],
     )];
-    let config = CompactorConfig {
-        model: None,
-        max_tokens: 512,
-    };
-    let error = super::runtime()
-        .block_on(compactor_model(
-            &config,
-            &candidates,
-            &request(512),
-            &FixedCounter { value: 500 },
-        ))
-        .unwrap_err();
+    let error = outcome(&candidates, None, 500).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unavailable);
     assert_eq!(error.model, "parent-model");
 }
@@ -316,20 +277,14 @@ fn every_deployment_budget_is_checked() {
 fn configured_model_absent_from_candidates() {
     let candidates: Vec<Candidate> = vec![candidate(
         "large",
-        vec![deployment(true, true, true, Some(200_000), Some(4096))],
+        vec![deployment(
+            true,
+            NativeCapability::Supported,
+            Some(200_000),
+            Some(4096),
+        )],
     )];
-    let config = CompactorConfig {
-        model: Some("missing"),
-        max_tokens: 512,
-    };
-    let error = super::runtime()
-        .block_on(compactor_model(
-            &config,
-            &candidates,
-            &request(512),
-            &FixedCounter { value: 1 },
-        ))
-        .unwrap_err();
+    let error = outcome(&candidates, Some("missing"), 1).unwrap_err();
     assert_eq!(error.kind, ErrorKind::Unavailable);
     assert_eq!(error.model, "parent-model");
 }
@@ -356,7 +311,7 @@ fn compactor_input_slices_the_older_messages() {
         calls: vec!["call_1".to_owned()],
         results: vec!["call_1".to_owned()],
     };
-    let summary = compactor_input(&payload, &history, 4096);
+    let summary = compactor_input(&ParentInput::Chat(&payload), &history, 4096).unwrap();
     assert_eq!(summary.messages.as_slice(), &conversation[..4]);
 }
 
