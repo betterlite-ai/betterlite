@@ -3,32 +3,38 @@ use crate::realtime_input::error::InputError;
 
 const CREATE: &str = r#"{"type":"conversation.item.create","item":"#;
 
-fn text_events(content: &str, text: &str) -> [String; 3] {
+fn content_events(content: &str, start: &str, body: String) -> [String; 3] {
     [
         format!(
-            r#"{{"event":{{"contentStart":{{"promptName":"{PROMPT}","contentName":"{content}","type":"TEXT","interactive":true,"role":"USER","textInputConfiguration":{{"mediaType":"text/plain"}}}}}}}}"#
+            r#"{{"event":{{"contentStart":{{"promptName":"{PROMPT}","contentName":"{content}",{start}}}}}}}"#
         ),
-        format!(
-            r#"{{"event":{{"textInput":{{"promptName":"{PROMPT}","contentName":"{content}","content":{text}}}}}}}"#
-        ),
+        format!(r#"{{"event":{{{body}}}}}"#),
         format!(
             r#"{{"event":{{"contentEnd":{{"promptName":"{PROMPT}","contentName":"{content}"}}}}}}"#
         ),
     ]
 }
 
+fn text_events(content: &str, text: &str) -> [String; 3] {
+    content_events(
+        content,
+        r#""type":"TEXT","interactive":true,"role":"USER","textInputConfiguration":{"mediaType":"text/plain"}"#,
+        format!(
+            r#""textInput":{{"promptName":"{PROMPT}","contentName":"{content}","content":{text}}}"#
+        ),
+    )
+}
+
 fn tool_events(content: &str, call_id: &str, output: &str) -> [String; 3] {
-    [
-        format!(
-            r#"{{"event":{{"contentStart":{{"promptName":"{PROMPT}","contentName":"{content}","type":"TOOL","interactive":false,"role":"TOOL","toolResultInputConfiguration":{{"toolUseId":"{call_id}","type":"TEXT","textInputConfiguration":{{"mediaType":"text/plain"}}}}}}}}}}"#
+    content_events(
+        content,
+        &format!(
+            r#""type":"TOOL","interactive":false,"role":"TOOL","toolResultInputConfiguration":{{"toolUseId":"{call_id}","type":"TEXT","textInputConfiguration":{{"mediaType":"text/plain"}}}}"#
         ),
         format!(
-            r#"{{"event":{{"toolResult":{{"promptName":"{PROMPT}","contentName":"{content}","content":{output}}}}}}}"#
+            r#""toolResult":{{"promptName":"{PROMPT}","contentName":"{content}","content":{output}}}"#
         ),
-        format!(
-            r#"{{"event":{{"contentEnd":{{"promptName":"{PROMPT}","contentName":"{content}"}}}}}}"#
-        ),
-    ]
+    )
 }
 
 pub(super) fn conversation_text_item() {
