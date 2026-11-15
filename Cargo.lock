@@ -1502,11 +1502,14 @@ dependencies = [
  "betterlite-env",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-redis",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-vertex",
  "chrono",
+ "deadpool-postgres",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
  "insta",
@@ -1529,11 +1532,13 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
  "unicode_titlecase",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1693,6 +1698,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
+ "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
@@ -1732,6 +1738,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "uuid",
+ "whoami",
 ]
 
 [[package]]
