@@ -9,4 +9,7 @@ deviations:
   - what: "The access-group resource collectors keep the first-seen order of the resources and drop later duplicates. LiteLLM returns list(set(resources)), whose order changes with the process's hash seed."
     why: "The order of a set-backed list is decided by Python's runtime and is not part of the declared return type; every caller this task owns answers membership, never position."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4296-L4296
+  - what: "A request whose model check trips the fallback-depth guard is refused with the 401 auth_error the auth exception handler builds for a bare exception. LiteLLM 1.105.1 answers 500 there: its proxy package extra does not install prisma, and the handler imports prisma to classify the exception before translating it."
+    why: "The guard refuses the request, so a 4xx belongs and the handler's own translation is a 401 auth_error with param \"None\" and code 401. A Rust test pins the 401, and the input cannot be an oracle case because the LiteLLM server raises out of its own error handler."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L73-L77
 kept_bugs: []

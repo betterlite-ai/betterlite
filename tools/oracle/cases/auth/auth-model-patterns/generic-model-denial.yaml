@@ -2,13 +2,12 @@ name: auth-model-patterns-generic-model-denial
 config: |
   model_list:
     - {model_name: alpha, litellm_params: {model: openai/alpha-upstream, api_key: oracle-key}}
-env:
-  DEFAULT_MAX_RECURSE_DEPTH: "1"
+env: {}
 request:
-  method: GET
-  path: /v1/files?model=alpha&target_model_names=beta
-  headers: {authorization: Bearer oracle-master}
-  body: null
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master}
+  body: {model: internal-model, messages: [{role: user, content: hi}]}
 upstream: []
 compare:
   headers: [content-type]
@@ -16,3 +15,4 @@ compare:
   upstream_headers: []
   ignore:
     - {pointer: /error/message, why: "betterlite writes its own message"}
+    - {pointer: /error/provider_specific_fields/error, why: "LiteLLM repeats its own message there"}

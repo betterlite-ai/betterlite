@@ -60,8 +60,7 @@ class StepResult(TypedDict):
 def run(input_value: Input) -> list[StepResult]:
     saved = dict(litellm.model_alias_map)
     saved_suppress = litellm.suppress_debug_info
-    # the proxy sets this at startup; without it get_llm_provider prints to stdout, which is the helper's reply channel
-    # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L912
+    # stops get_llm_provider printing its provider hint to stdout, the helper's reply channel
     litellm.suppress_debug_info = True
     try:
         return asyncio.run(run_steps(input_value["steps"]))
