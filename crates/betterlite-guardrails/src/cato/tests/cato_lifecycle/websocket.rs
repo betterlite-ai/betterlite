@@ -32,8 +32,8 @@ use crate::cato::transport::stream::{
 };
 use crate::cato::transport::websocket::WebSocketConnector;
 
-// half the frame limit, so a few unread frames fill the socket buffers of a server that stops reading
-const WRITE_PAYLOAD_BYTES: usize = 512 * 1024;
+// far above the socket buffers, so one frame to a server that stops reading cannot be written in full
+const WRITE_PAYLOAD_BYTES: usize = 64 * 1024 * 1024;
 
 // a hook that stops relaying would otherwise hold the test suite until its timeout
 const RELAY_DEADLINE: Duration = Duration::from_secs(5);
@@ -262,13 +262,7 @@ async fn websocket_connector_bounds_a_write_to_a_server_that_stops_reading() {
         .await
         .expect("connected");
     let payload = "x".repeat(WRITE_PAYLOAD_BYTES);
-    let mut outcome = Ok(());
-    for _attempt in 0..256 {
-        outcome = socket.writer.send_text(&payload).await;
-        if outcome.is_err() {
-            break;
-        }
-    }
+    let outcome = socket.writer.send_text(&payload).await;
     assert!(matches!(outcome, Err(CatoError::StreamTimeout)));
     tasks.abort_all();
 }

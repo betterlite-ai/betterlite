@@ -188,6 +188,6 @@ fn lakera_moderation_keeps_unknown_response_keys_in_the_detail() {
     let rejected = rejection(verdict(None, body));
     assert_echoed(
         &rejected,
-        r#"{"results":[{"flagged":true,"category_scores":{"jailbreak":0.9,"moderated_content":0.2},"payload":[{"end":4,"start":0}]}],"model":"lakera-guard"}"#,
+        r#"{"results":[{"flagged":true,"category_scores":{"jailbreak":0.9,"moderated_content":0.2},"payload":[{"start":0,"end":4}]}],"model":"lakera-guard"}"#,
     );
 }

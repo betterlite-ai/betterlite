@@ -18,13 +18,18 @@ pub(crate) struct Thresholds {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "function")]
-pub(crate) enum Input {
+pub(crate) enum Function {
     #[serde(rename = "lakera_moderation_threshold_check")]
-    LakeraModerationThresholdCheck {
-        category_thresholds: Option<Thresholds>,
-        response: LakeraModerationResponse,
-    },
+    LakeraModerationThresholdCheck,
+}
+
+// a plain struct, since an internally tagged enum buffers the response and the raw JSON it echoes cannot be buffered
+#[derive(Debug, Deserialize)]
+pub(crate) struct Input {
+    #[serde(rename = "function")]
+    _function: Function,
+    category_thresholds: Option<Thresholds>,
+    response: LakeraModerationResponse,
 }
 
 pub(crate) struct Op;
@@ -33,15 +38,13 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let Input::LakeraModerationThresholdCheck {
-            category_thresholds,
-            response,
-        } = input;
         let threshold_record =
-            category_thresholds.map(|thresholds: Thresholds| LakeraCategoryThresholds {
-                prompt_injection: thresholds.prompt_injection,
-                jailbreak: thresholds.jailbreak,
-            });
+            input
+                .category_thresholds
+                .map(|thresholds: Thresholds| LakeraCategoryThresholds {
+                    prompt_injection: thresholds.prompt_injection,
+                    jailbreak: thresholds.jailbreak,
+                });
         let lakera = LegacyLakeraModeration::new(
             LegacyLakeraModerationParams {
                 moderation_check: Some(ModerationCheck::PreCall),
@@ -52,7 +55,7 @@ impl Helper for Op {
             |_key| String::new(),
             reqwest::Client::default,
         );
-        let rejected = lakera.check_response_flagged(response).map_or(
+        let rejected = lakera.check_response_flagged(&input.response).map_or(
             Value::Null,
             |rejection| json!({"status": rejection.status.as_u16(), "detail": rejection.detail}),
         );
