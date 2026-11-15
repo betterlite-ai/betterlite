@@ -1,6 +1,9 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::env;
+use std::fs;
+use std::process;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -11,6 +14,8 @@ use betterlite_secret_managers::secret_lookup::ports::{
     OidcTokenCache,
 };
 use secrecy::{ExposeSecret as _, SecretString};
+use tracing::Level;
+use tracing::subscriber::with_default;
 
 use super::{SandboxRegistryError, SandboxToolRegistry};
 
@@ -84,6 +89,26 @@ fn text(value: Option<&SecretString>) -> Option<String> {
     value.map(|secret| secret.expose_secret().to_owned())
 }
 
+fn warn_log<T, F>(label: &str, run: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let path = env::temp_dir().join(format!(
+        "betterlite-sandbox-registry-{}-{label}.log",
+        process::id()
+    ));
+    let log = fs::File::create(&path).unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .with_max_level(Level::WARN)
+        .with_writer(Arc::new(log))
+        .finish();
+    let result = with_default(subscriber, run);
+    let logged = fs::read_to_string(&path).unwrap();
+    fs::remove_file(&path).unwrap();
+    (result, logged)
+}
+
 #[test]
 fn resolves_a_configured_tool_by_name() {
     let registry = register(
@@ -102,8 +127,12 @@ fn resolves_a_configured_tool_by_name() {
 }
 
 #[test]
-fn an_unknown_name_resolves_to_none() {
-    let registry = register(&[], &BTreeMap::new());
+fn resolves_a_registered_name_and_returns_none_for_an_unknown_one() {
+    let registry = register(
+        &[configured(Some("tools"), Some("e2b"), None, None)],
+        &BTreeMap::new(),
+    );
+    assert!(registry.tools.get("tools").is_some());
     assert!(registry.tools.get("missing").is_none());
 }
 
@@ -214,43 +243,62 @@ fn a_secret_lookup_failure_names_the_reference() {
 
 #[test]
 fn skips_an_entry_missing_a_name() {
-    let registry = register(
-        &[
-            configured(None, Some("e2b"), Some("key"), None),
-            configured(Some(""), Some("e2b"), Some("key"), None),
-            configured(Some("kept"), Some("e2b"), Some("key"), None),
-        ],
-        &BTreeMap::new(),
-    );
+    let (registry, log) = warn_log("missing-name", || {
+        register(
+            &[
+                configured(None, Some("e2b"), Some("key"), None),
+                configured(Some(""), Some("e2b"), Some("key"), None),
+                configured(Some("kept"), Some("e2b"), Some("key"), None),
+            ],
+            &BTreeMap::new(),
+        )
+    });
     assert!(registry.tools.get("kept").is_some());
     assert!(registry.tools.get("").is_none());
+    assert_eq!(
+        log.matches("skipping entry missing 'sandbox_tool_name'")
+            .count(),
+        2,
+        "{log}"
+    );
 }
 
 #[test]
 fn skips_an_entry_missing_a_provider() {
-    let registry = register(
-        &[
-            configured(Some("no-provider"), None, Some("key"), None),
-            configured(Some("empty-provider"), Some(""), Some("key"), None),
-            configured(Some("kept"), Some("e2b"), Some("key"), None),
-        ],
-        &BTreeMap::new(),
-    );
+    let (registry, log) = warn_log("missing-provider", || {
+        register(
+            &[
+                configured(Some("no-provider"), None, Some("key"), None),
+                configured(Some("empty-provider"), Some(""), Some("key"), None),
+                configured(Some("kept"), Some("e2b"), Some("key"), None),
+            ],
+            &BTreeMap::new(),
+        )
+    });
     assert!(registry.tools.get("no-provider").is_none());
     assert!(registry.tools.get("empty-provider").is_none());
     assert!(registry.tools.get("kept").is_some());
+    assert_eq!(
+        log.matches("skipping entry missing 'sandbox_provider'")
+            .count(),
+        2,
+        "{log}"
+    );
 }
 
 #[test]
 fn skips_an_entry_that_is_not_an_object() {
-    let registry = register(
-        &[
-            SandboxToolEntry::NotAnObject,
-            configured(Some("kept"), Some("e2b"), None, None),
-        ],
-        &BTreeMap::new(),
-    );
+    let (registry, log) = warn_log("not-an-object", || {
+        register(
+            &[
+                SandboxToolEntry::NotAnObject,
+                configured(Some("kept"), Some("e2b"), None, None),
+            ],
+            &BTreeMap::new(),
+        )
+    });
     assert!(registry.tools.get("kept").is_some());
+    assert_eq!(log.matches("skipping non-dict entry").count(), 1, "{log}");
 }
 
 #[test]
