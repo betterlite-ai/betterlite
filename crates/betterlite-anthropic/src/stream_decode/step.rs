@@ -97,7 +97,7 @@ where
     };
     let parsed =
         parse_data::<SourceFailure, Counter>(converter, data, max_event_bytes, accumulated_bytes)?;
-    Ok(parsed.map_or(Progress::Skipped, |parsed| {
-        Progress::Produced(DecodedChunk::Event(Box::new(parsed)))
+    Ok(parsed.map_or(Progress::Skipped, |event| {
+        Progress::Produced(DecodedChunk::Event(Box::new(event)))
     }))
 }
