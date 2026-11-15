@@ -26,7 +26,10 @@ pub(crate) fn no_texts_skip_the_guardrail() -> Scenario {
 }
 
 pub(crate) fn whitespace_only_texts_skip_the_guardrail() -> Scenario {
-    request(Some(vec![" ", "\n\t", ""]), vec![allowed()])
+    request(
+        Some(vec![" ", "\n\t", "", "\u{1c}", "\u{1f}"]),
+        vec![allowed()],
+    )
 }
 
 pub(crate) fn blank_text_positions_are_kept_around_a_rewrite() -> Scenario {
@@ -168,13 +171,27 @@ pub(crate) fn a_sanitized_text_drops_stale_structured_messages() -> Scenario {
 
 pub(crate) fn an_invalid_header_fails_open() -> Scenario {
     let mut case = request(Some(vec!["hello"]), Vec::new());
-    case.args = header_args("fail_open");
+    case.args = header_args("bad\nkey", "fail_open");
+    case
+}
+
+pub(crate) fn a_non_ascii_api_key_is_not_swallowed_by_fail_open() -> Scenario {
+    let mut case = request(Some(vec!["hello"]), Vec::new());
+    case.args = header_args("sk-vigil-é", "fail_open");
+    case.expected = other("non-ASCII");
+    case
+}
+
+pub(crate) fn a_non_ascii_api_key_is_not_a_backend_failure_when_closed() -> Scenario {
+    let mut case = request(Some(vec!["hello"]), Vec::new());
+    case.args = header_args("sk-vigil-é", "fail_closed");
+    case.expected = other("non-ASCII");
     case
 }
 
 pub(crate) fn an_invalid_header_fails_closed() -> Scenario {
     let mut case = request(Some(vec!["hello"]), Vec::new());
-    case.args = header_args("fail_closed");
+    case.args = header_args("bad\nkey", "fail_closed");
     case.expected = raised(BACKEND_CLOSED, 400, false);
     case
 }

@@ -18,6 +18,10 @@ pub enum VigilRuntimeError {
         #[source]
         source: TryFromFloatSecsError,
     },
+    #[error(
+        "the Vigil Guard api_key contains a non-ASCII character and cannot be sent as a header"
+    )]
+    NonAsciiApiKey,
     #[error("the Vigil Guard tool_calls entry at index {index} is not an object")]
     InvalidToolCall { index: usize },
 }

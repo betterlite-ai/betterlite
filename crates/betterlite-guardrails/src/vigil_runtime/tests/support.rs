@@ -210,7 +210,7 @@ pub(crate) async fn run_scan(scenario: Scenario) {
         defaults: EnvironmentDefaults::default(),
         supported_event_hooks: None,
         strict_modes: true,
-        handler: Arc::clone(&handler),
+        handler: Arc::<FakeHandler>::clone(&handler),
     };
     let guardrail = VigilGuard::new(params).expect("the scan scenario resolves");
     let result = guardrail

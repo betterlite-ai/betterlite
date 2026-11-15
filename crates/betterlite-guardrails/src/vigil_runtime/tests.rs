@@ -94,6 +94,12 @@ use support::{run_build, run_scan};
 #[case::an_invalid_header_fails_open(Case::Scan(Box::new(
     text_cases::an_invalid_header_fails_open()
 )))]
+#[case::a_non_ascii_api_key_is_not_swallowed_by_fail_open(Case::Scan(Box::new(
+    text_cases::a_non_ascii_api_key_is_not_swallowed_by_fail_open()
+)))]
+#[case::a_non_ascii_api_key_is_not_a_backend_failure_when_closed(Case::Scan(Box::new(
+    text_cases::a_non_ascii_api_key_is_not_a_backend_failure_when_closed()
+)))]
 #[case::an_invalid_header_fails_closed(Case::Scan(Box::new(
     text_cases::an_invalid_header_fails_closed()
 )))]

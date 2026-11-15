@@ -1,3 +1,4 @@
+use betterlite_secret_managers::secret_lookup::text_to_bool;
 use secrecy::SecretString;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -28,10 +29,10 @@ impl Section for Raw {
         Ok(Settings {
             api_base: lookup
                 .lookup(URL_VARIABLE)
-                .filter(|value| !value.is_empty()),
+                .filter(|value| !value.is_empty() && text_to_bool(value).is_none()),
             api_key: lookup
                 .lookup(API_KEY_VARIABLE)
-                .filter(|value| !value.is_empty())
+                .filter(|value| !value.is_empty() && text_to_bool(value).is_none())
                 .map(SecretString::from),
         })
     }

@@ -59,13 +59,8 @@ pub(crate) fn loaded_defaults(source: &str, variables: &[(&str, &str)]) -> Envir
         .vigil_runtime
 }
 
-pub(crate) fn header_args(fallback: &str) -> VigilGuardArgs {
-    args(
-        Some("https://vigil.example"),
-        Some("bad\nkey"),
-        fallback,
-        None,
-    )
+pub(crate) fn header_args(api_key: &str, fallback: &str) -> VigilGuardArgs {
+    args(Some("https://vigil.example"), Some(api_key), fallback, None)
 }
 
 pub(crate) fn request(texts: Option<Vec<&str>>, responses: Vec<ScanResponse>) -> Scenario {

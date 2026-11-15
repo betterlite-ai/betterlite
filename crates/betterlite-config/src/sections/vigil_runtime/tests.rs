@@ -5,7 +5,7 @@ use std::fs::{read, read_dir};
 use std::io::Error;
 
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
+use secrecy::ExposeSecret;
 
 use crate::loader::ConfigLoader;
 use crate::sections::vigil_runtime::Settings;
@@ -36,6 +36,16 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
 )]
 #[case::url_only(&[("VIGIL_GUARD_URL", "https://vigil.example")], Some("https://vigil.example"), None)]
 #[case::key_only(&[("VIGIL_GUARD_API_KEY", "sk-vigil")], None, Some("sk-vigil"))]
+#[case::boolean_url(
+    &[("VIGIL_GUARD_URL", "true"), ("VIGIL_GUARD_API_KEY", "sk-vigil")],
+    None,
+    Some("sk-vigil")
+)]
+#[case::padded_boolean_key(
+    &[("VIGIL_GUARD_URL", "https://vigil.example"), ("VIGIL_GUARD_API_KEY", " False ")],
+    Some("https://vigil.example"),
+    None
+)]
 fn loads_environment_defaults(
     #[case] variables: &[(&str, &str)],
     #[case] api_base: Option<&str>,
@@ -44,10 +54,7 @@ fn loads_environment_defaults(
     let loaded = settings("general_settings: {}\n", variables);
     assert_eq!(loaded.api_base.as_deref(), api_base);
     assert_eq!(
-        loaded
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        loaded.api_key.as_ref().map(ExposeSecret::expose_secret),
         api_key
     );
 }
@@ -64,10 +71,7 @@ fn loads_the_section_from_yaml_beside_an_injected_environment() {
     );
     assert_eq!(loaded.api_base.as_deref(), Some("https://vigil.example"));
     assert_eq!(
-        loaded
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().as_str()),
+        loaded.api_key.as_ref().map(ExposeSecret::expose_secret),
         Some("sk-vigil")
     );
 }

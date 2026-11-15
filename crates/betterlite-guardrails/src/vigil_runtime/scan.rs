@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use indexmap::IndexMap;
+use secrecy::ExposeSecret as _;
 
 use crate::generic_guardrail_contracts::{GuardrailInputType, UnreachableFallback};
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -17,6 +18,7 @@ use crate::vigil_guard::tool_calls::{set_tool_call_arguments, tool_call_argument
 
 use super::VigilGuard;
 use super::bridge::{self, CallIds};
+use super::error::VigilRuntimeError;
 
 const UNRECOGNIZED_DECISION_MESSAGE: &str = "Vigil Guard returned an unrecognized decision.";
 const RAISED_STATUS_CODE: u16 = 400;
@@ -34,17 +36,21 @@ pub(super) async fn apply(
         GuardrailInputType::Response => tool_call_arguments(bridged.tool_calls.as_deref()),
         GuardrailInputType::Request => Vec::new(),
     };
-    if texts.iter().all(|text| text.trim().is_empty()) && scanned.is_empty() {
+    if texts.iter().all(|text| is_blank(text)) && scanned.is_empty() {
         return Ok(inputs);
+    }
+    // httpx encodes header values as ASCII, so the failed encoding escapes apply_guardrail's except tuple
+    if !guardrail.settings.api_key.expose_secret().is_ascii() {
+        return Err(GuardrailFailure::from(VigilRuntimeError::NonAsciiApiKey));
     }
     let source = match input_type {
         GuardrailInputType::Request => Source::UserInput,
         GuardrailInputType::Response => Source::ModelOutput,
     };
-    let metadata = match logging_obj {
-        Some(target) => collect_metadata(request_data, Some(&CallIds { target })),
-        None => collect_metadata(request_data, None),
-    };
+    let metadata = logging_obj.map_or_else(
+        || collect_metadata(request_data, None),
+        |target| collect_metadata(request_data, Some(&CallIds { target })),
+    );
     let run = Run {
         guardrail,
         original: &inputs,
@@ -139,7 +145,7 @@ impl Run<'_> {
     async fn texts(&self, texts: &[String]) -> Result<Vec<String>, TextStop> {
         let mut rewritten = Vec::with_capacity(texts.len());
         for (index, text) in texts.iter().enumerate() {
-            if text.trim().is_empty() {
+            if is_blank(text) {
                 rewritten.push(text.clone());
                 continue;
             }
@@ -212,7 +218,7 @@ impl Run<'_> {
         error: VigilGuardError,
         partial: Partial<'_>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        // httpx raises a LocalProtocolError for an unencodable header, so Python treats it as a backend failure
+        // h11 raises a LocalProtocolError, an httpx.HTTPError, for a control character in the header, so Python treats it as a backend failure
         match failure_kind(&error) {
             FailureKind::Backend => {}
             FailureKind::Local => return Err(GuardrailFailure::from(error)),
@@ -276,9 +282,20 @@ fn failure_kind(error: &VigilGuardError) -> FailureKind {
     }
 }
 
+#[derive(Clone, Copy)]
 struct Partial<'partial> {
     texts: &'partial [String],
     tool_calls: Option<&'partial [ToolCall]>,
+}
+
+// Python's str.strip also strips the four separators U+001C to U+001F
+fn is_blank(text: &str) -> bool {
+    for character in text.chars() {
+        if !(character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')) {
+            return false;
+        }
+    }
+    true
 }
 
 fn partial_texts(processed: &[String], texts: &[String], index: usize) -> Vec<String> {

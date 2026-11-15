@@ -122,8 +122,8 @@ fn resolved_settings(
     })
 }
 
-fn resolved_timeout(seconds: Option<f64>) -> Result<RequestTimeout, VigilRuntimeError> {
-    let Some(seconds) = seconds else {
+fn resolved_timeout(configured: Option<f64>) -> Result<RequestTimeout, VigilRuntimeError> {
+    let Some(seconds) = configured else {
         return Ok(DEFAULT_TIMEOUT);
     };
     let total = Duration::try_from_secs_f64(seconds)
@@ -133,7 +133,7 @@ fn resolved_timeout(seconds: Option<f64>) -> Result<RequestTimeout, VigilRuntime
     Ok(RequestTimeout { total, connect })
 }
 
-fn fallback_mode(text: &str) -> UnreachableFallback {
+const fn fallback_mode(text: &str) -> UnreachableFallback {
     if text.eq_ignore_ascii_case("fail_open") {
         return UnreachableFallback::FailOpen;
     }
