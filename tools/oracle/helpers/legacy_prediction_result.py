@@ -62,8 +62,7 @@ async def collected_async(streamer: WordStream) -> list[str]:
         try:
             words.append(await anext(streamer))
         except StopAsyncIteration:
-            break
-    return words
+            return words
 
 
 def run(input_value: Input) -> Answer:
