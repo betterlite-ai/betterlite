@@ -9,8 +9,8 @@ deviations:
   - what: A failed on_flagged update reports an error that is betterlite's own, quoting the value with single quotes rather than Python's repr.
     why: Error messages are betterlite's own words; repr text is outside the compatibility contract.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L109-L118
-  - what: A function tool whose function is absent or null is dropped, where LiteLLM sends {"name": "", "description": "", "parameters": {}} for an absent function and raises AttributeError for a null one.
-    why: A function tool without a definition is not a tool any model can call, and the task names {"type": "function", "function": {...}} as the accepted shape; forwarding an empty definition would put a nameless tool in the request.
+  - what: 'A function tool whose function is absent or null is dropped, where LiteLLM sends {"name": "", "description": "", "parameters": {}} for an absent function and raises AttributeError for a null one.'
+    why: 'A function tool without a definition is not a tool any model can call, and the task names {"type": "function", "function": {...}} as the accepted shape; forwarding an empty definition would put a nameless tool in the request.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/qualifire/qualifire.py#L226-L236
   - what: A Qualifire answer body larger than 1 MiB is refused with a ResponseTooLarge error before it is parsed, where LiteLLM reads and parses whatever size arrives.
     why: The shared read_bounded cap keeps an evaluation answer from being buffered whole; a verdict lists a few checks and stays far below the cap.
