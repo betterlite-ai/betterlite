@@ -1,7 +1,7 @@
 task: B3635
 deviations:
-  - what: Image and embedding cost helpers return zero with a warning when pricing fails, instead of raising.
-    why: LiteLLM catches the pricing exception in the passthrough logging handler and writes a zero cost so the spend log is kept; betterlite keeps that behavior for every failure.
+  - what: Image and embedding cost helpers return zero with a warning on every pricing failure, even one a wrong-typed request field causes, and never propagate it to the caller.
+    why: LiteLLM catches the pricing exception in the passthrough logging handler and writes a zero cost so the spend log is kept; betterlite keeps that catch for every failure.
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L233-L235"
   - what: A shared Azure Cognitive Services hostname only classifies as OpenAI when its path carries /openai/ or /v1/.
     why: LiteLLM adds the path-marker requirement so Speech, Vision and Language services on the shared Azure domains are not misclassified as Azure OpenAI; betterlite keeps it.
