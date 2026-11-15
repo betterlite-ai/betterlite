@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use super::{MapParams, SUPPORTED_PARAMS, SUPPORTED_RESPONSE_FORMATS, map_openai_params_stt};
 
@@ -56,10 +56,7 @@ fn every_non_default_param_is_copied_over_the_existing_ones() {
 #[case::verbose_json("verbose_json")]
 #[case::text("text")]
 fn a_supported_response_format_is_copied(#[case] format: &str) {
-    let expected = json!({"response_format": format})
-        .as_object()
-        .cloned()
-        .expect("an object");
+    let expected = Map::from_iter([("response_format".to_owned(), Value::from(format))]);
     assert_eq!(
         mapped(
             &format!(r#"{{"response_format":"{format}"}}"#),

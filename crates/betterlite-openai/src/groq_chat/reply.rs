@@ -61,9 +61,7 @@ fn browser_actions(raw: &Value) -> Option<BrowserActions> {
     if raw.get("usage").is_none_or(Value::is_null) {
         return None;
     }
-    let Some(choices) = raw.get("choices").and_then(Value::as_array) else {
-        return None;
-    };
+    let choices = raw.get("choices").and_then(Value::as_array)?;
     let mut actions = Vec::new();
     for choice in choices {
         let executed = choice

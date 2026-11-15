@@ -97,6 +97,10 @@ fn object(text: &str) -> Object {
     serde_json::from_str(text).expect("a JSON object")
 }
 
+fn parsed(text: &str) -> Value {
+    serde_json::from_str(text).expect("a JSON value")
+}
+
 fn supported(model: &str, answers: &Answers) -> Result<Vec<&'static str>, GroqChatError> {
     get_supported_openai_params(&SupportedParams {
         model,
@@ -150,8 +154,8 @@ fn reply(body: &Value) -> super::reply::GroqReply {
     transform_response(body.to_string().as_bytes(), &options).expect("the reply")
 }
 
-fn transformed(messages: &str) -> Value {
-    let messages: Vec<ChatMessage> = serde_json::from_str(messages).expect("messages");
+fn transformed(source: &str) -> Value {
+    let messages: Vec<ChatMessage> = serde_json::from_str(source).expect("messages");
     let environment = BTreeMap::<String, String>::new();
     let downloads = RefuseDownloads;
     let transform = MessageTransform {
@@ -164,19 +168,19 @@ fn transformed(messages: &str) -> Value {
         .expect("the message JSON")
 }
 
-const fn billed(search: u64, opens: u64) -> Option<BrowserActions> {
-    Some(BrowserActions {
+const fn billed(search: u64, opens: u64) -> BrowserActions {
+    BrowserActions {
         web_search_requests: search,
         browser_open_requests: opens,
-    })
+    }
 }
 
 fn reply_with(executed: &Value) -> Value {
-    json!({
-        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "executed_tools": executed}}],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
-    })
+    parsed(&format!(
+        r#"{{"id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{{"index": 0, "message": {{"role": "assistant", "content": null, "executed_tools": {executed}}}}}],
+        "usage": {{"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}}}"#
+    ))
 }
 
 #[test]
@@ -194,40 +198,41 @@ fn credentials_prefer_explicit_then_environment_then_the_default_base() {
         key.as_ref().map(ExposeSecret::expose_secret),
         Some("explicit")
     );
-    let (base, key) = compatible_provider_info(
+    let (fallback_base, fallback_key) = compatible_provider_info(
         None,
         None,
         Some("https://environment.test"),
         Some(&environment_key),
     );
-    assert_eq!(base, "https://environment.test");
+    assert_eq!(fallback_base, "https://environment.test");
     assert_eq!(
-        key.as_ref().map(ExposeSecret::expose_secret),
+        fallback_key.as_ref().map(ExposeSecret::expose_secret),
         Some("environment")
     );
-    let (base, key) = compatible_provider_info(None, None, None, None);
-    assert_eq!(base, "https://api.groq.com/openai/v1");
-    assert!(key.is_none());
+    let (default_base, default_key) = compatible_provider_info(None, None, None, None);
+    assert_eq!(default_base, "https://api.groq.com/openai/v1");
+    assert!(default_key.is_none());
 }
 
 #[test]
 fn an_empty_string_counts_as_unset_at_every_step() {
     let empty = SecretString::from("");
     let environment_key = SecretString::from("environment");
-    let (base, key) = compatible_provider_info(
+    let (fallback_base, fallback_key) = compatible_provider_info(
         Some(""),
         Some(&empty),
         Some("https://environment.test"),
         Some(&environment_key),
     );
-    assert_eq!(base, "https://environment.test");
+    assert_eq!(fallback_base, "https://environment.test");
     assert_eq!(
-        key.as_ref().map(ExposeSecret::expose_secret),
+        fallback_key.as_ref().map(ExposeSecret::expose_secret),
         Some("environment")
     );
-    let (base, key) = compatible_provider_info(Some(""), Some(&empty), Some(""), Some(&empty));
-    assert_eq!(base, "https://api.groq.com/openai/v1");
-    assert!(key.is_none());
+    let (empty_base, empty_key) =
+        compatible_provider_info(Some(""), Some(&empty), Some(""), Some(&empty));
+    assert_eq!(empty_base, "https://api.groq.com/openai/v1");
+    assert!(empty_key.is_none());
 }
 
 #[rstest]
@@ -385,7 +390,7 @@ fn an_unsupported_schema_becomes_a_single_json_tool_call() {
     assert_eq!(mapped.optional_params["json_mode"], true);
     assert_eq!(mapped.optional_params["fake_stream"], true);
     assert!(mapped.non_default.get("response_format").is_none());
-    assert_eq!(mapped.optional_params["temperature"], 0.1);
+    assert_eq!(mapped.optional_params["temperature"], 0.1_f64);
 }
 
 #[test]
@@ -479,7 +484,7 @@ fn max_completion_tokens_is_sent_as_max_tokens() {
         &Answers::NO,
     )
     .expect("the mapping");
-    assert_eq!(mapped.optional_params["max_tokens"], 64);
+    assert_eq!(mapped.optional_params["max_tokens"], 64_u64);
     assert!(
         mapped
             .optional_params
@@ -499,7 +504,7 @@ fn web_search_options_add_one_browser_search_tool() {
     .expect("the mapping");
     assert_eq!(
         mapped.optional_params["tools"],
-        json!([{"type": "browser_search"}])
+        parsed(r#"[{"type": "browser_search"}]"#)
     );
     assert!(mapped.non_default.get("web_search_options").is_none());
 }
@@ -531,7 +536,7 @@ fn an_empty_web_search_options_object_still_adds_the_tool_without_a_log() {
         .expect("the mapping");
         assert_eq!(
             mapped.optional_params["tools"],
-            json!([{"type": "browser_search"}])
+            parsed(r#"[{"type": "browser_search"}]"#)
         );
     });
     assert!(!log.contains("Groq web search enabled"));
@@ -549,7 +554,7 @@ fn a_non_empty_web_search_options_logs_its_sorted_keys() {
         .expect("the mapping");
         assert_eq!(
             mapped.optional_params["tools"],
-            json!([{"type": "browser_search"}])
+            parsed(r#"[{"type": "browser_search"}]"#)
         );
     });
     assert!(
@@ -606,9 +611,12 @@ fn reasoning_effort_reaches_the_mapped_options_when_it_is_supported() {
 #[case::auto(r#"{"service_tier":"auto"}"#, "auto")]
 #[case::default_tier(r#"{"service_tier":"default"}"#, "default")]
 #[case::flex(r#"{"service_tier":"flex"}"#, "flex")]
-fn service_tier_is_mapped_to_a_groq_supported_value(#[case] extra: &str, #[case] expected: &str) {
+fn service_tier_is_mapped_to_a_groq_supported_value(
+    #[case] extra_fields: &str,
+    #[case] expected: &str,
+) {
     let mut body = reply_with(&json!([]));
-    let extra: Value = serde_json::from_str(extra).expect("extra fields");
+    let extra: Value = serde_json::from_str(extra_fields).expect("extra fields");
     for (name, value) in extra.as_object().expect("an object") {
         body[name.as_str()] = value.clone();
     }
@@ -621,42 +629,39 @@ fn service_tier_is_mapped_to_a_groq_supported_value(#[case] extra: &str, #[case]
 
 #[test]
 fn browser_searches_and_opens_are_counted_from_executed_tools() {
-    let converted = reply(&reply_with(&json!([
-        {"type": "browser_search"},
-        {"name": "browser.search"},
-        {"type": "browser.open"},
-        {"type": "other"}
-    ])));
-    assert_eq!(converted.browser_actions, billed(2, 1));
+    let converted = reply(&reply_with(&parsed(
+        r#"[{"type": "browser_search"}, {"name": "browser.search"}, {"type": "browser.open"}, {"type": "other"}]"#,
+    )));
+    assert_eq!(converted.browser_actions, Some(billed(2, 1)));
 }
 
 #[test]
 fn browser_searches_and_opens_are_summed_across_choices() {
-    let converted = reply(&json!({
-        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+    let converted = reply(&parsed(
+        r#"{"id": "c", "object": "chat.completion", "created": 1, "model": "m",
         "choices": [
             {"index": 0, "message": {"role": "assistant", "content": null,
                 "executed_tools": [{"type": "browser_search"}, {"type": "browser_search"}]}},
             {"index": 1, "message": {"role": "assistant", "content": null,
-                "executed_tools": [{"name": "browser.search"}, {"type": "browser.open"}]}}
+                "executed_tools": [{"name": "browser.search"}, {"name": "browser.open"}]}}
         ],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
-    }));
-    assert_eq!(converted.browser_actions, billed(3, 1));
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}"#,
+    ));
+    assert_eq!(converted.browser_actions, Some(billed(3, 1)));
 }
 
 #[test]
 fn a_malformed_second_choice_voids_the_whole_count() {
-    let body = json!({
-        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+    let body = parsed(
+        r#"{"id": "c", "object": "chat.completion", "created": 1, "model": "m",
         "choices": [
             {"index": 0, "message": {"role": "assistant", "content": null,
                 "executed_tools": [{"type": "browser_search"}]}},
             {"index": 1, "message": {"role": "assistant", "content": null,
                 "executed_tools": [3]}}
         ],
-        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
-    });
+        "usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}}"#,
+    );
     let log = captured(|| {
         let converted = reply(&body);
         assert!(converted.browser_actions.is_none());
@@ -669,8 +674,8 @@ fn a_malformed_second_choice_voids_the_whole_count() {
 
 #[test]
 fn searches_without_opens_are_still_billed() {
-    let converted = reply(&reply_with(&json!([{"type": "browser_search"}])));
-    assert_eq!(converted.browser_actions, billed(1, 0));
+    let converted = reply(&reply_with(&parsed(r#"[{"type": "browser_search"}]"#)));
+    assert_eq!(converted.browser_actions, Some(billed(1, 0)));
 }
 
 #[test]
@@ -686,10 +691,10 @@ fn a_null_executed_tools_list_is_not_a_bad_shape() {
 
 #[test]
 fn a_name_wins_over_the_type_of_an_executed_tool() {
-    let converted = reply(&reply_with(&json!([
-        {"name": "browser.open", "type": "browser_search"}
-    ])));
-    assert_eq!(converted.browser_actions, billed(0, 1));
+    let converted = reply(&reply_with(&parsed(
+        r#"[{"name": "browser.open", "type": "browser_search"}]"#,
+    )));
+    assert_eq!(converted.browser_actions, Some(billed(0, 1)));
 }
 
 #[rstest]
@@ -722,26 +727,26 @@ fn a_malformed_executed_tools_list_bills_nothing_and_keeps_the_reply(#[case] exe
 
 #[test]
 fn a_reply_without_usage_is_not_billed() {
-    let converted = reply(&json!({
-        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
-        "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "executed_tools": [{"type": "browser_search"}]}}]
-    }));
+    let converted = reply(&parsed(
+        r#"{"id": "c", "object": "chat.completion", "created": 1, "model": "m",
+        "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "executed_tools": [{"type": "browser_search"}]}}]}"#,
+    ));
     assert!(converted.browser_actions.is_none());
 }
 
 #[test]
 fn a_null_usage_is_not_billed() {
-    let converted = reply(&json!({
-        "id": "c", "object": "chat.completion", "created": 1, "model": "m",
+    let converted = reply(&parsed(
+        r#"{"id": "c", "object": "chat.completion", "created": 1, "model": "m",
         "choices": [{"index": 0, "message": {"role": "assistant", "content": null, "executed_tools": [{"type": "browser_search"}]}}],
-        "usage": null
-    }));
+        "usage": null}"#,
+    ));
     assert!(converted.browser_actions.is_none());
 }
 
 #[test]
 fn an_error_chunk_fails_with_its_own_code_and_body() {
-    let chunk = json!({"error": {"message": "rate limited", "code": 429}});
+    let chunk = parsed(r#"{"error": {"message": "rate limited", "code": 429}}"#);
     let error = chunk_parser(&chunk, Uuid::nil, i64::default).expect_err("the provider error");
     assert_eq!(error.status_code(), 429);
     match error {
@@ -749,19 +754,25 @@ fn an_error_chunk_fails_with_its_own_code_and_body() {
             assert_eq!(provider.message, "rate limited");
             assert_eq!(
                 provider.body.as_ref().and_then(|body| body.get("code")),
-                Some(&json!(429))
+                Some(&Value::from(429_i64))
             );
             assert!(!provider.status_code_is_synthesized);
         }
-        other => panic!("unexpected error: {other}"),
+        GroqChatError::BadRequest { .. }
+        | GroqChatError::Capability(_)
+        | GroqChatError::Content(_)
+        | GroqChatError::Provider(_)
+        | GroqChatError::Reply(_)
+        | GroqChatError::SchemaShape
+        | GroqChatError::Stream(_) => panic!("unexpected error"),
     }
 }
 
 #[rstest]
-#[case::missing_code(json!({"error": {"message": "boom"}}))]
-#[case::null_code(json!({"error": {"message": "boom", "code": null}}))]
-#[case::string_code(json!({"error": {"message": "boom", "code": "400"}}))]
-#[case::huge_code(json!({"error": {"message": "boom", "code": 70000}}))]
+#[case::missing_code(parsed(r#"{"error": {"message": "boom"}}"#))]
+#[case::null_code(parsed(r#"{"error": {"message": "boom", "code": null}}"#))]
+#[case::string_code(parsed(r#"{"error": {"message": "boom", "code": "400"}}"#))]
+#[case::huge_code(parsed(r#"{"error": {"message": "boom", "code": 70000}}"#))]
 fn an_error_chunk_without_an_integer_code_uses_500(#[case] chunk: Value) {
     let error = chunk_parser(&chunk, Uuid::nil, i64::default).expect_err("the provider error");
     assert_eq!(error.status_code(), 500);
@@ -770,48 +781,54 @@ fn an_error_chunk_without_an_integer_code_uses_500(#[case] chunk: Value) {
             assert!(provider.status_code_is_synthesized);
             assert_eq!(provider.message, "boom");
         }
-        other => panic!("unexpected error: {other}"),
+        GroqChatError::BadRequest { .. }
+        | GroqChatError::Capability(_)
+        | GroqChatError::Content(_)
+        | GroqChatError::Provider(_)
+        | GroqChatError::Reply(_)
+        | GroqChatError::SchemaShape
+        | GroqChatError::Stream(_) => panic!("unexpected error"),
     }
 }
 
 #[test]
 fn an_integer_code_outside_the_base_range_is_passed_on() {
     // the base parser turns 200 into 500, while Groq keeps whatever integer the chunk carried
-    let chunk = json!({"error": {"message": "odd", "code": 200}});
+    let chunk = parsed(r#"{"error": {"message": "odd", "code": 200}}"#);
     let error = chunk_parser(&chunk, Uuid::nil, i64::default).expect_err("the provider error");
     assert_eq!(error.status_code(), 200);
 }
 
 #[test]
 fn a_falsy_error_value_is_not_an_error() {
-    let chunk = json!({"id": "c", "created": 1, "model": "m", "choices": [], "error": null});
-    let parsed = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
-    assert_eq!(parsed.object, "chat.completion.chunk");
+    let chunk = parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [], "error": null}"#);
+    let reply_chunk = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
+    assert_eq!(reply_chunk.object, "chat.completion.chunk");
 }
 
 #[test]
 fn an_empty_name_falls_back_to_the_type() {
-    let converted = reply(&reply_with(&json!([
-        {"name": "", "type": "browser.open"}
-    ])));
-    assert_eq!(converted.browser_actions, billed(0, 1));
+    let converted = reply(&reply_with(&parsed(
+        r#"[{"name": "", "type": "browser.open"}]"#,
+    )));
+    assert_eq!(converted.browser_actions, Some(billed(0, 1)));
 }
 
 #[test]
 fn a_zero_error_value_is_not_an_error() {
-    let chunk = json!({"id": "c", "created": 1, "model": "m", "choices": [], "error": 0});
-    let parsed = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
-    assert_eq!(parsed.object, "chat.completion.chunk");
+    let chunk = parsed(r#"{"id": "c", "created": 1, "model": "m", "choices": [], "error": 0}"#);
+    let reply_chunk = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
+    assert_eq!(reply_chunk.object, "chat.completion.chunk");
 }
 
 #[test]
 fn delta_reasoning_becomes_reasoning_content() {
-    let chunk = json!({
-        "id": "c", "created": 1, "model": "m",
-        "choices": [{"index": 0, "delta": {"reasoning": "thinking", "content": "answer"}}]
-    });
-    let parsed = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
-    let delta = &parsed.choices[0].delta;
+    let chunk = parsed(
+        r#"{"id": "c", "created": 1, "model": "m",
+        "choices": [{"index": 0, "delta": {"reasoning": "thinking", "content": "answer"}}]}"#,
+    );
+    let reply_chunk = chunk_parser(&chunk, Uuid::nil, i64::default).expect("a chunk");
+    let delta = &reply_chunk.choices[0].delta;
     assert_eq!(delta.reasoning_content.as_deref(), Some("thinking"));
     let value = serde_json::to_value(delta).expect("the delta JSON");
     assert!(value.get("reasoning").is_none());

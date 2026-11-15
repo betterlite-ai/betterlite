@@ -42,7 +42,7 @@ pub fn map_openai_params_stt(request: &MapParams<'_>) -> Result<Map<String, Valu
         let supported = value
             .as_str()
             .is_some_and(|format| SUPPORTED_RESPONSE_FORMATS.contains(&format));
-        if !supported && !(request.global_drop_params || request.drop_params) {
+        if !(supported || request.global_drop_params || request.drop_params) {
             return Err(GroqSttError::UnsupportedResponseFormat {
                 value: rendered(value),
             });
@@ -55,8 +55,7 @@ pub fn map_openai_params_stt(request: &MapParams<'_>) -> Result<Map<String, Valu
 }
 
 fn rendered(value: &Value) -> String {
-    match value {
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    }
+    value
+        .as_str()
+        .map_or_else(|| value.to_string(), str::to_owned)
 }

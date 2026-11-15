@@ -1,4 +1,4 @@
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
 
 use crate::base_helpers::append_tools;
 use crate::openai_base_config::{CatalogCapabilities, Object, OpenAiConfig};
@@ -27,10 +27,8 @@ const BROWSER_SEARCH: &str = "browser_search";
 
 #[must_use]
 pub fn is_compound_model(model: &str) -> bool {
-    match model.strip_prefix(PROVIDER_PREFIX) {
-        Some(name) => COMPOUND_MODELS.contains(&name),
-        None => COMPOUND_MODELS.contains(&model),
-    }
+    let name = model.strip_prefix(PROVIDER_PREFIX).unwrap_or(model);
+    COMPOUND_MODELS.contains(&name)
 }
 
 pub struct SupportedParams<'request> {
@@ -148,8 +146,10 @@ fn map_response_format(
         });
     }
     optional_params.insert(TOOLS.to_owned(), Value::Array(vec![json_tool(schema)]));
-    let tool_choice = json!({"type": "function", "function": {"name": JSON_TOOL}});
-    optional_params.insert(TOOL_CHOICE.to_owned(), tool_choice);
+    let mut tool_choice = Map::from_iter([("type".to_owned(), Value::from("function"))]);
+    let function = Map::from_iter([("name".to_owned(), Value::from(JSON_TOOL))]);
+    tool_choice.insert("function".to_owned(), Value::Object(function));
+    optional_params.insert(TOOL_CHOICE.to_owned(), Value::Object(tool_choice));
     optional_params.insert(JSON_MODE.to_owned(), Value::Bool(true));
     non_default.remove(RESPONSE_FORMAT);
     Ok(())
@@ -214,7 +214,8 @@ fn add_web_search(
     if is_compound_model(model) || has_browser_search(optional_params) {
         return Ok(());
     }
-    append_tools(optional_params, vec![json!({"type": BROWSER_SEARCH})])?;
+    let tool = Map::from_iter([("type".to_owned(), Value::from(BROWSER_SEARCH))]);
+    append_tools(optional_params, vec![Value::Object(tool)])?;
     Ok(())
 }
 

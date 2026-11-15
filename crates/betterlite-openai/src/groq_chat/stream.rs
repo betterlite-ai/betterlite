@@ -41,10 +41,9 @@ fn provider_error(error: &Value) -> ProviderError {
 fn error_message(error: &Value) -> String {
     match error.get("message") {
         Some(Value::String(text)) => text.clone(),
-        _ => match error {
-            Value::String(text) => text.clone(),
-            other => other.to_string(),
-        },
+        _ => error
+            .as_str()
+            .map_or_else(|| error.to_string(), str::to_owned),
     }
 }
 

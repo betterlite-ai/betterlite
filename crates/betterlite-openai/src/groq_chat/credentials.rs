@@ -12,7 +12,7 @@ pub fn compatible_provider_info(
 ) -> (String, Option<SecretString>) {
     let base = api_base
         .filter(|value| !value.is_empty())
-        .or(environment_base.filter(|value| !value.is_empty()))
+        .or_else(|| environment_base.filter(|value| !value.is_empty()))
         .unwrap_or(DEFAULT_API_BASE)
         .to_owned();
     let key = api_key
