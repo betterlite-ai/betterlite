@@ -253,8 +253,16 @@ fn decode_permissive_fields() {
         embedded_decoded.custom_llm_provider.as_deref(),
         Some("pre mid")
     );
-    assert_eq!(embedded_decoded.model_id.as_deref(), Some("mo del del"));
+    assert_eq!(embedded_decoded.model_id.as_deref(), Some("mo del  del"));
     assert_eq!(embedded_decoded.video_id, "one two");
+    let plus = format!(
+        "video_{}",
+        STANDARD.encode("litellm:custom_llm_provider:openai;model_id:m;video_id:vid0>")
+    );
+    let plus_decoded = decode_video_id_with_provider(&plus);
+    assert_eq!(plus_decoded.custom_llm_provider.as_deref(), Some("openai"));
+    assert_eq!(plus_decoded.model_id.as_deref(), Some("m"));
+    assert_eq!(plus_decoded.video_id, "vid0>");
     let extra = decode_video_id_with_provider(&format!("video_{}", STANDARD.encode("a;b;c;d;e")));
     assert_eq!(extra.video_id, "c");
     let character = decode_character_id(&format!(
