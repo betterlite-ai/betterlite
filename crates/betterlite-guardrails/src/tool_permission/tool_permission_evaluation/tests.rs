@@ -320,6 +320,47 @@ fn nested_dot_and_array_paths_are_collected() {
 }
 
 #[test]
+fn an_empty_top_level_argument_key_roots_the_child_paths_again() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "rooted",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("x", "^1$")]),
+        )],
+    );
+    let arguments = json_arguments(r#"{"": {"x": "1"}}"#);
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(result.is_allowed, "unexpected denial: {:?}", result.message);
+}
+
+#[test]
+fn an_empty_top_level_argument_key_with_a_scalar_collects_no_value() {
+    let guardrail = build(
+        args(ToolDefaultAction::Deny),
+        vec![rule(
+            "empty-key",
+            ToolDecision::Allow,
+            Some("^read$"),
+            None,
+            Some(&[("", "^v$")]),
+        )],
+    );
+    let arguments = json_arguments(r#"{"": "v"}"#);
+    let result =
+        get_permission_for_tool_call(&guardrail, Some("read"), Some("function"), Some(&arguments));
+    assert!(!result.is_allowed);
+    assert_eq!(result.rule_id, None);
+    assert_eq!(
+        result.message.as_deref(),
+        Some("Missing value for path '' required by rule 'empty-key'")
+    );
+}
+
+#[test]
 fn a_mismatched_array_item_fails_the_rule() {
     let guardrail = build(
         args(ToolDefaultAction::Deny),

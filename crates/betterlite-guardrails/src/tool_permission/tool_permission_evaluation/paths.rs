@@ -26,8 +26,13 @@ fn collect_value(
     }
     let text = match value {
         GuardrailValue::Object(mapping) => {
+            // a top-level empty key leaves the path empty, and LiteLLM builds the child path from the root again
             for (key, child) in mapping {
-                let next_path = format!("{current_path}.{key}");
+                let next_path = if current_path.is_empty() {
+                    key.clone()
+                } else {
+                    format!("{current_path}.{key}")
+                };
                 collect_value(child, &next_path, collected, depth.saturating_add(1));
             }
             return;
@@ -47,6 +52,9 @@ fn collect_value(
             .map_or_else(|| "null".to_owned(), |float| float.to_string()),
         GuardrailValue::Text(text) => text.clone(),
     };
+    if current_path.is_empty() {
+        return;
+    }
     collected
         .entry(current_path.to_owned())
         .or_default()
