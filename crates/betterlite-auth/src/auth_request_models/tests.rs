@@ -937,9 +937,10 @@ fn video_and_character_ids_try_their_family() {
     let calls = decoders
         .family_calls
         .lock()
-        .expect("the recording mutex is not poisoned");
+        .expect("the recording mutex is not poisoned")
+        .clone();
     assert_eq!(
-        *calls,
+        calls,
         [
             "LegacyFileBatch:video-1",
             "Unified:video-1",
