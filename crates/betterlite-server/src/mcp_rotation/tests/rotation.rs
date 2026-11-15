@@ -181,6 +181,25 @@ async fn server_empty_skip() {
 }
 
 #[tokio::test]
+async fn server_null_secret_map_skips() {
+    let old = cipher(OLD_KEY);
+    let key = new_key();
+    let mut store = empty_store();
+    store.servers = vec![server_row(
+        "s1",
+        None,
+        None,
+        Some("null".to_owned()),
+        Some("null".to_owned()),
+    )];
+    test_rotation(&store, &old, &key)
+        .servers("rotator")
+        .await
+        .unwrap();
+    assert!(store.written().is_empty());
+}
+
+#[tokio::test]
 async fn server_json_text_empty_blob_is_rotated() {
     let old = cipher(OLD_KEY);
     let key = new_key();

@@ -245,6 +245,49 @@ async fn env_corrupt_preserved_warning_logs_the_name() {
 }
 
 #[tokio::test]
+async fn env_corrupt_entry_without_a_name_warns_as_none() {
+    let entries = array(vec![object(&[("value", string("not-a-ciphertext"))])]);
+    let store = only_server(stored(&entries));
+    let (logs, guard) = capture_logs();
+    let old = cipher(OLD_KEY);
+    Rotation {
+        store: &store,
+        cipher: &old,
+        new_key: &new_key(),
+    }
+    .servers("rotator")
+    .await
+    .unwrap();
+    drop(guard);
+    assert!(store.written().is_empty());
+    let lines = logs.lines();
+    assert_eq!(lines.len(), 2, "one warning and one summary: {lines:?}");
+    assert!(
+        lines
+            .first()
+            .unwrap()
+            .contains("could not decrypt global env var None, skipping")
+    );
+}
+
+#[test]
+fn env_entry_without_a_value_is_skipped() {
+    let entries = array(vec![object(&[("name", string("no-value"))])]);
+    assert_eq!(
+        reencrypt_global_env_values(stored(&entries).as_deref(), &cipher(OLD_KEY), &new_key())
+            .unwrap(),
+        None
+    );
+}
+
+#[test]
+fn env_too_deep_text_is_a_blob_error() {
+    let deep = "[".repeat(65);
+    let result = reencrypt_global_env_values(Some(deep.as_str()), &cipher(OLD_KEY), &new_key());
+    assert!(matches!(result, Err(RotationCodecError::Blob(_))));
+}
+
+#[tokio::test]
 async fn env_no_success_no_write() {
     let entries = array(vec![
         scoped_entry(
