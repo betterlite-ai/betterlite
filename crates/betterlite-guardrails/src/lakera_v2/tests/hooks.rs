@@ -187,6 +187,21 @@ async fn pre_call_does_not_run_when_every_message_is_skipped() {
     assert!(server.captured().is_empty());
 }
 
+#[rstest]
+#[case::pre_call(Hook::Pre)]
+#[case::during_call(Hook::During)]
+#[tokio::test]
+async fn hooks_do_not_run_when_there_is_no_inspectable_text(#[case] hook: Hook) {
+    let server = serve(200, flagged(ATTACK_ONLY, "[]")).await;
+    let guardrail = build(&server.base_url, LakeraOnFlagged::Block, None);
+    let mut data = Data::new();
+    let outcome = run_hook(&guardrail, &mut data, None, hook)
+        .await
+        .expect("nothing to inspect");
+    assert_eq!(outcome.applied_guardrail, None);
+    assert!(server.captured().is_empty());
+}
+
 #[tokio::test]
 async fn during_call_never_masks_pii() {
     let server = serve(200, flagged(PII_ONLY, EMAIL_SPAN)).await;
