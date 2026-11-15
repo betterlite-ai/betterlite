@@ -1,0 +1,37 @@
+kind: helper
+name: reservation-cost-router-deployment-tiered-tables
+call:
+  b3001:
+    function: max_cost
+    request:
+      model: tier-grouped
+      max_tokens: 10
+    route: /v1/chat/completions
+    model_cost:
+      flat-model:
+        mode: chat
+        max_input_tokens: 100000
+        max_output_tokens: 1000
+        input_cost_per_token: 0.000002
+        output_cost_per_token: 0.00001
+    input_token_counts:
+      tier-grouped: 5000
+    model_list:
+      - model_name: tier-grouped
+        backend_model: openai/flat-model
+        model_info:
+          id: dep-t
+          mode: chat
+          max_input_tokens: 100000
+          max_output_tokens: 1000
+          input_cost_per_token: 0.000002
+          output_cost_per_token: 0.00001
+          tiered_pricing:
+            - input_cost_per_token: 0.000001
+              output_cost_per_token: 0.000002
+              range: [0, 1000]
+            - input_cost_per_token: 0.000003
+              output_cost_per_token: 0.000004
+              range: [1000, 100000]
+env: {}
+compare: {ignore: []}
