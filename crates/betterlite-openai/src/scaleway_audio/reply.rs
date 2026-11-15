@@ -7,7 +7,7 @@ use crate::openai_base_config::{Headers, Object};
 use super::error::ScalewayAudioError;
 
 // LiteLLM keeps the whole reply body as hidden params beside the response it builds from it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transcription {
     pub response: TranscriptionResponse,
     pub hidden: Object,

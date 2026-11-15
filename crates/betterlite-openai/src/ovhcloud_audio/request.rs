@@ -16,7 +16,7 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 5] = [
     "temperature",
 ];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptionRequest {
     pub fields: Vec<(String, Value)>,
     pub file: ProcessedAudioFile,

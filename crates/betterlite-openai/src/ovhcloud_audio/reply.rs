@@ -6,7 +6,7 @@ use crate::openai_base_config::{Headers, Object};
 use crate::ovhcloud_chat::error::OvhCloudError;
 
 // LiteLLM keeps the whole reply body as hidden params beside the response it builds from it
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Transcription {
     pub response: TranscriptionResponse,
     pub hidden: Object,
@@ -16,8 +16,8 @@ pub struct Transcription {
 fn first_text(fields: &Map<String, Value>) -> String {
     for name in ["text", "transcript"] {
         let text = fields.get(name).and_then(Value::as_str);
-        if let Some(text) = text.filter(|text| !text.is_empty()) {
-            return text.to_owned();
+        if let Some(found) = text.filter(|found| !found.is_empty()) {
+            return found.to_owned();
         }
     }
     String::new()

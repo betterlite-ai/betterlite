@@ -17,7 +17,7 @@ pub const SUPPORTED_OPENAI_PARAMS: [&str; 5] = [
     "timestamp_granularities",
 ];
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TranscriptionRequest {
     pub fields: Vec<(String, Value)>,
     pub file: ProcessedAudioFile,
