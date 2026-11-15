@@ -1,51 +1,20 @@
 task: B621
 deviations:
   - what: >-
-      A tools or messages value that is not a list is left untouched. LiteLLM iterates it, which
-      walks a dict's keys or a string's characters and changes nothing, and raises TypeError for a
-      number or null.
+      A max_tokens integer below the range of a 64-bit signed integer is not compared with the
+      minimum thinking budget, so the clear thinking injection proceeds, where LiteLLM's int keeps
+      the value, compares it as not greater than the budget, warns and returns False.
     why: >-
-      The parsed record holds typed values, so a container of the wrong type has no items to walk;
-      the case contract says not to invent a guard for a malformed container, and ignoring it keeps
-      a request LiteLLM would fail.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L194-L197
-  - what: >-
-      A thinking.budget_tokens that is a list, an object or a non-numeric string surfaces as
-      MessageOptionsError::BudgetTokens. LiteLLM's int() raises TypeError for the containers and
-      ValueError for the string.
-    why: >-
-      docs/compatibility.md makes a value of the wrong type an error that names the field, and the
-      error text is betterlite's own rather than a Python exception message.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L323-L329
-  - what: >-
-      A budget_tokens string that only Python's int() accepts, such as 4_2 with underscores between
-      digits or a number written in non-ASCII decimal digits, is a BudgetTokens error. Leading and
-      trailing whitespace and a signed integer are read in both implementations.
-    why: >-
-      Rust parses the string as a decimal integer, and docs/compatibility.md reads an environment
-      string into the field's type; porting int()'s underscore and Unicode-digit grammar would add
-      a parser no declared caller sends.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L325-L329
-  - what: >-
-      A max_tokens JSON integer above i64::MAX is not a Python int for betterlite, so the clear
-      thinking injection proceeds, where LiteLLM's arbitrary-precision int compares it with the
-      minimum budget, emits the warning and returns False.
-    why: >-
-      The parsed record stores a number that fits an i64, and the messages safety check is defined
-      on Python ints; a token count above 9.2e18 is outside every model's context window.
+      The request record holds 64-bit numbers, so the guard cannot see a value below -9.2e18 that
+      Python's int holds; such a max_tokens is outside every context window, and betterlite injects
+      thinking rather than refuse a request over a number it cannot compare.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L297-L306
   - what: >-
-      A budget_tokens JSON integer above i64::MAX is a BudgetTokens error, where LiteLLM's int()
-      keeps the arbitrary-precision value and injects it as budget_tokens.
+      A thinking.budget_tokens integer outside the range of a 64-bit signed integer is a
+      MessageOptionsError::BudgetTokens, where LiteLLM's int() keeps the arbitrary-precision value,
+      injects it as thinking.budget_tokens and derives the effort from it.
     why: >-
-      The budget becomes thinking.budget_tokens and output_config.effort, and both are read as
-      i64; refusing the value beats forwarding one no budget comparison can hold.
+      The budget is compared with the effort thresholds and copied into the request as an i64;
+      refusing the value beats forwarding one no 64-bit comparison can hold.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L323-L329
-  - what: >-
-      The clear_thinking debug lines render a non-empty thinking object, and an effort that is a
-      list or object, as JSON text, where LiteLLM's %s prints Python's repr with single quotes.
-    why: >-
-      docs/compatibility.md does not port repr; the message text around the value, the level and
-      the value's content match, and an empty thinking object renders as {} in both.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/messages/invoke_transformations/anthropic_claude3_transformation.py#L292-L295
 kept_bugs: []
