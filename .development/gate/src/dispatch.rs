@@ -24,6 +24,7 @@ use crate::development::Development;
 use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::git::coordinator;
+use crate::journal::journal_dir;
 use crate::spec::agents::{Agents, Role, Runner};
 use crate::spec::backlog::Status;
 use crate::spec::review::ReviewVerdict;
@@ -68,6 +69,7 @@ pub(crate) struct Places<'run> {
     pub(crate) git_common_dir: &'run Path,
     pub(crate) home: &'run Path,
     pub(crate) writable: &'run [String],
+    pub(crate) net: &'run Path,
 }
 
 pub(crate) struct Attempt<'run> {
@@ -92,12 +94,42 @@ pub(crate) fn find_runner<'agents>(
     })
 }
 
-pub(crate) fn availability(development: &Development) -> Result<(), GateError> {
+pub(crate) fn availability(development: &Development, task: Option<&str>) -> Result<(), GateError> {
     let git = coordinator(&development.root)?;
     maintenance::check(&git, "")?;
     let mut agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
-    agents.roles.worker.keep_rungs_for("");
-    vendor::available(&git, &agents, "")
+    let Some(id) = task else {
+        agents.roles.worker.keep_rungs_for("");
+        return vendor::available(&git, &agents, "");
+    };
+    agents.roles.worker.keep_rungs_for(id);
+    vendor::available(&git, &agents, id)?;
+    ladder_available(&git, &agents, &journal_dir(&development.root, id)?, id)
+}
+
+fn ladder_available(
+    git: &Path,
+    agents: &Agents,
+    journal: &Path,
+    id: &str,
+) -> Result<(), GateError> {
+    let mut progress = Progress::load(journal, Vec::new())?;
+    progress.fit(&agents.roles.worker.ladder);
+    let chain = Chain::new(agents)?;
+    // a used-up ladder is for the dispatch to report
+    let Some(own) = own_link(&chain, &mut progress) else {
+        return Ok(());
+    };
+    if chain.pick(git, &progress, own)?.is_some() {
+        return Ok(());
+    }
+    Err(GateError::Unavailable {
+        task: id.to_owned(),
+        reason: format!(
+            "every runner left on its worker ladder is unavailable ({}); a grant moves its next start to another vendor",
+            vendor::causes(git, agents)?
+        ),
+    })
 }
 
 pub(crate) const fn reviewer_role(agents: &Agents, level: ReviewLevel, panel: Panel) -> &Role {
@@ -320,12 +352,10 @@ fn run_once(
     Ok(turn.step)
 }
 
-fn next_run<'chain, 'agents>(
+fn own_link<'chain, 'agents>(
     chain: &'chain Chain<'agents>,
-    brief: &Brief<'_>,
-    places: &Places<'_>,
     progress: &mut Progress,
-) -> Result<&'chain Link<'agents>, GateError> {
+) -> Option<&'chain Link<'agents>> {
     let agents = chain.agents;
     let fresh = progress.next == NextRun::Fresh;
     // a rung used up before this dispatch, or by a smaller ladder, hands over as if its last start had failed
@@ -338,7 +368,17 @@ fn next_run<'chain, 'agents>(
         .max_worker_attempts
         .saturating_add(progress.granted);
     let current = chain.links.get(progress.rung);
-    let Some(own) = current.filter(|_| !fresh || progress.used < most) else {
+    current.filter(|_| !fresh || progress.used < most)
+}
+
+fn next_run<'chain, 'agents>(
+    chain: &'chain Chain<'agents>,
+    brief: &Brief<'_>,
+    places: &Places<'_>,
+    progress: &mut Progress,
+) -> Result<&'chain Link<'agents>, GateError> {
+    let agents = chain.agents;
+    let Some(own) = own_link(chain, progress) else {
         let reason = format!(
             "the worker ladder ran out of attempts; last feedback: {}",
             progress.feedback.join("; ")
@@ -349,7 +389,7 @@ fn next_run<'chain, 'agents>(
         });
     };
     progress.limited = false;
-    if let Some(pick) = chain.pick(places, progress, own)? {
+    if let Some(pick) = chain.pick(places.git_common_dir, progress, own)? {
         return Ok(pick);
     }
     progress.limited = true;
@@ -440,6 +480,7 @@ pub(crate) fn dispatch(
         git_common_dir: &git_common_dir,
         home: &home,
         writable: &writable,
+        net: Path::new("/proc/net"),
     };
     let outcome = run_ladder(&agents, &brief, &places, &mut progress, grant);
     progress.save(&journal).and(outcome)

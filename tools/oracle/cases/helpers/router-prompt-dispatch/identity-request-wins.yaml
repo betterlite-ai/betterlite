@@ -1,0 +1,29 @@
+kind: helper
+name: prompt-dispatch-identity-request-wins
+call:
+  b8466:
+    check: prompt_factory
+    model: langfuse/my-prompt
+    messages: []
+    model_list:
+    - model_name: langfuse/my-prompt
+      litellm_params:
+        model: langfuse/my-prompt
+        prompt_id: deployment-id
+        prompt_variables:
+          name: deployment
+        prompt_label: deployment-label
+    request:
+      prompt_id: request-id
+      prompt_variables:
+        name: request
+      prompt_label: request-label
+    compiled:
+      model: gpt-4o
+      messages:
+      - role: user
+        content: compiled
+      optional_params: {}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: headroom-messages-ccr-hashes-filtered
+call:
+  b3773:
+    function: ccr_hashes
+    body:
+      ccr_hashes:
+        - ABCDEF012345
+        - abcdef012345
+        - FEDCBA987654
+        - 0123456789abcdef01234567
+        - 0123456789abcdef012345678
+        - 0123456789a
+        - zzzzzzzzzzzz
+        - 5
+env: {}
+compare: {ignore: []}

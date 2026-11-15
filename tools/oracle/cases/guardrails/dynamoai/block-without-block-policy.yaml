@@ -1,0 +1,23 @@
+kind: helper
+name: dynamoai-block-without-block-policy
+call:
+  b3768:
+    mode: pre_call
+    env: {}
+    api_key: dynamo-key
+    api_base: null
+    policy_ids: null
+    model_id: null
+    messages:
+      - {role: user, content: blocked without a block policy}
+    choices: []
+    answer:
+      status: 200
+      headers: {}
+      body:
+        finalAction: BLOCK
+        appliedPolicies:
+          - policy: {name: Warned}
+            outputs: {action: WARN}
+env: {}
+compare: {ignore: []}

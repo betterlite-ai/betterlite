@@ -1,0 +1,1 @@
+{"results":[{"alternatives":[{"transcript":"hello","confidence":0.5},{"transcript":"ignored"}],"languageCode":"en","resultEndTime":"1.5s"},{"alternatives":[{"transcript":""}],"languageCode":""}],"metadata":{"totalBilledDuration":"2.5s","model":"short"},"requestId":"r1"}
