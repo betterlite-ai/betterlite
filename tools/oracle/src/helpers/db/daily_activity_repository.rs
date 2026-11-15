@@ -38,21 +38,12 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let answers: BTreeMap<String, serde_json::Value> = input
+        let answers: serde_json::Map<String, serde_json::Value> = input
             .cases
             .iter()
             .map(|(name, case)| (name.clone(), answer(case)))
             .collect();
-        serde_json::to_value(answers).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
-                class: "ValueError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })
+        Ok(serde_json::Value::Object(answers))
     }
 }
 

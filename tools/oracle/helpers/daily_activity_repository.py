@@ -3,8 +3,7 @@ import sys
 import types
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from types import TracebackType
-from typing import Final, Literal, Self, TypedDict
+from typing import Final, Literal, Never, TypedDict
 
 from litellm.proxy.db.prisma_client import PrismaWrapper
 from litellm.proxy.management_endpoints.common_daily_activity import daily_activity_repository
@@ -45,74 +44,21 @@ class TokenFields(TypedDict):
 
 
 class TokenRecord:
-    def __init__(self, fields: TokenFields) -> None:
+    def __init__(self, fields: TokenFields, deleted_at: datetime | None = None) -> None:
         self.token = fields["token"]
         self.key_alias = fields["key_alias"]
         self.team_id = fields["team_id"]
         self.user_id = fields["user_id"]
         self.metadata: ObjectMapping | None = fields["metadata"]
-
-
-class DeletedTokenRecord(TokenRecord):
-    def __init__(self, fields: TokenFields, deleted_at: datetime) -> None:
-        super().__init__(fields)
         self.deleted_at = deleted_at
 
 
-class UserRecord:
-    def __init__(self, user_id: str, user_email: str | None, teams: list[str]) -> None:
-        self.user_id = user_id
-        self.user_email = user_email
-        self.teams = teams
-
-
-class TokenTable:
+class Table:
     def __init__(self, rows: Sequence[TokenRecord]) -> None:
         self.rows = tuple(rows)
 
-    async def find_many(
-        self, *, where: Mapping[str, Mapping[str, Sequence[str]]]
-    ) -> Sequence[TokenRecord]:
-        wanted = where["token"]["in"]
-        return [row for row in self.rows if row.token in wanted]
-
-
-class UserTable:
-    def __init__(self, rows: Sequence[UserRecord]) -> None:
-        self.rows = tuple(rows)
-
-    async def find_many(
-        self, *, where: Mapping[str, Mapping[str, Sequence[str]]]
-    ) -> Sequence[UserRecord]:
-        wanted = where["user_id"]["in"]
-        return [row for row in self.rows if row.user_id in wanted]
-
-
-class FakeTransaction:
-    def __init__(self) -> None:
-        self.statements: list[str] = []
-        self.queries: list[tuple[str, tuple[JsonValue, ...]]] = []
-
-    async def __aenter__(self) -> Self:
-        return self
-
-    async def __aexit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_value: BaseException | None,
-        traceback: TracebackType | None,
-    ) -> None:
-        del exc_type, exc_value, traceback
-
-    async def execute_raw(self, sql: str) -> int:
-        self.statements.append(sql)
-        return 0
-
-    async def query_raw(
-        self, sql: str, *params: JsonValue
-    ) -> Sequence[Mapping[str, JsonValue]]:
-        self.queries.append((sql, tuple(JSON.validate_python(param) for param in params)))
-        return ()
+    async def find_many(self, **_where: object) -> Sequence[TokenRecord]:
+        return self.rows
 
 
 class FakeWrapper(PrismaWrapper):
@@ -124,15 +70,14 @@ class FakeWrapper(PrismaWrapper):
     ) -> None:
         self.batches = [list(batch) for batch in batches]
         self.queries: list[tuple[str, tuple[JsonValue, ...]]] = []
-        self.timeouts: list[timedelta] = []
-        self.transaction = FakeTransaction()
-        self.litellm_verificationtoken = TokenTable(active)
-        self.litellm_deletedverificationtoken = TokenTable(deleted)
-        self.litellm_usertable = UserTable(())
+        self.litellm_verificationtoken = Table(active)
+        self.litellm_deletedverificationtoken = Table(deleted)
+        self.litellm_usertable = Table(())
 
-    def tx(self, *, timeout: timedelta) -> FakeTransaction:
-        self.timeouts.append(timeout)
-        return self.transaction
+    def tx(self, *, timeout: timedelta) -> Never:
+        del timeout
+        # key_metadata_recovery catches prisma.errors.PrismaError, which is RuntimeError here
+        raise RuntimeError("the oracle fake has no transactions")
 
     async def query_raw(
         self, sql: str, *params: JsonValue
@@ -172,11 +117,8 @@ class Input(TypedDict):
 
 
 async def token_metadata(fields: TokenFields, *, key_exists: bool) -> Mapping[str, KeyMetadataRow]:
-    record = TokenRecord(fields)
-    active: list[TokenRecord] = [record] if key_exists else []
-    deleted: list[DeletedTokenRecord] = []
-    if not key_exists:
-        deleted.append(DeletedTokenRecord(fields, DELETED_AT))
+    active: list[TokenRecord] = [TokenRecord(fields)] if key_exists else []
+    deleted: list[TokenRecord] = [] if key_exists else [TokenRecord(fields, DELETED_AT)]
     repository = daily_activity_repository(FakePrismaClient(FakeWrapper(active, deleted, [])))
     return await repository.key_metadata(frozenset({fields["token"]}), None)
 
@@ -257,5 +199,4 @@ async def answers(cases: Mapping[str, Call]) -> dict[str, JsonValue]:
 
 
 def run(input_value: Input) -> JsonValue:
-    resolved = asyncio.run(answers(input_value["cases"]))
-    return JSON.validate_python(resolved)
+    return JSON.validate_python(asyncio.run(answers(input_value["cases"])))
