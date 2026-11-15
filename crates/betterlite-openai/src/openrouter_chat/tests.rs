@@ -523,8 +523,17 @@ fn stream_chunk_copies_reasoning_into_reasoning_content() {
         reply.choices[0].delta.reasoning_content.as_deref(),
         Some("think")
     );
+    assert_eq!(
+        reply.choices[0]
+            .delta
+            .passthrough
+            .get("reasoning")
+            .and_then(Value::as_str),
+        Some("think")
+    );
     assert_eq!(reply.choices[0].delta.content.as_deref(), Some("hi"));
     assert_eq!(reply.choices[1].delta.reasoning_content, None);
+    assert!(!reply.choices[1].delta.passthrough.contains_key("reasoning"));
     assert_eq!(
         reply.usage,
         Some(json!({
@@ -534,6 +543,29 @@ fn stream_chunk_copies_reasoning_into_reasoning_content() {
             "completion_tokens_details": null,
             "prompt_tokens_details": null
         }))
+    );
+}
+
+#[test]
+fn stream_chunk_keeps_an_empty_reasoning_beside_its_copy() {
+    let chunk = json!({
+        "id": "c",
+        "created": 1,
+        "model": "m",
+        "choices": [{"index": 0, "delta": {"reasoning": ""}}]
+    });
+    let reply = chunk_parser(&chunk).unwrap();
+    assert_eq!(
+        reply.choices[0].delta.reasoning_content.as_deref(),
+        Some("")
+    );
+    assert_eq!(
+        reply.choices[0]
+            .delta
+            .passthrough
+            .get("reasoning")
+            .and_then(Value::as_str),
+        Some("")
     );
 }
 
@@ -614,6 +646,27 @@ fn stream_chunk_overwrites_an_existing_reasoning_content_with_null() {
     });
     let reply = chunk_parser(&chunk).unwrap();
     assert_eq!(reply.choices[0].delta.reasoning_content, None);
+    assert!(!reply.choices[0].delta.passthrough.contains_key("reasoning"));
+}
+
+#[rstest::rstest]
+#[case::above_a_status(70000)]
+#[case::negative(-5)]
+fn stream_chunk_carries_an_error_code_outside_http_statuses(#[case] code: i64) {
+    let chunk = json!({"error": {"message": "boom", "code": code}});
+    let error = chunk_parser(&chunk).unwrap_err();
+    assert_eq!(error.status_code, code);
+}
+
+#[rstest::rstest]
+#[case::string_code(json!("429"))]
+#[case::float_code(json!(429.5))]
+#[case::null_code(Value::Null)]
+fn stream_chunk_names_a_non_integer_error_code(#[case] code: Value) {
+    let chunk = json!({"error": {"message": "boom", "code": code}});
+    let error = chunk_parser(&chunk).unwrap_err();
+    assert_eq!(error.status_code, 400);
+    assert!(error.message.starts_with("KeyError: 'code'"));
 }
 
 #[test]

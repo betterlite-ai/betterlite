@@ -122,6 +122,9 @@ fn choice_json(choice: &StreamChoice) -> Value {
     if let Some(reasoning) = &choice.delta.reasoning_content {
         delta.insert(String::from("reasoning_content"), json!(reasoning));
     }
+    if let Some(reasoning) = choice.delta.passthrough.get("reasoning") {
+        delta.insert(String::from("reasoning"), reasoning.clone());
+    }
     let calls: Option<Vec<Value>> = choice
         .delta
         .tool_calls

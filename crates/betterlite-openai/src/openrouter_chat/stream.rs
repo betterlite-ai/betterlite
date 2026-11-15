@@ -20,6 +20,18 @@ pub fn chunk_parser(chunk: &Value) -> Result<StreamReply, OpenRouterError> {
         if !carries_reasoning {
             choice.delta.reasoning_content = None;
         }
+        // pydantic keeps a non-null reasoning as an extra delta field, so a client sees it beside reasoning_content
+        if let Some(Value::String(reasoning)) = raw
+            .as_object()
+            .and_then(|fields| fields.get("delta"))
+            .and_then(|delta| delta.get("reasoning"))
+        {
+            let value = Value::String(reasoning.clone());
+            choice
+                .delta
+                .passthrough
+                .insert(String::from("reasoning"), value);
+        }
     }
     // ModelResponseStream is built without service_tier, so the chunk's own key never reaches it
     reply.service_tier = None;
@@ -69,10 +81,9 @@ fn stream_error(error: &Value, chunk: &Value) -> OpenRouterError {
     let Some(code) = fields.get("code") else {
         return key_error("code", chunk);
     };
-    let status_code = code
-        .as_u64()
-        .and_then(|number| u16::try_from(number).ok())
-        .unwrap_or(500);
+    let Some(status_code) = code.as_i64() else {
+        return key_error("code", chunk);
+    };
     let metadata = fields
         .get("metadata")
         .cloned()

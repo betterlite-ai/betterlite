@@ -41,6 +41,7 @@ class ToolCallOut(TypedDict):
 
 class DeltaOut(TypedDict):
     content: str | None
+    reasoning: NotRequired[str | None]
     reasoning_content: NotRequired[str | None]
     tool_calls: list[ToolCallOut] | None
 

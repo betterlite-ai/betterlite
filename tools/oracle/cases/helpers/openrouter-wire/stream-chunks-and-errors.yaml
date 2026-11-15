@@ -77,6 +77,14 @@ call:
             message: upstream failed
             code: 502
             user_id: u1
+      - chunk:
+          error:
+            message: oversized status
+            code: 70000
+      - chunk:
+          error:
+            message: negative status
+            code: -5
 env: {}
 compare:
   ignore: []

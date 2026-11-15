@@ -2,17 +2,17 @@ use thiserror::Error;
 
 use crate::openai_base_config::Headers;
 
-// LiteLLM's OpenRouterException adds nothing to its native BaseLLMException
+// LiteLLM's OpenRouterException adds nothing to its native BaseLLMException, whose status_code is a plain int
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{message}")]
 pub struct OpenRouterError {
     pub message: String,
-    pub status_code: u16,
+    pub status_code: i64,
     pub headers: Headers,
 }
 
 #[must_use]
-pub fn get_error_class(message: &str, status_code: u16, headers: Headers) -> OpenRouterError {
+pub fn get_error_class(message: &str, status_code: i64, headers: Headers) -> OpenRouterError {
     OpenRouterError {
         message: message.to_owned(),
         status_code,
