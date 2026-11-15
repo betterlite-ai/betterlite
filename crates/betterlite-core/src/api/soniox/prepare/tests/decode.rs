@@ -2,6 +2,7 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use betterlite_config::sections::settings::JsonValue;
 use betterlite_openai::openai_base_config::Headers;
 use rstest::rstest;
 use serde_json::json;
@@ -11,7 +12,7 @@ use super::super::decode::{
 };
 use super::super::error::ReplyError;
 use super::super::raise::provider_message;
-use super::super::response::{transcript, transcription_meta};
+use super::super::response::{TranscriptionMeta, transcript, transcription_meta};
 use crate::api::api_boundaries::ApiLimits;
 
 fn decode(body: &[u8]) -> SonioxReply {
@@ -120,10 +121,11 @@ fn bounds_the_reply_bytes() {
         max_items: 4,
     };
 
-    let at_limit = decode_soniox_reply(200, Headers::new(), b"null", &limits);
+    let at_limit = decode_soniox_reply(200, Headers::new(), b"null", &limits)
+        .expect("the reply at the byte limit decodes");
     let over = decode_soniox_reply(200, Headers::new(), b"null ", &limits);
 
-    assert!(at_limit.is_ok());
+    assert_eq!(at_limit.status, 200);
     assert!(matches!(
         over,
         Err(ReplyError::TooLarge {
@@ -140,120 +142,126 @@ fn replays_the_soniox_reply_corpus(#[files("fuzz/corpus/soniox_reply/*")] path: 
     let reply = decode_soniox_reply(200, Headers::new(), &bytes, &ApiLimits::default())
         .expect("a bounded reply decodes");
 
-    expect_corpus(&name, &reply);
+    if name.starts_with("resource-") || name == "bom.json" {
+        expect_resource(&name, &reply);
+    } else if name.starts_with("transcript-") {
+        expect_transcript(&name, &reply);
+    } else if name.starts_with("status-") {
+        expect_status(&name, &reply);
+    } else {
+        expect_text(&name, &reply);
+    }
 }
 
-fn expect_corpus(name: &str, reply: &SonioxReply) {
-    if name.starts_with("resource-") || name == "bom.json" {
-        expect_resource(name, reply);
-        return;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Failure {
+    Missing,
+    Shape,
+    Field,
+    Other,
+}
+
+const RESOURCE_REPLIES: &[(&str, Result<&str, Failure>)] = &[
+    ("resource-ok.json", Ok("tx_1")),
+    ("bom.json", Ok("tx_bom")),
+    ("resource-missing-id.json", Err(Failure::Missing)),
+    ("resource-malformed-id.json", Err(Failure::Shape)),
+];
+
+const TRANSCRIPT_REPLIES: &[(&str, Result<(Option<&str>, usize), Failure>)] = &[
+    ("transcript-ok.json", Ok((Some("hello"), 1))),
+    ("transcript-null-tokens.json", Ok((Some("hello"), 0))),
+    ("transcript-malformed-tokens.json", Err(Failure::Field)),
+    ("transcript-tokens-not-a-list.json", Err(Failure::Shape)),
+];
+
+const STATUS_REPLIES: &[(&str, Result<(Option<&str>, Option<i64>), Failure>)] = &[
+    ("status-fields.json", Ok((Some("completed"), Some(1500)))),
+    ("status-wrong-typed.json", Err(Failure::Shape)),
+];
+
+#[derive(Clone, Copy)]
+enum TextReply {
+    Message(&'static str),
+    MessageIsText,
+    NotObject,
+    NotObjectText(&'static str),
+    ReplacedText,
+    EmptyText,
+}
+
+const TEXT_REPLIES: &[(&str, TextReply)] = &[
+    ("error-object.json", TextReply::Message("quota")),
+    ("error-non-object.json", TextReply::MessageIsText),
+    ("scalar.json", TextReply::NotObjectText("42")),
+    ("array.json", TextReply::NotObject),
+    ("trailing-garbage.json", TextReply::NotObject),
+    ("invalid-utf8.bin", TextReply::ReplacedText),
+    ("empty.bin", TextReply::EmptyText),
+];
+
+fn expected<T: Copy>(table: &[(&str, T)], name: &str) -> T {
+    let Some((_, want)) = table.iter().find(|(seed, _)| *seed == name) else {
+        panic!("the seed {name} has no expected reply");
+    };
+    *want
+}
+
+const fn failure_of(error: &ReplyError) -> Failure {
+    match error {
+        ReplyError::Missing { .. } => Failure::Missing,
+        ReplyError::Shape { .. } => Failure::Shape,
+        ReplyError::Field { .. } => Failure::Field,
+        ReplyError::NotObject | ReplyError::TooLarge { .. } | ReplyError::TooManyTokens { .. } => {
+            Failure::Other
+        }
     }
-    if name.starts_with("transcript-") {
-        expect_transcript(name, reply);
-        return;
-    }
-    if name.starts_with("status-") {
-        expect_status(name, reply);
-        return;
-    }
-    expect_text(name, reply);
+}
+
+fn status_fields(meta: &TranscriptionMeta) -> (Option<&str>, Option<i64>) {
+    (
+        meta.status.as_deref(),
+        meta.audio_duration_ms.as_ref().and_then(JsonValue::as_i64),
+    )
 }
 
 fn expect_resource(name: &str, reply: &SonioxReply) {
-    match name {
-        "resource-ok.json" => {
-            assert_eq!(identified_resource(reply).expect("the id").id, "tx_1");
-        }
-        "resource-missing-id.json" => {
-            assert!(matches!(
-                identified_resource(reply),
-                Err(ReplyError::Missing { .. })
-            ));
-        }
-        "resource-malformed-id.json" => {
-            assert!(matches!(
-                identified_resource(reply),
-                Err(ReplyError::Shape { .. })
-            ));
-        }
-        "bom.json" => {
-            assert_eq!(identified_resource(reply).expect("the id").id, "tx_bom");
-        }
-        other => panic!("the seed {other} has no expected reply"),
-    }
+    let identified = identified_resource(reply);
+    let found = identified.as_ref().map_err(failure_of);
+    let observed = found.map(|resource| resource.id.as_str());
+    assert_eq!(observed, expected(RESOURCE_REPLIES, name));
 }
 
 fn expect_transcript(name: &str, reply: &SonioxReply) {
-    match name {
-        "transcript-ok.json" => {
-            let decoded = transcript(reply, &ApiLimits::default()).expect("the transcript");
-            assert_eq!(decoded.text.as_deref(), Some("hello"));
-            assert_eq!(decoded.tokens.len(), 1);
-        }
-        "transcript-null-tokens.json" => {
-            let decoded = transcript(reply, &ApiLimits::default()).expect("the transcript");
-            assert!(decoded.tokens.is_empty());
-            assert_eq!(decoded.text.as_deref(), Some("hello"));
-        }
-        "transcript-malformed-tokens.json" => {
-            assert!(matches!(
-                transcript(reply, &ApiLimits::default()),
-                Err(ReplyError::Field { .. })
-            ));
-        }
-        "transcript-tokens-not-a-list.json" => {
-            assert!(matches!(
-                transcript(reply, &ApiLimits::default()),
-                Err(ReplyError::Shape { .. })
-            ));
-        }
-        other => panic!("the seed {other} has no expected reply"),
-    }
+    let decoded = transcript(reply, &ApiLimits::default());
+    let found = decoded.as_ref().map_err(failure_of);
+    let observed = found.map(|body| (body.text.as_deref(), body.tokens.len()));
+    assert_eq!(observed, expected(TRANSCRIPT_REPLIES, name));
 }
 
 fn expect_status(name: &str, reply: &SonioxReply) {
-    match name {
-        "status-fields.json" => {
-            let meta = transcription_meta(reply).expect("the meta");
-            assert_eq!(meta.status.as_deref(), Some("completed"));
-            assert_eq!(meta.audio_duration_ms, Some(json!(1500)));
-        }
-        "status-wrong-typed.json" => {
-            assert!(matches!(
-                transcription_meta(reply),
-                Err(ReplyError::Shape { .. })
-            ));
-        }
-        other => panic!("the seed {other} has no expected reply"),
-    }
+    let meta = transcription_meta(reply);
+    let found = meta.as_ref().map_err(failure_of);
+    let observed = found.map(status_fields);
+    assert_eq!(observed, expected(STATUS_REPLIES, name));
 }
 
 fn expect_text(name: &str, reply: &SonioxReply) {
-    match name {
-        "error-object.json" => {
-            assert_eq!(provider_message(reply), "quota");
-        }
-        "error-non-object.json" => {
-            assert_eq!(provider_message(reply), reply.text);
-        }
-        "scalar.json" => {
+    match expected(TEXT_REPLIES, name) {
+        TextReply::Message(message) => assert_eq!(provider_message(reply), message),
+        TextReply::MessageIsText => assert_eq!(provider_message(reply), reply.text),
+        TextReply::NotObject => assert!(reply.payload.is_none()),
+        TextReply::NotObjectText(text) => {
             assert!(reply.payload.is_none());
-            assert_eq!(reply.text, "42");
+            assert_eq!(reply.text, text);
         }
-        "array.json" => {
-            assert!(reply.payload.is_none());
-        }
-        "invalid-utf8.bin" => {
+        TextReply::ReplacedText => {
             assert!(reply.payload.is_none());
             assert!(reply.text.contains('\u{fffd}'));
         }
-        "empty.bin" => {
+        TextReply::EmptyText => {
             assert!(reply.payload.is_none());
-            assert_eq!(reply.text, "");
+            assert!(reply.text.is_empty());
         }
-        "trailing-garbage.json" => {
-            assert!(reply.payload.is_none());
-        }
-        other => panic!("the seed {other} has no expected reply"),
     }
 }
