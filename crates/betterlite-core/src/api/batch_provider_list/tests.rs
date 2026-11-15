@@ -321,10 +321,13 @@ fn an_explicit_null_credentials_value_is_absent() {
     assert!(vertex_call(prepared(&request)).vertex_credentials.is_none());
 }
 
-#[test]
-fn vertex_call_rejects_credentials_that_are_neither_text_nor_object() {
-    let source = r#"{"provider": "vertex_ai", "vertex_credentials": 7}"#;
-    let request: BatchProviderListInput = serde_json::from_str(source).expect("input parses");
+#[rstest]
+#[case::number("7")]
+#[case::boolean("true")]
+#[case::list("[]")]
+fn vertex_call_rejects_credentials_that_are_neither_text_nor_object(#[case] value: &str) {
+    let source = format!(r#"{{"provider": "vertex_ai", "vertex_credentials": {value}}}"#);
+    let request: BatchProviderListInput = serde_json::from_str(&source).expect("input parses");
     let error = service()
         .run(&request)
         .expect_err("the credentials are rejected");
