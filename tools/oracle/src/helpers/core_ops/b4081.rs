@@ -37,7 +37,7 @@ struct Price {
 }
 
 // The price map the cases carry, mirroring what the bundled LiteLLM cost map answers
-struct CasePrices<'a>(&'a BTreeMap<String, Price>);
+struct CasePrices<'prices>(&'prices BTreeMap<String, Price>);
 
 impl cost::PriceMap for CasePrices<'_> {
     fn completion_cost(&self, response: &Json) -> Option<Decimal> {
