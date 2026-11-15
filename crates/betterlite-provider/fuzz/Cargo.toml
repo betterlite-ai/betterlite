@@ -47,6 +47,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "petals_reply"
+path = "fuzz_targets/petals_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sap_credentials"
 path = "fuzz_targets/sap_credentials.rs"
 test = false
