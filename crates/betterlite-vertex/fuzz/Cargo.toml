@@ -268,3 +268,10 @@ path = "fuzz_targets/vertex_tuning_job.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vertex_stream"
+path = "fuzz_targets/vertex_stream.rs"
+test = false
+doc = false
+bench = false
