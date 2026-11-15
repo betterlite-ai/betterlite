@@ -1,0 +1,23 @@
+kind: helper
+name: policy-version-list-response-ordering
+call:
+  b3242:
+    group: policy_records_records
+    operation: validate
+    model: PolicyVersionListResponse
+    value:
+      policy_name: baseline
+      versions:
+        - policy_id: p2
+          policy_name: baseline
+          version_number: 2
+          version_status: production
+          is_latest: true
+        - policy_id: p1
+          policy_name: baseline
+          version_number: 1
+          version_status: production
+          is_latest: false
+      total_count: 2
+env: {}
+compare: {ignore: []}
