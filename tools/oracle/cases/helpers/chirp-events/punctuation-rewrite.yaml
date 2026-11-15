@@ -1,0 +1,29 @@
+kind: helper
+name: chirp-events-punctuation-rewrite
+call:
+  chirp_events:
+    function: punctuation
+    pairs:
+      - previous: hello world
+        current: hello word
+      - previous: Hello world.
+        current: "hello WORLD,"
+      - previous: ""
+        current: Good morning.
+      - previous: one two
+        current: one
+      - previous: um
+        current: um okay
+      - previous: café
+        current: cafe
+      - previous: straße
+        current: STRASSE
+      - previous: Hello
+        current: HELLO world
+      - previous: Hello world
+        current: hello
+      - previous: ""
+        current: ""
+env: {}
+compare:
+  ignore: []
