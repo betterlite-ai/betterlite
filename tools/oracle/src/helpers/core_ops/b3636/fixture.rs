@@ -20,7 +20,7 @@ const IMAGE_URL_TYPE: &str = "image_url";
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
-pub(super) struct FixtureCounter {
+pub(crate) struct FixtureCounter {
     messages: i64,
     response_text: i64,
 }
