@@ -61,9 +61,9 @@ fn read_two(
     first: &'static str,
     second: &'static str,
 ) -> Result<(Stamp, Stamp), LegacyMetricsError> {
-    let first = stamp(context.kwargs, first, context.resolver)?;
-    let second = stamp(context.kwargs, second, context.resolver)?;
-    Ok((first, second))
+    let first_stamp = stamp(context.kwargs, first, context.resolver)?;
+    let second_stamp = stamp(context.kwargs, second, context.resolver)?;
+    Ok((first_stamp, second_stamp))
 }
 
 pub fn record_ttft_metric(
