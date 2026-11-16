@@ -262,7 +262,7 @@ jobs:
           PARTS: ${{ inputs.all-parts }}
           TASK: ${{ inputs.task }}
         run: |
-          lint=(fmt clippy deny shear hooks similarity file-size module-tree case-ignores workflows)
+          lint=(fmt clippy deny shear hooks similarity file-size module-tree case-ignores shared-names workflows)
           if [[ -n $TASK ]]; then
             local_checks=$(cargo gate list "$TASK" --local) || exit 1
             mapfile -t lint < <(awk '/^[^ ]/ {print $1}' <<<"$local_checks")
@@ -270,7 +270,7 @@ jobs:
             lint+=(clippy)
           fi
           # the pull request run checked the task's own diff, so the queue re-checks only what another queued change can break (Max, 11-15)
-          if [[ $EVENT == merge_group && -n $TASK ]]; then lint=(clippy similarity); fi
+          if [[ $EVENT == merge_group && -n $TASK ]]; then lint=(clippy similarity shared-names); fi
           # coverage runs with the task's tests on the pull request, so the queue leaves it out
           later=(mutants)
           if [[ $EVENT != pull_request ]]; then later+=(coverage); fi
