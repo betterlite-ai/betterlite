@@ -1,5 +1,5 @@
 import os
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
 
@@ -9,6 +9,7 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.azure_ai.common_utils import AzureFoundryModelInfo
 from litellm.router_utils.add_retry_fallback_headers import get_hidden_params_dict
 from litellm.types.utils import ModelResponse
+from pydantic import JsonValue
 
 from .contracts import (
     CONFIG,
@@ -75,11 +76,15 @@ def catalog_value(call: CatalogCall) -> JsonObject:
     models = AzureFoundryModelInfo().get_models(
         api_key=call.get("api_key"), api_base=call.get("api_base")
     )
-    return {"models": models}
+    listed: list[JsonValue] = []
+    listed.extend(models)
+    return {"models": listed}
 
 
 @contextmanager
-def version_context(global_api_version: str | None, environment: dict[str, str]) -> Iterator[None]:
+def version_context(
+    global_api_version: str | None, environment: dict[str, str]
+) -> Generator[None, None, None]:
     for name in VERSION_NAMES:
         os.environ.pop(name, None)
     os.environ.update(environment)
