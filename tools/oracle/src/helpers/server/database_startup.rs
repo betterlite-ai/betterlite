@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::database_startup::startup::StartupSettings;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -49,7 +49,7 @@ fn settings_answer(input: &Input) -> HelperResult {
     .or_config_error()?;
     let settings = StartupSettings::from_config(&config);
     Ok(serde_json::json!({
-        "updates_enabled": settings.updates_enabled,
+        "updates_enabled": settings.updates_enabled.0,
         "command_timeout": settings.command_timeout.as_secs_f64(),
         "lock_timeout": settings.lock_timeout.as_secs_f64(),
         "deploy_timeout": settings.deploy_timeout.as_secs_f64(),
