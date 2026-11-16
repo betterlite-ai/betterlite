@@ -1,15 +1,23 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::mock::MockError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse, base_builder};
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use http::header::HeaderMap;
 use rstest::rstest;
+use tokio::io::AsyncReadExt as _;
+use tokio::net::TcpListener;
 use tokio::runtime::Builder;
+use tokio::time::sleep;
 use url::Url;
 
 use super::UpstreamReply;
@@ -26,6 +34,11 @@ use crate::api::fal::video_prepare::decode::{FalVideoError, decode_fal_video_rep
 
 const STATUS_URL: &str = "https://queue.fal.run/fal-ai/kling-video/requests/req-1/status";
 const MODEL_PATH: &str = "fal-ai/kling-video";
+const SHORT_READ_LIMIT: TransportLimits = TransportLimits {
+    read_timeout: Duration::from_millis(500),
+    ..TransportLimits::DEFAULT
+};
+const HOLD: Duration = Duration::from_secs(2);
 
 type RecordedRequest = (String, BTreeMap<String, String>);
 
@@ -97,6 +110,30 @@ impl VideoTransport for FakeTransport {
 
 fn answered(status: u16, body: &str) -> Vec<Step> {
     vec![Step::Answer(status, body.as_bytes().to_vec())]
+}
+
+fn outbound_client(limits: TransportLimits) -> ProxiedClient {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the proxy policy"),
+    );
+    ProxiedClient::build(base_builder().http1_only(), &policy, limits).expect("the client")
+}
+
+// keeps the connection open without answering, so only the client's read limit can end the request
+async fn hold_open(listener: TcpListener) {
+    let (mut stream, _) = listener.accept().await.expect("the connection");
+    let mut chunk = [0_u8; 4096];
+    let read = stream.read(&mut chunk).await.expect("the request bytes");
+    assert_ne!(
+        read, 0,
+        "the client sends its request before the read limit"
+    );
+    sleep(HOLD).await;
+}
+
+fn mock_failure() -> Step {
+    let source = serde_json::from_str::<u32>("not a number").expect_err("invalid JSON");
+    Step::Fail(TransportError::Mock(MockError::Encode(source)))
 }
 
 fn headers(entries: &[(&str, &str)]) -> VideoHeaders {
@@ -232,6 +269,7 @@ fn a_completed_job_probe_error_fails_the_video() {
 #[case::unsupported_scheme(Step::Fail(TransportError::RedirectScheme {
     scheme: Box::from("ftp")
 }))]
+#[case::mock_failure(mock_failure())]
 fn a_transient_probe_failure_keeps_the_completed_status(#[case] step: Step) {
     let transport = FakeTransport::new(vec![step]);
     let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
@@ -262,6 +300,91 @@ fn a_non_transient_probe_failure_fails_the_video(#[case] source: TransportError)
     let error = run_status(&transport, ClientKind::Sync, &call).expect_err("a failed probe");
     assert!(matches!(error, VideoResultsError::ProbeTransport { .. }));
     assert_eq!(transport.recorded().len(), 1);
+}
+
+#[tokio::test]
+async fn a_refused_probe_connection_keeps_the_completed_status() {
+    let address = {
+        let listener = TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("the listener");
+        listener.local_addr().expect("the address")
+    };
+    let client = outbound_client(TransportLimits::DEFAULT);
+    let clients = VideoClients {
+        sync: &client,
+        asynchronous: &client,
+    };
+    let probe_url = Url::parse(&format!("http://{address}/probe")).expect("the probe url");
+    let refused = client
+        .get(probe_url, HeaderMap::new())
+        .await
+        .expect_err("nothing listens on the address");
+    assert!(matches!(refused, TransportError::Connect(_)));
+    let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
+    let call = StatusCall {
+        request: StatusRequest {
+            url: Url::parse(&format!(
+                "http://{address}/fal-ai/kling-video/requests/req-1/status"
+            ))
+            .expect("the status url"),
+            headers: VideoHeaders::new(),
+        },
+        reply: &reply,
+        provider: None,
+    };
+    let video = status_response(&clients, ClientKind::Sync, None, &call)
+        .await
+        .expect("a status video");
+    assert_eq!(video.status, "completed");
+    assert!(video.error.is_none());
+}
+
+#[tokio::test]
+async fn a_stalled_probe_connection_fails_with_the_read_limit() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let client = outbound_client(SHORT_READ_LIMIT);
+    let probe_url = Url::parse(&format!("http://{address}/probe")).expect("the probe url");
+    let (stalled, ()) = tokio::join!(client.get(probe_url, HeaderMap::new()), hold_open(listener));
+    assert!(matches!(
+        stalled.expect_err("the stall ends the request"),
+        TransportError::Deadline(_)
+    ));
+}
+
+#[tokio::test]
+async fn a_probe_past_the_read_limit_keeps_the_completed_status() {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let client = outbound_client(SHORT_READ_LIMIT);
+    let clients = VideoClients {
+        sync: &client,
+        asynchronous: &client,
+    };
+    let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
+    let call = StatusCall {
+        request: StatusRequest {
+            url: Url::parse(&format!(
+                "http://{address}/fal-ai/kling-video/requests/req-1/status"
+            ))
+            .expect("the status url"),
+            headers: VideoHeaders::new(),
+        },
+        reply: &reply,
+        provider: None,
+    };
+    let (result, ()) = tokio::join!(
+        status_response(&clients, ClientKind::Sync, None, &call),
+        hold_open(listener)
+    );
+    let video = result.expect("a status video");
+    assert_eq!(video.status, "completed");
+    assert!(video.error.is_none());
 }
 
 #[test]
