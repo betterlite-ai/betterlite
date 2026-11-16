@@ -49,17 +49,14 @@ async fn database() -> (PostgresFixture, Pool) {
 
 #[tokio::test]
 async fn saved_settings_decrypts_only_string_values() {
-    let stored = json!({
-        "password": support::sealed(support::SAVED_SECRET),
-        "port": 6379,
-        "ssl": true,
-        "redis_startup_nodes": [{"host": "127.0.0.1", "port": 7000}],
-        "nested": {"password": "plain"},
-    });
+    let stored = support::parse(&format!(
+        r#"{{"password":"{}","port":6379,"ssl":true,"redis_startup_nodes":[{{"host":"127.0.0.1","port":7000}}],"nested":{{"password":"plain"}}}}"#,
+        support::sealed(support::SAVED_SECRET)
+    ));
     let (_, repository) = support::fake_saved(SavedReply::Stored(stored));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert_eq!(settings["password"], support::SAVED_SECRET);
-    assert_eq!(settings["port"], json!(6379));
+    assert_eq!(settings["port"], 6379_u16);
     assert_eq!(settings["ssl"], true);
     assert_eq!(settings["redis_startup_nodes"][0]["host"], "127.0.0.1");
     assert_eq!(settings["nested"]["password"], "plain");
@@ -67,10 +64,10 @@ async fn saved_settings_decrypts_only_string_values() {
 
 #[tokio::test]
 async fn saved_settings_keeps_a_value_it_cannot_decrypt() {
-    let stored = json!({
-        "password": "not-a-ciphertext",
-        "host": support::sealed("127.0.0.1"),
-    });
+    let stored = support::parse(&format!(
+        r#"{{"password":"not-a-ciphertext","host":"{}"}}"#,
+        support::sealed("127.0.0.1")
+    ));
     let (_, repository) = support::fake_saved(SavedReply::Stored(stored));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert_eq!(settings["password"], "not-a-ciphertext");
@@ -80,8 +77,9 @@ async fn saved_settings_keeps_a_value_it_cannot_decrypt() {
 #[tokio::test]
 async fn saved_settings_keeps_the_stored_text_without_a_signing_key() {
     let sealed = support::sealed(support::SAVED_SECRET);
-    let (_, repository) =
-        support::fake_saved(SavedReply::Stored(json!({"password": sealed.as_str()})));
+    let (_, repository) = support::fake_saved(SavedReply::Stored(support::parse(&format!(
+        r#"{{"password":"{sealed}"}}"#
+    ))));
     let settings = saved_settings(repository.as_deref(), &support::cipher_with(None)).await;
     assert_eq!(settings["password"].as_str(), Some(sealed.as_str()));
 }
@@ -121,12 +119,12 @@ async fn saved_settings_parses_a_stored_json_string() {
     let (_, repository) = support::fake_saved(SavedReply::Stored(json!(text)));
     let settings = saved_settings(repository.as_deref(), &support::cipher()).await;
     assert_eq!(settings["password"], support::SAVED_SECRET);
-    assert_eq!(settings["port"], json!(6379));
+    assert_eq!(settings["port"], 6379_u16);
 }
 
 #[rstest]
-#[case::number(json!(5))]
-#[case::array(json!([1]))]
+#[case::number(Value::from(5_u8))]
+#[case::array(Value::Array(vec![Value::from(1_u8)]))]
 #[case::flag(json!(true))]
 #[case::quoted(json!(r#""text""#))]
 #[tokio::test]
@@ -165,7 +163,7 @@ async fn postgres_adapter_reads_the_cache_config_row() {
         pool: Some(pool.clone()),
     };
     let stored = SavedCacheConfig::cache_settings(&store).await.unwrap();
-    assert_eq!(stored, Some(json!({"type": "redis", "host": "127.0.0.1"})));
+    assert_eq!(stored, Some(support::parse(text)));
     pool.close();
     fixture.close_async().await.unwrap();
 }

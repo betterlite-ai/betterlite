@@ -32,8 +32,8 @@ use betterlite_secrets::secret_codec::StoredValue;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
+use serde_json::Map;
 use serde_json::Value;
-use serde_json::json;
 use tokio::io::AsyncBufRead;
 use tokio::io::AsyncBufReadExt as _;
 use tokio::io::AsyncReadExt as _;
@@ -171,7 +171,8 @@ fn caller(subject: &str, roles: Vec<Role>) -> AuthContext {
 }
 
 pub(crate) fn request(settings: Value) -> String {
-    serde_json::to_string(&json!({ "cache_settings": settings })).expect("the request encodes")
+    serde_json::to_string(&Map::from_iter([("cache_settings".to_owned(), settings)]))
+        .expect("the request encodes")
 }
 
 pub(crate) async fn post(
@@ -203,8 +204,8 @@ pub(crate) async fn post(
     )
 }
 
-pub(crate) fn answer(body: &str) -> Value {
-    serde_json::from_str(body).expect("the answer is JSON")
+pub(crate) fn parse(body: &str) -> Value {
+    serde_json::from_str(body).expect("the text is JSON")
 }
 
 pub(crate) struct FakeRedis {

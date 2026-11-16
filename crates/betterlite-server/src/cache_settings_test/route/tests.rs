@@ -7,6 +7,7 @@ use std::sync::Mutex;
 
 use axum::http::StatusCode;
 use rstest::rstest;
+use serde_json::Map;
 use serde_json::Value;
 use serde_json::json;
 use tracing::subscriber::{DefaultGuard, set_default};
@@ -23,13 +24,28 @@ const SUCCESS_BODY: &str =
     r#"{"status":"success","message":"Redis connection test successful","error":null}"#;
 
 fn redis_target(redis: &FakeRedis) -> Value {
-    json!({ "type": "redis", "host": redis.host(), "port": redis.port() })
+    support::parse(&format!(
+        r#"{{"type":"redis","host":"{}","port":{}}}"#,
+        redis.host(),
+        redis.port()
+    ))
 }
 
 fn saved_target(redis: &FakeRedis) -> Value {
     let mut target = redis_target(redis);
     target["password"] = json!(support::sealed(support::SAVED_SECRET));
     target
+}
+
+fn failed_answer(error: &str) -> Value {
+    Value::Object(Map::from_iter([
+        ("status".to_owned(), Value::from("failed")),
+        (
+            "message".to_owned(),
+            Value::from(format!("Cache connection test failed: {error}")),
+        ),
+        ("error".to_owned(), Value::from(error)),
+    ]))
 }
 
 fn capture_logs() -> (Captured, DefaultGuard) {
@@ -198,44 +214,31 @@ async fn route_drops_null_options_the_redis_client_does_not_read() {
 
 #[tokio::test]
 async fn route_reports_a_construction_error() {
-    let body = support::request(json!({"type": "redis"}));
+    let body = support::request(support::parse(r#"{"type":"redis"}"#));
     let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        support::answer(&text),
-        json!({
-            "status": "failed",
-            "message": format!("Cache connection test failed: {MISSING_TARGET}"),
-            "error": MISSING_TARGET,
-        })
-    );
+    assert_eq!(support::parse(&text), failed_answer(MISSING_TARGET));
 }
 
 #[tokio::test]
 async fn route_reports_a_cluster_construction_error() {
-    let body = support::request(json!({
-        "type": "redis",
-        "redis_startup_nodes": [{"host": "127.0.0.1", "port": 7000}],
-    }));
+    let body = support::request(support::parse(
+        r#"{"type":"redis","redis_startup_nodes":[{"host":"127.0.0.1","port":7000}]}"#,
+    ));
     let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(
-        support::answer(&text),
-        json!({
-            "status": "failed",
-            "message": format!("Cache connection test failed: {CLUSTER_OWNED}"),
-            "error": CLUSTER_OWNED,
-        })
-    );
+    assert_eq!(support::parse(&text), failed_answer(CLUSTER_OWNED));
 }
 
 #[tokio::test]
 async fn route_reports_a_connection_error() {
     let port = support::closed_port().await;
-    let body = support::request(json!({ "type": "redis", "host": "127.0.0.1", "port": port }));
+    let body = support::request(support::parse(&format!(
+        r#"{{"type":"redis","host":"127.0.0.1","port":{port}}}"#
+    )));
     let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(status, StatusCode::OK);
-    let answer = support::answer(&text);
+    let answer = support::parse(&text);
     assert_eq!(answer["status"], "failed");
     let error = answer["error"]
         .as_str()
@@ -335,20 +338,13 @@ async fn route_clears_the_saved_password_with_an_empty_value(#[case] password: V
 async fn route_keeps_a_wrongly_typed_secret_out_of_the_answer(#[case] option: &str) {
     let redis = FakeRedis::start().await;
     let mut target = redis_target(&redis);
-    target[option] = json!(12_345);
+    target[option] = Value::from(12_345_u32);
     let body = support::request(target);
     let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(status, StatusCode::OK);
     assert!(!text.contains("12345"), "{text}");
     let message = format!("the redis option \"{option}\" has the wrong type or value");
-    assert_eq!(
-        support::answer(&text),
-        json!({
-            "status": "failed",
-            "message": format!("Cache connection test failed: {message}"),
-            "error": message,
-        })
-    );
+    assert_eq!(support::parse(&text), failed_answer(&message));
 }
 
 #[tokio::test]
@@ -381,21 +377,20 @@ fn move_saved_row_to_a_url(saved: &mut Value, port: u16) {
 }
 
 fn saved_row_for(changed: ChangedTarget, port: u16, other_port: u16) -> Value {
-    let mut saved = json!({
-        "type": "redis",
-        "host": "127.0.0.1",
-        "port": port,
-        "password": support::sealed(support::SAVED_SECRET),
-    });
+    let mut saved = support::parse(&format!(
+        r#"{{"type":"redis","host":"127.0.0.1","port":{port},"password":"{}"}}"#,
+        support::sealed(support::SAVED_SECRET)
+    ));
     match changed {
         ChangedTarget::Host => saved["host"] = json!("127.0.0.2"),
         ChangedTarget::Port => saved["port"] = json!(other_port),
         ChangedTarget::Url => move_saved_row_to_a_url(&mut saved, other_port),
         ChangedTarget::StartupNodes => {
-            saved["redis_startup_nodes"] = json!([{"host": "127.0.0.2", "port": other_port}]);
+            saved["redis_startup_nodes"] =
+                support::parse(&format!(r#"[{{"host":"127.0.0.2","port":{other_port}}}]"#));
         }
         ChangedTarget::SentinelNodes => {
-            saved["sentinel_nodes"] = json!([["127.0.0.2", other_port]])
+            saved["sentinel_nodes"] = support::parse(&format!(r#"[["127.0.0.2",{other_port}]]"#));
         }
         ChangedTarget::ServiceName => saved["service_name"] = json!("mymaster"),
     }
@@ -460,7 +455,7 @@ async fn route_resolves_the_redis_environment_fallbacks() {
         ("REDIS_HOST".to_owned(), redis.host()),
         ("REDIS_PORT".to_owned(), redis.port().to_string()),
     ]);
-    let body = support::request(json!({"type": "redis"}));
+    let body = support::request(support::parse(r#"{"type":"redis"}"#));
     let (status, text) = support::post(
         support::state_with_environment(environment),
         Some(support::admin()),
@@ -478,7 +473,7 @@ async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
         "REDIS_URL".to_owned(),
         format!("redis://{}:{}", redis.host(), redis.port()),
     )]);
-    let body = support::request(json!({"type": "redis", "url": null}));
+    let body = support::request(support::parse(r#"{"type":"redis","url":null}"#));
     let (status, text) = support::post(
         support::state_with_environment(environment),
         Some(support::admin()),
@@ -487,14 +482,7 @@ async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(redis.connections(), 0);
-    assert_eq!(
-        support::answer(&text),
-        json!({
-            "status": "failed",
-            "message": format!("Cache connection test failed: {MISSING_TARGET}"),
-            "error": MISSING_TARGET,
-        })
-    );
+    assert_eq!(support::parse(&text), failed_answer(MISSING_TARGET));
 }
 
 // Merge drops the marker url when the request names a host, so the stored url cannot win over the submitted host and port.
@@ -502,10 +490,9 @@ async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
 async fn route_merges_before_the_url_precedence() {
     let redis = FakeRedis::start().await;
     let other_port = support::closed_port().await;
-    let saved = json!({
-        "type": "redis",
-        "url": format!("redis://127.0.0.1:{other_port}"),
-    });
+    let saved = support::parse(&format!(
+        r#"{{"type":"redis","url":"redis://127.0.0.1:{other_port}"}}"#
+    ));
     let (_, repository) = support::fake_saved(SavedReply::Stored(saved));
     let mut target = redis_target(&redis);
     target["url"] = json!(support::REDACTED);
@@ -540,14 +527,10 @@ async fn route_logs_the_settings_after_url_precedence() {
     let (records, _guard) = capture_logs();
     let redis = FakeRedis::start().await;
     let url = format!("redis://{}:{}", redis.host(), redis.port());
-    let body = support::request(json!({
-        "type": "redis",
-        "url": url,
-        "host": "unused.example",
-        "port": 6399,
-        "username": "someone",
-        "password": support::TYPED_SECRET,
-    }));
+    let body = support::request(support::parse(&format!(
+        r#"{{"type":"redis","url":"{url}","host":"unused.example","port":6399,"username":"someone","password":"{}"}}"#,
+        support::TYPED_SECRET
+    )));
     let (_, text) = support::post(support::state(None), Some(support::admin()), &body).await;
     assert_eq!(text, SUCCESS_BODY);
     assert!(redis.auth_passwords().is_empty(), "{text}");
