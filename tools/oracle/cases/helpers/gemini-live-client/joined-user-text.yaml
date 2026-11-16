@@ -1,0 +1,37 @@
+kind: helper
+name: joined-user-text
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": "hello"}, {"type": "input_text", "text": ""}, {"type": "input_text", "text": "world"}]}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": ""}, {"type": "input_text", "text": ""}]}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_audio"}, {"type": "input_text", "text": "a"}]}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": " "}]}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": "a"}, {"type": "input_text", "text": " "}]}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "message", "content": []}}'
+      - kind: message
+        message: '{"type": "conversation.item.create"}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"content": [{"type": "input_text", "text": "two"}]}}'
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text"}]}}'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "message", "content": [{"type": "input_text", "text": "a"}, {"type": "input_audio"}, {"type": "input_text", "text": "b"}]}}'
+env: {}
+compare: {ignore: []}

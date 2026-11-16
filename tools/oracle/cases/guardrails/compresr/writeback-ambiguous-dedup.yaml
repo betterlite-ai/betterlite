@@ -1,0 +1,7 @@
+kind: helper
+name: writeback-ambiguous-dedup
+call:
+  b3765: {"function": "apply", "config": {"api_key": "test-key", "api_base": "http://compresr.test", "min_chars_to_compress": 5, "enable_retrieval": false}, "reply": {"status": 200, "body": "{\"data\": {\"results\": [{\"compressed_context\": \"first\", \"original_tokens\": 10, \"compressed_tokens\": 4}, {\"compressed_context\": \"second\", \"original_tokens\": 10, \"compressed_tokens\": 4}]}}"}, "inputs": {"structured_messages": [{"role": "user", "content": "find the answer"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{\"q\": \"x\"}"}}, {"id": "c2", "type": "function", "function": {"name": "fetch", "arguments": "{\"u\": \"y\"}"}}]}, {"role": "tool", "tool_call_id": "c1", "content": "long tool output one"}, {"role": "tool", "tool_call_id": "c2", "content": "long tool output one"}], "texts": ["long tool output one", "long tool output one"]}, "headers": null, "caller": null}
+env: {}
+compare:
+  ignore: []

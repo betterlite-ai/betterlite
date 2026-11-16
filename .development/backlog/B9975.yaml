@@ -1,13 +1,13 @@
 id: B9975
 milestone: R2 bug fixes
 title: Server run test passes on what it sees, not on a deadline
-status: todo
+status: done
 depends_on: []
 file: tasks/B9975-server-test-deadline.yaml
 covers: []
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2158

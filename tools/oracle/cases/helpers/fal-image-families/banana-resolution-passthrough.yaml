@@ -1,0 +1,40 @@
+kind: helper
+name: fal-image-families-banana-resolution-passthrough
+call:
+  fal_image_families:
+    operation: banana_resolution_passthrough
+    prompt: "a cat"
+    cases:
+      - non_default: {}
+        optional: {}
+        drop_params: false
+      - non_default: {}
+        optional: {resolution: "4K"}
+        drop_params: false
+      - non_default: {n: 1, size: "1024x1024"}
+        optional: {resolution: "0.5K"}
+        drop_params: false
+      - non_default: {size: "1792x1024"}
+        optional: {resolution: "2K", aspect_ratio: "1:1"}
+        drop_params: false
+      - non_default: {n: 3}
+        optional: {resolution: "1K", num_images: 1}
+        drop_params: false
+      - non_default: {size: "1024x768"}
+        optional: {resolution: 7}
+        drop_params: false
+      - non_default: {resolution: "4K"}
+        optional: {}
+        drop_params: false
+      - non_default: {resolution: "4K"}
+        optional: {}
+        drop_params: true
+      - non_default: {resolution: "4K"}
+        optional: {resolution: "1K"}
+        drop_params: false
+      - non_default: {n: 2}
+        optional: {resolution: null}
+        drop_params: false
+env: {}
+compare:
+  ignore: []
