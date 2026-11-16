@@ -14,8 +14,6 @@ from azure_embeddings.fixtures import Session, make_client
 from azure_embeddings.report import Recorder, azure_value, reply_value
 from azure_embeddings.types import Input, Step
 
-API_BASE = "https://example.openai.azure.com"
-
 
 def logging_object(recorder: Recorder) -> Logging:
     logging_obj = Logging(
@@ -37,15 +35,15 @@ def logging_object(recorder: Recorder) -> Logging:
 
 def call_embedding(step: Step, session: Session, logging_obj: Logging) -> EmbeddingResponse:
     outcome = AzureChatCompletion().embedding(
-        model=step["model"] if "model" in step else "my-deployment",
+        model=step["model"],
         input=step["input"],
-        api_base=step["api_base"] if "api_base" in step else API_BASE,
-        api_version=step["api_version"] if "api_version" in step else "2024-02-01",
-        timeout=step["timeout"] if "timeout" in step else 30.0,
+        api_base=step["api_base"],
+        api_version=step["api_version"],
+        timeout=step["timeout"],
         logging_obj=logging_obj,
         model_response=EmbeddingResponse(),
         optional_params=dict(step["optional_params"]) if "optional_params" in step else {},
-        api_key=step["api_key"] if "api_key" in step else "azure-key",
+        api_key=step["api_key"],
         azure_ad_token=step["azure_ad_token"] if "azure_ad_token" in step else None,
         max_retries=step["max_retries"] if "max_retries" in step else None,
         client=make_client(step["client"], session),

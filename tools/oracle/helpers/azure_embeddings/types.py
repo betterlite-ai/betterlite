@@ -32,12 +32,12 @@ class Step(TypedDict):
     input: EmbeddingInput
     answer: ReplyAnswer | ConnectionAnswer
     client: ClientName
+    model: str
+    api_base: str
+    api_version: str
+    timeout: float
+    api_key: str
     aembedding: NotRequired[bool]
-    model: NotRequired[str]
-    api_base: NotRequired[str]
-    api_version: NotRequired[str]
-    timeout: NotRequired[float]
-    api_key: NotRequired[str]
     azure_ad_token: NotRequired[str]
     max_retries: NotRequired[int]
     optional_params: NotRequired[dict[str, Json]]

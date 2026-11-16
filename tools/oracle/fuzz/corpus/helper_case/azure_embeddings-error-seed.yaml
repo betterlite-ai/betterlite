@@ -6,9 +6,19 @@ call:
       - input: ["a"]
         client: azure_open_ai
         answer: {reply: {status: 429, headers: {content-type: "text/plain"}, body: "slow down"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: async_azure_open_ai
         answer: {connection: {}}
         aembedding: true
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
 env: {}
 compare: {ignore: []}

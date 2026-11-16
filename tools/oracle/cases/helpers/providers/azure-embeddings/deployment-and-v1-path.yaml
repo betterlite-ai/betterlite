@@ -7,28 +7,51 @@ call:
         client: azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "2024-02-01"
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "v1"
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "preview"
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         api_version: "latest"
         model: "gpt-embed"
+        api_base: "https://example.openai.azure.com"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: async_azure_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         aembedding: true
         api_base: "https://x.openai.azure.com/openai/deployments/gpt-embed"
+        model: my-deployment
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
       - input: ["a"]
         client: async_open_ai
         answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
         aembedding: true
         api_version: "v1"
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        timeout: 30.0
+        api_key: azure-key
 env: {}
 compare: {ignore: []}

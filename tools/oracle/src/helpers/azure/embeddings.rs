@@ -37,15 +37,10 @@ struct Step {
     client: ClientName,
     #[serde(default)]
     aembedding: bool,
-    #[serde(default = "default_model")]
     model: String,
-    #[serde(default = "default_api_base")]
     api_base: String,
-    #[serde(default = "default_api_version")]
     api_version: String,
-    #[serde(default = "default_timeout")]
     timeout: f64,
-    #[serde(default = "default_api_key")]
     api_key: String,
     #[serde(default)]
     azure_ad_token: Option<String>,
@@ -57,26 +52,6 @@ struct Step {
     headers: BTreeMap<String, String>,
     #[serde(default)]
     litellm_params: LiteLlmParams,
-}
-
-fn default_model() -> String {
-    "my-deployment".to_owned()
-}
-
-fn default_api_base() -> String {
-    "https://example.openai.azure.com".to_owned()
-}
-
-fn default_api_version() -> String {
-    "2024-02-01".to_owned()
-}
-
-const fn default_timeout() -> f64 {
-    30.0
-}
-
-fn default_api_key() -> String {
-    "azure-key".to_owned()
 }
 
 async fn run_step(step: &Step) -> Value {
