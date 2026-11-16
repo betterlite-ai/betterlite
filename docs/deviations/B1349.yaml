@@ -1,0 +1,21 @@
+task: B1349
+deviations:
+  - what: >-
+      A reply whose predictions is not a list, whose prediction is not an object, or whose bytesBase64Encoded is neither
+      a string nor null ends in a typed Shape or ImageType error naming the path, where LiteLLM's loop and its subscript
+      raise a Python TypeError or a pydantic validation error from the duck-typed value.
+    why: Python's runtime decides those outcomes, and docs/compatibility.md makes a value of the wrong type an error
+      that names the field; the declared dict[str, Any] reply never promised any other behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L33-L38
+kept_bugs:
+  - what: >-
+      is_image_generation_response reads predictions[0] unguarded, so a reply holding an empty predictions list raises
+      IndexError where an absent predictions key answers false.
+    why: the passthrough logging caller sees the same failure today and the task keeps the two paths distinct, so
+      betterlite returns a typed EmptyPredictions error instead of answering false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L275-L279
+  - what: >-
+      process_image_generation_response sets model_response.data to the converted list even when predictions is empty,
+      so an empty list clears the images the response held and succeeds.
+    why: a working passthrough already receives that empty answer, so betterlite replaces the data the same way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L38-L44

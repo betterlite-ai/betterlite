@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-image-policy-replaces-existing-images-seed
+call:
+  vertex_image_policy:
+    models: []
+    billing: []
+    replies:
+      - {kind: convert, body: {predictions: [{bytesBase64Encoded: AAA}, {bytesBase64Encoded: null}]}, existing: [OLD, null]}
+env: {}
+compare: {ignore: []}
