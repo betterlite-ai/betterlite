@@ -16,10 +16,10 @@ use super::openai_rewrite::rewrite_openai_responses;
 use super::reconstruct::reconstruct_chunk;
 use super::stream_assembly::{assemble_anthropic_stream, assemble_openai_chunks, rewritten_record};
 use super::stream_services::StreamServices;
-use super::unparseable::UNPARSEABLE_STREAM_MESSAGE;
+use super::unparsable::UNPARSABLE_STREAM_MESSAGE;
 
 // LiteLLM's async_post_call_streaming_iterator_hook: every chunk is buffered before the response is checked
-pub async fn post_call_streaming_iterator_hook(
+pub async fn streaming_iterator_hook(
     guardrail: &ToolPermissionGuardrail,
     limits: StreamBufferLimits,
     services: &StreamServices<'_>,
@@ -50,7 +50,7 @@ pub async fn post_call_streaming_iterator_hook(
             return Err(ResponseToolError::Guardrail(
                 GuardrailFailure::GuardrailRaised {
                     guardrail_name: Some(guardrail.args.name.clone()),
-                    message: UNPARSEABLE_STREAM_MESSAGE.to_owned(),
+                    message: UNPARSABLE_STREAM_MESSAGE.to_owned(),
                     wrap_default_message: true,
                     status_code: 400,
                     blocked_content: false,

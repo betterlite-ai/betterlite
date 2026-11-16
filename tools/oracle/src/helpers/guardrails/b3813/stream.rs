@@ -8,7 +8,7 @@ use betterlite_guardrails::tool_permission_responses::buffer_overflow::{
 };
 use betterlite_guardrails::tool_permission_responses::error::ResponseToolError;
 use betterlite_guardrails::tool_permission_responses::stream_services::StreamServices;
-use betterlite_guardrails::tool_permission_responses::streaming::post_call_streaming_iterator_hook;
+use betterlite_guardrails::tool_permission_responses::streaming::streaming_iterator_hook;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
@@ -85,7 +85,7 @@ async fn run_stream_hook(
             }
         }
     };
-    let hook = post_call_streaming_iterator_hook(guardrail, limits, services, receiver, output);
+    let hook = streaming_iterator_hook(guardrail, limits, services, receiver, output);
     let collect = async {
         let mut chunks = Vec::new();
         while let Some(item) = output_receiver.recv().await {

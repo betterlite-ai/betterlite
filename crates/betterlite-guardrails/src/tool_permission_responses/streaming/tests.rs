@@ -12,7 +12,7 @@ use crate::tool_permission_responses::tests::support::{
     guardrail, object, rewrite_guardrail, rule, services, skipping_guardrail, text,
 };
 
-use super::{buffer_stream, check_assembled_stream, post_call_streaming_iterator_hook, relay};
+use super::{buffer_stream, check_assembled_stream, relay, streaming_iterator_hook};
 
 fn raised(error: ResponseToolError) -> String {
     let ResponseToolError::Guardrail(GuardrailFailure::GuardrailRaised { message, .. }) = error
@@ -76,7 +76,7 @@ async fn buffer_stream_rejects_the_chunk_after_the_limit() {
 }
 
 #[tokio::test]
-async fn post_call_streaming_iterator_hook_blocks_an_unparseable_raw_stream() {
+async fn streaming_iterator_hook_blocks_an_unparsable_raw_stream() {
     let (sender, receiver) = mpsc::channel(2);
     sender
         .send(StreamItem::Bytes(b"data: {not json\n\n".to_vec()))
@@ -84,7 +84,7 @@ async fn post_call_streaming_iterator_hook_blocks_an_unparseable_raw_stream() {
         .expect("send");
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(4);
-    let error = post_call_streaming_iterator_hook(
+    let error = streaming_iterator_hook(
         &guardrail(Vec::new()),
         StreamBufferLimits::default(),
         &services(),
@@ -92,13 +92,13 @@ async fn post_call_streaming_iterator_hook_blocks_an_unparseable_raw_stream() {
         output,
     )
     .await
-    .expect_err("an unparseable raw stream is blocked");
+    .expect_err("an unparsable raw stream is blocked");
     assert!(raised(error).contains("not a parseable Anthropic SSE stream"));
     assert!(output_receiver.try_recv().is_err());
 }
 
 #[tokio::test]
-async fn post_call_streaming_iterator_hook_passes_a_non_raw_chunk_through() {
+async fn streaming_iterator_hook_passes_a_non_raw_chunk_through() {
     let (sender, receiver) = mpsc::channel(2);
     sender
         .send(StreamItem::Json(GuardrailValue::Null))
@@ -106,7 +106,7 @@ async fn post_call_streaming_iterator_hook_passes_a_non_raw_chunk_through() {
         .expect("send");
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(4);
-    post_call_streaming_iterator_hook(
+    streaming_iterator_hook(
         &guardrail(Vec::new()),
         StreamBufferLimits::default(),
         &services(),
@@ -123,11 +123,11 @@ async fn post_call_streaming_iterator_hook_passes_a_non_raw_chunk_through() {
 }
 
 #[tokio::test]
-async fn post_call_streaming_iterator_hook_relays_an_empty_stream() {
+async fn streaming_iterator_hook_relays_an_empty_stream() {
     let (sender, receiver) = mpsc::channel(1);
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(1);
-    post_call_streaming_iterator_hook(
+    streaming_iterator_hook(
         &guardrail(Vec::new()),
         StreamBufferLimits::default(),
         &services(),
@@ -176,11 +176,25 @@ fn check_assembled_stream_returns_nothing_without_tool_calls() {
     );
 }
 
-fn anthropic_tool_stream(tool_names: &[&str]) -> String {
+fn anthropic_tool_stream(tool_names: &[&str], thinking: bool) -> String {
     let mut frames = vec![
         r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
     ];
+    let mut offset = 0;
+    if thinking {
+        frames.extend(
+            [
+                r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#,
+                r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#,
+                r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-abc"}}"#,
+                r#"{"type":"content_block_stop","index":0}"#,
+            ]
+            .map(str::to_owned),
+        );
+        offset = 1;
+    }
     for (index, tool_name) in tool_names.iter().enumerate() {
+        let index = index + offset;
         frames.push(format!(
             r#"{{"type":"content_block_start","index":{index},"content_block":{{"type":"tool_use","id":"toolu_{index}","name":"{tool_name}","input":{{}}}}}}"#
         ));
@@ -202,18 +216,17 @@ fn anthropic_tool_stream(tool_names: &[&str]) -> String {
         .collect()
 }
 
-async fn run_anthropic(
+async fn run_stream(
     guardrail: &crate::tool_permission::ToolPermissionGuardrail,
-    stream: String,
+    chunks: Vec<StreamItem>,
 ) -> Vec<StreamItem> {
-    let (sender, receiver) = mpsc::channel(4);
-    sender
-        .send(StreamItem::Bytes(stream.into_bytes()))
-        .await
-        .expect("send");
+    let (sender, receiver) = mpsc::channel(chunks.len().max(1));
+    for item in chunks {
+        sender.send(item).await.expect("send");
+    }
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(64);
-    post_call_streaming_iterator_hook(
+    streaming_iterator_hook(
         guardrail,
         StreamBufferLimits::default(),
         &services(),
@@ -229,25 +242,8 @@ async fn run_anthropic(
     items
 }
 
-fn anthropic_thinking_tool_stream(tool_name: &str) -> String {
-    let frames = [
-        r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","usage":{"input_tokens":10,"output_tokens":1}}}"#.to_owned(),
-        r#"{"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":""}}"#.to_owned(),
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"hmm"}}"#.to_owned(),
-        r#"{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":"sig-abc"}}"#.to_owned(),
-        r#"{"type":"content_block_stop","index":0}"#.to_owned(),
-        format!(
-            r#"{{"type":"content_block_start","index":1,"content_block":{{"type":"tool_use","id":"toolu_1","name":"{tool_name}","input":{{}}}}}}"#
-        ),
-        r#"{"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\"cmd\":\"ls\"}"}}"#.to_owned(),
-        r#"{"type":"content_block_stop","index":1}"#.to_owned(),
-        r#"{"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":5}}"#.to_owned(),
-        r#"{"type":"message_stop"}"#.to_owned(),
-    ];
-    frames
-        .iter()
-        .map(|data| format!("data: {data}\n\n"))
-        .collect()
+fn bytes_stream(stream: String) -> Vec<StreamItem> {
+    vec![StreamItem::Bytes(stream.into_bytes())]
 }
 
 fn emitted_text(items: &[StreamItem]) -> String {
@@ -262,10 +258,10 @@ fn emitted_text(items: &[StreamItem]) -> String {
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() {
-    let stream = anthropic_tool_stream(&["shell"]);
-    let items = run_anthropic(
+    let stream = anthropic_tool_stream(&["shell"], false);
+    let items = run_stream(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
-        stream,
+        bytes_stream(stream),
     )
     .await;
     let text = emitted_text(&items);
@@ -278,13 +274,13 @@ async fn post_call_streaming_iterator_hook_rewrites_a_denied_anthropic_stream() 
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_keeps_an_allowed_anthropic_tool_use() {
-    let stream = anthropic_tool_stream(&["shell", "read"]);
-    let items = run_anthropic(
+    let stream = anthropic_tool_stream(&["shell", "read"], false);
+    let items = run_stream(
         &rewrite_guardrail(vec![
             rule("block-shell", "deny", "shell"),
             rule("allow-read", "allow", "read"),
         ]),
-        stream,
+        bytes_stream(stream),
     )
     .await;
     let text = emitted_text(&items);
@@ -295,10 +291,10 @@ async fn post_call_streaming_iterator_hook_keeps_an_allowed_anthropic_tool_use()
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_anthropic_stream() {
-    let stream = anthropic_thinking_tool_stream("shell");
-    let items = run_anthropic(
+    let stream = anthropic_tool_stream(&["shell"], true);
+    let items = run_stream(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
-        stream,
+        bytes_stream(stream),
     )
     .await;
     let text = emitted_text(&items);
@@ -311,10 +307,10 @@ async fn post_call_streaming_iterator_hook_keeps_thinking_blocks_of_a_denied_ant
 
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_passes_an_allowed_anthropic_stream_through() {
-    let stream = anthropic_tool_stream(&["read"]);
-    let items = run_anthropic(
+    let stream = anthropic_tool_stream(&["read"], false);
+    let items = run_stream(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
-        stream.clone(),
+        bytes_stream(stream.clone()),
     )
     .await;
     assert_eq!(items, vec![StreamItem::Bytes(stream.into_bytes())]);
@@ -331,35 +327,9 @@ fn openai_tool_stream() -> Vec<StreamItem> {
     .collect()
 }
 
-async fn run_openai(
-    guardrail: &crate::tool_permission::ToolPermissionGuardrail,
-    chunks: Vec<StreamItem>,
-) -> Vec<StreamItem> {
-    let (sender, receiver) = mpsc::channel(chunks.len().max(1));
-    for item in chunks {
-        sender.send(item).await.expect("send");
-    }
-    drop(sender);
-    let (output, mut output_receiver) = mpsc::channel(8);
-    post_call_streaming_iterator_hook(
-        guardrail,
-        StreamBufferLimits::default(),
-        &services(),
-        receiver,
-        output,
-    )
-    .await
-    .expect("the stream checks");
-    let mut items = Vec::new();
-    while let Some(item) = output_receiver.recv().await {
-        items.push(item);
-    }
-    items
-}
-
 #[tokio::test]
 async fn post_call_streaming_iterator_hook_rewrites_a_denied_openai_stream() {
-    let items = run_openai(
+    let items = run_stream(
         &rewrite_guardrail(vec![rule("block-shell", "deny", "shell")]),
         openai_tool_stream(),
     )

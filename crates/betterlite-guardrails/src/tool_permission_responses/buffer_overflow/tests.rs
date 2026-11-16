@@ -7,7 +7,7 @@ use tokio::sync::mpsc;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::StreamItem;
 use crate::tool_permission_responses::error::ResponseToolError;
-use crate::tool_permission_responses::streaming::post_call_streaming_iterator_hook;
+use crate::tool_permission_responses::streaming::streaming_iterator_hook;
 use crate::tool_permission_responses::tests::support::{GUARDRAIL_NAME, guardrail, services};
 
 use super::{DEFAULT_MAX_STREAM_CHUNKS, StreamBufferLimits};
@@ -29,7 +29,7 @@ async fn run_hook(
     }
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(8);
-    let result = post_call_streaming_iterator_hook(
+    let result = streaming_iterator_hook(
         &guardrail(Vec::new()),
         limits,
         &services(),

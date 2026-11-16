@@ -6,21 +6,21 @@ use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_message_scope::StreamItem;
 use crate::tool_permission_responses::buffer_overflow::StreamBufferLimits;
 use crate::tool_permission_responses::error::ResponseToolError;
-use crate::tool_permission_responses::streaming::post_call_streaming_iterator_hook;
+use crate::tool_permission_responses::streaming::streaming_iterator_hook;
 use crate::tool_permission_responses::tests::support::{GUARDRAIL_NAME, guardrail, services};
 
-use super::UNPARSEABLE_STREAM_MESSAGE;
+use super::UNPARSABLE_STREAM_MESSAGE;
 
 #[test]
-fn unparseable_stream_message_matches_litellm() {
+fn unparsable_stream_message_matches_litellm() {
     assert_eq!(
-        UNPARSEABLE_STREAM_MESSAGE,
+        UNPARSABLE_STREAM_MESSAGE,
         "Streamed response could not be verified for tool permissions (not a parseable Anthropic SSE stream), blocking it"
     );
 }
 
 #[tokio::test]
-async fn an_unparseable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
+async fn an_unparsable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
     let (sender, receiver) = mpsc::channel(1);
     sender
         .send(StreamItem::Bytes(b"data: {not json\n\n".to_vec()))
@@ -28,7 +28,7 @@ async fn an_unparseable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
         .expect("send");
     drop(sender);
     let (output, mut output_receiver) = mpsc::channel(4);
-    let error = post_call_streaming_iterator_hook(
+    let error = streaming_iterator_hook(
         &guardrail(Vec::new()),
         StreamBufferLimits::default(),
         &services(),
@@ -36,7 +36,7 @@ async fn an_unparseable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
         output,
     )
     .await
-    .expect_err("an unparseable raw stream is blocked");
+    .expect_err("an unparsable raw stream is blocked");
     let ResponseToolError::Guardrail(GuardrailFailure::GuardrailRaised {
         guardrail_name,
         message,
@@ -48,7 +48,7 @@ async fn an_unparseable_raw_stream_raises_a_400_failure_naming_the_guardrail() {
         panic!("expected a raised guardrail failure");
     };
     assert_eq!(guardrail_name.as_deref(), Some(GUARDRAIL_NAME));
-    assert_eq!(message, UNPARSEABLE_STREAM_MESSAGE);
+    assert_eq!(message, UNPARSABLE_STREAM_MESSAGE);
     assert!(wrap_default_message);
     assert_eq!(status_code, 400);
     assert!(!blocked_content);
