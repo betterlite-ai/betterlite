@@ -3,8 +3,8 @@ use super::input::{
     CapabilityCall, Endpoint, Install, MapStep, ReplyStep, ResourceStep, Steps, TransformStep,
     UrlCall, UrlStep, WebsocketStep,
 };
-use super::sources;
-use crate::helpers::HelperError;
+use crate::urls::sources::NoSources;
+use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
 use betterlite_azure::responses::capabilities::{
     is_o_series_model, map_params, o_series_map_params, o_series_supported_params, supported_params,
 };
@@ -15,6 +15,7 @@ use betterlite_azure::responses::resources::{list_input_items, resource_request}
 use betterlite_azure::responses::url::{
     MODEL_IN_WEBSOCKET_URL, SUPPORTS_NATIVE_WEBSOCKET, complete_url, websocket_url,
 };
+use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_config::sections::azure_responses::Settings;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::reasoning_models::DropParams;
@@ -24,56 +25,56 @@ use betterlite_openai::response_params::params::ResponsesOptions;
 use betterlite_openai::response_resources::request::{
     InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 const DEFAULT_INPUT_ITEMS_LIMIT: i64 = 20;
 const PROJECTED: [&str; 3] = ["model", "input", "tools"];
-pub(super) fn invalid_input(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: String::from("InvalidInput"),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
 pub(super) fn base_rows(call: &UrlCall) -> Vec<Value> {
     let settings = Settings {
         default_responses_api_version: call.default_api_version.clone(),
     };
-    call.urls
+    call.steps
         .iter()
         .map(|step| base_row(step, &settings))
         .collect()
 }
 fn base_row(step: &UrlStep, settings: &Settings) -> Value {
     let key = step.api_key.as_deref().map(SecretString::from);
-    let Ok(url) = complete_url(
-        step.api_base.as_deref(),
-        step.api_version.as_deref(),
-        settings,
-    ) else {
-        return json!({"ok": false, "url": Value::Null, "headers": Value::Null, "status": Value::Null});
+    let credentials = DeploymentSettings {
+        azure_ad_token: None,
+        tenant_id: None,
+        client_id: None,
+        client_secret: None,
+        azure_scope: String::from("https://cognitiveservices.azure.com/.default"),
+        azure_username: None,
+        azure_password: None,
     };
-    match sources::environment_headers(&step.headers, key.as_ref()) {
-        Ok(headers) => json!({"ok": true, "url": url, "headers": headers, "status": Value::Null}),
-        Err(_) => {
+    let headers = validate_azure_environment(EnvironmentHeadersRequest {
+        headers: step.headers.clone(),
+        api_key: key.as_ref(),
+        credentials: &credentials,
+        refresh_enabled: false,
+        provider: None,
+        sources: &NoSources,
+    });
+    let base = step.api_base.as_deref();
+    match (
+        complete_url(base, step.api_version.as_deref(), settings),
+        headers,
+    ) {
+        (Ok(url), Ok(headers)) => {
+            json!({"ok": true, "url": url, "headers": headers, "status": Value::Null})
+        }
+        _ => {
             json!({"ok": false, "url": Value::Null, "headers": Value::Null, "status": Value::Null})
         }
     }
 }
-pub(super) fn transform_rows(call: &Steps<TransformStep>) -> Result<Vec<Value>, Box<HelperError>> {
-    call.steps
-        .iter()
-        .map(projected_body)
-        .collect::<Result<Vec<Value>, Box<HelperError>>>()
-}
-fn projected_body(step: &TransformStep) -> Result<Value, Box<HelperError>> {
-    let body = transform_request(&step.model, &step.input, &step.params, None)
-        .map_err(|error| invalid_input(error.to_string()))?;
+pub(super) fn projected_body(step: &TransformStep) -> Result<Value, Box<HelperError>> {
+    let body = transform_request(&step.model, &step.input, &step.params, None).or_value_error()?;
     let value = serde_json::to_value(&body).expect("the request body serializes");
     let projected: serde_json::Map<String, Value> = PROJECTED
         .into_iter()
@@ -94,23 +95,13 @@ fn websocket_step(step: &WebsocketStep) -> Value {
         Err(error) => json!({"ok": false, "url": Value::Null, "status": error.http_status()}),
     }
 }
-pub(super) fn resource_rows(call: &Steps<ResourceStep>) -> Result<Vec<Value>, Box<HelperError>> {
-    let mut rows = Vec::with_capacity(call.steps.len());
-    rows.extend(call.steps.iter().map(resource_row));
-    Ok(rows)
-}
-fn resource_row(step: &ResourceStep) -> Value {
+pub(super) fn resource_row(step: &ResourceStep) -> Value {
+    let (base, id) = (&step.api_base, &step.response_id);
     let result = match step.endpoint {
         Endpoint::List => list_request(step),
-        Endpoint::Get => {
-            resource_request(&step.api_base, &step.response_id, ResourceOperation::Get)
-        }
-        Endpoint::Delete => {
-            resource_request(&step.api_base, &step.response_id, ResourceOperation::Delete)
-        }
-        Endpoint::Cancel => {
-            resource_request(&step.api_base, &step.response_id, ResourceOperation::Cancel)
-        }
+        Endpoint::Get => resource_request(base, id, ResourceOperation::Get),
+        Endpoint::Delete => resource_request(base, id, ResourceOperation::Delete),
+        Endpoint::Cancel => resource_request(base, id, ResourceOperation::Cancel),
     };
     match result {
         Ok(request) => json!({
@@ -137,14 +128,7 @@ fn list_request(step: &ResourceStep) -> Result<ResourceRequest, ResponsesError> 
     };
     list_input_items(&step.api_base, &step.response_id, &query)
 }
-pub(super) fn reply_rows(call: &Steps<ReplyStep>) -> Vec<Value> {
-    let mut rows = Vec::with_capacity(call.steps.len());
-    for step in &call.steps {
-        rows.push(reply_row(step));
-    }
-    rows
-}
-fn reply_row(step: &ReplyStep) -> Value {
+pub(super) fn reply_row(step: &ReplyStep) -> Value {
     let headers = IndexMap::new();
     let reply = RawResponse {
         status: step.status,
