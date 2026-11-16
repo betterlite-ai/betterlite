@@ -26,94 +26,92 @@ const REJECTED_MESSAGE: &str = "Guardrail rejected";
 const APPROVE_FAILED: &str = "Error approving guardrail submission";
 const REJECT_FAILED: &str = "Error rejecting guardrail submission";
 
-pub(super) async fn approve_guardrail_submission<R, S>(
+#[derive(Clone, Copy)]
+pub(super) enum Decision {
+    Approve,
+    Reject,
+}
+
+pub(super) async fn review_submission<R, S>(
     State(state): State<Arc<MutationState<R, S>>>,
     Path(guardrail_id): Path<String>,
+    Extension(decision): Extension<Decision>,
     caller: Option<Extension<AuthContext>>,
 ) -> Result<Json<SubmissionDecision>, MutationError>
 where
     R: GuardrailRows + 'static,
     S: ReviewRows + 'static,
 {
-    let context = authenticated(caller)?;
-    require_admin(&context, REVIEW_ADMIN_REQUIRED)?;
-    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
-    let row = pending_row(database, &guardrail_id, APPROVE_FAILED).await?;
+    let (failed, status, message) = match decision {
+        Decision::Approve => (APPROVE_FAILED, ACTIVE, APPROVED_MESSAGE),
+        Decision::Reject => (REJECT_FAILED, REJECTED, REJECTED_MESSAGE),
+    };
+    let (database, row) = pending_submission(&state, caller, &guardrail_id, failed).await?;
     database
         .review_rows
-        .set_status(&guardrail_id, ACTIVE, Utc::now())
+        .set_status(&guardrail_id, status, Utc::now())
         .await
-        .map_err(|source| logged(APPROVE_FAILED, MutationError::ReviewRows { source }))?;
+        .map_err(|source| logged(failed, MutationError::ReviewRows { source }))?;
+    let warning = match decision {
+        Decision::Approve => activate(database, &row, &guardrail_id).await?,
+        Decision::Reject => None,
+    };
+    Ok(Json(SubmissionDecision {
+        guardrail_id,
+        status,
+        message,
+        warning,
+    }))
+}
+
+// The warning an approval carries when the guardrail did not start in memory
+async fn activate<R, S>(
+    database: &MutationDatabase<R, S>,
+    row: &ReviewRow,
+    guardrail_id: &str,
+) -> Result<Option<String>, MutationError>
+where
+    R: GuardrailRows,
+    S: ReviewRows,
+{
     let Some(params) =
         parse_json_object(row.litellm_params.as_ref()).filter(|params| !params.0.is_empty())
     else {
         return Err(MutationError::MissingParams);
     };
-    match start_approved(database, &row, params).await {
+    match start_approved(database, row, params).await {
         Ok(()) => {
             tracing::info!(
                 "Approved guardrail {} (ID: {guardrail_id}) and initialized in memory",
                 row.guardrail_name
             );
-            Ok(Json(SubmissionDecision {
-                guardrail_id,
-                status: ACTIVE,
-                message: APPROVED_MESSAGE,
-                warning: None,
-            }))
+            Ok(None)
         }
         Err(error) => {
             tracing::warn!(
                 "Failed to initialize approved guardrail {guardrail_id} in memory: {error}"
             );
-            let warning = format!(
+            Ok(Some(format!(
                 "Guardrail was marked active but failed to initialize in memory: {error}. It will be picked up on the next sync cycle."
-            );
-            Ok(Json(SubmissionDecision {
-                guardrail_id,
-                status: ACTIVE,
-                message: APPROVED_MESSAGE,
-                warning: Some(warning),
-            }))
+            )))
         }
     }
 }
 
-pub(super) async fn reject_guardrail_submission<R, S>(
-    State(state): State<Arc<MutationState<R, S>>>,
-    Path(guardrail_id): Path<String>,
+// The admin gate, the database and the pending_review check both decisions share
+async fn pending_submission<'state, R, S>(
+    state: &'state MutationState<R, S>,
     caller: Option<Extension<AuthContext>>,
-) -> Result<Json<SubmissionDecision>, MutationError>
-where
-    R: GuardrailRows + 'static,
-    S: ReviewRows + 'static,
-{
-    let context = authenticated(caller)?;
-    require_admin(&context, REVIEW_ADMIN_REQUIRED)?;
-    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
-    pending_row(database, &guardrail_id, REJECT_FAILED).await?;
-    database
-        .review_rows
-        .set_status(&guardrail_id, REJECTED, Utc::now())
-        .await
-        .map_err(|source| logged(REJECT_FAILED, MutationError::ReviewRows { source }))?;
-    Ok(Json(SubmissionDecision {
-        guardrail_id,
-        status: REJECTED,
-        message: REJECTED_MESSAGE,
-        warning: None,
-    }))
-}
-
-async fn pending_row<R, S>(
-    database: &MutationDatabase<R, S>,
     guardrail_id: &str,
     context: &str,
-) -> Result<ReviewRow, MutationError>
+) -> Result<(&'state MutationDatabase<R, S>, ReviewRow), MutationError>
 where
     R: GuardrailRows,
     S: ReviewRows,
 {
+    let auth = authenticated(caller)?;
+    require_admin(&auth, REVIEW_ADMIN_REQUIRED)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     let row = database
         .review_rows
         .find_unique(guardrail_id)
@@ -127,7 +125,7 @@ where
             status: row.status.clone(),
         });
     }
-    Ok(row)
+    Ok((database, row))
 }
 
 // LiteLLM's _parse_json_field: an object as stored, or text that parses to an object

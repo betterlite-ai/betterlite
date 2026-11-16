@@ -74,16 +74,11 @@ impl ResourceBinding for ReviewRowsBinding {
 }
 
 pub struct PostgresReviewRows<'db> {
-    client: Option<PrismaClient<'db>>,
-    publish: PublishChange<TableError>,
+    pub client: Option<PrismaClient<'db>>,
+    pub publish: PublishChange<TableError>,
 }
 
 impl<'db> PostgresReviewRows<'db> {
-    #[must_use]
-    pub fn new(client: Option<PrismaClient<'db>>, publish: PublishChange<TableError>) -> Self {
-        Self { client, publish }
-    }
-
     // The write handle keeps reads after a write and makes the config-sync wrapper publish
     fn table(
         &self,

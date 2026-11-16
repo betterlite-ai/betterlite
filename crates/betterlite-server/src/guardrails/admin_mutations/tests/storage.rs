@@ -83,7 +83,10 @@ async fn storage_round_trips_a_review_row() {
         availability: &availability,
     };
     let journal: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
-    let rows = PostgresReviewRows::new(Some(client), publisher(&journal));
+    let rows = PostgresReviewRows {
+        client: Some(client),
+        publish: publisher(&journal),
+    };
     let row = rows
         .find_unique("g1")
         .await

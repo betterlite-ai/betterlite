@@ -24,7 +24,7 @@ use self::delete::delete_guardrail;
 use self::error::MutationError;
 use self::patch::patch_guardrail;
 use self::replace::replace_guardrail;
-use self::review::{approve_guardrail_submission, reject_guardrail_submission};
+use self::review::{Decision, review_submission};
 use self::review_rows::ReviewRows;
 use crate::auth::auth_identity::AuthContext;
 
@@ -55,11 +55,11 @@ where
         )
         .route(
             "/guardrails/submissions/{guardrail_id}/approve",
-            post(approve_guardrail_submission::<R, S>),
+            post(review_submission::<R, S>).layer(Extension(Decision::Approve)),
         )
         .route(
             "/guardrails/submissions/{guardrail_id}/reject",
-            post(reject_guardrail_submission::<R, S>),
+            post(review_submission::<R, S>).layer(Extension(Decision::Reject)),
         )
         .with_state(Arc::new(state))
 }

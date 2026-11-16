@@ -308,16 +308,25 @@ pub(super) fn stored_row(id: &str, name: &str, params: &str, status: &str) -> Gu
     }
 }
 
+impl From<GuardrailRow> for ReviewRow {
+    fn from(row: GuardrailRow) -> Self {
+        Self {
+            guardrail_id: row.guardrail_id,
+            guardrail_name: row.guardrail_name,
+            litellm_params: None,
+            guardrail_info: None,
+            team_id: row.team_id,
+            status: row.status,
+            submitted_at: Some(row.created_at),
+            reviewed_at: None,
+        }
+    }
+}
+
 pub(super) fn review_row(id: &str, name: &str, params: Option<&str>, status: &str) -> ReviewRow {
     ReviewRow {
-        guardrail_id: id.to_owned(),
-        guardrail_name: name.to_owned(),
         litellm_params: params.map(parse),
-        guardrail_info: None,
-        team_id: None,
-        status: status.to_owned(),
-        submitted_at: Some(stamp("2026-01-02T03:04:05")),
-        reviewed_at: None,
+        ..ReviewRow::from(stored_row(id, name, "{}", status))
     }
 }
 

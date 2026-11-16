@@ -9,6 +9,7 @@ use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
 use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::Guardrail;
 use betterlite_config::sections::guardrail_params::routes::PatchGuardrailRequest;
+use betterlite_guardrails::guardrail_registry::error::RegistryError;
 use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 use betterlite_guardrails::guardrail_startup::reconcile::GuardrailReconcile as _;
 use chrono::Utc;
@@ -90,8 +91,11 @@ fn merge_guardrail(
     request: &PatchGuardrailRequest,
 ) -> Result<Guardrail, MutationError> {
     let params = match request.litellm_params.as_ref() {
-        Some(sent) => merge_params(&existing.litellm_params, sent)
-            .map_err(|source| MutationError::UpdateRejected { source })?,
+        Some(sent) => merge_params(&existing.litellm_params, sent).map_err(|source| {
+            MutationError::UpdateRejected {
+                source: RegistryError::Params(source),
+            }
+        })?,
         None => existing.litellm_params.clone(),
     };
     let info = match request.guardrail_info.clone() {
