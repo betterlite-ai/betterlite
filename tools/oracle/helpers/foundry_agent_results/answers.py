@@ -22,20 +22,17 @@ from .types import (
 from .views import chunk_view, reply_view, usage_of
 
 
-def extraction_answer(call: ExtractionCall) -> JsonValue:
-    handler = AgentHandler()
+def extraction_answer(handler: AgentHandler, call: ExtractionCall) -> JsonValue:
     content, annotations = handler._extract_content_from_messages(call["messages"])  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L158-L175
     return {"content": content, "annotations": JSON.validate_python(annotations)}
 
 
-def annotation_answer(call: AnnotationCall) -> JsonValue:
-    handler = AgentHandler()
+def annotation_answer(handler: AgentHandler, call: AnnotationCall) -> JsonValue:
     transformed = handler._transform_annotations(call["annotations"])  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L177-L210
     return JSON.validate_python(transformed)
 
 
-def reply_answer(call: ReplyCall) -> JsonValue:
-    handler = AgentHandler()
+def reply_answer(handler: AgentHandler, call: ReplyCall) -> JsonValue:
     response = ModelResponse()
     existing = call["existing_usage"]
     if existing is not None:
@@ -98,8 +95,7 @@ async def collect_chunks(
     return chunks
 
 
-def stream_answer(call: StreamCall) -> JsonValue:
-    handler = AgentHandler()
+def stream_answer(handler: AgentHandler, call: StreamCall) -> JsonValue:
     patch_identity(call["id"], call["created"])
     install_client(FakeClient(200, call["body"], call["split"]))
     chunks = asyncio.run(collect_chunks(handler, call))
@@ -125,8 +121,7 @@ async def request_outcome(handler: AgentHandler, call: RequestCall) -> JsonValue
     return {"ok": True, "chunks": chunks}
 
 
-def request_answer(call: RequestCall) -> JsonValue:
-    handler = AgentHandler()
+def request_answer(handler: AgentHandler, call: RequestCall) -> JsonValue:
     patch_identity(call["id"], call["created"])
     client = FakeClient(call["status"], call["body"])
     factory = install_client(client)
