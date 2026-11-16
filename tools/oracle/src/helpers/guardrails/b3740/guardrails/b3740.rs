@@ -53,43 +53,54 @@ pub(crate) fn run(input: &Input) -> HelperResult {
 }
 
 fn pre_call(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
-    let call_type = call_type(input)?;
-    let mut data = input.data.clone();
-    let runtime = runtime()?;
-    let sink = DiscardSink;
-    let outcome = runtime.block_on(async {
-        let mut context = setup.context(identity(input), &sink);
-        async_pre_call_hook(&setup.guardrail, &mut data, call_type, &mut context).await
-    });
-    Ok(outcome)
+    blocking(input, setup, BlockingOperation::PreCall(call_type(input)?))
 }
 
 fn post_success(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
     let result = required(input.result.as_ref(), "result")?.clone();
-    let mut data = input.data.clone();
-    let runtime = runtime()?;
-    let sink = DiscardSink;
-    let outcome = runtime.block_on(async {
-        let mut context = setup.context(identity(input), &sink);
-        async_post_call_success_hook(&setup.guardrail, &mut data, result, &mut context)
-            .await
-            .map(|_| ())
-    });
-    Ok(outcome)
+    blocking(input, setup, BlockingOperation::PostSuccess(result))
 }
 
 fn streaming(input: &Input, setup: &Setup) -> Result<Outcome, Box<HelperError>> {
     let chunks = required(input.chunks.as_ref(), "chunks")?.clone();
-    let mut data = input.data.clone();
+    blocking(input, setup, BlockingOperation::Streaming(chunks))
+}
+
+enum BlockingOperation {
+    PreCall(Option<CallType>),
+    PostSuccess(GuardrailValue),
+    Streaming(Vec<GuardrailValue>),
+}
+
+// The three blocking hooks differ only in the call they make on one request's state.
+fn blocking(
+    input: &Input,
+    setup: &Setup,
+    operation: BlockingOperation,
+) -> Result<Outcome, Box<HelperError>> {
     let runtime = runtime()?;
     let sink = DiscardSink;
-    let outcome = runtime.block_on(async {
-        let mut context = setup.context(identity(input), &sink);
-        streaming_hook(&setup.guardrail, chunks, &mut data, &mut context)
-            .await
-            .map(|_| ())
-    });
-    Ok(outcome)
+    let mut data = input.data.clone();
+    let mut context = setup.context(identity(input), &sink);
+    let guardrail = &setup.guardrail;
+    Ok(match operation {
+        BlockingOperation::PreCall(call_type) => runtime.block_on(async_pre_call_hook(
+            guardrail,
+            &mut data,
+            call_type,
+            &mut context,
+        )),
+        BlockingOperation::PostSuccess(result) => runtime.block_on(async {
+            async_post_call_success_hook(guardrail, &mut data, result, &mut context)
+                .await
+                .map(|_| ())
+        }),
+        BlockingOperation::Streaming(chunks) => runtime.block_on(async {
+            streaming_hook(guardrail, chunks, &mut data, &mut context)
+                .await
+                .map(|_| ())
+        }),
+    })
 }
 
 fn logging_sync(input: &Input, setup: &Setup) -> Result<Option<u16>, Box<HelperError>> {
