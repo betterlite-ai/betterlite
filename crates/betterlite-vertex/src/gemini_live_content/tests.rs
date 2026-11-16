@@ -16,7 +16,7 @@ use super::delta::content_delta_event;
 use super::done::{additional_done_events, content_done_event};
 use super::error::ContentError;
 use super::events::ContentEvent;
-use super::ids::ContentIds;
+use super::ids::{ContentIds, UuidIds};
 use super::map::{
     MappedEvent, ModalityEvent, get_nested_value, map_generation_complete_event,
     map_model_turn_event, map_openai_event,
@@ -25,6 +25,7 @@ use super::modality::handle_openai_modality_event;
 use super::start::{StartContent, start_content_events};
 use super::state::ContentState;
 use super::update::{ChunkKind, ChunkSource, update_current_chunks};
+use uuid::Uuid;
 
 const SETUP: &str = r#"{"setup":{"generationConfig":{"responseModalities":["AUDIO","TEXT"],"temperature":0.5,"maxOutputTokens":256}}}"#;
 
@@ -114,6 +115,46 @@ fn maps_generation_complete_only_with_a_prior_delta_type() {
         map_generation_complete_event(None),
         Err(ContentError::MissingDeltaType)
     ));
+}
+
+#[test]
+fn maps_mapped_events_to_modality_events() {
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::TextDelta),
+        Some(ModalityEvent::TextDelta)
+    );
+    assert_eq!(ModalityEvent::TextDelta.delta_type(), AllDeltaType::Text);
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::AudioDelta),
+        Some(ModalityEvent::AudioDelta)
+    );
+    assert_eq!(ModalityEvent::AudioDelta.delta_type(), AllDeltaType::Audio);
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::TextDone),
+        Some(ModalityEvent::TextDone)
+    );
+    assert_eq!(ModalityEvent::TextDone.delta_type(), AllDeltaType::Text);
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::AudioDone),
+        Some(ModalityEvent::AudioDone)
+    );
+    assert_eq!(ModalityEvent::AudioDone.delta_type(), AllDeltaType::Audio);
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::SessionCreated),
+        None
+    );
+    assert_eq!(
+        ModalityEvent::from_mapped(MappedEvent::FunctionCallArgumentsDone),
+        None
+    );
+    assert_eq!(ModalityEvent::from_mapped(MappedEvent::ResponseDone), None);
+}
+
+#[test]
+fn generates_uuid_v4_ids() {
+    let mut ids = UuidIds;
+    let identifier = ids.next_id();
+    assert_eq!(Uuid::parse_str(&identifier).unwrap().get_version_num(), 4);
 }
 
 #[test]
