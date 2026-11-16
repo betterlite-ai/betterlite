@@ -382,6 +382,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "video_reference_to_id"
+path = "fuzz_targets/video_reference_to_id.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "fal_video_reply"
 path = "fuzz_targets/fal_video_reply.rs"
 test = false

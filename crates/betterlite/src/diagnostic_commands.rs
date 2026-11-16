@@ -73,7 +73,7 @@ pub fn config_validation_command<L>(
     err_writer: &mut dyn Write,
 ) -> Result<(), DiagnosticError>
 where
-    L: EnvironmentLookup,
+    L: EnvironmentLookup + Sync,
 {
     let Some(path) = config else {
         return Err(DiagnosticError::ConfigRequired);

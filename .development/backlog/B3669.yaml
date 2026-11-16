@@ -1,7 +1,7 @@
 id: B3669
 milestone: M6 guardrails
 title: Chat guardrail streaming and lossless tool merging
-status: todo
+status: done
 depends_on: [B3661, B3663, B3664, B3667, B3668, B907, B913, B966]
 file: tasks/B3669-chat-guardrail-streaming.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/proxy/guardrails/anthropic_sse.py"
 parent: B104
 split_from: B104
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2146
