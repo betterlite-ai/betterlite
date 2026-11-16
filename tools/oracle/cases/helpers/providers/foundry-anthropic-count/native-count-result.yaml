@@ -1,0 +1,74 @@
+kind: helper
+name: native-count-result
+call:
+  foundry_anthropic_count:
+    function: counter
+    cases:
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":42,"extra":{"a":1}}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":0}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: 'null'}
+      - model: claude-sonnet-4-5
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":7}'}
+      - model: claude-sonnet-4-5
+        messages: []
+        contents: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":7}'}
+      - model: claude-sonnet-4-5
+        messages: null
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":7}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: anthropic
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        system: you count tokens
+        tools: [{name: count, input_schema: {type: object}}]
+        litellm_params: {api_key: params-key, api_base: https://r.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+kind: helper
+name: b3330-extract-model-simple
+call:
+  b3330: {function: extract_model, value: openai/gpt-4o}
+env: {}
+compare: {ignore: []}

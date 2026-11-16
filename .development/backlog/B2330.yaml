@@ -1,7 +1,7 @@
 id: B2330
 milestone: M4 keys, spend and management
 title: Shared audit policy, records and event sink
-status: todo
+status: done
 depends_on: [B002, B003, B171, B188, B244, B726, B856, B860, B2314]
 file: tasks/B2330-audit-event-sink.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/_types.py"
 parent: B065
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1930

@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use self::error::HostedVllmEmbeddingError;
+use crate::embedding::reply_error::reply_error;
 use crate::embedding::{EmbeddingInput, EmbeddingRecord, EmbeddingResponse, EmbeddingUsage};
 use crate::openai_base_config::{Headers, Object};
 
@@ -142,8 +143,13 @@ pub fn transform_embedding_response(
     }
     let reply: Value =
         serde_json::from_slice(raw).map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
-    if let Some(error) = reply_error(&reply) {
-        return Err(error);
+    if let Some(failure) = reply_error(&reply) {
+        return Err(provider_error(
+            failure
+                .message
+                .unwrap_or_else(|| String::from(DEFAULT_ERROR)),
+            failure.status,
+        ));
     }
     let decoded: RawReply = serde_json::from_value(reply)
         .map_err(|source| HostedVllmEmbeddingError::Shape { source })?;
@@ -165,58 +171,6 @@ pub fn transform_embedding_response(
         model: decoded.model,
         usage,
     })
-}
-
-// LiteLLM checks an error object inside a successful reply before it builds the embedding response
-fn reply_error(reply: &Value) -> Option<HostedVllmEmbeddingError> {
-    let error = reply.get("error").filter(|error| !error.is_null())?;
-    match error {
-        Value::String(text) if text.is_empty() => None,
-        Value::Object(fields) => object_error(fields),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
-            Some(provider_error(String::from(DEFAULT_ERROR), 422))
-        }
-    }
-}
-
-fn object_error(fields: &Object) -> Option<HostedVllmEmbeddingError> {
-    let message = fields.get("message");
-    let code = fields.get("code");
-    if message.is_none_or(is_blank) && code.is_none_or(Value::is_null) {
-        return None;
-    }
-    let status_code = code
-        .and_then(Value::as_u64)
-        .and_then(|number| u16::try_from(number).ok())
-        .unwrap_or(422);
-    Some(provider_error(error_text(message), status_code))
-}
-
-fn error_text(message: Option<&Value>) -> String {
-    match message {
-        Some(Value::String(text)) => text.clone(),
-        Some(other) if !is_blank(other) => other.to_string(),
-        _ => String::from(DEFAULT_ERROR),
-    }
-}
-
-fn is_blank(value: &Value) -> bool {
-    if value.is_null() {
-        return true;
-    }
-    if let Some(flag) = value.as_bool() {
-        return !flag;
-    }
-    if let Some(number) = value.as_f64() {
-        return number == 0.0;
-    }
-    if let Some(text) = value.as_str() {
-        return text.is_empty();
-    }
-    if let Some(items) = value.as_array() {
-        return items.is_empty();
-    }
-    value.as_object().is_some_and(Object::is_empty)
 }
 
 const fn provider_error(message: String, status_code: u16) -> HostedVllmEmbeddingError {
