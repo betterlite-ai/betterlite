@@ -11,7 +11,7 @@ use crate::api::api_boundaries::ApiLimits;
 mod blocks;
 mod response;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SseEvent {
     pub event_type: String,
     pub data: Json,
@@ -152,11 +152,10 @@ pub(super) fn text_field<'fields>(
     fields: &'fields IndexMap<String, Json>,
     key: &str,
 ) -> Option<&'fields str> {
-    match fields.get(key) {
-        Some(Json::Text(text)) => Some(text),
-        Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))
-        | None => None,
+    if let Some(Json::Text(text)) = fields.get(key) {
+        return Some(text);
     }
+    None
 }
 
 pub(super) fn event_fields(data: &Json) -> Result<&IndexMap<String, Json>, MessagesAgenticError> {

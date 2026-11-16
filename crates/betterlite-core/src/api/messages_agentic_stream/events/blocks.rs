@@ -107,7 +107,10 @@ pub(super) fn handle_content_block_delta(
     blocks: &mut BTreeMap<usize, IndexMap<String, Json>>,
 ) -> Result<(), MessagesAgenticError> {
     let (index, delta) = delta_payload(data)?;
-    apply_delta(blocks.get_mut(&index), &delta)
+    let Some(target) = blocks.get_mut(&index) else {
+        return Ok(());
+    };
+    apply_delta(target, &delta)
 }
 
 fn delta_payload(data: &Json) -> Result<(usize, IndexMap<String, Json>), MessagesAgenticError> {
@@ -118,12 +121,9 @@ fn delta_payload(data: &Json) -> Result<(usize, IndexMap<String, Json>), Message
 }
 
 fn apply_delta(
-    block: Option<&mut IndexMap<String, Json>>,
+    block: &mut IndexMap<String, Json>,
     delta: &IndexMap<String, Json>,
 ) -> Result<(), MessagesAgenticError> {
-    let Some(block) = block else {
-        return Ok(());
-    };
     match text_field(delta, "type").unwrap_or_default() {
         "text_delta" => append_text(block, "text", delta, "text"),
         "input_json_delta" => append_text(block, "_partial_json", delta, "partial_json"),
@@ -176,12 +176,11 @@ pub(super) fn handle_content_block_stop(
     blocks: &mut BTreeMap<usize, IndexMap<String, Json>>,
     limits: &ApiLimits,
 ) -> Result<(), MessagesAgenticError> {
-    let fields = event_fields(data)?;
-    let index = index_field(fields)?.unwrap_or(0);
-    match blocks.get_mut(&index) {
-        Some(block) => finish_tool_input(block, limits),
-        None => Ok(()),
+    let index = index_field(event_fields(data)?)?.unwrap_or(0);
+    if let Some(target) = blocks.get_mut(&index) {
+        finish_tool_input(target, limits)?;
     }
+    Ok(())
 }
 
 fn finish_tool_input(

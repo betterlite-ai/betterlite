@@ -6,8 +6,10 @@ use betterlite_context::agentic_callback::error::AgenticHookError;
 use betterlite_models::decisions::Json;
 use tracing::{debug, error, warn};
 
+use held_back::HeldBack as _;
+
 use super::events::{buffer_holds_server_tool_use, rebuild_agentic_response};
-use super::interceptor::{AgenticFollowUp, AgenticHookFuture, AgenticInterceptor};
+use super::interceptor::{AgenticFollowUp as _, AgenticHookFuture, AgenticInterceptor};
 use super::{
     LEAK_ERROR_FRAME, MessagesAgenticError, MessagesAgenticStreamError, MessagesAgenticStreamInput,
     MessagesAgenticStreamResult, PING_INTERVAL_SECONDS,
@@ -27,10 +29,8 @@ pub struct MessagesAgenticStream<S: MessagesProviderStream, I: AgenticIntercepto
     limits: ApiLimits,
     collected: Vec<Vec<u8>>,
     collected_bytes: usize,
-    drain_started: bool,
-    stream_exhausted: bool,
+    drain: Drain,
     hooks: HookState<I::FollowUp>,
-    hook_processing_done: bool,
     follow_up: Option<I::FollowUp>,
     leak: Option<bool>,
     replay_index: usize,
@@ -38,6 +38,14 @@ pub struct MessagesAgenticStream<S: MessagesProviderStream, I: AgenticIntercepto
     closed: bool,
 }
 
+// LiteLLM's _drain_task and _stream_exhausted: not started, draining, or the provider stream ended
+enum Drain {
+    Idle,
+    Draining,
+    Exhausted,
+}
+
+// LiteLLM's _hook_task and _hook_processing_done together
 enum HookState<FollowUp> {
     NotStarted,
     Running(AgenticHookFuture<FollowUp>),
@@ -66,10 +74,8 @@ where
             limits,
             collected: Vec::new(),
             collected_bytes: 0,
-            drain_started: false,
-            stream_exhausted: false,
+            drain: Drain::Idle,
             hooks: HookState::NotStarted,
-            hook_processing_done: false,
             follow_up: None,
             leak: None,
             replay_index: 0,
@@ -106,22 +112,18 @@ where
 
     // LiteLLM's __anext__ without hold_back: yield live, then process hooks at exhaustion
     async fn read_live(&mut self) -> Result<Option<Vec<u8>>, MessagesAgenticStreamError<S, I>> {
-        if !self.stream_exhausted {
-            let chunk = self
+        if !matches!(self.drain, Drain::Exhausted) {
+            let read = self
                 .inner
                 .next_chunk()
                 .await
                 .map_err(MessagesAgenticError::Provider)?;
-            match chunk {
-                Some(chunk) => {
-                    self.collect(chunk.clone())?;
-                    return Ok(Some(chunk));
-                }
-                None => {
-                    self.stream_exhausted = true;
-                    self.run_hooks().await;
-                }
+            if let Some(chunk) = read {
+                self.collect(chunk.clone())?;
+                return Ok(Some(chunk));
             }
+            self.drain = Drain::Exhausted;
+            self.run_hooks().await;
         }
         match self.follow_up.as_mut() {
             Some(follow_up) => follow_up
@@ -192,10 +194,10 @@ where
     }
 
     fn hook_future(&mut self) -> Option<AgenticHookFuture<I::FollowUp>> {
-        if self.hook_processing_done {
+        if !matches!(self.hooks, HookState::NotStarted) {
             return None;
         }
-        self.hook_processing_done = true;
+        self.hooks = HookState::Done;
         if self.collected.is_empty() {
             return None;
         }
