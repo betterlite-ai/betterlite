@@ -21,6 +21,9 @@ deviations:
   - what: A response error that is not a JSON string is dropped with a warning; LiteLLM's membership test over an error object checks its keys and then writes the object into the row.
     why: The failure branch's error is a string on the response contract, and Python's membership over a non-string is duck typing that docs/compatibility.md excludes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L83
+  - what: SUPABASE_URL is parsed when the logger is built and must use the http or https scheme, so a URL that does not parse or uses another scheme gives CatalogError::Init with a message naming SUPABASE_URL.
+    why: LiteLLM passes the string to supabase.create_client without a URL or scheme check, so a bad URL fails at the first write inside a caught exception; a Supabase URL on another scheme can never serve a request, and docs/compatibility.md asks for an error that names the field.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L31
 kept_bugs:
   - what: A success event whose payload carries no litellm_call_id writes its row under a fresh uuid4, so it cannot update an initiated row.
     why: The success dispatch site falls back to str(uuid.uuid4()) when litellm_params has no call id, and the pre-call dispatch raises on the missing key and writes no initiated row; a setup in that state still relies on getting its success row, so betterlite keeps the fallback instead of dropping the row.
