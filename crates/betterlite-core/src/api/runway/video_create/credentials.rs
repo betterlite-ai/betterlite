@@ -24,9 +24,11 @@ impl VideoCredentials {
     #[must_use]
     pub fn from_environment(lookup: &dyn EnvironmentLookup) -> Self {
         Self {
+            api_key: None,
+            params_api_key: None,
+            global_api_key: None,
             environment_secret: lookup.lookup("RUNWAYML_API_SECRET").map(SecretString::from),
             environment_key: lookup.lookup("RUNWAYML_API_KEY").map(SecretString::from),
-            ..Self::default()
         }
     }
 }

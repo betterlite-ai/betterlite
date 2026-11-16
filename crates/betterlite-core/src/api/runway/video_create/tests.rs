@@ -9,7 +9,7 @@ use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provi
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use rstest::rstest;
 use secrecy::SecretString;
-use serde_json::{Number, json};
+use serde_json::{Number, Value};
 
 use super::VideoParams;
 use super::credentials::{VideoCredentials, validate_environment};
@@ -294,7 +294,8 @@ fn timestamps_decode_offsets_and_zero_everything_else() {
 
 #[test]
 fn creation_keeps_identity_completion_presence_and_progress_absence() {
-    let body = r#"{"id":"task_1","status":"PENDING","createdAt":"2025-11-11T21:48:50Z"}"#;
+    let body =
+        r#"{"id":"task_1","status":"PENDING","createdAt":"2025-11-11T21:48:50Z","progress":0.5}"#;
     let video = created(body, None, &VideoParams::new());
     assert_eq!(video.id, "task_1");
     assert_eq!(video.object, VideoObjectType::Video);
@@ -326,21 +327,26 @@ fn a_present_failure_field_creates_an_error_without_forcing_the_status() {
         None,
         &VideoParams::new(),
     );
-    let error = blank.error.unwrap();
-    assert_eq!(error.get("code"), Some(&json!("")));
+    let blank_error = blank.error.unwrap();
+    assert_eq!(blank_error.get("code"), Some(&Value::from("")));
     assert_eq!(
-        error.get("message"),
-        Some(&json!("Video generation failed"))
+        blank_error.get("message"),
+        Some(&Value::from("Video generation failed"))
     );
     assert_eq!(blank.status, "completed");
+    let message_only = created(r#"{"id":"t","failure":"boom"}"#, None, &VideoParams::new());
+    let message_error = message_only.error.unwrap();
+    assert_eq!(message_error.get("code"), Some(&Value::from("unknown")));
+    assert_eq!(message_error.get("message"), Some(&Value::from("boom")));
+    assert_eq!(message_only.status, "queued");
     let nulls = created(
         r#"{"id":"t","failureCode":null,"failure":null}"#,
         None,
         &VideoParams::new(),
     );
-    let error = nulls.error.unwrap();
-    assert_eq!(error.get("code"), Some(&json!(null)));
-    assert_eq!(error.get("message"), Some(&json!(null)));
+    let null_error = nulls.error.unwrap();
+    assert_eq!(null_error.get("code"), Some(&Value::Null));
+    assert_eq!(null_error.get("message"), Some(&Value::Null));
 }
 
 #[test]
@@ -361,6 +367,12 @@ fn provider_tagging_leaves_empty_ids_alone() {
         &VideoParams::new(),
     );
     assert_eq!(empty_id.id, "");
+    let no_id = created(
+        r#"{"status":"PENDING"}"#,
+        Some("runwayml"),
+        &VideoParams::new(),
+    );
+    assert_eq!(no_id.id, "");
 }
 
 #[test]
@@ -374,7 +386,7 @@ fn request_fields_reach_the_reply_and_colons_become_x_in_the_size() {
     let video = created(r#"{"id":"t","status":"PENDING"}"#, None, &form.body);
     assert_eq!(video.model.as_deref(), Some("gen4_turbo"));
     assert_eq!(video.size.as_deref(), Some("1280x720"));
-    assert_eq!(video.seconds, Some(json!("4")));
+    assert_eq!(video.seconds, Some(Value::from("4")));
 }
 
 #[rstest]
@@ -389,6 +401,7 @@ fn request_fields_reach_the_reply_and_colons_become_x_in_the_size() {
 #[case::leading_zeros("0800:0750", Some("720p"))]
 #[case::not_a_ratio("1280", None)]
 #[case::empty_side(":720", None)]
+#[case::empty_height("1280:", None)]
 #[case::non_digits("1280x720", None)]
 #[case::second_ratio("1280:720:2", None)]
 #[case::signed("-800:720", None)]
@@ -406,13 +419,13 @@ fn resolution_reads_only_text_ratios() {
 }
 
 #[rstest]
-#[case::ten(lexeme("10"), Some(json!(0.1)))]
-#[case::fraction(lexeme("0.5"), Some(json!(0.005)))]
-#[case::two_and_a_half(lexeme("2.5"), Some(json!(0.025)))]
-#[case::hundred(lexeme("100"), Some(json!(1.0)))]
-#[case::zero(lexeme("0"), Some(json!(0.0)))]
-#[case::bool_true(Json::Bool(true), Some(json!(0.01)))]
-#[case::bool_false(Json::Bool(false), Some(json!(0.0)))]
+#[case::ten(lexeme("10"), Some(lexeme("0.1")))]
+#[case::fraction(lexeme("0.5"), Some(lexeme("0.005")))]
+#[case::two_and_a_half(lexeme("2.5"), Some(lexeme("0.025")))]
+#[case::hundred(lexeme("100"), Some(lexeme("1.0")))]
+#[case::zero(lexeme("0"), Some(lexeme("0.0")))]
+#[case::bool_true(Json::Bool(true), Some(lexeme("0.01")))]
+#[case::bool_false(Json::Bool(false), Some(lexeme("0.0")))]
 #[case::text(Json::Text("10".to_owned()), None)]
 #[case::null(Json::Null, None)]
 #[case::list(Json::List(Vec::new()), None)]
@@ -428,17 +441,28 @@ fn usage_carries_duration_resolution_and_reported_credits() {
     let form = create_request("gen4_turbo", "a cat", None, &map_openai_params(&given));
     let body = r#"{"id":"t","status":"PENDING","estimatedCost":{"credits":10}}"#;
     let usage = created(body, None, &form.body).usage.unwrap();
-    assert_eq!(usage.get("duration_seconds"), Some(&json!(5.0)));
-    assert_eq!(usage.get("video_resolution"), Some(&json!("720p")));
-    assert_eq!(usage.get("provider_reported_cost_usd"), Some(&json!(0.1)));
+    assert_eq!(
+        usage.get("duration_seconds").and_then(Value::as_f64),
+        Some(5.0)
+    );
+    assert_eq!(
+        usage.get("video_resolution").and_then(Value::as_str),
+        Some("720p")
+    );
+    assert_eq!(
+        usage
+            .get("provider_reported_cost_usd")
+            .and_then(Value::as_f64),
+        Some(0.1)
+    );
 }
 
 #[test]
-fn an_unparseable_seconds_text_leaves_the_duration_out_of_usage() {
+fn an_unparsable_seconds_text_leaves_the_duration_out_of_usage() {
     let given = params(&[("duration", text("soon"))]);
     let body = r#"{"id":"t","status":"PENDING"}"#;
     let video = created(body, None, &given);
-    assert_eq!(video.seconds, Some(json!("soon")));
+    assert_eq!(video.seconds, Some(Value::from("soon")));
     assert_eq!(video.usage.unwrap().get("duration_seconds"), None);
 }
 

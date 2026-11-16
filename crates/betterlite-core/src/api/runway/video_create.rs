@@ -1,3 +1,9 @@
+#![expect(
+    clippy::disallowed_methods,
+    clippy::disallowed_types,
+    reason = "VideoObject.error and usage are the video model's own serde_json maps, built and asserted here"
+)]
+
 pub mod credentials;
 pub mod error;
 pub mod params;

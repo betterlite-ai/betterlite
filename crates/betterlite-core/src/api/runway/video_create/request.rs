@@ -24,7 +24,7 @@ impl GenerationEndpoint {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CreateVideoForm {
     pub body: VideoParams,
     pub url: String,

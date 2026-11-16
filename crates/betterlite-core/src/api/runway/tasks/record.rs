@@ -70,7 +70,7 @@ impl From<Box<RawValue>> for TaskValue {
 
 impl TaskValue {
     #[must_use]
-    pub fn value(&self) -> Option<&Json> {
+    pub const fn value(&self) -> Option<&Json> {
         match self {
             Self::Missing => None,
             Self::Present(value) => Some(value),

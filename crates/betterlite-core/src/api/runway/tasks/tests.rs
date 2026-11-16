@@ -445,6 +445,6 @@ fn replays_the_runway_task_corpus(#[files("fuzz/corpus/runway_task/*")] path: Pa
         drop(task.estimated_credits().cloned());
         drop(task.failure.or_default("unknown"));
         drop(task.failure_code.or_default("unknown"));
-        drop(task.progress.to_string());
+        drop(task.progress.map(|share| share.to_string()));
     }
 }

@@ -10,10 +10,10 @@ const RESOLUTION_TIERS: [(u128, &str); 3] =
 // _ratio_to_resolution: a colon ratio whose sides are all ASCII digits, compared against the strict area limits
 #[must_use]
 pub fn ratio_to_resolution(ratio: Option<&Json>) -> Option<&'static str> {
-    let Some(Json::Text(ratio_text)) = ratio else {
+    let Some(Json::Text(text)) = ratio else {
         return None;
     };
-    let (width_text, height_text) = ratio_text.split_once(':')?;
+    let (width_text, height_text) = text.split_once(':')?;
     if width_text.is_empty()
         || height_text.is_empty()
         || !width_text.bytes().all(|byte| byte.is_ascii_digit())
@@ -41,21 +41,21 @@ pub fn ratio_to_resolution(ratio: Option<&Json>) -> Option<&'static str> {
 // _estimated_cost_usd: credits are numeric as a JSON number or bool, and 0.01 USD per credit is exact
 #[must_use]
 pub fn estimated_cost_usd(credits: Option<&Json>) -> Option<Json> {
-    let credits = match credits? {
+    let amount = match credits? {
         Json::Bool(flag) => Decimal::from(u8::from(*flag)),
         Json::Number(number) => parse_decimal_lexeme(&number.to_string()).ok()?,
         Json::Text(_) | Json::Null | Json::List(_) | Json::Object(_) => return None,
     };
-    let usd = credits.checked_mul(Decimal::new(1, 2))?;
+    let usd = amount.checked_mul(Decimal::new(1, 2))?;
     Some(cost_value(usd))
 }
 
 // _progress_percent: half-even rounding of the decimal share, clamped to whole percent
 #[must_use]
 pub fn progress_percent(progress: f64) -> i64 {
-    let scaled_share =
+    let scaled =
         Decimal::from_f64(progress).and_then(|value| value.checked_mul(Decimal::ONE_HUNDRED));
-    let Some(percent) = scaled_share else {
+    let Some(percent) = scaled else {
         // a share Decimal cannot hold keeps its sign, and a NaN share counts as no progress
         return if progress.is_nan() || progress.is_sign_negative() {
             0
