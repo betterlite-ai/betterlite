@@ -50,6 +50,7 @@ pub(super) async fn check() {
     dall_e().await;
     gpt_image().await;
     failure().await;
+    two_dispatches_stay_apart().await;
 }
 
 async fn dall_e() {
@@ -64,6 +65,7 @@ async fn dall_e() {
     let OpenAiMediaResult::ImageGeneration(outcome) = result else {
         panic!("a generation reply is never read as an edit");
     };
+    assert_eq!(fixture.request_count(), 1);
     let request = fixture
         .take_request()
         .expect("one dispatch sends one request");
@@ -111,6 +113,16 @@ async fn gpt_image() {
     assert_eq!(outcome.reply.output_format.as_deref(), Some("webp"));
     assert_eq!(outcome.reply.background.as_deref(), Some("transparent"));
     assert_eq!(outcome.reply.size.as_deref(), Some("1024x1024"));
+}
+
+async fn two_dispatches_stay_apart() {
+    let fixture = Fixture::new(200, DALL_E_REPLY);
+    let first = media_result(run(call("dall-e-3", "{}"), &fixture).await);
+    let second = media_result(run(call("dall-e-3", "{}"), &fixture).await);
+    assert!(matches!(first, OpenAiMediaResult::ImageGeneration(_)));
+    assert!(matches!(second, OpenAiMediaResult::ImageGeneration(_)));
+    assert_eq!(fixture.request_count(), 2);
+    assert!(fixture.take_request().is_none());
 }
 
 async fn failure() {
