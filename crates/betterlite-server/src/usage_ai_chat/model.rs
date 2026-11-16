@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::future::Future;
 
 use futures_util::Stream;
@@ -26,24 +27,32 @@ pub struct ModelToolCall {
     pub arguments: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
-pub enum ModelError {
-    #[error("the completion call failed: {message}")]
-    Completion { message: String },
-    #[error("the completion stream failed: {message}")]
-    Stream { message: String },
+#[derive(Debug, Error)]
+pub enum ModelError<Fault: Error + 'static> {
+    #[error("the completion call failed: {source}")]
+    Completion {
+        #[source]
+        source: Fault,
+    },
+    #[error("the completion stream failed: {source}")]
+    Stream {
+        #[source]
+        source: Fault,
+    },
 }
 
 pub trait UsageChatModel: Sync {
+    type Error: Error + Send + Sync + 'static;
+
     fn complete(
         &self,
         request: &ModelRequest<'_>,
-    ) -> impl Future<Output = Result<ModelReply, ModelError>> + Send;
+    ) -> impl Future<Output = Result<ModelReply, Self::Error>> + Send;
 
     fn stream(
         &self,
         request: &ModelRequest<'_>,
     ) -> impl Future<
-        Output = Result<impl Stream<Item = Result<String, ModelError>> + Send, ModelError>,
+        Output = Result<impl Stream<Item = Result<String, Self::Error>> + Send, Self::Error>,
     > + Send;
 }

@@ -1,15 +1,17 @@
+use std::error::Error;
+
 use chrono::NaiveDate;
 use futures_util::StreamExt;
 use indexmap::IndexMap;
 use tokio::sync::mpsc;
 
 use super::constants::{DEFAULT_CHAT_MODEL, MAX_CHAT_MESSAGES, USAGE_AI_TEMPERATURE};
-use super::error::UsageChatError;
+use super::error::{ChatError, UsageChatError};
 use super::fetch_args::{
     FetchArguments, decode_tool_arguments, parse_csv_ids, resolve_fetch_kwargs,
 };
 use super::messages::ChatMessage;
-use super::model::{ModelReply, ModelRequest, ModelToolCall, UsageChatModel};
+use super::model::{ModelError, ModelReply, ModelRequest, ModelToolCall, UsageChatModel};
 use super::parts::{UsageChatParts, UsageChatRequest};
 use super::prompt::build_system_prompt;
 use super::source::UsageDataSource;
@@ -41,7 +43,7 @@ pub async fn stream_usage_ai_chat<Model, Data, Clock>(
     }];
     chat.extend(request.messages.iter().skip(skip).cloned());
     match run_chat(parts, model, &mut chat, request, sink).await {
-        Ok(()) | Err(UsageChatError::ClientDisconnected) => {}
+        Ok(()) | Err(ChatError::ClientDisconnected(_)) => {}
         Err(error) => {
             tracing::error!("AI usage chat failed: {error}");
             let frame = sse_frame(&SseEvent::Error {
@@ -58,14 +60,11 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError> {
-    send_event(
-        sink,
-        &SseEvent::Status {
-            message: THINKING.to_owned(),
-        },
-    )
-    .await?;
+) -> Result<(), ChatError<Model::Error>> {
+    let thinking = SseEvent::Status {
+        message: THINKING.to_owned(),
+    };
+    sink.send(sse_frame(&thinking)).await?;
     let tools = tools_for_role(request.is_admin);
     let reply = parts
         .model
@@ -75,12 +74,14 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
             tools: Some(tools.as_slice()),
             temperature: USAGE_AI_TEMPERATURE,
         })
-        .await?;
+        .await
+        .map_err(|source| ModelError::Completion { source })?;
     if reply.tool_calls.is_empty() {
         if let Some(content) = reply.content.filter(|text| !text.is_empty()) {
-            send_event(sink, &SseEvent::Chunk { content }).await?;
+            sink.send(sse_frame(&SseEvent::Chunk { content })).await?;
         }
-        return send_event(sink, &SseEvent::Done).await;
+        sink.send(sse_frame(&SseEvent::Done)).await?;
+        return Ok(());
     }
     let ModelReply {
         content,
@@ -91,19 +92,20 @@ async fn run_chat<Model: UsageChatModel, Data: UsageDataSource, Clock>(
         tool_calls: tool_calls.clone(),
     });
     for call in tool_calls {
-        process_tool_call(&parts.data, &call, chat, request, sink).await?;
+        process_tool_call::<Data, Model::Error>(&parts.data, &call, chat, request, sink).await?;
     }
     stream_final_response(&parts.model, model, chat.as_slice(), sink).await?;
-    send_event(sink, &SseEvent::Done).await
+    sink.send(sse_frame(&SseEvent::Done)).await?;
+    Ok(())
 }
 
-async fn process_tool_call<Data: UsageDataSource>(
+async fn process_tool_call<Data: UsageDataSource, Fault: Error + 'static>(
     data: &Data,
     call: &ModelToolCall,
     chat: &mut Vec<ChatMessage>,
     request: &UsageChatRequest<'_>,
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError> {
+) -> Result<(), ChatError<Fault>> {
     let arguments = decode_tool_arguments(&call.arguments)?;
     let Some(tool) =
         UsageTool::from_name(&call.name).filter(|tool| tool.allowed_for(request.is_admin))
@@ -115,7 +117,7 @@ async fn process_tool_call<Data: UsageDataSource>(
         return Ok(());
     };
     let running = tool_event(tool, &call.name, &arguments, ToolCallStatus::Running);
-    send_event(sink, &running).await?;
+    sink.send(sse_frame(&running)).await?;
     let (content, status) = match execute_tool(data, tool, &arguments, request).await {
         Ok(text) => (text, ToolCallStatus::Complete),
         Err(error) => {
@@ -127,7 +129,7 @@ async fn process_tool_call<Data: UsageDataSource>(
         }
     };
     let finished = tool_event(tool, &call.name, &arguments, status);
-    send_event(sink, &finished).await?;
+    sink.send(sse_frame(&finished)).await?;
     chat.push(ChatMessage::Tool {
         tool_call_id: call.id.clone(),
         content,
@@ -180,35 +182,29 @@ async fn stream_final_response<Model: UsageChatModel>(
     name: &str,
     messages: &[ChatMessage],
     sink: &mpsc::Sender<String>,
-) -> Result<(), UsageChatError> {
-    send_event(
-        sink,
-        &SseEvent::Status {
-            message: ANALYZING.to_owned(),
-        },
-    )
-    .await?;
+) -> Result<(), ChatError<Model::Error>> {
+    let analyzing = SseEvent::Status {
+        message: ANALYZING.to_owned(),
+    };
+    sink.send(sse_frame(&analyzing)).await?;
     let request = ModelRequest {
         model: name,
         messages,
         tools: None,
         temperature: USAGE_AI_TEMPERATURE,
     };
-    let mut stream = Box::pin(model.stream(&request).await?);
+    let opened = model
+        .stream(&request)
+        .await
+        .map_err(|source| ModelError::Stream { source })?;
+    let mut stream = Box::pin(opened);
     while let Some(delta) = stream.next().await {
-        let content = delta?;
+        let content = delta.map_err(|source| ModelError::Stream { source })?;
         if !content.is_empty() {
-            send_event(sink, &SseEvent::Chunk { content }).await?;
+            sink.send(sse_frame(&SseEvent::Chunk { content })).await?;
         }
     }
     Ok(())
-}
-
-async fn send_event(sink: &mpsc::Sender<String>, event: &SseEvent) -> Result<(), UsageChatError> {
-    match sink.send(sse_frame(event)).await {
-        Ok(()) => Ok(()),
-        Err(_) => Err(UsageChatError::ClientDisconnected),
-    }
 }
 
 fn tool_event(

@@ -99,17 +99,29 @@ async fn source_without_a_repository_fails_with_the_database_error() {
         .global("2026-01-01", "2026-01-31", None)
         .await
         .unwrap_err();
+    assert!(matches!(error, UsageChatError::DatabaseNotConnected));
     assert_eq!(
         error.to_string(),
         CommonProxyErrors::DbNotConnectedError.as_str()
     );
-    assert!(
-        source
-            .teams("2026-01-01", "2026-01-31", None)
-            .await
-            .is_err()
+    let teams = source
+        .teams("2026-01-01", "2026-01-31", None)
+        .await
+        .unwrap_err();
+    assert!(matches!(teams, UsageChatError::DatabaseNotConnected));
+    assert_eq!(
+        teams.to_string(),
+        CommonProxyErrors::DbNotConnectedError.as_str()
     );
-    assert!(source.tags("2026-01-01", "2026-01-31", None).await.is_err());
+    let tags = source
+        .tags("2026-01-01", "2026-01-31", None)
+        .await
+        .unwrap_err();
+    assert!(matches!(tags, UsageChatError::DatabaseNotConnected));
+    assert_eq!(
+        tags.to_string(),
+        CommonProxyErrors::DbNotConnectedError.as_str()
+    );
 }
 
 #[test]

@@ -1,5 +1,5 @@
-use std::fmt::Write as _;
-
+use betterlite_logging::python_json::dumps_object;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
@@ -44,85 +44,40 @@ pub enum SseEvent {
 
 #[must_use]
 pub fn sse_frame(event: &SseEvent) -> String {
-    let mut frame = String::from("data: ");
-    push_event_json(&mut frame, event);
-    frame.push_str("\n\n");
-    frame
-}
-
-fn push_event_json(out: &mut String, event: &SseEvent) {
-    match event {
-        SseEvent::Status { message } => {
-            out.push_str("{\"type\": \"status\", \"message\": ");
-            push_json_string(out, message);
-            out.push('}');
-        }
-        SseEvent::Chunk { content } => {
-            out.push_str("{\"type\": \"chunk\", \"content\": ");
-            push_json_string(out, content);
-            out.push('}');
-        }
-        SseEvent::Done => out.push_str("{\"type\": \"done\"}"),
-        SseEvent::Error { message } => {
-            out.push_str("{\"type\": \"error\", \"message\": ");
-            push_json_string(out, message);
-            out.push('}');
-        }
+    let object = match event {
+        SseEvent::Status { message } => IndexMap::from([
+            ("type".to_owned(), Json::Text("status".to_owned())),
+            ("message".to_owned(), Json::Text(message.clone())),
+        ]),
+        SseEvent::Chunk { content } => IndexMap::from([
+            ("type".to_owned(), Json::Text("chunk".to_owned())),
+            ("content".to_owned(), Json::Text(content.clone())),
+        ]),
+        SseEvent::Done => IndexMap::from([("type".to_owned(), Json::Text("done".to_owned()))]),
+        SseEvent::Error { message } => IndexMap::from([
+            ("type".to_owned(), Json::Text("error".to_owned())),
+            ("message".to_owned(), Json::Text(message.clone())),
+        ]),
         SseEvent::ToolCall {
             tool_name,
             tool_label,
             arguments,
             status,
-        } => {
-            out.push_str("{\"type\": \"tool_call\", \"tool_name\": ");
-            push_json_string(out, tool_name);
-            out.push_str(", \"tool_label\": ");
-            push_json_string(out, tool_label);
-            out.push_str(", \"arguments\": {");
-            for (index, (key, value)) in arguments.iter().enumerate() {
-                if index > 0 {
-                    out.push_str(", ");
-                }
-                push_json_string(out, key);
-                out.push_str(": ");
-                push_json_string(out, value);
-            }
-            out.push_str("}, \"status\": ");
-            push_json_string(out, status.as_str());
-            out.push('}');
-        }
-    }
-}
-
-fn push_json_string(out: &mut String, text: &str) {
-    out.push('"');
-    for character in text.chars() {
-        push_json_character(out, character);
-    }
-    out.push('"');
-}
-
-fn push_json_character(out: &mut String, character: char) {
-    match character {
-        '"' => out.push_str("\\\""),
-        '\\' => out.push_str("\\\\"),
-        '\n' => out.push_str("\\n"),
-        '\r' => out.push_str("\\r"),
-        '\t' => out.push_str("\\t"),
-        '\u{08}' => out.push_str("\\b"),
-        '\u{0c}' => out.push_str("\\f"),
-        ' '..='~' => out.push(character),
-        '\u{00}'..='\u{1f}' | '\u{7f}'..='\u{ffff}' => push_hex4(out, u32::from(character)),
-        _ => push_surrogate_pair(out, character),
-    }
-}
-
-fn push_hex4(out: &mut String, code: u32) {
-    let _written = write!(out, "\\u{code:04x}");
-}
-
-fn push_surrogate_pair(out: &mut String, character: char) {
-    let adjusted = u32::from(character).saturating_sub(0x1_0000);
-    push_hex4(out, 0xd800.saturating_add(adjusted >> 10));
-    push_hex4(out, 0xdc00.saturating_add(adjusted & 0x3ff));
+        } => IndexMap::from([
+            ("type".to_owned(), Json::Text("tool_call".to_owned())),
+            ("tool_name".to_owned(), Json::Text(tool_name.clone())),
+            ("tool_label".to_owned(), Json::Text(tool_label.clone())),
+            (
+                "arguments".to_owned(),
+                Json::Object(
+                    arguments
+                        .iter()
+                        .map(|(key, value)| (key.clone(), Json::Text(value.clone())))
+                        .collect(),
+                ),
+            ),
+            ("status".to_owned(), Json::Text(status.as_str().to_owned())),
+        ]),
+    };
+    format!("data: {}\n\n", dumps_object(&object))
 }

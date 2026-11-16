@@ -86,17 +86,20 @@ fn fetch_args_missing_or_empty_dates_fail_for_every_tool(#[case] tool: UsageTool
             .to_string(),
         "Missing required start_date or end_date from tool arguments"
     );
-    assert!(
-        resolve_fetch_kwargs(
-            tool,
-            &args(&[("start_date", "2026-01-01")]),
-            Some("alice"),
-            true
-        )
-        .is_err()
+    let missing_end = args(&[("start_date", "2026-01-01")]);
+    assert_eq!(
+        resolve_fetch_kwargs(tool, &missing_end, Some("alice"), true)
+            .unwrap_err()
+            .to_string(),
+        "Missing required start_date or end_date from tool arguments"
     );
     let blank_end = args(&[("start_date", "2026-01-01"), ("end_date", "")]);
-    assert!(resolve_fetch_kwargs(tool, &blank_end, Some("alice"), true).is_err());
+    assert_eq!(
+        resolve_fetch_kwargs(tool, &blank_end, Some("alice"), true)
+            .unwrap_err()
+            .to_string(),
+        "Missing required start_date or end_date from tool arguments"
+    );
 }
 
 #[test]

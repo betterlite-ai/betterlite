@@ -40,9 +40,8 @@ pub fn parse_csv_ids(raw: Option<&str>) -> Option<Vec<String>> {
 }
 
 pub fn decode_tool_arguments(arguments: &str) -> Result<IndexMap<String, String>, UsageChatError> {
-    serde_json::from_str(arguments).map_err(|error| UsageChatError::InvalidToolArguments {
-        message: error.to_string(),
-    })
+    serde_json::from_str(arguments)
+        .map_err(|source| UsageChatError::InvalidToolArguments { source })
 }
 
 pub fn resolve_fetch_kwargs(

@@ -32,9 +32,7 @@ use crate::daily_activity::recovery::scope::ScopeIds;
 use crate::usage_ai_chat::error::UsageChatError;
 use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::messages::ChatMessage;
-use crate::usage_ai_chat::model::{
-    ModelError, ModelReply, ModelRequest, ModelToolCall, UsageChatModel,
-};
+use crate::usage_ai_chat::model::{ModelReply, ModelRequest, ModelToolCall, UsageChatModel};
 use crate::usage_ai_chat::parts::{UsageChatParts, UsageChatRequest};
 use crate::usage_ai_chat::source::{
     DailyActivityUsageData, UsageActivityRepository, UsageDataSource,
@@ -198,14 +196,18 @@ pub(crate) fn tool_call(name: &str, arguments: &str) -> ModelReply {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("{0}")]
+pub(crate) struct FakeFailure(pub(crate) String);
+
 pub(crate) enum ReplyStep {
     Reply(ModelReply),
-    Fail(ModelError),
+    Fail(FakeFailure),
 }
 
 pub(crate) enum StreamStep {
     Chunks(Vec<String>),
-    Fail(ModelError),
+    Fail(FakeFailure),
 }
 
 #[derive(Debug, Clone)]
@@ -254,9 +256,7 @@ impl FakeModel {
         self.completions
             .lock()
             .unwrap()
-            .push_back(ReplyStep::Fail(ModelError::Completion {
-                message: message.to_owned(),
-            }));
+            .push_back(ReplyStep::Fail(FakeFailure(message.to_owned())));
         self
     }
 
@@ -276,9 +276,7 @@ impl FakeModel {
         self.streams
             .lock()
             .unwrap()
-            .push_back(StreamStep::Fail(ModelError::Stream {
-                message: message.to_owned(),
-            }));
+            .push_back(StreamStep::Fail(FakeFailure(message.to_owned())));
         self
     }
 
@@ -288,10 +286,12 @@ impl FakeModel {
 }
 
 impl UsageChatModel for FakeModel {
+    type Error = FakeFailure;
+
     fn complete(
         &self,
         request: &ModelRequest<'_>,
-    ) -> impl Future<Output = Result<ModelReply, ModelError>> + Send {
+    ) -> impl Future<Output = Result<ModelReply, FakeFailure>> + Send {
         let recorded = RecordedRequest::capture(request);
         let step = self
             .completions
@@ -312,7 +312,7 @@ impl UsageChatModel for FakeModel {
         &self,
         request: &ModelRequest<'_>,
     ) -> impl Future<
-        Output = Result<impl Stream<Item = Result<String, ModelError>> + Send, ModelError>,
+        Output = Result<impl Stream<Item = Result<String, FakeFailure>> + Send, FakeFailure>,
     > + Send {
         let recorded = RecordedRequest::capture(request);
         let step = self
@@ -325,7 +325,7 @@ impl UsageChatModel for FakeModel {
             self.requests.lock().unwrap().push(recorded);
             match step {
                 StreamStep::Chunks(chunks) => {
-                    let items: Vec<Result<String, ModelError>> =
+                    let items: Vec<Result<String, FakeFailure>> =
                         chunks.into_iter().map(Ok).collect();
                     Ok(stream::iter(items))
                 }
