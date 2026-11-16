@@ -1,0 +1,19 @@
+kind: helper
+name: nested-tool-result-fetch
+call:
+  b9963:
+    urls:
+      # 1024x1024: four tiles and 765 tokens, where the 300x300 default dimensions count 255
+      "https://example.com/image.png": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQA"
+    calls:
+      - function: count_content
+        content:
+          - type: tool_result
+            tool_use_id: toolu_1
+            content:
+              - type: image_url
+                image_url:
+                  url: https://example.com/image.png
+                  detail: high
+env: {}
+compare: {ignore: []}

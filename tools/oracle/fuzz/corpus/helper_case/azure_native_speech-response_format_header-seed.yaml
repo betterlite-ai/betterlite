@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-response_format_header-seed
+call: {azure_native_speech: {response_format_header: {formats: [null, wav]}}}
+env: {}
+compare: {ignore: []}

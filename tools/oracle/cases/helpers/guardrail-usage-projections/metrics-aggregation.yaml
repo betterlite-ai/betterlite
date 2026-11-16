@@ -1,0 +1,51 @@
+kind: helper
+name: guardrail-usage-metrics-aggregation
+call:
+  b3689:
+    function: daily_metrics
+    cases:
+      - reduce: aggregate
+        rows:
+          - {date: "2026-11-01", id: g1, requests_evaluated: 10, passed_count: 8, blocked_count: 1, flagged_count: 2}
+          - {date: "2026-11-02", id: g1, requests_evaluated: 5, passed_count: 4, blocked_count: 1, flagged_count: null}
+          - {date: "2026-11-02", id: g2, requests_evaluated: null, passed_count: 1, blocked_count: null, flagged_count: null}
+      - reduce: aggregate
+        rows: []
+      - reduce: aggregate
+        rows:
+          - {date: "2026-11-02", id: g1, requests_evaluated: 1, passed_count: 1, blocked_count: 0, flagged_count: 0}
+          - {date: "2026-11-03", id: g2, requests_evaluated: 2, passed_count: 1, blocked_count: 1, flagged_count: 0}
+          - {date: "2026-11-01", id: g1, requests_evaluated: 3, passed_count: 2, blocked_count: 1, flagged_count: 0}
+          - {date: "2026-11-03", id: g2, requests_evaluated: null, passed_count: 0, blocked_count: null, flagged_count: null}
+calls:
+  - b3689:
+      function: daily_metrics
+      cases:
+        - reduce: previous
+          rows:
+            - {date: "2026-11-01", id: g1, requests_evaluated: 10, passed_count: 8, blocked_count: 1, flagged_count: 2}
+            - {date: "2026-11-02", id: g1, requests_evaluated: 5, passed_count: 4, blocked_count: 1, flagged_count: null}
+            - {date: "2026-11-02", id: g2, requests_evaluated: null, passed_count: 1, blocked_count: null, flagged_count: null}
+        - reduce: previous
+          rows:
+            - {date: "2026-11-05", id: empty, requests_evaluated: 0, passed_count: 0, blocked_count: 5, flagged_count: 0}
+        - reduce: previous
+          rows: []
+  - b3689:
+      function: daily_metrics
+      cases:
+        - reduce: chart
+          rows:
+            - {date: "2026-11-01", id: g1, requests_evaluated: 10, passed_count: 8, blocked_count: 1, flagged_count: 2}
+            - {date: "2026-11-02", id: g1, requests_evaluated: 5, passed_count: 4, blocked_count: 1, flagged_count: null}
+            - {date: "2026-11-02", id: g2, requests_evaluated: null, passed_count: 1, blocked_count: null, flagged_count: null}
+        - reduce: chart
+          rows:
+            - {date: "2026-11-02", id: g1, requests_evaluated: 1, passed_count: 1, blocked_count: 0, flagged_count: 0}
+            - {date: "2026-11-03", id: g2, requests_evaluated: 2, passed_count: 1, blocked_count: 1, flagged_count: 0}
+            - {date: "2026-11-01", id: g1, requests_evaluated: 3, passed_count: 2, blocked_count: 1, flagged_count: 0}
+            - {date: "2026-11-03", id: g2, requests_evaluated: null, passed_count: 0, blocked_count: null, flagged_count: null}
+        - reduce: chart
+          rows: []
+env: {}
+compare: {ignore: []}
