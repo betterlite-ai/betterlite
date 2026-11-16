@@ -98,6 +98,8 @@ impl Agent365Guardrail {
             },
             strict_modes,
         )?;
+        let name = &settings.guardrail_name;
+        tracing::info!("Initialized Microsoft Agent 365 guardrail: {name}");
         Ok(Self {
             base,
             settings,

@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
+use std::io;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,6 +22,7 @@ use sha2::{Digest as _, Sha256};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tracing::subscriber::with_default;
 
 use super::poster::{Agent365Poster, Agent365PosterError, HttpPoster, PostReply};
 use super::{
@@ -39,6 +41,23 @@ use crate::agent_365_tokens::wire::{DEFAULT_TOKEN_TTL, MAX_DESCRIPTION_CHARS};
 
 type ScenarioFuture = Pin<Box<dyn Future<Output = ()> + Send>>;
 type Scenario = fn() -> ScenarioFuture;
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for Captured {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 const START_SECONDS: u64 = 1_000_000;
 const ASSERTION: &str = "header.payload.signature";
@@ -753,6 +772,32 @@ fn test_wiring() -> ScenarioFuture {
     })
 }
 
+fn test_construction_logs_the_initialized_guardrail() -> ScenarioFuture {
+    Box::pin(async {
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::INFO)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let poster: Arc<dyn Agent365Poster> = Arc::new(FakePoster::default());
+        let clock = TestClock::new();
+        let _guardrail = with_default(subscriber, || {
+            Agent365Guardrail::new(settings(), poster, true, clock.handle())
+        })
+        .unwrap();
+        let output = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+        assert_eq!(
+            output
+                .matches("Initialized Microsoft Agent 365 guardrail: agent365")
+                .count(),
+            1,
+            "unexpected log output {output}"
+        );
+    })
+}
+
 fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
     Box::pin(async {
         for seconds in [-1.0_f64, f64::NAN, f64::INFINITY] {
@@ -795,6 +840,9 @@ fn test_invalid_timeouts_are_rejected() -> ScenarioFuture {
 #[case::wiring(test_wiring)]
 #[case::invalid_timeouts_are_rejected(test_invalid_timeouts_are_rejected)]
 #[case::lifetime_past_the_clock_range_is_refused(test_lifetime_past_the_clock_range_is_refused)]
+#[case::construction_logs_the_initialized_guardrail(
+    test_construction_logs_the_initialized_guardrail
+)]
 #[tokio::test]
 async fn agent_365_token_behaviors(#[case] scenario: Scenario) {
     scenario().await;
