@@ -99,11 +99,13 @@ where
         let body = match source.read_body().await {
             Ok(body) => body,
             Err(error) => {
+                // Safe catch-all for cleanup logic: a failed read never replaces the status error
                 tracing::debug!(%error, "the upstream error body could not be read");
                 Vec::new()
             }
         };
         if let Err(error) = source.close().await {
+            // Safe catch-all for cleanup logic: this close failure has nowhere to go
             tracing::debug!(%error, "the upstream error response could not be closed");
         }
         Err(PassthroughStreamError::UpstreamStatus(Box::new(
@@ -151,6 +153,7 @@ where
             return;
         };
         if let Err(error) = source.close().await {
+            // Safe catch-all for cleanup logic: a close failure after the stream ended has nowhere to go
             tracing::debug!(
                 %error,
                 "the passthrough response could not be closed after the stream ended"

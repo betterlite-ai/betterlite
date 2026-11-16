@@ -137,6 +137,18 @@ fn iterator_next_yields_chunks_until_the_end() {
 }
 
 #[test]
+fn iterator_next_yields_a_read_error_and_then_ends() {
+    let steps = vec![Step::Chunk(b"one".to_vec()), Step::Fail];
+    let mut fixture = SyncFixture::new(ReplyFixture::ok(script(steps)), inline_executor());
+    let first = fixture.stream.next().expect("the first chunk arrives");
+    assert_eq!(first.expect("the chunk is returned"), b"one".to_vec());
+    let second = fixture.stream.next().expect("the read error is yielded");
+    assert!(matches!(second, Err(HttpError::Timeout)));
+    assert!(fixture.stream.next().is_none());
+    assert_eq!(fixture.executor.scheduled(), 1);
+}
+
+#[test]
 fn close_without_chunks_does_not_submit() {
     let mut fixture = SyncFixture::new(ReplyFixture::ok(script(Vec::new())), inline_executor());
     fixture.stream.close();

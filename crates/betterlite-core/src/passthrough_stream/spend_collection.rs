@@ -39,6 +39,7 @@ impl<S: SpendSink> SpendCollection<S> {
             return;
         };
         if let Err(error) = sink.add(chunk) {
+            // Safe catch-all: spend tracking must never break the relayed stream
             self.failed = true;
             tracing::error!(
                 chunks = self.chunk_count,

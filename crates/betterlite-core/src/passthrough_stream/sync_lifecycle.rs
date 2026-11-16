@@ -71,6 +71,7 @@ where
 
     fn close_response(&mut self) {
         if let Err(error) = self.source.close() {
+            // Safe catch-all for cleanup logic: a close failure after the stream ended has nowhere to go
             tracing::debug!(%error, "the passthrough response could not be closed");
         }
     }
