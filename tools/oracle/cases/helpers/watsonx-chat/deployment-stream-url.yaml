@@ -1,0 +1,22 @@
+kind: helper
+name: watsonx-chat-deployment-stream-url
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env:
+      WATSONX_API_BASE: https://env-host
+    maps: []
+    infos: []
+    urls:
+      - {api_base: null, model: granite, stream: false, options: {}}
+      - {api_base: null, model: granite, stream: true, options: {}}
+      - {api_base: null, model: deployment/deployment-id, stream: false, options: {}}
+      - {api_base: null, model: deployment/deployment-id, stream: true, options: {}}
+      - {api_base: null, model: deployment/a/b, stream: true, options: {}}
+      - {api_base: null, model: deployment/, stream: false, options: {}}
+      - {api_base: null, model: deployment, stream: false, options: {}}
+      - {api_base: null, model: my-deployment/abc, stream: true, options: {}}
+      - {api_base: "https://host///", model: ibm/granite, stream: true, options: {}}
+      - {api_base: "https://host/prefix/", model: deployment/x, stream: false, options: {}}
+    plans: []
