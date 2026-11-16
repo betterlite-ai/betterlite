@@ -1,0 +1,14 @@
+kind: helper
+name: native-speech-headers
+call:
+  azure_native_speech:
+    native_speech_headers:
+      cases:
+        - headers: {}
+        - headers: {Ocp-Apim-Subscription-Key: caller-key, Content-Type: text/plain, User-Agent: caller, X-Trace: abc}
+          api_key: identity-key
+        - headers: {Ocp-Apim-Subscription-Key: caller-key}
+          api_key: ''
+        - headers: {Content-Type: caller/type, User-Agent: caller}
+env: {}
+compare: {ignore: []}
