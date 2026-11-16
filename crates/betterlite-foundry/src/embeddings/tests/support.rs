@@ -97,10 +97,8 @@ impl Answer {
 
     pub(super) fn failed() -> Self {
         Self {
-            status: 0,
-            headers: Vec::new(),
-            body: Vec::new(),
             failed: true,
+            ..Self::statused(0, "")
         }
     }
 }

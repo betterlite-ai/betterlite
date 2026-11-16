@@ -8,52 +8,28 @@ pub(super) struct Failure {
 }
 
 pub(super) fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
-    match error {
+    let (class, status) = match error {
         FoundryEmbeddingError::ApiBaseMissing
         | FoundryEmbeddingError::ApiKeyMissing
-        | FoundryEmbeddingError::TokenCount { .. } => Some(Failure {
-            class: "ValueError",
-            status: None,
-        }),
+        | FoundryEmbeddingError::TokenCount { .. } => ("ValueError", None),
         FoundryEmbeddingError::ImageDataMissing | FoundryEmbeddingError::TextDataMissing => {
-            Some(Failure {
-                class: "Exception",
-                status: None,
-            })
+            ("Exception", None)
         }
-        FoundryEmbeddingError::Provider { status } => Some(Failure {
-            class: "HTTPStatusError",
-            status: Some(*status),
-        }),
-        FoundryEmbeddingError::ReplyError { status } => Some(Failure {
-            class: "Exception",
-            status: Some(*status),
-        }),
-        FoundryEmbeddingError::Json { source } if source.is_data() => Some(Failure {
-            class: "ResponseValidationError",
-            status: None,
-        }),
-        FoundryEmbeddingError::Json { .. } => Some(Failure {
-            class: "JSONDecodeError",
-            status: None,
-        }),
-        FoundryEmbeddingError::DataMissing => Some(Failure {
-            class: "KeyError",
-            status: None,
-        }),
-        FoundryEmbeddingError::TooFewEntries { .. } => Some(Failure {
-            class: "IndexError",
-            status: None,
-        }),
-        FoundryEmbeddingError::Transport { .. } => Some(Failure {
-            class: "TransportError",
-            status: None,
-        }),
+        FoundryEmbeddingError::Provider { status } => ("HTTPStatusError", Some(*status)),
+        FoundryEmbeddingError::ReplyError { status } => ("Exception", Some(*status)),
+        FoundryEmbeddingError::Json { source } if source.is_data() => {
+            ("ResponseValidationError", None)
+        }
+        FoundryEmbeddingError::Json { .. } => ("JSONDecodeError", None),
+        FoundryEmbeddingError::DataMissing => ("KeyError", None),
+        FoundryEmbeddingError::TooFewEntries { .. } => ("IndexError", None),
+        FoundryEmbeddingError::Transport { .. } => ("TransportError", None),
         FoundryEmbeddingError::FieldType { .. }
         | FoundryEmbeddingError::Encode { .. }
         | FoundryEmbeddingError::Header { .. }
-        | FoundryEmbeddingError::Text(_) => None,
-    }
+        | FoundryEmbeddingError::Text(_) => return None,
+    };
+    Some(Failure { class, status })
 }
 
 pub(super) fn helper_error(class: &str, message: String) -> Box<HelperError> {

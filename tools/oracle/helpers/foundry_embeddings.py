@@ -227,8 +227,10 @@ def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     except Exception as error:  # noqa: BLE001  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L180
         kind = "Exception"
         # only the reply-error Exception carries status_code; the None Embeddings ones carry none
-        if hasattr(error, "status_code"):
+        try:
             status = cast(ReplyErrorFacts, error).status_code  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L614-L617
+        except AttributeError:
+            status = None
     else:
         return answer_outcome(state, response)
     finally:
