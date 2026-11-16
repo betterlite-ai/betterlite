@@ -314,6 +314,46 @@ fn create_interaction_passes_an_invalid_url_through_the_error_handler() {
 }
 
 #[test]
+fn create_interaction_validates_an_absent_model_as_an_empty_string() {
+    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::new();
+    let mut call = Call::new(serving.address);
+    call.model = None;
+
+    let (_outcome, _logging) = run(&fixture, &call);
+
+    let calls = fixture.calls();
+    assert_eq!(
+        calls.first(),
+        Some(&"environment||0|1".to_owned()),
+        "{calls:?}"
+    );
+    serving.request.join().unwrap();
+}
+
+#[test]
+fn create_interaction_refuses_a_proxy_it_cannot_use_instead_of_connecting_directly() {
+    let fixture = Fixture::new();
+    let mut clients = HttpClients::new(
+        base::policy(Verification::Enabled, None),
+        base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
+    );
+
+    let outcome = create_interaction(
+        &fixture,
+        &mut clients,
+        &mut Logging::default(),
+        None,
+        &Call::new(dead_address()).request(),
+    );
+
+    assert!(matches!(
+        transport_error(outcome),
+        RequestFailure::UnsupportedProxyScheme { scheme } if scheme == "https"
+    ));
+}
+
+#[test]
 fn create_interaction_skips_the_proxy_check_for_a_supplied_client() {
     let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
     let fixture = Fixture::new();
