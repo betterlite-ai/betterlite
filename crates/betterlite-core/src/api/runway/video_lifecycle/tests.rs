@@ -34,7 +34,7 @@ const MISSING_URL: &str = "Video URL not found in response. Video may not be rea
 
 struct Reply {
     status: u16,
-    body: &'static str,
+    body: Vec<u8>,
     headers: HeaderMap,
 }
 
@@ -62,7 +62,7 @@ impl Script {
     fn once(status: u16, body: &'static str) -> Self {
         Self::new(vec![Reply {
             status,
-            body,
+            body: body.as_bytes().to_vec(),
             headers: HeaderMap::new(),
         }])
     }
@@ -97,7 +97,7 @@ impl ArtifactTransport for Script {
         ready(Ok(UpstreamResponse {
             status: reply.status,
             headers: reply.headers,
-            body: reply.body.as_bytes().to_vec(),
+            body: reply.body,
         }))
     }
 }
@@ -289,6 +289,8 @@ fn retrieval_adds_no_usage_or_request_fields() {
     assert!(video.seconds.is_none());
     assert!(video.remixed_from_video_id.is_none());
     assert!(video.expires_at.is_none());
+    let reply = serde_json::to_value(&video).unwrap();
+    assert!(reply.get("output_url").is_none(), "{reply}");
 }
 
 #[tokio::test]
@@ -434,7 +436,7 @@ async fn content_reports_an_artifact_http_failure_as_the_provider_error() {
     headers.insert("x-runway-trace", HeaderValue::from_static("abc"));
     let script = Script::new(vec![Reply {
         status: 404,
-        body: "not found",
+        body: b"not found".to_vec(),
         headers,
     }]);
     let outcome = content_response(body.as_bytes(), &script, LIMITS, DEADLINE).await;
@@ -445,6 +447,35 @@ async fn content_reports_an_artifact_http_failure_as_the_provider_error() {
     assert_eq!(error.message, "not found");
     assert_eq!(error.headers.get("x-runway-trace"), Some(&json!("abc")));
     assert_eq!(script.requests().len(), 1);
+}
+
+#[tokio::test]
+async fn content_keeps_the_valid_prefix_of_a_non_utf8_failure_body() {
+    let body = r#"{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/a.mp4"]}"#;
+    let script = Script::new(vec![Reply {
+        status: 500,
+        body: b"bad \xFF bytes".to_vec(),
+        headers: HeaderMap::new(),
+    }]);
+    let outcome = content_response(body.as_bytes(), &script, LIMITS, DEADLINE).await;
+    let Err(VideoLifecycleError::ArtifactStatus(error)) = outcome else {
+        panic!("expected the artifact status error");
+    };
+    assert_eq!(error.status_code, 500);
+    assert_eq!(error.message, "bad ");
+    assert!(error.headers.is_empty());
+}
+
+#[tokio::test]
+async fn content_reports_a_redirect_reply_as_the_provider_error() {
+    let body = r#"{"id":"t","status":"SUCCEEDED","output":["https://cdn.test/a.mp4"]}"#;
+    let script = Script::once(302, "moved");
+    let outcome = content_response(body.as_bytes(), &script, LIMITS, DEADLINE).await;
+    let Err(VideoLifecycleError::ArtifactStatus(error)) = outcome else {
+        panic!("expected the artifact status error");
+    };
+    assert_eq!(error.status_code, 302);
+    assert_eq!(error.message, "moved");
 }
 
 #[tokio::test]
