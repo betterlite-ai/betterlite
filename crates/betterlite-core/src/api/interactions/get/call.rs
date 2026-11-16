@@ -1,5 +1,4 @@
 use betterlite_http::interactions::base::{ClientError, Params};
-use betterlite_http::interactions::get::GetInteractionRequest;
 use betterlite_logging::logging_state::updates::{CallUpdate, update_from_kwargs};
 use betterlite_logging::logging_state::{LoggingState, LoggingStateError};
 use betterlite_models::controls::json_value::JsonValue;
@@ -7,7 +6,6 @@ use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
-use secrecy::SecretString;
 
 use super::InteractionGetRequest;
 use super::error::{InteractionGetError, InteractionGetFailureError, failure};
@@ -138,23 +136,6 @@ fn provider_name(request: &InteractionGetRequest<'_>) -> Result<String, ClientEr
         },
     };
     Ok(named.map_or_else(|| DEFAULT_PROVIDER.to_owned(), str::to_owned))
-}
-
-pub(crate) fn transport_request<'request>(
-    request: &'request InteractionGetRequest<'_>,
-    prepared: &'request Prepared,
-) -> GetInteractionRequest<'request> {
-    GetInteractionRequest {
-        interaction_id: request.interaction_id,
-        litellm_params: &prepared.params,
-        provider: prepared.client,
-        extra_headers: request
-            .extra_headers
-            .iter()
-            .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
-            .collect(),
-        timeout: request.timeout,
-    }
 }
 
 fn json_value(value: &Json) -> JsonValue {

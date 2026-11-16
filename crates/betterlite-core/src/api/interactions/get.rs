@@ -9,14 +9,16 @@ use std::time::Duration;
 use betterlite_http::interactions::base::Logging;
 use betterlite_http::interactions::base::clients::HttpClients;
 use betterlite_http::interactions::get::GetInteractionConfig;
+use betterlite_http::interactions::get::GetInteractionRequest;
 use betterlite_http::interactions::get::asynchronous::async_get_interaction;
 use betterlite_http::interactions::get::synchronous::get_interaction;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
 use indexmap::IndexMap;
+use secrecy::SecretString;
 
-use self::call::{prepare, transport_request};
+use self::call::prepare;
 use self::error::{InteractionGetError, InteractionGetFailureError, failure};
 use crate::api::agents::item::error::ProviderFailure;
 
@@ -56,7 +58,17 @@ macro_rules! retrieval_entries {
                 redactor,
             } = deps;
             let prepared = prepare(request, logging, redactor)?;
-            let sent = transport_request(request, &prepared);
+            let sent = GetInteractionRequest {
+                interaction_id: request.interaction_id,
+                litellm_params: &prepared.params,
+                provider: prepared.client,
+                extra_headers: request
+                    .extra_headers
+                    .iter()
+                    .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
+                    .collect(),
+                timeout: request.timeout,
+            };
             $send(config, clients, http, None, &sent).map_err(|carried| {
                 failure(
                     InteractionGetError::from(carried),
@@ -83,7 +95,17 @@ macro_rules! retrieval_entries {
                 redactor,
             } = deps;
             let prepared = prepare(request, logging, redactor)?;
-            let sent = transport_request(request, &prepared);
+            let sent = GetInteractionRequest {
+                interaction_id: request.interaction_id,
+                litellm_params: &prepared.params,
+                provider: prepared.client,
+                extra_headers: request
+                    .extra_headers
+                    .iter()
+                    .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
+                    .collect(),
+                timeout: request.timeout,
+            };
             $send(config, clients, http, None, &sent)
                 .await
                 .map_err(|carried| {

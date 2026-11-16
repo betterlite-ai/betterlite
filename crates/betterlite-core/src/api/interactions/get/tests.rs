@@ -6,6 +6,7 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -232,6 +233,32 @@ fn get_records_a_null_call_id_when_the_caller_names_none() {
 }
 
 #[test]
+fn get_records_the_caller_metadata_on_the_logging_state() {
+    let serving = serve(reply(200, GET_BODY));
+    let config = fixture();
+    let mut harness = Harness::new();
+    let metadata = Json::Object(IndexMap::from([("user_api_key".to_owned(), text("k"))]));
+    let litellm_metadata = Json::Object(IndexMap::from([(
+        "tags".to_owned(),
+        Json::List(vec![text("t")]),
+    )]));
+    let call = Call::new("int_1")
+        .kwarg("api_base", text(&base(serving.address)))
+        .kwarg("metadata", metadata.clone())
+        .kwarg("litellm_metadata", litellm_metadata.clone());
+    get(&config, harness.deps(), &call.request()).expect("the fixture answers");
+    assert_eq!(
+        harness.state.litellm_params.get("metadata"),
+        Some(&metadata)
+    );
+    assert_eq!(
+        harness.state.litellm_params.get("litellm_metadata"),
+        Some(&litellm_metadata)
+    );
+    drop(head_of(serving));
+}
+
+#[test]
 fn get_drops_the_async_flag_from_the_transport_parameters() {
     let serving = serve(reply(200, GET_BODY));
     let config = fixture();
@@ -373,6 +400,25 @@ async fn aget_carries_the_call_context_into_the_async_path() {
     assert_eq!(
         environment_headers(&config),
         vec![("x-extra".to_owned(), "yes".to_owned())]
+    );
+    drop(head_of(serving));
+}
+
+#[tokio::test]
+async fn aget_records_the_caller_metadata_on_the_logging_state() {
+    let serving = serve(reply(200, GET_BODY));
+    let config = fixture();
+    let mut harness = Harness::new();
+    let metadata = Json::Object(IndexMap::from([("user_api_key".to_owned(), text("k"))]));
+    let call = Call::new("int_2")
+        .kwarg("api_base", text(&base(serving.address)))
+        .kwarg("metadata", metadata.clone());
+    aget(&config, harness.deps(), &call.request())
+        .await
+        .expect("the fixture answers");
+    assert_eq!(
+        harness.state.litellm_params.get("metadata"),
+        Some(&metadata)
     );
     drop(head_of(serving));
 }
