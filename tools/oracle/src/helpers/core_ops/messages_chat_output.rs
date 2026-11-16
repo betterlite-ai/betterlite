@@ -9,6 +9,8 @@ use betterlite_core::api::messages_chat_output::stream::{content_block, delta, t
 use betterlite_core::api::messages_context_clear::result::{
     AppliedEdit, CompactionBlock, PolyfillResult, UsageIteration,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
@@ -80,14 +82,14 @@ impl IdSource for FixedIds {
 }
 
 // Each failure carries the exception the pinned adapter raises on the same input.
-fn failure(error: &ChatOutputError) -> Box<crate::helpers::HelperError> {
+fn failure(error: &ChatOutputError) -> Box<HelperError> {
     let class = match error {
         ChatOutputError::Arguments { .. } => "ValueError",
         ChatOutputError::NonObjectArguments { .. } => "ValidationError",
         ChatOutputError::NonTextThinkingField { .. } => "AssertionError",
         ChatOutputError::NoChoices => "IndexError",
     };
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -105,10 +107,10 @@ const fn block_kind(block: &ContentBlock) -> &'static str {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Response {
                 response,
