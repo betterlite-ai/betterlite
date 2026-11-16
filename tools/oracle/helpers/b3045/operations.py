@@ -87,11 +87,11 @@ class Operations(Protocol):
         tpm_limited_tags: set[str],
     ) -> list[tuple[str, str]]: ...
 
-    def _build_io_token_reservation_ops(  # ast-grep-ignore: no-long-names
+    def _build_io_token_reservation_ops(
         self, kwargs: CallbackArguments, response_obj: ResponsePayload
     ) -> Sequence[ReservationOperation]: ...
 
-    def _build_success_event_pipeline_operations(  # ast-grep-ignore: no-long-names
+    def _build_success_event_pipeline_operations(
         self,
         kwargs: CallbackArguments,
         response_obj: ResponsePayload,

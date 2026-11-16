@@ -111,10 +111,8 @@ fn a_reserved_agent_scope_already_in_the_targets_is_not_duplicated() {
 
 #[test]
 fn the_request_user_names_the_end_user_scope() {
-    let parts = SuccessParts {
-        request_user: Some("caller".to_owned()),
-        ..parts_with(StashState::default())
-    };
+    let mut parts = parts_with(StashState::default());
+    parts.request_user = Some("caller".to_owned());
     assert_eq!(
         success_increments(&parts),
         vec![

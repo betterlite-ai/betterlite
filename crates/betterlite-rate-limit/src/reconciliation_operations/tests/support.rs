@@ -287,12 +287,11 @@ pub(crate) fn logging_metadata() -> ScopeMetadata {
 }
 
 pub(crate) fn model_scope_metadata() -> ScopeMetadata {
-    ScopeMetadata {
-        user_api_key_team_id: Some("team-1".to_owned()),
-        user_api_key_org_id: Some("org-1".to_owned()),
-        user_api_key_project_id: Some("proj-1".to_owned()),
-        ..logging_metadata()
-    }
+    let mut metadata = logging_metadata();
+    metadata.user_api_key_team_id = Some("team-1".to_owned());
+    metadata.user_api_key_org_id = Some("org-1".to_owned());
+    metadata.user_api_key_project_id = Some("proj-1".to_owned());
+    metadata
 }
 
 pub(crate) fn success_increments(parts: &SuccessParts) -> Vec<(String, f64, Option<i64>)> {

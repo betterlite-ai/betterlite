@@ -33,7 +33,8 @@ def rerank_response(input_value: ResponseInput) -> RerankResponse:
     billed_total = input_value.get("billed_units_total_tokens")
     if billed_total is not None:
         metadata["billed_units"] = {"total_tokens": billed_total}
-    return RerankResponse.model_validate({"meta": metadata})
+    update: dict[str, dict[str, JsonValue]] = {"meta": metadata}
+    return RerankResponse().model_copy(update=update)
 
 
 def response_api_response(
