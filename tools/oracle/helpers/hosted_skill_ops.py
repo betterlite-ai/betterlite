@@ -224,7 +224,7 @@ def answer_of(action: str, pending: Pending) -> dict[str, JsonValue]:
     return {"action": action, "record": record}
 
 
-def run_step(step: Step) -> JsonValue:
+def run_step(step: Step, handler: HostedHandler) -> JsonValue:
     action = step["action"]
     if action not in ("create", "list", "get", "delete"):
         return {"action": action, "error": "invalid_input"}
@@ -233,7 +233,6 @@ def run_step(step: Step) -> JsonValue:
         model="fixture-model", messages=None, stream=False, call_type=action,
         start_time=datetime(2026, 1, 1, tzinfo=UTC), litellm_call_id="call-1", function_id="fn-1",
     )
-    handler: HostedHandler = LiteLLMSkillsTransformationHandler()
     principal = principal_of(step.get("principal"))
     files = step.get("files")
     encoded = step.get("file_content")
@@ -291,5 +290,6 @@ def run(input_value: Input) -> JsonValue:
     sys.modules[PROXY_MODULE] = proxy
     sys.modules[PRISMA_MODULE] = prisma
     sys.modules[FIELDS_MODULE] = fields
-    steps: list[JsonValue] = [run_step(step) for step in input_value["steps"]]
+    handler: HostedHandler = LiteLLMSkillsTransformationHandler()
+    steps: list[JsonValue] = [run_step(step, handler) for step in input_value["steps"]]
     return {"steps": steps, "effects": state.effects}
