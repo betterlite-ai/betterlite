@@ -14,7 +14,7 @@ use crate::lakera::LegacyLakeraModerationParams;
 use crate::lakera::rejection::LakeraViolation;
 use crate::lakera::{LegacyLakeraModeration, ModerationCheck};
 use crate::third_party_hooks_a::error::ThirdPartyHookError;
-use crate::third_party_hooks_a::lakera;
+use crate::third_party_hooks_a::lakera::{self, error::LakeraHookError};
 
 const LAKERA_OK: &str = r#"{"results":[{"flagged":false}]}"#;
 const LAKERA_FLAGGED: &str = r#"{"results":[{"flagged":true}]}"#;
@@ -506,6 +506,25 @@ async fn lakera_fails_with_the_upstream_error_body() {
     assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(error.to_string(), "upstream exploded");
     assert!(matches!(error, ThirdPartyHookError::Failure { .. }));
+}
+
+#[tokio::test]
+async fn lakera_a_message_of_the_wrong_type_is_an_internal_error() {
+    let (base, _server, captured) = serve("/v1/prompt_injection", Vec::new()).await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = BTreeMap::from([("messages".to_owned(), list(&[text("not a message")]))]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    let error = hooks.check(&data, &selection).await.expect_err("invalid");
+    assert!(matches!(
+        &error,
+        ThirdPartyHookError::Lakera(LakeraHookError::InvalidField { field: "messages" })
+    ));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(captured.lock().expect("captured").is_empty());
 }
 
 #[tokio::test]

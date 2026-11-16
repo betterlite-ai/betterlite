@@ -410,6 +410,58 @@ async fn lasso_nothing_to_inspect_returns_without_a_call() {
 }
 
 #[tokio::test]
+async fn lasso_only_the_pre_call_hook_warms_the_conversation_cache() {
+    let (base, _server, captured) = serve("/classify", Vec::new()).await;
+    let guardrail = lasso_guardrail(&base, false);
+    let key = "lasso_conversation_id:call-1";
+    let cache = TestCache::default();
+    let data = BTreeMap::from([
+        ("litellm_call_id".to_owned(), text("call-1")),
+        ("messages".to_owned(), list(&[])),
+    ]);
+    let mut moderated = data.clone();
+    lasso::hook(
+        &guardrail,
+        &mut moderated,
+        &cache,
+        LassoRequestHook::Moderation,
+        true,
+    )
+    .await
+    .expect("moderation");
+    assert_eq!(cache.get_cache(key).expect("read"), None);
+    let mut warmed = data.clone();
+    lasso::hook(
+        &guardrail,
+        &mut warmed,
+        &cache,
+        LassoRequestHook::PreCall,
+        true,
+    )
+    .await
+    .expect("pre_call");
+    assert!(cache.get_cache(key).expect("read").is_some());
+    assert!(captured.lock().expect("captured").is_empty());
+}
+
+#[tokio::test]
+async fn lasso_an_empty_text_input_is_not_inspected() {
+    let (base, _server, captured) = serve("/classify", Vec::new()).await;
+    let guardrail = lasso_guardrail(&base, true);
+    let mut data = BTreeMap::from([("input".to_owned(), text(""))]);
+    lasso::hook(
+        &guardrail,
+        &mut data,
+        &TestCache::default(),
+        LassoRequestHook::PreCall,
+        true,
+    )
+    .await
+    .expect("skipped");
+    assert!(captured.lock().expect("captured").is_empty());
+}
+
+#[tokio::test]
 async fn lasso_messages_of_the_wrong_type_fail_with_the_field_name() {
     let (base, _server, _captured) = serve("/classify", Vec::new()).await;
     let guardrail = lasso_guardrail(&base, false);
