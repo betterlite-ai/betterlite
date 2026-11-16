@@ -7,6 +7,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
+use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::model_armor::hooks::error_handling::HookError;
 use crate::model_armor::hooks::tests::support::{
     API_ERROR, BLOCKED, CLEAN, Recorder, SANITIZED_TEXT, armor, armor_with, blocked, bucket, field,
@@ -176,9 +177,7 @@ async fn logging_only_joins_the_non_empty_texts() {
 #[case::absent(no_texts())]
 #[case::empty(texts(&[]))]
 #[tokio::test]
-async fn logging_only_skips_the_request_without_texts(
-    #[case] inputs: crate::guardrail_base::inputs::GuardrailApiInputs,
-) {
+async fn logging_only_skips_the_request_without_texts(#[case] inputs: GuardrailApiInputs) {
     let fixture = armor(Vec::new()).await;
     let hooks = fixture.hooks();
     let mut request = prompt_data();
@@ -287,7 +286,7 @@ async fn logging_only_propagates_a_response_that_is_not_json() {
         error,
         HookError::Transport(TransportError::ResponseJson(_))
     ));
-    assert!(request.get("metadata").is_none());
+    assert!(!request.contains_key("metadata"));
 }
 
 #[tokio::test]

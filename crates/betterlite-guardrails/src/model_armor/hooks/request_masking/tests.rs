@@ -18,7 +18,7 @@ use super::{apply, read_messages};
 )]
 fn request_masking_reads_the_messages(#[case] source: &str, #[case] expected: Option<usize>) {
     let messages = read_messages(&data(source)).expect("messages");
-    assert_eq!(messages.map(|messages| messages.len()), expected);
+    assert_eq!(messages.map(|list| list.len()), expected);
 }
 
 #[test]

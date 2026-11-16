@@ -192,7 +192,7 @@ async fn post_call_api_errors_stop_the_hook_when_fail_closed() {
         .await
         .expect_err("fail closed");
     assert!(matches!(error, HookError::Api(_)));
-    assert!(request.get("metadata").is_none());
+    assert!(!request.contains_key("metadata"));
     assert!(standard_records(&recorder).is_empty());
 }
 

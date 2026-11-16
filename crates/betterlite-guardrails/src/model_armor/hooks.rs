@@ -14,6 +14,7 @@ use crate::model_armor::decisions::model_response::CallResponse;
 use crate::model_armor::decisions::{
     build_block_error_detail, build_logging_response, should_block_content,
 };
+use crate::model_armor::transport::ArmorResponse;
 use crate::model_armor::transport::ModelArmorTransport;
 use crate::model_armor::transport::tokens::ArmorTokens;
 
@@ -35,6 +36,7 @@ mod timing;
 use error_handling::HookError;
 use events::HookPhase;
 use logging_information::ApplyVerdict;
+use timing::RecordTimes;
 
 pub const MODEL_ARMOR_PROVIDER: &str = "model_armor";
 
@@ -119,14 +121,25 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
             .make_model_armor_request(Some(&text), logging_only::source(input_type), None)
             .await;
         let times = timing::between(started_at, (self.clock)());
-        let armor = match result {
-            Ok(armor) => armor,
+        match result {
+            Ok(armor) => self.record_and_block(data, input_type, context, &armor, times)?,
             Err(error) => {
                 let verdict = logging_only::failure_verdict(error)?;
                 logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
-                return Ok(inputs);
             }
-        };
+        }
+        Ok(inputs)
+    }
+
+    // LiteLLM's apply_guardrail verdict: record it, then block a flagged one outside logging_only mode
+    fn record_and_block(
+        &self,
+        data: &mut Data,
+        input_type: GuardrailInputType,
+        context: &mut HookContext<'_>,
+        armor: &ArmorResponse,
+        times: RecordTimes,
+    ) -> Result<(), HookError<T::Error>> {
         let flagged = should_block_content(&armor.verdict, false);
         let response = build_logging_response(&armor.body, self.guardrail.sanitize_error_detail);
         let verdict = if flagged {
@@ -135,22 +148,22 @@ impl<T: ArmorTokens> ModelArmorHooks<'_, T> {
             ApplyVerdict::Success { response }
         };
         logging_information::record_apply_guardrail(self, data, context, verdict, times)?;
-        if flagged
-            && !self
+        if !flagged
+            || self
                 .guardrail
                 .base
                 .event_hook_is_event_type(GuardrailEventHooks::LoggingOnly)
         {
-            return Err(HookError::Blocked {
-                status: 400,
-                detail: build_block_error_detail(
-                    logging_only::block_message(input_type),
-                    &armor.body,
-                    self.guardrail.sanitize_error_detail,
-                ),
-            });
+            return Ok(());
         }
-        Ok(inputs)
+        Err(HookError::Blocked {
+            status: 400,
+            detail: build_block_error_detail(
+                logging_only::block_message(input_type),
+                &armor.body,
+                self.guardrail.sanitize_error_detail,
+            ),
+        })
     }
 }
 

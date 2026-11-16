@@ -93,10 +93,7 @@ pub(super) fn record_text_scan(data: &mut Data, response: GuardrailValue, blocke
 
 // LiteLLM copies the request's start_time into the record unchecked; the record field is a float, so a non-number logs as null
 pub(super) fn request_start_time(data: &Data) -> Option<f64> {
-    data.get(START_TIME_KEY).and_then(number_of)
-}
-
-fn number_of(value: &GuardrailValue) -> Option<f64> {
+    let value = data.get(START_TIME_KEY)?;
     match value {
         GuardrailValue::Decimal(number) => Some(*number),
         GuardrailValue::SignedInteger(number) => serde_json::Number::from(*number).as_f64(),

@@ -61,12 +61,12 @@ fn metadata_maps_the_stored_status(
     #[case] expected: GuardrailStatus,
 ) {
     let mut request = prompt_data();
-    if let Some(status) = status {
+    if let Some(stored) = status {
         request.insert(
             "metadata".to_owned(),
             GuardrailValue::Object(BTreeMap::from([(
                 "_model_armor_status".to_owned(),
-                GuardrailValue::Text(status.to_owned()),
+                GuardrailValue::Text(stored.to_owned()),
             )])),
         );
     }
@@ -146,8 +146,8 @@ fn metadata_scan_replaces_a_bucket_that_is_not_an_object() {
 #[rstest]
 #[case::absent("{}", None)]
 #[case::null(r#"{"start_time":null}"#, None)]
-#[case::fraction(r#"{"start_time":1.5}"#, Some(1.5))]
-#[case::integer(r#"{"start_time":7}"#, Some(7.0))]
+#[case::fraction(r#"{"start_time":1.5}"#, Some(1.5_f64))]
+#[case::integer(r#"{"start_time":7}"#, Some(7.0_f64))]
 #[case::text(r#"{"start_time":"soon"}"#, None)]
 #[case::boolean(r#"{"start_time":true}"#, None)]
 #[case::marker_with_other_keys(
@@ -163,9 +163,9 @@ fn metadata_reads_the_request_start_time(#[case] source: &str, #[case] expected:
 fn metadata_reads_a_start_time_that_came_from_a_stored_record() {
     let mut request = Data::new();
     request.insert("start_time".to_owned(), GuardrailValue::Decimal(2.5));
-    assert_eq!(request_start_time(&request), Some(2.5));
+    assert_eq!(request_start_time(&request), Some(2.5_f64));
     let marker = data(r#"{"start_time":3.25}"#);
-    assert_eq!(request_start_time(&marker), Some(3.25));
+    assert_eq!(request_start_time(&marker), Some(3.25_f64));
 }
 
 #[tokio::test]
@@ -254,7 +254,7 @@ async fn metadata_file_scan_writes_the_litellm_metadata_bucket_when_present() {
     )
     .await
     .expect("scan");
-    assert!(request.get("metadata").is_none());
+    assert!(!request.contains_key("metadata"));
     assert!(bucket(&request, "litellm_metadata").contains_key("_model_armor_status"));
 }
 

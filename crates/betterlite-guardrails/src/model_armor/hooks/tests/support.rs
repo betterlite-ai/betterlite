@@ -66,7 +66,7 @@ impl GuardrailSpanSink for DiscardSink {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct Recorded {
     pub(crate) path: String,
     pub(crate) body: GuardrailValue,
@@ -181,7 +181,9 @@ pub(crate) fn settings_for(hooks: &[&str]) -> GuardrailSettings {
 }
 
 pub(crate) fn fixed_clock() -> SystemTime {
-    SystemTime::UNIX_EPOCH + Duration::from_secs(100)
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(100))
+        .expect("clock")
 }
 
 pub(crate) struct Armor {
@@ -250,14 +252,12 @@ impl Armor {
     }
 
     pub(crate) fn request(&self, index: usize) -> Recorded {
-        let recorded = self.recorded.lock().expect("recorded");
-        let entry = recorded
+        self.recorded
+            .lock()
+            .expect("recorded")
             .get(index)
-            .unwrap_or_else(|| panic!("no request at {index}"));
-        Recorded {
-            path: entry.path.clone(),
-            body: entry.body.clone(),
-        }
+            .cloned()
+            .unwrap_or_else(|| panic!("no request at {index}"))
     }
 
     pub(crate) fn request_text(&self, index: usize) -> String {
@@ -270,10 +270,10 @@ fn sent_payload(recorded: &Recorded) -> &BTreeMap<String, GuardrailValue> {
     let GuardrailValue::Object(fields) = &recorded.body else {
         panic!("no request body in {:?}", recorded.body);
     };
-    let payload = fields
+    let scanned = fields
         .get("userPromptData")
         .or_else(|| fields.get("modelResponseData"));
-    let Some(GuardrailValue::Object(payload)) = payload else {
+    let Some(GuardrailValue::Object(payload)) = scanned else {
         panic!("no prompt data in {:?}", recorded.body);
     };
     payload
@@ -313,7 +313,9 @@ impl Recorder {
                 self_recorded: false,
                 event_type,
                 baseline: None,
-                started_at: SystemTime::UNIX_EPOCH + Duration::from_millis(1_500),
+                started_at: SystemTime::UNIX_EPOCH
+                    .checked_add(Duration::from_millis(1_500))
+                    .expect("started_at"),
             },
             suppressed: BTreeSet::new(),
             log_target: Some(log_target()),
@@ -449,7 +451,13 @@ pub(crate) fn field(value: &GuardrailValue, name: &str) -> GuardrailValue {
             .get(name)
             .cloned()
             .unwrap_or_else(|| panic!("no field {name} in {value:?}")),
-        other => panic!("expected an object, got {other:?}"),
+        other @ (GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Array(_)) => panic!("expected an object, got {other:?}"),
     }
 }
 

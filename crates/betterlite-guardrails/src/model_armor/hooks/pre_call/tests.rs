@@ -201,13 +201,19 @@ async fn pre_call_skips_a_sanitized_text_that_matches_what_it_scanned() {
     .await;
     let hooks = fixture.hooks();
     let mut request = prompt_data();
-    let before = request.clone();
     let mut recorder = Recorder::new(Some(GuardrailEventHooks::PreCall));
     hooks
         .pre_call(&mut request, None, &mut recorder.context())
         .await
         .expect("clean");
-    assert_eq!(request, before);
+    assert_eq!(
+        request.get("messages"),
+        Some(&value(r#"[{"role":"user","content":"hello"}]"#))
+    );
+    assert_eq!(
+        bucket(&request, "metadata").get("_model_armor_status"),
+        Some(&text("success"))
+    );
 }
 
 #[tokio::test]
@@ -323,7 +329,7 @@ async fn pre_call_api_errors_stop_the_hook_when_fail_closed() {
         .await
         .expect_err("fail closed");
     assert!(matches!(error, HookError::Api(_)));
-    assert!(request.get("metadata").is_none());
+    assert!(!request.contains_key("metadata"));
 }
 
 #[tokio::test]
