@@ -127,7 +127,13 @@ async fn assembly_failure_blocks_a_responses_stream_with_error_items() {
 
 #[tokio::test]
 async fn terminal_error_stream_is_yielded_without_scanning() {
-    let wire = chat_wire(ScanReply::Armor(value("{}")));
+    let wire = FakeWire::new(Setup {
+        sse_error: true,
+        chat: Some(Assembly::Model(value(CHAT_JSON))),
+        model_text: Some("The secret".to_owned()),
+        scan: ScanReply::Armor(value("{}")),
+        ..Setup::default()
+    });
     let mut data = request_data("{}");
     let original = bytes("data: {\"error\": {\"message\": \"blocked\"}}\n\n");
     let hook = StreamHook {
