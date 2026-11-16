@@ -4,10 +4,9 @@ use betterlite_foundry::image_generation::flux::{
     flux2_image_generation_url, flux2_provider_model_path, is_flux2_model, supported_params,
 };
 use betterlite_foundry::image_generation::params::map_openai_params;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Serialize;
 use serde_json::{Map, Value, json};
-
-use crate::helpers::{Helper, HelperResult};
 
 mod input;
 mod tests;
