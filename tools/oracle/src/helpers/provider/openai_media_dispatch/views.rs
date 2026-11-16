@@ -1,4 +1,5 @@
 use betterlite_openai::image_generation::reply::ImageGenerationReply;
+use betterlite_openai::videos::VideoOptions;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::openai_media_dispatch::{
     MediaMethod, MediaPart, MediaPartBody, MediaPayload,
@@ -80,10 +81,11 @@ pub(super) fn text(bytes: &[u8]) -> Result<String, Box<HelperError>> {
     String::from_utf8(bytes.to_vec()).map_err(|error| failure("Utf8", error))
 }
 
-pub(super) fn query_value(query: &[(String, String)]) -> Value {
-    let mut fields = serde_json::Map::new();
-    for (name, value) in query {
-        fields.insert(name.clone(), Value::String(value.clone()));
-    }
-    Value::Object(fields)
+pub(super) fn query_value(query: &VideoOptions) -> Value {
+    Value::Object(
+        query
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone()))
+            .collect(),
+    )
 }
