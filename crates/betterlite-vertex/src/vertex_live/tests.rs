@@ -188,6 +188,19 @@ fn global_default_setup_keeps_the_global_location_in_the_model_path() {
 }
 
 #[test]
+fn deferred_setup_keeps_audio_for_a_text_only_model() {
+    // LiteLLM hardcodes AUDIO here and only the session.update path runs the catalog coercion
+    let request = policy("my-project", "us-central1")
+        .session_configuration_request("transcribe-live")
+        .expect("the setup builds");
+    let setup = decode_gemini_live_setup(&request).expect("the setup decodes");
+    assert_eq!(
+        setup.generation_config.response_modalities,
+        Some(vec!["AUDIO".to_owned()])
+    );
+}
+
+#[test]
 fn first_session_update_sends_the_vertex_setup() {
     let messages = client_messages(
         &policy("my-project", "europe-west4"),
