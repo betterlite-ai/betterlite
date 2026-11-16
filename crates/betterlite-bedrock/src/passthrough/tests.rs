@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
@@ -28,9 +30,7 @@ use super::model_id::{encoded_model_id, with_model_id};
 use super::record::{DecodedChunk, EventChunkDecoder};
 use super::reply::{NativeReplyRequest, NativeReplyTransform, logged_reply};
 use super::url::PassthroughEnvironment;
-use super::{
-    BedrockPassthroughPlan, CollectorClock, PassthroughIdentity, get_bedrock_bearer_token,
-};
+use super::{BedrockPassthroughPlan, CollectorClock, PassthroughIdentity};
 
 mod collecting;
 mod runs;
@@ -193,15 +193,6 @@ fn identity() -> PassthroughIdentity {
 fn environment() -> PassthroughEnvironment {
     PassthroughEnvironment {
         region_name: Some("us-east-1".to_owned()),
-        region: None,
-        session_region: None,
-        runtime_endpoint: None,
-    }
-}
-
-fn bare_environment() -> PassthroughEnvironment {
-    PassthroughEnvironment {
-        region_name: None,
         region: None,
         session_region: None,
         runtime_endpoint: None,
@@ -411,7 +402,6 @@ fn signed_with_the_configured_bearer() {
         String::from_utf8(body.unwrap()).unwrap(),
         r#"{"input": "hi"}"#
     );
-    assert!(get_bedrock_bearer_token(&params).is_none());
 }
 
 fn signed_with_sigv4_credentials() {
@@ -659,7 +649,7 @@ fn region_sources() {
         &services.0,
         &services.1,
         &services.2,
-        bare_environment(),
+        PassthroughEnvironment::default(),
         identity(),
     );
     let arn = "arn:aws:bedrock:eu-west-1:1:foundation-model/anthropic.claude";

@@ -1,5 +1,5 @@
 use super::BedrockPassthroughPlan;
-use super::error::{PassthroughFailure, ProviderFailure};
+use super::error::PassthroughFailure;
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -80,5 +80,5 @@ pub fn logged_reply(
     plan.transform
         .transform(&request)
         .map(Some)
-        .map_err(|error| PassthroughFailure::Reply(ProviderFailure(error)))
+        .map_err(|_error| PassthroughFailure::Reply)
 }

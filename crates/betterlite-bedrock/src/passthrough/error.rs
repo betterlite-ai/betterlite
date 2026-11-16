@@ -4,19 +4,7 @@ use betterlite_context::chat_config_selection::selection::ChatConfigError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::passthrough::transformation::types::PassthroughError;
-use std::fmt;
 use thiserror::Error;
-pub struct ProviderFailure(pub Box<ProviderError>);
-impl fmt::Debug for ProviderFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("ProviderFailure([REDACTED])")
-    }
-}
-impl fmt::Display for ProviderFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the provider request failed")
-    }
-}
 #[derive(Debug, Error)]
 pub enum PassthroughFailure {
     #[error(transparent)]
@@ -36,13 +24,13 @@ pub enum PassthroughFailure {
     #[error("No provider config found for model: {model}")]
     NoProviderConfig { model: String },
     #[error("the native reply transform failed")]
-    Reply(ProviderFailure),
+    Reply,
     #[error("the provider request failed")]
-    Provider(ProviderFailure),
+    Provider,
 }
 impl From<ProviderError> for PassthroughFailure {
-    fn from(error: ProviderError) -> Self {
-        Self::Provider(ProviderFailure(Box::new(error)))
+    fn from(_error: ProviderError) -> Self {
+        Self::Provider
     }
 }
 #[must_use]

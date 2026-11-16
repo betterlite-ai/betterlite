@@ -1,13 +1,14 @@
 use std::fs;
-use std::path::Path;
+use std::path::PathBuf;
 
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::passthrough::transformation::BasePassthroughConfig as _;
+use rstest::rstest;
 use secrecy::SecretString;
 
-use super::super::error::{PassthroughFailure, ProviderFailure};
+use super::super::error::PassthroughFailure;
 use super::super::event::{LogEventError, decode_passthrough_log_event};
 use super::super::{BedrockPassthroughPlan, PassthroughIdentity};
 use super::{
@@ -101,9 +102,8 @@ fn provider_failure_hides_the_message() {
         body: None,
         status_code_is_synthesized: false,
     });
-    let hidden = PassthroughFailure::Reply(ProviderFailure(Box::new(provider)));
+    let hidden = PassthroughFailure::from(provider);
     assert!(!format!("{hidden:?}").contains("FIXTURE-SECRET"));
-    assert!(format!("{hidden:?}").contains("REDACTED"));
     assert_eq!(hidden.to_string(), "the provider request failed");
 }
 
@@ -123,19 +123,17 @@ fn outcome(bytes: &[u8]) -> &'static str {
     }
 }
 
+#[rstest]
+fn replays_the_bedrock_services_passthrough_corpus(
+    #[files("fuzz/corpus/bedrock_services_passthrough/*")] path: PathBuf,
+) {
+    let name = path.file_name().unwrap().to_str().unwrap();
+    let category = name.splitn(3, '-').nth(2).unwrap();
+    assert_eq!(outcome(&fs::read(&path).unwrap()), category, "{name}");
+}
+
 #[test]
-fn replays_the_bedrock_services_passthrough_corpus() {
-    let corpus =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/bedrock_services_passthrough");
-    let mut seen = Vec::new();
-    for entry in fs::read_dir(corpus).unwrap() {
-        let path = entry.unwrap().path();
-        let name = path.file_name().unwrap().to_str().unwrap().to_owned();
-        let category = name.splitn(3, '-').nth(2).unwrap();
-        assert_eq!(outcome(&fs::read(&path).unwrap()), category, "{name}");
-        seen.push(name);
-    }
-    assert!(seen.len() >= 6);
+fn log_event_boundaries_keep_their_category() {
     assert_eq!(outcome(br#"  ["not", "an", "object"]"#), "not-object");
     assert_eq!(outcome(b"{\"a\":\"\xff\"}"), "not-utf8");
     let value: Json = json(r#"{"bytes":"x"}"#);

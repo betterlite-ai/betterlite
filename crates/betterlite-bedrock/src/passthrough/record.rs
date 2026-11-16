@@ -44,7 +44,11 @@ pub trait EventChunkDecoder: Send {
         clock: CollectorClock,
     ) -> Result<DecodedChunk, StreamLogError>;
 }
-fn convert<T: Serialize, U: DeserializeOwned>(value: &T) -> Result<U, StreamLogError> {
+fn convert<T, U>(value: &T) -> Result<U, StreamLogError>
+where
+    T: Serialize,
+    U: DeserializeOwned,
+{
     serde_json::from_str(&serde_json::to_string(value).map_err(StreamLogError::Encode)?)
         .map_err(StreamLogError::Decode)
 }
@@ -54,7 +58,10 @@ fn extra_object(extra: &Extra) -> Result<Option<JsonObject>, StreamLogError> {
     }
     convert(extra).map(Some)
 }
-fn with_model<T: Serialize>(value: &T) -> Result<StreamChunk, StreamLogError> {
+fn with_model<T>(value: &T) -> Result<StreamChunk, StreamLogError>
+where
+    T: Serialize,
+{
     let mut object: JsonObject = convert(value)?;
     if let Some(model @ JsonValue::Null) = object.get_mut("model") {
         *model = JsonValue::String(String::new());

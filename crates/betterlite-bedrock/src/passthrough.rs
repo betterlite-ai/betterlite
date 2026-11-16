@@ -29,7 +29,6 @@ pub mod event;
 pub mod model_id;
 pub mod record;
 pub mod reply;
-#[cfg(test)]
 mod tests;
 pub mod url;
 use self::url::PassthroughEnvironment;
@@ -64,10 +63,6 @@ impl fmt::Debug for BedrockPassthroughPlan<'_> {
             .field("environment", &self.environment)
             .finish_non_exhaustive()
     }
-}
-#[must_use]
-pub const fn get_bedrock_bearer_token(_litellm_params: &Object) -> Option<SecretString> {
-    None
 }
 fn request_body(context: &PassthroughSigning<'_>) -> Result<Vec<u8>, PassthroughFailure> {
     let data: IndexMap<String, Json> = match context.request_data {
@@ -139,11 +134,8 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         context: &PassthroughSigning<'_>,
     ) -> Result<(Headers, Option<Vec<u8>>), Self::Error> {
         let body = request_body(context)?;
-        let api_key = get_bedrock_bearer_token(context.litellm_params);
-        let bearer = crate::aws_settings::bedrock_bearer_token(
-            api_key.as_ref(),
-            self.identity.bearer_token.as_ref(),
-        );
+        let bearer =
+            crate::aws_settings::bedrock_bearer_token(None, self.identity.bearer_token.as_ref());
         let pairs = content_type_pairs(&headers, bearer.is_some());
         let supplied = supplied_authorization(&pairs);
         let region = signing_region(self, context, bearer.is_some())?;
@@ -158,7 +150,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
             endpoint: context.api_base,
             data: Body::Bytes(&body),
             headers: &pairs,
-            api_key: api_key.as_ref(),
+            api_key: None,
             configured_bearer: self.identity.bearer_token.as_ref(),
             supports_bearer_token: true,
             now: self.identity.now,

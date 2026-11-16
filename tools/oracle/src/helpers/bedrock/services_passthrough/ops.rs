@@ -168,19 +168,15 @@ fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> HelperResult {
 fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> HelperResult {
     let target = PassthroughTarget {
         model: "m",
-        custom_llm_provider: run.provider.as_str(),
-        endpoint: run.endpoint.as_str(),
+        custom_llm_provider: &run.provider,
+        endpoint: &run.endpoint,
     };
     let response = RelayedResponse {
         status_code: 200,
         body: run.body.as_bytes(),
     };
-    Ok(
-        match logged_reply(plan, &target, &response, &Object::new()) {
-            Ok(logged) => json!({ "logged": logged.is_some(), "raised": false }),
-            Err(_) => json!({ "logged": false, "raised": true }),
-        },
-    )
+    let logged = logged_reply(plan, &target, &response, &Object::new());
+    Ok(json!({ "logged": matches!(logged, Ok(Some(_))), "raised": logged.is_err() }))
 }
 fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8]) -> HelperResult {
     let warning = match decoder_selection(&run.model, &run.endpoint, plan.clock) {
@@ -206,10 +202,6 @@ fn collect_run(plan: &BedrockPassthroughPlan<'_>, run: &CollectRun, stream: &[u8
         "warning": warning,
     }))
 }
-fn each<T>(runs: &[T], one: impl Fn(&T) -> HelperResult) -> HelperResult {
-    let values = runs.iter().map(one).collect::<Result<Vec<_>, _>>()?;
-    Ok(json!({ "runs": values }))
-}
 pub(super) fn run(input: &Input) -> HelperResult {
     let bearer_token = match input {
         Input::Sign { bearer, .. } => bearer.clone().map(SecretString::from),
@@ -220,7 +212,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
         bearer_token,
         now: SystemTime::UNIX_EPOCH,
     };
-    match input {
+    let values = match input {
         Input::Url { environment, runs } => {
             let settings = PassthroughEnvironment {
                 region_name: environment.region_name.clone(),
@@ -229,20 +221,29 @@ pub(super) fn run(input: &Input) -> HelperResult {
                 runtime_endpoint: environment.runtime_endpoint.clone(),
             };
             let plan = plan(settings, identity);
-            each(runs, |run| url_run(&plan, run))
+            runs.iter()
+                .map(|run| url_run(&plan, run))
+                .collect::<Result<Vec<_>, _>>()?
         }
         Input::Sign { runs, .. } => {
             let plan = plan(PassthroughEnvironment::default(), identity);
-            each(runs, |run| sign_run(&plan, run))
+            runs.iter()
+                .map(|run| sign_run(&plan, run))
+                .collect::<Result<Vec<_>, _>>()?
         }
         Input::Reply { runs } => {
             let plan = plan(PassthroughEnvironment::default(), identity);
-            each(runs, |run| reply_run(&plan, run))
+            runs.iter()
+                .map(|run| reply_run(&plan, run))
+                .collect::<Result<Vec<_>, _>>()?
         }
         Input::Collect { runs, stream } => {
             let plan = plan(PassthroughEnvironment::default(), identity);
             let bytes = hex::decode(stream).or_value_error()?;
-            each(runs, |run| collect_run(&plan, run, &bytes))
+            runs.iter()
+                .map(|run| collect_run(&plan, run, &bytes))
+                .collect::<Result<Vec<_>, _>>()?
         }
-    }
+    };
+    Ok(json!({ "runs": values }))
 }
