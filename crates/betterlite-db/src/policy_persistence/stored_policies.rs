@@ -9,7 +9,7 @@ use betterlite_policy::values::{ModelPatterns, Policy, PolicyCondition};
 use serde::Deserialize;
 
 use super::PolicyError;
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 
 // LiteLLM reads only the model key of a stored condition
 #[derive(Deserialize)]
@@ -28,11 +28,14 @@ struct StoredPolicy {
     pipeline: Option<RawPipeline>,
 }
 
-pub(super) fn parse_stored_policy<Client: PolicyTableSource>(
+pub(super) fn parse_stored_policy<Client>(
     response: &PolicyDBResponse,
     operation: Operation,
-) -> Result<Policy, PolicyError<Client>> {
-    let chain = || OperationChain::from(operation);
+) -> Result<Policy, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
+    let chain = || vec![operation];
     let stored = serde_json::to_string(response)
         .and_then(|text| serde_json::from_str::<StoredPolicy>(&text))
         .map_err(|source| PolicyError::<Client>::Json(chain(), source).logged())?;
@@ -52,10 +55,13 @@ pub(super) fn parse_stored_policy<Client: PolicyTableSource>(
         .map_err(|source| PolicyError::<Client>::Policy(chain(), source).logged())
 }
 
-pub(super) fn policy_map<Client: PolicyTableSource>(
+pub(super) fn policy_map<Client>(
     responses: &[PolicyDBResponse],
     operation: Operation,
-) -> Result<BTreeMap<String, Policy>, PolicyError<Client>> {
+) -> Result<BTreeMap<String, Policy>, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
     let mut policies = BTreeMap::new();
     for response in responses {
         let policy = parse_stored_policy::<Client>(response, operation)?;

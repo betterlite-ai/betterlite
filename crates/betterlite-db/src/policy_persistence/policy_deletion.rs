@@ -5,7 +5,7 @@ use std::sync::PoisonError;
 use betterlite_policy::registry::PolicySource;
 use betterlite_policy::row_adapter::{PolicyTable as _, PolicyTableSource};
 
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::existing_policy::existing_policy;
 use super::{Deletion, PolicyError, PolicyStore};
 
@@ -14,15 +14,17 @@ const CONFIG_RESTORED: &str =
 
 const NONE_PROMOTED: &str = "Production version was deleted. No other version was promoted. Promote another version to production if this policy should remain active.";
 
-pub async fn delete_policy_from_db<Client: PolicyTableSource>(
+pub async fn delete_policy_from_db<Client>(
     store: &PolicyStore<'_, Client>,
     policy_id: &str,
-) -> Result<Deletion, PolicyError<Client>> {
+) -> Result<Deletion, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
     let (filter, policy) = existing_policy(store, policy_id, Operation::DeletePolicy).await?;
     let table = store.client.policy_table();
     table.delete(filter).await.map_err(|source| {
-        PolicyError::<Client>::Database(OperationChain::from(Operation::DeletePolicy), source)
-            .logged()
+        PolicyError::<Client>::Database(vec![Operation::DeletePolicy], source).logged()
     })?;
     let message = format!("Policy {policy_id} deleted successfully");
     if policy.version_status.as_deref().unwrap_or("production") != "production" {

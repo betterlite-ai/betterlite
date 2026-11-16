@@ -4,10 +4,9 @@ use betterlite_policy::records::JsonObject;
 pub(super) fn validate_pipeline(
     pipeline: Option<&JsonObject>,
 ) -> Result<Option<GuardrailPipeline>, serde_json::Error> {
-    pipeline
-        .map(|raw| {
-            serde_json::to_string(raw)
-                .and_then(|text| serde_json::from_str::<GuardrailPipeline>(&text))
-        })
-        .transpose()
+    let Some(raw) = pipeline else {
+        return Ok(None);
+    };
+    let text = serde_json::to_string(raw)?;
+    serde_json::from_str(&text).map(Some)
 }

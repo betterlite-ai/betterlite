@@ -6,12 +6,12 @@ use betterlite_policy::records::attachment::{
     PolicyAttachmentCreateRequest, PolicyAttachmentDBResponse,
 };
 use betterlite_policy::row_adapter::{PolicyClause, PolicyTable as _};
-use betterlite_policy::values::PolicyAttachment;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
-use super::attachment_row::{AttachmentRow, AttachmentTableSource};
-use super::error::{Operation, OperationChain};
+use super::attachment_row::AttachmentTableSource;
+use super::attachment_sync::registered_attachment;
+use super::error::Operation;
 use super::{AttachmentError, AttachmentStore};
 
 #[derive(Serialize)]
@@ -30,35 +30,15 @@ struct NewAttachment<'request> {
     updated_by: Option<&'request str>,
 }
 
-pub async fn add_attachment_to_db<Client: AttachmentTableSource>(
+pub async fn add_attachment_to_db<Client>(
     store: &AttachmentStore<'_, Client>,
     request: &PolicyAttachmentCreateRequest,
     created_by: Option<&str>,
-) -> Result<PolicyAttachmentDBResponse, AttachmentError<Client>> {
-    let created = insert_attachment(store, request, created_by).await?;
-    store
-        .registry
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .add_attachment(PolicyAttachment {
-            policy: request.policy_name.clone(),
-            scope: request.scope.clone(),
-            teams: request.teams.clone(),
-            keys: request.keys.clone(),
-            models: request.models.clone(),
-            tags: request.tags.clone(),
-            priority: request.priority,
-            default: request.default,
-        });
-    Ok(PolicyAttachmentDBResponse::from(created))
-}
-
-async fn insert_attachment<Client: AttachmentTableSource>(
-    store: &AttachmentStore<'_, Client>,
-    request: &PolicyAttachmentCreateRequest,
-    created_by: Option<&str>,
-) -> Result<AttachmentRow, AttachmentError<Client>> {
-    let chain = || OperationChain::from(Operation::AddAttachment);
+) -> Result<PolicyAttachmentDBResponse, AttachmentError<Client>>
+where
+    Client: AttachmentTableSource,
+{
+    let chain = || vec![Operation::AddAttachment];
     let now = (store.now)();
     let row = NewAttachment {
         policy_name: &request.policy_name,
@@ -78,8 +58,17 @@ async fn insert_attachment<Client: AttachmentTableSource>(
         .and_then(|text| serde_json::from_str::<PolicyClause>(&text))
         .map_err(|source| AttachmentError::<Client>::Json(chain(), source).logged())?;
     let table = store.client.attachment_table();
-    table
+    let created = table
         .create(data)
         .await
-        .map_err(|source| AttachmentError::<Client>::Database(chain(), source).logged())
+        .map_err(|source| AttachmentError::<Client>::Database(chain(), source).logged())?;
+    let response = PolicyAttachmentDBResponse::from(created);
+    // the stored row holds the request's values, so registering it matches a later resync
+    let attachment = registered_attachment(response.clone());
+    store
+        .registry
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .add_attachment(attachment);
+    Ok(response)
 }

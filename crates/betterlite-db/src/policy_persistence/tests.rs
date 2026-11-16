@@ -64,11 +64,17 @@ impl<Row> Clone for FakeTable<Row> {
     }
 }
 
-pub(super) fn object<Value: Serialize>(value: &Value) -> JsonObject {
+pub(super) fn object<Value>(value: &Value) -> JsonObject
+where
+    Value: Serialize,
+{
     serde_json::from_str(&serde_json::to_string(value).unwrap()).unwrap()
 }
 
-fn decode<Row: DeserializeOwned>(row: &JsonObject) -> Row {
+fn decode<Row>(row: &JsonObject) -> Row
+where
+    Row: DeserializeOwned,
+{
     serde_json::from_str(&serde_json::to_string(row).unwrap()).unwrap()
 }
 
@@ -86,8 +92,42 @@ fn matches(row: &JsonObject, filter: &PolicyClause) -> bool {
     })
 }
 
+fn ordered(
+    rows: &[JsonObject],
+    filter: &PolicyClause,
+    order: Option<&PolicyOrder>,
+) -> Vec<JsonObject> {
+    let mut found: Vec<JsonObject> = rows
+        .iter()
+        .filter(|row| matches(row, filter))
+        .cloned()
+        .collect();
+    for (field, direction) in order.into_iter().flatten() {
+        found.sort_by_key(|row| serde_json::to_string(&row.get(field)).unwrap());
+        if *direction == PolicySort::Desc {
+            found.reverse();
+        }
+    }
+    found
+}
+
+impl Call {
+    const fn method(&self) -> &'static str {
+        match self {
+            Self::Create(_) => "create",
+            Self::FindUnique(_) => "find_unique",
+            Self::FindMany(..) => "find_many",
+            Self::Update(..) => "update",
+            Self::Delete(_) => "delete",
+        }
+    }
+}
+
 impl<Row> FakeTable<Row> {
-    fn holding<Stored: Serialize>(id_field: &'static str, rows: &[Stored]) -> Self {
+    fn holding<Stored>(id_field: &'static str, rows: &[Stored]) -> Self
+    where
+        Stored: Serialize,
+    {
         let state = TableState {
             rows: rows.iter().map(object).collect(),
             calls: Vec::new(),
@@ -112,50 +152,65 @@ impl<Row> FakeTable<Row> {
         self.state.lock().unwrap().rows.clone()
     }
 
-    fn run<Answer, Action>(
-        &self,
-        method: &'static str,
-        call: Call,
-        action: Action,
-    ) -> Result<Answer, FakeFailure>
+    fn answer(&self, call: Call) -> Result<Vec<Row>, FakeFailure>
     where
-        Action: FnOnce(&mut Vec<JsonObject>, &'static str) -> Answer,
+        Row: DeserializeOwned,
     {
         let mut state = self.state.lock().unwrap();
-        state.calls.push(call);
-        if state.failing.contains(&method) {
-            return Err(FakeFailure(method));
+        state.calls.push(call.clone());
+        if state.failing.contains(&call.method()) {
+            return Err(FakeFailure(call.method()));
         }
-        Ok(action(&mut state.rows, self.id_field))
+        let rows = &mut state.rows;
+        let produced: Vec<JsonObject> = match call {
+            Call::Create(mut created) => {
+                let id = format!("{}-{}", self.id_field, rows.len());
+                created.insert(self.id_field.to_owned(), JsonValue::String(id));
+                rows.push(created.clone());
+                vec![created]
+            }
+            Call::FindUnique(filter) => rows
+                .iter()
+                .filter(|row| matches(row, &filter))
+                .take(1)
+                .cloned()
+                .collect(),
+            Call::FindMany(filter, order) => {
+                ordered(rows, &filter.unwrap_or_default(), order.as_ref())
+            }
+            Call::Update(filter, data) => {
+                let updated = rows.iter_mut().find(|row| matches(row, &filter)).unwrap();
+                updated.extend(data);
+                vec![updated.clone()]
+            }
+            Call::Delete(filter) => {
+                let position = rows.iter().position(|row| matches(row, &filter));
+                position
+                    .map(|index| rows.remove(index))
+                    .into_iter()
+                    .collect()
+            }
+        };
+        Ok(produced.iter().map(decode).collect())
     }
+}
+
+fn single<Row>(mut rows: Vec<Row>) -> Row {
+    rows.remove(0)
 }
 
 impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row> {
     type Failure = FakeFailure;
 
     fn create(&self, data: PolicyClause) -> impl Future<Output = Result<Row, FakeFailure>> + Send {
-        ready(
-            self.run("create", Call::Create(data.clone()), |rows, id_field| {
-                let mut row = data;
-                row.insert(
-                    id_field.to_owned(),
-                    JsonValue::String(format!("{id_field}-{}", rows.len())),
-                );
-                rows.push(row.clone());
-                decode(&row)
-            }),
-        )
+        ready(self.answer(Call::Create(data)).map(single))
     }
 
     fn find_unique(
         &self,
         filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<Row>, FakeFailure>> + Send {
-        ready(self.run(
-            "find_unique",
-            Call::FindUnique(filter.clone()),
-            |rows, _| rows.iter().find(|row| matches(row, &filter)).map(decode),
-        ))
+        ready(self.answer(Call::FindUnique(filter)).map(Vec::pop))
     }
 
     fn find_many(
@@ -163,22 +218,7 @@ impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row>
         filter: Option<PolicyClause>,
         order: Option<PolicyOrder>,
     ) -> impl Future<Output = Result<Vec<Row>, FakeFailure>> + Send {
-        ready(self.run(
-            "find_many",
-            Call::FindMany(filter.clone(), order.clone()),
-            |rows, _| {
-                let wanted = filter.unwrap_or_default();
-                let mut found: Vec<&JsonObject> =
-                    rows.iter().filter(|row| matches(row, &wanted)).collect();
-                for (field, direction) in order.iter().flatten() {
-                    found.sort_by_key(|row| serde_json::to_string(&row.get(field)).unwrap());
-                    if *direction == PolicySort::Desc {
-                        found.reverse();
-                    }
-                }
-                found.into_iter().map(decode).collect()
-            },
-        ))
+        ready(self.answer(Call::FindMany(filter, order)))
     }
 
     fn update(
@@ -186,15 +226,7 @@ impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row>
         filter: PolicyClause,
         data: PolicyClause,
     ) -> impl Future<Output = Result<Row, FakeFailure>> + Send {
-        ready(self.run(
-            "update",
-            Call::Update(filter.clone(), data.clone()),
-            |rows, _| {
-                let row = rows.iter_mut().find(|row| matches(row, &filter)).unwrap();
-                row.extend(data);
-                decode(row)
-            },
-        ))
+        ready(self.answer(Call::Update(filter, data)).map(single))
     }
 
     fn update_many(
@@ -209,10 +241,7 @@ impl<Row: DeserializeOwned + Send + 'static> PolicyTable<Row> for FakeTable<Row>
         &self,
         filter: PolicyClause,
     ) -> impl Future<Output = Result<Option<Row>, FakeFailure>> + Send {
-        ready(self.run("delete", Call::Delete(filter.clone()), |rows, _| {
-            let position = rows.iter().position(|row| matches(row, &filter));
-            position.map(|index| decode(&rows.remove(index)))
-        }))
+        ready(self.answer(Call::Delete(filter)).map(Vec::pop))
     }
 
     fn delete_many(
@@ -280,25 +309,16 @@ impl Fixture {
     }
 }
 
-pub(super) fn policy_row(
-    policy_id: &str,
-    policy_name: &str,
-    status: &str,
-    created_at: &str,
-) -> PolicyRow {
+pub(super) fn policy_row(id: &str, name: &str, status: &str, created: &str) -> PolicyRow {
     let text = format!(
-        r#"{{"policy_id": "{policy_id}", "policy_name": "{policy_name}", "version_status": "{status}", "guardrails_add": ["{policy_name}-guard"], "created_at": "{created_at}", "updated_at": "{created_at}"}}"#
+        r#"{{"policy_id": "{id}", "policy_name": "{name}", "version_status": "{status}", "guardrails_add": ["{name}-guard"], "created_at": "{created}", "updated_at": "{created}"}}"#
     );
     serde_json::from_str(&text).unwrap()
 }
 
-pub(super) fn attachment_row(
-    attachment_id: &str,
-    policy_name: &str,
-    created_at: &str,
-) -> AttachmentRow {
+pub(super) fn attachment_row(id: &str, name: &str, created: &str) -> AttachmentRow {
     let text = format!(
-        r#"{{"attachment_id": "{attachment_id}", "policy_name": "{policy_name}", "teams": ["team-a"], "keys": [], "models": [], "tags": [], "is_default": false, "created_at": "{created_at}", "updated_at": "{created_at}"}}"#
+        r#"{{"attachment_id": "{id}", "policy_name": "{name}", "teams": ["team-a"], "keys": [], "models": [], "tags": [], "is_default": false, "created_at": "{created}", "updated_at": "{created}"}}"#
     );
     serde_json::from_str(&text).unwrap()
 }

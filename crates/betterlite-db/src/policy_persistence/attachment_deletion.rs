@@ -5,14 +5,17 @@ use betterlite_policy::row_adapter::{PolicyClause, PolicyTable as _};
 
 use super::attachment_row::AttachmentTableSource;
 use super::attachment_sync::sync_attachments_from_db;
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::{AttachmentError, AttachmentStore, Deletion};
 
-pub async fn delete_attachment_from_db<Client: AttachmentTableSource>(
+pub async fn delete_attachment_from_db<Client>(
     store: &AttachmentStore<'_, Client>,
     attachment_id: &str,
-) -> Result<Deletion, AttachmentError<Client>> {
-    let chain = || OperationChain::from(Operation::DeleteAttachment);
+) -> Result<Deletion, AttachmentError<Client>>
+where
+    Client: AttachmentTableSource,
+{
+    let chain = || vec![Operation::DeleteAttachment];
     let failed = |source| AttachmentError::<Client>::Database(chain(), source).logged();
     let table = store.client.attachment_table();
     let filter = PolicyClause::from([(

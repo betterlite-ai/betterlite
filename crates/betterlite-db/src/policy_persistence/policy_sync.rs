@@ -10,14 +10,17 @@ use betterlite_policy::row_adapter::{
 };
 use betterlite_policy::values::Policy;
 
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::policy_list::get_all_policies_from_db;
 use super::stored_policies::{parse_stored_policy, policy_map};
 use super::{PolicyError, PolicyStore};
 
-pub async fn sync_policies_from_db<Client: PolicyTableSource>(
+pub async fn sync_policies_from_db<Client>(
     store: &PolicyStore<'_, Client>,
-) -> Result<(), PolicyError<Client>> {
+) -> Result<(), PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
     let production = get_all_policies_from_db(store, Some("production"))
         .await
         .map_err(|error| error.within(Operation::SyncPolicies).logged())?;
@@ -63,9 +66,12 @@ fn publish_production(shared: &Mutex<PolicyRegistry>, db_policies: BTreeMap<Stri
     registry.policies_by_id = BTreeMap::new();
 }
 
-async fn load_versions_by_id<Client: PolicyTableSource>(
+async fn load_versions_by_id<Client>(
     store: &PolicyStore<'_, Client>,
-) -> Result<usize, PolicyError<Client>> {
+) -> Result<usize, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
     let statuses = vec![
         JsonValue::String("draft".to_owned()),
         JsonValue::String("published".to_owned()),
@@ -81,8 +87,7 @@ async fn load_versions_by_id<Client: PolicyTableSource>(
         .find_many(Some(filter), Some(order))
         .await
         .map_err(|source| {
-            PolicyError::<Client>::Database(OperationChain::from(Operation::SyncPolicies), source)
-                .logged()
+            PolicyError::<Client>::Database(vec![Operation::SyncPolicies], source).logged()
         })?;
     for row in &rows {
         let policy =

@@ -10,7 +10,7 @@ use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_with::skip_serializing_none;
 
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::existing_policy::existing_policy;
 use super::request_pipeline::validate_pipeline;
 use super::{PolicyError, PolicyStore};
@@ -31,13 +31,16 @@ struct PolicyChanges<'request> {
     pipeline: Option<GuardrailPipeline>,
 }
 
-pub async fn update_policy_in_db<Client: PolicyTableSource>(
+pub async fn update_policy_in_db<Client>(
     store: &PolicyStore<'_, Client>,
     policy_id: &str,
     request: &PolicyUpdateRequest,
     updated_by: Option<&str>,
-) -> Result<PolicyDBResponse, PolicyError<Client>> {
-    let chain = || OperationChain::from(Operation::UpdatePolicy);
+) -> Result<PolicyDBResponse, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
+    let chain = || vec![Operation::UpdatePolicy];
     let (filter, existing) = existing_policy(store, policy_id, Operation::UpdatePolicy).await?;
     let status = existing
         .version_status

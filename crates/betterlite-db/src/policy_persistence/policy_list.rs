@@ -6,13 +6,16 @@ use betterlite_policy::row_adapter::{
     PolicyClause, PolicyOrder, PolicySort, PolicyTable as _, PolicyTableSource, policy_db_response,
 };
 
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::{PolicyError, PolicyStore};
 
-pub async fn get_all_policies_from_db<Client: PolicyTableSource>(
+pub async fn get_all_policies_from_db<Client>(
     store: &PolicyStore<'_, Client>,
     version_status: Option<&str>,
-) -> Result<Vec<PolicyDBResponse>, PolicyError<Client>> {
+) -> Result<Vec<PolicyDBResponse>, PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
     let filter = version_status.map(|status| {
         PolicyClause::from([(
             "version_status".to_owned(),
@@ -26,8 +29,7 @@ pub async fn get_all_policies_from_db<Client: PolicyTableSource>(
         .find_many(filter, Some(order))
         .await
         .map_err(|source| {
-            PolicyError::<Client>::Database(OperationChain::from(Operation::ListPolicies), source)
-                .logged()
+            PolicyError::<Client>::Database(vec![Operation::ListPolicies], source).logged()
         })?;
     Ok(rows.iter().map(policy_db_response).collect())
 }

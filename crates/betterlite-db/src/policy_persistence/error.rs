@@ -1,5 +1,4 @@
 use std::error::Error;
-use std::fmt;
 
 use betterlite_policy::registry::RegistryError;
 
@@ -30,39 +29,23 @@ pub enum Operation {
 }
 
 // LiteLLM wraps a failed inner call once per caller, so the message names every operation it crossed
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct OperationChain(pub Vec<Operation>);
-
-impl From<Operation> for OperationChain {
-    fn from(operation: Operation) -> Self {
-        Self(vec![operation])
-    }
-}
-
-impl fmt::Display for OperationChain {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let names: Vec<String> = self.0.iter().map(ToString::to_string).collect();
-        formatter.write_str(&names.join(": Error "))
-    }
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum PersistenceError<Failure>
 where
     Failure: Error + Send + Sync + 'static,
 {
-    #[error("Error {0}: {1}")]
-    Database(OperationChain, #[source] Failure),
-    #[error("Error {0}: {1}")]
-    Json(OperationChain, #[source] serde_json::Error),
-    #[error("Error {0}: {1}")]
-    Policy(OperationChain, #[source] RegistryError),
-    #[error("Error {0}: Policy with ID {1} not found")]
-    PolicyNotFound(OperationChain, String),
-    #[error("Error {0}: Only draft versions can be updated. This policy has status '{1}'.")]
-    NotDraft(OperationChain, String),
-    #[error("Error {0}: Attachment with ID {1} not found")]
-    AttachmentNotFound(OperationChain, String),
+    #[error("Error {}: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    Database(Vec<Operation>, #[source] Failure),
+    #[error("Error {}: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    Json(Vec<Operation>, #[source] serde_json::Error),
+    #[error("Error {}: {}", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    Policy(Vec<Operation>, #[source] RegistryError),
+    #[error("Error {}: Policy with ID {} not found", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    PolicyNotFound(Vec<Operation>, String),
+    #[error("Error {}: Only draft versions can be updated. This policy has status '{}'.", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    NotDraft(Vec<Operation>, String),
+    #[error("Error {}: Attachment with ID {} not found", .0.iter().map(ToString::to_string).collect::<Vec<_>>().join(": Error "), .1)]
+    AttachmentNotFound(Vec<Operation>, String),
 }
 
 impl<Failure> PersistenceError<Failure>
@@ -83,7 +66,7 @@ where
         | Self::PolicyNotFound(chain, _)
         | Self::NotDraft(chain, _)
         | Self::AttachmentNotFound(chain, _)) = &mut self;
-        chain.0.insert(0, outer);
+        chain.insert(0, outer);
         self
     }
 }

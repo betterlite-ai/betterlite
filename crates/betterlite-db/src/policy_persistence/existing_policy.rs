@@ -3,15 +3,18 @@ use betterlite_policy::row_adapter::{
     PolicyClause, PolicyRow, PolicyTable as _, PolicyTableSource,
 };
 
-use super::error::{Operation, OperationChain};
+use super::error::Operation;
 use super::{PolicyError, PolicyStore};
 
-pub(super) async fn existing_policy<Client: PolicyTableSource>(
+pub(super) async fn existing_policy<Client>(
     store: &PolicyStore<'_, Client>,
     policy_id: &str,
     operation: Operation,
-) -> Result<(PolicyClause, PolicyRow), PolicyError<Client>> {
-    let chain = || OperationChain::from(operation);
+) -> Result<(PolicyClause, PolicyRow), PolicyError<Client>>
+where
+    Client: PolicyTableSource,
+{
+    let chain = || vec![operation];
     let filter = PolicyClause::from([(
         "policy_id".to_owned(),
         JsonValue::String(policy_id.to_owned()),

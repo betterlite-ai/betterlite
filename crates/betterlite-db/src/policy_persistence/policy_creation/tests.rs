@@ -8,15 +8,15 @@ use tracing::Level;
 use super::add_policy_to_db;
 use crate::policy_persistence::tests::{CapturedLogs, Fixture, NOW};
 
-const FULL_REQUEST: &str = r#"{"policy_name": "pii", "inherit": "base", "description": "masks pii", "guardrails_add": ["presidio"], "condition": {"model": "gpt-4"}, "pipeline": {"mode": "post_call", "steps": [{"guardrail": "presidio"}]}}"#;
+const FULL_REQUEST: &str = r#"{"policy_name": "pii", "inherit": "base", "description": "masks pii", "guardrails_add": ["presidio"], "guardrails_remove": ["pii-legacy"], "condition": {"model": "gpt-4"}, "pipeline": {"mode": "post_call", "steps": [{"guardrail": "presidio"}]}}"#;
 
-const STORED_FULL: &str = r#"{"condition":{"model":"gpt-4"},"created_at":"NOW","created_by":"admin","description":"masks pii","guardrails_add":["presidio"],"guardrails_remove":[],"inherit":"base","is_latest":true,"pipeline":{"mode":"post_call","steps":[{"guardrail":"presidio","modify_response_message":null,"on_error":null,"on_fail":"block","on_pass":"allow","pass_data":false}]},"policy_id":"policy_id-0","policy_name":"pii","production_at":"NOW","updated_at":"NOW","updated_by":"admin","version_number":1,"version_status":"production"}"#;
+const STORED_FULL: &str = r#"{"condition":{"model":"gpt-4"},"created_at":"NOW","created_by":"admin","description":"masks pii","guardrails_add":["presidio"],"guardrails_remove":["pii-legacy"],"inherit":"base","is_latest":true,"pipeline":{"mode":"post_call","steps":[{"guardrail":"presidio","modify_response_message":null,"on_error":null,"on_fail":"block","on_pass":"allow","pass_data":false}]},"policy_id":"policy_id-0","policy_name":"pii","production_at":"NOW","updated_at":"NOW","updated_by":"admin","version_number":1,"version_status":"production"}"#;
 
-const REGISTERED_FULL: &str = r#"{"inherit":"base","description":"masks pii","guardrails":{"add":["presidio"],"remove":null},"condition":{"model":"gpt-4"},"pipeline":{"mode":"post_call","steps":[{"guardrail":"presidio","on_fail":"block","on_pass":"allow","on_error":null,"pass_data":false,"modify_response_message":null}]}}"#;
+const REGISTERED_FULL: &str = r#"{"inherit":"base","description":"masks pii","guardrails":{"add":["presidio"],"remove":["pii-legacy"]},"condition":{"model":"gpt-4"},"pipeline":{"mode":"post_call","steps":[{"guardrail":"presidio","on_fail":"block","on_pass":"allow","on_error":null,"pass_data":false,"modify_response_message":null}]}}"#;
 
 const STORED_BARE: &str = r#"{"created_at":"NOW","guardrails_add":[],"guardrails_remove":[],"is_latest":true,"policy_id":"policy_id-0","policy_name":"pii","production_at":"NOW","updated_at":"NOW","version_number":1,"version_status":"production"}"#;
 
-const REGISTERED_BARE: &str = r#"{"inherit":null,"description":null,"guardrails":{"add":null,"remove":null},"condition":null,"pipeline":null}"#;
+const REGISTERED_BARE: &str = r#"{"inherit":null,"description":null,"guardrails":{"add":[],"remove":[]},"condition":null,"pipeline":null}"#;
 
 #[rstest]
 #[case::full(FULL_REQUEST, Some("admin"), STORED_FULL, REGISTERED_FULL)]
