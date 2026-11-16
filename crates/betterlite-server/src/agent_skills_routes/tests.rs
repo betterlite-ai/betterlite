@@ -263,6 +263,7 @@ async fn index_url_uses_the_request_authority() {
 #[case::edges("--Hello--", "hello")]
 #[case::digits("V2 Beta", "v2-beta")]
 #[case::non_ascii("Ünïcode", "n-code")]
+#[case::empty_slug("???", "skill-1")]
 #[tokio::test]
 async fn name_slugifies_the_declared_name(#[case] declared: &str, #[case] expected: &str) {
     let harness = Harness::new(vec![row("skill-1", Some(b"upload-1"), Some(STAMP))]);
