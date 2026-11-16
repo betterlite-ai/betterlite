@@ -103,7 +103,7 @@ fn status_floors_a_remaining_time_at_zero() {
 }
 
 #[test]
-fn status_ignores_unparseable_timestamps() {
+fn status_ignores_unparsable_timestamps() {
     let clock = TestClock::at("2026-01-10T00:00:30Z");
     let mut stored = running_status(4, 6);
     stored.started_at = Some("yesterday".to_owned());

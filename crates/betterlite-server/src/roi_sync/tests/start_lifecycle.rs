@@ -154,9 +154,9 @@ async fn start_refuses_when_the_shared_run_is_still_running() {
 #[tokio::test]
 async fn start_leaves_a_running_analysis_when_the_new_settings_are_invalid() {
     let manager = manager(None);
-    let mut inputs = inputs("o/r", &[12]);
-    inputs.complete = stalled_caller(Arc::new(Notify::new()));
-    assert!(manager.start(inputs.run()).await);
+    let mut first = inputs("o/r", &[12]);
+    first.complete = stalled_caller(Arc::new(Notify::new()));
+    assert!(manager.start(first.run()).await);
     drained().await;
     let mut invalid = inputs("o/r", &[12]);
     invalid.settings = settings(&[]);

@@ -2,17 +2,31 @@
 
 use betterlite_roi::records::ROISyncPhase;
 
-use super::support::{FakeCoordinator, Lease, inputs, manager, settled};
+use super::support::{FakeCoordinator, Lease, TestClock, inputs, manager, settled, until};
 use crate::roi_cache::store::REPORT_PARAM;
 use crate::roi_sync::error::REPLACED_MESSAGE;
 
+const PULL_DETAIL: &str = "/repos/o/r/pulls/12";
+
 #[tokio::test]
 async fn coordinator_receives_the_completed_status_and_report() {
-    let manager = manager(None);
-    let mut inputs = inputs("o/r", &[12, 13]);
+    let clock = TestClock::at("2026-01-10T00:00:00Z");
+    let manager = manager(Some(clock.handle()));
+    let mut inputs = inputs("o/r", &[12, 13, 14]);
     let coordinator = FakeCoordinator::default();
     inputs.coordinator = Some(coordinator.clone());
+    let gate = inputs.routes.gate(PULL_DETAIL);
     assert!(manager.start(inputs.run()).await);
+    until(|| {
+        inputs
+            .routes
+            .requested()
+            .iter()
+            .any(|path| path == PULL_DETAIL)
+    })
+    .await;
+    clock.set("2026-01-10T02:00:00Z");
+    gate.notify_one();
     settled(&manager).await;
     let finishes = coordinator.finishes();
     assert_eq!(finishes.len(), 1);
@@ -21,12 +35,17 @@ async fn coordinator_receives_the_completed_status_and_report() {
     assert_eq!(status.phase, ROISyncPhase::Complete);
     assert!(!status.running);
     assert_eq!(status.stage, "Analysis complete");
-    assert!(status.finished_at.is_some());
-    assert_eq!(status.done, 2);
+    assert_eq!(
+        status.finished_at.as_deref(),
+        Some("2026-01-10T02:00:00+00:00")
+    );
+    assert_eq!(status.elapsed_seconds, 7200);
+    assert_eq!(status.remaining_seconds, Some(0));
+    assert_eq!(status.done, 3);
     let published = completed
         .as_ref()
         .expect("the completed run hands its report to the coordinator");
-    assert_eq!(published.pulls.len(), 2);
+    assert_eq!(published.pulls.len(), 3);
     assert!(inputs.repository.written_named(REPORT_PARAM).is_none());
 }
 
