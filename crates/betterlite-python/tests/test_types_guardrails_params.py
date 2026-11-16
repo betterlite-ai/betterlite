@@ -22,6 +22,7 @@ from pydantic import BaseModel, TypeAdapter, ValidationError
 
 import litellm.types.guardrails as theirs
 
+import betterlite.types.guardrails.content_filter as our_content_filter
 import betterlite.types.guardrails.endpoints as our_endpoints
 import betterlite.types.guardrails.params as our_params
 
@@ -124,15 +125,28 @@ def validated(module, name, payload):
         return {"errors": sorted([item["type"], item["msg"]] for item in error.errors())}
 
 
-ours = {**vars(our_params), **vars(our_endpoints)}
-report = {"defined": {"betterlite": sorted(set(defined(our_params)) | set(defined(our_endpoints)))}}
+OUR_MODULES = (our_params, our_endpoints, our_content_filter)
+
+
+def module_of(name):
+    for module in OUR_MODULES:
+        if name in vars(module):
+            return module
+    raise KeyError(name)
+
+
+ours = {**vars(our_params), **vars(our_endpoints), **vars(our_content_filter)}
+report = {
+    "defined": {
+        "betterlite": sorted(
+            set(defined(our_params)) | set(defined(our_endpoints)) | set(defined(our_content_filter))
+        )
+    }
+}
 names = report["defined"]["betterlite"]
 report["shapes"] = {
     "litellm": {name: describe(theirs, name) for name in names},
-    "betterlite": {
-        name: describe(our_params if name in vars(our_params) else our_endpoints, name)
-        for name in names
-    },
+    "betterlite": {name: describe(module_of(name), name) for name in names},
 }
 report["litellm_has"] = {name: name in vars(theirs) for name in names}
 
@@ -140,16 +154,12 @@ PARAMS_CASES = json.loads(sys.argv[1])
 report["outcomes"] = {"litellm": {}, "betterlite": {}}
 for label, name, kwargs in PARAMS_CASES:
     report["outcomes"]["litellm"][label] = outcome(theirs, name, kwargs)
-    report["outcomes"]["betterlite"][label] = outcome(
-        our_params if name in vars(our_params) else our_endpoints, name, kwargs
-    )
+    report["outcomes"]["betterlite"][label] = outcome(module_of(name), name, kwargs)
 VALIDATED_CASES = json.loads(sys.argv[2])
 report["validated"] = {"litellm": {}, "betterlite": {}}
 for label, name, payload in VALIDATED_CASES:
     report["validated"]["litellm"][label] = validated(theirs, name, payload)
-    report["validated"]["betterlite"][label] = validated(
-        our_params if name in vars(our_params) else our_endpoints, name, payload
-    )
+    report["validated"]["betterlite"][label] = validated(module_of(name), name, payload)
 
 
 def access(module):

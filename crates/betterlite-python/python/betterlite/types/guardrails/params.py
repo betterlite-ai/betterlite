@@ -1,10 +1,14 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Final, Literal, Required, Self, TypeAlias
+from typing import ClassVar, Literal, Required, Self, TypeAlias
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from typing_extensions import ReadOnly, TypedDict
 
+from betterlite.types.guardrails.content_filter import (
+    ContentFilterConfigModel,
+    MCP_SECURITY_ON_VIOLATION,
+)
 from betterlite.types.guardrails.core import (
     LakeraCategoryThresholds,
     SupportedGuardrailIntegrations,
@@ -38,9 +42,6 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.hiddenlayer import (
     HiddenlayerGuardrailConfigModel,
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.ibm.base import IBMGuardrailsBaseConfigModel
-from betterlite.types.proxy.guardrails.guardrail_hooks.litellm_content_filter import (
-    ContentFilterCategoryConfig,
-)
 from betterlite.types.proxy.guardrails.guardrail_hooks.ovalix import OvalixGuardrailConfigModel
 from betterlite.types.proxy.guardrails.guardrail_hooks.promptguard import PromptGuardConfigModel
 from betterlite.types.proxy.guardrails.guardrail_hooks.qohash import QostodianNexusConfigModel
@@ -60,38 +61,6 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.vigil_guard import (
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.xecguard import XecGuardConfigModel
 from betterlite.types.utils.base import ResponseObject
-
-
-class ContentFilterAction(StrEnum):
-    BLOCK = "BLOCK"
-    MASK = "MASK"
-
-
-class BlockedWord(ResponseObject):
-    keyword: str
-    action: ContentFilterAction
-    description: str | None = None
-
-
-class ContentFilterPattern(ResponseObject):
-    pattern_type: Literal["prebuilt", "regex"]
-    pattern_name: str | None = None
-    pattern: str | None = None
-    name: str | None = None
-    action: ContentFilterAction
-
-
-class ContentFilterConfigModel(ResponseObject):
-    patterns: list[ContentFilterPattern] | None = None
-    blocked_words: list[BlockedWord] | None = None
-    blocked_words_file: str | None = None
-    categories: list[ContentFilterCategoryConfig] | None = None
-    severity_threshold: str | None = None
-    pattern_redaction_format: str | None = None
-    keyword_redaction_tag: str | None = None
-
-
-MCP_SECURITY_ON_VIOLATION: Final = frozenset({"block", "alert"})
 
 
 class Mode(ResponseObject):
