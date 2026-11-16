@@ -5,7 +5,9 @@ use indexmap::IndexMap;
 use serde_json::Number;
 use thiserror::Error;
 
-use crate::api::fal::images::decode::{FalImage, decode_fal_image_reply};
+use crate::api::fal::images::decode::{
+    FalImage, decode_fal_image_record, fal_images_to_image_objects,
+};
 use crate::api::fal::images::error::FalImageError;
 use crate::api::fal::images::params::GENERIC_OPENAI_PARAMS;
 
@@ -227,10 +229,14 @@ pub fn project_response(
     body: &[u8],
     response: &mut FluxImageResponse,
 ) -> Result<(), FalImageError> {
-    let reply = decode_fal_image_reply(status, headers, body)?;
-    response.data.extend(reply.images);
+    let fields = decode_fal_image_record(status, headers, body)?;
+    response.data.extend(
+        fields
+            .get("images")
+            .map_or_else(Vec::new, fal_images_to_image_objects),
+    );
     for name in HIDDEN_METADATA {
-        if let Some(value) = reply.metadata.get(name) {
+        if let Some(value) = fields.get(name) {
             response
                 .hidden_params
                 .insert(name.to_owned(), value.clone());
