@@ -1,0 +1,77 @@
+kind: helper
+name: embedding-error
+call:
+  foundry_embeddings:
+    flows:
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":null,"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 404, headers: [], body: missing}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: 'not json'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA', hello]
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":1,"embedding":[0.1]}],"model":"text-model","usage":{"prompt_tokens":1,"completion_tokens":0,"total_tokens":1}}'}
+        client: openai
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA', hello, 'data:image/png;base64,AAAB']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]},{"object":"embedding","index":1,"embedding":[0.2]}],"model":"image-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: openai
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-num_tokens, value: abc}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model","usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-num_tokens, value: '0'}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model","usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+env: {}
+compare: {ignore: []}
