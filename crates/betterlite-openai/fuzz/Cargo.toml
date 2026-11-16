@@ -602,6 +602,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "dashscope_image_reply"
+path = "fuzz_targets/dashscope_image_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "mistral_resource"
 path = "fuzz_targets/mistral_resource.rs"
 test = false
