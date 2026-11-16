@@ -162,6 +162,8 @@ fn advertised_parameters_do_not_pass_through_but_others_win_last() {
 #[case::text_just_below_one(text("0.9999999999999999"), Some(number(0)))]
 #[case::text_just_below_two(text("2.9999999999999996"), Some(number(2)))]
 #[case::text_invalid(text("soon"), None)]
+#[case::text_underscore(text("1_0"), None)]
+#[case::text_unicode_digits(text("\u{661}\u{662}"), None)]
 #[case::text_nan(text("NaN"), None)]
 #[case::text_infinite(text("inf"), None)]
 #[case::number_fraction(lexeme("2.9"), Some(number(2)))]
@@ -292,6 +294,15 @@ fn timestamps_decode_offsets_and_zero_everything_else() {
 }
 
 #[test]
+fn a_reply_that_is_not_a_task_is_a_decode_error() {
+    let failed = create_response("gen4_turbo", br#"{"id":7}"#, None, &VideoParams::new());
+    let Err(RunwayVideoError::Task(error)) = failed else {
+        panic!("a numeric id has to fail the decode as a task error");
+    };
+    assert!(error.to_string().contains("id"));
+}
+
+#[test]
 fn creation_keeps_identity_completion_presence_and_progress_absence() {
     let body =
         r#"{"id":"task_1","status":"PENDING","createdAt":"2025-11-11T21:48:50Z","progress":0.5}"#;
@@ -311,6 +322,9 @@ fn creation_keeps_identity_completion_presence_and_progress_absence() {
     );
     assert_eq!(completed.completed_at, Some(0));
     assert_eq!(completed.status, "completed");
+    let nulls = created(r#"{"id":null,"status":null}"#, None, &VideoParams::new());
+    assert_eq!(nulls.id, "");
+    assert_eq!(nulls.status, "queued");
 }
 
 #[test]
@@ -419,6 +433,7 @@ fn resolution_reads_only_text_ratios() {
 
 #[rstest]
 #[case::ten(lexeme("10"), Some(lexeme("0.1")))]
+#[case::seventh(lexeme("0.7"), Some(lexeme("0.007")))]
 #[case::fraction(lexeme("0.5"), Some(lexeme("0.005")))]
 #[case::two_and_a_half(lexeme("2.5"), Some(lexeme("0.025")))]
 #[case::hundred(lexeme("100"), Some(lexeme("1.0")))]
