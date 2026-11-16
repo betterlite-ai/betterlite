@@ -3,7 +3,6 @@ use thiserror::Error;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use crate::agent_365_tokens::DEFENDER_STATUS_EVALUATED;
 use crate::primitives::json_value::JsonValue;
 
 // LiteLLM's _DefenderResult; a missing field is the same as an absent one
@@ -98,11 +97,6 @@ fn text_of(value: Option<&JsonValue>) -> Option<String> {
 }
 
 impl EvaluateVerdict {
-    #[must_use]
-    pub fn defender_evaluated(&self) -> bool {
-        self.defender.status.as_deref() == Some(DEFENDER_STATUS_EVALUATED)
-    }
-
     // LiteLLM's f"Microsoft Defender did not evaluate the call (defender.status={defender_status or 'missing'})"
     #[must_use]
     pub fn unevaluated_reason(&self) -> String {
@@ -167,14 +161,17 @@ impl BlockedDetail {
     #[must_use]
     pub fn detail(&self) -> IndexMap<String, GuardrailValue> {
         let mut detail = UnavailableDetail::from(self).detail();
-        let correlation = self
-            .correlation_id
-            .as_deref()
-            .map_or(GuardrailValue::Null, |id| {
-                GuardrailValue::Text(id.to_owned())
-            });
+        let correlation = correlation_value(self.correlation_id.as_deref());
         detail.insert("correlation_id".to_owned(), correlation);
         detail
+    }
+}
+
+// LiteLLM's _BlockedDetail writes correlation_id even when the verdict carried none
+fn correlation_value(correlation_id: Option<&str>) -> GuardrailValue {
+    match correlation_id {
+        Some(id) => GuardrailValue::Text(id.to_owned()),
+        None => GuardrailValue::Null,
     }
 }
 

@@ -94,12 +94,15 @@ fn prepare(reply: &ScriptedReply) -> Result<Option<PostReply>, Box<HelperError>>
     let ScriptedReply::Reply { status, body, raw } = reply else {
         return Ok(None);
     };
-    let status = StatusCode::from_u16(*status).or_value_error()?;
-    let body = match raw {
-        Some(raw) => raw.as_bytes().to_vec(),
+    let status_code = StatusCode::from_u16(*status).or_value_error()?;
+    let bytes = match raw {
+        Some(text) => text.as_bytes().to_vec(),
         None => serde_json::to_vec(body).or_value_error()?,
     };
-    Ok(Some(PostReply { status, body }))
+    Ok(Some(PostReply {
+        status: status_code,
+        body: bytes,
+    }))
 }
 
 fn recorded_body(content_type: Option<&str>, body: &[u8]) -> Value {

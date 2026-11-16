@@ -15,6 +15,7 @@ use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap};
 use secrecy::SecretString;
 use serde::Deserialize;
+use url::form_urlencoded;
 
 use super::error::EnforcementError;
 use super::pre_mcp_call_hook;
@@ -100,7 +101,8 @@ impl Agent365Poster for FakePoster {
             body: body.to_vec(),
         });
         let _advanced = self.now.fetch_add(LATENCY_STEP_NANOS, Ordering::Relaxed);
-        match self.replies.lock().unwrap().pop_front() {
+        let next = self.replies.lock().unwrap().pop_front();
+        match next {
             Some(ScriptedReply::Reply(reply)) => Ok(reply),
             Some(ScriptedReply::Unreachable) => Err(Agent365PosterError::NoReply {
                 url: url.to_owned(),
@@ -292,7 +294,7 @@ fn evaluate_body(request: &RecordedPost) -> EvaluateBody {
 }
 
 fn form_body(request: &RecordedPost) -> BTreeMap<String, String> {
-    url::form_urlencoded::parse(&request.body)
+    form_urlencoded::parse(&request.body)
         .map(|(name, value)| (name.into_owned(), value.into_owned()))
         .collect()
 }
@@ -312,7 +314,7 @@ async fn skips_a_call_type_that_is_not_an_mcp_call() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(poster.recorded().is_empty());
     assert!(!data.contains_key("metadata"));
 }
@@ -333,7 +335,7 @@ async fn skips_a_suppressed_guardrail() {
         &suppressed,
     )
     .await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(poster.recorded().is_empty());
     assert!(!data.contains_key("metadata"));
 }
@@ -347,7 +349,7 @@ async fn skips_a_request_without_a_tool_name() {
     } = harness(UnreachableFallback::FailClosed);
     let _removed = data.remove("mcp_tool_name");
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert!(poster.recorded().is_empty());
     assert!(!data.contains_key("metadata"));
 }
@@ -438,7 +440,7 @@ async fn allows_an_evaluated_verdict() {
     );
     poster.enqueue(allow_replies());
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let requests = poster.recorded();
     assert_eq!(requests.len(), 2);
     assert_token_request(&requests[0]);
@@ -472,7 +474,7 @@ async fn records_an_evaluated_allow() {
     } = harness(UnreachableFallback::FailClosed);
     poster.enqueue(allow_replies());
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let fields = record_fields(&data);
     assert_eq!(text(fields.get("guardrail_name").unwrap()), GUARDRAIL_NAME);
     assert_eq!(text(fields.get("guardrail_provider").unwrap()), "agent_365");
@@ -486,7 +488,10 @@ async fn records_an_evaluated_allow() {
     assert_eq!(text(recorded.get("verdict").unwrap()), "Allow");
     assert_eq!(text(recorded.get("defender_status").unwrap()), "Evaluated");
     assert_eq!(text(recorded.get("correlation_id").unwrap()), "corr-1");
-    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), LATENCY_MILLIS);
+    assert_eq!(
+        decimal(recorded.get("latency_ms").unwrap()).to_bits(),
+        LATENCY_MILLIS.to_bits()
+    );
     assert!(!recorded.contains_key("reason"));
 }
 
@@ -510,10 +515,13 @@ async fn a_quarter_millisecond_latency_rounds_away_from_zero() {
     .unwrap();
     let mut data = request_data();
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let fields = record_fields(&data);
     let recorded = response(fields);
-    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), 0.3);
+    assert_eq!(
+        decimal(recorded.get("latency_ms").unwrap()).to_bits(),
+        0.3_f64.to_bits()
+    );
     assert_eq!(duration_of(fields), &GuardrailValue::Decimal(0.00025));
 }
 
@@ -530,7 +538,7 @@ async fn agent_id_is_omitted_without_a_key_alias() {
     ]);
     let outcome =
         pre_mcp_call_hook(&guardrail, &mut data, "mcp_call", None, &BTreeSet::new()).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let request = poster.recorded().remove(1);
     let body = evaluate_body(&request);
     assert!(body.agent_id.is_none());
@@ -625,7 +633,10 @@ async fn an_unevaluated_allow_falls_back_to_unavailable() {
     assert_eq!(text(recorded.get("correlation_id").unwrap()), "corr-3");
     assert_eq!(text(recorded.get("reason").unwrap()), reason);
     assert!(!recorded.contains_key("defender_status"));
-    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), LATENCY_MILLIS);
+    assert_eq!(
+        decimal(recorded.get("latency_ms").unwrap()).to_bits(),
+        LATENCY_MILLIS.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -640,7 +651,7 @@ async fn an_unevaluated_allow_fails_open_when_configured() {
         evaluate(r#"{"allowed":true,"defender":{"status":"Skipped"},"correlationId":"corr-4"}"#),
     ]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let fields = record_fields(&data);
     let recorded = response(fields);
     assert_eq!(text(recorded.get("verdict").unwrap()), "Unscanned");
@@ -776,12 +787,12 @@ async fn a_non_ascii_obo_token_still_reaches_the_evaluation() {
     poster.enqueue(vec![
         ScriptedReply::Reply(reply(
             200,
-            r#"{"access_token":"obo-töken","expires_in":3600}"#,
+            "{\"access_token\":\"obo-t\u{f6}ken\",\"expires_in\":3600}",
         )),
         evaluate(r#"{"allowed":true,"defender":{"status":"Evaluated"}}"#),
     ]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let requests = poster.recorded();
     assert_eq!(requests.len(), 2);
     assert_eq!(requests[1].url, EVALUATE_URL);
@@ -799,7 +810,7 @@ async fn an_obo_token_that_is_not_a_header_value_fails_open() {
         r#"{"access_token":"obo\ntoken","expires_in":3600}"#,
     ))]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     assert_eq!(poster.recorded().len(), 1);
     let fields = record_fields(&data);
     assert_eq!(status_of(fields), "guardrail_failed_to_respond");

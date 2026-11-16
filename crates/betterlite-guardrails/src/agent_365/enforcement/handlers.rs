@@ -10,6 +10,7 @@ use crate::agent_365::enforcement_types::{
     BlockedDetail, EvaluateVerdict, UnavailableDetail, Verdict, decode_evaluate_response,
 };
 use crate::agent_365_tokens::Agent365Guardrail;
+use crate::agent_365_tokens::DEFENDER_STATUS_EVALUATED;
 use crate::agent_365_tokens::poster::PostReply;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_metadata::RequestData;
@@ -213,7 +214,7 @@ fn enforce_verdict(
             return Ok(());
         }
     };
-    if verdict.allowed && !verdict.defender_evaluated() {
+    if verdict.allowed && verdict.defender.status.as_deref() != Some(DEFENDER_STATUS_EVALUATED) {
         let reason = verdict.unevaluated_reason();
         unavailable(
             guardrail,

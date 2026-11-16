@@ -10,6 +10,7 @@ use super::{
     BlockedDetail, DefenderResult, EvaluateResponseError, EvaluateVerdict, UnavailableDetail,
     Verdict, decode_evaluate_response,
 };
+use crate::agent_365_tokens::DEFENDER_STATUS_EVALUATED;
 
 fn allowed_body() -> Vec<u8> {
     br#"{"allowed":true,"defender":{"status":"Evaluated","verdict":"Allow","message":null},"correlationId":"corr-1"}"#.to_vec()
@@ -32,7 +33,10 @@ fn decodes_an_evaluated_allow() {
         }
     );
     assert_eq!(verdict.correlation_id.as_deref(), Some("corr-1"));
-    assert!(verdict.defender_evaluated());
+    assert_eq!(
+        verdict.defender.status.as_deref(),
+        Some(DEFENDER_STATUS_EVALUATED)
+    );
 }
 
 #[test]
@@ -57,7 +61,10 @@ fn treats_a_non_object_defender_as_missing() {
     let verdict =
         decode(r#"{"allowed":true,"defender":"Evaluated","correlationId":"corr-1"}"#).unwrap();
     assert_eq!(verdict.defender, DefenderResult::default());
-    assert!(!verdict.defender_evaluated());
+    assert_ne!(
+        verdict.defender.status.as_deref(),
+        Some(DEFENDER_STATUS_EVALUATED)
+    );
     assert_eq!(verdict.correlation_id.as_deref(), Some("corr-1"));
 }
 
@@ -127,7 +134,10 @@ fn reads_an_array_defender_as_an_empty_one() {
     let verdict = decode(r#"{"allowed":true,"defender":["Evaluated",null,null]}"#).unwrap();
     assert!(verdict.allowed);
     assert_eq!(verdict.defender, DefenderResult::default());
-    assert!(!verdict.defender_evaluated());
+    assert_ne!(
+        verdict.defender.status.as_deref(),
+        Some(DEFENDER_STATUS_EVALUATED)
+    );
     assert_eq!(
         verdict.unevaluated_reason(),
         "Microsoft Defender did not evaluate the call (defender.status=missing)"
@@ -235,38 +245,42 @@ fn verdict_names_are_the_record_strings() {
     assert_eq!(Verdict::Unavailable.name(), "Unavailable");
 }
 
+// What a corpus entry decoded to, so the replay compares one map instead of six matches
+fn describe(outcome: &Result<EvaluateVerdict, EvaluateResponseError>) -> &'static str {
+    match outcome {
+        Ok(verdict) if verdict.allowed => "allowed",
+        Ok(_) => "blocked",
+        Err(EvaluateResponseError::NonJsonBody { .. }) => "non-JSON body",
+        Err(EvaluateResponseError::NonObjectBody) => "non-object body",
+        Err(EvaluateResponseError::MissingAllowed) => "missing allowed",
+    }
+}
+
 #[test]
 fn replays_the_agent_365_evaluate_response_corpus() {
     let corpus =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/agent_365_evaluate_response");
     let entries: Vec<_> = fs::read_dir(corpus).unwrap().collect();
     assert!(!entries.is_empty());
-    let outcomes: BTreeMap<String, Result<EvaluateVerdict, EvaluateResponseError>> = entries
+    let outcomes: BTreeMap<String, &'static str> = entries
         .into_iter()
         .map(|entry| {
             let path = entry.unwrap().path();
             let name = path.file_name().unwrap().to_str().unwrap().to_owned();
             let bytes = fs::read(&path).unwrap();
-            (name, decode_evaluate_response(&bytes))
+            (name, describe(&decode_evaluate_response(&bytes)))
         })
         .collect();
     assert_eq!(outcomes.len(), 6);
-    assert!(matches!(
-        &outcomes["array_verdict.json"],
-        Err(EvaluateResponseError::NonObjectBody)
-    ));
-    assert!(matches!(&outcomes["allowed.json"], Ok(verdict) if verdict.allowed));
-    assert!(matches!(&outcomes["blocked.json"], Ok(verdict) if !verdict.allowed));
-    assert!(matches!(
-        &outcomes["missing_allowed.json"],
-        Err(EvaluateResponseError::MissingAllowed)
-    ));
-    assert!(matches!(
-        &outcomes["non_object.json"],
-        Err(EvaluateResponseError::NonObjectBody)
-    ));
-    assert!(matches!(
-        &outcomes["truncated.json"],
-        Err(EvaluateResponseError::NonJsonBody { .. })
-    ));
+    assert_eq!(
+        outcomes,
+        BTreeMap::from([
+            ("allowed.json".to_owned(), "allowed"),
+            ("array_verdict.json".to_owned(), "non-object body"),
+            ("blocked.json".to_owned(), "blocked"),
+            ("missing_allowed.json".to_owned(), "missing allowed"),
+            ("non_object.json".to_owned(), "non-object body"),
+            ("truncated.json".to_owned(), "non-JSON body"),
+        ])
+    );
 }

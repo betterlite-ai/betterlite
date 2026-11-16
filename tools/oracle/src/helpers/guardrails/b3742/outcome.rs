@@ -18,13 +18,15 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 fn failure_outcome(failure: &EnforcementError) -> Result<Value, Box<HelperError>> {
     match failure {
         EnforcementError::Guardrail(GuardrailFailure::HttpObject { status, detail }) => {
-            let detail = serde_json::to_value(detail).or_value_error()?;
-            Ok(json!({"kind": "rejected", "status_code": status, "detail": detail}))
+            let detail_value = serde_json::to_value(detail).or_value_error()?;
+            Ok(json!({"kind": "rejected", "status_code": status, "detail": detail_value}))
         }
         EnforcementError::Guardrail(GuardrailFailure::Http { status, detail }) => {
             Ok(json!({"kind": "rejected", "status_code": status, "detail": detail}))
         }
-        other => Err(format!("the Agent 365 hook failed unexpectedly: {other}")).or_value_error(),
+        other @ (EnforcementError::Guardrail(_) | EnforcementError::PayloadEncoding { .. }) => {
+            Err(format!("the Agent 365 hook failed unexpectedly: {other}")).or_value_error()
+        }
     }
 }
 
@@ -32,10 +34,10 @@ fn records_of(data: &Data) -> Result<Value, Box<HelperError>> {
     let Some(GuardrailValue::Object(metadata)) = data.get(METADATA_KEY) else {
         return Ok(Value::Array(Vec::new()));
     };
-    match metadata.get(RECORDS_KEY) {
-        Some(records) => serde_json::to_value(records).or_value_error(),
-        None => Ok(Value::Array(Vec::new())),
-    }
+    metadata.get(RECORDS_KEY).map_or_else(
+        || Ok(Value::Array(Vec::new())),
+        |records| serde_json::to_value(records).or_value_error(),
+    )
 }
 
 async fn run_invocation(

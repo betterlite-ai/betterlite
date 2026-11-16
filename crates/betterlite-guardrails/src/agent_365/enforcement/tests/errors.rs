@@ -27,7 +27,7 @@ async fn evaluation_401_evicts_the_obo_token() {
     );
     let mut second_data = request_data();
     let second = run(&guardrail, &mut second_data).await;
-    assert!(second.is_ok());
+    second.unwrap();
     let requests = poster.recorded();
     assert_eq!(requests.len(), 4);
     assert_eq!(requests[0].url, TOKEN_ENDPOINT);
@@ -67,7 +67,10 @@ async fn evaluation_4xx_is_rejected() {
         text(recorded.get("reason").unwrap()),
         r#"HTTP 403: {"error":"forbidden"}"#
     );
-    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), LATENCY_MILLIS);
+    assert_eq!(
+        decimal(recorded.get("latency_ms").unwrap()).to_bits(),
+        LATENCY_MILLIS.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -149,7 +152,10 @@ async fn evaluation_408_is_throttled() {
         "the Agent 365 endpoint returned HTTP 408"
     );
     assert_eq!(status_of(fields), "guardrail_failed_to_respond");
-    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), LATENCY_MILLIS);
+    assert_eq!(
+        decimal(recorded.get("latency_ms").unwrap()).to_bits(),
+        LATENCY_MILLIS.to_bits()
+    );
 }
 
 #[tokio::test]
@@ -218,7 +224,7 @@ async fn an_unreachable_evaluation_endpoint_fails_open() {
     } = harness(UnreachableFallback::FailOpen);
     poster.enqueue(vec![token(), ScriptedReply::Unreachable]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let recorded = response(record_fields(&data));
     assert_eq!(text(recorded.get("verdict").unwrap()), "Unscanned");
     assert!(
@@ -259,7 +265,7 @@ async fn a_gateway_owned_token_error_fails_open_when_configured() {
     } = harness(UnreachableFallback::FailOpen);
     poster.enqueue(vec![exchange_failure("invalid_scope")]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let recorded = response(record_fields(&data));
     assert_eq!(text(recorded.get("verdict").unwrap()), "Unscanned");
     assert!(text(recorded.get("reason").unwrap()).contains("(invalid_scope)"));
@@ -400,7 +406,7 @@ async fn a_null_tool_name_is_an_empty_name() {
         evaluate(r#"{"allowed":true,"defender":{"status":"Evaluated"}}"#),
     ]);
     let outcome = run(&guardrail, &mut data).await;
-    assert!(outcome.is_ok());
+    outcome.unwrap();
     let request = poster.recorded().remove(1);
     assert_eq!(evaluate_body(&request).tool.name, "");
 }
