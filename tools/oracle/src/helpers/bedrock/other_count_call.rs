@@ -6,7 +6,7 @@ mod tests;
 
 use std::collections::BTreeMap;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::json;
 
 pub(crate) struct Op;

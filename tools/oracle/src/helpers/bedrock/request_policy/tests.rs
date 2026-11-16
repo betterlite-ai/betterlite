@@ -5,11 +5,12 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperCall, ORACLE_DIR};
 
 #[test]
 fn helper_seeds_select_bedrock_request_policy() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -21,7 +22,7 @@ fn helper_seeds_select_bedrock_request_policy() {
         .map(|path| fs::read_to_string(path).unwrap())
         .collect();
     assert!(!seeds.is_empty());
-    let calls: Vec<crate::helpers::HelperCall> = seeds
+    let calls: Vec<HelperCall> = seeds
         .iter()
         .map(|source| {
             serde_saphyr::from_str(source)
@@ -43,8 +44,7 @@ fn helper_seeds_select_bedrock_request_policy() {
 
 #[test]
 fn oracle_cases_project_through_invoke() {
-    let cases = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("cases/helpers/providers/bedrock-request-policy");
+    let cases = Path::new(ORACLE_DIR).join("cases/helpers/providers/bedrock-request-policy");
     let mut outputs: Vec<(String, Value)> = fs::read_dir(cases)
         .unwrap()
         .filter_map(|entry| {
@@ -53,7 +53,7 @@ fn oracle_cases_project_through_invoke() {
             let input: super::BedrockRequestPolicyInput = (case.call.operation
                 == "bedrock_request_policy")
                 .then(|| serde_json::from_value(case.call.input.clone()).unwrap())?;
-            Some((case.name, super::invoke(&input).unwrap()))
+            Some((case.name, super::invoke_request_policy(&input).unwrap()))
         })
         .collect();
     outputs.sort_by(|left, right| left.0.cmp(&right.0));

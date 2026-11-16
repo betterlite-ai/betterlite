@@ -175,7 +175,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::genai_metrics::attributes::/)'
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions on timing arithmetic and cardinality filtering.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3869::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3869::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new genai metrics decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/genai-metrics tools/oracle/fuzz/corpus/helper_case/genai-metrics-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'

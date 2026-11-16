@@ -5,13 +5,12 @@ use std::path::Path;
 
 use serde_json::Value;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::compare::helper::HelperOutput;
-use crate::helpers::invoke;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::compare::helper::HelperOutput;
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, invoke};
 
 fn seeds() -> Vec<(String, HelperCase)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, HelperCase)> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())
@@ -66,7 +65,7 @@ fn covers(output: &HelperOutput, host: &str) -> bool {
 fn helper_seeds_cover_every_host_policy() {
     let outputs: Vec<HelperOutput> = seeds()
         .into_iter()
-        .map(|(_, case)| invoke(&case.call))
+        .map(|(_, case)| invoke(&[crate::GROUP], &case.call))
         .collect();
     let missing: Vec<&str> = ["clarifai", "compactifai", "datarobot"]
         .into_iter()

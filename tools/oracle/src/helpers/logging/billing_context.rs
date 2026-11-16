@@ -3,6 +3,8 @@ use std::fmt::Display;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::price_lookup::PriceRecord;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Deserialize;
@@ -151,13 +153,13 @@ pub(crate) struct RatesInput {
     reasoning: Decimal,
 }
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 
 fn failure<Error>(error: Error) -> Failure
 where
     Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -167,10 +169,10 @@ where
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(serde_json::Value::Array(
             input.calls.iter().map(execute::run_call).collect(),
         ))

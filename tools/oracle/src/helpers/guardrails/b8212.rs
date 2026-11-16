@@ -11,10 +11,13 @@ use betterlite_guardrails::guardrail_base::inputs::{GuardrailApiInputs, Guardrai
 use betterlite_guardrails::qohash::{QostodianNexus, QostodianNexusParams};
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -49,7 +52,7 @@ struct CapturedRequest {
     request_headers: Option<BTreeMap<String, String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = QohashCall;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -79,7 +82,7 @@ fn call(input: &QohashCall) -> HelperResult {
         litellm_params: Some(log_params(input)),
         model_call_params: None,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("OSError", None, error.to_string()))?;
@@ -146,7 +149,7 @@ fn mock_base(
         );
         return Ok((base, None));
     };
-    let script = MockScript::try_from(std::slice::from_ref(reply))
+    let script = MockScript::try_from(slice::from_ref(reply))
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     let provider = MockProvider::start(script)
         .map_err(|error| failure("MockError", None, error.to_string()))?;

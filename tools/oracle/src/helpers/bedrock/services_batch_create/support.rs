@@ -9,7 +9,7 @@ use betterlite_secret_managers::secret_lookup::ports::{
 use secrecy::SecretString;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 struct NoOidc;
 
