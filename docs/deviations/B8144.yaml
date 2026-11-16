@@ -18,6 +18,9 @@ deviations:
   - what: redis_transit_encryption defaults to false, where LiteLLM turns TLS on.
     why: With TLS the client needs the server CA in REDIS_SSL_CA_CERTS, and no betterlite task wires that file yet. The variable stays so a caller can opt in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf#L102-L106
+  - what: create_redis lets a caller skip Memorystore and point betterlite at a Redis it runs, and local.redis_enabled carries that choice to the runtime. LiteLLM always creates the instance.
+    why: The AWS module already lets a caller supply a Redis URL, and a deps-only deployment may not want a managed instance.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf#L1-L22
   - what: Memorystore is created with auth_enabled = true, so clients have to send AUTH, where LiteLLM leaves AUTH off.
     why: An instance in a shared private services access range should not answer every client that can reach it. The export task that runs the service has to pass the auth string to betterlite.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/redis.tf#L1-L22
