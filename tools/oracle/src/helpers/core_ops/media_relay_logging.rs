@@ -107,7 +107,7 @@ impl Helper for Op {
 
 // What the relay handler leaves for the spend logger: the response text, the billed duration and its cost.
 fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog).map_err(failure)?;
+    let registry = registry(&call.catalog)?;
     let adjustments = Adjustments {
         discount: resolve_adjustment_entries(
             AdjustmentKind::Discount,
@@ -148,7 +148,7 @@ fn deepgram_answer(call: &DeepgramCall) -> Result<Value, Box<HelperError>> {
 
 // What the relay handler leaves for the spend logger: the image urls, the model and the submission's cost.
 fn fal_answer(call: &FalCall) -> Result<Value, Box<HelperError>> {
-    let registry = registry(&call.catalog).map_err(failure)?;
+    let registry = registry(&call.catalog)?;
     let kwargs = PassThroughLoggingKwargs {
         entries: call.kwargs.clone(),
     };

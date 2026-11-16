@@ -121,11 +121,11 @@ pub(super) struct Registry {
     pub(super) lookup: CaseLookup,
 }
 
-pub(super) fn registry(entries: &IndexMap<String, Json>) -> Result<Registry, serde_json::Error> {
-    let bytes = serde_json::to_vec(entries)?;
-    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject)?;
+pub(super) fn registry(entries: &IndexMap<String, Json>) -> Result<Registry, Box<HelperError>> {
+    let bytes = serde_json::to_vec(entries).map_err(super::failure)?;
+    let catalog = ModelCatalog::parse(&bytes, UnknownFields::Reject).map_err(super::failure)?;
     let lookup = CaseLookup {
-        entries: serde_json::from_slice(&bytes)?,
+        entries: serde_json::from_slice(&bytes).map_err(super::failure)?,
     };
     Ok(Registry { catalog, lookup })
 }
