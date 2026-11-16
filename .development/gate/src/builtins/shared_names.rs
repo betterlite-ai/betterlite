@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use syn::{Item, Stmt, Visibility};
+use syn::{Item, ItemFn, Stmt, Visibility};
 
 use crate::builtins::Context;
 use crate::error::GateError;
@@ -55,59 +55,54 @@ fn parse(file: &Path) -> Result<Vec<Item>, GateError> {
     Ok(parsed.items)
 }
 
-fn public_functions(items: &[Item], names: &mut BTreeSet<String>) {
-    for item in items {
-        if let Item::Fn(function) = item
-            && matches!(function.vis, Visibility::Public(_))
-        {
-            names.insert(function.sig.ident.to_string());
+fn functions<'file>(items: &[&'file Item], found: &mut Vec<&'file ItemFn>) {
+    for &item in items {
+        if let Item::Fn(function) = item {
+            found.push(function);
+            let nested: Vec<&Item> = function
+                .block
+                .stmts
+                .iter()
+                .filter_map(|statement| match statement {
+                    Stmt::Item(nested) => Some(nested),
+                    Stmt::Local(_) | Stmt::Expr(..) | Stmt::Macro(_) => None,
+                })
+                .collect();
+            functions(&nested, found);
         }
         if let Item::Mod(module) = item
             && let Some((_, inner)) = &module.content
         {
-            public_functions(inner, names);
+            let nested: Vec<&Item> = inner.iter().collect();
+            functions(&nested, found);
         }
     }
 }
 
 pub(crate) fn shared_names(root: &Path) -> Result<BTreeSet<String>, GateError> {
-    let mut names = BTreeSet::new();
+    let mut items = Vec::new();
     for folder in SHARED {
         for file in rust_files(root, folder)? {
-            public_functions(&parse(&root.join(file))?, &mut names);
+            items.extend(parse(&root.join(file))?);
         }
     }
-    Ok(names)
-}
-
-fn free_functions(items: &[Item], found: &mut Vec<String>) {
-    for item in items {
-        if let Item::Fn(function) = item {
-            found.push(function.sig.ident.to_string());
-            let inner: Vec<Item> = function
-                .block
-                .stmts
-                .iter()
-                .filter_map(|statement| match statement {
-                    Stmt::Item(nested) => Some(nested.clone()),
-                    Stmt::Local(_) | Stmt::Expr(..) | Stmt::Macro(_) => None,
-                })
-                .collect();
-            free_functions(&inner, found);
-        }
-        if let Item::Mod(module) = item
-            && let Some((_, inner)) = &module.content
-        {
-            free_functions(inner, found);
-        }
-    }
+    let top: Vec<&Item> = items.iter().collect();
+    let mut found = Vec::new();
+    functions(&top, &mut found);
+    Ok(found
+        .into_iter()
+        .filter(|function| matches!(function.vis, Visibility::Public(_)))
+        .map(|function| function.sig.ident.to_string())
+        .collect())
 }
 
 pub(crate) fn name_problems(path: &str, items: &[Item], shared: &BTreeSet<String>) -> Vec<String> {
+    let top: Vec<&Item> = items.iter().collect();
     let mut found = Vec::new();
-    free_functions(items, &mut found);
+    functions(&top, &mut found);
     found
         .into_iter()
+        .map(|function| function.sig.ident.to_string())
         .filter(|name| shared.contains(name))
         .map(|name| {
             format!(

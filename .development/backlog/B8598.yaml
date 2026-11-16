@@ -2,7 +2,7 @@ id: B8598
 milestone: M8 platform
 title: "/utils routes and model listing callback filters"
 status: todo
-depends_on: [B195, B196, B175, B2219, B884, B5368, B8399]
+depends_on: [B195, B196, B175, B2219, B884, B5368, B8399, B9963]
 file: tasks/B8598-utility-routes.yaml
 covers:
   - "litellm/proxy/proxy_server.py"

@@ -274,7 +274,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_provider*")"
       && grep -lq 'anthropic_provider' tools/oracle/fuzz/corpus/helper_case/anthropic_provider* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_provider$/)' &&
+      run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_provider$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-provider-config-selection
     why: 'At the composition boundary select the Anthropic chat config for model/provider before B584 execution.
@@ -425,6 +425,7 @@ out_of_scope:
 - 'Function ownership inventory litellm/main.py: _is_openai_backed_api_base L1064-L1066; _resolve_openai_api_base
   L1069-L1080 belong to B500.'
 pitfalls:
+- Request media is fetched as LiteLLM fetches it (decision 2026-10-31), so build B5083's Fetcher once from the route's UserUrlFetcher, B173's shared client and MAX_IMAGE_URL_DOWNLOAD_SIZE_MB and pass it to B577's request preparation (PromptDeps), never a refusing fetcher.
 - 'The oracle helper for this task is pre-registered as anthropic_provider in the provider group. Replace the stub Op in tools/oracle/src/helpers/provider/anthropic_provider.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/anthropic_provider.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - The calculated caller custom_prompt_dict is not the value passed to Anthropic chat; the source passes the global
   map.
