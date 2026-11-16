@@ -108,21 +108,24 @@ impl A2aAgentLookup for Registry {
 
 struct Recorder {
     calls: Mutex<Vec<CompletionCall>>,
-    outcome: Result<String, HandlerError>,
+    reply: String,
+    failure: Option<u16>,
 }
 
 impl Recorder {
     fn answer(reply: &str) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
-            outcome: Ok(reply.to_owned()),
+            reply: reply.to_owned(),
+            failure: None,
         }
     }
 
-    fn failing(error: HandlerError) -> Self {
+    fn failing(status_code: u16) -> Self {
         Self {
             calls: Mutex::new(Vec::new()),
-            outcome: Err(error),
+            reply: String::new(),
+            failure: Some(status_code),
         }
     }
 
@@ -139,7 +142,10 @@ impl ChatCompletionHandler for Recorder {
             .lock()
             .expect("the fixture lock is held")
             .push(call.clone());
-        self.outcome.clone()
+        match self.failure {
+            Some(status_code) => Err(HandlerError::Upstream { status_code }),
+            None => Ok(self.reply.clone()),
+        }
     }
 }
 
@@ -267,7 +273,7 @@ fn a2a_takes_the_registered_agent_base_key_and_headers() {
     assert_eq!(sent.len(), 1);
     let call = &sent[0];
     assert_eq!(call.model, "my-agent");
-    assert_eq!(call.api_base.as_deref(), Some("http://card.test/agent"));
+    assert_eq!(call.api_base, "http://card.test/agent");
     assert_eq!(
         exposed(call.api_key.as_ref()),
         Some(String::from("card-key"))
@@ -318,7 +324,7 @@ fn a2a_resolves_the_base_from_the_argument_then_the_globals(
     harness.globals_base = global.map(str::to_owned);
     let recorder = Recorder::answer("hi");
     complete_a2a(&harness.context(), &recorder).expect("the call resolves");
-    assert_eq!(recorder.calls()[0].api_base.as_deref(), Some(expected));
+    assert_eq!(recorder.calls()[0].api_base, expected);
 }
 
 #[test]
@@ -330,10 +336,7 @@ fn a2a_ignores_an_empty_argument_base_and_reads_the_environment() {
         .insert(String::from(API_BASE_ENV), String::from("http://env.test"));
     let recorder = Recorder::answer("hi");
     complete_a2a(&harness.context(), &recorder).expect("the call resolves");
-    assert_eq!(
-        recorder.calls()[0].api_base.as_deref(),
-        Some("http://env.test")
-    );
+    assert_eq!(recorder.calls()[0].api_base, "http://env.test");
 }
 
 #[test]
@@ -380,14 +383,12 @@ fn a2a_headers_take_the_global_only_when_absent_or_empty(
 fn a2a_passes_a_handler_error_through_unchanged() {
     let mut harness = Harness::new("a2a", "my-agent");
     harness.api_base = Some(String::from("http://explicit.test"));
-    let handler_error = HandlerError {
-        status_code: Some(502),
-        message: String::from("the agent refused the request"),
-    };
-    let recorder = Recorder::failing(handler_error.clone());
+    let recorder = Recorder::failing(502);
     let error = complete_a2a(&harness.context(), &recorder).expect_err("the handler fails");
     match error {
-        DispatchError::Handler(found) => assert_eq!(found, handler_error),
+        DispatchError::Handler(HandlerError::Upstream { status_code }) => {
+            assert_eq!(status_code, 502);
+        }
         other => panic!("the handler error is hidden: {other}"),
     }
     assert_eq!(recorder.calls().len(), 1);
@@ -421,7 +422,7 @@ fn langgraph_passes_the_provider_info_pair() {
     let sent = recorder.calls();
     let call = &sent[0];
     assert_eq!(call.model, "agent");
-    assert_eq!(call.api_base.as_deref(), Some("http://lg.test"));
+    assert_eq!(call.api_base, "http://lg.test");
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lg-key")));
     assert_eq!(call.headers, Some(headers(&[("x-lg", "1")])));
     assert_eq!(call.custom_llm_provider, "langgraph");
@@ -445,7 +446,7 @@ fn langgraph_reads_the_environment_pair() {
     let recorder = Recorder::answer("hi");
     complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
     let call = &recorder.calls()[0];
-    assert_eq!(call.api_base.as_deref(), Some("http://env-lg.test"));
+    assert_eq!(call.api_base, "http://env-lg.test");
     assert_eq!(
         exposed(call.api_key.as_ref()),
         Some(String::from("env-lg-key"))
@@ -458,7 +459,7 @@ fn langgraph_defaults_the_base_to_the_local_runtime() {
     let recorder = Recorder::answer("hi");
     complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
     let call = &recorder.calls()[0];
-    assert_eq!(call.api_base.as_deref(), Some("http://localhost:2024"));
+    assert_eq!(call.api_base, "http://localhost:2024");
     assert!(call.api_key.is_none());
 }
 
@@ -480,7 +481,7 @@ fn langgraph_prefers_a_global_base_and_key_before_the_environment() {
     let recorder = Recorder::answer("hi");
     complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
     let call = &recorder.calls()[0];
-    assert_eq!(call.api_base.as_deref(), Some("http://global-lg.test"));
+    assert_eq!(call.api_base, "http://global-lg.test");
     assert_eq!(
         exposed(call.api_key.as_ref()),
         Some(String::from("global-lg-key"))
@@ -490,14 +491,12 @@ fn langgraph_prefers_a_global_base_and_key_before_the_environment() {
 #[test]
 fn langgraph_passes_a_handler_error_through_unchanged() {
     let harness = Harness::new("langgraph", "agent");
-    let handler_error = HandlerError {
-        status_code: Some(503),
-        message: String::from("the runtime is busy"),
-    };
-    let recorder = Recorder::failing(handler_error.clone());
+    let recorder = Recorder::failing(503);
     let error = complete_langgraph(&harness.context(), &recorder).expect_err("the handler fails");
     match error {
-        DispatchError::Handler(found) => assert_eq!(found, handler_error),
+        DispatchError::Handler(HandlerError::Upstream { status_code }) => {
+            assert_eq!(status_code, 503);
+        }
         other => panic!("the handler error is hidden: {other}"),
     }
 }
@@ -513,7 +512,7 @@ fn langflow_passes_the_provider_info_pair() {
     let sent = recorder.calls();
     let call = &sent[0];
     assert_eq!(call.model, "flow-1");
-    assert_eq!(call.api_base.as_deref(), Some("http://lf.test"));
+    assert_eq!(call.api_base, "http://lf.test");
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lf-key")));
     assert_eq!(call.custom_llm_provider, "langflow");
     assert!(call.provider_config.is_none());
@@ -532,7 +531,7 @@ fn langflow_reads_the_environment_pair_and_defaults_the_base() {
     let recorder = Recorder::answer("hello");
     complete_langflow(&from_environment.context(), &recorder).expect("the call resolves");
     let call = &recorder.calls()[0];
-    assert_eq!(call.api_base.as_deref(), Some("http://env-lf.test"));
+    assert_eq!(call.api_base, "http://env-lf.test");
     assert_eq!(
         exposed(call.api_key.as_ref()),
         Some(String::from("env-lf-key"))
@@ -541,23 +540,18 @@ fn langflow_reads_the_environment_pair_and_defaults_the_base() {
     let bare = Harness::new("langflow", "flow-1");
     let other = Recorder::answer("hello");
     complete_langflow(&bare.context(), &other).expect("the call resolves");
-    assert_eq!(
-        other.calls()[0].api_base.as_deref(),
-        Some("http://localhost:7860")
-    );
+    assert_eq!(other.calls()[0].api_base, "http://localhost:7860");
 }
 
 #[test]
 fn langflow_passes_a_handler_error_through_unchanged() {
     let harness = Harness::new("langflow", "flow-1");
-    let handler_error = HandlerError {
-        status_code: Some(500),
-        message: String::from("Could not extract a message from the LangFlow response"),
-    };
-    let recorder = Recorder::failing(handler_error.clone());
+    let recorder = Recorder::failing(500);
     let error = complete_langflow(&harness.context(), &recorder).expect_err("the handler fails");
     match error {
-        DispatchError::Handler(found) => assert_eq!(found, handler_error),
+        DispatchError::Handler(HandlerError::Upstream { status_code }) => {
+            assert_eq!(status_code, 500);
+        }
         other => panic!("the handler error is hidden: {other}"),
     }
 }

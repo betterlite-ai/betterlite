@@ -2,7 +2,7 @@ use secrecy::ExposeSecret;
 
 use crate::langgraph_chat::config;
 
-use super::call::{ResolvedRoute, build_call};
+use super::call::CompletionCall;
 use super::context::{DispatchContext, headers_or_global};
 use super::environment::environment_secret;
 use super::error::DispatchError;
@@ -29,13 +29,18 @@ pub fn complete_langgraph<R>(
         env_base.as_ref().map(ExposeSecret::expose_secret),
         env_key.as_ref(),
     );
-    let route = ResolvedRoute {
-        api_base: Some(info.api_base),
+    Ok(handler.complete(&CompletionCall {
+        model: context.model.to_owned(),
+        stream: context.stream,
+        acompletion: context.acompletion,
+        api_base: info.api_base,
         api_key: info.api_key,
+        custom_llm_provider: context.custom_llm_provider.to_owned(),
         headers: headers_or_global(context.headers.cloned(), context.globals.headers),
+        litellm_params: context.litellm_params.clone(),
         optional_params: context.optional_params.clone(),
+        messages: context.messages.to_vec(),
+        timeout: context.timeout,
         provider_config: None,
-    };
-    let reply = handler.complete(&build_call(context, route))?;
-    Ok(reply)
+    })?)
 }

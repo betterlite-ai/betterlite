@@ -18,7 +18,6 @@ pub struct DispatchGlobals<'settings> {
     pub headers: Option<&'settings BTreeMap<String, String>>,
 }
 
-// what the completion entry point hands a platform dispatch function before it resolves the provider's config
 pub struct DispatchContext<'request> {
     pub acompletion: bool,
     pub api_base: Option<&'request str>,

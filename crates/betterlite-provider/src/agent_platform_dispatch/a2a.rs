@@ -2,7 +2,7 @@ use secrecy::ExposeSecret as _;
 
 use crate::a2a_chat::registry::{RegistryInput, resolve_agent_config};
 
-use super::call::{ResolvedRoute, build_call};
+use super::call::CompletionCall;
 use super::context::{DispatchContext, headers_or_global};
 use super::environment::environment_secret;
 use super::error::DispatchError;
@@ -27,15 +27,21 @@ pub fn complete_a2a<R>(
         context.registry,
         context.entra,
     )?;
-    let route = ResolvedRoute {
-        api_base: Some(api_base(context, resolved.api_base)?),
+    let base = api_base(context, resolved.api_base)?;
+    Ok(handler.complete(&CompletionCall {
+        model: context.model.to_owned(),
+        stream: context.stream,
+        acompletion: context.acompletion,
+        api_base: base,
         api_key: resolved.api_key,
+        custom_llm_provider: context.custom_llm_provider.to_owned(),
         headers: headers_or_global(resolved.headers, context.globals.headers),
+        litellm_params: context.litellm_params.clone(),
         optional_params,
+        messages: context.messages.to_vec(),
+        timeout: context.timeout,
         provider_config: context.provider_config,
-    };
-    let reply = handler.complete(&build_call(context, route))?;
-    Ok(reply)
+    })?)
 }
 
 fn api_base(
