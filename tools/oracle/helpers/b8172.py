@@ -15,7 +15,6 @@ from litellm.llms.dashscope.common_utils import (
 from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
-from typing_extensions import override
 
 EMBEDDING_MODEL = "text-embedding-v4"
 IMAGE_MODEL = "qwen-image-2.0-pro"
@@ -29,14 +28,7 @@ class NoMessages(list[AllMessageValues]): ...
 
 class Recorder(Logging):
     def __init__(self) -> None:
-        pass
-
-    @override
-    def post_call(
-        self, original_response: JsonValue, input: JsonValue = None, api_key: str | None = None,
-        additional_args: dict[str, JsonValue] | None = None,
-    ) -> None:
-        del original_response, input, api_key, additional_args
+        self.model_call_details: dict[str, JsonValue] = {}
 
 
 ImageReplyTransform = Callable[
@@ -67,6 +59,16 @@ ImageEnvTransform = Callable[
     dict[str, JsonValue],
 ]
 
+UrlTransform = Callable[
+    [str | None, str | None, str, dict[str, JsonValue], dict[str, JsonValue]],
+    str,
+]
+
+ImageRequestTransform = Callable[
+    [str, str, dict[str, JsonValue], dict[str, JsonValue], dict[str, str]],
+    dict[str, JsonValue],
+]
+
 
 @runtime_checkable
 class ImageConfig(Protocol):
@@ -75,19 +77,17 @@ class ImageConfig(Protocol):
         model: str, /, *, drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
-    # ruff counts a def's parameters (PLR0913), so the six-argument call type is a property value
+    # ruff counts a def's parameters (PLR0913), so each six-argument call type is a property value
     @property
     def validate_environment(self) -> ImageEnvTransform: ...
 
-    def get_complete_url(
-        self, api_base: str | None, api_key: str | None, model: str,
-        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
-    ) -> str: ...
+    @property
+    def get_complete_url(self) -> UrlTransform: ...
 
+    @property
     def transform_image_generation_request(  # ast-grep-ignore: no-long-names
-        self, model: str, prompt: str, optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue], headers: dict[str, str], /,
-    ) -> dict[str, JsonValue]: ...
+        self,
+    ) -> ImageRequestTransform: ...
 
     @property
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
@@ -97,10 +97,8 @@ class ImageConfig(Protocol):
 
 @runtime_checkable
 class EmbeddingUrlConfig(Protocol):
-    def get_complete_url(
-        self, api_base: str | None, api_key: str | None, model: str,
-        optional_params: dict[str, JsonValue], litellm_params: dict[str, JsonValue], /,
-    ) -> str: ...
+    @property
+    def get_complete_url(self) -> UrlTransform: ...
 
 
 @runtime_checkable
@@ -265,8 +263,7 @@ def image_reply(input_value: ImageReplyInput) -> JsonValue:
 
 def set_env(name: str, value: str | None) -> None:
     if value is None:
-        if name in os.environ:
-            del os.environ[name]
+        os.environ.pop(name, None)
     else:
         os.environ[name] = value
 
