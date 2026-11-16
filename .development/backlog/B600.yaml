@@ -1,14 +1,14 @@
 id: B600
 milestone: M3 providers
 title: Bedrock Converse reasoning and model options
-status: done
+status: todo
 depends_on: [B2203, B569, B688, B690, B171, B002, B2216, B2221]
 file: tasks/B600-bedrock-converse-options.yaml
 covers:
   - "litellm/llms/bedrock/chat/converse_transformation.py"
 parent: B028
 split_from: null
-resolution: merged
+resolution: null
 superseded_by: null
 blocked_reason: null
-pr: 2025
+pr: null
