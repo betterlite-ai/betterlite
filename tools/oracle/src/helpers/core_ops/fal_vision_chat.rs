@@ -9,12 +9,11 @@ use betterlite_core::api::fal::vision_chat::request::transform_request;
 use betterlite_openai::api::image_contracts::records::ImageHeaders;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat::response::ChatResponse;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
-
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 type Environment = BTreeMap<String, String>;
 
@@ -101,7 +100,8 @@ impl Helper for Op {
                 Ok(json!({"cases": outcomes}))
             }
             Input::ReasoningOverride { model, cases } => {
-                let messages: Vec<ChatMessage> = decode(VALID_MESSAGES)?;
+                let messages: Vec<ChatMessage> =
+                    serde_json::from_str(VALID_MESSAGES).or_value_error()?;
                 let outcomes: Vec<Value> = cases
                     .iter()
                     .map(|case| mapping_outcome(&messages, model, case))
@@ -120,7 +120,8 @@ impl Helper for Op {
             Input::MalformedReply { model, replies } | Input::ReasoningUsage { model, replies } => {
                 let mut outcomes = Vec::new();
                 for reply in replies {
-                    let response: ChatResponse = decode(STARTING_RESPONSE)?;
+                    let response: ChatResponse =
+                        serde_json::from_str(STARTING_RESPONSE).or_value_error()?;
                     outcomes.push(reply_outcome(model, reply, response));
                 }
                 Ok(json!({"cases": outcomes}))
@@ -195,18 +196,5 @@ fn completion_projection(completion: FalChatCompletion) -> Value {
             "completion_tokens": response.usage.completion_tokens,
             "total_tokens": response.usage.total_tokens,
         },
-    })
-}
-
-fn decode<T: DeserializeOwned>(text: &str) -> Result<T, Box<HelperError>> {
-    serde_json::from_str(text).map_err(|error| {
-        Box::new(HelperError {
-            class: "ValueError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
     })
 }
