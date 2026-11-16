@@ -17,7 +17,6 @@ use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use chrono::DateTime;
 use indexmap::IndexMap;
 use rstest::rstest;
-use serde_json::json;
 use uuid::Uuid;
 
 use crate::api::messages_chat_output::records::{ChoiceRecord, UsageRecord};
@@ -27,10 +26,15 @@ use crate::api::messages_context_clear::result::{
 use crate::api::messages_stream_split::ChunkSource;
 use crate::api::messages_stream_split::errors::StreamFailure;
 
-use super::blocks::{delta_has_content, is_blank_delta};
+use super::blocks::{
+    delta_has_content, is_blank_delta, next_compaction_event, should_start_new_content_block,
+    with_refusal_stop_details,
+};
 use super::error::StreamStateError;
 use super::state::{BlockKind, StreamSetup, StreamState};
-use super::usage::initial_usage;
+use super::usage::{
+    augment_message_delta_usage, handle_choiceless_chunk, initial_usage, merge_usage_into_held_stop,
+};
 
 const PROBE_USAGE: &str =
     r#"{"prompt_tokens":8,"completion_tokens":2,"cache_read_input_tokens":3}"#;
@@ -92,6 +96,10 @@ fn object(source: &str) -> Object {
     serde_json::from_str(source).expect("valid object fixture")
 }
 
+fn json_object(source: &str) -> Json {
+    Json::Object(object(source))
+}
+
 fn choice(source: &str) -> ChoiceRecord {
     serde_json::from_str(source).expect("valid choice fixture")
 }
@@ -100,10 +108,11 @@ fn record(source: &str) -> UsageRecord {
     serde_json::from_str(source).expect("valid usage fixture")
 }
 
-fn start<T: ChunkSource>(state: &mut StreamState<T>, source: &str) -> bool {
-    state
-        .should_start_new_content_block(&[choice(source)], &FixedIds)
-        .expect("a single choice")
+fn start<T>(state: &mut StreamState<T>, source: &str) -> bool
+where
+    T: ChunkSource,
+{
+    should_start_new_content_block(state, &[choice(source)], &FixedIds).expect("a single choice")
 }
 
 fn applied_edit() -> AppliedEdit {
@@ -189,17 +198,9 @@ fn stream_state_initialization() {
     assert_eq!(state.current_content_block_index, 0);
     assert_eq!(state.current_content_block_type, BlockKind::Text);
     assert_eq!(
-        serde_json::to_value(&state.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "text", "text": ""})
+        state.current_content_block_start,
+        json_object(r#"{"type": "text", "text": ""}"#)
     );
-    assert!(!state.message_progress.sent_first_chunk);
-    assert!(!state.message_progress.sent_last_message);
-    assert!(!state.block_progress.sent_content_block_start);
-    assert!(!state.block_progress.sent_content_block_finish);
-    assert!(!state.compaction_progress.sent_compaction_block_start);
-    assert!(!state.compaction_progress.sent_compaction_block_delta);
-    assert!(!state.queued_usage_chunk);
-    assert!(!state.sent_compaction_block);
     assert!(state.chunk_queue.is_empty());
     assert!(state.refusal_text.is_empty());
     assert!(state.tool_name_mapping.is_empty());
@@ -208,12 +209,35 @@ fn stream_state_initialization() {
     assert!(state.iterations_usage.is_none());
     assert!(state.holding_chunk.is_none());
     assert!(state.holding_stop_reason_chunk.is_none());
+}
+
+#[test]
+fn stream_state_flags_start_clear() {
+    let state = state();
+    assert!(!state.message_progress.sent_first_chunk);
+    assert!(!state.message_progress.sent_last_message);
+    assert!(!state.block_progress.sent_content_block_start);
+    assert!(!state.block_progress.sent_content_block_finish);
+    assert!(!state.compaction_progress.sent_compaction_block_start);
+    assert!(!state.compaction_progress.sent_compaction_block_delta);
+    assert!(!state.queued_usage_chunk);
+    assert!(!state.sent_compaction_block);
+}
+
+#[test]
+fn stream_state_names_the_message_id_after_a_uuid() {
+    let state = state();
     assert!(state.message_id.starts_with("msg_"));
     let id = state
         .message_id
         .strip_prefix("msg_")
         .expect("the id prefix");
-    assert!(Uuid::parse_str(id).is_ok());
+    assert_eq!(
+        Uuid::parse_str(id)
+            .expect("the id suffix is a uuid")
+            .get_version_num(),
+        4
+    );
 }
 
 #[test]
@@ -221,13 +245,11 @@ fn initial_usage_is_four_zero_counters() {
     let usage = initial_usage();
     assert_eq!(usage.len(), 4);
     assert_eq!(
-        serde_json::to_value(&usage).expect("the fixture serializes"),
-        json!({
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "cache_creation_input_tokens": 0,
-            "cache_read_input_tokens": 0,
-        })
+        usage,
+        object(
+            r#"{"input_tokens": 0, "output_tokens": 0,
+                "cache_creation_input_tokens": 0, "cache_read_input_tokens": 0}"#
+        )
     );
 }
 
@@ -240,8 +262,8 @@ fn independent_instances_share_nothing() {
     first.current_content_block_start = Json::Text("mutated".to_owned());
     assert!(second.chunk_queue.is_empty());
     assert_eq!(
-        serde_json::to_value(&second.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "text", "text": ""})
+        second.current_content_block_start,
+        json_object(r#"{"type": "text", "text": ""}"#)
     );
 }
 
@@ -258,7 +280,6 @@ fn constructor_records_the_message_id_on_logging() {
 
 #[test]
 fn chunks_and_messages_forward_through_the_splitter() {
-    let chunks = vec![StreamChunk::default(), StreamChunk::default()];
     let messages = vec![
         serde_json::from_str(r#"{"role": "user", "content": "hi"}"#)
             .expect("valid message fixture"),
@@ -266,7 +287,7 @@ fn chunks_and_messages_forward_through_the_splitter() {
     let state = StreamState::new(
         None,
         Forwarding {
-            chunks: Some(chunks.clone()),
+            chunks: Some(vec![StreamChunk::default(), StreamChunk::default()]),
             messages: Some(messages.clone()),
         },
         setup(),
@@ -306,16 +327,13 @@ fn held_usage_replaces_placeholder() {
     state.holding_stop_reason_chunk = Some(object(
         r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"input_tokens": 0, "output_tokens": 0}}"#,
     ));
-    let merged = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
+    let merged = merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
     assert_eq!(
-        serde_json::to_value(&merged).expect("the fixture serializes"),
-        json!({
-            "type": "message_delta",
-            "delta": {"stop_reason": "end_turn"},
-            "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3},
-        })
+        merged,
+        object(
+            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3}}"#
+        )
     );
 }
 
@@ -323,9 +341,7 @@ fn held_usage_replaces_placeholder() {
 fn held_usage_adds_a_missing_delta() {
     let mut state = state();
     state.holding_stop_reason_chunk = Some(object(r#"{"type": "message_delta"}"#));
-    let merged = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
+    let merged = merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
     assert_eq!(merged.get("delta"), Some(&Json::Object(Object::new())));
 }
 
@@ -336,15 +352,13 @@ fn held_usage_attaches_context_edits() {
         ..setup()
     });
     state.holding_stop_reason_chunk = Some(object(r#"{"type": "message_delta"}"#));
-    let merged = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
+    let merged = merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
     let attached = merged.get("context_management").expect("attached");
     assert_eq!(
-        serde_json::to_value(attached).expect("the fixture serializes"),
-        json!({
-            "applied_edits": [{"type": "clear_tool_uses_20250919", "cleared_tool_uses": 1}],
-        })
+        attached,
+        &json_object(
+            r#"{"applied_edits": [{"type": "clear_tool_uses_20250919", "cleared_tool_uses": 1}]}"#
+        )
     );
 }
 
@@ -357,21 +371,15 @@ fn held_usage_keeps_an_existing_context_management() {
     state.holding_stop_reason_chunk = Some(object(
         r#"{"type": "message_delta", "context_management": null}"#,
     ));
-    let merged = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
+    let merged = merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
     assert_eq!(merged.get("context_management"), Some(&Json::Null));
     state.holding_stop_reason_chunk = Some(object(
         r#"{"type": "message_delta", "context_management": {"applied_edits": []}}"#,
     ));
-    let retained_chunk = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
+    let retained_chunk =
+        merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
     let retained = retained_chunk.get("context_management").expect("retained");
-    assert_eq!(
-        serde_json::to_value(retained).expect("the fixture serializes"),
-        json!({"applied_edits": []})
-    );
+    assert_eq!(retained, &json_object(r#"{"applied_edits": []}"#));
 }
 
 #[test]
@@ -380,16 +388,10 @@ fn choiceless_chunk_queues_merged_usage() {
     let probe = record(PROBE_USAGE);
     let mut expected_state = state();
     expected_state.holding_stop_reason_chunk = Some(held.clone());
-    let expected = expected_state
-        .merge_usage_into_held_stop(&probe)
-        .expect("a held stop");
+    let expected = merge_usage_into_held_stop(&expected_state, &probe).expect("a held stop");
     let mut state = state();
     state.holding_stop_reason_chunk = Some(held);
-    assert!(
-        state
-            .handle_choiceless_chunk(Some(&probe))
-            .expect("a usage")
-    );
+    assert!(handle_choiceless_chunk(&mut state, Some(&probe)).expect("a usage"));
     assert_eq!(state.chunk_queue.len(), 1);
     assert_eq!(state.chunk_queue.front(), Some(&expected));
     assert!(state.queued_usage_chunk);
@@ -401,53 +403,31 @@ fn held_usage_gets_polyfill_iterations() {
     let held = object(
         r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"input_tokens": 0, "output_tokens": 0}}"#,
     );
-    let expected = json!({
-        "type": "message_delta",
-        "delta": {"stop_reason": "end_turn"},
-        "usage": {
-            "input_tokens": 5,
-            "output_tokens": 2,
-            "cache_read_input_tokens": 3,
-            "iterations": [
-                {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
-                {"type": "message", "input_tokens": 5, "output_tokens": 2},
-            ],
-        },
-    });
+    let expected = object(
+        r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+            "usage": {"input_tokens": 5, "output_tokens": 2, "cache_read_input_tokens": 3,
+                      "iterations": [
+                          {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
+                          {"type": "message", "input_tokens": 5, "output_tokens": 2}
+                      ]}}"#,
+    );
     let mut state = iterations_state();
-    state.holding_stop_reason_chunk = Some(held.clone());
-    let merged = state
-        .merge_usage_into_held_stop(&record(PROBE_USAGE))
-        .expect("a held stop");
-    assert_eq!(
-        serde_json::to_value(&merged).expect("the fixture serializes"),
-        expected
-    );
-    assert!(
-        state
-            .handle_choiceless_chunk(Some(&record(PROBE_USAGE)))
-            .expect("a usage")
-    );
-    assert_eq!(
-        serde_json::to_value(state.chunk_queue.front().expect("queued"))
-            .expect("the fixture serializes"),
-        expected
-    );
+    state.holding_stop_reason_chunk = Some(held);
+    let merged = merge_usage_into_held_stop(&state, &record(PROBE_USAGE)).expect("a held stop");
+    assert_eq!(merged, expected);
+    assert!(handle_choiceless_chunk(&mut state, Some(&record(PROBE_USAGE))).expect("a usage"));
+    assert_eq!(state.chunk_queue.front(), Some(&expected));
 }
 
 #[test]
 fn choiceless_chunk_requires_a_held_stop() {
     let probe = record(PROBE_USAGE);
     let mut state = state();
-    assert!(
-        !state
-            .handle_choiceless_chunk(Some(&probe))
-            .expect("no held")
-    );
+    assert!(!handle_choiceless_chunk(&mut state, Some(&probe)).expect("no held"));
     assert!(state.chunk_queue.is_empty());
     assert!(!state.queued_usage_chunk);
     state.holding_stop_reason_chunk = Some(object(r#"{"type": "message_delta"}"#));
-    assert!(!state.handle_choiceless_chunk(None).expect("no usage"));
+    assert!(!handle_choiceless_chunk(&mut state, None).expect("no usage"));
     assert!(state.chunk_queue.is_empty());
     assert!(!state.queued_usage_chunk);
     assert!(state.holding_stop_reason_chunk.is_some());
@@ -457,7 +437,7 @@ fn choiceless_chunk_requires_a_held_stop() {
 fn held_usage_merge_without_held_stop_is_an_error() {
     let state = state();
     assert!(matches!(
-        state.merge_usage_into_held_stop(&record(PROBE_USAGE)),
+        merge_usage_into_held_stop(&state, &record(PROBE_USAGE)),
         Err(StreamStateError::MissingHeldStop)
     ));
 }
@@ -465,44 +445,41 @@ fn held_usage_merge_without_held_stop_is_an_error() {
 #[test]
 fn compaction_usage_iterations() {
     let state = iterations_state();
-    let augmented = state
-        .augment_message_delta_usage(object(
+    let augmented = augment_message_delta_usage(
+        &state,
+        object(
             r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}, "usage": {"input_tokens": 5, "output_tokens": 2}}"#,
-        ))
-        .expect("augmented");
+        ),
+    )
+    .expect("augmented");
     assert_eq!(
-        serde_json::to_value(&augmented).expect("the fixture serializes"),
-        json!({
-            "type": "message_delta",
-            "delta": {"stop_reason": "end_turn"},
-            "usage": {
-                "input_tokens": 5,
-                "output_tokens": 2,
-                "iterations": [
-                    {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
-                    {"type": "message", "input_tokens": 5, "output_tokens": 2},
-                ],
-            },
-        })
+        augmented,
+        object(
+            r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"},
+                "usage": {"input_tokens": 5, "output_tokens": 2,
+                          "iterations": [
+                              {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
+                              {"type": "message", "input_tokens": 5, "output_tokens": 2}
+                          ]}}"#
+        )
     );
 }
 
 #[test]
 fn zero_counters_keep_only_summary_iterations() {
     let state = iterations_state();
-    let augmented = state
-        .augment_message_delta_usage(object(
-            r#"{"type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 0}}"#,
-        ))
-        .expect("augmented");
+    let augmented = augment_message_delta_usage(
+        &state,
+        object(r#"{"type": "message_delta", "usage": {"input_tokens": 0, "output_tokens": 0}}"#),
+    )
+    .expect("augmented");
     let usage = augmented.get("usage").expect("usage");
     assert_eq!(
-        serde_json::to_value(usage).expect("the fixture serializes"),
-        json!({
-            "input_tokens": 0,
-            "output_tokens": 0,
-            "iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}],
-        })
+        usage,
+        &json_object(
+            r#"{"input_tokens": 0, "output_tokens": 0,
+                "iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}]}"#
+        )
     );
 }
 
@@ -523,45 +500,38 @@ fn single_sided_counters_still_append_a_message_iteration(
     #[case] output: i64,
 ) {
     let state = iterations_state();
-    let augmented = state
-        .augment_message_delta_usage(object(event))
-        .expect("augmented");
-    assert_eq!(
-        serde_json::to_value(augmented.get("usage").expect("usage"))
-            .expect("the fixture serializes"),
-        json!({
-            "input_tokens": input,
-            "output_tokens": output,
-            "iterations": [
-                {"type": "compaction", "input_tokens": 12, "output_tokens": 3},
-                {"type": "message", "input_tokens": input, "output_tokens": output},
-            ],
-        })
-    );
+    let augmented = augment_message_delta_usage(&state, object(event)).expect("augmented");
+    let expected = json_object(&format!(
+        r#"{{"input_tokens": {input}, "output_tokens": {output}, "iterations": [{{"type": "compaction", "input_tokens": 12, "output_tokens": 3}}, {{"type": "message", "input_tokens": {input}, "output_tokens": {output}}}]}}"#
+    ));
+    assert_eq!(augmented.get("usage"), Some(&expected));
 }
 
 #[test]
 fn missing_counters_keep_only_summary_iterations() {
     let state = iterations_state();
-    let absent = state
-        .augment_message_delta_usage(object(r#"{"type": "message_delta", "usage": {}}"#))
-        .expect("augmented");
+    let absent =
+        augment_message_delta_usage(&state, object(r#"{"type": "message_delta", "usage": {}}"#))
+            .expect("augmented");
     assert_eq!(
-        serde_json::to_value(absent.get("usage").expect("usage")).expect("the fixture serializes"),
-        json!({"iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}]})
-    );
-    let nulls = state
-        .augment_message_delta_usage(object(
-            r#"{"type": "message_delta", "usage": {"input_tokens": null, "output_tokens": null}}"#,
+        absent.get("usage"),
+        Some(&json_object(
+            r#"{"iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}]}"#
         ))
-        .expect("augmented");
+    );
+    let nulls = augment_message_delta_usage(
+        &state,
+        object(
+            r#"{"type": "message_delta", "usage": {"input_tokens": null, "output_tokens": null}}"#,
+        ),
+    )
+    .expect("augmented");
     assert_eq!(
-        serde_json::to_value(nulls.get("usage").expect("usage")).expect("the fixture serializes"),
-        json!({
-            "input_tokens": null,
-            "output_tokens": null,
-            "iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}],
-        })
+        nulls.get("usage"),
+        Some(&json_object(
+            r#"{"input_tokens": null, "output_tokens": null,
+                "iterations": [{"type": "compaction", "input_tokens": 12, "output_tokens": 3}]}"#
+        ))
     );
 }
 
@@ -573,9 +543,8 @@ fn missing_counters_keep_only_summary_iterations() {
     r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2, "iterations": null}}"#
 )]
 fn existing_iterations_block_the_message_iteration(#[case] event: &str) {
-    let augmented = iterations_state()
-        .augment_message_delta_usage(object(event))
-        .expect("augmented");
+    let augmented =
+        augment_message_delta_usage(&iterations_state(), object(event)).expect("augmented");
     assert_eq!(augmented, object(event));
 }
 
@@ -584,9 +553,8 @@ fn existing_iterations_block_the_message_iteration(#[case] event: &str) {
 #[case::usage_null(r#"{"type": "message_delta", "usage": null}"#)]
 #[case::usage_a_list(r#"{"type": "message_delta", "usage": []}"#)]
 fn non_object_usage_blocks_iterations(#[case] event: &str) {
-    let augmented = iterations_state()
-        .augment_message_delta_usage(object(event))
-        .expect("augmented");
+    let augmented =
+        augment_message_delta_usage(&iterations_state(), object(event)).expect("augmented");
     assert_eq!(augmented, object(event));
 }
 
@@ -596,74 +564,71 @@ fn iterations_absent_still_attaches_context_edits() {
         applied_edits: vec![applied_edit()],
         ..setup()
     });
-    let augmented = state
-        .augment_message_delta_usage(object(
-            r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2}}"#,
-        ))
-        .expect("augmented");
+    let augmented = augment_message_delta_usage(
+        &state,
+        object(r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2}}"#),
+    )
+    .expect("augmented");
     assert_eq!(
-        serde_json::to_value(&augmented).expect("the fixture serializes"),
-        json!({
-            "type": "message_delta",
-            "usage": {"input_tokens": 5, "output_tokens": 2},
-            "context_management": {
-                "applied_edits": [{"type": "clear_tool_uses_20250919", "cleared_tool_uses": 1}],
-            },
-        })
+        augmented,
+        object(
+            r#"{"type": "message_delta", "usage": {"input_tokens": 5, "output_tokens": 2},
+                "context_management": {"applied_edits": [
+                    {"type": "clear_tool_uses_20250919", "cleared_tool_uses": 1}
+                ]}}"#
+        )
     );
-    let retained = state
-        .augment_message_delta_usage(object(
-            r#"{"type": "message_delta", "context_management": null}"#,
-        ))
-        .expect("augmented");
+    let retained = augment_message_delta_usage(
+        &state,
+        object(r#"{"type": "message_delta", "context_management": null}"#),
+    )
+    .expect("augmented");
     assert_eq!(retained.get("context_management"), Some(&Json::Null));
 }
 
 #[test]
 fn compaction_three_step_lifecycle() {
     let mut state = compaction_state(Some("S"));
-    let start = state.next_compaction_event().expect("start");
+    let start = next_compaction_event(&mut state).expect("start");
     assert_eq!(
-        serde_json::to_value(&start).expect("the fixture serializes"),
-        json!({
-            "type": "content_block_start",
-            "index": 0,
-            "content_block": {"type": "compaction", "content": ""},
-        })
+        start,
+        object(
+            r#"{"type": "content_block_start", "index": 0,
+                "content_block": {"type": "compaction", "content": ""}}"#
+        )
     );
-    let delta = state.next_compaction_event().expect("delta");
+    let delta = next_compaction_event(&mut state).expect("delta");
     assert_eq!(
-        serde_json::to_value(&delta).expect("the fixture serializes"),
-        json!({
-            "type": "content_block_delta",
-            "index": 0,
-            "delta": {"type": "compaction_delta", "content": "S"},
-        })
+        delta,
+        object(
+            r#"{"type": "content_block_delta", "index": 0,
+                "delta": {"type": "compaction_delta", "content": "S"}}"#
+        )
     );
-    let stop = state.next_compaction_event().expect("stop");
+    let stop = next_compaction_event(&mut state).expect("stop");
     assert_eq!(
-        serde_json::to_value(&stop).expect("the fixture serializes"),
-        json!({"type": "content_block_stop", "index": 0})
+        stop,
+        object(r#"{"type": "content_block_stop", "index": 0}"#)
     );
     assert_eq!(state.current_content_block_index, 1);
     assert!(state.sent_compaction_block);
     assert!(!state.block_progress.sent_content_block_finish);
-    assert!(state.next_compaction_event().is_none());
+    assert!(next_compaction_event(&mut state).is_none());
 }
 
 #[test]
 fn compaction_flags_follow_the_returned_event() {
     let mut state = compaction_state(Some("S"));
-    assert!(state.next_compaction_event().is_some());
+    assert!(next_compaction_event(&mut state).is_some());
     assert!(state.compaction_progress.sent_compaction_block_start);
     assert!(!state.compaction_progress.sent_compaction_block_delta);
     assert!(!state.sent_compaction_block);
     assert_eq!(state.current_content_block_index, 0);
-    assert!(state.next_compaction_event().is_some());
+    assert!(next_compaction_event(&mut state).is_some());
     assert!(state.compaction_progress.sent_compaction_block_delta);
     assert!(!state.sent_compaction_block);
     assert_eq!(state.current_content_block_index, 0);
-    assert!(state.next_compaction_event().is_some());
+    assert!(next_compaction_event(&mut state).is_some());
     assert_eq!(state.current_content_block_index, 1);
 }
 
@@ -672,22 +637,21 @@ fn compaction_flags_follow_the_returned_event() {
 #[case::block_with_empty_content(Some(""))]
 fn compaction_delta_without_summary_is_empty(#[case] content: Option<&str>) {
     let mut state = compaction_state(content);
-    assert!(state.next_compaction_event().is_some());
-    let delta = state.next_compaction_event().expect("delta");
+    assert!(next_compaction_event(&mut state).is_some());
+    let delta = next_compaction_event(&mut state).expect("delta");
     assert_eq!(
-        serde_json::to_value(&delta).expect("the fixture serializes"),
-        json!({
-            "type": "content_block_delta",
-            "index": 0,
-            "delta": {"type": "compaction_delta", "content": ""},
-        })
+        delta,
+        object(
+            r#"{"type": "content_block_delta", "index": 0,
+                "delta": {"type": "compaction_delta", "content": ""}}"#
+        )
     );
 }
 
 #[test]
 fn absent_compaction_block_emits_nothing() {
     let mut state = state();
-    assert!(state.next_compaction_event().is_none());
+    assert!(next_compaction_event(&mut state).is_none());
     assert!(!state.compaction_progress.sent_compaction_block_start);
     assert!(!state.compaction_progress.sent_compaction_block_delta);
     assert!(!state.sent_compaction_block);
@@ -812,8 +776,8 @@ fn content_boundary_and_tool_restore() {
     assert!(!start(&mut state, r#"{"delta": {"content": "hi"}}"#));
     assert_eq!(state.current_content_block_type, BlockKind::Text);
     assert_eq!(
-        serde_json::to_value(&state.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "text", "text": ""})
+        state.current_content_block_start,
+        json_object(r#"{"type": "text", "text": ""}"#)
     );
     assert!(start(
         &mut state,
@@ -821,21 +785,23 @@ fn content_boundary_and_tool_restore() {
     ));
     assert_eq!(state.current_content_block_type, BlockKind::Thinking);
     assert_eq!(
-        serde_json::to_value(&state.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "thinking", "thinking": "", "signature": ""})
+        state.current_content_block_start,
+        json_object(r#"{"type": "thinking", "thinking": "", "signature": ""}"#)
     );
     let named = r#"{"delta": {"tool_calls": [{"id": "tool_1", "function": {"name": "short", "arguments": "{}"}}]}}"#;
     assert!(start(&mut state, named));
     assert_eq!(state.current_content_block_type, BlockKind::ToolUse);
     assert_eq!(
-        serde_json::to_value(&state.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "tool_use", "id": "tool_1", "name": "long_tool_name", "input": {}})
+        state.current_content_block_start,
+        json_object(
+            r#"{"type": "tool_use", "id": "tool_1", "name": "long_tool_name", "input": {}}"#
+        )
     );
     let later = r#"{"delta": {"tool_calls": [{"id": "tool_2", "function": {"name": "later", "arguments": "{}"}}]}}"#;
     assert!(start(&mut state, later));
     assert_eq!(
-        serde_json::to_value(&state.current_content_block_start).expect("the fixture serializes"),
-        json!({"type": "tool_use", "id": "tool_2", "name": "later", "input": {}})
+        state.current_content_block_start,
+        json_object(r#"{"type": "tool_use", "id": "tool_2", "name": "later", "input": {}}"#)
     );
 }
 
@@ -889,14 +855,13 @@ fn refusal_in_provider_specific_fields_becomes_the_explanation() {
     ));
     assert_eq!(state.refusal_text, "No");
     let event = object(r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}}"#);
-    let processed = state.with_refusal_stop_details(event).expect("processed");
+    let processed = with_refusal_stop_details(&state, event).expect("processed");
     assert_eq!(
-        serde_json::to_value(processed.get("delta").expect("delta"))
-            .expect("the fixture serializes"),
-        json!({
-            "stop_reason": "refusal",
-            "stop_details": {"type": "refusal", "category": null, "explanation": "No"},
-        })
+        processed.get("delta").expect("delta"),
+        &json_object(
+            r#"{"stop_reason": "refusal",
+                "stop_details": {"type": "refusal", "category": null, "explanation": "No"}}"#
+        )
     );
 }
 
@@ -904,7 +869,7 @@ fn refusal_in_provider_specific_fields_becomes_the_explanation() {
 fn start_block_without_choices_is_an_error() {
     let mut state = state();
     assert!(matches!(
-        state.should_start_new_content_block(&[], &FixedIds),
+        should_start_new_content_block(&mut state, &[], &FixedIds),
         Err(StreamStateError::Content { .. })
     ));
 }
@@ -917,18 +882,16 @@ fn refusal_stop_precedence() {
     let event = object(
         r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_sequence": "x"}, "usage": {"input_tokens": 1}}"#,
     );
-    let processed = state.with_refusal_stop_details(event).expect("processed");
+    let processed = with_refusal_stop_details(&state, event).expect("processed");
     assert_eq!(
-        serde_json::to_value(&processed).expect("the fixture serializes"),
-        json!({
-            "type": "message_delta",
-            "delta": {
-                "stop_reason": "refusal",
-                "stop_sequence": "x",
-                "stop_details": {"type": "refusal", "category": null, "explanation": "No thanks"},
-            },
-            "usage": {"input_tokens": 1},
-        })
+        processed,
+        object(
+            r#"{"type": "message_delta",
+                "delta": {"stop_reason": "refusal", "stop_sequence": "x",
+                          "stop_details": {"type": "refusal", "category": null,
+                                           "explanation": "No thanks"}},
+                "usage": {"input_tokens": 1}}"#
+        )
     );
 }
 
@@ -937,9 +900,7 @@ fn max_tokens_is_not_overridden() {
     let mut state = state();
     assert!(!start(&mut state, r#"{"delta": {"refusal": "No"}}"#));
     let event = object(r#"{"type": "message_delta", "delta": {"stop_reason": "max_tokens"}}"#);
-    let processed = state
-        .with_refusal_stop_details(event.clone())
-        .expect("processed");
+    let processed = with_refusal_stop_details(&state, event.clone()).expect("processed");
     assert_eq!(processed, event);
 }
 
@@ -947,17 +908,13 @@ fn max_tokens_is_not_overridden() {
 fn nonterminal_or_empty_refusal_is_unchanged() {
     let empty = state();
     let terminal = object(r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn"}}"#);
-    let terminal_result = empty
-        .with_refusal_stop_details(terminal.clone())
-        .expect("processed");
+    let terminal_result = with_refusal_stop_details(&empty, terminal.clone()).expect("processed");
     assert_eq!(terminal_result, terminal);
     let mut state = state();
     assert!(!start(&mut state, r#"{"delta": {"refusal": "No"}}"#));
     let content =
         object(r#"{"type": "content_block_delta", "delta": {"type": "text_delta", "text": "x"}}"#);
-    let content_result = state
-        .with_refusal_stop_details(content.clone())
-        .expect("processed");
+    let content_result = with_refusal_stop_details(&state, content.clone()).expect("processed");
     assert_eq!(content_result, content);
 }
 
@@ -970,7 +927,7 @@ fn malformed_refusal_events_are_errors(#[case] event: &str, #[case] field: &str)
     assert!(!start(&mut state, r#"{"delta": {"refusal": "No"}}"#));
     assert!(
         matches!(
-            state.with_refusal_stop_details(object(event)),
+            with_refusal_stop_details(&state, object(event)),
             Err(StreamStateError::MalformedEvent { field: missing }) if missing == field
         ),
         "{event}"
@@ -984,13 +941,12 @@ fn existing_stop_details_are_replaced() {
     let event = object(
         r#"{"type": "message_delta", "delta": {"stop_reason": "end_turn", "stop_details": {"type": "other"}}}"#,
     );
-    let processed = state.with_refusal_stop_details(event).expect("processed");
+    let processed = with_refusal_stop_details(&state, event).expect("processed");
     assert_eq!(
-        serde_json::to_value(processed.get("delta").expect("delta"))
-            .expect("the fixture serializes"),
-        json!({
-            "stop_reason": "refusal",
-            "stop_details": {"type": "refusal", "category": null, "explanation": "No"},
-        })
+        processed.get("delta").expect("delta"),
+        &json_object(
+            r#"{"stop_reason": "refusal",
+                "stop_details": {"type": "refusal", "category": null, "explanation": "No"}}"#
+        )
     );
 }
