@@ -1,7 +1,7 @@
 id: B7760
 milestone: M11 distribution
 title: Terraform provider Go source kept verbatim and checked offline
-status: todo
+status: done
 depends_on: []
 file: tasks/B7760-terraform-provider-source.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "terraform/provider/go.sum"
 parent: B155
 split_from: B155
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2067
