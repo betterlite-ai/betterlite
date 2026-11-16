@@ -255,7 +255,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call*")"
       && grep -lq 'bedrock_other_embedding_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_embedding_call*
       && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_embedding_call$/)'
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: credential-identity-isolation
     why: Distinct configured identities cannot share credentials, headers or cache entries.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::embedding_call_credential_identity_isolation$/)'

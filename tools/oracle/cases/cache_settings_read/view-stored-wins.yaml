@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-read-view-stored-wins
+call:
+  b4307:
+    stored: {host: "stored-host", port: "6380"}
+    environment: {REDIS_HOST: "environment-host", REDIS_PORT: "6379"}
+env: {REDIS_HOST: "environment-host", REDIS_PORT: "6379"}
+compare: {ignore: []}
