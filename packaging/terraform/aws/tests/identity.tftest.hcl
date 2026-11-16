@@ -1,18 +1,7 @@
 mock_provider "aws" {
-  override_during = plan
-
   mock_data "aws_iam_policy_document" {
     defaults = {
       json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-    }
-  }
-
-  # A plan leaves the cluster resource id unknown, and the rds-db resource ARN needs it
-  mock_resource "aws_rds_cluster" {
-    defaults = {
-      cluster_resource_id = "cluster-ABCDEFGHIJKLMNOPQRSTUVW"
-      endpoint            = "acme-litellm-test.cluster-cdefghijklmn.us-east-1.rds.amazonaws.com"
-      port                = 5432
     }
   }
 
@@ -23,7 +12,85 @@ mock_provider "aws" {
   }
 }
 
-mock_provider "random" {
+mock_provider "random" {}
+
+# A plan leaves every computed attribute unknown, so each value an assertion reads is fixed here for the plan phase
+override_resource {
+  target          = random_password.master_key
+  values          = { result = "MockedMasterKeyAbCd1234MockedMasterKeyAbCd1234MockedMa" }
+  override_during = plan
+}
+
+override_resource {
+  target          = random_password.db_master_password
+  values          = { result = "MockedDbPasswordAbCd1234MockedDb" }
+  override_during = plan
+}
+
+override_resource {
+  target          = random_id.s3_suffix
+  values          = { hex = "0a1b2c3d" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.master_key
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-master-key-AAAAAA" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.license
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-license-BBBBBB" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.ui_password
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-ui-password-CCCCCC" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.database_url
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-database-url-DDDDDD" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.redis_url
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-redis-url-EEEEEE" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_policy.secrets_access
+  values          = { arn = "arn:aws:iam::111122223333:policy/acme-litellm-test-secrets-access" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_policy.rds_iam_connect
+  values          = { arn = "arn:aws:iam::111122223333:policy/acme-litellm-test-rds-iam-connect" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_policy.s3_access
+  values          = { arn = "arn:aws:iam::111122223333:policy/acme-litellm-test-s3-access" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_s3_bucket.this
+  values          = { id = "acme-litellm-test-0a1b2c3d", arn = "arn:aws:s3:::acme-litellm-test-0a1b2c3d" }
+  override_during = plan
+}
+
+# A plan leaves the cluster resource id unknown, and the rds-db resource ARN needs it
+override_resource {
+  target          = aws_rds_cluster.this
+  values          = { cluster_resource_id = "cluster-ABCDEFGHIJKLMNOPQRSTUVW" }
   override_during = plan
 }
 
@@ -47,7 +114,7 @@ run "empty_master_key_falls_back_to_a_generated_sk_key" {
       random_password.master_key.min_lower == 4,
       random_password.master_key.min_upper == 4,
       random_password.master_key.min_numeric == 4,
-      aws_secretsmanager_secret.master_key.tags == local.tags,
+      jsonencode(aws_secretsmanager_secret.master_key.tags) == jsonencode(local.tags),
     ])
     error_message = "The master key secret must always exist and hold a 48-character alphanumeric generated key."
   }
@@ -231,7 +298,7 @@ run "task_role_gets_rds_connect_and_the_assume_document" {
       aws_iam_role.task.assume_role_policy == data.aws_iam_policy_document.task_assume.json,
       aws_iam_role_policy_attachment.task_execution.policy_arn == "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy",
       aws_iam_role_policy_attachment.task_execution.role == aws_iam_role.task_execution.name,
-      aws_iam_role.task.tags == local.tags,
+      jsonencode(aws_iam_role.task.tags) == jsonencode(local.tags),
     ])
     error_message = "Both roles must take the ecs-tasks assume document and the execution role the managed ECS task policy."
   }
@@ -284,7 +351,7 @@ run "bucket_is_hardened_and_the_task_role_reads_it" {
       aws_s3_bucket.this.bucket == "${local.name}-${random_id.s3_suffix.hex}",
       random_id.s3_suffix.byte_length == 4,
       aws_s3_bucket.this.force_destroy == false,
-      aws_s3_bucket.this.tags == local.tags,
+      jsonencode(aws_s3_bucket.this.tags) == jsonencode(local.tags),
       aws_s3_bucket_versioning.this.versioning_configuration[0].status == "Enabled",
       one(aws_s3_bucket_server_side_encryption_configuration.this.rule).apply_server_side_encryption_by_default[0].sse_algorithm == "AES256",
       aws_s3_bucket_public_access_block.this.block_public_acls == true,
@@ -361,7 +428,7 @@ run "cluster_and_log_groups_exist_with_the_retention" {
   assert {
     condition = alltrue([
       aws_ecs_cluster.this.name == local.name,
-      aws_ecs_cluster.this.tags == local.tags,
+      jsonencode(aws_ecs_cluster.this.tags) == jsonencode(local.tags),
       contains([for setting in aws_ecs_cluster.this.setting : "${setting.name}=${setting.value}"], "containerInsights=enabled"),
       aws_cloudwatch_log_group.betterlite.name == "/ecs/${local.name}/betterlite",
       aws_cloudwatch_log_group.betterlite.retention_in_days == var.log_retention_days,

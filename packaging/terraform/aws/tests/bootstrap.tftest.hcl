@@ -1,18 +1,7 @@
 mock_provider "aws" {
-  override_during = plan
-
   mock_data "aws_iam_policy_document" {
     defaults = {
       json = "{\"Version\":\"2012-10-17\",\"Statement\":[]}"
-    }
-  }
-
-  # The task definition embeds the cluster endpoint and port, and the secret JSON embeds both
-  mock_resource "aws_rds_cluster" {
-    defaults = {
-      cluster_resource_id = "cluster-ABCDEFGHIJKLMNOPQRSTUVW"
-      endpoint            = "acme-litellm-test.cluster-cdefghijklmn.us-east-1.rds.amazonaws.com"
-      port                = 5432
     }
   }
 
@@ -23,7 +12,53 @@ mock_provider "aws" {
   }
 }
 
-mock_provider "random" {
+mock_provider "random" {}
+
+# A plan leaves every computed attribute unknown, so each value an assertion reads is fixed here for the plan phase
+override_resource {
+  target          = random_password.db_master_password
+  values          = { result = "MockedDbPasswordAbCd1234MockedDb" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_secretsmanager_secret.db_master_password
+  values          = { arn = "arn:aws:secretsmanager:us-east-1:111122223333:secret:acme-litellm-test-db-master-password-FFFFFF" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_role.task_execution
+  values          = { arn = "arn:aws:iam::111122223333:role/acme-litellm-test-task-execution" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_role.task
+  values          = { arn = "arn:aws:iam::111122223333:role/acme-litellm-test-task" }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_iam_policy.bootstrap_secrets
+  values          = { arn = "arn:aws:iam::111122223333:policy/acme-litellm-test-bootstrap-secrets-access" }
+  override_during = plan
+}
+
+# The task definition embeds the cluster endpoint and port, and the secret JSON embeds both
+override_resource {
+  target = aws_rds_cluster.this
+  values = {
+    cluster_resource_id = "cluster-ABCDEFGHIJKLMNOPQRSTUVW"
+    endpoint            = "acme-litellm-test.cluster-cdefghijklmn.us-east-1.rds.amazonaws.com"
+    port                = 5432
+  }
+  override_during = plan
+}
+
+override_resource {
+  target          = aws_ecs_task_definition.bootstrap_db
+  values          = { arn = "arn:aws:ecs:us-east-1:111122223333:task-definition/acme-litellm-test-bootstrap-db:1", revision = 1 }
   override_during = plan
 }
 
