@@ -21,9 +21,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
         body: input.body.clone().into_bytes(),
     };
     let page = decode_vertex_batch_page(&reply).or_value_error()?;
-    let jobs = match page.batch_prediction_jobs {
-        None => Value::Null,
-        Some(jobs) => Value::Array(
+    let jobs = page.batch_prediction_jobs.map_or(Value::Null, |jobs| {
+        Value::Array(
             jobs.into_iter()
                 .map(|job| {
                     let mut fields = Map::new();
@@ -39,8 +38,8 @@ pub(super) fn run(input: &Input) -> HelperResult {
                     Value::Object(fields)
                 })
                 .collect(),
-        ),
-    };
+        )
+    });
     let mut out = Map::new();
     out.insert("batchPredictionJobs".to_owned(), jobs);
     if let Some(token) = page.next_page_token {
