@@ -82,16 +82,7 @@ pub async fn convert_messages_to_prompt(
             | Provider::Llama,
         ) => factory_prompt(&conversion, conversion.model, Some("bedrock"), "bedrock").await,
         Some(Provider::Cohere) => cohere_prompt(conversion.messages),
-        Some(Provider::DeepseekR1) => {
-            let prompt = conversion
-                .prompts
-                .hf_chat_template(DEEPSEEK_MODEL, conversion.messages, conversion.now)
-                .await?;
-            Ok(ConvertedPrompt {
-                prompt,
-                chat_history: None,
-            })
-        }
+        Some(Provider::DeepseekR1) => deepseek_prompt(&conversion).await,
         Some(
             Provider::Ai21
             | Provider::Nova
@@ -129,6 +120,19 @@ async fn factory_prompt(
             provider: operation,
         }),
     }
+}
+
+async fn deepseek_prompt(
+    conversion: &PromptConversion<'_>,
+) -> Result<ConvertedPrompt, ConversionError> {
+    let prompt = conversion
+        .prompts
+        .hf_chat_template(DEEPSEEK_MODEL, conversion.messages, conversion.now)
+        .await?;
+    Ok(ConvertedPrompt {
+        prompt,
+        chat_history: None,
+    })
 }
 
 fn cohere_prompt(messages: &[Message]) -> Result<ConvertedPrompt, ConversionError> {
