@@ -23,8 +23,8 @@ pub enum InitPromptsError {
 }
 
 impl fmt::Debug for InitPromptsError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // serde quotes the offending value, which can be a prompt body or a secret
-        fmt::Display::fmt(self, formatter)
+        fmt::Display::fmt(self, f)
     }
 }
