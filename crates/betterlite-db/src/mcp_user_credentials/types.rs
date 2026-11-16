@@ -1,8 +1,10 @@
 use betterlite_secrets::error::SecretError;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+// identity_rows' adapter is the crate's one way to serialize a secret, and it builds the exposed text only during the write
+use crate::identity_rows::ExposedSecret;
 use crate::mcp::table_access::types::McpTableError;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,17 +31,6 @@ impl OAuthGrantState {
             Self::Refreshable => "refreshable",
             Self::Absent => "absent",
         }
-    }
-}
-
-// serde's library adapter builds this private, non-Debug value only while a payload is serialized for encryption
-#[derive(Serialize)]
-#[serde(transparent)]
-struct ExposedSecret(String);
-
-impl From<&SecretString> for ExposedSecret {
-    fn from(secret: &SecretString) -> Self {
-        Self(secret.expose_secret().to_owned())
     }
 }
 
@@ -83,15 +74,15 @@ pub struct McpUserCredentialListItem {
     pub updated_at: String,
 }
 
-pub struct StoreOAuthCredential<'a> {
-    pub user_id: &'a str,
-    pub server_id: &'a str,
-    pub access_token: &'a SecretString,
-    pub refresh_token: Option<&'a SecretString>,
+pub struct StoreOAuthCredential<'request> {
+    pub user_id: &'request str,
+    pub server_id: &'request str,
+    pub access_token: &'request SecretString,
+    pub refresh_token: Option<&'request SecretString>,
     pub expires_in: Option<i64>,
-    pub scopes: Option<&'a [String]>,
+    pub scopes: Option<&'request [String]>,
     pub skip_byok_guard: bool,
-    pub identity_binding_proof: Option<&'a str>,
+    pub identity_binding_proof: Option<&'request str>,
 }
 
 #[derive(Debug, Error)]

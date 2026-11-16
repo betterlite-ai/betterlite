@@ -1,6 +1,6 @@
 use rstest::rstest;
 
-use super::super::decode::{decode_oauth_payload, decode_user_credential, parse_oauth_payload};
+use super::super::decode::{decode_user_credential, parse_oauth_payload};
 use super::super::types::{CredentialError, CredentialType};
 use super::support::{cipher, exposed, secret};
 use super::{
@@ -97,29 +97,34 @@ fn parse_oauth_payload_reports_a_payload_field_of_the_wrong_type() {
 
 #[test]
 fn decode_oauth_payload_composes_decoding_and_parsing() {
-    let decoded = decode_oauth_payload(&cipher(), ENCRYPTED_OAUTH)
-        .expect("the row decodes")
+    let stored = decode_user_credential(&cipher(), ENCRYPTED_OAUTH);
+    let payload = parse_oauth_payload(stored.as_ref())
+        .expect("parsing runs")
         .expect("the row holds a payload");
-    assert_eq!(exposed(decoded.access_token.as_ref()), Some("tok-123"));
-    let byok = decode_oauth_payload(&cipher(), ENCRYPTED_SECRET).expect("the row decodes");
+    assert_eq!(exposed(payload.access_token.as_ref()), Some("tok-123"));
+    let byok = parse_oauth_payload(decode_user_credential(&cipher(), ENCRYPTED_SECRET).as_ref())
+        .expect("parsing runs");
     assert!(byok.is_none());
-    let unreadable = decode_oauth_payload(&cipher(), UNDECRYPTABLE).expect("the row decodes");
+    let unreadable = parse_oauth_payload(decode_user_credential(&cipher(), UNDECRYPTABLE).as_ref())
+        .expect("parsing runs");
     assert!(unreadable.is_none());
 }
 
 #[test]
 fn decode_oauth_payload_reads_a_legacy_base64_payload() {
-    let decoded = decode_oauth_payload(&cipher(), LEGACY_OAUTH)
-        .expect("the row decodes")
+    let stored = decode_user_credential(&cipher(), LEGACY_OAUTH);
+    let payload = parse_oauth_payload(stored.as_ref())
+        .expect("parsing runs")
         .expect("the legacy row holds a payload");
     assert_eq!(
-        decoded.scopes,
+        payload.scopes,
         Some(vec!["read".to_owned(), "write".to_owned()])
     );
 }
 
 #[test]
 fn decode_oauth_payload_returns_none_for_a_legacy_row_that_is_not_json() {
-    let decoded = decode_oauth_payload(&cipher(), NOT_JSON).expect("the row decodes");
+    let stored = decode_user_credential(&cipher(), NOT_JSON);
+    let decoded = parse_oauth_payload(stored.as_ref()).expect("parsing runs");
     assert!(decoded.is_none());
 }

@@ -59,10 +59,10 @@ fn decoded_stored_text(table: &FakeTable) -> String {
 }
 
 fn row_without_credential() -> JsonData {
-    JsonData::Object(BTreeMap::from([(
-        "user_id".to_owned(),
-        JsonData::String("u1".to_owned()),
-    )]))
+    JsonData::Object(BTreeMap::from([
+        ("user_id".to_owned(), JsonData::String("u1".to_owned())),
+        ("server_id".to_owned(), JsonData::String("s1".to_owned())),
+    ]))
 }
 
 #[test]

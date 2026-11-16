@@ -1,21 +1,16 @@
 use betterlite_secrets::secret_codec::python_base64::decode_lenient;
 use betterlite_secrets::secret_codec::{DecryptPolicy, FailureLog, FailureValue, StoredValue};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
 
+use crate::budget_permission_rows::JsonData;
 use crate::stored_cipher::DbCipher;
 
+use super::rows::stored_text;
 use super::types::{CredentialError, OAuthCredentialPayload};
 
 const CREDENTIAL_KEY: &str = "mcp_user_credential";
 const OAUTH2: &str = "oauth2";
 
-// the one field that separates an OAuth2 payload from a BYOK key; a value that is not an object with a text type is not a payload
-#[derive(Deserialize)]
-struct CredentialKind {
-    #[serde(rename = "type")]
-    credential_type: Option<String>,
-}
 // LiteLLM decrypts under the "debug" policy, so a failed open logs at debug and never at error
 const UNREADABLE: DecryptPolicy = DecryptPolicy {
     log: FailureLog::Debug,
@@ -43,28 +38,38 @@ pub fn decode_user_credential(cipher: &DbCipher, stored: &str) -> Option<SecretS
         .map(SecretString::from)
 }
 
+// LiteLLM's _parse_oauth_payload: only a JSON object whose "type" is the text "oauth2" is a payload, so an array or scalar is not one
 pub fn parse_oauth_payload(
     decoded: Option<&SecretString>,
 ) -> Result<Option<OAuthCredentialPayload>, CredentialError> {
-    let Some(decoded) = decoded else {
+    let Some(text) = decoded else {
         return Ok(None);
     };
-    let Ok(kind) = serde_json::from_str::<CredentialKind>(decoded.expose_secret()) else {
+    let Ok(fields) =
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(text.expose_secret())
+    else {
         return Ok(None);
     };
-    if kind.credential_type.as_deref() != Some(OAUTH2) {
+    if fields.get("type").and_then(serde_json::Value::as_str) != Some(OAUTH2) {
         return Ok(None);
     }
-    let payload = serde_json::from_str(decoded.expose_secret()).map_err(CredentialError::Json)?;
-    Ok(Some(payload))
+    serde_json::from_value(serde_json::Value::Object(fields))
+        .map(Some)
+        .map_err(CredentialError::Json)
 }
 
-// a row that is not OAuth2 is Ok(None); a row that claims oauth2 with a mistyped field is the Json error on every path
-pub fn decode_oauth_payload(
+// every reader that shows a user's token warns once about the row it cannot open; the BYOK guard keeps its own message because it replaces the row
+pub(super) fn decoded_row(
+    row: &JsonData,
     cipher: &DbCipher,
-    stored: &str,
-) -> Result<Option<OAuthCredentialPayload>, CredentialError> {
-    parse_oauth_payload(decode_user_credential(cipher, stored).as_ref())
+    user_id: &str,
+    server_id: &str,
+) -> Result<Option<SecretString>, CredentialError> {
+    let decoded = decode_user_credential(cipher, stored_text(row)?);
+    if decoded.is_none() {
+        warn_undecryptable_credential(user_id, server_id);
+    }
+    Ok(decoded)
 }
 
 pub(crate) fn warn_undecryptable_credential(user_id: &str, server_id: &str) {

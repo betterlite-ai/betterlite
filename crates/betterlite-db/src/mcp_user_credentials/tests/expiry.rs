@@ -83,7 +83,7 @@ fn expiry_absent_expires_at_is_not_expired() {
 }
 
 #[test]
-fn expiry_unparseable_expires_at_is_not_expired() {
+fn expiry_unparsable_expires_at_is_not_expired() {
     assert!(!expired(&expires_at("not-a-date"), 0));
 }
 

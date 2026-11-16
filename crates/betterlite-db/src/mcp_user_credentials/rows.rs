@@ -12,10 +12,14 @@ use crate::mcp::table_access::user_tables::{
     db_find_user_credential_row, db_find_user_credential_rows, db_upsert_user_credential_row,
 };
 
+use super::types::CredentialError;
+
+pub(super) const CREDENTIAL_COLUMN: &str = "credential_b64";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CredentialScope<'a> {
-    User(&'a str),
-    Server(&'a str),
+pub enum CredentialScope<'scope> {
+    User(&'scope str),
+    Server(&'scope str),
 }
 
 pub trait CredentialRows: Send + Sync {
@@ -95,4 +99,10 @@ pub fn text_field<'row>(row: &'row JsonData, field: &str) -> Option<&'row str> {
         return None;
     };
     Some(text.as_str())
+}
+
+pub(super) fn stored_text(row: &JsonData) -> Result<&str, CredentialError> {
+    text_field(row, CREDENTIAL_COLUMN).ok_or(CredentialError::MissingField {
+        field: CREDENTIAL_COLUMN,
+    })
 }

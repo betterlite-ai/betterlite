@@ -13,11 +13,8 @@ pub mod types;
 
 mod tests;
 
-use decode::{
-    decode_oauth_payload, decode_user_credential, parse_oauth_payload,
-    warn_undecryptable_credential,
-};
-use rows::{CredentialRows, CredentialScope, text_field};
+use decode::{decode_user_credential, decoded_row, parse_oauth_payload};
+use rows::{CredentialRows, CredentialScope, stored_text, text_field};
 use store::{guard_byok_overwrite, store_user_credential};
 use types::{
     CredentialError, CredentialType, McpUserCredentialListItem, OAuthCredentialPayload,
@@ -25,12 +22,15 @@ use types::{
 };
 
 // LiteLLM's store_user_oauth_credential: one JSON payload encrypted into the BYOK column, with a connected_at and expires_at from the one `now` the caller read
-pub async fn store_user_oauth_credential<A: CredentialRows>(
+pub async fn store_user_oauth_credential<A>(
     table: &A,
     cipher: &DbCipher,
     request: &StoreOAuthCredential<'_>,
     now: DateTime<Utc>,
-) -> Result<(), CredentialError> {
+) -> Result<(), CredentialError>
+where
+    A: CredentialRows,
+{
     if !request.skip_byok_guard {
         let existing = table
             .find_credential(request.user_id, request.server_id)
@@ -76,7 +76,7 @@ fn moment_after(now: DateTime<Utc>, seconds: i64) -> Result<DateTime<Utc>, Crede
         .ok_or(CredentialError::ExpiresInOutOfRange { seconds })
 }
 
-// LiteLLM's is_oauth_credential_expired: a naive timestamp is UTC, an absent or unparseable one never counts as expired, and now + buffer > expires is the comparison, so a token expiring exactly at the deadline is still live
+// LiteLLM's is_oauth_credential_expired: a naive timestamp is UTC, an absent or unparsable one never counts as expired, and now + buffer > expires is the comparison, so a token expiring exactly at the deadline is still live
 #[must_use]
 pub fn is_oauth_credential_expired(
     credential: &OAuthCredentialPayload,
@@ -100,16 +100,16 @@ pub fn oauth_grant_state(
     now: DateTime<Utc>,
     buffer_seconds: i64,
 ) -> OAuthGrantState {
-    let Some(credential) = credential else {
+    let Some(payload) = credential else {
         return OAuthGrantState::Absent;
     };
-    if credential.access_token.is_none() {
+    if payload.access_token.is_none() {
         return OAuthGrantState::Absent;
     }
-    if !is_oauth_credential_expired(credential, now, buffer_seconds) {
+    if !is_oauth_credential_expired(payload, now, buffer_seconds) {
         return OAuthGrantState::Valid;
     }
-    if credential.refresh_token.is_some() {
+    if payload.refresh_token.is_some() {
         return OAuthGrantState::Refreshable;
     }
     OAuthGrantState::Absent
@@ -125,10 +125,8 @@ pub fn server_user_credential_item(
     let updated_at = text_field(row, "updated_at").ok_or(CredentialError::MissingField {
         field: "updated_at",
     })?;
-    let stored = text_field(row, "credential_b64").ok_or(CredentialError::MissingField {
-        field: "credential_b64",
-    })?;
-    let (credential_type, expires_at, connected_at) = match decode_oauth_payload(cipher, stored)? {
+    let decoded = decode_user_credential(cipher, stored_text(row)?);
+    let (credential_type, expires_at, connected_at) = match parse_oauth_payload(decoded.as_ref())? {
         Some(payload) => (
             CredentialType::Oauth2,
             payload.expires_at,
@@ -146,45 +144,50 @@ pub fn server_user_credential_item(
 }
 
 // LiteLLM's list_server_user_credentials: every user's credential for one server, summed up without the secret
-pub async fn list_server_user_credentials<A: CredentialRows>(
-    table: &A,
-    cipher: &DbCipher,
-    server_id: &str,
-) -> Result<Vec<McpUserCredentialListItem>, CredentialError> {
-    let rows = table
+#[rustfmt::skip]
+pub async fn list_server_user_credentials<A>(table: &A, cipher: &DbCipher, server_id: &str) -> Result<Vec<McpUserCredentialListItem>, CredentialError> where A: CredentialRows {
+    table
         .find_credentials(CredentialScope::Server(server_id))
-        .await?;
-    let mut items = Vec::with_capacity(rows.len());
-    for row in &rows {
-        items.push(server_user_credential_item(row, cipher)?);
-    }
-    Ok(items)
+        .await?
+        .iter()
+        .map(|row| server_user_credential_item(row, cipher))
+        .collect()
 }
 
 // LiteLLM's list_user_oauth_credentials: a row that does not decrypt is warned about and skipped, a row that is not OAuth2 is skipped, and the payload is tagged with its server_id
-pub async fn list_user_oauth_credentials<A: CredentialRows>(
-    table: &A,
+#[rustfmt::skip]
+pub async fn list_user_oauth_credentials<A>(table: &A, cipher: &DbCipher, user_id: &str) -> Result<Vec<OAuthCredentialPayload>, CredentialError> where A: CredentialRows {
+    oauth_payloads(
+        &table.find_credentials(CredentialScope::User(user_id)).await?,
+        cipher,
+        user_id,
+    )
+}
+
+fn oauth_payloads(
+    rows: &[JsonData],
     cipher: &DbCipher,
     user_id: &str,
 ) -> Result<Vec<OAuthCredentialPayload>, CredentialError> {
-    let rows = table
-        .find_credentials(CredentialScope::User(user_id))
-        .await?;
-    let mut payloads = Vec::with_capacity(rows.len());
-    for row in &rows {
-        let server_id = server_id_of(row)?;
-        let stored = text_field(row, "credential_b64").ok_or(CredentialError::MissingField {
-            field: "credential_b64",
-        })?;
-        let decoded = decode_user_credential(cipher, stored);
-        if decoded.is_none() {
-            warn_undecryptable_credential(user_id, &server_id);
+    let mut payloads = Vec::new();
+    for row in rows {
+        if let Some(payload) = user_oauth_payload(row, cipher, user_id)? {
+            payloads.push(payload);
         }
-        let Some(mut payload) = parse_oauth_payload(decoded.as_ref())? else {
-            continue;
-        };
-        payload.server_id = Some(server_id);
-        payloads.push(payload);
     }
     Ok(payloads)
+}
+
+fn user_oauth_payload(
+    row: &JsonData,
+    cipher: &DbCipher,
+    user_id: &str,
+) -> Result<Option<OAuthCredentialPayload>, CredentialError> {
+    let server_id = server_id_of(row)?;
+    let decoded = decoded_row(row, cipher, user_id, &server_id)?;
+    let Some(mut payload) = parse_oauth_payload(decoded.as_ref())? else {
+        return Ok(None);
+    };
+    payload.server_id = Some(server_id);
+    Ok(Some(payload))
 }
