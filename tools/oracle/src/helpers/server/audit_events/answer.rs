@@ -5,6 +5,8 @@ use async_trait::async_trait;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::audit_events::{LITELLM_STORE_AUDIT_LOGS_ENV, Settings};
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_server::audit_events::callbacks::{
     AuditCallbackConfig, AuditCallbackDispatcher, AuditLogCallback,
 };
@@ -24,7 +26,7 @@ use serde_json::json;
 use super::support::{CollectingSpawner, LocalRecorder, LocalRegistry, delivery_view};
 use super::types::{Aspect, CallbackCall, Input, failure};
 
-pub(super) async fn answer(input: &Input) -> crate::helpers::HelperResult {
+pub(super) async fn answer(input: &Input) -> HelperResult {
     match input.aspect {
         Aspect::Policy => policy_answer(input),
         Aspect::Identity => Ok(identity_answer(input)),
@@ -34,7 +36,7 @@ pub(super) async fn answer(input: &Input) -> crate::helpers::HelperResult {
     }
 }
 
-fn policy_answer(call: &Input) -> crate::helpers::HelperResult {
+fn policy_answer(call: &Input) -> HelperResult {
     let lookup: BTreeMap<String, String> = call
         .env
         .iter()
@@ -64,7 +66,7 @@ fn identity_answer(call: &Input) -> JsonValue {
     json!({"changed_by": changed_by})
 }
 
-fn decoded_record(record: &JsonValue) -> Result<AuditLogRecord, Box<crate::helpers::HelperError>> {
+fn decoded_record(record: &JsonValue) -> Result<AuditLogRecord, Box<HelperError>> {
     match serde_json::to_vec(record) {
         Ok(bytes) => decode_audit_record(&bytes).map_err(|error| failure("ValidationError", error)),
         Err(error) => Err(failure("InvalidRecord", error)),
@@ -89,7 +91,7 @@ fn record_view(record: &AuditLogRecord) -> JsonValue {
     })
 }
 
-async fn dispatch_answer(call: &Input) -> crate::helpers::HelperResult {
+async fn dispatch_answer(call: &Input) -> HelperResult {
     let record = decoded_record(&call.record)?;
     let spawner = Arc::new(CollectingSpawner::default());
     let mut recorders = Vec::new();
@@ -192,7 +194,7 @@ fn stored_ids(repository: &LocalRepository) -> Vec<String> {
     inserted.iter().map(|record| record.id.clone()).collect()
 }
 
-async fn sink_answer(call: &Input) -> crate::helpers::HelperResult {
+async fn sink_answer(call: &Input) -> HelperResult {
     let record = decoded_record(&call.record)?;
     let action = AuditAction::parse(&call.action)
         .ok_or_else(|| failure("InvalidInput", "unknown audit action"))?;

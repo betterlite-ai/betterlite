@@ -3,7 +3,7 @@ use std::fmt::Display;
 use betterlite_config::sections::settings::JsonValue;
 use serde::Deserialize;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
