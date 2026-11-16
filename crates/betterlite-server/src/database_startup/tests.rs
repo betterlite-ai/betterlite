@@ -37,7 +37,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 
 use self::postgres::{
     NoJitter, SchemaDatabase, catalog_request_log_indexes, ledger_rows, migration,
-    present_request_log_indexes, row_count, table_exists, with_schema,
+    present_request_log_indexes, row_count, scalar, table_exists, with_schema,
 };
 use super::fixtures::{
     BuildAnswer, HeartbeatCall, JobBuild, MigrationAnswer, ScriptedHeartbeat, ScriptedRefresh,
@@ -495,6 +495,8 @@ async fn shutdown_drains() {
     assert!(!finished.load(Ordering::SeqCst));
 
     let refresh = Arc::new(ScriptedRefresh::default());
+    let cloned_refresh = Arc::clone(&refresh);
+    let erased_refresh: Arc<dyn CredentialRefresh> = cloned_refresh;
     let fake_heartbeat = Arc::new(ScriptedHeartbeat::default());
     let heartbeat_task =
         HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake_heartbeat)).await;
@@ -503,7 +505,7 @@ async fn shutdown_drains() {
         state: DatabaseState { configured: true },
         startup: Some(started),
         heartbeat: Some(heartbeat_task),
-        refresh: Some(Arc::clone(&refresh)),
+        refresh: Some(erased_refresh),
         pool: None,
     };
     let (log_file, guard) = capture_log();
@@ -754,11 +756,8 @@ async fn assert_packaged_ledger(database: &SchemaDatabase) {
 }
 
 async fn insert_spend_log(database: &SchemaDatabase) {
-    database
-        .pool
-        .get()
-        .await
-        .expect("a fixture connection")
+    let client = database.pool.get().await.expect("a fixture connection");
+    let inserted = client
         .execute(
             "INSERT INTO \"LiteLLM_SpendLogs\" (\"request_id\", \"call_type\", \"startTime\", \"endTime\") \
              VALUES ('b051-row', 'acompletion', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
@@ -766,23 +765,18 @@ async fn insert_spend_log(database: &SchemaDatabase) {
         )
         .await
         .expect("a pinned spend-log row inserts");
+    assert_eq!(inserted, 1);
 }
 
 async fn spend_log_replica_identity(database: &SchemaDatabase) -> String {
-    database
-        .pool
-        .get()
-        .await
-        .expect("a fixture connection")
-        .query_one(
-            "SELECT c.relreplident::text FROM pg_class c \
-             JOIN pg_namespace n ON n.oid = c.relnamespace \
-             WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
-            &[&database.schema],
-        )
-        .await
-        .expect("the replica identity reads")
-        .get(0)
+    scalar(
+        database,
+        "SELECT c.relreplident::text FROM pg_class c \
+         JOIN pg_namespace n ON n.oid = c.relnamespace \
+         WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
+        &[&database.schema],
+    )
+    .await
 }
 
 async fn assert_replica_identity_full(database: &SchemaDatabase, settings: &StartupSettings) {

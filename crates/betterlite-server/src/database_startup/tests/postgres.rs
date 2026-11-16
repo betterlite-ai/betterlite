@@ -137,7 +137,11 @@ fn qualified(database: &SchemaDatabase, name: &str) -> String {
     format!("\"{}\".\"{name}\"", database.schema.replace('"', "\"\""))
 }
 
-async fn scalar<T>(database: &SchemaDatabase, statement: &str, params: &[&(dyn ToSql + Sync)]) -> T
+pub(crate) async fn scalar<T>(
+    database: &SchemaDatabase,
+    statement: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> T
 where
     T: for<'row> FromSql<'row>,
 {

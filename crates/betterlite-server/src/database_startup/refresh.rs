@@ -23,10 +23,10 @@ where
     C: Error + Send + Sync + 'static,
 {
     fn start(&self) {
-        <DatabaseRefreshLoop<P, M, C>>::start(self);
+        Self::start(self);
     }
 
     fn stop(&self) -> RefreshFuture<'_> {
-        Box::pin(<DatabaseRefreshLoop<P, M, C>>::stop(self))
+        Box::pin(Self::stop(self))
     }
 }

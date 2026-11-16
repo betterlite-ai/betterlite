@@ -157,14 +157,14 @@ async fn open_pool(url: &SecretString) -> Result<(Arc<NativePool>, HeartbeatTask
             return Err(StartupError::Heartbeat { source });
         }
     };
-    let heartbeat =
+    let task =
         HeartbeatTask::start(Arc::new(heartbeat), Arc::new(PostgresDatabase { client })).await;
-    Ok((pool, heartbeat))
+    Ok((pool, task))
 }
 
 // What a finished startup owns. B4448 reads the state; shutdown deregisters, drains and closes.
 pub struct Running {
-    pub(crate) state: DatabaseState,
+    pub state: DatabaseState,
     pub(crate) startup: Option<Startup>,
     pub(crate) heartbeat: Option<HeartbeatTask>,
     pub(crate) refresh: Option<Arc<dyn CredentialRefresh>>,
