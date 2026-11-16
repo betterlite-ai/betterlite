@@ -37,10 +37,9 @@ fn load(params: &str) -> Result<(), ConfigError> {
 #[test]
 fn compresr_config_skips_other_guardrails_and_absent_sections() {
     let other = "guardrails:\n  - guardrail_name: aim\n    litellm_params:\n      guardrail: aim\n";
-    let (raw, _ignored) = parse_view::<super::Raw>(other).unwrap();
+    let (raw, _) = parse_view::<super::Raw>(other).unwrap();
     assert!(raw.convert(&lookup(&[])).unwrap().guardrails.is_empty());
-    let (absent, _ignored) =
-        parse_view::<super::Raw>("general_settings:\n  master_key: key\n").unwrap();
+    let (absent, _) = parse_view::<super::Raw>("general_settings:\n  master_key: key\n").unwrap();
     assert!(absent.convert(&lookup(&[])).unwrap().guardrails.is_empty());
 }
 
@@ -64,8 +63,8 @@ fn compresr_config_without_tuning_leaves_every_knob_unset() {
 }
 
 #[test]
-fn compresr_config_reads_every_flat_key() {
-    let params = "      api_base: https://compresr.test\n      api_key: secret-key\n      model: latte_v1\n      unreachable_fallback: fail_open\n      timeout: 2.5\n      target_compression_ratio: 4\n      coarse: false\n      min_chars_to_compress: 100\n      compress_tool_outputs: false\n      compress_system: true\n      compress_history: true\n      compress_last_user: true\n      enable_retrieval: false\n      max_bytes_per_call: 2048\n      allow_bypass_header: true\n      dynamic: false\n      dynamic_min_ratio: 1.5\n      dynamic_max_ratio: 8\n      compression_params:\n        heuristic_chunking: true\n";
+fn compresr_config_reads_every_connection_key() {
+    let params = "      api_base: https://compresr.test\n      api_key: secret-key\n      model: latte_v1\n      unreachable_fallback: fail_open\n      timeout: 2.5\n";
     let settings = resolve(params, &[]).unwrap();
     let configured = settings.guardrails.first().unwrap();
     assert_eq!(
@@ -85,7 +84,13 @@ fn compresr_config_reads_every_flat_key() {
         UnreachableFallback::FailOpen
     );
     assert_eq!(configured.timeout, Some(2.5_f64));
-    let tuning = &configured.tuning;
+}
+
+#[test]
+fn compresr_config_reads_every_tuning_key() {
+    let params = "      target_compression_ratio: 4\n      coarse: false\n      min_chars_to_compress: 100\n      compress_tool_outputs: false\n      compress_system: true\n      compress_history: true\n      compress_last_user: true\n      enable_retrieval: false\n      max_bytes_per_call: 2048\n      allow_bypass_header: true\n      dynamic: false\n      dynamic_min_ratio: 1.5\n      dynamic_max_ratio: 8\n      compression_params:\n        heuristic_chunking: true\n";
+    let settings = resolve(params, &[]).unwrap();
+    let tuning = &settings.guardrails.first().unwrap().tuning;
     assert_eq!(tuning.target_compression_ratio, Some(4.0_f64));
     assert_eq!(tuning.coarse, Some(false));
     assert_eq!(tuning.min_chars_to_compress, Some(100));
@@ -201,7 +206,7 @@ fn no_compresr_key_is_unsupported() {
 #[case::flat("      bogus_key: 1\n", "guardrails.0.litellm_params.bogus_key")]
 #[case::nested(
     "      optional_params:\n        bogus_key: 1\n",
-    "guardrails.0.litellm_params.optional_params.bogus_key"
+    "guardrails.0.litellm_params.optional_params.?.bogus_key"
 )]
 fn a_misspelled_compresr_key_is_unsupported(#[case] params: &str, #[case] path: &str) {
     let ConfigError::Unsupported { paths } = load(params).unwrap_err() else {

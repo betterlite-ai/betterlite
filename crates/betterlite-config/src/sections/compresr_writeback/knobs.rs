@@ -43,15 +43,6 @@ impl<L> Resolver<'_, L>
 where
     L: EnvironmentLookup,
 {
-    pub(super) fn float(
-        &self,
-        raw: Option<RawNumber>,
-        name: &str,
-    ) -> Result<Option<f64>, ConfigError> {
-        let path = format!("{}.{name}", self.prefix);
-        resolve_number(raw, &path, self.lookup, parse_float)
-    }
-
     fn integer(&self, raw: Option<RawNumber>, name: &str) -> Result<Option<i64>, ConfigError> {
         let path = format!("{}.{name}", self.prefix);
         resolve_number(raw, &path, self.lookup, |text, at| {
@@ -101,9 +92,11 @@ impl Parameters {
         L: EnvironmentLookup,
     {
         Ok(Tuning {
-            target_compression_ratio: resolver.float(
+            target_compression_ratio: resolve_number(
                 self.target_compression_ratio.take(),
-                "target_compression_ratio",
+                &format!("{}.target_compression_ratio", resolver.prefix),
+                resolver.lookup,
+                parse_float,
             )?,
             coarse: resolver.flag(self.coarse.take(), "coarse")?,
             min_chars_to_compress: resolver
@@ -120,10 +113,18 @@ impl Parameters {
             allow_bypass_header: resolver
                 .flag(self.allow_bypass_header.take(), "allow_bypass_header")?,
             dynamic: resolver.flag(self.dynamic.take(), "dynamic")?,
-            dynamic_min_ratio: resolver
-                .float(self.dynamic_min_ratio.take(), "dynamic_min_ratio")?,
-            dynamic_max_ratio: resolver
-                .float(self.dynamic_max_ratio.take(), "dynamic_max_ratio")?,
+            dynamic_min_ratio: resolve_number(
+                self.dynamic_min_ratio.take(),
+                &format!("{}.dynamic_min_ratio", resolver.prefix),
+                resolver.lookup,
+                parse_float,
+            )?,
+            dynamic_max_ratio: resolve_number(
+                self.dynamic_max_ratio.take(),
+                &format!("{}.dynamic_max_ratio", resolver.prefix),
+                resolver.lookup,
+                parse_float,
+            )?,
             compression_params: self.compression_params.take(),
         })
     }
