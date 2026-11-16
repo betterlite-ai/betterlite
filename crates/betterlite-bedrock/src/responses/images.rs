@@ -69,18 +69,6 @@ fn inline_block(block: &Json, inlined: &BTreeMap<String, String>) -> Result<Json
     Ok(Json::Object(replaced))
 }
 
-fn inline_value(value: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
-    match value {
-        Json::List(blocks) => blocks
-            .iter()
-            .map(|block| inline_block(block, inlined))
-            .collect::<Result<Vec<_>, _>>()
-            .map(Json::List),
-        Json::Object(_) => inline_block(value, inlined),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => Ok(value.clone()),
-    }
-}
-
 fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
     let Json::Object(fields) = item else {
         return Ok(item.clone());
@@ -88,10 +76,20 @@ fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, 
     fields
         .iter()
         .map(|(key, value)| {
-            let inlined_value = if IMAGE_BLOCK_KEYS.contains(&key.as_str()) {
-                inline_value(value, inlined)?
-            } else {
-                value.clone()
+            let image_key = IMAGE_BLOCK_KEYS.contains(&key.as_str());
+            let inlined_value = match value {
+                Json::List(blocks) if image_key => blocks
+                    .iter()
+                    .map(|block| inline_block(block, inlined))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(Json::List)?,
+                Json::Object(_) if image_key => inline_block(value, inlined)?,
+                Json::Null
+                | Json::Bool(_)
+                | Json::Number(_)
+                | Json::Text(_)
+                | Json::List(_)
+                | Json::Object(_) => value.clone(),
             };
             Ok((key.clone(), inlined_value))
         })
