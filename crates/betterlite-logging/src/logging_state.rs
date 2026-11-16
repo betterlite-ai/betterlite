@@ -90,6 +90,7 @@ pub struct LoggingState {
     pub truncated_messages_for_logging: Option<Json>,
     pub cost_breakdown: Option<CostBreakdown>,
     pub billed_token_rates: Option<BilledTokenRates>,
+    pub streamed_anthropic_message_id: Option<String>,
     pub correlation: CorrelationOwnership,
     pub deferred: DeferredLogging,
     pub callback_policy: CallbackPolicy,
@@ -138,9 +139,10 @@ impl LoggingState {
         let session_id = session_id_from_kwargs(&init.kwargs)?;
         let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
         let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), &mut clock);
-        let ownership = apply_correlation(&mut correlation, &trace_id, &session_id, redactor);
         let model_call_details = initial_model_call_details(&init, &trace_id);
         Ok(Self {
+            // The literal moves the ids this borrows, so the correlation is built before them
+            correlation: apply_correlation(&mut correlation, &trace_id, &session_id, redactor),
             model: init.model,
             messages,
             stream: init.stream,
@@ -171,7 +173,7 @@ impl LoggingState {
             truncated_messages_for_logging: None,
             cost_breakdown: None,
             billed_token_rates: None,
-            correlation: ownership,
+            streamed_anthropic_message_id: None,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
         })
