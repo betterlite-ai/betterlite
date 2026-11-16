@@ -25,6 +25,7 @@ pub fn should_run_guardrail(
 }
 
 // LiteLLM's _MCP_COMPAT_MAP.
+#[must_use]
 pub const fn compatible_event(event: GuardrailEventHooks) -> Option<GuardrailEventHooks> {
     match event {
         GuardrailEventHooks::PreMcpCall => Some(GuardrailEventHooks::PreCall),

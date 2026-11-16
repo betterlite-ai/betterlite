@@ -28,11 +28,11 @@ pub async fn post_call_hook(
     audit: &mut GuardrailAudit,
     context: &HookContext<'_>,
 ) -> Result<(), GuardrailHttpError> {
-    let CallResponse::Model(response) = response else {
+    let CallResponse::Model(model) = response else {
         return Ok(());
     };
     tracing::info!("PANW Prisma AIRS: Running post-call response scan");
-    let outcome = run_post_call(guardrail, data, response, audit, context).await;
+    let outcome = run_post_call(guardrail, data, model, audit, context).await;
     audit_bridge::flush(data, audit, guardrail.settings.guardrail_name.as_str());
     outcome
 }

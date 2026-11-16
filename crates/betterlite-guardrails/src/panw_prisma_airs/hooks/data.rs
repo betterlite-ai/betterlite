@@ -13,6 +13,7 @@ pub const MESSAGES: &str = "messages";
 pub const METADATA: &str = "metadata";
 pub const PROMPT: &str = "prompt";
 
+#[must_use]
 pub fn text<'data>(data: &'data Data, key: &str) -> Option<&'data str> {
     match data.get(key) {
         Some(GuardrailValue::Text(text)) => Some(text),
@@ -20,6 +21,7 @@ pub fn text<'data>(data: &'data Data, key: &str) -> Option<&'data str> {
     }
 }
 
+#[must_use]
 pub fn call_id(data: &Data) -> Option<&str> {
     match data.get(CALL_ID) {
         Some(GuardrailValue::Text(id)) if !id.is_empty() => Some(id),
@@ -27,6 +29,7 @@ pub fn call_id(data: &Data) -> Option<&str> {
     }
 }
 
+#[must_use]
 pub fn messages(data: &Data) -> Option<&[GuardrailValue]> {
     match data.get(MESSAGES) {
         Some(GuardrailValue::Array(messages)) => Some(messages),

@@ -12,7 +12,7 @@ pub mod hook;
 pub mod raw;
 
 // The characters str.strip removes: Unicode whitespace plus the file, group, record and unit separators.
-pub(super) fn is_strip_whitespace(character: char) -> bool {
+pub(super) const fn is_strip_whitespace(character: char) -> bool {
     match character {
         '\u{1c}'..='\u{1f}' => true,
         other => other.is_whitespace(),
@@ -41,7 +41,7 @@ pub fn into_items(chunks: Vec<StreamChunk>) -> Vec<StreamItem> {
 // The chunks the caller collected plus the assembler U2 will provide.
 pub struct StreamingResponse<'stream> {
     pub chunks: Vec<StreamChunk>,
-    pub assembler: &'stream dyn StreamAssembler,
+    pub assembler: &'stream (dyn StreamAssembler + Sync),
 }
 
 // B2227's stream_chunk_builder and U2's MockResponseIterator reach this hook through one seam.

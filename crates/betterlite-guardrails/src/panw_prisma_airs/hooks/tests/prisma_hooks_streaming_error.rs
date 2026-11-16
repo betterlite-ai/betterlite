@@ -24,6 +24,8 @@ use crate::panw_prisma_airs::hooks::streaming::{
 use crate::panw_prisma_airs::verdict::Action;
 
 const BLOCK: &str = r#"{"action":"block","category":"toxic","scan_id":"scan-2"}"#;
+const TWO_ANSWERS: &str =
+    r#"{"choices":[{"message":{"content":"a"}},{"message":{"content":"b"}}]}"#;
 const ASSEMBLED: &str = r#"{"choices":[{"message":{"content":"answer"}}]}"#;
 
 fn http_error_fields() -> IndexMap<String, Box<RawValue>> {
@@ -114,7 +116,7 @@ fn a_generic_frame_logs_the_error() {
     assert!(object_of(body).get("action").is_none());
     let written = logs.finish();
     assert!(written.contains(
-        "PANW Prisma AIRS streaming error: the streamed response could not be assembled or rebuilt"
+        "PANW Prisma AIRS streaming error: the streamed response could not be reassembled: the streamed response could not be assembled or rebuilt"
     ));
 }
 
@@ -161,7 +163,7 @@ async fn a_blocked_raw_stream_yields_a_frame() {
 #[tokio::test]
 async fn a_masking_failure_yields_the_generic_frame() {
     let logs = LogCapture::start("frame-masking", tracing::Level::INFO);
-    let masked = "x".repeat(1024 * 1024 + 1);
+    let masked = "x".repeat(600_000);
     let body = format!(
         r#"{{"action":"allow","category":"benign","response_masked_data":{{"data":"{masked}"}}}}"#
     );
@@ -169,7 +171,7 @@ async fn a_masking_failure_yields_the_generic_frame() {
     let guardrail = support::blocking(&server.base);
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
     let chunks = vec![StreamChunk::Model(support::json(r#"{"id":"chunk-1"}"#))];
-    let fake = FakeAssembler::new(Some(ASSEMBLED));
+    let fake = FakeAssembler::new(Some(TWO_ANSWERS));
     let items = support::run_streaming(&guardrail, &mut request_data, chunks, &fake).await;
     assert_eq!(items.len(), 1);
     let frame = support::frame_json(&items[0]);

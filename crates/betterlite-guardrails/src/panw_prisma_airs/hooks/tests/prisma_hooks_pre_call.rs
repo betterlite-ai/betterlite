@@ -171,9 +171,12 @@ async fn allow_with_masked_text_rewrites_the_last_user_message() {
         .await
         .expect("allowed");
     let messages = array_of(request_data.get("messages").expect("messages"));
-    assert_eq!(text_of(field(&messages[1], "name")), "first");
-    assert_eq!(text_of(field(&messages[1], "content")), "one");
-    assert_eq!(text_of(field(&messages[2], "content")), "MASKED");
+    let [_, first, last] = messages else {
+        panic!("three messages");
+    };
+    assert_eq!(text_of(field(first, "name")), "first");
+    assert_eq!(text_of(field(first, "content")), "one");
+    assert_eq!(text_of(field(last, "content")), "MASKED");
     assert_eq!(names_in(&request_data, APPLIED), vec!["panw".to_owned()]);
     let record = records(&request_data).first().expect("record");
     assert_eq!(text_of(field(record, "guardrail_status")), "success");
@@ -190,8 +193,9 @@ async fn allow_with_masked_text_but_no_eligible_message_fails_closed() {
     )
     .await;
     let guardrail = support::blocking(&server.base);
-    let mut request_data =
-        data(r#"{"litellm_call_id":"call-1","messages":[{"role":"system","content":"sys"}]}"#);
+    let mut request_data = data(
+        r#"{"litellm_call_id":"call-1","messages":[{"role":"system","content":"sys"}],"prompt":"hi"}"#,
+    );
     let selection = FakeSelection {
         events: vec![GuardrailEventHooks::PreCall],
     };

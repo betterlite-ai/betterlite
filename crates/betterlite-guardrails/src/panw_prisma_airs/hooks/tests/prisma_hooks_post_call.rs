@@ -17,6 +17,8 @@ use crate::prisma_airs_masking::MaskContent;
 
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
 const BLOCK: &str = r#"{"action":"block","category":"harmful","scan_id":"scan-2"}"#;
+const TWO_ANSWERS: &str =
+    r#"{"choices":[{"message":{"content":"a"}},{"message":{"content":"b"}}]}"#;
 const ANSWER: &str = r#"{"choices":[{"message":{"content":"answer"}}]}"#;
 const RICH: &str = r#"{"choices":[{"message":{"content":"a","tool_calls":[{"function":{"arguments":"{\"x\":1}"}}],"function_call":{"arguments":"orig"}}},{"message":{"content":[{"type":"text","text":"b"},5,{"type":"image_url","image_url":{"url":"u"}}]}}]}"#;
 
@@ -156,7 +158,7 @@ async fn allow_with_masked_text_rewrites_call_arguments() {
     let function_call = first.function_call.as_ref().expect("function call");
     assert_eq!(function_call.arguments.as_deref(), Some("MASKED"));
     let written = logs.finish();
-    assert!(written.contains("PANW PRisma AIRS: Response allowed with masking (Category: benign)"));
+    assert!(written.contains("PANW Prisma AIRS: Response allowed with masking (Category: benign)"));
 }
 
 #[tokio::test]
@@ -430,14 +432,14 @@ async fn transient_error_with_fallback_block_returns_a_500() {
 #[tokio::test]
 async fn an_oversized_mask_becomes_the_catch_all_500() {
     let logs = LogCapture::start("post-oversized", tracing::Level::INFO);
-    let masked = "x".repeat(1024 * 1024 + 1);
+    let masked = "x".repeat(600_000);
     let body = format!(
         r#"{{"action":"allow","category":"benign","response_masked_data":{{"data":"{masked}"}}}}"#
     );
     let server = support::serve(StatusCode::OK, &body).await;
     let guardrail = support::blocking(&server.base);
     let mut request_data = data(r#"{"litellm_call_id":"call-1"}"#);
-    let mut model_response = response(ANSWER);
+    let mut model_response = response(TWO_ANSWERS);
     let selection = FakeSelection {
         events: vec![GuardrailEventHooks::PostCall],
     };

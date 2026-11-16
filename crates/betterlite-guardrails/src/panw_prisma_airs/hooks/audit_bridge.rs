@@ -90,8 +90,7 @@ fn append_information(data: &mut Data, guardrail_name: &str, information: &Guard
         duration: information.duration.as_secs_f64(),
         masked_entity_count: None,
     };
-    let encoded = serde_json::to_value(&record)
-        .and_then(|value| serde_json::from_value::<GuardrailValue>(value));
+    let encoded = serde_json::to_value(&record).and_then(serde_json::from_value::<GuardrailValue>);
     match encoded {
         Ok(value) => append_unique(data, value),
         Err(source) => {
@@ -159,8 +158,6 @@ fn verdict_value(summary: &VerdictSummary) -> GuardrailValue {
 }
 
 fn seconds(time: SystemTime) -> f64 {
-    match time.duration_since(SystemTime::UNIX_EPOCH) {
-        Ok(elapsed) => elapsed.as_secs_f64(),
-        Err(_) => 0.0,
-    }
+    time.duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0.0, |elapsed| elapsed.as_secs_f64())
 }

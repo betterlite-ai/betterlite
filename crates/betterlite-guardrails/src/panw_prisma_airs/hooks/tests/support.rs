@@ -1,9 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::env;
 use std::fs;
 use std::future::IntoFuture as _;
 use std::io;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::process;
+use std::str::from_utf8;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, SystemTime};
 
 use axum::Router;
@@ -20,7 +24,7 @@ use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinSet;
-use tracing::subscriber::DefaultGuard;
+use tracing::subscriber::{DefaultGuard, set_default};
 use uuid::Uuid;
 
 use crate::guardrail_message_scope::StreamItem;
@@ -186,24 +190,24 @@ pub(super) fn response(source: &str) -> Response {
 }
 
 pub(super) fn object_of(value: &GuardrailValue) -> &BTreeMap<String, GuardrailValue> {
-    match value {
-        GuardrailValue::Object(fields) => fields,
-        _ => panic!("not an object"),
-    }
+    let GuardrailValue::Object(fields) = value else {
+        panic!("not an object");
+    };
+    fields
 }
 
 pub(super) fn array_of(value: &GuardrailValue) -> &[GuardrailValue] {
-    match value {
-        GuardrailValue::Array(items) => items,
-        _ => panic!("not an array"),
-    }
+    let GuardrailValue::Array(items) = value else {
+        panic!("not an array");
+    };
+    items
 }
 
 pub(super) fn text_of(value: &GuardrailValue) -> &str {
-    match value {
-        GuardrailValue::Text(text) => text,
-        _ => panic!("not text"),
-    }
+    let GuardrailValue::Text(text) = value else {
+        panic!("not text");
+    };
+    text
 }
 
 pub(super) fn field<'value>(value: &'value GuardrailValue, key: &str) -> &'value GuardrailValue {
@@ -284,9 +288,9 @@ pub(super) fn frame_json(item: &StreamItem) -> GuardrailValue {
     let StreamItem::Bytes(bytes) = item else {
         panic!("frame is not bytes");
     };
-    let text = std::str::from_utf8(bytes).expect("frame utf8");
-    let payload = text.strip_prefix("data: ").expect("sse prefix");
-    let payload = payload.strip_suffix("\n\n").expect("sse suffix");
+    let text = from_utf8(bytes).expect("frame utf8");
+    let prefixed = text.strip_prefix("data: ").expect("sse prefix");
+    let payload = prefixed.strip_suffix("\n\n").expect("sse suffix");
     serde_json::from_str(payload).expect("frame json")
 }
 
@@ -343,7 +347,7 @@ pub(super) async fn run_streaming(
     guardrail: &PanwPrismaAirs,
     data: &mut Data,
     chunks: Vec<StreamChunk>,
-    assembler: &dyn StreamAssembler,
+    assembler: &(dyn StreamAssembler + Sync),
 ) -> Vec<StreamItem> {
     let selection = FakeSelection {
         events: vec![GuardrailEventHooks::PostCall],
@@ -391,9 +395,9 @@ pub(super) struct LogCapture {
 
 impl LogCapture {
     pub(super) fn start(name: &str, level: tracing::Level) -> Self {
-        let path = std::env::temp_dir().join(format!(
+        let path = env::temp_dir().join(format!(
             "betterlite-panw-hooks-{name}-{}.log",
-            std::process::id()
+            process::id()
         ));
         let writer = Arc::new(fs::File::create(&path).expect("log file"));
         let subscriber = tracing_subscriber::fmt()
@@ -401,7 +405,7 @@ impl LogCapture {
             .with_max_level(level)
             .with_writer(writer)
             .finish();
-        let guard = tracing::subscriber::set_default(subscriber);
+        let guard = set_default(subscriber);
         Self { path, guard }
     }
 
@@ -416,39 +420,38 @@ impl LogCapture {
 // Stands in for stream_chunk_builder and MockResponseIterator until U2 wires them in.
 pub(super) struct FakeAssembler {
     pub(super) assembled: Option<String>,
-    assembled_chunks: Mutex<usize>,
-    reassembled: Mutex<usize>,
+    assembled_chunks: AtomicUsize,
+    reassembled: AtomicUsize,
 }
 
 impl FakeAssembler {
     pub(super) fn new(assembled: Option<&str>) -> Self {
         Self {
             assembled: assembled.map(str::to_owned),
-            assembled_chunks: Mutex::new(0),
-            reassembled: Mutex::new(0),
+            assembled_chunks: AtomicUsize::new(0),
+            reassembled: AtomicUsize::new(0),
         }
     }
 
     pub(super) fn assembled_chunk_count(&self) -> usize {
-        *self.assembled_chunks.lock().expect("lock")
+        self.assembled_chunks.load(Ordering::SeqCst)
     }
 
     pub(super) fn reassembled_count(&self) -> usize {
-        *self.reassembled.lock().expect("lock")
+        self.reassembled.load(Ordering::SeqCst)
     }
 }
 
 impl StreamAssembler for FakeAssembler {
     fn assemble(&self, chunks: &[GuardrailValue]) -> Result<Option<Response>, StreamAssemblyError> {
-        *self.assembled_chunks.lock().expect("lock") = chunks.len();
-        match self.assembled.as_deref() {
-            Some(source) => Ok(Some(response(source))),
-            None => Ok(None),
-        }
+        self.assembled_chunks.store(chunks.len(), Ordering::SeqCst);
+        self.assembled
+            .as_deref()
+            .map_or(Ok(None), |source| Ok(Some(response(source))))
     }
 
     fn reassemble(&self, response: &Response) -> Result<Vec<StreamChunk>, StreamAssemblyError> {
-        *self.reassembled.lock().expect("lock") += 1;
+        self.reassembled.fetch_add(1, Ordering::SeqCst);
         let mut rebuilt = Vec::new();
         for choice in response.choices.iter().flatten() {
             let Some(message) = choice.message.as_ref() else {

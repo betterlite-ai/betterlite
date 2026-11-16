@@ -12,11 +12,12 @@ use crate::panw_prisma_airs::verdict::{Action, Failure};
 use crate::prisma_airs_masking::{MaskContent, MaskedResponseMessage};
 
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
-const BLOCK: &str = r#"{"action":"block","category":"toxic","scan_id":"scan-2"}"#;
 const MASKED: &str =
     r#"{"action":"allow","category":"benign","response_masked_data":{"data":"MASKED"}}"#;
 const BLOCK_MASKED: &str =
     r#"{"action":"block","category":"toxic","response_masked_data":{"data":"MASKED"}}"#;
+const TWO_ANSWERS: &str =
+    r#"{"choices":[{"message":{"content":"a"}},{"message":{"content":"b"}}]}"#;
 const ANSWER: &str = r#"{"choices":[{"message":{"content":"answer"}}]}"#;
 
 fn content_text(message: &MaskedResponseMessage) -> String {
@@ -92,16 +93,14 @@ async fn a_blocked_response_with_a_mask_but_no_flag_errors() {
     let error = scan_streaming_response(&guardrail, &request_data, &mut model_response)
         .await
         .expect_err("blocked");
-    match error {
-        StreamError::Http(http) => {
-            assert_eq!(http.status, 400);
-            assert_eq!(
-                http.detail.error.code,
-                ErrorCode::PanwPrismaAirsResponseBlocked
-            );
-        }
-        other => panic!("unexpected {other:?}"),
-    }
+    let StreamError::Http(http) = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(http.status, 400);
+    assert_eq!(
+        http.detail.error.code,
+        ErrorCode::PanwPrismaAirsResponseBlocked
+    );
     let choices = model_response.choices.as_ref().expect("choices");
     let message = choices
         .first()
@@ -136,7 +135,10 @@ async fn a_blocked_response_with_a_mask_and_the_flag_is_masked() {
         .expect("message");
     assert_eq!(content_text(message), "MASKED");
     let written = logs.finish();
-    assert!(written.contains("Response blocked but masked instead (mask_response_content=True)"));
+    assert!(
+        written
+            .contains("Streaming response blocked but masked instead (mask_response_content=True)")
+    );
 }
 
 #[tokio::test]
@@ -228,14 +230,14 @@ async fn tool_call_arguments_are_scanned() {
 
 #[tokio::test]
 async fn an_oversized_mask_errors() {
-    let masked = "x".repeat(1024 * 1024 + 1);
+    let masked = "x".repeat(600_000);
     let body = format!(
         r#"{{"action":"allow","category":"benign","response_masked_data":{{"data":"{masked}"}}}}"#
     );
     let server = support::serve(StatusCode::OK, &body).await;
     let guardrail = guardrail(settings(&server.base, NO_MASKING, FallbackAction::Block));
     let request_data = data(r#"{"litellm_call_id":"call-1"}"#);
-    let mut model_response = response(ANSWER);
+    let mut model_response = response(TWO_ANSWERS);
     let error = scan_streaming_response(&guardrail, &request_data, &mut model_response)
         .await
         .expect_err("oversized");

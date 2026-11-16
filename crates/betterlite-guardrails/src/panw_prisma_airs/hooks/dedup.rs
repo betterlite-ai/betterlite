@@ -42,7 +42,6 @@ pub fn check_and_mark_scanned(
     let key = format!("_panw_{}_scanned_{call_id}", scan_type.label());
     match data.get(LITELLM_METADATA) {
         Some(GuardrailValue::Object(bucket)) => match bucket.get(&key) {
-            None | Some(GuardrailValue::Null) => {}
             Some(GuardrailValue::Boolean(true)) => {
                 tracing::debug!(
                     "PANW Prisma AIRS: Skipping duplicate {}-call scan",
@@ -50,16 +49,15 @@ pub fn check_and_mark_scanned(
                 );
                 return Ok(true);
             }
-            Some(GuardrailValue::Boolean(false)) => {}
+            None | Some(GuardrailValue::Null | GuardrailValue::Boolean(false)) => {}
             Some(_) => return Err(HookDataError::MarkerNotBoolean { key }),
         },
-        Some(GuardrailValue::Null) => {}
+        None | Some(GuardrailValue::Null) => {}
         Some(_) => {
             return Err(HookDataError::NotObject {
                 field: LITELLM_METADATA,
             });
         }
-        None => {}
     }
     let mut bucket = match data.remove(LITELLM_METADATA) {
         Some(GuardrailValue::Object(fields)) => fields,

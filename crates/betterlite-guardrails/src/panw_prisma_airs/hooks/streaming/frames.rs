@@ -51,7 +51,9 @@ struct GenericFrameBody<'frame> {
 pub fn error_item(guardrail_name: &str, error: StreamError) -> StreamItem {
     match error {
         StreamError::Http(http) => http_item(&http),
-        other => generic_item(guardrail_name, &other),
+        other @ (StreamError::Data { .. }
+        | StreamError::Assembly { .. }
+        | StreamError::Masking(_)) => generic_item(guardrail_name, &other),
     }
 }
 

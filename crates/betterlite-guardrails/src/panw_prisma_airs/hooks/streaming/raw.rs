@@ -50,7 +50,13 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
 
 // One SSE line as Python reads it: invalid UTF-8 becomes U+FFFD, str.strip trims it, and only "data: " lines count.
 fn data_payload(raw_line: &[u8]) -> Option<String> {
-    let line = String::from_utf8_lossy(raw_line);
+    let mut line = String::with_capacity(raw_line.len());
+    for chunk in raw_line.utf8_chunks() {
+        line.push_str(chunk.valid());
+        if !chunk.invalid().is_empty() {
+            line.push(char::REPLACEMENT_CHARACTER);
+        }
+    }
     let payload = line
         .trim_matches(is_strip_whitespace)
         .strip_prefix("data: ")?;
@@ -89,8 +95,8 @@ fn push_chat_delta_text(event: &BTreeMap<String, GuardrailValue>, parts: &mut Ve
     let Some(GuardrailValue::Array(choices)) = event.get("choices") else {
         return;
     };
-    for choice in choices {
-        let GuardrailValue::Object(choice) = choice else {
+    for item in choices {
+        let GuardrailValue::Object(choice) = item else {
             continue;
         };
         let Some(GuardrailValue::Object(delta)) = choice.get("delta") else {

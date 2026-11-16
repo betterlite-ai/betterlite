@@ -1,3 +1,5 @@
+use std::error::Error as StdError;
+
 use indexmap::IndexMap;
 use thiserror::Error;
 
@@ -46,7 +48,7 @@ pub enum HookDataError {
 // LiteLLM's catch-all except block: a scan that raises becomes a 500 with the request or response wording.
 #[must_use]
 pub fn internal(
-    error: &dyn std::error::Error,
+    error: &dyn StdError,
     direction: Direction,
     guardrail: &PanwPrismaAirs,
 ) -> GuardrailHttpError {

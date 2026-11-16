@@ -244,16 +244,14 @@ async fn block_returns_the_400_without_recording_a_scan() {
     )
     .await
     .expect_err("blocked");
-    match error {
-        StreamError::Http(http) => {
-            assert_eq!(http.status, 400);
-            assert_eq!(
-                http.detail.error.code,
-                ErrorCode::PanwPrismaAirsResponseBlocked
-            );
-        }
-        other => panic!("unexpected {other:?}"),
-    }
+    let StreamError::Http(http) = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(http.status, 400);
+    assert_eq!(
+        http.detail.error.code,
+        ErrorCode::PanwPrismaAirsResponseBlocked
+    );
     assert!(audit.information.is_empty());
     assert!(audit.applied_guardrails.is_empty());
     assert!(audit.scan_ids.is_empty());
@@ -279,10 +277,10 @@ async fn a_mask_with_the_response_flag_warns_and_blocks() {
     )
     .await
     .expect_err("blocked");
-    match error {
-        StreamError::Http(http) => assert_eq!(http.status, 400),
-        other => panic!("unexpected {other:?}"),
-    }
+    let StreamError::Http(http) = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(http.status, 400);
     let written = logs.finish();
     assert!(written.contains(MASK_WARNING));
 }
@@ -350,13 +348,11 @@ async fn transient_error_with_fallback_block_returns_a_500() {
     )
     .await
     .expect_err("blocked");
-    match error {
-        StreamError::Http(http) => {
-            assert_eq!(http.status, 500);
-            assert_eq!(http.detail.error.code, ErrorCode::PanwPrismaAirsScanFailed);
-        }
-        other => panic!("unexpected {other:?}"),
-    }
+    let StreamError::Http(http) = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert_eq!(http.status, 500);
+    assert_eq!(http.detail.error.code, ErrorCode::PanwPrismaAirsScanFailed);
 }
 
 #[tokio::test]
@@ -374,13 +370,13 @@ async fn unreadable_metadata_returns_a_data_error() {
     )
     .await
     .expect_err("metadata");
-    match error {
-        StreamError::Data { source } => assert!(
-            source
-                .to_string()
-                .contains("the request metadata could not be read")
-        ),
-        other => panic!("unexpected {other:?}"),
-    }
+    let StreamError::Data { source } = &error else {
+        panic!("unexpected {error:?}");
+    };
+    assert!(
+        source
+            .to_string()
+            .contains("the request metadata could not be read")
+    );
     assert!(server.body_texts().await.is_empty());
 }

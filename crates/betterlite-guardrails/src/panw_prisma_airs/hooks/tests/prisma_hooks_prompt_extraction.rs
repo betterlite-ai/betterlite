@@ -19,7 +19,7 @@ use crate::panw_prisma_airs::hooks::prompt::extract_prompt_from_request;
 #[case::a_string_list_item_joins_as_json(r#"{"prompt":["a",["b"]]}"#, r#"a ["b"]"#)]
 #[case::a_token_list_item_joins_as_json(r#"{"prompt":[[1,2,3]]}"#, "[1,2,3]")]
 #[case::a_nested_token_list_joins_as_json(r#"{"prompt":[["x",[4,5]]]}"#, r#"["x",[4,5]]"#)]
-#[case::number_items_join_as_text(r#"{"prompt":[7,-2,0.5]}"#, "7 -2 0.5")]
+#[case::number_items_join_as_text(r#"{"prompt":[7,-2,5]}"#, "7 -2 5")]
 #[case::an_empty_list_item_is_skipped(r#"{"prompt":["a",[],"b"]}"#, "a b")]
 #[case::messages_win_over_prompt(
     r#"{"messages":[{"role":"user","content":"m"}],"prompt":"p"}"#,

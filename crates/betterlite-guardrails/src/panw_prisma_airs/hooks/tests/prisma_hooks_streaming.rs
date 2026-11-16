@@ -58,7 +58,7 @@ async fn disabled_passes_the_chunks_through() {
     assert_eq!(items, expected);
     assert_eq!(fake.assembled_chunk_count(), 0);
     assert!(server.body_texts().await.is_empty());
-    assert!(request_data.get("litellm_metadata").is_none());
+    assert!(!request_data.contains_key("litellm_metadata"));
 }
 
 #[tokio::test]
