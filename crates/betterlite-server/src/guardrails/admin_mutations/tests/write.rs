@@ -310,6 +310,37 @@ async fn replace_rejects_a_configuration_error_and_restores_the_row() {
 }
 
 #[tokio::test]
+async fn replace_keeps_the_row_when_the_enterprise_package_is_missing() {
+    let (captured, _guard) = capture();
+    let harness = harness();
+    seed_old_guardrail(&harness);
+    let payload = replace_body(
+        "new-name",
+        r#"{"guardrail":"hide-secrets","mode":"pre_call"}"#,
+    );
+    let (status, _body) = send(
+        harness.router,
+        request(
+            "PUT",
+            "/guardrails/g1",
+            Some(admin()),
+            Some(payload.as_str()),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        harness.guardrails.row("g1").unwrap().guardrail_name,
+        "new-name"
+    );
+    assert_eq!(held_count(&harness.runtime).await, 0);
+    assert!(
+        logged(&captured)
+            .contains("Immediate sync: Failed to update 'new-name' (ID: g1) in memory")
+    );
+}
+
+#[tokio::test]
 async fn replace_missing_after_update_is_a_500() {
     let harness = harness();
     harness
@@ -537,6 +568,31 @@ async fn patch_rejects_a_configuration_error_and_restores_the_row() {
     let params = stored_params(&harness.guardrails);
     assert_eq!(params.guardrail, "bedrock");
     assert!(held_guardrail(&harness.runtime, "g1").await.is_none());
+}
+
+#[tokio::test]
+async fn patch_keeps_the_row_when_the_enterprise_package_is_missing() {
+    let (captured, _guard) = capture();
+    let harness = harness();
+    seed_old_guardrail(&harness);
+    let (status, _body) = send(
+        harness.router,
+        request(
+            "PATCH",
+            "/guardrails/g1",
+            Some(admin()),
+            Some(r#"{"litellm_params":{"guardrail":"hide-secrets"}}"#),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let params = stored_params(&harness.guardrails);
+    assert_eq!(params.guardrail, "hide-secrets");
+    assert_eq!(held_count(&harness.runtime).await, 0);
+    assert!(
+        logged(&captured)
+            .contains("Immediate sync: Failed to update 'old-name' (ID: g1) in memory")
+    );
 }
 
 #[tokio::test]
