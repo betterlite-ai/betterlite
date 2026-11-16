@@ -31,7 +31,22 @@ from openai_video_edits import (
 )
 from openai_video_edits.fixtures import BytesFixture
 from openai_videos import CONFIG as VIDEO_CONFIG, create_ops, reply_ops, request_ops
-from openai_videos.views import BytesReference, Reference
+from openai_videos.views import (
+    BytesReference,
+    ContentReplyCall,
+    ContentRequestCall,
+    CreateCall,
+    CreateReplyCall,
+    DeleteReplyCall,
+    DeleteRequestCall,
+    ListReplyCall,
+    ListRequestCall,
+    Reference,
+    RemixReplyCall,
+    RemixRequestCall,
+    StatusReplyCall,
+    StatusRequestCall,
+)
 from pydantic import Field, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
@@ -169,6 +184,10 @@ MediaCase: TypeAlias = Annotated[
     Field(discriminator="case"),
 ]
 CASES: Final = TypeAdapter(MediaCase)
+
+ImageCases: TypeAlias = ImageGenerationCase | ImageEditCase | ImageVariationCase
+AudioCases: TypeAlias = SpeechCase | TranscriptionCase
+VideoCases: TypeAlias = VideoCreateCase | VideoLifecycleCase | VideoExtendedCase
 
 
 def required(value: str | None, name: str) -> str:
@@ -449,26 +468,22 @@ def video_create(case: VideoCreateCase) -> JsonValue:
         reference = BytesReference(
             kind="bytes", data_base64=base64.b64encode(given.encode()).decode("ascii")
         )
-    created = OBJECT.validate_python(
-        create_ops(
-            {
-                "op": "create",
-                "model": case["model"],
-                "prompt": case["prompt"],
-                "api_base": base,
-                "options": case["options"],
-                "reference": reference,
-            }
-        )
-    )
-    reply = create_ops(
-        {
-            "op": "create_response",
-            "model": case["model"],
-            "provider": case["provider"],
-            "body_base64": base64.b64encode(case["reply"].encode()).decode("ascii"),
-        }
-    )
+    create_call: CreateCall = {
+        "op": "create",
+        "model": case["model"],
+        "prompt": case["prompt"],
+        "api_base": base,
+        "options": case["options"],
+        "reference": reference,
+    }
+    created = OBJECT.validate_python(create_ops(create_call))
+    create_reply: CreateReplyCall = {
+        "op": "create_response",
+        "model": case["model"],
+        "provider": case["provider"],
+        "body_base64": base64.b64encode(case["reply"].encode()).decode("ascii"),
+    }
+    reply = create_ops(create_reply)
     return {
         "url": created["api_base"],
         "body": created["data"],
@@ -487,80 +502,74 @@ def video_lifecycle(case: VideoLifecycleCase) -> JsonValue:
     reply: JsonValue = None
     encoded = base64.b64encode(case["reply"].encode()).decode("ascii")
     if op == "list":
-        sent = OBJECT.validate_python(
-            request_ops(
-                {
-                    "op": "list_request",
-                    "api_base": base,
-                    "after": case["after"],
-                    "limit": case["limit"],
-                    "order": case["order"],
-                }
-            )
-        )
+        list_call: ListRequestCall = {
+            "op": "list_request",
+            "api_base": base,
+            "after": case["after"],
+            "limit": case["limit"],
+            "order": case["order"],
+        }
+        sent = OBJECT.validate_python(request_ops(list_call))
         params = sent["params"]
-        reply = reply_ops(
-            {"op": "list_response", "provider": case["provider"], "body_base64": encoded}
-        )
+        list_reply: ListReplyCall = {
+            "op": "list_response",
+            "provider": case["provider"],
+            "body_base64": encoded,
+        }
+        reply = reply_ops(list_reply)
     elif op == "status":
-        sent = OBJECT.validate_python(
-            request_ops(
-                {
-                    "op": "status_request",
-                    "video_id": required(case["video_id"], "video_id"),
-                    "api_base": base,
-                }
-            )
-        )
-        reply = reply_ops(
-            {"op": "status_response", "provider": case["provider"], "body_base64": encoded}
-        )
+        status_call: StatusRequestCall = {
+            "op": "status_request",
+            "video_id": required(case["video_id"], "video_id"),
+            "api_base": base,
+        }
+        sent = OBJECT.validate_python(request_ops(status_call))
+        status_reply: StatusReplyCall = {
+            "op": "status_response",
+            "provider": case["provider"],
+            "body_base64": encoded,
+        }
+        reply = reply_ops(status_reply)
     elif op == "delete":
-        sent = OBJECT.validate_python(
-            request_ops(
-                {
-                    "op": "delete_request",
-                    "video_id": required(case["video_id"], "video_id"),
-                    "api_base": base,
-                }
-            )
-        )
+        delete_call: DeleteRequestCall = {
+            "op": "delete_request",
+            "video_id": required(case["video_id"], "video_id"),
+            "api_base": base,
+        }
+        sent = OBJECT.validate_python(request_ops(delete_call))
         method = "DELETE"
-        reply = reply_ops({"op": "delete_response", "body_base64": encoded})
+        delete_reply: DeleteReplyCall = {"op": "delete_response", "body_base64": encoded}
+        reply = reply_ops(delete_reply)
     elif op == "content":
-        sent = OBJECT.validate_python(
-            request_ops(
-                {
-                    "op": "content_request",
-                    "video_id": required(case["video_id"], "video_id"),
-                    "api_base": base,
-                    "variant": case["variant"],
-                }
-            )
-        )
-        content = OBJECT.validate_python(
-            reply_ops({"op": "content_response", "body_base64": encoded})
-        )
+        content_call: ContentRequestCall = {
+            "op": "content_request",
+            "video_id": required(case["video_id"], "video_id"),
+            "api_base": base,
+            "variant": case["variant"],
+        }
+        sent = OBJECT.validate_python(request_ops(content_call))
+        content_reply: ContentReplyCall = {"op": "content_response", "body_base64": encoded}
+        content = OBJECT.validate_python(reply_ops(content_reply))
         content_body: dict[str, JsonValue] = {
             "body": base64.b64decode(TEXT.validate_python(content["body_base64"])).decode()
         }
         reply = content_body
     elif op == "remix":
-        sent = OBJECT.validate_python(
-            request_ops(
-                {
-                    "op": "remix_request",
-                    "video_id": required(case["video_id"], "video_id"),
-                    "prompt": required(case["prompt"], "prompt"),
-                    "api_base": base,
-                }
-            )
-        )
+        remix_call: RemixRequestCall = {
+            "op": "remix_request",
+            "video_id": required(case["video_id"], "video_id"),
+            "prompt": required(case["prompt"], "prompt"),
+            "api_base": base,
+        }
+        sent = OBJECT.validate_python(request_ops(remix_call))
         method = "POST"
         body = sent["params"]
-        reply = reply_ops(
-            {"op": "remix_response", "provider": case["provider"], "body_base64": encoded}
-        )
+        remix_reply: RemixReplyCall = {
+            "op": "remix_response",
+            "provider": case["provider"],
+            "body_base64": encoded,
+        }
+        reply = reply_ops(remix_reply)
     else:
         raise ValueError(f"unknown video op {op}")
     return {
@@ -674,22 +683,40 @@ def video_extended(case: VideoExtendedCase) -> JsonValue:
     }
 
 
+def image_cases(case: ImageCases) -> JsonValue:
+    match case["case"]:
+        case "image_generation":
+            return image_generation(case)
+        case "image_edit":
+            return image_edit(case)
+        case "image_variation":
+            return image_variation(case)
+
+
+def audio_cases(case: AudioCases) -> JsonValue:
+    match case["case"]:
+        case "speech":
+            return speech(case)
+        case "transcription":
+            return transcription(case)
+
+
+def video_cases(case: VideoCases) -> JsonValue:
+    match case["case"]:
+        case "video_create":
+            return video_create(case)
+        case "video_lifecycle":
+            return video_lifecycle(case)
+        case "video_extended_operations":
+            return video_extended(case)
+
+
 def run(input_value: dict[str, JsonValue]) -> JsonValue:
     spec = CASES.validate_python(input_value)
     match spec["case"]:
-        case "image_generation":
-            return image_generation(spec)
-        case "image_edit":
-            return image_edit(spec)
-        case "image_variation":
-            return image_variation(spec)
-        case "speech":
-            return speech(spec)
-        case "transcription":
-            return transcription(spec)
-        case "video_create":
-            return video_create(spec)
-        case "video_lifecycle":
-            return video_lifecycle(spec)
-        case "video_extended_operations":
-            return video_extended(spec)
+        case "image_generation" | "image_edit" | "image_variation":
+            return image_cases(spec)
+        case "speech" | "transcription":
+            return audio_cases(spec)
+        case "video_create" | "video_lifecycle" | "video_extended_operations":
+            return video_cases(spec)
