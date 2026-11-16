@@ -10,3 +10,4 @@ pub mod state;
 pub mod update;
 
 mod tests;
+mod warn_tests;
