@@ -67,6 +67,8 @@ impl StreamCostCalculator for NoCosts {
         Ok(None)
     }
 
+    // Decimal's default is zero, so a mutant that returns the default pair computes this same value.
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_completion_cost(
         &self,
         _model: &str,
