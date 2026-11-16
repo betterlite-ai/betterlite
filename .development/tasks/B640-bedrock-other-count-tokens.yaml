@@ -233,7 +233,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*")"
       && grep -lq 'bedrock_other_count_tokens' tools/oracle/fuzz/corpus/helper_case/bedrock_other_count_tokens*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_count_tokens$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_count_tokens$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-invoke-body-defaults
     why: When messages is a body key, set missing anthropic_version to bedrock-2023-05-31 and max_tokens to 1024;

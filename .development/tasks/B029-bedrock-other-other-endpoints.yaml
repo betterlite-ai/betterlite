@@ -179,7 +179,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_other_endpoints*")"
       && grep -lq 'bedrock_other_other_endpoints' tools/oracle/fuzz/corpus/helper_case/bedrock_other_other_endpoints*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_other_endpoints$/)'
+      && cargo nextest run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_other_endpoints$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-bedrock-image-composition
     why: Install B679 generation and edit composition alongside the non-image operations, and exercise one Canvas
