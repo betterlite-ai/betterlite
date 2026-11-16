@@ -1,0 +1,17 @@
+task: B6072
+deviations:
+  - what: The model list is built as a request and a decoder, and the caller sends it; a non-200 status is a typed error carrying the status and the body, not a bare ValueError.
+    why: A provider leaf makes no HTTP call, and the compatibility rules ask for typed errors; the status mapping follows B2454.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L790-L818
+  - what: A malformed JSON reply is a FireworksError that keeps the raw text, the status and the headers.
+    why: Same as LiteLLM's FireworksAIException; only the transport call moved to the caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L733-L740
+  - what: A models response body over 1 MiB is rejected with a typed error before it is parsed. LiteLLM reads the body first and has no limit.
+    why: Rule bounded-inputs caps every inbound body that arrives from outside.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L806-L818
+  - what: A reply body with no model, or a null one, answers model "" where LiteLLM keeps None. A body whose model is the empty string keeps the prefix in both.
+    why: docs/compatibility.md requires the declared type at the boundary and betterlite's chat response types model as a string, so a client reads an empty model instead of null.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L747-L750
+  - what: A reply body with no usage block, or a null one, answers zeroed token counts. LiteLLM leaves usage unset, which reaches the client as null.
+    why: The shared chat response type B504 built carries usage as a required struct that defaults to zero, and docs/compatibility.md takes an absent optional value as its default.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2227-L2253
