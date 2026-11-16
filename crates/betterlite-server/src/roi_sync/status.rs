@@ -1,7 +1,10 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_roi::records::{ROIEstimate, ROIEstimateStatus, ROISyncPhase, ROISyncStatus};
 use chrono::{DateTime, Utc};
+use rust_decimal::Decimal;
+use rust_decimal::RoundingStrategy;
 
 use super::PR_CONCURRENCY;
 use super::ports::SyncClock;
@@ -12,44 +15,6 @@ pub(crate) const REPOSITORIES_STAGE: &str = "Reading configured repositories";
 pub(crate) const ESTIMATES_STAGE: &str = "Estimating new or changed pull requests";
 pub(crate) const CANCELLED_STAGE: &str = "Sync cancelled";
 pub(crate) const FAILED_STAGE: &str = "Sync failed";
-
-// Python's datetime.isoformat: the fraction appears only when the microseconds are not zero
-pub(crate) fn isoformat(time: DateTime<Utc>) -> String {
-    if time.timestamp_subsec_micros() == 0 {
-        time.format("%Y-%m-%dT%H:%M:%S+00:00").to_string()
-    } else {
-        time.format("%Y-%m-%dT%H:%M:%S%.6f+00:00").to_string()
-    }
-}
-
-pub(crate) fn idle_status() -> ROISyncStatus {
-    ROISyncStatus {
-        running: false,
-        phase: ROISyncPhase::Idle,
-        stage: IDLE_STAGE.to_owned(),
-        done: 0,
-        total: 0,
-        estimated: 0,
-        reused: 0,
-        needs_attention: 0,
-        error: None,
-        started_at: None,
-        finished_at: None,
-        next_update: None,
-        elapsed_seconds: 0,
-        remaining_seconds: None,
-    }
-}
-
-pub(crate) fn initial_status(now: DateTime<Utc>) -> ROISyncStatus {
-    ROISyncStatus {
-        running: true,
-        phase: ROISyncPhase::Spend,
-        stage: SPEND_STAGE.to_owned(),
-        started_at: Some(isoformat(now)),
-        ..idle_status()
-    }
-}
 
 pub(crate) fn timed_status(status: ROISyncStatus, now: DateTime<Utc>) -> ROISyncStatus {
     if status.started_at.is_none() {
@@ -88,22 +53,11 @@ fn remaining_seconds(status: &ROISyncStatus, elapsed: i64) -> Option<i64> {
         return None;
     }
     let span = status.total.checked_sub(status.done)?;
-    let numerator = i128::from(elapsed).checked_mul(i128::from(span))?;
-    let rounded = round_half_even(numerator, i128::from(status.done))?;
-    Some(rounded.max(0))
-}
-
-fn round_half_even(numerator: i128, denominator: i128) -> Option<i64> {
-    let quotient = numerator.checked_div(denominator)?;
-    let remainder = numerator.checked_rem(denominator)?;
-    let doubled = remainder.checked_abs()?.checked_mul(2)?;
-    let tie_breaks_up = doubled == denominator && quotient.rem_euclid(2) != 0;
-    let rounded = if doubled > denominator || tie_breaks_up {
-        quotient.checked_add(numerator.signum())?
-    } else {
-        quotient
-    };
-    i64::try_from(rounded).ok()
+    let numerator = Decimal::from(elapsed).checked_mul(Decimal::from(span))?;
+    let estimate = numerator.checked_div(Decimal::from(status.done))?;
+    let rounded = estimate.round_dp_with_strategy(0, RoundingStrategy::MidpointNearestEven);
+    let seconds = i64::try_from(rounded).ok()?;
+    Some(seconds.max(0))
 }
 
 #[derive(Clone)]

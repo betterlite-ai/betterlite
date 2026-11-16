@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::error::Error as StdError;
+use std::sync::Arc;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_roi::records::{ROIEstimateStatus, ROIPullEvidence, ROIPullRecord};
@@ -18,7 +19,7 @@ use crate::roi_github::profile_email::profile_email;
 use crate::roi_github::transport::Transport;
 
 use super::PR_CONCURRENCY;
-use super::capabilities::NoDeclaredCapabilities;
+use super::capabilities::{CapabilityLookup, SessionCapabilities};
 use super::error::RunError;
 use super::status::StatusReporter;
 
@@ -43,6 +44,7 @@ pub(crate) struct PullProcessor<'run, T: Transport, Repository> {
     pub(crate) estimate_context: &'run str,
     pub(crate) previous: &'run BTreeMap<String, ROIPullRecord>,
     pub(crate) status: &'run StatusReporter,
+    pub(crate) capabilities: &'run Arc<dyn CapabilityLookup>,
 }
 
 impl<T, Repository> PullProcessor<'_, T, Repository>
@@ -130,7 +132,9 @@ where
                 });
             }
         };
-        let mut predicates = NoDeclaredCapabilities;
+        let mut predicates = SessionCapabilities {
+            lookup: self.capabilities.as_ref(),
+        };
         let estimate =
             estimate_with_fallback(self.estimator, &pull_evidence, &mut predicates).await;
         let evidence_item = evidence_item(&pull_evidence);

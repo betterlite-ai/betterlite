@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_roi::estimator::cache::cache_context;
 use betterlite_roi::estimator::json::JsonError;
 use betterlite_roi::estimator::models::EstimatorModel;
@@ -19,12 +21,12 @@ use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
 
 use super::PR_CONCURRENCY;
-use super::capabilities::NoDeclaredCapabilities;
+use super::capabilities::{CapabilityLookup, SessionCapabilities};
 use super::error::RunError;
 use super::ports::SyncClock;
 use super::process::{EstimatePlan, IndexedPull, PullProcessor};
 use super::report::{ReportParts, build_report};
-use super::status::{StatusChange, StatusReporter, isoformat};
+use super::status::{StatusChange, StatusReporter};
 
 pub(crate) struct RunContext<'run, T: Transport> {
     pub(crate) settings: &'run ROISettings,
@@ -33,6 +35,7 @@ pub(crate) struct RunContext<'run, T: Transport> {
     pub(crate) github: &'run GitHub<T>,
     pub(crate) status: &'run StatusReporter,
     pub(crate) clock: &'run SyncClock,
+    pub(crate) capabilities: &'run Arc<dyn CapabilityLookup>,
 }
 
 pub(crate) struct Execution {
@@ -67,6 +70,7 @@ where
         context.models,
         previous,
         &repositories.queue,
+        context.capabilities,
     )
     .await
     .map_err(RunError::Key)?;
@@ -94,8 +98,11 @@ async fn index_pulls(
     models: Option<&[EstimatorModel]>,
     previous: Option<ROIReport>,
     queue: &[(String, GitHubPullListItem)],
+    capabilities: &Arc<dyn CapabilityLookup>,
 ) -> Result<EstimatePlan, JsonError> {
-    let mut predicates = NoDeclaredCapabilities;
+    let mut predicates = SessionCapabilities {
+        lookup: capabilities.as_ref(),
+    };
     let estimate_context = cache_context(settings, models, &mut predicates).await?;
     let previous_pulls = previous.map_or_else(BTreeMap::new, |report| {
         let mut map = BTreeMap::new();
@@ -145,6 +152,7 @@ where
         estimate_context: &plan.estimate_context,
         previous: &plan.previous,
         status: context.status,
+        capabilities: context.capabilities,
     };
     let workers =
         join_all((0..PR_CONCURRENCY).map(|offset| processor.worker(offset, &plan.queue))).await;

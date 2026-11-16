@@ -1,24 +1,24 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
+use betterlite_db::search_tools::convert::isoformat;
 use betterlite_roi::estimator::models::EstimatorModel;
-use betterlite_roi::records::ROISyncStatus;
+use betterlite_roi::records::{ROISyncPhase, ROISyncStatus};
 use betterlite_roi::settings::ROISettings;
-use chrono::Utc;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
-use uuid::Uuid;
 
 use crate::roi_cache::store::ReportRepository;
 use crate::roi_estimator::CompletionCaller;
 use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
 
+use super::capabilities::CapabilityLookup;
 use super::coordinator::SyncCoordinator;
-use super::ports::{GitHubFactory, SyncClock};
+use super::ports::{GitHubFactory, SyncClock, UuidSource};
 use super::run::{RunTask, run as run_task};
-use super::status::{StatusChange, StatusReporter, idle_status, initial_status, timed_status};
+use super::status::{IDLE_STAGE, SPEND_STAGE, StatusChange, StatusReporter, timed_status};
 
 pub struct SyncRun<T: Transport, Reader, Repository> {
     pub settings: ROISettings,
@@ -44,24 +44,44 @@ pub struct SyncManager<T: Transport> {
     reporter: StatusReporter,
     slot: Mutex<Option<RunSlot>>,
     start_lock: AsyncMutex<()>,
+    next_id: UuidSource,
+    capabilities: Arc<dyn CapabilityLookup>,
 }
 
 impl<T: Transport + 'static> SyncManager<T> {
     #[must_use]
-    pub fn new(factory: GitHubFactory<T>, clock: Option<SyncClock>) -> Self {
-        let resolved: SyncClock = match clock {
-            Some(provided) => provided,
-            None => Arc::new(Utc::now),
-        };
+    pub fn new(
+        factory: GitHubFactory<T>,
+        clock: SyncClock,
+        next_id: UuidSource,
+        capabilities: Arc<dyn CapabilityLookup>,
+    ) -> Self {
         let reporter = StatusReporter {
-            stored: Arc::new(Mutex::new(idle_status())),
-            clock: resolved,
+            stored: Arc::new(Mutex::new(ROISyncStatus {
+                running: false,
+                phase: ROISyncPhase::Idle,
+                stage: IDLE_STAGE.to_owned(),
+                done: 0,
+                total: 0,
+                estimated: 0,
+                reused: 0,
+                needs_attention: 0,
+                error: None,
+                started_at: None,
+                finished_at: None,
+                next_update: None,
+                elapsed_seconds: 0,
+                remaining_seconds: None,
+            })),
+            clock,
         };
         Self {
             factory,
             reporter,
             slot: Mutex::new(None),
             start_lock: AsyncMutex::new(()),
+            next_id,
+            capabilities,
         }
     }
 
@@ -91,8 +111,24 @@ impl<T: Transport + 'static> SyncManager<T> {
         if !self.clear_previous(run.coordinator.as_ref()).await {
             return false;
         }
-        let owner = Uuid::new_v4().to_string();
-        let initial = initial_status((self.reporter.clock)());
+        let owner = (self.next_id)().to_string();
+        let now = (self.reporter.clock)();
+        let initial = ROISyncStatus {
+            running: true,
+            phase: ROISyncPhase::Spend,
+            stage: SPEND_STAGE.to_owned(),
+            done: 0,
+            total: 0,
+            estimated: 0,
+            reused: 0,
+            needs_attention: 0,
+            error: None,
+            started_at: Some(isoformat(now)),
+            finished_at: None,
+            next_update: None,
+            elapsed_seconds: 0,
+            remaining_seconds: None,
+        };
         let lease = run.coordinator.as_ref();
         let acquired = acquire_lease(lease, &owner, &initial, run.scheduled_interval).await;
         if !acquired {
@@ -181,6 +217,7 @@ impl<T: Transport + 'static> SyncManager<T> {
             owner: owner.clone(),
             status: self.reporter.clone(),
             clock: Arc::clone(&self.reporter.clock),
+            capabilities: Arc::clone(&self.capabilities),
             token: cancel.clone(),
             finished: Arc::clone(&finished),
         };

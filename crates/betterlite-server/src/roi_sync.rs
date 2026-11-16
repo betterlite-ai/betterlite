@@ -1,9 +1,9 @@
+pub mod capabilities;
 pub mod coordinator;
 pub mod manager;
 pub mod ports;
 
 mod analysis;
-mod capabilities;
 mod error;
 mod heartbeat;
 mod phases;

@@ -15,6 +15,7 @@ use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
 
 use super::analysis::Analyze;
+use super::capabilities::CapabilityLookup;
 use super::coordinator::SyncCoordinator;
 use super::error::RunError;
 use super::heartbeat::Heartbeat;
@@ -33,11 +34,12 @@ pub(crate) struct RunTask<T: Transport, Reader, Repository> {
     pub(crate) owner: String,
     pub(crate) status: StatusReporter,
     pub(crate) clock: SyncClock,
+    pub(crate) capabilities: Arc<dyn CapabilityLookup>,
     pub(crate) token: CancellationToken,
     pub(crate) finished: Arc<AtomicBool>,
 }
 
-pub(crate) async fn run<T, Reader, Repository>(task: RunTask<T, Reader, Repository>)
+pub(crate) async fn run<T, Reader, Repository>(mut task: RunTask<T, Reader, Repository>)
 where
     T: Transport,
     Reader: SpendReader + Send + Sync,
@@ -79,6 +81,7 @@ where
         repository: &task.repository,
         status: &task.status,
         clock: &task.clock,
+        capabilities: &task.capabilities,
         coordinator: task.coordinator.as_ref(),
         owner: &task.owner,
         factory: &task.factory,

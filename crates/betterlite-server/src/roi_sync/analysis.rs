@@ -14,6 +14,7 @@ use crate::roi_github::client::GitHub;
 use crate::roi_github::transport::Transport;
 use crate::roi_spend::SpendReader;
 
+use super::capabilities::CapabilityLookup;
 use super::coordinator::SyncCoordinator;
 use super::error::RunError;
 use super::phases::{Execution, RunContext, execute};
@@ -29,6 +30,7 @@ pub(crate) struct Analyze<'run, T: Transport, Reader, Repository> {
     pub(crate) repository: &'run Repository,
     pub(crate) status: &'run StatusReporter,
     pub(crate) clock: &'run SyncClock,
+    pub(crate) capabilities: &'run Arc<dyn CapabilityLookup>,
     pub(crate) coordinator: Option<&'run Arc<dyn SyncCoordinator>>,
     pub(crate) owner: &'run str,
     pub(crate) factory: &'run GitHubFactory<T>,
@@ -74,6 +76,7 @@ where
             github,
             status: self.status,
             clock: self.clock,
+            capabilities: self.capabilities,
         };
         execute(&context, self.repository, self.spend_reader).await
     }
