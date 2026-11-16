@@ -1,0 +1,108 @@
+kind: helper
+name: dashscope-family-settings
+call:
+  b8172:
+    function: family_settings
+    dashscope:
+      base: https://dash-env.test/v1
+      brand_key: null
+      fallback_key: sk-dash-fallback
+      rerank_base: https://dash-rerank-env.test/reranks
+      image_base: https://dash-image-env.test/generation
+    qwencloud:
+      base: https://intl-env.test/v1
+      brand_key: sk-qwen-brand
+      fallback_key: sk-dash-fallback
+      rerank_base: null
+      image_base: null
+    qwen_ai_platform:
+      base: null
+      brand_key: sk-cn-brand
+      fallback_key: null
+      rerank_base: ''
+      image_base: https://cn-image-env.test/generation
+calls:
+  - b8172:
+      function: family_settings
+      api_base: https://proxy.test/compatible-mode/v1
+      api_key: sk-arg
+      dashscope:
+        base: null
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: null
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+  - b8172:
+      function: family_settings
+      dashscope:
+        base: null
+        brand_key: null
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: null
+        brand_key: null
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: null
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+  - b8172:
+      function: family_settings
+      dashscope:
+        base: null
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: null
+        brand_key: sk-qwen
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: sk-cn
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+  - b8172:
+      function: family_settings
+      dashscope:
+        base: https://dash-env.test/v1
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: https://intl-env.test/v1
+        brand_key: sk-qwen
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: sk-cn
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+env: {}
+compare: {ignore: []}

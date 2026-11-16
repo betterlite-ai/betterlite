@@ -1,0 +1,13 @@
+kind: helper
+name: media-relay-logging-fal-route-detection-match
+call:
+  media_relay_logging:
+    deepgram_routes: []
+    fal_routes:
+      - {url_route: "https://queue.fal.run/fal-ai/flux/dev", custom_llm_provider: fal_ai}
+      - {url_route: "https://gateway.example/v1/images", custom_llm_provider: fal_ai}
+      - {url_route: "not a url at all", custom_llm_provider: fal_ai}
+    deepgram_listens: []
+    fal_passthroughs: []
+env: {}
+compare: {ignore: []}

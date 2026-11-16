@@ -1,0 +1,8 @@
+kind: helper
+name: vertex-files-retrieve-metadata
+call:
+  vertex_files:
+    operation: retrieve_reply
+    body: '{"id":"my-bucket/litellm-vertex-files/uploads/rows.jsonl/1700000000000000","name":"litellm-vertex-files/uploads/rows.jsonl","size":"7","timeCreated":"2024-12-04T21:53:12.120184Z","metadata":{"purpose":"vision"}}'
+env: {}
+compare: {ignore: []}

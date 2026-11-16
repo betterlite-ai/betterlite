@@ -1,0 +1,13 @@
+kind: helper
+name: rate-limit-error-map-detail
+call:
+  b3017:
+    rate_limit_error:
+      detail: {error: {message: slow down}}
+      headers: {retry-after: 60, x-ratelimit-reset: '2026-01-01T00:00:00Z'}
+      category: null
+      rate_limit_type: null
+      model: gpt-4o
+      llm_provider: openai
+env: {}
+compare: {ignore: []}

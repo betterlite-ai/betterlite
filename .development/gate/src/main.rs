@@ -161,6 +161,16 @@ enum Command {
         target: String,
     },
     #[command(
+        about = "Print the package that runs each oracle case file, one line per package and file: the group crates that own a helper case's operations, betterlite-oracle for its own groups, or gateway for a case of another kind"
+    )]
+    OracleGroups {
+        #[arg(
+            required = true,
+            help = "Case files or folders, relative to the repository root; a folder takes its YAML files"
+        )]
+        paths: Vec<PathBuf>,
+    },
+    #[command(
         about = "Run shellcheck on every run command of checks.yaml, with .shellcheckrc, or of task files, with the default checks"
     )]
     Shellcheck {
@@ -278,6 +288,10 @@ fn run_command(
         Command::Validate => validate_command(development),
         Command::Exceptions => Ok((exceptions::exceptions(development)?, true)),
         Command::Shellcheck { paths } => shellcheck::shellcheck(&development.root, &paths),
+        Command::OracleGroups { paths } => Ok((
+            builtins::oracle_groups::oracle_groups(&development.root, &paths)?,
+            true,
+        )),
         Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
         Command::Preflight { task } => preflight(development, &task),
         Command::Run {

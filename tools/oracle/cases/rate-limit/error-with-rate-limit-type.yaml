@@ -1,0 +1,13 @@
+kind: helper
+name: rate-limit-error-with-rate-limit-type
+call:
+  b3017:
+    rate_limit_error:
+      detail: {error: tokens per minute exceeded}
+      headers: {retry-after: 5}
+      category: null
+      rate_limit_type: budget
+      model: gpt-4o
+      llm_provider: openai
+env: {}
+compare: {ignore: []}

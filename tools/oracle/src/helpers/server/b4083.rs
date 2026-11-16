@@ -1,11 +1,23 @@
+mod inputs;
+mod load;
+mod record;
+mod support;
+mod validate;
+
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
+use inputs::Input;
 
 pub(crate) struct Op;
 
 impl Helper for Op {
-    type Input = serde_json::Value;
+    type Input = Input;
 
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b4083")
+    fn run(input: &Self::Input) -> HelperResult {
+        match input {
+            Input::ValidateJob(call) => Ok(validate::validate(call)),
+            Input::LoadJobs(call) => load::load(call),
+            Input::RecordAttempt(call) => record::record(call),
+        }
     }
 }
