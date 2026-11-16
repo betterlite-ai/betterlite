@@ -37,12 +37,7 @@ pub struct Fixture {
 impl Fixture {
     #[must_use]
     pub fn new(status: u16, body: &[u8]) -> Self {
-        Self {
-            status,
-            body: body.to_vec(),
-            headers: HeaderMap::new(),
-            seen: Mutex::new(Vec::new()),
-        }
+        Self::with_headers(status, body, HeaderMap::new())
     }
 
     #[must_use]
