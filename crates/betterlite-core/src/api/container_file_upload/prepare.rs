@@ -159,7 +159,7 @@ fn json_value(value: &Json) -> JsonValue {
 }
 
 // Python's `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default is already applied, and a zero picks the request timeout
-fn timeout_seconds(timeout: f64, request_timeout_seconds: f64) -> f64 {
+const fn timeout_seconds(timeout: f64, request_timeout_seconds: f64) -> f64 {
     if timeout == 0.0_f64 {
         return request_timeout_seconds;
     }
