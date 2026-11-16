@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -124,7 +124,7 @@ impl CacheTransport for Scripted {
             deadline: request.deadline,
             protected: false,
         });
-        std::future::ready(reply.answer())
+        ready(reply.answer())
     }
 }
 
@@ -144,7 +144,7 @@ impl ProtectedGet for Scripted {
             deadline,
             protected: true,
         });
-        std::future::ready(
+        ready(
             reply
                 .answer()
                 .map_err(VertexBatchCreateError::from_transport),

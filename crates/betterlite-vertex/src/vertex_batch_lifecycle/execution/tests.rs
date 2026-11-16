@@ -42,10 +42,7 @@ use support::{
 const HOST: &str =
     "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1";
 
-fn base<'request>(
-    api_base: Option<&'request str>,
-    timeout: Option<Duration>,
-) -> BatchLifecycleRequest<'request> {
+fn base(api_base: Option<&str>, timeout: Option<Duration>) -> BatchLifecycleRequest<'_> {
     BatchLifecycleRequest {
         api_base,
         project: Some("proj"),
@@ -564,7 +561,7 @@ async fn caller_cancel_closes_response() {
         execute_batch_cancel(&transport, prepared, &local()),
     )
     .await;
-    assert!(outcome.is_err());
+    outcome.unwrap_err();
     assert!(transport.dropped.load(Ordering::SeqCst));
 }
 
