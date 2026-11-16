@@ -621,6 +621,19 @@ fn default_base_url_is_storage_googleapis() {
     assert!(debug.contains("https://storage.googleapis.com"), "{debug}");
 }
 
+#[test]
+fn mock_environment_is_ignored() {
+    let cache = GcsCache::new(
+        &settings(""),
+        FixedAuth { fail: false },
+        proxied_client(),
+        None,
+    )
+    .unwrap();
+    assert!(!cache.base.is_mock_mode);
+    assert!(!cache.base.client.settings.enabled);
+}
+
 #[tokio::test]
 async fn base_url_trailing_slash_is_trimmed() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
