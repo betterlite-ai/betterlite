@@ -1,0 +1,59 @@
+suite: test gateway config map
+templates:
+  - gateway/configmap.yaml
+values:
+  - ./values/required.yaml
+tests:
+  - it: renders an empty proxy config by default
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-betterlite-gateway-config
+      - equal:
+          path: data["config.yaml"]
+          value: "{}\n"
+
+  - it: renders proxy_config as config.yaml
+    set:
+      gateway.config.proxy_config:
+        general_settings:
+          master_key: os.environ/LITELLM_MASTER_KEY
+        model_list:
+          - model_name: gpt-4o
+            litellm_params:
+              model: openai/gpt-4o
+              api_key: os.environ/OPENAI_API_KEY
+    asserts:
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^general_settings:$"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^  master_key: os.environ/LITELLM_MASTER_KEY$"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^model_list:$"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^- litellm_params:$"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "(?m)^  model_name: gpt-4o$"
+
+  - it: renders nothing when create is false
+    set:
+      gateway.config.create: false
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: renders nothing when the gateway is disabled
+    set:
+      gateway.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0

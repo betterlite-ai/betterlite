@@ -1,0 +1,7 @@
+kind: helper
+name: tool-injection-merge
+call:
+  b3765: {"function": "apply", "config": {"api_key": "test-key", "api_base": "http://compresr.test", "min_chars_to_compress": 5}, "reply": {"status": 200, "body": "{\"data\": {\"compressed_context\": \"short\", \"original_tokens\": 10, \"compressed_tokens\": 4}}"}, "inputs": {"structured_messages": [{"role": "user", "content": "find the answer"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{\"q\": \"x\"}"}}]}, {"role": "tool", "tool_call_id": "c1", "content": "long tool output one"}], "tools": [{"type": "function", "function": {"name": "search", "description": "Search the index.", "parameters": {"type": "object", "properties": {}}}}]}, "headers": null, "caller": {"scope": "hash-a", "call_id": "call-1"}}
+env: {}
+compare:
+  ignore: []
