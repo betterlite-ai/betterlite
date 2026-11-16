@@ -1,0 +1,22 @@
+task: B3212
+deviations:
+  - what: >-
+      A skill row whose file_content holds a character outside the Base64 alphabet and outside ASCII
+      whitespace, such as "aGVs!bG8=", fails with an error instead of decoding.
+    why: >-
+      base64.b64decode runs with validate=false, so LiteLLM silently discards every non-alphabet byte and
+      accepts a corrupt row whenever the remaining characters decode. betterlite strips the ASCII whitespace
+      PostgreSQL's encode(..., 'base64') inserts and rejects anything else, because that whitespace is the only
+      non-alphabet form a working database read produces. The strict rejection is proven by
+      skill_to_typed_conversion_rejects_malformed_base64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L49
+  - what: >-
+      The skill row cache belongs to the StoredSkillReads value the caller injects, so two services over one
+      database do not share cached rows, while LiteLLM keeps one module-level _SKILL_CACHE shared by every caller
+      in the process. Each service instance is still per-skill, not per-caller.
+    why: >-
+      betterlite injects its dependencies and B2226 owns the cache implementation, so the application holds one
+      service per process and that instance reproduces the module-global scope. Proven by
+      cache_serves_every_caller_from_one_per_skill_entry.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L34
+kept_bugs: []
