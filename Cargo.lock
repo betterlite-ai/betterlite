@@ -3396,6 +3396,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-db",
+ "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-rate-limit",
  "betterlite-redis",
