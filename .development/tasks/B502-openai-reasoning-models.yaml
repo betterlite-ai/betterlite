@@ -289,7 +289,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models*")"
       && grep -lq 'openai_reasoning_models' tools/oracle/fuzz/corpus/helper_case/openai_reasoning_models* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_reasoning_models$/)'
+      nextest run --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_reasoning_models$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-gpt5-regular-allowlist
     why: Start from B668 GPT params, add reasoning_effort and verbosity, drop tool_choice when unsupported and always

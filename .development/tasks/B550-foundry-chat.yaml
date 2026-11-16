@@ -248,7 +248,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_chat*")"
       && grep -lq 'foundry_chat' tools/oracle/fuzz/corpus/helper_case/foundry_chat* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_chat$/)' && cargo nextest run
+      -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_chat$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-foundry-chat-auth
     why: Truthy explicit key uses api-key for B549 recognized host or Authorization Bearer otherwise; absent key

@@ -1,0 +1,22 @@
+kind: helper
+name: openai-videos-replies-seed
+call:
+  openai_videos:
+    calls:
+      - op: create_response
+        model: sora-2
+        provider: openai
+        body_base64: eyJpZCI6InZpZC0xIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJjb21wbGV0ZWQiLCJzZWNvbmRzIjoiNCJ9
+      - op: remix_response
+        provider: null
+        body_base64: eyJpZCI6InZpZC0xIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJzZWNvbmRzIjoiYWJjIn0=
+      - op: list_response
+        provider: openai
+        body_base64: eyJvYmplY3QiOiJsaXN0IiwiZGF0YSI6W3siaWQiOiJ2aWQtMSIsIm9iamVjdCI6InZpZGVvIiwic3RhdHVzIjoiY29tcGxldGVkIiwibW9kZWwiOiJzb3JhLTIifV0sImZpcnN0X2lkIjoidmlkLTEiLCJsYXN0X2lkIjoidmlkLTEiLCJoYXNfbW9yZSI6ZmFsc2V9
+      - op: status_response
+        provider: ''
+        body_base64: eyJpZCI6InZpZC0yIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQifQ==
+      - op: delete_response
+        body_base64: eyJpZCI6InZpZC0zIiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJkZWxldGVkIn0=
+env: {}
+compare: {ignore: []}

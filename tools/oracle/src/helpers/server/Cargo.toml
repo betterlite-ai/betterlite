@@ -21,16 +21,19 @@ betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-context = { path = "../../../../../crates/betterlite-context" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-db = { path = "../../../../../crates/betterlite-db" }
+betterlite-error = { path = "../../../../../crates/betterlite-error" }
 betterlite-gateway = { path = "../../../../../crates/betterlite-gateway" }
 betterlite-guardrails = { path = "../../../../../crates/betterlite-guardrails" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
 betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-ocr = { path = "../../../../../crates/betterlite-ocr" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-roi = { path = "../../../../../crates/betterlite-roi" }
+betterlite-routes = { path = "../../../../../crates/betterlite-routes" }
 betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
 betterlite-semantic = { path = "../../../../../crates/betterlite-semantic" }
 betterlite-server = { path = "../../../../../crates/betterlite-server" }
@@ -40,6 +43,7 @@ chrono.workspace = true
 flate2 = "1.1.5"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
+indexmap = "2.14.2"
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 quick-xml.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
