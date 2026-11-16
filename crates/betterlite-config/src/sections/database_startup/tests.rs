@@ -374,7 +374,7 @@ fn bootstrap_inputs_warn_once_and_an_empty_set_warns_nothing() {
         ("LITELLM_MIGRATION_DIR", "/migrations"),
     ];
     let loaded = config("general_settings: {}\n", &pairs);
-    let (_startup, log) = logged(|| StartupSettings::from_config(&loaded));
+    let (_noisy, log) = logged(|| StartupSettings::from_config(&loaded));
     assert_eq!(log.matches("accepted but have no effect").count(), 1);
     assert!(
         log.contains("PRISMA_OFFLINE_MODE, LITELLM_MIGRATION_DIR"),
@@ -382,7 +382,7 @@ fn bootstrap_inputs_warn_once_and_an_empty_set_warns_nothing() {
     );
 
     let quiet = config("general_settings: {}\n", &[]);
-    let (_startup, quiet_log) = logged(|| StartupSettings::from_config(&quiet));
+    let (_quiet, quiet_log) = logged(|| StartupSettings::from_config(&quiet));
     assert_eq!(quiet_log.matches("accepted but have no effect").count(), 0);
 }
 

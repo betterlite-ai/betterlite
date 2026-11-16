@@ -1,16 +1,13 @@
 use std::future::Future;
 use std::time::Duration;
 
-use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_ledger::lock::JitterSource;
 use betterlite_db::request_log_index_catalog::definitions::REQUEST_LOG_INDEXES;
 use betterlite_postgres_fixture::connection::PostgresFixture;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
-use sha2::{Digest as _, Sha256};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
-use tokio_postgres::types::{FromSql, ToSql};
 use tokio_postgres::{Config, NoTls};
 
 use crate::loader::startup::process_environment;
@@ -32,8 +29,8 @@ impl JitterSource for NoJitter {
 
 #[derive(Clone)]
 pub(super) struct SchemaDatabase {
-    pub(super) pool: Pool,
-    pub(super) url: SecretString,
+    pool: Pool,
+    url: SecretString,
     pub(super) schema: String,
 }
 
@@ -56,14 +53,52 @@ impl SchemaDatabase {
             bootstrap_inputs: Vec::new(),
         }
     }
+
+    // The relreplident letter of the spend-log table: d is the default identity, f is full.
+    pub(super) async fn spend_log_replica_identity(&self) -> String {
+        self.pool
+            .get()
+            .await
+            .expect("a fixture connection")
+            .query_one(
+                "SELECT c.relreplident::text FROM pg_class c \
+                 JOIN pg_namespace n ON n.oid = c.relnamespace \
+                 WHERE n.nspname = $1 AND c.relname = 'LiteLLM_SpendLogs'",
+                &[&self.schema],
+            )
+            .await
+            .expect("the replica identity reads")
+            .get(0)
+    }
+
+    // The request-log indexes this schema actually carries, sorted to compare against the catalog.
+    pub(super) async fn present_request_log_indexes(&self) -> Vec<String> {
+        let names: Vec<&str> = REQUEST_LOG_INDEXES.iter().map(|index| index.name).collect();
+        let client = self.pool.get().await.expect("a fixture connection");
+        let mut present: Vec<String> = client
+            .query(
+                "SELECT indexname::text FROM pg_indexes \
+                 WHERE schemaname = $1 AND indexname::text = ANY($2)",
+                &[&self.schema, &names],
+            )
+            .await
+            .expect("the index catalog reads")
+            .iter()
+            .map(|row| row.get(0))
+            .collect();
+        present.sort();
+        present
+    }
 }
 
-pub(super) struct LedgerRow {
-    pub(super) name: String,
-    pub(super) checksum: String,
-    pub(super) finished: bool,
-    pub(super) rolled_back: bool,
-    pub(super) logs: Option<String>,
+// The request-log indexes the catalog promises, sorted so a missing one shows in the diff.
+pub(super) fn catalog_request_log_indexes() -> Vec<String> {
+    let mut names: Vec<String> = REQUEST_LOG_INDEXES
+        .iter()
+        .map(|index| index.name.to_owned())
+        .collect();
+    names.sort();
+    names
 }
 
 pub(super) async fn with_schema<F, Fut>(test: F)
@@ -118,99 +153,4 @@ async fn provision() -> (SchemaDatabase, PostgresFixture) {
         schema,
     };
     (database, fixture)
-}
-
-pub(super) fn migration(name: &str, sql: &str) -> Migration {
-    Migration {
-        name: name.to_owned(),
-        checksum: hex::encode(Sha256::digest(sql.as_bytes())),
-        sql: sql.as_bytes().to_vec(),
-    }
-}
-
-// The schema-qualified name a fixture query addresses, with the quoting PostgreSQL needs.
-fn qualified(database: &SchemaDatabase, name: &str) -> String {
-    format!("\"{}\".\"{name}\"", database.schema.replace('"', "\"\""))
-}
-
-pub(super) async fn scalar<T>(
-    database: &SchemaDatabase,
-    statement: &str,
-    params: &[&(dyn ToSql + Sync)],
-) -> T
-where
-    T: for<'row> FromSql<'row>,
-{
-    database
-        .pool
-        .get()
-        .await
-        .expect("a fixture connection")
-        .query_one(statement, params)
-        .await
-        .expect("the scalar query runs")
-        .get(0)
-}
-
-// The request-log indexes the catalog promises, sorted so a missing one shows in the diff.
-pub(super) fn catalog_request_log_indexes() -> Vec<String> {
-    let mut names: Vec<String> = REQUEST_LOG_INDEXES
-        .iter()
-        .map(|index| index.name.to_owned())
-        .collect();
-    names.sort();
-    names
-}
-
-// The request-log indexes this schema actually carries, sorted to compare against the catalog.
-pub(super) async fn present_request_log_indexes(database: &SchemaDatabase) -> Vec<String> {
-    let names: Vec<&str> = REQUEST_LOG_INDEXES.iter().map(|index| index.name).collect();
-    let client = database.pool.get().await.expect("a fixture connection");
-    let mut present: Vec<String> = client
-        .query(
-            "SELECT indexname::text FROM pg_indexes \
-             WHERE schemaname = $1 AND indexname::text = ANY($2)",
-            &[&database.schema, &names],
-        )
-        .await
-        .expect("the index catalog reads")
-        .iter()
-        .map(|row| row.get(0))
-        .collect();
-    present.sort();
-    present
-}
-
-pub(super) async fn ledger_rows(database: &SchemaDatabase) -> Vec<LedgerRow> {
-    let table = qualified(database, "_prisma_migrations");
-    let client = database.pool.get().await.expect("a fixture connection");
-    let rows = client
-        .query(
-            &format!(
-                "SELECT migration_name, checksum, finished_at IS NOT NULL, \
-                 rolled_back_at IS NOT NULL, logs FROM {table} ORDER BY migration_name"
-            ),
-            &[],
-        )
-        .await
-        .expect("the migration ledger reads");
-    rows.into_iter()
-        .map(|row| LedgerRow {
-            name: row.get(0),
-            checksum: row.get(1),
-            finished: row.get(2),
-            rolled_back: row.get(3),
-            logs: row.get(4),
-        })
-        .collect()
-}
-
-pub(super) async fn table_exists(database: &SchemaDatabase, name: &str) -> bool {
-    let table = qualified(database, name);
-    scalar(database, "SELECT to_regclass($1) IS NOT NULL", &[&table]).await
-}
-
-pub(super) async fn row_count(database: &SchemaDatabase, table: &str) -> i64 {
-    let target = qualified(database, table);
-    scalar(database, &format!("SELECT count(*) FROM {target}"), &[]).await
 }
