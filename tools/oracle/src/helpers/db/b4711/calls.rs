@@ -14,13 +14,12 @@ use betterlite_db::mcp::table_access::{
 use betterlite_db::mcp::table_access::get_active_submitted_mcp_server_ids_for_user as active_ids;
 use betterlite_db::mcp_stored_contracts::{JsonValue, PinnedMCPTool};
 use betterlite_db::stored_cipher::DbCipher;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use secrecy::SecretString;
 use serde_json::{Value, json};
-
-use crate::helpers::HelperResult;
-use crate::helpers::OrHelperError as _;
 
 use super::rows::RowStore;
 use super::{

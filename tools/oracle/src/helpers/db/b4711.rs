@@ -1,8 +1,8 @@
 use betterlite_db::budget_permission_rows::JsonData;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
-
-use crate::helpers::OrHelperError as _;
 
 mod calls;
 mod rows;
@@ -101,10 +101,10 @@ pub(crate) struct ActiveSubmissions {
     rows: Vec<JsonData>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .or_value_error()?;
