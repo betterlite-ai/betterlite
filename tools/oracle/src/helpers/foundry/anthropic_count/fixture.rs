@@ -204,8 +204,10 @@ pub(crate) fn key_shape<'data>(
 pub(crate) fn params_secret(
     litellm_params: &BTreeMap<String, Option<String>>,
 ) -> Option<SecretString> {
-    let entry = litellm_params.get("api_key")?;
-    entry.as_deref().map(SecretString::from)
+    litellm_params
+        .get("api_key")
+        .and_then(Option::as_deref)
+        .map(SecretString::from)
 }
 
 #[derive(Clone, Default)]
