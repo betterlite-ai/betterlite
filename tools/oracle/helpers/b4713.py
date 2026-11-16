@@ -41,43 +41,34 @@ class ItemView(TypedDict):
     updated_at: str
 
 
-class GetCredential(TypedDict):
+class SaltedPair(TypedDict):
+    salt_key: str
+    user_id: str
+    server_id: str
+    rows: list[Where]
+
+
+class GetCredential(SaltedPair):
     function: Literal["get_credential"]
-    salt_key: str
-    user_id: str
-    server_id: str
-    rows: list[Where]
 
 
-class GetOauthCredential(TypedDict):
+class GetOauthCredential(SaltedPair):
     function: Literal["get_oauth_credential"]
-    salt_key: str
-    user_id: str
-    server_id: str
-    rows: list[Where]
 
 
-class StoreCredential(TypedDict):
+class StoreCredential(SaltedPair):
     function: Literal["store_credential"]
-    salt_key: str
-    user_id: str
-    server_id: str
     credential: str
-    rows: list[Where]
 
 
-class StoreOauthCredential(TypedDict):
+class StoreOauthCredential(SaltedPair):
     function: Literal["store_oauth_credential"]
-    salt_key: str
-    user_id: str
-    server_id: str
     access_token: str
     refresh_token: str | None
     expires_in: int | None
     scopes: list[str] | None
     skip_byok_guard: bool
     identity_binding_proof: str | None
-    rows: list[Where]
 
 
 class DeleteCredential(TypedDict):
@@ -147,25 +138,13 @@ class FakeRow:
         self.updated_at = datetime.fromisoformat(stamp)
 
 
-def where_pair(where: Where) -> tuple[str, str]:
-    key = WHERE.validate_python(where["user_id_server_id"])
-    return (
-        STRING.validate_python(key["user_id"], strict=True),
-        STRING.validate_python(key["server_id"], strict=True),
-    )
-
-
-def row_values(row: FakeRow) -> Where:
-    return {
+def where_matches(row: FakeRow, where: Where) -> bool:
+    values: Where = {
         "user_id": row.user_id,
         "server_id": row.server_id,
         "credential_b64": row.credential_b64,
         "updated_at": row.updated_at.isoformat(),
     }
-
-
-def where_matches(row: FakeRow, where: Where) -> bool:
-    values = row_values(row)
     return all(values[field] == wanted for field, wanted in where.items())
 
 
@@ -192,7 +171,9 @@ class FakeTable(PrismaWrapper):
     ) -> None: ...
 
     async def find_unique(self, where: Where) -> FakeRow | None:
-        user_id, server_id = where_pair(where)
+        key = WHERE.validate_python(where["user_id_server_id"])
+        user_id = STRING.validate_python(key["user_id"], strict=True)
+        server_id = STRING.validate_python(key["server_id"], strict=True)
         for row in self.rows:
             if row.user_id == user_id and row.server_id == server_id:
                 return row
@@ -229,14 +210,18 @@ class FakeClient(PrismaClient):
         self.db = self.fake_table
 
 
-def payload_summary(payload: OAuthCredentialPayload) -> PayloadSummary:
+def stored_view(client: FakeClient, user_id: str, server_id: str, *, refused: bool) -> StoreAnswer:
+    payload = asyncio.run(mcp_db.get_user_oauth_credential(client, user_id, server_id))
+    if payload is None:
+        byok = asyncio.run(mcp_db.get_user_credential(client, user_id, server_id))
+        return StoreAnswer(refused=refused, oauth=None, byok=byok)
     connected = payload.get("connected_at")
     expires = payload.get("expires_at")
     expires_in_seconds: int | None = None
     if connected is not None and expires is not None:
         lifetime = datetime.fromisoformat(expires) - datetime.fromisoformat(connected)
         expires_in_seconds = round(lifetime.total_seconds())
-    return PayloadSummary(
+    summary = PayloadSummary(
         type=payload.get("type"),
         access_token=payload.get("access_token"),
         refresh_token=payload.get("refresh_token"),
@@ -245,16 +230,7 @@ def payload_summary(payload: OAuthCredentialPayload) -> PayloadSummary:
         connected_at_present=connected is not None,
         expires_in_seconds=expires_in_seconds,
     )
-
-
-def stored_view(
-    client: FakeClient, user_id: str, server_id: str, *, refused: bool
-) -> StoreAnswer:
-    payload = asyncio.run(mcp_db.get_user_oauth_credential(client, user_id, server_id))
-    if payload is not None:
-        return StoreAnswer(refused=refused, oauth=payload_summary(payload), byok=None)
-    byok = asyncio.run(mcp_db.get_user_credential(client, user_id, server_id))
-    return StoreAnswer(refused=refused, oauth=None, byok=byok)
+    return StoreAnswer(refused=refused, oauth=summary, byok=None)
 
 
 def store_credential_call(client: FakeClient, call: StoreCredential) -> StoreAnswer:
@@ -269,10 +245,7 @@ def store_oauth_call(client: FakeClient, call: StoreOauthCredential) -> StoreAns
     try:
         asyncio.run(
             mcp_db.store_user_oauth_credential(
-                client,
-                call["user_id"],
-                call["server_id"],
-                call["access_token"],
+                client, call["user_id"], call["server_id"], call["access_token"],
                 refresh_token=call["refresh_token"],
                 expires_in=call["expires_in"],
                 scopes=call["scopes"],

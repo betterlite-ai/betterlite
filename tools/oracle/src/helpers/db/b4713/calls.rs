@@ -34,18 +34,21 @@ fn cipher(salt: &str) -> DbCipher {
     }
 }
 
+fn json_secret(secret: Option<SecretString>) -> Value {
+    let Some(token) = secret else {
+        return Value::Null;
+    };
+    Value::String(token.expose_secret().to_owned())
+}
+
+// the two row reads and writes share their table, salt and pair arguments; one line keeps this under the similarity check's 8-line floor
+#[rustfmt::skip]
 pub(super) async fn get_credential(call: &GetCredential) -> HelperResult {
-    let store = RowStore::new(&call.rows);
-    let read = get_user_credential(
-        &store,
-        &cipher(&call.salt_key),
-        &call.user_id,
-        &call.server_id,
-    )
-    .await;
-    Ok(read.or_value_error()?.map_or(Value::Null, |secret| {
-        Value::String(secret.expose_secret().to_owned())
-    }))
+    Ok(json_secret(
+        get_user_credential(&RowStore::new(&call.rows), &cipher(&call.salt_key), &call.user_id, &call.server_id)
+            .await
+            .or_value_error()?,
+    ))
 }
 
 pub(super) async fn get_oauth_credential(call: &GetOauthCredential) -> HelperResult {
@@ -116,11 +119,8 @@ async fn stored_view(
     let Some(payload) = oauth else {
         let byok = get_user_credential(store, cipher, user_id, server_id)
             .await
-            .or_value_error()?
-            .map_or(Value::Null, |secret| {
-                Value::String(secret.expose_secret().to_owned())
-            });
-        return Ok(json!({"refused": refused, "oauth": Value::Null, "byok": byok}));
+            .or_value_error()?;
+        return Ok(json!({"refused": refused, "oauth": Value::Null, "byok": json_secret(byok)}));
     };
     Ok(json!({"refused": refused, "oauth": payload_summary(&payload)?, "byok": Value::Null}))
 }

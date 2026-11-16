@@ -12,7 +12,7 @@ deviations:
   - what: Undecryptable credentials (decrypted=None from decrypt_value_helper) and rows that decode to an empty string are replaced by store_user_oauth_credential with a warning log.
     why: LiteLLM logs a warning when replacing undecryptable BYOK with OAuth (lines 1628-1634); we match this to allow recovery when a user re-authorizes under a new key.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1628-L1634
-  - what: Absent or unparseable expires_at in is_oauth_credential_expired is treated as non-expired (returns False).
+  - what: Absent or unparsable expires_at in is_oauth_credential_expired is treated as non-expired (returns False).
     why: LiteLLM's behavior (lines 1650-1651) is to assume a token without expiry is valid, allowing fallback to implicit provider defaults when the field is absent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1649-L1658
   - what: oauth_grant_state, is_oauth_credential_expired and store_user_oauth_credential take the buffer and the current instant from the caller, where LiteLLM reads MCP_PER_USER_TOKEN_EXPIRY_BUFFER_SECONDS from the environment and datetime.now inside the function.
@@ -28,7 +28,7 @@ deviations:
     why: betterlite decodes stored values into the declared payload type at every boundary, and docs/compatibility.md makes a value of the wrong type an error rather than duck-typed data. Rows LiteLLM or betterlite writes always hold the declared field types.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1413-L1434
   - what: expires_in and buffer_seconds values beyond the timestamp range are ExpiresInOutOfRange from the store and false from the expiry check, where Python raises OverflowError from timedelta, which is outside the except clause at line 1657 and so propagates.
-    why: An uncaught OverflowError is a 500 for a value no working setup sends; betterlite makes the write fail with a named error and keeps the expiry check total, which the task's "unparseable is not expired" rule already requires.
+    why: An uncaught OverflowError is a 500 for a value no working setup sends; betterlite makes the write fail with a named error and keeps the expiry check total, which the task's "unparsable is not expired" rule already requires.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L1649-L1658
   - what: Credential list items carry the row's updated_at text as the database hands it over, where LiteLLM parses the column to a datetime and writes datetime.isoformat() back.
     why: PostgreSQL returns a timestamptz through row_to_json in ISO form, so a row written by either implementation lists with the same updated_at text; the column is never a naive value that needs a timezone applied.
