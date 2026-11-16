@@ -80,7 +80,7 @@ fn transcription_args(model: &str, billed: Decimal) -> CompletionArgs<'_> {
     }
 }
 
-fn billing_input(model: &str) -> CompletionBillingInput<'_> {
+const fn billing_input(model: &str) -> CompletionBillingInput<'_> {
     CompletionBillingInput {
         model: Some(model),
         prompt: "",
