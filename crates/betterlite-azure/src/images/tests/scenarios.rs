@@ -13,6 +13,7 @@ use crate::images::edit::{
     EditAuth, EditParams, EditUrl, finalize_image_edit_request_data, get_complete_url,
     validate_environment,
 };
+use crate::images::error::ImageError;
 use crate::images::selection::{AzureImageConfig, get_azure_image_generation_config};
 use crate::images::target::{AzureClientParams, create_azure_base_url};
 
@@ -200,6 +201,23 @@ impl<'data> EditCase<'data> {
 fn edit_auth_table() {
     edit_key_and_token();
     edit_header_and_environment();
+    edit_credentials_key();
+}
+
+// the deployment-settings key fills in when neither the argument nor litellm_params carries one
+fn edit_credentials_key() {
+    let credentials = AzureCredentials {
+        api_key: Some(secrecy::SecretString::from("credential-key")),
+        ..AzureCredentials::default()
+    };
+    let environment = BTreeMap::new();
+    let keyed = EditCase::new(&credentials, &environment)
+        .run()
+        .expect("credential key");
+    assert_eq!(
+        keyed.get("api-key").map(String::as_str),
+        Some("credential-key")
+    );
 }
 
 fn edit_key_and_token() {
@@ -262,6 +280,31 @@ fn edit_header_and_environment() {
 fn edit_url_table() {
     edit_url_requires_base();
     edit_url_versions();
+    edit_url_empty_arguments();
+}
+
+// an empty request value counts as unset, so the deployment settings and then the default fill in
+fn edit_url_empty_arguments() {
+    let global = AzureCredentials {
+        api_base: Some("https://global.openai.azure.com".to_owned()),
+        api_version: Some("2024-06-01".to_owned()),
+        ..AzureCredentials::default()
+    };
+    assert_eq!(
+        edit_url(Some(""), Some(""), &global),
+        "https://global.openai.azure.com/openai/deployments/dall-e-3/images/edits?api-version=2024-06-01"
+    );
+    let empty_version = AzureCredentials {
+        api_base: Some("https://global.openai.azure.com".to_owned()),
+        api_version: Some(String::new()),
+        ..AzureCredentials::default()
+    };
+    assert_eq!(
+        edit_url(None, None, &empty_version),
+        format!(
+            "https://global.openai.azure.com/openai/deployments/dall-e-3/images/edits?api-version={VERSION}"
+        )
+    );
 }
 
 fn edit_url_requires_base() {
@@ -411,6 +454,11 @@ fn base_selection() {
 }
 
 fn flux2_table() {
+    flux2_models();
+    flux2_provider_bases();
+}
+
+fn flux2_models() {
     assert_eq!(
         target(
             Some(AZURE),
@@ -421,6 +469,10 @@ fn flux2_table() {
         format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
     );
     assert_eq!(
+        target(Some(AZURE), Some(""), Some("flux-2-pro"), None),
+        format!("{AZURE}/providers/blackforestlabs/v1/flux-2-pro?api-version=preview")
+    );
+    assert_eq!(
         target(Some(AZURE), Some(VERSION), Some("FLUX.2-flex"), None),
         format!("{AZURE}/providers/blackforestlabs/v1/flux-2-flex?api-version={VERSION}")
     );
@@ -428,6 +480,9 @@ fn flux2_table() {
         target(Some(AZURE), Some(VERSION), Some("flux-2-pro"), None),
         format!("{AZURE}/providers/blackforestlabs/v1/flux-2-pro?api-version={VERSION}")
     );
+}
+
+fn flux2_provider_bases() {
     let providers = format!("{AZURE}/providers/x");
     assert_eq!(
         target(
@@ -455,6 +510,15 @@ fn mai_table() {
     assert_eq!(
         target(Some(mai.as_str()), Some(VERSION), Some("mai-image-1"), None),
         format!("{AZURE}/mai/v1/images/generations?foo=1")
+    );
+    assert_eq!(
+        target(Some(AZURE), Some(""), Some("mai-image-1"), None),
+        format!("{AZURE}/mai/v1/images/generations?api-version=preview")
+    );
+    // an empty base model counts as absent, so the deployment's own name decides the route
+    assert_eq!(
+        target(Some(AZURE), Some(VERSION), Some("mai-image-1"), Some("")),
+        format!("{AZURE}/mai/v1/images/generations?api-version={VERSION}")
     );
 }
 
@@ -504,23 +568,33 @@ fn body_table() {
 }
 
 fn body_model_table() {
+    body_absent_model();
+    body_base_model();
+}
+
+fn body_absent_model() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         model: Some(String::new()),
         ..scenario("dall-e-3")
     });
-    assert_eq!(outcome.calls[0].body_field("model"), Some(&Json::Null));
+    // the deployment route drops the model from the wire, so the logged request data carries it
+    assert_eq!(outcome.logger.pre[0].data.get("model"), Some(&Json::Null));
+    assert!(outcome.calls[0].body_field("model").is_none());
     assert_eq!(outcome.success().hidden_model, None);
+}
 
+fn body_base_model() {
     let mut harness = Harness::new(&[]).with_reply(ok_reply());
     let outcome = harness.run(&Scenario {
         base_model: Some("hidden-dall-e-3".to_owned()),
         ..scenario("my-deployment")
     });
     assert_eq!(
-        outcome.calls[0].body_field("model"),
+        outcome.logger.pre[0].data.get("model"),
         Some(&Json::Text("hidden-dall-e-3".to_owned()))
     );
+    assert!(outcome.calls[0].body_field("model").is_none());
     assert_eq!(
         outcome.success().hidden_model.as_deref(),
         Some("hidden-dall-e-3")
@@ -530,6 +604,17 @@ fn body_model_table() {
         format!(
             "{AZURE}/openai/deployments/my-deployment/images/generations?api-version={VERSION}"
         )
+    );
+
+    // an empty base model counts as absent, so the deployment's own name fills the request data
+    let mut harness = Harness::new(&[]).with_reply(ok_reply());
+    let outcome = harness.run(&Scenario {
+        base_model: Some(String::new()),
+        ..scenario("my-deployment")
+    });
+    assert_eq!(
+        outcome.logger.pre[0].data.get("model"),
+        Some(&Json::Text("my-deployment".to_owned()))
     );
 }
 
@@ -555,6 +640,11 @@ fn body_options_table() {
 }
 
 fn retry_table() {
+    retry_accepted();
+    retry_rejected();
+}
+
+fn retry_accepted() {
     for accepted in [r#"{"max_retries":3}"#, r#"{"max_retries":true}"#] {
         let mut harness = Harness::new(&[]).with_reply(ok_reply());
         let outcome = harness.run(&Scenario {
@@ -564,6 +654,9 @@ fn retry_table() {
         assert!(outcome.result.is_ok(), "{accepted}");
         assert!(outcome.calls[0].body_field("max_retries").is_none());
     }
+}
+
+fn retry_rejected() {
     for rejected in [
         r#"{"max_retries":null}"#,
         r#"{"max_retries":"3"}"#,
@@ -582,6 +675,11 @@ fn retry_table() {
             "max retries must be an int",
             "{rejected}"
         );
+        // LiteLLM re-raises its own image error, so the sync leg must not wrap this one again
+        assert!(
+            matches!(outcome.result, Err(ImageError::MaxRetries)),
+            "{rejected}"
+        );
         assert!(outcome.calls.is_empty(), "{rejected}");
         assert!(outcome.logger.post.is_empty(), "{rejected}");
     }
@@ -590,7 +688,8 @@ fn retry_table() {
         optional: r#"{"extra_body":"nope"}"#.to_owned(),
         ..scenario("dall-e-3")
     });
-    assert_eq!(outcome.failure().class(), "TypeError");
+    assert_eq!(outcome.failure().class(), "AzureOpenAIError");
+    assert_eq!(outcome.failure().status(), Some(500));
 }
 
 pub(super) fn azure_image_auth() {
@@ -707,8 +806,8 @@ fn async_failure_table() {
     });
     assert_eq!(outcome.failure().class(), "AzureOpenAIError");
     assert_eq!(outcome.failure().status(), Some(400));
-    assert_eq!(outcome.logger.post.len(), 1);
-    match &outcome.logger.post[0].original_response {
+    assert_eq!(outcome.logger.post.len(), 2);
+    match &outcome.logger.post[1].original_response {
         Json::Text(text) => assert!(text.contains("boom")),
         _ => panic!("the async leg logs the failure as text"),
     }
