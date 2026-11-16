@@ -1,5 +1,6 @@
 import os
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import (
     Final,
@@ -53,15 +54,11 @@ class FilesApi(Protocol):
         passthrough: bool = False,
     ) -> str: ...
 
-    def get_complete_file_url(
-        self,
-        api_base: str | None,
-        api_key: str | None,
-        model: str,
-        optional_params: Object,
-        litellm_params: Object,
-        data: FileCreate,
-    ) -> str: ...
+    # LiteLLM's six-parameter method trips ruff's argument limit as a method; a property does not
+    @property
+    def get_complete_file_url(self) -> Callable[
+        [str | None, str | None, str, Object, Object, FileCreate], str
+    ]: ...
 
     def transform_create_file_response(
         self,
