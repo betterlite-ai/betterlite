@@ -3,13 +3,13 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use rstest::rstest;
 
 use super::is_anthropic_sse_stream::is_anthropic_sse_stream;
 use super::is_raw_sse_stream::is_raw_sse_stream;
 use super::is_sse_error_stream::is_sse_error_stream;
 use super::sse_stream::{anthropic_message_start, joined_sse_stream, parsed_sse_events};
+use crate::guardrail_message_scope::StreamItem;
 
 pub(crate) mod support;
 

@@ -1,9 +1,7 @@
 #![cfg(test)]
 
 use super::is_raw_sse_stream;
-use crate::guardrails::anthropic_sse::tests::support::{
-    GOOGLE_FRAME, bytes_chunk, object_chunk, text_chunk,
-};
+use crate::anthropic_sse::tests::support::{GOOGLE_FRAME, bytes_chunk, object_chunk, text_chunk};
 
 #[test]
 fn is_raw_sse_stream_is_true_for_bytes() {
