@@ -1,0 +1,41 @@
+task: B1550
+deviations:
+  - what: >-
+      An upload whose authenticated headers carry no Authorization entry fails with a typed MissingHeader error naming
+      Authorization, where LiteLLM's auth_headers["Authorization"] raises an uncaught KeyError.
+    why: >-
+      A deployment without an Authorization header reaches no working Soniox upload, and a named failure is what the
+      pipeline can report as a bounded error instead of an internal one; the header value is still copied exactly and
+      no request is sent.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L498
+  - what: >-
+      An authenticated header name or value that HTTP cannot carry fails upload or poll with a typed HeaderName or
+      HeaderValue error naming the header, where LiteLLM hands the string to httpx and the call fails from httpx's own
+      encoding or protocol exception.
+    why: >-
+      betterlite sends through http types, which validate a header before the request is built; both sides send
+      nothing, and a working setup carries valid header names and values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L523
+  - what: >-
+      A reply header whose bytes are not visible ASCII fails the call with a typed ReplyHeader error naming the
+      header, where httpx decodes reply headers as ASCII, then UTF-8, then ISO-8859-1, and LiteLLM's call proceeds.
+    why: >-
+      betterlite carries reply headers as http HeaderValue text, which the JSON reply and the SonioxException record
+      can hold; a working Soniox reply sends visible ASCII headers.
+    link: ""
+  - what: >-
+      The 504 message prints the poll interval from the prepared Decimal, so an interval whose float text needs more
+      than about sixteen significant digits loses them (2.5000000000000004 prints as 2.5), where LiteLLM interpolates
+      the Python float repr.
+    why: >-
+      B1549 prepares the interval as a Decimal and interval_text keeps that text instead of going back through f64;
+      integral intervals keep the .0 suffix both sides print.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L544
+kept_bugs:
+  - what: >-
+      Cleanup never inspects the status of a DELETE reply and swallows every transport failure, so a failed delete
+      leaves that resource on Soniox while the other delete, or the transcription result, still returns.
+    why: >-
+      The source marks its deletes best-effort on purpose, and the task keeps that behavior so cleanup can never mask
+      the original result or error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L560-L583
