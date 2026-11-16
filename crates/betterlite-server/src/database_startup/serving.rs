@@ -32,7 +32,7 @@ pub enum StartupOutcome {
 // The owned work a serving startup leaves running: the background request-log index build.
 pub struct Startup {
     pub outcome: StartupOutcome,
-    pub(crate) tasks: JoinSet<()>,
+    pub tasks: JoinSet<()>,
 }
 
 impl Startup {

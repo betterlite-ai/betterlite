@@ -165,10 +165,10 @@ async fn open_pool(url: &SecretString) -> Result<(Arc<NativePool>, HeartbeatTask
 // What a finished startup owns. B4448 reads the state; shutdown deregisters, drains and closes.
 pub struct Running {
     pub state: DatabaseState,
-    pub(crate) startup: Option<Startup>,
-    pub(crate) heartbeat: Option<HeartbeatTask>,
-    pub(crate) refresh: Option<Arc<dyn CredentialRefresh>>,
-    pub(crate) pool: Option<Arc<NativePool>>,
+    pub startup: Option<Startup>,
+    pub heartbeat: Option<HeartbeatTask>,
+    pub refresh: Option<Arc<dyn CredentialRefresh>>,
+    pub pool: Option<Arc<NativePool>>,
 }
 
 impl Running {
