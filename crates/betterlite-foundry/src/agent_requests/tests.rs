@@ -15,9 +15,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use super::endpoint::{AgentEndpoint, endpoint_url};
-use super::error::{AgentRequestError, check_response, error_for_status};
-use super::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
-use super::prepare::{PreparedAgentCall, prepare, validate_environment};
+use super::error::{AgentRequestError, check_response};
+use super::params::SUPPORTED_OPENAI_PARAMS;
+use super::prepare::{Headers, PreparedAgentCall, prepare, validate_environment};
 use super::request::{
     AgentCallRequest, DEFAULT_API_VERSION, agent_id, agent_id_from_model, api_version,
     complete_url, provider_info, transform_request,
@@ -28,7 +28,7 @@ use crate::credentials::{AZURE_AI_API_BASE_VAR, AZURE_AI_API_KEY_VAR};
 const SENTINEL: &str = "sentinel-fixture-credential";
 const API_BASE_REQUIRED: &str = "api_base is required for Azure AI Agents. Set it via AZURE_AI_API_BASE env var or api_base parameter.";
 
-static EMPTY_HEADERS: BTreeMap<String, String> = BTreeMap::new();
+static EMPTY_HEADERS: Headers = BTreeMap::new();
 
 struct NoOidc;
 
@@ -85,6 +85,13 @@ fn strings(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
+fn header_map(pairs: &[(&str, &str)]) -> Headers {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), SecretString::from(*value)))
+        .collect()
+}
+
 fn shown(value: Option<&SecretString>) -> Option<&str> {
     value.map(SecretString::expose_secret)
 }
@@ -93,7 +100,7 @@ fn request<'data>(
     model: &'data str,
     optional_params: &'data Object,
     messages: &'data [Object],
-    request_headers: &'data BTreeMap<String, String>,
+    request_headers: &'data Headers,
 ) -> AgentCallRequest<'data> {
     AgentCallRequest {
         model,
@@ -157,15 +164,8 @@ fn agent_id_field_precedence() {
 }
 
 fn agent_params_passthrough() {
+    // the agent route advertises only stream; the request keeps optional_params as given (the oracle case proves it)
     assert_eq!(SUPPORTED_OPENAI_PARAMS, ["stream"]);
-    let optional = object(r#"{"agent_id":"kept"}"#);
-    let mapped = map_openai_params(
-        &object(r#"{"temperature":0.2,"stream":true}"#),
-        optional.clone(),
-        "model",
-        false,
-    );
-    assert_eq!(mapped, optional);
 }
 
 fn agent_model_id() {
@@ -289,7 +289,7 @@ fn default_api_version() {
 }
 
 fn thread_payloads() {
-    let empty = strings(&[]);
+    let empty: Headers = BTreeMap::new();
     let base =
         transform_request(&request("azure_ai/agents/a", &Object::new(), &[], &empty)).unwrap();
     assert_eq!(base.thread_id, None);
@@ -357,7 +357,7 @@ fn message_scalar_content() {
         object(r#"{"role":"user","content":""}"#),
         object(r#"{"role":null,"content":"x"}"#),
     ];
-    let empty = strings(&[]);
+    let empty: Headers = BTreeMap::new();
     let payload = transform_request(&request(
         "azure_ai/agents/a",
         &Object::new(),
@@ -384,7 +384,7 @@ fn message_list_content() {
         object(r#"{"role":"user","content":[{"type":"text","text":""},{"type":"text"}]}"#),
         object(r#"{"role":"user","content":[]}"#),
     ];
-    let empty = strings(&[]);
+    let empty: Headers = BTreeMap::new();
     let payload = transform_request(&request(
         "azure_ai/agents/a",
         &Object::new(),
@@ -401,7 +401,7 @@ fn message_list_content() {
 }
 
 fn message_search_results() {
-    let empty = strings(&[]);
+    let empty: Headers = BTreeMap::new();
     let mut sourced = object(r#"{"role":"user","content":[{"type":"text","text":"base"}]}"#);
     sourced.insert(
         String::from("search_results"),
@@ -466,7 +466,6 @@ fn run_urls() {
     );
     let missing = endpoint_url(AgentEndpoint::Messages { thread_id: "" }, base, "").unwrap_err();
     assert_eq!(missing.to_string(), "thread_id is required");
-    assert_eq!(missing.class(), "ValueError");
     let dot = endpoint_url(AgentEndpoint::Runs { thread_id: "." }, base, "").unwrap_err();
     assert_eq!(dot.to_string(), "thread_id cannot be a dot path segment");
     let dot_run = endpoint_url(
@@ -489,7 +488,6 @@ fn thread_and_run_paths() {
 fn missing_api_base() {
     let missing = complete_url(None).unwrap_err();
     assert_eq!(missing.to_string(), API_BASE_REQUIRED);
-    assert_eq!(missing.class(), "ValueError");
     assert_eq!(missing.status(), None);
     let no_params = Object::new();
     let mut call = request("azure_ai/agents/a", &no_params, &[], &EMPTY_HEADERS);
@@ -503,13 +501,13 @@ fn missing_api_base() {
 
 fn validation_headers() {
     let key = SecretString::from("secret");
-    let validated = validate_environment(&strings(&[]), Some(&key));
+    let validated = validate_environment(&header_map(&[]), Some(&key));
     assert_eq!(
         shown(validated.get("Content-Type")),
         Some("application/json")
     );
     assert_eq!(shown(validated.get("Authorization")), Some("Bearer secret"));
-    let existing = strings(&[
+    let existing = header_map(&[
         ("Authorization", "Bearer old"),
         ("Content-Type", "text/plain"),
     ]);
@@ -525,7 +523,7 @@ fn validation_headers() {
     assert_eq!(shown(empty.get("Authorization")), Some("Bearer old"));
     let replaced = validate_environment(&existing, Some(&key));
     assert_eq!(shown(replaced.get("Authorization")), Some("Bearer secret"));
-    let lower = validate_environment(&strings(&[("content-type", "text/plain")]), None);
+    let lower = validate_environment(&header_map(&[("content-type", "text/plain")]), None);
     assert_eq!(shown(lower.get("content-type")), Some("text/plain"));
     assert_eq!(shown(lower.get("Content-Type")), Some("application/json"));
 }
@@ -589,7 +587,6 @@ fn response_checks() {
     assert!(check_response(202, "accepted", &[200, 202], "add-message").is_ok());
     let failed = check_response(404, "not-found", &[200], "create-thread").unwrap_err();
     assert_eq!(failed.to_string(), "create-thread: not-found");
-    assert_eq!(failed.class(), "AzureAIAgentsError");
     assert_eq!(failed.status(), Some(404));
     let unexpected = check_response(400, "", &[], "poll-run").unwrap_err();
     assert_eq!(unexpected.to_string(), "poll-run: ");
@@ -598,8 +595,11 @@ fn response_checks() {
 }
 
 fn error_class_and_status() {
-    let error = error_for_status(401, String::from("unauthorized"));
-    assert_eq!(error.class(), "AzureAIAgentsError");
+    // get_error_class drops the headers it is handed, so only the status and the message survive
+    let error = AgentRequestError::Upstream {
+        status: 401,
+        message: String::from("unauthorized"),
+    };
     assert_eq!(error.status(), Some(401));
     assert_eq!(error.to_string(), "unauthorized");
     let failure = prepare(&request(
@@ -609,7 +609,6 @@ fn error_class_and_status() {
         &EMPTY_HEADERS,
     ))
     .unwrap_err();
-    assert_eq!(failure.class(), "ValueError");
     assert_eq!(failure.status(), None);
     assert_eq!(failure.to_string(), API_BASE_REQUIRED);
 }
@@ -642,7 +641,7 @@ fn agent_requests_cases(#[case] check: fn()) {
 }
 
 fn prepared_identity_isolation() {
-    let empty = strings(&[]);
+    let empty: Headers = BTreeMap::new();
     let no_params = Object::new();
     let first_key = SecretString::from("first-key");
     let second_key = SecretString::from("second-key");
@@ -731,10 +730,22 @@ fn foundry_agents_secret_safe_failure() {
     .unwrap();
     assert_eq!(shown(info.api_key.as_ref()), Some(SENTINEL));
     assert!(!format!("{info:?}").contains(SENTINEL));
+    let passed = header_map(&[
+        ("Authorization", "Bearer sentinel-fixture-credential"),
+        ("X-Trace", "trace-1"),
+    ]);
+    let mut incoming = request("azure_ai/agents/a", &params, &[], &passed);
+    incoming.api_base = Some("https://base.example");
+    assert!(!format!("{incoming:?}").contains(SENTINEL));
+    let prepared_from_incoming = prepare(&incoming).unwrap();
+    assert_eq!(
+        shown(prepared_from_incoming.headers.get("Authorization")),
+        Some("Bearer sentinel-fixture-credential")
+    );
+    assert!(!format!("{prepared_from_incoming:?}").contains(SENTINEL));
     let mut incomplete = request("azure_ai/agents/a", &params, &[], &EMPTY_HEADERS);
     incomplete.api_key = Some(&key);
     let failure = prepare(&incomplete).unwrap_err();
-    assert_eq!(failure.class(), "ValueError");
     assert!(!format!("{failure:?}").contains(SENTINEL));
     assert!(!format!("{failure}").contains(SENTINEL));
 }

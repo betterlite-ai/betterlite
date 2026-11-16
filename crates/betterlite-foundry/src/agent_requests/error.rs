@@ -24,16 +24,6 @@ pub enum AgentRequestError {
 }
 
 impl AgentRequestError {
-    // the Python class each failure raises: get_error_class builds AzureAIAgentsError, the other places raise ValueError
-    #[must_use]
-    pub const fn class(&self) -> &'static str {
-        match self {
-            Self::Upstream { .. } => "AzureAIAgentsError",
-            Self::ApiBaseRequired | Self::FieldType { .. } | Self::Segment(_) => "ValueError",
-            Self::Secret { .. } => "ConfigError",
-        }
-    }
-
     #[must_use]
     pub const fn status(&self) -> Option<u16> {
         match self {
@@ -44,12 +34,6 @@ impl AgentRequestError {
             | Self::Secret { .. } => None,
         }
     }
-}
-
-#[must_use]
-pub const fn error_for_status(status: u16, message: String) -> AgentRequestError {
-    // get_error_class ignores the headers it is handed, so the error keeps only the status and the message
-    AgentRequestError::Upstream { status, message }
 }
 
 pub fn check_response(

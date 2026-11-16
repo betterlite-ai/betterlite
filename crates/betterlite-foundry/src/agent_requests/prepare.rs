@@ -23,14 +23,8 @@ pub struct PreparedAgentCall {
 
 // LiteLLM's validate_environment rewrites Content-Type and only a truthy key replaces an existing Authorization
 #[must_use]
-pub fn validate_environment(
-    headers: &BTreeMap<String, String>,
-    api_key: Option<&SecretString>,
-) -> Headers {
-    let mut validated: Headers = headers
-        .iter()
-        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
-        .collect();
+pub fn validate_environment(headers: &Headers, api_key: Option<&SecretString>) -> Headers {
+    let mut validated = headers.clone();
     validated.insert(
         String::from(CONTENT_TYPE_HEADER),
         SecretString::from(JSON_CONTENT_TYPE),

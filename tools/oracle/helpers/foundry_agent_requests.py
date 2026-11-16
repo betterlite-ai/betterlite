@@ -1,6 +1,6 @@
 import os
 from collections.abc import Callable
-from typing import Final, TypeAlias, TypedDict, cast
+from typing import Final, Literal, TypeAlias, TypedDict, cast
 
 import httpx
 from litellm.llms.azure_ai.agents.handler import AzureAIAgentsHandler as AgentHandler
@@ -68,7 +68,9 @@ class ErrorCall(TypedDict):
 
 
 class PathCall(TypedDict):
-    function: str
+    function: Literal[
+        "threads", "messages", "list_messages", "runs", "run_status", "thread_and_run"
+    ]
     api_base: str
     api_version: str
     thread_id: str
@@ -125,7 +127,7 @@ def complete_url_answer(config: AzureAIAgentsConfig, call: UrlCall) -> JsonValue
     try:
         url = config.get_complete_url(call["api_base"], None, "model", EMPTY, EMPTY)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L144-L172
     except ValueError:
-        return {"ok": False, "error": {"class": "ValueError", "status": None}}
+        return {"ok": False, "error": {"status": None}}
     return {"ok": True, "value": url}
 
 
@@ -180,17 +182,13 @@ def check_answer(handler: AgentHandler, call: CheckCall) -> JsonValue:
     try:
         check(response, call["expected"], call["error_msg"])
     except AzureAIAgentsError as error:
-        return {
-            "ok": False,
-            "error": {"class": "AzureAIAgentsError", "status": error.status_code},
-        }
+        return {"ok": False, "error": {"status": error.status_code}}
     return {"ok": True}
 
 
 def error_answer(config: AzureAIAgentsConfig, call: ErrorCall) -> JsonValue:
     error = config.get_error_class(call["message"], call["status"], dict(call["headers"]))  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L263-L264
     return {
-        "class": type(error).__name__,
         "status": error.status_code,
         "headers_dropped": cast("object | None", error.headers) is None,  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L263-L264
     }
@@ -210,15 +208,13 @@ def path_url(handler: AgentHandler, call: PathCall) -> str:
             return handler._build_list_messages_url(call["api_base"], call["thread_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L147-L149
         case "messages":
             return handler._build_messages_url(call["api_base"], call["thread_id"], call["api_version"])  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/handler.py#L134-L136
-        case other:
-            raise ValueError(f"unknown path function: {other}")
 
 
 def path_answer(handler: AgentHandler, call: PathCall) -> JsonValue:
     try:
         url = path_url(handler, call)
     except ValueError:
-        return {"ok": False, "error": {"class": "ValueError", "status": None}}
+        return {"ok": False, "error": {"status": None}}
     return {"ok": True, "value": url}
 
 

@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use super::error::AgentRequestError;
 use super::messages::{ConvertedMessage, convert_messages};
+use super::prepare::Headers;
 use crate::credentials::{AZURE_AI_API_BASE_VAR, AZURE_AI_API_KEY_VAR};
 
 pub const DEFAULT_API_VERSION: &str = "2025-05-01";
@@ -23,7 +24,8 @@ pub struct AgentCallRequest<'data> {
     pub model: &'data str,
     pub messages: &'data [Object],
     pub optional_params: &'data Object,
-    pub headers: &'data BTreeMap<String, String>,
+    // the caller's incoming headers keep their Authorization value secret, so Debug redacts it
+    pub headers: &'data Headers,
     pub api_key: Option<&'data SecretString>,
     pub api_base: Option<&'data str>,
 }

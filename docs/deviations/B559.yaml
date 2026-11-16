@@ -1,6 +1,6 @@
 task: B559
 deviations:
-- what: A failing secret-manager read for AZURE_AI_API_BASE or AZURE_AI_API_KEY surfaces as AgentRequestError::Secret (class ConfigError) with the lookup error as its source, where LiteLLM lets the secret manager's own exception escape get_secret_str.
+- what: A failing secret-manager read for AZURE_AI_API_BASE or AZURE_AI_API_KEY surfaces as AgentRequestError::Secret with the lookup error as its source, where LiteLLM lets the secret manager's own exception escape get_secret_str.
   why: betterlite's shared secret lookup (B2202) returns its typed SecretLookupError instead of propagating an arbitrary Python exception, so the agent call fails with a named error and the credential is never read again from a fallback.
-  link: ""
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/agents/transformation.py#L117-L118
 kept_bugs: []

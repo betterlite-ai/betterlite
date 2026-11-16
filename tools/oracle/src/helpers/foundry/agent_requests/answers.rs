@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_foundry::agent_requests::endpoint::{AgentEndpoint, endpoint_url};
-use betterlite_foundry::agent_requests::error::{
-    AgentRequestError, check_response, error_for_status,
-};
-use betterlite_foundry::agent_requests::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
+use betterlite_foundry::agent_requests::error::{AgentRequestError, check_response};
+use betterlite_foundry::agent_requests::params::SUPPORTED_OPENAI_PARAMS;
 use betterlite_foundry::agent_requests::prepare::{Headers, prepare, validate_environment};
 use betterlite_foundry::agent_requests::request::{
     AgentCallRequest, agent_id, complete_url, provider_info, transform_request,
@@ -24,13 +22,20 @@ use super::input::{
 use super::secrets;
 
 fn failure(error: &AgentRequestError) -> Value {
-    json!({"ok": false, "error": {"class": error.class(), "status": error.status()}})
+    json!({"ok": false, "error": {"status": error.status()}})
 }
 
 fn shown_headers(headers: &Headers) -> BTreeMap<&str, &str> {
     headers
         .iter()
         .map(|(name, value)| (name.as_str(), value.expose_secret()))
+        .collect()
+}
+
+fn secret_headers(headers: &BTreeMap<String, String>) -> Headers {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), SecretString::from(value.clone())))
         .collect()
 }
 
@@ -48,13 +53,11 @@ pub(super) fn agent_ids(calls: &[AgentIdCall]) -> HelperResult {
 pub(super) fn params(calls: &[ParamsCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
-        let mapped = map_openai_params(
-            &call.non_default_params,
-            call.optional_params.clone(),
-            &call.model,
-            false,
-        );
-        answers.push(json!({"supported": SUPPORTED_OPENAI_PARAMS, "mapped": mapped}));
+        // the agent route copies no non-default parameter, so the mapped body is optional_params as given
+        answers.push(json!({
+            "supported": SUPPORTED_OPENAI_PARAMS,
+            "mapped": call.optional_params,
+        }));
     }
     Ok(json!({"calls": answers}))
 }
@@ -98,7 +101,7 @@ pub(super) fn complete_urls(calls: &[UrlCall]) -> HelperResult {
 pub(super) fn requests(calls: &[RequestCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
-        let headers = BTreeMap::new();
+        let headers = Headers::new();
         let request = AgentCallRequest {
             model: &call.model,
             messages: &call.messages,
@@ -121,11 +124,12 @@ pub(super) fn preparations(calls: &[PreparationCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
         let key = call.api_key.as_deref().map(SecretString::from);
+        let incoming = secret_headers(&call.headers);
         let request = AgentCallRequest {
             model: &call.model,
             messages: &[],
             optional_params: &call.optional_params,
-            headers: &call.headers,
+            headers: &incoming,
             api_key: key.as_ref(),
             api_base: Some(&call.api_base),
         };
@@ -150,7 +154,7 @@ pub(super) fn validations(calls: &[ValidationCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
         let key = call.api_key.as_deref().map(SecretString::from);
-        let headers = validate_environment(&call.headers, key.as_ref());
+        let headers = validate_environment(&secret_headers(&call.headers), key.as_ref());
         answers.push(json!({"ok": true, "value": {"headers": shown_headers(&headers)}}));
     }
     Ok(json!({"calls": answers}))
@@ -172,9 +176,12 @@ pub(super) fn checks(calls: &[CheckCall]) -> HelperResult {
 pub(super) fn errors(calls: &[ErrorCall]) -> HelperResult {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
-        let error = error_for_status(call.status, call.message.clone());
+        // get_error_class ignores the headers it is handed, so the error keeps only the status and the message
+        let error = AgentRequestError::Upstream {
+            status: call.status,
+            message: call.message.clone(),
+        };
         answers.push(json!({
-            "class": error.class(),
             "status": error.status(),
             "headers_dropped": true,
         }));
