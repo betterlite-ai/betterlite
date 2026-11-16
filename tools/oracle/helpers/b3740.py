@@ -4,7 +4,6 @@ from collections.abc import AsyncIterator
 from typing import Literal, TypedDict
 
 import httpx
-from fastapi import HTTPException
 from litellm.caching.dual_cache import DualCache
 from litellm.exceptions import APIError
 from litellm.proxy._types import UserAPIKeyAuth
@@ -18,8 +17,9 @@ from litellm.types.utils import (
     ModelResponseStream,
     StreamingChoices,
 )
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 from pydantic.alias_generators import to_camel
+from starlette.exceptions import HTTPException
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 RESPONSE: TypeAdapter[ModelResponse] = TypeAdapter(ModelResponse)
@@ -91,13 +91,13 @@ class ProcessBody(BaseModel):
 PROCESS: TypeAdapter[ProcessBody] = TypeAdapter(ProcessBody)
 
 
-class ScriptedEvent(ModelResponseStream):
+class ScriptedEvent(ModelResponseStream):  # type: ignore[explicit-any]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103
     id: str = ""
     created: int = 0
     object: str = ""
     type: str = ""
     response: ResponsesAPIResponse | None = None
-    choices: list[StreamingChoices] = []
+    choices: list[StreamingChoices] = Field(default_factory=list)
 
 
 EVENT: TypeAdapter[ScriptedEvent] = TypeAdapter(ScriptedEvent)
@@ -138,7 +138,7 @@ def pre_call(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | None:
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
         asyncio.run(
-            hooks.async_pre_call_hook(credentials, DualCache(), case["data"], case["call_type"])
+            hooks.async_pre_call_hook(credentials, DualCache(), case["data"], case["call_type"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L387
         )
     except HTTPException as error:
         return error.status_code
@@ -149,7 +149,7 @@ def post_success(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | None
     response = RESPONSE.validate_python(case["result"])
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
-        asyncio.run(hooks.async_post_call_success_hook(case["data"], credentials, response))
+        asyncio.run(hooks.async_post_call_success_hook(case["data"], credentials, response))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L446
     except HTTPException as error:
         return error.status_code
     return None
@@ -159,33 +159,33 @@ async def streaming(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | N
     chunks: list[ModelResponseStream] = [EVENT.validate_python(value) for value in case["chunks"]]
     credentials = UserAPIKeyAuth(user_id=case["identity"]["user_id"])
     try:
-        stream = hooks.async_post_call_streaming_iterator_hook(
+        stream = hooks.async_post_call_streaming_iterator_hook(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L473
             credentials, chunk_stream(chunks), case["data"]
         )
         async for _chunk in stream:
             pass
     except HTTPException as error:
         return error.status_code
-    except APIError as error:
+    except APIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L811
         return error.status_code
     return None
 
 
 def logging_sync(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | None:
     before = set(threading.enumerate())
-    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])
+    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L596
     for thread in set(threading.enumerate()) - before:
         thread.join()
     return None
 
 
 async def logging_deferred(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | None:
-    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])
+    hooks.logging_hook(case["data"], RESPONSE.validate_python(case["result"]), case["call_type"])  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L596
     return None
 
 
 async def logging_async(hooks: MicrosoftPurviewDLPGuardrail, case: Input) -> int | None:
-    await hooks.async_logging_hook(
+    await hooks.async_logging_hook(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L644
         case["data"], RESPONSE.validate_python(case["result"]), case["call_type"]
     )
     return None
