@@ -32,10 +32,10 @@ use super::fixture::{
 const TRUNCATED_HEAD: &str =
     "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncontent-length: 4096\r\n\r\n";
 const TRICKLE_HEAD: &str = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\n\r\n";
-const STALLED_HEAD: &str = "HTTP/1.1 500 Internal Server Error\r\ncontent-length: 4096\r\n\r\n";
 const TRICKLE_FRAMES: usize = 20;
 const TRICKLE_STEP: Duration = Duration::from_millis(100);
 const SHORT_TIMEOUT: Duration = Duration::from_secs(1);
+const LONG_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::test]
 async fn anthropic_http_stream_partial_body_close() {
@@ -198,20 +198,14 @@ async fn anthropic_http_stream_proxied_error_body_stalls() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_stalled_body(listener));
+    tasks.spawn(serve_stalled_body(listener, 500));
     let client = proxied_client();
     let drain_client = client.clone();
     let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
         Ok(_) => panic!("a 500 reply opens no stream"),
         Err(error) => error,
     };
-    let StreamOpenError::Reraised { source } = error else {
-        panic!("an error body read timeout is re-raised");
-    };
-    let StreamFailure::ErrorBody(source) = source else {
-        panic!("the failed read keeps its transport error");
-    };
-    assert!(matches!(source, TransportError::Deadline(_)));
+    assert_status(error, 500);
     drain_client
         .drain(Duration::from_secs(10))
         .await
@@ -228,20 +222,14 @@ async fn anthropic_http_stream_proxied_error_body_truncated() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
     let mut tasks = JoinSet::new();
-    tasks.spawn(serve_short_body(listener));
+    tasks.spawn(serve_short_body(listener, 500));
     let client = proxied_client();
     let drain_client = client.clone();
     let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
         Ok(_) => panic!("a 500 reply opens no stream"),
         Err(error) => error,
     };
-    let StreamOpenError::Unknown { source } = error else {
-        panic!("an unreadable error body becomes AnthropicError(500)");
-    };
-    let StreamFailure::ErrorBody(source) = source else {
-        panic!("the failed read keeps its transport error");
-    };
-    assert!(matches!(source, TransportError::Body(_)));
+    assert_status(error, 500);
     drain_client
         .drain(Duration::from_secs(10))
         .await
@@ -251,6 +239,77 @@ async fn anthropic_http_stream_proxied_error_body_truncated() {
         .expect("the local server ends")
         .unwrap()
         .unwrap();
+}
+
+// a rate limit whose body cannot be read stays a rate limit, as LiteLLM's masked handler keeps the status
+#[tokio::test]
+async fn anthropic_http_stream_proxied_error_body_truncated_keeps_429() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_short_body(listener, 429));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match open_with(&api_base, &client, SHORT_TIMEOUT).await {
+        Ok(_) => panic!("a 429 reply opens no stream"),
+        Err(error) => error,
+    };
+    assert_status(error, 429);
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+// LiteLLM caps the streaming error body read at five seconds, so a stalled body ends well before a long call deadline
+#[tokio::test]
+async fn anthropic_http_stream_error_body_read_capped() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let api_base = format!("http://{}/v1/messages", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(serve_stalled_body(listener, 500));
+    let client = proxied_client();
+    let drain_client = client.clone();
+    let error = match timeout(
+        Duration::from_secs(9),
+        open_with(&api_base, &client, LONG_TIMEOUT),
+    )
+    .await
+    .expect("the error body read is capped instead of waiting for the call deadline")
+    {
+        Ok(_) => panic!("a 500 reply opens no stream"),
+        Err(error) => error,
+    };
+    assert_status(error, 500);
+    drain_client
+        .drain(Duration::from_secs(10))
+        .await
+        .expect("the transport owner drains");
+    timeout(Duration::from_secs(10), tasks.join_next())
+        .await
+        .expect("the local server ends")
+        .unwrap()
+        .unwrap();
+}
+
+fn assert_status(error: StreamOpenError<StreamFailure>, expected: u16) {
+    let StreamOpenError::Anthropic {
+        status_code,
+        message,
+        headers,
+    } = error
+    else {
+        panic!("a status error keeps the upstream status");
+    };
+    assert_eq!(status_code, expected);
+    assert_eq!(message, "");
+    let headers = headers.expect("the failure keeps the reply headers");
+    assert_eq!(header(&headers, "x-request-id"), Some("req-proxied"));
 }
 
 #[tokio::test]
@@ -350,21 +409,33 @@ async fn serve_silence(listener: TcpListener) {
     let _closed = socket.read_to_end(&mut rest).await;
 }
 
-async fn serve_stalled_body(listener: TcpListener) {
+async fn serve_stalled_body(listener: TcpListener, status: u16) {
     let (mut socket, _) = listener.accept().await.unwrap();
-    socket.write_all(STALLED_HEAD.as_bytes()).await.unwrap();
+    socket
+        .write_all(stall_head(status).as_bytes())
+        .await
+        .unwrap();
     socket.write_all(b"partial").await.unwrap();
     let mut rest = Vec::new();
     let _closed = socket.read_to_end(&mut rest).await;
 }
 
-async fn serve_short_body(listener: TcpListener) {
+async fn serve_short_body(listener: TcpListener, status: u16) {
     let (mut socket, _) = listener.accept().await.unwrap();
-    socket.write_all(STALLED_HEAD.as_bytes()).await.unwrap();
+    socket
+        .write_all(stall_head(status).as_bytes())
+        .await
+        .unwrap();
     socket.write_all(b"partial").await.unwrap();
     socket.shutdown().await.unwrap();
     let mut rest = Vec::new();
     let _closed = socket.read_to_end(&mut rest).await;
+}
+
+fn stall_head(status: u16) -> String {
+    format!(
+        "HTTP/1.1 {status} Error\r\ncontent-type: application/json\r\nx-request-id: req-proxied\r\ncontent-length: 4096\r\n\r\n"
+    )
 }
 
 async fn serve_trickle(listener: TcpListener, frames: usize) {

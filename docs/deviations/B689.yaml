@@ -12,9 +12,9 @@ deviations:
   - what: The call timeout is the deadline of the whole exchange, so a stream that keeps sending events past it fails with a transport error at the deadline, where LiteLLM's httpx timeout applies to each read and delivers the whole answer.
     why: betterlite applies the caller's timeout once per request on the shared ProxiedClient, and B1316 and B1344 list the same difference for their own calls.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L89-L95
-  - what: An error body that cannot be read surfaces as a typed failure, re-raised when the read timed out and AnthropicError(500) for any other read error, where LiteLLM lets the httpx read error escape make_call uncaught.
-    why: the body is read before the error is raised, so the read failure, not an empty message, is what the caller sees.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L102-L106
+  - what: An error body larger than the transport's body limit is dropped, so the AnthropicError keeps the upstream status and headers with an empty message, where LiteLLM reads the whole body under a five second cap.
+    why: the body goes through the proxy client's bounded buffered read, so an oversized error body cannot grow memory; the five second cap and the empty message for a failed read match LiteLLM's masked handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L487-L509
   - what: The sync non-200 guard keeps an error body only up to the transport's body limit and stops at a whole line, where LiteLLM reads the whole body into AnthropicError.message.
     why: any 2xx other than 200 reaches the guard, and the limit stops an upstream that keeps sending short lines from buffering without bound.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/handler.py#L173-L179

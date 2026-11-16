@@ -42,6 +42,9 @@ pub trait StreamTransport: Send + Sync {
     ) -> impl Future<Output = Result<StreamReply<Self::Failure>, PostFailure<Self::Failure>>> + Send;
 }
 
+// http_handler._STREAMING_ERROR_BODY_READ_TIMEOUT_SECONDS, the cap LiteLLM puts on reading a streaming error body
+const ERROR_BODY_READ: Duration = Duration::from_secs(5);
+
 impl StreamTransport for ProxiedClient {
     type Failure = StreamFailure;
 
@@ -65,9 +68,16 @@ impl StreamTransport for ProxiedClient {
             let status_code = response.response.status().as_u16();
             let headers = response.response.headers().clone();
             if !response.response.status().is_success() {
-                let body = match response.buffered(self.limits.body_bytes).await {
-                    Ok(reply) => reply.body,
-                    Err(source) => return Err(body_failure(source)),
+                // LiteLLM's handler reads the error body under a five second cap and keeps the upstream
+                // status with an empty message when that read fails, so a rate limit stays a rate limit
+                let body = match tokio::time::timeout(
+                    ERROR_BODY_READ,
+                    response.buffered(self.limits.body_bytes),
+                )
+                .await
+                {
+                    Ok(Ok(reply)) => reply.body,
+                    Ok(Err(_)) | Err(_) => Vec::new(),
                 };
                 return Err(PostFailure::Status(StatusFailure {
                     status_code,
@@ -104,17 +114,6 @@ fn is_timeout(source: &TransportError) -> bool {
 fn post_failure(source: TransportError) -> PostFailure<StreamFailure> {
     let timed = is_timeout(&source);
     let failure = StreamFailure::Transport(source);
-    if timed {
-        PostFailure::Known(failure)
-    } else {
-        PostFailure::Unknown(failure)
-    }
-}
-
-// The error body is read before LiteLLM raises, so a read timeout keeps the re-raise and any other read failure is the 500
-fn body_failure(source: TransportError) -> PostFailure<StreamFailure> {
-    let timed = is_timeout(&source);
-    let failure = StreamFailure::ErrorBody(source);
     if timed {
         PostFailure::Known(failure)
     } else {
