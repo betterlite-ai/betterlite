@@ -1,4 +1,3 @@
-use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 use crate::guardrail_base::failure::GuardrailFailure;
@@ -11,10 +10,5 @@ pub enum EnforcementError {
     PayloadEncoding {
         #[source]
         source: serde_json::Error,
-    },
-    #[error("the Agent 365 token is not a valid header value")]
-    TokenHeader {
-        #[source]
-        source: InvalidHeaderValue,
     },
 }

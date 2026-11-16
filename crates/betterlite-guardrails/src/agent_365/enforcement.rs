@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::records::GuardrailEventHooks;
-use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::agent_365::enforcement::error::EnforcementError;
@@ -205,33 +205,39 @@ async fn evaluate(
     key_alias: Option<&str>,
 ) -> Result<Option<(PostReply, Duration)>, EnforcementError> {
     let body = evaluate_body(data, key_alias)?;
-    let headers = evaluation_headers(token)?;
-    let started = (guardrail.clock)();
-    let reply = match guardrail
-        .post_allowing_error_status(EVALUATE_URL, &headers, &body)
-        .await
-    {
-        Ok(reply) => reply,
-        Err(error) => {
-            let reason = format!("the Agent 365 endpoint could not be reached ({error})");
-            handlers::unavailable(
-                guardrail,
-                data,
-                tool_name,
-                &VerdictRecord {
-                    verdict: Verdict::Unavailable,
-                    defender_status: None,
-                    correlation_id: None,
-                    latency: None,
-                    reason: Some(&reason),
-                },
-            )?;
-            return Ok(None);
+    // LiteLLM's httpx raises LocalProtocolError for a bearer value no header can carry, so both failures are unreachable
+    let reason = match evaluation_headers(token) {
+        Ok(headers) => {
+            let started = (guardrail.clock)();
+            match guardrail
+                .post_allowing_error_status(EVALUATE_URL, &headers, &body)
+                .await
+            {
+                Ok(reply) => {
+                    let finished = (guardrail.clock)();
+                    let latency = finished.duration_since(started).unwrap_or_default();
+                    return Ok(Some((reply, latency)));
+                }
+                Err(error) => format!("the Agent 365 endpoint could not be reached ({error})"),
+            }
         }
+        Err(error) => format!(
+            "the Agent 365 endpoint could not be reached (the OBO token is not a valid header value: {error})"
+        ),
     };
-    let finished = (guardrail.clock)();
-    let latency = finished.duration_since(started).unwrap_or_default();
-    Ok(Some((reply, latency)))
+    handlers::unavailable(
+        guardrail,
+        data,
+        tool_name,
+        &VerdictRecord {
+            verdict: Verdict::Unavailable,
+            defender_status: None,
+            correlation_id: None,
+            latency: None,
+            reason: Some(&reason),
+        },
+    )?;
+    Ok(None)
 }
 
 fn evaluate_body(data: &RequestData, key_alias: Option<&str>) -> Result<Vec<u8>, EnforcementError> {
@@ -248,10 +254,9 @@ fn evaluate_body(data: &RequestData, key_alias: Option<&str>) -> Result<Vec<u8>,
 }
 
 // The bearer value is marked sensitive so the header map never prints the OBO token
-fn evaluation_headers(token: &SecretString) -> Result<HeaderMap, EnforcementError> {
+fn evaluation_headers(token: &SecretString) -> Result<HeaderMap, InvalidHeaderValue> {
     let value = SecretString::from(format!("Bearer {}", token.expose_secret()));
-    let mut authorization = HeaderValue::from_str(value.expose_secret())
-        .map_err(|source| EnforcementError::TokenHeader { source })?;
+    let mut authorization = HeaderValue::from_str(value.expose_secret())?;
     authorization.set_sensitive(true);
     let mut headers = HeaderMap::new();
     let _replaced = headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));

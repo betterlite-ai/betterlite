@@ -741,7 +741,58 @@ async fn an_array_defender_is_an_unevaluated_allow() {
 }
 
 #[tokio::test]
-async fn an_obo_token_that_is_not_a_header_value_is_an_error() {
+async fn an_obo_token_that_is_not_a_header_value_respects_fail_closed() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    poster.enqueue(vec![ScriptedReply::Reply(reply(
+        200,
+        r#"{"access_token":"obo\ntoken","expires_in":3600}"#,
+    ))]);
+    let failure = run(&guardrail, &mut data).await.unwrap_err();
+    let (status, detail) = http_detail(&failure);
+    assert_eq!(status, 503);
+    let reason = "the Agent 365 endpoint could not be reached (the OBO token is not a valid header value: failed to parse header value)";
+    assert_eq!(
+        detail_text(detail, "message"),
+        format!(
+            "Tool call '{TOOL}' was blocked because {reason} and unreachable_fallback is 'fail_closed'."
+        )
+    );
+    assert_eq!(poster.recorded().len(), 1);
+    let fields = record_fields(&data);
+    let recorded = response(fields);
+    assert_eq!(text(recorded.get("verdict").unwrap()), "Unavailable");
+    assert_eq!(text(recorded.get("reason").unwrap()), reason);
+    assert!(!recorded.contains_key("latency_ms"));
+}
+
+// LiteLLM's httpx cannot encode this header as ASCII and the hook answers 500; betterlite sends the bytes
+#[tokio::test]
+async fn a_non_ascii_obo_token_still_reaches_the_evaluation() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    poster.enqueue(vec![
+        ScriptedReply::Reply(reply(
+            200,
+            r#"{"access_token":"obo-töken","expires_in":3600}"#,
+        )),
+        evaluate(r#"{"allowed":true,"defender":{"status":"Evaluated"}}"#),
+    ]);
+    let outcome = run(&guardrail, &mut data).await;
+    assert!(outcome.is_ok());
+    let requests = poster.recorded();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1].url, EVALUATE_URL);
+}
+
+#[tokio::test]
+async fn an_obo_token_that_is_not_a_header_value_fails_open() {
     let Harness {
         guardrail,
         poster,
@@ -751,10 +802,12 @@ async fn an_obo_token_that_is_not_a_header_value_is_an_error() {
         200,
         r#"{"access_token":"obo\ntoken","expires_in":3600}"#,
     ))]);
-    let failure = run(&guardrail, &mut data).await.unwrap_err();
-    assert!(matches!(failure, EnforcementError::TokenHeader { .. }));
+    let outcome = run(&guardrail, &mut data).await;
+    assert!(outcome.is_ok());
     assert_eq!(poster.recorded().len(), 1);
-    assert!(!data.contains_key("metadata"));
+    let fields = record_fields(&data);
+    assert_eq!(status_of(fields), "guardrail_failed_to_respond");
+    assert_eq!(text(response(fields).get("verdict").unwrap()), "Unscanned");
 }
 
 #[tokio::test]
