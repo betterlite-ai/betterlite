@@ -1,0 +1,11 @@
+kind: helper
+name: azure-fine-tuning-client
+call:
+  azure_fine_tuning:
+    steps:
+    - action: project
+      client: azure_openai
+      is_async: true
+      args: {api_key: seed-3, api_base: "https://fixture.test", api_version: "2024-10-21", timeout: 7.5, max_retries: 7, organization: org-x}
+env: {}
+compare: {ignore: []}

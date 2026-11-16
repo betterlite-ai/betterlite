@@ -1,0 +1,7 @@
+kind: helper
+name: bypass-header-disabled
+call:
+  b3765: {"function": "apply", "config": {"api_key": "test-key", "api_base": "http://compresr.test", "min_chars_to_compress": 5, "enable_retrieval": false}, "reply": {"status": 200, "body": "{\"data\": {\"compressed_context\": \"short\", \"original_tokens\": 10, \"compressed_tokens\": 4}}"}, "inputs": {"structured_messages": [{"role": "user", "content": "find the answer"}, {"role": "assistant", "content": null, "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "search", "arguments": "{\"q\": \"x\"}"}}]}, {"role": "tool", "tool_call_id": "c1", "content": "long tool output one"}]}, "headers": {"x-compresr-bypass": "true"}, "caller": null}
+env: {}
+compare:
+  ignore: []

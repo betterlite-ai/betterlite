@@ -1,0 +1,23 @@
+kind: helper
+name: databricks-chat-messages-seed
+call:
+  b5841:
+    function: messages
+    cases:
+    - model: databricks-meta-llama-3-1-70b
+      messages:
+      - role: user
+        content: seeded
+      - role: assistant
+        content: ''
+        tool_calls:
+        - id: a
+          type: function
+          function:
+            name: f
+            arguments: '{}'
+      - role: tool
+        tool_call_id: a
+        content: one
+env: {}
+compare: {ignore: []}

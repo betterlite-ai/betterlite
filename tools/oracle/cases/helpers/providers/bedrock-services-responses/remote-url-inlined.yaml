@@ -1,0 +1,35 @@
+kind: helper
+name: remote-url-inlined
+call:
+  bedrock_services_responses:
+    remote_url_inlined:
+      - input:
+          - type: message
+            role: user
+            content:
+              - {type: input_image, detail: auto, image_url: "http://a.example/1.png"}
+              - {type: input_image, detail: auto, image_url: "https://b.example/2.png"}
+              - {type: input_image, detail: auto, image_url: "http://a.example/1.png"}
+          - type: computer_call_output
+            call_id: c
+            output: {type: computer_screenshot, image_url: "http://shot.example/3.png"}
+        data_urls:
+          "http://a.example/1.png": "data:image/png;base64,QQ=="
+          "https://b.example/2.png": "data:image/png;base64,Qg=="
+          "http://shot.example/3.png": "data:image/png;base64,Qw=="
+      - input:
+          - type: message
+            role: user
+            content:
+              - {type: input_image, detail: auto, image_url: "http://a.example/1.png"}
+        data_urls: {}
+      - input:
+          - type: message
+            role: user
+            content:
+              - {type: input_image, detail: auto, image_url: "s3://bucket/key.png"}
+        data_urls: {}
+      - input: plain text
+        data_urls: {}
+env: {}
+compare: {ignore: []}

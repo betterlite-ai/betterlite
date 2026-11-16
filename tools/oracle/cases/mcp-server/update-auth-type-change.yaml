@@ -1,0 +1,31 @@
+kind: helper
+name: mcp-server-update-auth-type-change
+call:
+  b4712:
+    function: update
+    salt_key: b4712-salt
+    touched_by: editor
+    payload:
+      server_id: srv-auth
+      auth_type: api_key
+      credentials: {auth_value: new-token}
+    rows:
+      - server_id: srv-auth
+        server_name: Auth
+        transport: sse
+        auth_type: oauth2
+        url: https://old.test/mcp
+        issuer: https://old-idp.test
+        token_url: https://old-idp.test/token
+        oauth2_flow: client_credentials
+        token_exchange_endpoint: https://old-te.test
+        audience: aud-1
+        credentials:
+          client_id: 'LqBglpaKovAuK9WjRtglrdCERxzVtJXi7s73ewTHF9K2XBXdFdPyipDZm9lptPw='
+          client_secret: 'ClbePr8tx9fqJkfeuU8rtjlX54TNGaxX-ukAwdM1WSga725KSxvj9yImJ9Ng3xk='
+    server_id: ''
+    ttl_seconds: 0
+    users: []
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}

@@ -236,7 +236,7 @@ pub fn merge(mut base: ConfigMap, included: ConfigMap) -> ConfigMap {
 
 pub fn load_file<L, P>(loader: &ConfigLoader<L>, config_path: P) -> Result<Config, LoadError>
 where
-    L: EnvironmentLookup,
+    L: EnvironmentLookup + Sync,
     P: AsRef<Path>,
 {
     let path = config_path.as_ref();
