@@ -90,6 +90,8 @@ fn deepgram_listen_bills_the_base_and_each_priced_addon() {
         )
     );
     assert_eq!(caller.entries.len(), 3);
+    assert_eq!(caller.entries.get("model"), Some(&json("stale")));
+    assert_eq!(caller.entries.get("response_cost"), Some(&json("9")));
 }
 
 #[test]
