@@ -1,0 +1,47 @@
+task: B3367
+deviations:
+  - what: >-
+      The sync and async entry points are two Rust functions. The sync function drops async_call from the kwargs it
+      logs and never returns a coroutine, and aupload_container_file awaits an async executor instead of running the
+      sync function on the event loop with contextvars copied.
+    why: >-
+      A Rust function returns one type, so LiteLLM's _is_async switch between a value and a coroutine has no
+      counterpart; the logging state, the call id and the redactor are explicit arguments, so there is no context to
+      copy. B3363's handler exposes handle and ahandle as separate methods for the same reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1183-L1214
+  - what: >-
+      The generic container handler is reached through an UploadExecutor/AsyncUploadExecutor seam that names the
+      provider config as ContainerProviderConfig and carries litellm_params as typed JSON values, instead of core
+      building the provider config and calling the handler itself.
+    why: >-
+      Core cannot build a BaseContainerConfig with credentials (the Azure config is B547's and not landed) and cannot
+      name serde_json::Map or Value, which clippy.toml disallows; the route layer that holds the credentials builds
+      the config from the name, the same seam B3361 uses for provider configs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1354-L1365
+  - what: extra_body is accepted on the request and never reaches the executor.
+    why: LiteLLM takes extra_body as a named argument and does not pass it to generic_container_handler.handle.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1264
+  - what: >-
+      A provider name outside the known set and a known provider with no container config fail with the same
+      ApiConnection class, and every failure is mapped once, with the provider the managed id resolved to.
+    why: >-
+      B3361's get_provider_container_config answers None for both, and LiteLLM reaches the same ValueError branch for
+      an unknown LlmProviders enum name and for a missing config. The async wrapper's second exception_type pass
+      returns an already-mapped exception unchanged, so mapping once gives the same result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1333-L1338
+  - what: >-
+      The resolved timeout reaches the executor as f64 seconds, and the value of litellm.constants.request_timeout
+      enters through ContainerFileUploadDeps instead of being read from the environment here.
+    why: >-
+      The argument is declared as a float and B3363's handler never sends a timeout; configuration enters betterlite
+      through the config crate, and clippy.toml forbids std::env::var outside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L562-L577
+  - what: >-
+      In the Rust request an absent timeout is None and keeps the declared 600 seconds, while an explicit zero takes
+      the request timeout; LiteLLM's None falls through `timeout or DEFAULT_REQUEST_TIMEOUT` to the request timeout,
+      exactly as its zero does.
+    why: >-
+      Option<f64> cannot tell an omitted argument from an explicit null, and docs/compatibility.md makes an absent or
+      null value take the declared default, which is 600.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1361
+kept_bugs: []
