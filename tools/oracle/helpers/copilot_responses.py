@@ -183,13 +183,13 @@ def stream_value(step: StreamStep) -> JsonValue:
 def auth_value(step: AuthStep) -> JsonValue:
     params = step["params"]
     litellm_params = (
-        None if params is None else GenericLiteLLMParams.model_validate(params)
+        None if params is None else GenericLiteLLMParams.model_validate(params)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381
     )
     with TemporaryDirectory() as root:
         config = copilot_config(root, step["copilot_key"], None)
         try:
             headers = config.validate_environment(step["headers"], MODEL, litellm_params)
-        except AuthenticationError as error:
+        except AuthenticationError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132
             return {"raised": error.status_code}
     shown: dict[str, JsonValue] = {
         name: value for name, value in headers.items() if name != "x-request-id"
