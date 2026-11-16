@@ -1,7 +1,10 @@
-from collections.abc import AsyncIterator, Iterator
-from typing import Final, Literal, Protocol, TypedDict
+from collections.abc import AsyncIterator, Callable, Iterator
+from typing import Final, Literal, Protocol, TypedDict, Unpack
 
 import httpx
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.types.utils import ModelResponse
+from openai import AsyncAzureOpenAI, AzureOpenAI
 from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 MODEL: Final = "gpt-35-turbo-instruct"
@@ -80,6 +83,17 @@ class ConfigInput(TypedDict):
 Input = CompletionInput | StreamInput | AuthInput | ConfigInput
 
 
+class ConfigView(Protocol):
+    frequency_penalty: int | None
+    logit_bias: dict[str, int] | None
+    max_tokens: int | None
+    n: int | None
+    presence_penalty: int | None
+    stop: str | list[str] | None
+    temperature: int | None
+    top_p: int | None
+
+
 class PreArgs(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -93,7 +107,7 @@ class PreArgs(BaseModel):
 class PostArgs(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    headers: dict[str, str] | None = None
+    headers: dict[str, JsonValue] | None = None
     api_version: str | None = None
     api_base: str | None = None
 
@@ -124,17 +138,10 @@ class AsyncStream(Protocol):
     async def __anext__(self) -> JsonDump: ...
 
 
-class MessageView(TypedDict):
-    content: str | None
-    role: str
-    tool_calls: JsonValue | None
-    function_call: JsonValue | None
-
-
 class ReplyChoiceView(TypedDict):
     index: int
     finish_reason: str | None
-    message: MessageView
+    message: dict[str, JsonValue]
 
 
 class DetailsView(TypedDict, total=False):
@@ -173,6 +180,56 @@ class ChunkView(TypedDict):
     model: str
     created: int
     choices: list[ChunkChoiceView]
+
+
+class CompletionKwargs(TypedDict):
+    model: str
+    messages: list[Turn]
+    model_response: ModelResponse
+    api_key: str | None
+    api_base: str
+    api_version: str
+    api_type: str
+    azure_ad_token: str | None
+    azure_ad_token_provider: None
+    print_verbose: Callable[[str], None]
+    timeout: float | None
+    logging_obj: Logging
+    optional_params: dict[str, JsonValue]
+    litellm_params: dict[str, JsonValue]
+    logger_fn: None
+    acompletion: bool
+    headers: dict[str, str] | None
+    client: AzureOpenAI | AsyncAzureOpenAI
+
+
+class StreamKwargs(TypedDict):
+    logging_obj: Logging
+    api_base: str
+    api_key: str | None
+    api_version: str
+    data: dict[str, JsonValue]
+    model: str
+    timeout: float | None
+    azure_ad_token: str | None
+    client: AzureOpenAI | AsyncAzureOpenAI
+    litellm_params: dict[str, JsonValue]
+
+
+class SyncTextCompletion(Protocol):
+    def validate_environment(
+        self, api_key: str | None, azure_ad_token: str | None
+    ) -> dict[str, JsonValue]: ...
+
+    def completion(self, **kwargs: Unpack[CompletionKwargs]) -> SyncStream | JsonDump: ...
+
+    def streaming(self, **kwargs: Unpack[StreamKwargs]) -> SyncStream: ...
+
+
+class AsyncTextCompletion(Protocol):
+    async def completion(self, **kwargs: Unpack[CompletionKwargs]) -> AsyncStream | JsonDump: ...
+
+    async def async_streaming(self, **kwargs: Unpack[StreamKwargs]) -> AsyncStream: ...
 
 
 REPLY: Final[TypeAdapter[ReplyView]] = TypeAdapter(ReplyView)

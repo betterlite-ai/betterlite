@@ -81,27 +81,26 @@ where
     Source: ClientSource,
 {
     let stream_requested = matches!(sent.data.get(request::STREAM_KEY), Some(Json::Bool(true)));
-    match (call.acompletion, stream_requested) {
-        (true, true) => streaming::streaming(source, &mut sent, call, runtime, hooks)
-            .await
-            .map(TextCompletionOutcome::Stream),
-        (true, false) => buffered::acompletion(source, &sent, call, runtime, hooks)
-            .await
-            .map(TextCompletionOutcome::Buffered),
-        (false, true) => {
-            let empty = LiteLlmParams::default();
-            let mut sent_without_params = SentCall {
-                litellm_params: &empty,
-                ..sent
-            };
-            streaming::streaming(source, &mut sent_without_params, call, runtime, hooks)
-                .await
-                .map(TextCompletionOutcome::Stream)
-        }
-        (false, false) => buffered::complete_buffered(source, &sent, call, runtime, hooks)
-            .await
-            .map(TextCompletionOutcome::Buffered),
+    if call.acompletion && stream_requested {
+        let stream = streaming::streaming(source, &mut sent, call, runtime, hooks).await?;
+        return Ok(TextCompletionOutcome::Stream(stream));
     }
+    if call.acompletion {
+        let reply = buffered::acompletion(source, &sent, call, runtime, hooks).await?;
+        return Ok(TextCompletionOutcome::Buffered(reply));
+    }
+    if stream_requested {
+        let empty = LiteLlmParams::default();
+        let mut sent_without_params = SentCall {
+            litellm_params: &empty,
+            ..sent
+        };
+        let stream =
+            streaming::streaming(source, &mut sent_without_params, call, runtime, hooks).await?;
+        return Ok(TextCompletionOutcome::Stream(stream));
+    }
+    let reply = buffered::complete_buffered(source, &sent, call, runtime, hooks).await?;
+    Ok(TextCompletionOutcome::Buffered(reply))
 }
 
 // the cloudflare branch swaps the caller's client for one whose base url carries the deployment
@@ -148,17 +147,19 @@ fn resolve_client<Source>(
 where
     Source: ClientSource,
 {
-    if let Some(handle) = sent.supplied.as_ref() {
-        return Ok(handle.clone());
-    }
-    source.get(GetClient {
-        api_key: call.api_key,
-        api_base: call.api_base,
-        api_version: call.api_version,
-        model: call.model,
-        litellm_params: sent.litellm_params,
-        is_async,
-    })
+    sent.supplied.as_ref().map_or_else(
+        || {
+            source.get(GetClient {
+                api_key: call.api_key,
+                api_base: call.api_base,
+                api_version: call.api_version,
+                model: call.model,
+                litellm_params: sent.litellm_params,
+                is_async,
+            })
+        },
+        |handle| Ok(handle.clone()),
+    )
 }
 
 // the isinstance guard each path runs on the client it got back

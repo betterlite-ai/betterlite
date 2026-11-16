@@ -5,6 +5,7 @@ use betterlite_prompts::builtin::Message;
 use betterlite_streaming::stream_chunk_shaping::records::{JsonObject, StreamChunk};
 use futures_util::StreamExt as _;
 use secrecy::SecretString;
+use serde_json::Number;
 
 use crate::completion::arguments::{CompletionCall, Runtime};
 use crate::completion::client::ClientHandle;
@@ -259,28 +260,26 @@ pub(super) fn at(value: &Json, path: &str) -> Json {
 }
 
 pub(super) fn text(value: &Json) -> String {
-    match value {
-        Json::Text(content) => content.clone(),
-        Json::Null => String::new(),
-        Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            panic!("not text: {value:?}")
-        }
+    if matches!(value, Json::Null) {
+        return String::new();
     }
+    let Json::Text(content) = value else {
+        panic!("not text: {value:?}");
+    };
+    content.clone()
 }
 
 pub(super) fn number(value: &Json) -> i64 {
-    match value {
-        Json::Number(count) => count.as_i64().unwrap(),
-        Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_) => {
-            panic!("not a number: {value:?}")
-        }
-    }
+    let Json::Number(count) = value else {
+        panic!("not a number: {value:?}");
+    };
+    count.as_i64().unwrap()
 }
 
 pub(super) fn float(value: f64) -> Json {
-    Json::Number(serde_json::Number::from_f64(value).unwrap())
+    Json::Number(Number::from_f64(value).unwrap())
 }
 
 pub(super) fn count(value: i64) -> Json {
-    Json::Number(serde_json::Number::from(value))
+    Json::Number(Number::from(value))
 }

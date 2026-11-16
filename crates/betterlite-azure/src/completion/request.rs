@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use secrecy::{ExposeSecret as _, SecretString};
+use serde_json::Number;
 
 pub const CLOUDFLARE_MARKER: &str = "gateway.ai.cloudflare.com";
 pub const DEFAULT_MAX_RETRIES: i64 = 2;
@@ -18,7 +19,7 @@ impl Retries {
     pub fn pop(data: &mut Extra) -> Self {
         Self(
             data.shift_remove(MAX_RETRIES_KEY)
-                .unwrap_or_else(|| Json::Number(serde_json::Number::from(DEFAULT_MAX_RETRIES))),
+                .unwrap_or_else(|| Json::Number(Number::from(DEFAULT_MAX_RETRIES))),
         )
     }
 

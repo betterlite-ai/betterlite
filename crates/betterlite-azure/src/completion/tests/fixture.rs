@@ -16,7 +16,10 @@ use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use chrono::{DateTime, Utc};
 use futures_util::stream;
 use http::HeaderMap;
+use http::header::{HeaderName, HeaderValue};
 use secrecy::SecretString;
+use serde_json::Number;
+use tokio::runtime::Builder;
 use uuid::Uuid;
 
 use crate::completion::client::{
@@ -60,8 +63,8 @@ fn status_error(status: u16, message: &str, headers: &[(String, String)]) -> Sdk
     let mut map = HeaderMap::new();
     for (raw_name, raw_value) in headers {
         if let (Ok(name), Ok(value)) = (
-            raw_name.parse::<http::header::HeaderName>(),
-            raw_value.parse::<http::header::HeaderValue>(),
+            raw_name.parse::<HeaderName>(),
+            raw_value.parse::<HeaderValue>(),
         ) {
             map.insert(name, value);
         }
@@ -87,7 +90,7 @@ impl CompletionsTransport for ScriptedTransport {
         record.insert(
             "timeout".to_owned(),
             timeout.map_or(Json::Null, |value| {
-                Json::Number(serde_json::Number::from_f64(value).unwrap())
+                Json::Number(Number::from_f64(value).unwrap())
             }),
         );
         self.creates.lock().unwrap().push(Json::Object(record));
@@ -194,9 +197,9 @@ impl ClientSource for ScriptedSource {
         fields.insert("is_async".to_owned(), Json::Bool(call.is_async));
         fields.insert(
             "max_retries".to_owned(),
-            call.litellm_params.max_retries.map_or(Json::Null, |count| {
-                Json::Number(serde_json::Number::from(count))
-            }),
+            call.litellm_params
+                .max_retries
+                .map_or(Json::Null, |count| Json::Number(Number::from(count))),
         );
         let handle = self.client_for(fields, &self.gets);
         if self.fail_get {
@@ -313,7 +316,7 @@ pub(super) fn run<Fut>(future: Fut) -> Fut::Output
 where
     Fut: Future,
 {
-    tokio::runtime::Builder::new_current_thread()
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .unwrap()

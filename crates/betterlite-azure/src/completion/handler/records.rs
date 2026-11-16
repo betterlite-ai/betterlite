@@ -88,20 +88,19 @@ pub(super) fn async_pre_call<Client>(client: &ClientHandle<Client>, data: &Extra
         || "Bearer None".to_owned(),
         |secret| format!("Bearer {}", secret.expose_secret()),
     );
-    let mut headers = IndexMap::new();
-    headers.insert("Authorization".to_owned(), Json::Text(authorization));
-    let mut passthrough = IndexMap::new();
-    passthrough.insert("acompletion".to_owned(), Json::Bool(true));
     PreCall {
         input: data.get("prompt").cloned().unwrap_or(Json::Null),
         model: None,
         additional_args: AdditionalArgs {
-            api_base: Some(client.base_url.clone()),
-            headers: Some(headers),
-            complete_input_dict: Some(RawBody::Object(data.clone())),
-            request_str: None,
+            passthrough: IndexMap::from([("acompletion".to_owned(), Json::Bool(true))]),
             openai_sdk: None,
-            passthrough,
+            request_str: None,
+            headers: Some(IndexMap::from([(
+                "Authorization".to_owned(),
+                Json::Text(authorization),
+            )])),
+            complete_input_dict: Some(RawBody::Object(data.clone())),
+            api_base: Some(client.base_url.clone()),
         },
     }
 }

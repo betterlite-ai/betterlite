@@ -1,11 +1,13 @@
 use betterlite_azure::completion::error::AzureTextError;
 use betterlite_azure::completion::response::ChatReply;
+use betterlite_logging::logging_pre_post::args::AdditionalArgs;
 use betterlite_logging::logging_pre_post::post_call::PostCall;
 use betterlite_logging::logging_pre_post::pre_call::PreCall;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::error::TextCompletionError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
+use serde_json::Number;
 
 use super::hooks::Recorder;
 use super::source::ScriptedSource;
@@ -54,34 +56,38 @@ pub(super) fn failure(error: &TextCompletionError) -> Box<HelperError> {
     })
 }
 
-pub(super) fn pre_value(call: &PreCall) -> Json {
-    let args = &call.additional_args;
-    let acompletion = matches!(args.passthrough.get("acompletion"), Some(Json::Bool(true)));
-    let api_base = if acompletion {
-        Json::Null
-    } else {
-        args.api_base
-            .as_deref()
-            .map_or(Json::Null, |text| Json::Text(text.to_owned()))
-    };
-    let api_version = if acompletion {
-        Json::Null
-    } else {
-        args.passthrough
-            .get("api_version")
-            .cloned()
-            .unwrap_or(Json::Null)
-    };
+// the input, headers and target a callback saw; an async call logs no target of its own
+fn call_fields(input: &Json, args: &AdditionalArgs, hidden: bool) -> Extra {
     let mut fields = Extra::new();
-    fields.insert("input".to_owned(), call.input.clone());
+    fields.insert("input".to_owned(), input.clone());
     fields.insert(
         "headers".to_owned(),
         args.headers
             .as_ref()
             .map_or(Json::Null, |headers| Json::Object(headers.clone())),
     );
+    let (api_base, api_version) = if hidden {
+        (Json::Null, Json::Null)
+    } else {
+        (
+            args.api_base
+                .as_deref()
+                .map_or(Json::Null, |text| Json::Text(text.to_owned())),
+            args.passthrough
+                .get("api_version")
+                .cloned()
+                .unwrap_or(Json::Null),
+        )
+    };
     fields.insert("api_base".to_owned(), api_base);
     fields.insert("api_version".to_owned(), api_version);
+    fields
+}
+
+pub(super) fn pre_value(call: &PreCall) -> Json {
+    let args = &call.additional_args;
+    let acompletion = matches!(args.passthrough.get("acompletion"), Some(Json::Bool(true)));
+    let mut fields = call_fields(&call.input, args, acompletion);
     fields.insert("acompletion".to_owned(), Json::Bool(acompletion));
     fields.insert(
         "complete_input_dict".to_owned(),
@@ -93,32 +99,11 @@ pub(super) fn pre_value(call: &PreCall) -> Json {
 }
 
 pub(super) fn post_value(call: &PostCall) -> Json {
-    let args = &call.additional_args;
+    let mut fields = call_fields(&call.input, &call.additional_args, false);
     let original_id = match &call.original_response {
-        Json::Object(fields) => fields.get("id").cloned().unwrap_or(Json::Null),
+        Json::Object(original) => original.get("id").cloned().unwrap_or(Json::Null),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => Json::Null,
     };
-    let mut fields = Extra::new();
-    fields.insert("input".to_owned(), call.input.clone());
-    fields.insert(
-        "headers".to_owned(),
-        args.headers
-            .as_ref()
-            .map_or(Json::Null, |headers| Json::Object(headers.clone())),
-    );
-    fields.insert(
-        "api_base".to_owned(),
-        args.api_base
-            .as_deref()
-            .map_or(Json::Null, |text| Json::Text(text.to_owned())),
-    );
-    fields.insert(
-        "api_version".to_owned(),
-        args.passthrough
-            .get("api_version")
-            .cloned()
-            .unwrap_or(Json::Null),
-    );
     fields.insert("original_id".to_owned(), original_id);
     Json::Object(fields)
 }
@@ -126,7 +111,7 @@ pub(super) fn post_value(call: &PostCall) -> Json {
 pub(super) fn error_value(error: &AzureTextError) -> Json {
     let status = error
         .status
-        .map_or(Json::Null, |value| Json::Number(serde_json::Number::from(value)));
+        .map_or(Json::Null, |value| Json::Number(Number::from(value)));
     let retry_after = error
         .headers
         .as_ref()
@@ -193,7 +178,10 @@ fn usage_value(usage: &Json) -> Json {
     for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
         out.insert(
             name.to_owned(),
-            fields.get(name).cloned().unwrap_or(Json::Number(serde_json::Number::from(0_u8))),
+            fields
+                .get(name)
+                .cloned()
+                .unwrap_or(Json::Number(Number::from(0_u8))),
         );
     }
     out.insert("reasoning_tokens".to_owned(), reasoning);
@@ -235,7 +223,7 @@ pub(super) fn chunk_value(chunk: &StreamChunk) -> Json {
     let finish_reason = choice
         .and_then(|entry| entry.finish_reason.clone())
         .map_or(Json::Null, Json::Text);
-    let index = choice.map_or(Json::Null, |entry| Json::Number(serde_json::Number::from(entry.index)));
+    let index = choice.map_or(Json::Null, |entry| Json::Number(Number::from(entry.index)));
     let mut fields = Extra::new();
     fields.insert("content".to_owned(), content);
     fields.insert("role".to_owned(), role);
