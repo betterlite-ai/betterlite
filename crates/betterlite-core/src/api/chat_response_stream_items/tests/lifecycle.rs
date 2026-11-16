@@ -269,3 +269,14 @@ fn lifecycle_reports_sequence_overflow() {
         Err(StreamItemsError::Stream(StreamToolsError::SequenceOverflow))
     ));
 }
+
+#[test]
+fn system_sources_read_the_wall_clock_and_fresh_uuids() {
+    let system = EventSources::system();
+    let now = (system.clock)().unwrap();
+    let first = (system.ids)();
+    let second = (system.ids)();
+    assert!(now > 1_700_000_000);
+    assert!(uuid::Uuid::parse_str(&first).is_ok());
+    assert_ne!(first, second);
+}
