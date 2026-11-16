@@ -12,15 +12,18 @@ use betterlite_mcp::client::sessions::error::McpFailure;
 use serde_json::json;
 use url::Url;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{ErrorInput, Input, Operation};
 use super::session::{FakeSession, ResultStep, Script};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 const SERVER: &str = "https://mcp.example.com/mcp";
 
 pub(crate) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_time()
         .start_paused(true)
         .build()
@@ -30,7 +33,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),

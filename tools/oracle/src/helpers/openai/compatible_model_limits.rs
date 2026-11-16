@@ -1,4 +1,5 @@
 use betterlite_openai::compatible_models::decode_compatible_model_list;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -17,10 +18,10 @@ struct Call {
     body: String,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let limits = input.calls.iter().map(|call| {
             let found = decode_compatible_model_list(call.body.as_bytes())
                 .ok()

@@ -1,4 +1,4 @@
-use self::run::run_case;
+use self::run::run_fixture_case;
 use crate::OracleError;
 use crate::cli::Options;
 use crate::http_scenarios::model::HttpScenario;
@@ -17,7 +17,7 @@ pub(crate) fn run_cases(
     let root = artifact_root()?;
     let mut different = false;
     for scenario in scenarios {
-        different |= run_case(options, &root, scenario)?;
+        different |= run_fixture_case(options, &root, scenario)?;
     }
     Ok(different)
 }

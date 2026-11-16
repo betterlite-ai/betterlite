@@ -29,10 +29,14 @@ use betterlite_ocr::response::OCRResponse;
 use secrecy::SecretString;
 use serde::Deserialize;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{Helper, HelperError, HelperResult};
-use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::{MockScript, Outcome, ProviderCall, ScriptedReply, Wait};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, Outcome, ProviderCall, ScriptedReply, Wait,
+};
+use tokio::runtime::Builder;
 
 #[derive(Deserialize)]
 pub(crate) struct Input {
@@ -53,7 +57,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure("Runtime", error.to_string()))?;

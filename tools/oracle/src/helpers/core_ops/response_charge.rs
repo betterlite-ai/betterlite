@@ -11,6 +11,9 @@ use self::args::{build_parts, completion_args};
 use self::frame::{build_adapters, build_calculator, build_stage};
 use self::input::{Function, Input};
 use self::views::response_view;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 mod adapters;
 mod args;
@@ -21,7 +24,7 @@ mod views;
 async fn charge(
     input: &Input,
     target: Option<&mut Breakdown>,
-) -> Result<Decimal, Box<crate::helpers::HelperError>> {
+) -> Result<Decimal, Box<HelperError>> {
     let stage = build_stage(input)?;
     let adapters = build_adapters(&stage, input);
     let calculator = build_calculator(&stage, &adapters);
@@ -40,11 +43,11 @@ async fn charge(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| failure("RuntimeError", error.to_string()))?;
         let mut target = Breakdown {

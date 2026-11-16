@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_policy::registry::{PolicyRegistry, RawPolicy};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn invalid_input(message: String) -> Box<HelperError> {
     Box::new(HelperError {

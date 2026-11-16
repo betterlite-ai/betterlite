@@ -1,13 +1,16 @@
 use std::time::Duration;
 
-use crate::routing_mock_scripts::{MockScript, Outcome, ScriptedReply, Wait};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, Outcome, ScriptedReply, Wait};
+use serde::de::DeserializeOwned;
+use std::collections::BTreeMap;
 
 pub(super) fn parse_json_field<T>(
     request: &serde_json::Value,
     name: &str,
-) -> Result<Option<T>, Box<crate::helpers::HelperError>>
+) -> Result<Option<T>, Box<HelperError>>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     let Some(value) = request.get(name).cloned() else {
         return Ok(None);
@@ -22,7 +25,7 @@ pub(super) fn error_failure(
     other_class: &str,
     status: Option<u16>,
     message: String,
-) -> Box<crate::helpers::HelperError> {
+) -> Box<HelperError> {
     let class = if is_blocked {
         blocked_class
     } else {
@@ -34,9 +37,9 @@ pub(super) fn failure_with_class(
     class_name: &str,
     status: Option<u16>,
     message: String,
-) -> Box<crate::helpers::HelperError> {
+) -> Box<HelperError> {
     let class = class_name.to_owned();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class,
         status,
         error_type: None,
@@ -58,6 +61,6 @@ pub(super) fn disconnection_script(fail: &str) -> MockScript {
             wait,
             then: Outcome::Close,
         }],
-        barriers: std::collections::BTreeMap::new(),
+        barriers: BTreeMap::new(),
     }
 }

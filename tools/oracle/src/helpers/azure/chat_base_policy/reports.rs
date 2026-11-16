@@ -13,7 +13,7 @@ use betterlite_openai::base_helpers::provider_config;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::TRANSFORM_MODEL;
 use super::input::{

@@ -5,6 +5,8 @@ use betterlite_openapi::llm_request_bodies::{LlmRequestSchemas, add_llm_request_
 use betterlite_openapi::operation_ids::{ensure_unique_operation_ids, stable_operation_id};
 use betterlite_openapi::schema_transforms::tree::JsonObject;
 use betterlite_openapi::websocket_stubs::{WebsocketRoute, inject_websocket_stubs};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
@@ -32,10 +34,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::ErrorResponseTable => to_json(error_responses()),
             Input::ErrorResponseSchema => to_json(error_response_schema()),
@@ -78,12 +80,12 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn to_json<T>(value: T) -> crate::helpers::HelperResult
+fn to_json<T>(value: T) -> HelperResult
 where
     T: serde::Serialize,
 {
     serde_json::to_value(value).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: None,

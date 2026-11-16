@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::sections::content_filter_catalog::categories::available_content_categories;
 use betterlite_config::sections::content_filter_catalog::patterns::{
@@ -16,7 +16,8 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -112,7 +113,7 @@ fn categories(roots: &[Vec<CategoryFile>]) -> HelperResult {
     let warning_entries = warnings
         .0
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .clone();
     let categories: Vec<Value> = entries
         .iter()
@@ -232,7 +233,7 @@ impl<Inner: Subscriber> Layer<Inner> for WarningCapture {
         };
         self.0
             .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .unwrap_or_else(PoisonError::into_inner)
             .push(warning);
     }
 }

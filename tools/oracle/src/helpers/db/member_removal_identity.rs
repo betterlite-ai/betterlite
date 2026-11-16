@@ -11,6 +11,8 @@ use betterlite_db::member_removal_identity::matching::{
     addresses_member, addresses_user, same_email, with_row_email,
 };
 use betterlite_db::team_rows::member::Member;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -82,10 +84,10 @@ pub(crate) enum Input {
     AnyFilter { clauses: Vec<FilterClause> },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Validate(args) => {
                 let identity =
@@ -137,7 +139,7 @@ fn run_addresses(
     target: AddressTarget<'_>,
     user_id: Option<&str>,
     user_email: Option<&str>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let request = MemberIdentity::new(user_id.map(str::to_owned), user_email.map(str::to_owned))
         .map_err(|error| helper_error("ValidationError", &error.to_string()))?;
     to_value(match target {
@@ -147,7 +149,7 @@ fn run_addresses(
     .map_err(|error| helper_error("InvalidOutput", &error.to_string()))
 }
 
-fn run_duplicate_indexes(requests: &[RawIdentity]) -> crate::helpers::HelperResult {
+fn run_duplicate_indexes(requests: &[RawIdentity]) -> HelperResult {
     let identities = requests
         .iter()
         .map(|raw| {
@@ -160,8 +162,8 @@ fn run_duplicate_indexes(requests: &[RawIdentity]) -> crate::helpers::HelperResu
         .map_err(|error| helper_error("InvalidOutput", &error.to_string()))
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

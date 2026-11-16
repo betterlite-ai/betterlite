@@ -300,8 +300,7 @@ deviations:
 - what: 'Open, waiting for Max: keep request image/PDF/file URLs unfetched (current behavior), or permit controlled
     request-URL downloads. This task keeps URLs as provider-forwardable descriptors and rejects a URL when local
     bytes are required; only supplied bytes or already authorized local file handles may be read.'
-  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
-    feature that depends on fetching.
+  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/mantle/transformation.py#L39-L143
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

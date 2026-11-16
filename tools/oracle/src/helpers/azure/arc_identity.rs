@@ -1,7 +1,7 @@
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use std::collections::{BTreeMap, VecDeque};
 use std::io;
-use std::sync::Mutex;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_azure::azure_arc_identity::error::ArcIdentityError;
 use betterlite_azure::azure_arc_identity::{
@@ -10,6 +10,7 @@ use betterlite_azure::azure_arc_identity::{
 };
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::azure_arc_identity::Settings;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
@@ -55,7 +56,7 @@ struct Host<'fixture> {
 }
 
 impl<'fixture> Host<'fixture> {
-    fn load(fixture: &'fixture Fixture) -> Result<Self, Box<crate::helpers::HelperError>> {
+    fn load(fixture: &'fixture Fixture) -> Result<Self, Box<HelperError>> {
         let config = ConfigLoader {
             lookup: fixture.environment.clone(),
         }
@@ -174,7 +175,7 @@ fn acquire(
     let requests = transport
         .requests
         .into_inner()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
+        .unwrap_or_else(PoisonError::into_inner);
     let (result, bearer) = match outcome {
         Ok(token) => (
             json!({
@@ -196,10 +197,10 @@ fn acquire(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(match input {
             Input::Endpoint(fixture) => {
                 json!({"endpoint": select_arc_endpoint(&Host::load(fixture)?)})
