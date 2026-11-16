@@ -200,6 +200,14 @@ fn auth_configured_key(call: &AuthCall) -> Result<Option<SecretString>, Box<Help
         .and_then(|deployment| deployment.api_key))
 }
 
+fn refused(message: &str) -> SourceFailure {
+    SourceFailure {
+        class: String::from("ValueError"),
+        status: None,
+        message: message.to_owned(),
+    }
+}
+
 struct NoSources;
 
 impl CredentialSources for NoSources {
@@ -207,33 +215,21 @@ impl CredentialSources for NoSources {
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("ValueError"),
-            status: None,
-            message: String::from("no client secret source is configured"),
-        })
+        Err(refused("no client secret source is configured"))
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("ValueError"),
-            status: None,
-            message: String::from("no username and password source is configured"),
-        })
+        Err(refused("no username and password source is configured"))
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("ValueError"),
-            status: None,
-            message: String::from("no SDK refresh source is configured"),
-        })
+        Err(refused("no SDK refresh source is configured"))
     }
 
     fn default_credential<'source>(
@@ -244,10 +240,6 @@ impl CredentialSources for NoSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(SourceFailure {
-            class: String::from("ValueError"),
-            status: None,
-            message: String::from("no OIDC source is configured"),
-        })
+        Err(refused("no OIDC source is configured"))
     }
 }

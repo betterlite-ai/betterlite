@@ -1,6 +1,6 @@
 use betterlite_foundry::chat::fields::required_params;
 use serde_json::{Map, Value, json};
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -22,83 +22,56 @@ impl Helper for Op {
         let runtime = Builder::new_current_thread().build().or_value_error()?;
         let mut installed = Installed::new(input);
         let mut answer = Map::new();
-        insert_urls(input, &mut answer);
-        insert_supported(input, &runtime, &mut installed, &mut answer);
-        insert_maps(input, &runtime, &mut installed, &mut answer);
-        insert_requests(input, &mut answer);
-        insert_responses(input, &mut answer);
-        insert_providers(input, &installed, &mut answer);
+        insert_section(
+            &mut answer,
+            "urls",
+            input.urls.as_deref(),
+            reports::url_report,
+        );
+        insert_section(
+            &mut answer,
+            "supported",
+            input.supported.as_deref(),
+            |model| reports::supported_report(&runtime, &mut installed, model),
+        );
+        insert_section(&mut answer, "maps", input.maps.as_deref(), |call| {
+            reports::map_report(&runtime, &mut installed, call)
+        });
+        insert_section(
+            &mut answer,
+            "requests",
+            input.requests.as_deref(),
+            reports::request_report,
+        );
+        insert_section(
+            &mut answer,
+            "responses",
+            input.responses.as_deref(),
+            reports::response_report,
+        );
+        insert_section(
+            &mut answer,
+            "providers",
+            input.providers.as_deref(),
+            |call| reports::provider_report(&installed, call),
+        );
         insert_auths(input, &mut answer)?;
-        insert_fields(input, &mut answer);
+        if input.fields == Some(true) {
+            answer.insert(String::from("fields"), json!(required_params()));
+        }
         Ok(Value::Object(answer))
     }
 }
 
-fn insert_urls(input: &Input, answer: &mut Map<String, Value>) {
-    let Some(calls) = &input.urls else {
-        return;
-    };
-    let values = calls.iter().map(reports::url_report).collect();
-    answer.insert(String::from("urls"), Value::Array(values));
-}
-
-fn insert_supported(
-    input: &Input,
-    runtime: &Runtime,
-    installed: &mut Installed,
+fn insert_section<T>(
     answer: &mut Map<String, Value>,
+    name: &str,
+    calls: Option<&[T]>,
+    report: impl FnMut(&T) -> Value,
 ) {
-    let Some(models) = &input.supported else {
-        return;
-    };
-    let values = models
-        .iter()
-        .map(|model| reports::supported_report(runtime, installed, model))
-        .collect();
-    answer.insert(String::from("supported"), Value::Array(values));
-}
-
-fn insert_maps(
-    input: &Input,
-    runtime: &Runtime,
-    installed: &mut Installed,
-    answer: &mut Map<String, Value>,
-) {
-    let Some(calls) = &input.maps else {
-        return;
-    };
-    let values = calls
-        .iter()
-        .map(|call| reports::map_report(runtime, installed, call))
-        .collect();
-    answer.insert(String::from("maps"), Value::Array(values));
-}
-
-fn insert_requests(input: &Input, answer: &mut Map<String, Value>) {
-    let Some(calls) = &input.requests else {
-        return;
-    };
-    let values = calls.iter().map(reports::request_report).collect();
-    answer.insert(String::from("requests"), Value::Array(values));
-}
-
-fn insert_responses(input: &Input, answer: &mut Map<String, Value>) {
-    let Some(calls) = &input.responses else {
-        return;
-    };
-    let values = calls.iter().map(reports::response_report).collect();
-    answer.insert(String::from("responses"), Value::Array(values));
-}
-
-fn insert_providers(input: &Input, installed: &Installed, answer: &mut Map<String, Value>) {
-    let Some(calls) = &input.providers else {
-        return;
-    };
-    let values = calls
-        .iter()
-        .map(|call| reports::provider_report(installed, call))
-        .collect();
-    answer.insert(String::from("providers"), Value::Array(values));
+    if let Some(calls) = calls {
+        answer.insert(String::from(name), calls.iter().map(report).collect());
+    }
 }
 
 fn insert_auths(input: &Input, answer: &mut Map<String, Value>) -> Result<(), Box<HelperError>> {
@@ -111,10 +84,4 @@ fn insert_auths(input: &Input, answer: &mut Map<String, Value>) -> Result<(), Bo
         .collect::<Result<Vec<_>, _>>()?;
     answer.insert(String::from("auths"), Value::Array(values));
     Ok(())
-}
-
-fn insert_fields(input: &Input, answer: &mut Map<String, Value>) {
-    if input.fields == Some(true) {
-        answer.insert(String::from("fields"), json!(required_params()));
-    }
 }

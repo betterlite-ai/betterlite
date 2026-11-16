@@ -67,6 +67,10 @@ impl ChatCapabilities {
                 .and_then(|entry| entry.get(key))
         })
     }
+
+    fn flag(&self, model: &str, key: &str) -> Option<bool> {
+        self.field(model, key).and_then(Value::as_bool)
+    }
 }
 
 impl ReasoningCapabilities for ChatCapabilities {
@@ -75,8 +79,7 @@ impl ReasoningCapabilities for ChatCapabilities {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self.field(request.model, key).and_then(Value::as_bool) == Some(true);
-        ready(answer)
+        ready(self.flag(request.model, key) == Some(true))
     }
 
     fn declared_value_factory(
@@ -95,19 +98,14 @@ impl ReasoningCapabilities for ChatCapabilities {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self.field(request.model, key).and_then(Value::as_bool) == Some(false);
-        ready(answer)
+        ready(self.flag(request.model, key) == Some(false))
     }
 
     fn supports_response_schema(
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self
-            .field(request.model, "supports_response_schema")
-            .and_then(Value::as_bool)
-            == Some(true);
-        ready(answer)
+        ready(self.flag(request.model, "supports_response_schema") == Some(true))
     }
 
     fn catalogue_declares_default(&mut self) -> bool {
