@@ -3,6 +3,7 @@
 use axum::http::StatusCode;
 use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_db::database_faults::ErrorType;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
@@ -222,7 +223,10 @@ async fn route_answers_a_string_detail_when_the_cache_refuses_the_params() {
 #[tokio::test]
 async fn route_answers_a_string_detail_when_the_row_cannot_be_read() {
     let (fake, repository) = support::fake_repository();
-    fake.push_read(Err(support::refused_error("the row is unreadable")));
+    fake.push_read(Err(support::database_error(
+        ErrorType::Other,
+        "the row is unreadable",
+    )));
     let harness = support::harness(Some(repository), support::reinit(), support::audit(true));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;

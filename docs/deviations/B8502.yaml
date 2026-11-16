@@ -18,4 +18,7 @@ deviations:
   - what: "A database failure while writing the audit row logs B2330's \"Failed Creating audit log <error>\" from the sink, not the route's \"Failed to write cache-settings audit log: <error>\" warning."
     why: "B2330's create_audit_log_for_update owns the insert and logs its failure internally; the spawned task still answers LiteLLM's warning whenever the audit port itself reports an error, which B8502's failing-fake test proves, and the save is never failed by the audit either way."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L294-L328
+  - what: "changed_by_api_key is the caller key's hashed token taken from the auth principal, so a master-key save writes null when the principal carries no source key."
+    why: "LiteLLM reads user_api_key_dict.api_key, which for a master-key caller is the master key itself; the audit table must not become a copy of the proxy's credential, and a database key writes the same hashed token on both sides."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L317-L320
 kept_bugs: []

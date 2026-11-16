@@ -128,20 +128,9 @@ pub(crate) fn decrypt_all(value: &JsonValue) -> JsonValue {
     plain
 }
 
-pub(crate) fn database_error(message: &str) -> DbError {
+pub(crate) fn database_error(error_type: ErrorType, message: &str) -> DbError {
     DbError {
-        error_type: ErrorType::Connect,
-        message: message.to_owned(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
-        cause: None,
-    }
-}
-
-pub(crate) fn refused_error(message: &str) -> DbError {
-    DbError {
-        error_type: ErrorType::Other,
+        error_type,
         message: message.to_owned(),
         code: None,
         meta_code: None,
@@ -586,13 +575,12 @@ pub(crate) struct LogSink(Arc<Mutex<Vec<u8>>>);
 
 impl LogSink {
     pub(crate) fn text(&self) -> String {
-        String::from_utf8(
-            self.0
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone(),
-        )
-        .expect("the log is utf-8")
+        let captured = self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        String::from_utf8(captured).expect("the log is utf-8")
     }
 }
 

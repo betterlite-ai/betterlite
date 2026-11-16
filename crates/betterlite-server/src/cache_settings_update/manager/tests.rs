@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_config::sections::settings::JsonValue;
+use betterlite_db::database_faults::ErrorType;
 use betterlite_models::decisions::Json;
 
 use super::{CacheSettingsManager, params_equal};
@@ -156,7 +157,10 @@ async fn init_from_db_ignores_a_missing_or_empty_row() {
 async fn init_from_db_logs_and_swallows_a_failed_lookup() {
     let (logs, _guard) = support::capture_logs();
     let (fake, erased) = support::fake_repository();
-    fake.push_read(Err(support::refused_error("the row is unreadable")));
+    fake.push_read(Err(support::database_error(
+        ErrorType::Other,
+        "the row is unreadable",
+    )));
     let manager = CacheSettingsManager::default();
     let reinit = support::reinit();
     let cipher = support::cipher();
@@ -182,7 +186,10 @@ async fn init_from_db_logs_and_swallows_a_failed_lookup() {
 #[tokio::test]
 async fn init_from_db_retries_once_on_a_transport_failure() {
     let (fake, erased) = support::fake_repository();
-    fake.push_read(Err(support::database_error("connection closed")));
+    fake.push_read(Err(support::database_error(
+        ErrorType::Connect,
+        "connection closed",
+    )));
     fake.push_read(Ok(Some(support::stored_row(&[("host", string("h"))]))));
     let manager = CacheSettingsManager::default();
     let reinit = support::reinit();
@@ -215,7 +222,10 @@ async fn init_from_db_retries_once_on_a_transport_failure() {
 async fn init_from_db_gives_up_when_the_reconnect_fails() {
     let (logs, _guard) = support::capture_logs();
     let (fake, erased) = support::fake_repository();
-    fake.push_read(Err(support::database_error("connection closed")));
+    fake.push_read(Err(support::database_error(
+        ErrorType::Connect,
+        "connection closed",
+    )));
     let manager = CacheSettingsManager::default();
     let reinit = support::reinit();
     let cipher = support::cipher();
