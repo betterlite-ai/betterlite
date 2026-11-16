@@ -3,12 +3,11 @@ use betterlite_models::decisions::Json;
 use crate::api::chat_response_stream_items::error::StreamItemsError;
 use crate::api::chat_response_stream_items::items::{content_part_added, queue_message_added};
 use crate::api::chat_response_stream_tools::error::StreamToolsError;
+use crate::api::chat_response_stream_tools::state::ChatStreamState;
 
 use super::fixtures::{json, sources, state_with_details};
 
-fn queued(
-    state: &crate::api::chat_response_stream_tools::state::ChatStreamState<String>,
-) -> Vec<Json> {
+fn queued(state: &ChatStreamState<String>) -> Vec<Json> {
     state
         .progress
         .pending_response_events

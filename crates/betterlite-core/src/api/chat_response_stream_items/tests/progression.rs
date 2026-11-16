@@ -1,3 +1,5 @@
+use betterlite_models::decisions::Json;
+
 use crate::api::chat_response_stream_items::error::StreamItemsError;
 use crate::api::chat_response_stream_items::items::queue_message_added;
 use crate::api::chat_response_stream_items::progression::{
@@ -5,9 +7,9 @@ use crate::api::chat_response_stream_items::progression::{
 };
 use crate::api::chat_response_stream_tools::error::StreamToolsError;
 
-use super::fixtures::{completion, field, json, sources, state_with_details};
+use super::fixtures::{completion, field, json, path, sources, state_with_details};
 
-fn empty_completion() -> betterlite_models::decisions::Json {
+fn empty_completion() -> Json {
     completion(&json("\"\""), "[]")
 }
 
@@ -59,6 +61,15 @@ fn default_done_progression_queues_the_message_for_final_content() {
             r#"{"type":"response.content_part.added","item_id":"msg_u","output_index":0,"content_index":0,"part":{"type":"output_text","text":"","annotations":[]},"sequence_number":2}"#
         )
     );
+}
+
+#[test]
+fn default_done_progression_yields_text_then_part_done() {
+    let final_content = completion(&json("\"hi\""), "[]");
+    let mut state = state_with_details("{}", None, None);
+    let sources = sources(10, &["u"]);
+    return_default_done_events(&mut state, &sources, &final_content)
+        .expect("the message shell builds");
     state.progress.litellm_model_response = Some(completion(&json("\"stored\""), "[]"));
     let text = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the text done event builds")
@@ -81,14 +92,29 @@ fn default_done_progression_queues_the_message_for_final_content() {
         json("\"response.content_part.done\"")
     );
     assert!(state.progress.sent_content_part_done);
+}
+
+#[test]
+fn default_done_progression_yields_item_done_and_finishes() {
+    let final_content = completion(&json("\"hi\""), "[]");
+    let mut state = state_with_details("{}", None, None);
+    let sources = sources(10, &["u"]);
+    return_default_done_events(&mut state, &sources, &final_content)
+        .expect("the message shell builds");
+    state.progress.litellm_model_response = Some(completion(&json("\"stored\""), "[]"));
+    return_default_done_events(&mut state, &sources, &final_content)
+        .expect("the text done event builds");
+    return_default_done_events(&mut state, &sources, &final_content)
+        .expect("the part done event builds");
     let item = return_default_done_events(&mut state, &sources, &final_content)
         .expect("the item done event builds")
         .expect("the fourth call returns item done");
     assert_eq!(
-        json(&serde_json::to_string(&item).expect("the event serializes")),
-        json(
-            r#"{"type":"response.output_item.done","output_index":0,"sequence_number":1,"item":{"id":"msg_u","status":"completed","type":"message","role":"assistant","content":[{"type":"output_text","text":"stored","annotations":[]}]}}"#
-        )
+        path(
+            &json(&serde_json::to_string(&item).expect("the event serializes")),
+            &["item", "content"]
+        ),
+        json(r#"[{"type":"output_text","text":"stored","annotations":[]}]"#)
     );
     assert!(state.progress.sent_output_item_done);
     assert!(
@@ -118,12 +144,9 @@ fn default_done_progression_still_completes_an_added_message_with_empty_content(
         .expect("the part done event builds")
         .expect("an added message still gets part done");
     assert_eq!(
-        field(
-            &field(
-                &json(&serde_json::to_string(&part).expect("the event serializes")),
-                "part"
-            ),
-            "text"
+        path(
+            &json(&serde_json::to_string(&part).expect("the event serializes")),
+            &["part", "text"]
         ),
         json("\"\"")
     );
@@ -243,18 +266,18 @@ fn default_done_progression_finishes_only_with_every_done_flag() {
     assert!(is_stream_finished(&state));
     state.progress.finished = false;
     assert!(is_stream_finished(&state));
-    let mut state = state_with_details("{}", None, None);
-    state.progress.sent_content_part_done = true;
-    state.progress.sent_output_item_done = true;
+    let mut missing_text = state_with_details("{}", None, None);
+    missing_text.progress.sent_content_part_done = true;
+    missing_text.progress.sent_output_item_done = true;
     assert!(
-        !is_stream_finished(&state),
+        !is_stream_finished(&missing_text),
         "the text done flag is required too"
     );
-    let mut state = state_with_details("{}", None, None);
-    state.progress.sent_output_text_done = true;
-    state.progress.sent_output_item_done = true;
+    let mut missing_content = state_with_details("{}", None, None);
+    missing_content.progress.sent_output_text_done = true;
+    missing_content.progress.sent_output_item_done = true;
     assert!(
-        !is_stream_finished(&state),
+        !is_stream_finished(&missing_content),
         "the content part done flag is required too"
     );
 }

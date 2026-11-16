@@ -8,6 +8,10 @@ use crate::api::chat_response_stream_items::error::StreamItemsError;
 
 use super::fixtures::{completion, field, json, sources, state_with_details};
 
+const ANNOTATED_COMPLETION: &str = r#"{"choices":[{"message":{"content":"hi","annotations":[{"type":"url_citation","url_citation":{"start_index":1,"end_index":4,"url":"https://example.test","title":"T"}},{"type":"file_citation"},{"type":"url_citation","url_citation":{}}]}}]}"#;
+
+const CITATION_ANNOTATIONS: &str = r#"[{"type":"url_citation","start_index":1,"end_index":4,"url":"https://example.test","title":"T"},{"type":"url_citation","start_index":null,"end_index":null,"url":null,"title":null}]"#;
+
 #[test]
 fn message_done_payloads() {
     let mut state = state_with_details("{}", None, None);
@@ -40,6 +44,14 @@ fn message_done_payloads() {
             r#"{"type":"response.content_part.done","item_id":"msg_c","output_index":2,"content_index":0,"part":{"type":"output_text","text":"hello","annotations":[],"logprobs":null}}"#
         )
     );
+}
+
+#[test]
+fn message_done_payloads_read_the_stored_completion() {
+    let mut state = state_with_details("{}", None, None);
+    state.progress.cached_item_id = Some(String::from("msg_c"));
+    state.progress.message_output_index = 2;
+    let sources = sources(10, &[]);
     state.progress.litellm_model_response = Some(completion(&json("\"stored\""), "[]"));
     let item = message_done_event(
         &mut state,
@@ -62,15 +74,12 @@ fn message_done_payloads() {
 
 #[test]
 fn message_done_payloads_keep_citation_annotations() {
-    let annotated = json(
-        r#"{"choices":[{"message":{"content":"hi","annotations":[{"type":"url_citation","url_citation":{"start_index":1,"end_index":4,"url":"https://example.test","title":"T"}},{"type":"file_citation"},{"type":"url_citation","url_citation":{}}]}}]}"#,
-    );
     let mut state = state_with_details("{}", None, None);
     state.progress.cached_item_id = Some(String::from("msg_c"));
     let part = message_done_event(
         &mut state,
         &sources(10, &[]),
-        &annotated,
+        &json(ANNOTATED_COMPLETION),
         MessageDone::ContentPart,
     )
     .expect("the part done event builds");
@@ -82,11 +91,15 @@ fn message_done_payloads_keep_citation_annotations() {
             ),
             "annotations"
         ),
-        json(
-            r#"[{"type":"url_citation","start_index":1,"end_index":4,"url":"https://example.test","title":"T"},{"type":"url_citation","start_index":null,"end_index":null,"url":null,"title":null}]"#
-        )
+        json(CITATION_ANNOTATIONS)
     );
-    state.progress.litellm_model_response = Some(annotated);
+}
+
+#[test]
+fn message_done_payloads_keep_citation_annotations_in_the_item() {
+    let mut state = state_with_details("{}", None, None);
+    state.progress.cached_item_id = Some(String::from("msg_c"));
+    state.progress.litellm_model_response = Some(json(ANNOTATED_COMPLETION));
     let item = message_done_event(
         &mut state,
         &sources(10, &[]),
@@ -101,12 +114,7 @@ fn message_done_payloads_keep_citation_annotations() {
     let Json::List(parts) = field(&content, "content") else {
         panic!("the item content is a list");
     };
-    assert_eq!(
-        field(&parts[0], "annotations"),
-        json(
-            r#"[{"type":"url_citation","start_index":1,"end_index":4,"url":"https://example.test","title":"T"},{"type":"url_citation","start_index":null,"end_index":null,"url":null,"title":null}]"#
-        )
-    );
+    assert_eq!(field(&parts[0], "annotations"), json(CITATION_ANNOTATIONS));
 }
 
 #[rstest]
@@ -152,20 +160,20 @@ fn message_done_payloads_need_a_first_choice(#[case] text: &str) {
 fn message_done_payloads_reject_content_that_is_not_text() {
     let sources = sources(10, &[]);
     let mut state = state_with_details("{}", None, None);
-    let result = message_done_event(
+    let text_result = message_done_event(
         &mut state,
         &sources,
         &json(r#"{"choices":[{"message":{"content":5}}]}"#),
         MessageDone::Text,
     );
-    assert!(matches!(result, Err(StreamItemsError::ContentNotText)));
-    let result = message_done_event(
+    assert!(matches!(text_result, Err(StreamItemsError::ContentNotText)));
+    let part_result = message_done_event(
         &mut state,
         &sources,
         &json(r#"{"choices":[{"message":{"content":[]}}]}"#),
         MessageDone::ContentPart,
     );
-    assert!(matches!(result, Err(StreamItemsError::ContentNotText)));
+    assert!(matches!(part_result, Err(StreamItemsError::ContentNotText)));
 }
 
 #[test]

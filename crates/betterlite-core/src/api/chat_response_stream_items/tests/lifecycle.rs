@@ -289,6 +289,6 @@ fn system_sources_read_the_wall_clock_and_fresh_uuids() {
     let first = (system.ids)();
     let second = (system.ids)();
     assert!(now > 1_700_000_000);
-    assert!(uuid::Uuid::parse_str(&first).is_ok());
+    uuid::Uuid::parse_str(&first).expect("the generated id is a uuid");
     assert_ne!(first, second);
 }

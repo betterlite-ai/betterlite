@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_streaming::stream_chunk_shaping::records::JsonValue;
@@ -26,12 +26,12 @@ pub(super) fn state_with_details(
     provider: Option<&str>,
     litellm_metadata: Option<IndexMap<String, Json>>,
 ) -> ChatStreamState<String> {
-    let request = json(request);
+    let parsed = json(request);
     ChatStreamState::new(StreamSetup {
         model: "gpt-4o-mini",
         logging_context: String::from("wrapper-context"),
         request_input: &Json::Text(String::from("hi")),
-        responses_api_request: &request,
+        responses_api_request: &parsed,
         custom_llm_provider: provider,
         litellm_metadata,
         limits: ApiLimits::default(),
@@ -70,9 +70,9 @@ pub(super) fn path(value: &Json, names: &[&str]) -> Json {
 }
 
 pub(super) fn completion(content: &Json, annotations: &str) -> Json {
-    let content = serde_json::to_string(content).expect("the content serializes");
+    let serialized = serde_json::to_string(content).expect("the content serializes");
     json(&format!(
-        r#"{{"choices":[{{"message":{{"content":{content},"annotations":{annotations}}}}}]}}"#
+        r#"{{"choices":[{{"message":{{"content":{serialized},"annotations":{annotations}}}}}]}}"#
     ))
 }
 
@@ -83,9 +83,11 @@ pub(super) enum AssemblyResponse {
     Text,
 }
 
+type ReceivedCalls = Arc<Mutex<Vec<Vec<IndexMap<String, Json>>>>>;
+
 pub(super) struct FixtureAssembly {
     pub(super) response: AssemblyResponse,
-    pub(super) received: Arc<Mutex<Vec<Vec<IndexMap<String, Json>>>>>,
+    pub(super) received: ReceivedCalls,
 }
 
 impl FixtureAssembly {
@@ -104,7 +106,7 @@ impl StreamAssembly for FixtureAssembly {
     ) -> Result<Option<Response>, AssemblyError> {
         self.received
             .lock()
-            .expect("the calls lock")
+            .unwrap_or_else(PoisonError::into_inner)
             .push(chunks.to_vec());
         match self.response {
             AssemblyResponse::None => Ok(None),
@@ -150,12 +152,12 @@ pub(super) fn state_with_assembly(
     request: &str,
     assembly: FixtureAssembly,
 ) -> ChatStreamState<FixtureAssembly> {
-    let request = json(request);
+    let parsed = json(request);
     ChatStreamState::new(StreamSetup {
         model: "gpt-4o-mini",
         logging_context: assembly,
         request_input: &Json::Text(String::from("hi")),
-        responses_api_request: &request,
+        responses_api_request: &parsed,
         custom_llm_provider: None,
         litellm_metadata: None,
         limits: ApiLimits::default(),
