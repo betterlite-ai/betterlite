@@ -6,6 +6,9 @@ deviations:
   - what: Async methods run B3997's synchronous token lookup on the blocking pool and the HTTP call on the async client, and sync methods block on the same async path.
     why: betterlite-http has one async client, so there is no separate sync transport. The requests, headers and results are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L36-L40
+  - what: A sync write or read called inside a running async runtime logs and returns nothing or a miss instead of blocking until the request finishes.
+    why: LiteLLM's sync methods block the calling thread on its sync client. betterlite has one async transport, and blocking on it from inside a runtime would need a nested runtime, which panics; B4290's backend contract defines the logged skip instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L42-L52
   - what: Response bodies over B173's 16 MiB buffered limit read as a miss, and body text is decoded as UTF-8 only.
     why: The bounded-inputs rule caps buffered bodies. httpx's response.text guesses a charset, and Python's json.loads also accepts the bare tokens NaN and Infinity, which serde_json rejects.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L72-L73
