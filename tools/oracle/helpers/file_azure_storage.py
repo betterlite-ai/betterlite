@@ -8,7 +8,6 @@ import azure.identity
 import fastuuid
 import httpx
 import litellm
-from fastuuid import UUID
 from litellm.llms.base_llm.files.storage_backend_factory import get_storage_backend
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler, httpxSpecialProvider
 from pydantic import JsonValue
@@ -39,10 +38,10 @@ class Clock:
 
 class FixedUuid:
     def __init__(self, value: str) -> None:
-        self.value = UUID(value)
+        self.value = value
 
-    def __call__(self) -> UUID:
-        return self.value
+    def __call__(self) -> fastuuid.UUID:
+        return fastuuid.UUID(hex=self.value)
 
 
 class AnswerStatus:
@@ -96,5 +95,7 @@ async def generate_name(call: FileNameCall, cache: ClientCache) -> JsonValue:
 def run(input_value: Input) -> list[JsonValue]:
     sys.modules[IDENTITY_MODULE] = ScriptedIdentity(IDENTITY_MODULE)
     cache: ClientCache = litellm.in_memory_llm_clients_cache
-    names: list[JsonValue] = [asyncio.run(generate_name(call, cache)) for call in input_value["calls"]]
+    names: list[JsonValue] = [
+        asyncio.run(generate_name(call, cache)) for call in input_value["calls"]
+    ]
     return names

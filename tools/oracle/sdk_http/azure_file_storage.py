@@ -64,7 +64,7 @@ class FixedChain:
 class Backend(AzureBlobStorageBackend):
     api_base: str
 
-    # the backend's own initializer is untyped, so the annotated logger initializer parses the environment
+    # the backend's __init__ is untyped, so the annotated logger one parses the environment
     def __init__(self, api_base: str) -> None:
         source = AzureBlobStorageLogger()
         self.tenant_id = source.tenant_id
