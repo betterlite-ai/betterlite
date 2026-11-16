@@ -1,0 +1,21 @@
+task: B658
+deviations:
+  - what: The passthrough config's logging_non_streaming_response returns no logged reply and warns instead of raising when the native reply cannot be built.
+    why: The shared PassthroughConfig trait in betterlite returns an Option, so a logging failure cannot abort the relayed response; the decoder and selection helpers raise the same failures where they are called directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L254-L260
+  - what: An unknown custom_llm_provider fails with a PassthroughFailure that names the provider instead of LlmProviders' ValueError text.
+    why: betterlite models the failure as a typed error enum, and the message names the provider rather than Python's enum validation text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L254-L257
+  - what: A signed request drops the Content-Length the shared signer adds, unless the caller supplied Content-Length or Transfer-Encoding.
+    why: LiteLLM's _sign_request returns the headers botocore produced, which carry no Content-Length; the shared betterlite signer prepares a bounded request, so the passthrough wrapper removes the extra header it alone would add.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1683-L1730
+kept_bugs:
+  - what: A non-ARN model_id that contains a slash is truncated to its first path segment by the temporary endpoint regex.
+    why: LiteLLM wraps the id in /model/{id}/converse, encodes ARN resources, then keeps the first /model/([^/]+)/ group, so a plain slash ends the capture; callers relying on that truncation keep it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L159-L169
+  - what: is_streaming_request matches the case-sensitive substring stream anywhere in the endpoint, not just a streaming path segment.
+    why: LiteLLM returns "stream" in endpoint, so an endpoint such as /model/x/upstream also counts; the passthrough routes rely on this simple check.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L136-L137
+  - what: get_complete_url replaces every model/{segment}/ match in the endpoint with the same encoded model_id.
+    why: LiteLLM calls re.sub without a count, so an endpoint with two model segments gets both rewritten; copying it keeps the URL identical for such inputs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/transformation.py#L199-L206

@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-services-passthrough-native-reply-log
+call:
+  bedrock_services_passthrough:
+    kind: reply
+    runs:
+      - {provider: bedrock, endpoint: /model/m/tag}
+      - {provider: transcribe, endpoint: /model/m/invoke}
+      - {provider: transcribe, endpoint: /model/m/converse}
+      - {provider: transcribe, endpoint: /model/m/invoke/converse}
+      - {provider: not-a-provider, endpoint: /model/m/invoke}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-services-passthrough-passthrough-url
+call:
+  bedrock_services_passthrough:
+    kind: url
+    environment: {region_name: us-east-1, runtime_endpoint: "https://env.bedrock.example"}
+    runs:
+      - {model: m, endpoint: /model/m/converse}
+      - {model: m, endpoint: /model/m/converse, api_base: "https://client.example/base/"}
+      - {model: m, endpoint: /model/m/converse, runtime_endpoint: "https://configured.bedrock.example"}
+      - {model: m, endpoint: /model/m/invoke, query: {beta: "1"}}
+      - {model: m, endpoint: /model/m/converse-with-response-stream}
+env:
+  AWS_REGION_NAME: us-east-1
+  AWS_BEDROCK_RUNTIME_ENDPOINT: https://env.bedrock.example
+compare: {ignore: []}

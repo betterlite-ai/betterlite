@@ -1,0 +1,10 @@
+kind: helper
+name: bedrock-services-passthrough-sign-seed
+call:
+  bedrock_services_passthrough:
+    kind: sign
+    bearer: bedrock-env-token
+    runs:
+      - {data: {input: hi}}
+env: {}
+compare: {ignore: []}

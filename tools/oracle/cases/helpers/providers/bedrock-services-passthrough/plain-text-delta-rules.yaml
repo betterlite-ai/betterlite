@@ -1,0 +1,16 @@
+kind: helper
+name: bedrock-services-passthrough-plain-text-delta-rules
+call:
+  bedrock_services_passthrough:
+    kind: collector
+    model: anthropic.claude-3-sonnet-20240229-v1:0
+    endpoint: /model/m/converse
+    split: false
+    frames:
+      - {event_type: contentBlockDelta, payload: '{"contentBlockIndex":0,"delta":{"text":"a"}}'}
+      - {event_type: contentBlockDelta, payload: '{"contentBlockIndex":0,"delta":{"text":"b"}}'}
+      - {event_type: messageStop, payload: '{"stopReason":"end_turn"}'}
+      - {event_type: metadata, payload: '{"usage":{"inputTokens":3,"outputTokens":4,"totalTokens":7}}'}
+      - {event_type: contentBlockDelta, payload: '{"contentBlockIndex":0,"delta":{"text":"c"}}'}
+env: {}
+compare: {ignore: []}

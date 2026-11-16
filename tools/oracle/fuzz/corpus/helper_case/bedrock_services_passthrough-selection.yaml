@@ -1,0 +1,11 @@
+kind: helper
+name: bedrock-services-passthrough-selection-seed
+call:
+  bedrock_services_passthrough:
+    kind: selection
+    runs:
+      - {model: anthropic.claude-v2, endpoint: /model/m/converse}
+    frames:
+      - {event_type: contentBlockDelta, payload: '{"contentBlockIndex":0,"delta":{"text":"a"}}'}
+env: {}
+compare: {ignore: []}

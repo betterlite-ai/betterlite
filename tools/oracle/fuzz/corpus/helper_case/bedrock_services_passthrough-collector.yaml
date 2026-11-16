@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-services-passthrough-collector-seed
+call:
+  bedrock_services_passthrough:
+    kind: collector
+    model: anthropic.claude-3-sonnet-20240229-v1:0
+    endpoint: /model/m/converse
+    split: false
+    frames:
+      - {event_type: contentBlockDelta, payload: '{"contentBlockIndex":0,"delta":{"text":"a"}}'}
+env: {}
+compare: {ignore: []}
