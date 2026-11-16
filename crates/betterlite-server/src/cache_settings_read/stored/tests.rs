@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use axum::http::StatusCode;
+use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_postgres_fixture::connection::PostgresFixture;
@@ -171,7 +172,7 @@ async fn a_repository_error_is_an_error() {
 #[case::invalid_stored_json(StoreReply::Settings(Value::String("{not json".to_owned())))]
 #[tokio::test]
 async fn a_stored_settings_failure_answers_500_with_the_error_prefix(#[case] reply: StoreReply) {
-    let state = CacheSettingsReadState::with_ports(
+    let state = CacheSettingsReadState::new(
         Some(Arc::new(FakeCacheConfigStore::new(reply))),
         cipher_settings(None),
         lookup(&[]),
@@ -254,9 +255,15 @@ async fn the_cache_config_row_is_read_from_the_database() {
     .await;
     insert_row(&pool, "other", r#"{"host": "other-host"}"#).await;
     let cipher = stored_cipher(cipher_settings(None));
-    let found = stored_settings(&DatabaseCacheConfigStore::new(store(&pool)), &cipher)
-        .await
-        .unwrap();
+    let found = stored_settings(
+        &DatabaseCacheConfigStore {
+            store: store(&pool),
+            availability: Availability::default(),
+        },
+        &cipher,
+    )
+    .await
+    .unwrap();
     assert_eq!(found, obj(r#"{"host": "postgres-host", "port": 6379}"#));
     close(fixture, pool).await;
 }
@@ -266,9 +273,15 @@ async fn a_database_without_the_row_gives_no_stored_settings() {
     let (fixture, pool) = database().await;
     insert_row(&pool, "other", r#"{"host": "other-host"}"#).await;
     let cipher = stored_cipher(cipher_settings(None));
-    let found = stored_settings(&DatabaseCacheConfigStore::new(store(&pool)), &cipher)
-        .await
-        .unwrap();
+    let found = stored_settings(
+        &DatabaseCacheConfigStore {
+            store: store(&pool),
+            availability: Availability::default(),
+        },
+        &cipher,
+    )
+    .await
+    .unwrap();
     assert!(found.is_empty());
     close(fixture, pool).await;
 }
@@ -278,9 +291,15 @@ async fn a_database_row_holding_a_json_string_is_parsed() {
     let (fixture, pool) = database().await;
     insert_row(&pool, "cache_config", r#""{\"host\": \"string-host\"}""#).await;
     let cipher = stored_cipher(cipher_settings(None));
-    let found = stored_settings(&DatabaseCacheConfigStore::new(store(&pool)), &cipher)
-        .await
-        .unwrap();
+    let found = stored_settings(
+        &DatabaseCacheConfigStore {
+            store: store(&pool),
+            availability: Availability::default(),
+        },
+        &cipher,
+    )
+    .await
+    .unwrap();
     assert_eq!(found, obj(r#"{"host": "string-host"}"#));
     close(fixture, pool).await;
 }
@@ -296,9 +315,15 @@ async fn a_database_row_with_an_encrypted_value_decrypts_it() {
         &format!(r#"{{"password": "{password}"}}"#),
     )
     .await;
-    let found = stored_settings(&DatabaseCacheConfigStore::new(store(&pool)), &cipher)
-        .await
-        .unwrap();
+    let found = stored_settings(
+        &DatabaseCacheConfigStore {
+            store: store(&pool),
+            availability: Availability::default(),
+        },
+        &cipher,
+    )
+    .await
+    .unwrap();
     assert_eq!(found, obj(r#"{"password": "hunter2"}"#));
     close(fixture, pool).await;
 }

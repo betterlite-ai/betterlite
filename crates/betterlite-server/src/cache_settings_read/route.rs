@@ -7,7 +7,6 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::get;
-use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_db::stored_cipher::DbCipher;
 use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup;
 use betterlite_secrets::secret_codec::CipherSettings;
@@ -18,10 +17,7 @@ use serde_json::{Map, Value};
 
 use super::fields::catalog;
 use super::fields::{CacheSettingsField, REDIS_TYPE_DESCRIPTIONS, RedisTypeDescriptions};
-use super::overlay::ProcessEnvironment;
-use super::stored::{
-    CacheConfigStore, DatabaseCacheConfigStore, StoredSettingsError, stored_settings,
-};
+use super::stored::{CacheConfigStore, StoredSettingsError, stored_settings};
 use super::view::{effective_values, fill_field_values};
 use crate::auth::auth_identity::AuthContext;
 use crate::tracing_routes::router::unauthenticated;
@@ -35,19 +31,7 @@ pub struct CacheSettingsReadState {
 
 impl CacheSettingsReadState {
     #[must_use]
-    pub fn new(store: Option<Arc<PostgresStore>>, cipher: CipherSettings) -> Self {
-        Self {
-            store: store.map(|store| {
-                Arc::new(DatabaseCacheConfigStore::new(store)) as Arc<dyn CacheConfigStore>
-            }),
-            cipher: stored_cipher(cipher),
-            environment: Arc::new(ProcessEnvironment),
-        }
-    }
-
-    #[cfg(test)]
-    #[must_use]
-    pub(crate) fn with_ports(
+    pub fn new(
         store: Option<Arc<dyn CacheConfigStore>>,
         cipher: CipherSettings,
         environment: Arc<dyn EnvironmentLookup + Send + Sync>,

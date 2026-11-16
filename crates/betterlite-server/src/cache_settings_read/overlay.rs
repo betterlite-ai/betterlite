@@ -1,4 +1,5 @@
 use betterlite_config::loader::startup::process_environment;
+use betterlite_env::flag;
 use betterlite_redis::redis_connection_settings::environment::EnvironmentLookup;
 use serde_json::{Map, Value};
 
@@ -34,7 +35,16 @@ impl EnvironmentLookup for ProcessEnvironment {
     }
 }
 
+// The catalog fields of Boolean type; a REDIS_ variable for one reads as a bool, the rest stay raw strings.
+const BOOLEAN_FIELDS: [&str; 4] = [
+    "aws_iam_auth",
+    "aws_iam_serverless",
+    "ssl",
+    "ssl_check_hostname",
+];
+
 // The environment fills only what the stored settings leave out; a stored key present even with null keeps its value.
+// An empty variable counts as unset, and a Boolean field reads as a bool when its text is one the shared parser knows.
 #[must_use]
 pub fn overlay_environment(
     stored: &Map<String, Value>,
@@ -42,9 +52,17 @@ pub fn overlay_environment(
 ) -> Map<String, Value> {
     let mut effective = Map::new();
     for (name, field) in ENVIRONMENT_FIELDS {
-        if let Some(value) = environment.lookup(name) {
-            effective.insert(field.to_owned(), environment_value(value));
+        let Some(raw) = environment.lookup(name) else {
+            continue;
+        };
+        if raw.trim().is_empty() {
+            continue;
         }
+        let value = match flag(name, &raw) {
+            Ok(Some(parsed)) if BOOLEAN_FIELDS.contains(&field) => Value::Bool(parsed),
+            _ => Value::String(raw),
+        };
+        effective.insert(field.to_owned(), value);
     }
     if effective.is_empty() {
         return stored.clone();
@@ -56,13 +74,4 @@ pub fn overlay_environment(
         effective.insert("type".to_owned(), Value::String("redis".to_owned()));
     }
     effective
-}
-
-// get_secret hands back a bool for the exact words true and false in any case, and the raw string for anything else.
-fn environment_value(raw: String) -> Value {
-    match raw.trim().to_lowercase().as_str() {
-        "true" => Value::Bool(true),
-        "false" => Value::Bool(false),
-        _ => Value::String(raw),
-    }
 }

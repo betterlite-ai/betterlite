@@ -41,7 +41,7 @@ fn current_values(body: &Value) -> Value {
 
 #[tokio::test]
 async fn the_response_carries_the_fields_and_the_redis_type_descriptions() {
-    let state = CacheSettingsReadState::with_ports(None, cipher_settings(None), lookup(&[]));
+    let state = CacheSettingsReadState::new(None, cipher_settings(None), lookup(&[]));
     let (status, text) = get(router(state), master()).await;
     assert_eq!(status, StatusCode::OK);
     let body = parse(&text);
@@ -89,7 +89,7 @@ async fn the_response_carries_the_fields_and_the_redis_type_descriptions() {
 
 #[tokio::test]
 async fn without_a_caller_the_route_answers_401() {
-    let state = CacheSettingsReadState::with_ports(None, cipher_settings(None), lookup(&[]));
+    let state = CacheSettingsReadState::new(None, cipher_settings(None), lookup(&[]));
     let (status, text) = get(router(state), None).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -103,7 +103,7 @@ async fn without_a_caller_the_route_answers_401() {
 // LiteLLM refuses a non-admin key in the auth dependency's route check, so the handler itself must not repeat it.
 #[tokio::test]
 async fn the_route_adds_no_role_check_of_its_own() {
-    let state = CacheSettingsReadState::with_ports(None, cipher_settings(None), lookup(&[]));
+    let state = CacheSettingsReadState::new(None, cipher_settings(None), lookup(&[]));
     let user = caller("key-user", Vec::new());
     let (status, text) = get(router(state), Some(user)).await;
     assert_eq!(status, StatusCode::OK);
@@ -113,8 +113,7 @@ async fn the_route_adds_no_role_check_of_its_own() {
 #[tokio::test]
 async fn the_environment_is_read_on_every_request() {
     let environment = Arc::new(SwitchableEnvironment::new(&[("REDIS_HOST", "first-host")]));
-    let state =
-        CacheSettingsReadState::with_ports(None, cipher_settings(None), environment.clone());
+    let state = CacheSettingsReadState::new(None, cipher_settings(None), Arc::clone(&environment));
     let application = router(state);
     let (first_status, first_text) = get(application.clone(), master()).await;
     assert_eq!(first_status, StatusCode::OK);
@@ -136,7 +135,7 @@ async fn stored_values_reach_the_fields_redacted() {
     let stored = parse(
         r#"{"type": "redis", "host": "stored-host", "password": "secret", "sentinel_nodes": [["localhost", 26379]]}"#,
     );
-    let state = CacheSettingsReadState::with_ports(
+    let state = CacheSettingsReadState::new(
         Some(Arc::new(FakeCacheConfigStore::new(StoreReply::Settings(
             stored,
         )))),

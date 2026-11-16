@@ -43,18 +43,8 @@ pub trait CacheConfigStore: Send + Sync {
 }
 
 pub struct DatabaseCacheConfigStore {
-    store: Arc<PostgresStore>,
-    availability: Availability,
-}
-
-impl DatabaseCacheConfigStore {
-    #[must_use]
-    pub fn new(store: Arc<PostgresStore>) -> Self {
-        Self {
-            store,
-            availability: Availability::default(),
-        }
-    }
+    pub store: Arc<PostgresStore>,
+    pub availability: Availability,
 }
 
 #[async_trait]

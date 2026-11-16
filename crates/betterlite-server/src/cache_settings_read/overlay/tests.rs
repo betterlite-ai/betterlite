@@ -125,29 +125,41 @@ fn a_stored_type_survives_the_environment_overlay() {
 }
 
 #[test]
-fn the_words_true_and_false_become_booleans_and_other_values_stay_strings() {
+fn boolean_fields_read_the_shared_bool_words_and_other_fields_stay_strings() {
     let overlaid = overlay_with(
         &Map::new(),
         &[
             ("REDIS_SSL", " TRUE "),
-            ("REDIS_SSL_CHECK_HOSTNAME", "false"),
+            ("REDIS_SSL_CHECK_HOSTNAME", "no"),
             ("REDIS_AWS_IAM_AUTH", "1"),
+            ("REDIS_AWS_IAM_SERVERLESS", "off"),
             ("REDIS_PORT", " 6379 "),
+            ("REDIS_HOST", "true"),
         ],
     );
     assert_eq!(
         overlaid,
         parse(
-            r#"{"ssl": true, "ssl_check_hostname": false, "aws_iam_auth": "1", "port": " 6379 ", "type": "redis"}"#
+            r#"{"ssl": true, "ssl_check_hostname": false, "aws_iam_auth": true, "aws_iam_serverless": false, "port": " 6379 ", "host": "true", "type": "redis"}"#
         )
     );
 }
 
 #[test]
-fn an_empty_environment_value_still_counts_as_set() {
+fn a_boolean_field_with_other_text_keeps_the_raw_string() {
     assert_eq!(
-        overlay_with(&Map::new(), &[("REDIS_HOST", "")]),
-        parse(r#"{"host": "", "type": "redis"}"#)
+        overlay_with(&Map::new(), &[("REDIS_SSL", "maybe")]),
+        parse(r#"{"ssl": "maybe", "type": "redis"}"#)
+    );
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::blank("  ")]
+fn an_empty_environment_value_counts_as_unset(#[case] value: &str) {
+    assert_eq!(
+        overlay_with(&Map::new(), &[("REDIS_HOST", value), ("REDIS_SSL", value)]),
+        parse("{}")
     );
 }
 

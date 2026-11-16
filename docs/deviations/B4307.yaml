@@ -5,4 +5,12 @@ deviations:
       exception text.
     why: Python exception strings (repr of a JSONDecodeError or a prisma error) have no Rust equivalent; status and the prefix match.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L504-L505
+  - what: >-
+      An empty or blank REDIS_ variable counts as unset in the overlay, so it adds no key and no "type": "redis".
+    why: docs/compatibility.md makes an empty environment variable count as unset; LiteLLM's get_secret hands back the empty string and the overlay keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L272-L280
+  - what: >-
+      REDIS_SSL, REDIS_SSL_CHECK_HOSTNAME, REDIS_AWS_IAM_AUTH and REDIS_AWS_IAM_SERVERLESS read as a bool for true, false, 1, 0, yes, no, on and off in any case; LiteLLM turns only true and false into a bool and leaves 1 or yes as a string.
+    why: docs/compatibility.md has one shared parser turn env text into a bool; other text on those four fields stays the raw string.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L134
 kept_bugs: []
