@@ -1,0 +1,28 @@
+{
+  "api_base": {
+    "description": "Base URL for DynamoAI API. If not provided, the `DYNAMOAI_API_BASE` environment variable is checked, defaults to https://api.dynamo.ai",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "API key for DynamoAI Guardrails. If not provided, the `DYNAMOAI_API_KEY` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "guardrail_name": {
+    "description": "Name of the guardrail for identification in logs and traces.",
+    "required": false,
+    "type": "string"
+  },
+  "model_id": {
+    "description": "Model ID for tracking/logging purposes. If not provided, the `DYNAMOAI_MODEL_ID` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "policy_ids": {
+    "description": "List of DynamoAI policy IDs to apply. If not provided, the `DYNAMOAI_POLICY_IDS` environment variable is checked (comma-separated).",
+    "required": false,
+    "type": "array"
+  },
+  "ui_friendly_name": "DynamoAI Guardrails"
+}

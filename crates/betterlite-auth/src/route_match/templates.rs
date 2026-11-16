@@ -1,3 +1,5 @@
+use betterlite_routes::wildcard::route_matches_wildcard_pattern;
+
 use super::python_regex;
 
 pub enum RouteValue<'text> {
@@ -54,13 +56,6 @@ fn placeholder_fragment(placeholder: &str, after: &str) -> &'static str {
     } else {
         r"[\s\S]+"
     }
-}
-
-#[must_use]
-pub fn route_matches_wildcard_pattern(route: &str, pattern: &str) -> bool {
-    pattern
-        .strip_suffix('*')
-        .map_or_else(|| route == pattern, |prefix| route.starts_with(prefix))
 }
 
 #[must_use]

@@ -274,7 +274,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_provider*")"
       && grep -lq 'anthropic_provider' tools/oracle/fuzz/corpus/helper_case/anthropic_provider* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_provider$/)' &&
+      run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_provider$/)' &&
       cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-provider-config-selection
     why: 'At the composition boundary select the Anthropic chat config for model/provider before B584 execution.

@@ -1,0 +1,19 @@
+{
+  "kind": "helper",
+  "name": "dispatch-v1-explicit",
+  "call": {
+    "b3776": {
+      "function": "dispatch",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 1
+      },
+      "guardrail_name": "hiddenlayer-eval"
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

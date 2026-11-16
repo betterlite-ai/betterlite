@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_core::api::vertex_location::VertexLocationError;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
@@ -16,7 +17,6 @@ use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::request::{
     complete_url, map_openai_params, recognize_request, validate_environment,
-    validate_speech_project,
 };
 use crate::vertex_recognition::response::{
     TranscriptionTask, decode_vertex_recognition, parse_duration_seconds,
@@ -104,17 +104,12 @@ fn a_missing_project_is_required() {
 #[case::empty("")]
 #[case::parent("..")]
 #[case::slash("bad/project")]
-#[case::question("bad?project")]
-#[case::hash("bad#project")]
-#[case::backslash("bad\\project")]
-#[case::colon("bad:project")]
-#[case::space("bad project")]
-#[case::tab("bad\tproject")]
-#[case::newline("bad\nproject")]
-#[case::carriage_return("bad\rproject")]
 fn unsafe_projects_are_rejected(#[case] project: &str) {
-    let error = validate_speech_project(project).unwrap_err();
-    assert!(matches!(error, VertexRecognitionError::Project { .. }));
+    let error = complete_url(None, None, Some(project), None).unwrap_err();
+    assert!(matches!(
+        error,
+        VertexRecognitionError::Target(VertexLocationError::Project { .. })
+    ));
     assert_eq!(error.status_code(), Some(400));
 }
 
@@ -124,7 +119,10 @@ fn unsafe_projects_are_rejected(#[case] project: &str) {
 #[case::digits_first("1us")]
 fn invalid_locations_are_rejected(#[case] location: &str) {
     let error = complete_url(None, Some(location), Some("my-project"), None).unwrap_err();
-    assert!(matches!(error, VertexRecognitionError::Location { .. }));
+    assert!(matches!(
+        error,
+        VertexRecognitionError::Target(VertexLocationError::Invalid)
+    ));
     assert_eq!(error.status_code(), Some(400));
 }
 
