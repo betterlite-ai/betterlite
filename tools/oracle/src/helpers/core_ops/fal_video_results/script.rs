@@ -54,7 +54,10 @@ impl VideoTransport for ScriptedTransport {
                 headers: HeaderMap::new(),
                 body: body.clone(),
             }),
-            None => Err(TransportError::HeadersTooLarge { limit: 0 }),
+            // the scripted failure is the transient class LiteLLM's probe swallows: an unsupported redirect scheme
+            None => Err(TransportError::RedirectScheme {
+                scheme: "ftp".into(),
+            }),
         }
     }
 }
