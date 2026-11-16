@@ -156,6 +156,28 @@ fn resolves_references_through_the_deepest_mapping_yaml_allows() {
 }
 
 #[test]
+fn deep_yaml_loads_on_small_stack() {
+    let worker = std::thread::Builder::new()
+        .stack_size(1024 * 1024)
+        .spawn(|| {
+            let environment = [("GATEWAY_URL", "https://gateway.example")];
+            load(&nested_settings_yaml(60), &environment)
+        })
+        .expect("the one MiB thread starts");
+    let settings = worker
+        .join()
+        .expect("the one MiB thread finishes")
+        .expect("the deep config loads");
+    assert_eq!(
+        settings.managed_settings,
+        Some(nested_expected(
+            60,
+            Json::Text("https://gateway.example".to_owned())
+        ))
+    );
+}
+
+#[test]
 fn a_config_nested_past_the_yaml_budget_fails_the_load() {
     let error = load(&nested_settings_yaml(70), &[]).unwrap_err();
     assert_eq!(error.category(), "yaml");

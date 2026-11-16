@@ -252,7 +252,8 @@ fn rejects_developer_credential_filters(#[case] filter: &str) {
         | ConfigError::Unsupported { .. }
         | ConfigError::MissingEnvironment { .. }
         | ConfigError::InvalidFloat { .. }
-        | ConfigError::InvalidInteger { .. } => {
+        | ConfigError::InvalidInteger { .. }
+        | ConfigError::LoadThread { .. } => {
             panic!("the developer filter {filter} loaded as {error:?}");
         }
     }
