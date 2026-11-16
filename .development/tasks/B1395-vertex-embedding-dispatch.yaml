@@ -37,6 +37,9 @@ description: >-
   and prepared.rs as they are.
 scope:
   paths:
+    - "crates/betterlite-provider/src/vertex_dispatch.rs"
+    - "crates/betterlite-core/src/operation/call_types.rs"
+    - "crates/betterlite-core/src/dispatch/tests.rs"
     - crates/betterlite-core/Cargo.toml
     - crates/betterlite-provider/Cargo.toml
     - crates/betterlite-core/src/{dispatch,operation,vertex_embedding_dispatch}.rs
