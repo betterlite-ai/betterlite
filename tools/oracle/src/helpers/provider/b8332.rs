@@ -1,11 +1,3 @@
-use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-
-pub(crate) struct Op;
-
-impl Helper for Op {
-    type Input = serde_json::Value;
-
-    fn run(_input: &Self::Input) -> HelperResult {
-        Self::not_built("b8332")
-    }
-}
+include!("b8332/a.rs");
+include!("b8332/b.rs");
+include!("b8332/c.rs");

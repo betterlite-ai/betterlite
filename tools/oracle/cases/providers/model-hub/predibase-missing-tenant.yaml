@@ -1,0 +1,11 @@
+kind: helper
+name: predibase-missing-tenant
+call:
+  b8332:
+    op: predibase
+    model: meta-llama/llama-2-7b-chat
+    messages: [{role: user, content: hi}]
+    api_base: http://mock
+    env: {PREDIBASE_API_KEY: pb-env}
+env: {PREDIBASE_API_KEY: pb-env}
+compare: {ignore: []}

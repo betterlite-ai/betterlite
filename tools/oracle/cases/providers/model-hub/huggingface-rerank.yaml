@@ -1,0 +1,9 @@
+kind: helper
+name: huggingface-rerank
+call:
+  b8332:
+    op: huggingface_rerank
+    model: BAAI/bge-reranker-v2-m3
+    env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: hf-env}
+env: {HF_API_BASE: "http://hf.test", HUGGINGFACE_API_KEY: hf-env}
+compare: {ignore: []}

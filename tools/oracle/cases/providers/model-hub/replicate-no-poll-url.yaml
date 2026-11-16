@@ -1,0 +1,14 @@
+kind: helper
+name: replicate-no-poll-url
+call:
+  b8332:
+    op: replicate
+    model: meta/meta-llama-3-8b-instruct
+    messages: [{role: user, content: hi}]
+    api_base: http://mock/api
+    api_key: rep-key
+    polls:
+      - status: 200
+        body: '{}'
+env: {}
+compare: {ignore: []}
