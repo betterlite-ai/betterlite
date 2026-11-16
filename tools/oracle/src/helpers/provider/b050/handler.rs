@@ -222,7 +222,6 @@ fn langflow_request_value(call: &CompletionCall) -> Result<Value, HandlerError> 
     ))
 }
 
-// the compared projection of an outgoing request: its url, the headers worth comparing and the body
 fn request_view<B>(url: &str, headers: &BTreeMap<String, String>, body: &B) -> Value
 where
     B: Serialize,
