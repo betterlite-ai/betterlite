@@ -1,4 +1,4 @@
-use betterlite_config::vertex::video_settings::VertexSettings;
+use betterlite_config::vertex::video_settings;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
@@ -7,7 +7,7 @@ use super::error::VeoOperationError;
 // _build_vertex_video_usage_from_request_data: the duration, resolution and video count the request asked for
 pub fn video_usage(
     request_data: Option<&Object>,
-    settings: VertexSettings,
+    settings: video_settings::Settings,
 ) -> Result<Object, VeoOperationError> {
     let mut usage = Object::new();
     let Some(data) = request_data else {

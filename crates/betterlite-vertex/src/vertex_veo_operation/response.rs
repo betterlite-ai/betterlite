@@ -1,4 +1,4 @@
-use betterlite_config::vertex::video_settings::VertexSettings;
+use betterlite_config::vertex::video_settings;
 use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use betterlite_prompts::arguments::json::Object;
@@ -14,7 +14,7 @@ pub fn create_response(
     body: &[u8],
     provider: Option<&str>,
     request_data: Option<&Object>,
-    settings: VertexSettings,
+    settings: video_settings::Settings,
 ) -> Result<VideoObject, VeoOperationError> {
     let operation = decode_vertex_veo_operation(body)?;
     if operation.name.is_empty() {
@@ -71,7 +71,7 @@ pub fn edit_response(
     body: &[u8],
     provider: Option<&str>,
     request_data: Option<&Object>,
-    settings: VertexSettings,
+    settings: video_settings::Settings,
 ) -> Result<VideoObject, VeoOperationError> {
     let operation = decode_vertex_veo_operation(body)?;
     if operation.name.is_empty() {
@@ -87,7 +87,7 @@ fn processing_video(
     provider: Option<&str>,
     model: &str,
     request_data: Option<&Object>,
-    settings: VertexSettings,
+    settings: video_settings::Settings,
 ) -> Result<VideoObject, VeoOperationError> {
     Ok(VideoObject {
         id: encode_video_id_with_provider(

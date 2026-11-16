@@ -5,18 +5,16 @@ use std::collections::BTreeMap;
 use betterlite_env::EnvError;
 use rstest::rstest;
 
-use super::video_settings::{VIDEO_DURATION_ENV, VertexSettings, load_vertex_settings};
+use super::video_settings::{Settings, VIDEO_DURATION_ENV};
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn load(environment: &[(&str, &str)]) -> Result<VertexSettings, ConfigError> {
+fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
     let lookup: BTreeMap<String, String> = environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    let loader = ConfigLoader { lookup };
-    // the setting rides the loader B002 builds, so the test loads through it before reading the lookup
-    drop(loader.load("")?);
-    load_vertex_settings(&loader.lookup)
+    let config = ConfigLoader { lookup }.load("")?;
+    Ok(config.sections.vertex_video_settings)
 }
 
 #[rstest]
