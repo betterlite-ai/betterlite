@@ -5,6 +5,7 @@ members = [
   "crates/*/fuzz",
   "tools/*",
   "tools/*/fuzz",
+  "tools/oracle/groups",
   "tools/oracle/helper-api",
   "tools/oracle/runner",
   "tools/oracle/src/helpers/a2a",
