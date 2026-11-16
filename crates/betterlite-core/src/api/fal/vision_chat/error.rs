@@ -34,6 +34,13 @@ pub enum FalAIError {
     },
     #[error("fal_ai returned an unexpected response body: {text}")]
     UsageOverflow { text: String, headers: ImageHeaders },
+    // what get_error_class builds for an upstream error: the status, message and headers as the provider sent them
+    #[error("{message}")]
+    Upstream {
+        status: u16,
+        message: String,
+        headers: ImageHeaders,
+    },
     #[error("the completion record has no choice to fill")]
     NoChoices,
 }
@@ -49,6 +56,7 @@ impl FalAIError {
             | Self::StreamNotBoolean
             | Self::UnsupportedReasoningEffort { .. } => Some(400),
             Self::UnexpectedResponse { .. } | Self::UsageOverflow { .. } => Some(422),
+            Self::Upstream { status, .. } => Some(*status),
             Self::MissingApiKey(_) | Self::NoChoices => None,
         }
     }
@@ -56,9 +64,9 @@ impl FalAIError {
     #[must_use]
     pub const fn headers(&self) -> Option<&ImageHeaders> {
         match self {
-            Self::UnexpectedResponse { headers, .. } | Self::UsageOverflow { headers, .. } => {
-                Some(headers)
-            }
+            Self::UnexpectedResponse { headers, .. }
+            | Self::UsageOverflow { headers, .. }
+            | Self::Upstream { headers, .. } => Some(headers),
             Self::OneUserMessage
             | Self::TextRequired
             | Self::OneImageRequired

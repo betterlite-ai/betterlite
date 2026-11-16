@@ -659,6 +659,19 @@ fn an_invalid_reply_leaves_the_response_to_the_caller() {
 }
 
 #[test]
+fn an_upstream_error_keeps_the_status_message_and_headers() {
+    let sent = headers(&[("retry-after", "3")]);
+    let error = FalAIError::Upstream {
+        status: 429,
+        message: "slow down".to_owned(),
+        headers: sent.clone(),
+    };
+    assert_eq!(error.status(), Some(429));
+    assert_eq!(error.headers(), Some(&sent));
+    assert_eq!(error.to_string(), "slow down");
+}
+
+#[test]
 fn a_response_without_choices_is_an_error_not_a_panic() {
     let error = transform_response(
         "m",
