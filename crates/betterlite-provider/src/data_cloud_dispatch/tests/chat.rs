@@ -388,6 +388,26 @@ fn databricks_completion_names_the_literal_provider() {
 }
 
 #[test]
+fn databricks_completion_clears_the_provider_config() {
+    let mut fixture = Fixture::new();
+    fixture.provider_config = Some(ChatConfigTag::A2a);
+    let handler = Recorder::succeeding();
+    let redactor = redactor();
+    let (mut state, env) = logging(&redactor);
+    let mut log = CallLogging {
+        state: &mut state,
+        env: &env,
+    };
+    let outcome = complete_databricks(
+        &fixture.context(DispatchGlobals::default()),
+        &handler,
+        &mut log,
+    );
+    assert!(outcome.is_ok());
+    assert_eq!(handler.calls()[0].provider_config, None);
+}
+
+#[test]
 fn databricks_completion_treats_an_empty_context_setting_as_unset() {
     let mut fixture = Fixture::new();
     fixture.environment = environment(&[("DATABRICKS_API_BASE", "https://env.example.com")]);

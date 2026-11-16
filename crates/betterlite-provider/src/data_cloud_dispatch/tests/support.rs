@@ -3,6 +3,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_logging::logging_pre_post::env::{
     DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv,
@@ -99,6 +100,7 @@ pub(super) struct Fixture {
     pub(super) api_base: Option<String>,
     pub(super) api_key: Option<SecretString>,
     pub(super) headers: Option<BTreeMap<String, String>>,
+    pub(super) provider_config: Option<ChatConfigTag>,
     pub(super) stream: Option<bool>,
 }
 
@@ -116,6 +118,7 @@ impl Fixture {
             api_base: None,
             api_key: None,
             headers: None,
+            provider_config: None,
             stream: None,
         }
     }
@@ -134,7 +137,7 @@ impl Fixture {
             messages: &self.messages,
             model: &self.model,
             optional_params: &self.optional_params,
-            provider_config: None,
+            provider_config: self.provider_config,
             stream: self.stream,
             timeout: None,
             globals,

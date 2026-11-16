@@ -69,6 +69,30 @@ async fn oci_stream_sends_the_signed_body_and_decodes_the_events() {
 }
 
 #[tokio::test]
+async fn oci_stream_stops_after_the_done_event() {
+    let transport = Scripted::with_stream(sse_head(vec![
+        "data: [DONE]\n",
+        "data: {\"message\":{\"content\":[{\"type\":\"TEXT\",\"text\":\"late\"}]}}\n\n",
+    ]));
+    let headers = HeaderMap::new();
+    let data = PromptJson::Null;
+    let mut stream = open_stream(
+        OciStreamRequest {
+            api_base: "https://example.com",
+            headers,
+            data: &data,
+            signed_body: None,
+        },
+        &transport,
+    )
+    .await
+    .expect("the stream opens");
+    let first = stream.next().await.expect("the stream decodes");
+    assert!(matches!(first, Some(StreamItem::Done)));
+    assert!(stream.next().await.expect("the stream ends").is_none());
+}
+
+#[tokio::test]
 async fn oci_stream_sends_the_json_body_without_a_signature() {
     let transport = Scripted::with_stream(sse_head(vec!["data: [DONE]\n"]));
     let headers = HeaderMap::new();

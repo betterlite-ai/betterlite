@@ -90,9 +90,7 @@ impl OciStream {
         if self.pending.is_empty() {
             return Ok(None);
         }
-        let item = self.pending.pop_front();
-        self.done |= matches!(item, Some(StreamItem::Done));
-        Ok(item)
+        Ok(self.pending.pop_front())
     }
 
     fn feed(&mut self, bytes: &[u8]) -> Result<(), OciError> {
