@@ -1,8 +1,9 @@
 use betterlite_openai::response_events::RawResponse;
+use betterlite_openai::response_resources::response::json_body;
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::responses::decode::{cancel_reply, decode_azure_response_resource};
+use crate::responses::decode::{decode_azure_response_resource, record};
 use crate::responses::error::ResponsesError;
 
 fn with_reply<T>(status: u16, text: &str, run: impl FnOnce(&RawResponse<'_>) -> T) -> T {
@@ -15,15 +16,20 @@ fn with_reply<T>(status: u16, text: &str, run: impl FnOnce(&RawResponse<'_>) -> 
 }
 
 fn outcome(status: u16, text: &str) -> Value {
-    with_reply(status, text, |reply| match cancel_reply(reply) {
-        Ok(response) => serde_json::json!({
-            "id": response.id,
-            "created_at": response.created_at,
-            "status": response.status,
-            "model": response.model,
-        }),
-        Err(error) => {
-            serde_json::json!({"status": error.http_status(), "message": error.to_string()})
+    with_reply(status, text, |reply| {
+        let decoded = json_body(reply)
+            .map_err(ResponsesError::from)
+            .and_then(|body| record(&body));
+        match decoded {
+            Ok(response) => serde_json::json!({
+                "id": response.id,
+                "created_at": response.created_at,
+                "status": response.status,
+                "model": response.model,
+            }),
+            Err(error) => {
+                serde_json::json!({"status": error.http_status(), "message": error.to_string()})
+            }
         }
     })
 }

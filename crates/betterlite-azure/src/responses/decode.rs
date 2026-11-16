@@ -1,16 +1,9 @@
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
-use betterlite_openai::response_events::RawResponse;
 use betterlite_openai::response_resources::error::ResponseResourceError;
-use betterlite_openai::response_resources::response::{decode_response_resource, json_body};
+use betterlite_openai::response_resources::response::decode_response_resource;
 use betterlite_prompts::arguments::json::Json;
 
 use super::error::ResponsesError;
-
-// A cancel reply that is not JSON fails as the upstream error, a JSON one is validated as a response
-pub fn cancel_reply(reply: &RawResponse<'_>) -> Result<ResponsesApiResponse, ResponsesError> {
-    let body = json_body(reply)?;
-    Ok(record(&body)?)
-}
 
 // The byte boundary the cancel path reads: response JSON bytes, then the response record
 pub fn decode_azure_response_resource(
@@ -20,7 +13,7 @@ pub fn decode_azure_response_resource(
     Ok(record(&decoded)?)
 }
 
-fn record(decoded: &Json) -> Result<ResponsesApiResponse, ResponsesError> {
+pub fn record(decoded: &Json) -> Result<ResponsesApiResponse, ResponsesError> {
     let value =
         serde_json::to_value(decoded).map_err(|source| ResponseResourceError::Encode { source })?;
     serde_json::from_value(value).map_err(ResponsesError::Record)

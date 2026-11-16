@@ -17,15 +17,16 @@ pub(super) fn azure_input(input: &ResponsesInput) -> ResponsesInput {
 }
 
 fn prepared_item(item: &Json) -> Json {
-    let Json::Object(fields) = item else {
+    let Json::Object(item_fields) = item else {
         return item.clone();
     };
-    let is_reasoning = matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "reasoning");
-    let is_message = matches!(fields.get("type"), Some(Json::Text(kind)) if kind == "message");
+    let is_reasoning =
+        matches!(item_fields.get("type"), Some(Json::Text(kind)) if kind == "reasoning");
+    let is_message = matches!(item_fields.get("type"), Some(Json::Text(kind)) if kind == "message");
     if is_reasoning {
-        return Json::Object(sanitize_item(fields));
+        return Json::Object(sanitize_item(item_fields));
     }
-    let mut fields = fields.clone();
+    let mut fields = item_fields.clone();
     if is_message {
         fields.shift_remove("status");
     }

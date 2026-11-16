@@ -8,7 +8,7 @@ use crate::helpers::HelperError;
 use betterlite_azure::responses::capabilities::{
     is_o_series_model, map_params, o_series_map_params, o_series_supported_params, supported_params,
 };
-use betterlite_azure::responses::decode::cancel_reply;
+use betterlite_azure::responses::decode::record;
 use betterlite_azure::responses::error::ResponsesError;
 use betterlite_azure::responses::request::transform_request;
 use betterlite_azure::responses::resources::{list_input_items, resource_request};
@@ -25,6 +25,7 @@ use betterlite_openai::response_params::params::{ResponsesOptions, ResponsesPara
 use betterlite_openai::response_resources::request::{
     InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
 };
+use betterlite_openai::response_resources::response::json_body;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
@@ -147,7 +148,10 @@ pub(super) fn reply_rows(call: &Steps<ReplyStep>) -> Vec<Value> {
                 headers: &headers,
                 text: &step.body,
             };
-            match cancel_reply(&reply) {
+            let decoded = json_body(&reply)
+                .map_err(ResponsesError::from)
+                .and_then(|body| record(&body));
+            match decoded {
                 Ok(response) => json!({
                     "ok": true,
                     "value": {

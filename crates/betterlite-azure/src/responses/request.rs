@@ -47,16 +47,16 @@ fn flattened_tools(options: &Object) -> Result<Object, ResponsesError> {
 }
 
 fn flattened_tool(tool: &Json) -> Result<Json, ResponsesError> {
-    let Json::Object(fields) = tool else {
+    let Json::Object(tool_fields) = tool else {
         return Ok(tool.clone());
     };
-    let mut fields = fields.clone();
+    let mut fields = tool_fields.clone();
     let Some(nested) = fields.shift_remove("function") else {
         return Ok(tool.clone());
     };
-    let Json::Object(nested) = nested else {
+    let Json::Object(nested_function) = nested else {
         return Err(ResponsesError::InvalidToolFunction);
     };
-    fields.extend(nested);
+    fields.extend(nested_function);
     Ok(Json::Object(fields))
 }
