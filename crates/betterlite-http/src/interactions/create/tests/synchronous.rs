@@ -63,6 +63,8 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
     );
     assert!(received.head.contains("x-goog-api-key: key-1\r\n"));
     assert!(received.head.contains("content-type: application/json\r\n"));
+    // the caller's own headers only feed validate_environment, so the POST carries what it returned
+    assert!(!received.head.contains("x-caller: c1\r\n"));
     assert_eq!(
         posted(&received.body),
         posted(r#"{"model": "m", "input": "hello"}"#)
@@ -311,6 +313,25 @@ fn create_interaction_passes_an_invalid_url_through_the_error_handler() {
             .iter()
             .all(|recorded| !recorded.starts_with("error|"))
     );
+}
+
+#[test]
+fn create_interaction_reports_the_error_body_with_invalid_bytes_replaced() {
+    let mut answer =
+        b"HTTP/1.1 400 Bad Request\r\ncontent-length: 3\r\nconnection: close\r\n\r\n".to_vec();
+    answer.extend_from_slice(&[b'a', 0xff, b'b']);
+    let serving = serve_with_body(answer, None);
+    let fixture = Fixture::new();
+
+    let (outcome, _logging) = run(&fixture, &Call::new(serving.address));
+
+    assert_eq!(provider_error(outcome), FixtureError::Refused(400));
+    let calls = fixture.calls();
+    assert!(
+        calls.contains(&"error|400|a\u{fffd}b|-".to_owned()),
+        "{calls:?}"
+    );
+    serving.request.join().unwrap();
 }
 
 #[test]

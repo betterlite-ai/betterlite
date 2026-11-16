@@ -178,6 +178,26 @@ async fn async_create_interaction_returns_a_connection_failure_to_the_caller() {
 }
 
 #[tokio::test]
+async fn async_create_interaction_leaves_a_config_error_as_a_provider_error() {
+    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture {
+        fail_transform_status: Some(200),
+        ..Fixture::new()
+    };
+
+    let (outcome, _logging) = run_async(&fixture, &Call::new(serving.address)).await;
+
+    assert_eq!(provider_error(outcome), FixtureError::Refused(200));
+    assert!(
+        fixture
+            .calls()
+            .iter()
+            .all(|recorded| !recorded.starts_with("error|"))
+    );
+    serving.request.join().unwrap();
+}
+
+#[tokio::test]
 async fn async_create_interaction_does_not_follow_a_redirect() {
     let serving = serve_with_body(
         base::reply(
