@@ -839,9 +839,13 @@ impl PriceLookup for Catalog {
         self.entries.get(key).cloned()
     }
 
-    fn effective_priced_model(&self, name: &str, provider: Option<&str>) -> Option<PricedModel> {
-        self.note(name, provider);
-        let record = self.entries.get(name)?.clone();
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.note(model, custom_llm_provider);
+        let record = self.entries.get(model)?.clone();
         Some(PricedModel {
             record,
             tiered_pricing: Vec::new(),
