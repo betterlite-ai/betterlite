@@ -192,6 +192,12 @@ fn cache_false_yields_none() {
 }
 
 #[test]
+fn missing_cache_params_yields_none() {
+    let config = load("litellm_settings:\n  cache: true\n").expect("cache without params");
+    assert!(config.sections.gcs_response_cache.is_none());
+}
+
+#[test]
 fn other_cache_type_yields_none() {
     let config = load("litellm_settings:\n  cache: true\n  cache_params:\n    type: s3\n    gcs_bucket_name: responses\n")
         .expect("another backend");
