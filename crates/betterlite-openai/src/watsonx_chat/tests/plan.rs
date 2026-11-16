@@ -124,7 +124,7 @@ async fn plan_overwrites_ids_the_caller_left_in_the_options() {
     .unwrap();
     assert_eq!(
         body(&plan),
-        json!({"model_id": "granite-13b", "project_id": "project-1", "space_id": "space-1"})
+        json!({"model_id": "granite-13b", "project_id": "project-1"})
     );
 }
 
