@@ -111,7 +111,13 @@ fn encode_list(items: Vec<SdkValue>, depth: i64, max_depth: i64) -> Vec<SdkValue
             .into_iter()
             .map(|item| match item {
                 SdkValue::DateTime(moment) => SdkValue::Text(moment.isoformat()),
-                other => other,
+                other @ (SdkValue::Null
+                | SdkValue::Bool(_)
+                | SdkValue::Number(_)
+                | SdkValue::Text(_)
+                | SdkValue::Bytes(_)
+                | SdkValue::List(_)
+                | SdkValue::Object(_)) => other,
             })
             .collect();
     }
@@ -122,7 +128,13 @@ fn encode_list(items: Vec<SdkValue>, depth: i64, max_depth: i64) -> Vec<SdkValue
             SdkValue::Object(fields) => {
                 SdkValue::Object(encode_unserializable_types(fields, depth, max_depth))
             }
-            other => other,
+            other @ (SdkValue::Null
+            | SdkValue::Bool(_)
+            | SdkValue::Number(_)
+            | SdkValue::Text(_)
+            | SdkValue::Bytes(_)
+            | SdkValue::DateTime(_)
+            | SdkValue::List(_)) => other,
         })
         .collect()
 }
