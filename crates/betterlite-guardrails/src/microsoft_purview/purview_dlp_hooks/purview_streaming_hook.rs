@@ -5,7 +5,8 @@ use betterlite_logging::verbose_hooks::VerboseHooks;
 use betterlite_redact::secret::Redactor;
 use betterlite_redact::structured::Payload;
 use betterlite_streaming::streamed_response_assembly::records::Chunk;
-use betterlite_streaming::streamed_response_assembly::{Request, Response, stream_chunk_builder};
+use betterlite_streaming::streamed_response_assembly::response::Response;
+use betterlite_streaming::streamed_response_assembly::{Request, stream_chunk_builder};
 
 use crate::purview_dlp_evaluation::MicrosoftPurviewDLPGuardrail;
 use crate::purview_dlp_evaluation::completion_text::{
@@ -59,39 +60,54 @@ async fn assemble_chat(chunks: &[GuardrailValue], redactor: &Arc<Redactor>) -> O
     }
 }
 
-// Nothing leaves the buffered stream until the scan passes: the caller gets the chunks back only on Ok.
+async fn response_text_parts(
+    chunks: &[GuardrailValue],
+    redactor: &Arc<Redactor>,
+) -> Result<Vec<String>, PurviewHookError> {
+    let events: Vec<_> = chunks
+        .iter()
+        .filter_map(|chunk| serde_json::from_str(&serde_json::to_string(chunk).ok()?).ok())
+        .collect();
+    let (marked, assembled) = assemble_responses_stream(&events);
+    if marked {
+        let Some(response) = assembled else {
+            return Err(PurviewHookError::from(error_handling::message_error(
+                INCOMPLETE_ERROR,
+            )));
+        };
+        return Ok(completion_response_text_parts(
+            &CompletionResponse::Responses(&response),
+        ));
+    }
+    let Some(response) = assemble_chat(chunks, redactor).await else {
+        return Err(PurviewHookError::from(error_handling::message_error(
+            ASSEMBLY_ERROR,
+        )));
+    };
+    let Ok(value) =
+        serde_json::to_string(&response).and_then(|encoded| serde_json::from_str(&encoded))
+    else {
+        return Err(PurviewHookError::from(error_handling::message_error(
+            ASSEMBLY_ERROR,
+        )));
+    };
+    Ok(response_parts::parts(&value)?)
+}
+
+// ast-grep-ignore: no-long-names
 pub async fn async_post_call_streaming_iterator_hook(
     guardrail: &MicrosoftPurviewDLPGuardrail,
     chunks: Vec<GuardrailValue>,
     data: &mut Data,
     context: &mut HookContext<'_>,
 ) -> Result<Vec<GuardrailValue>, PurviewHookError> {
+    // Nothing leaves the buffered stream until the scan passes: the caller gets the chunks back only on Ok.
     let request_data = conversion::object(data);
     let user_id = resolve_user_id_for_blocking(&guardrail.base, &request_data, &context.identity)?;
     if chunks.is_empty() {
         return Ok(chunks);
     }
-    let events: Vec<_> = chunks
-        .iter()
-        .filter_map(|chunk| serde_json::from_str(&serde_json::to_string(chunk).ok()?).ok())
-        .collect();
-    let (marked, assembled) = assemble_responses_stream(&events);
-    let parts = if marked {
-        let Some(response) = assembled else {
-            return Err(error_handling::message_error(INCOMPLETE_ERROR).into());
-        };
-        completion_response_text_parts(&CompletionResponse::Responses(&response))
-    } else {
-        let Some(response) = assemble_chat(&chunks, &context.redactor).await else {
-            return Err(error_handling::message_error(ASSEMBLY_ERROR).into());
-        };
-        let Ok(value) =
-            serde_json::to_string(&response).and_then(|encoded| serde_json::from_str(&encoded))
-        else {
-            return Err(error_handling::message_error(ASSEMBLY_ERROR).into());
-        };
-        response_parts::parts(&value)?
-    };
+    let parts = response_text_parts(&chunks, &context.redactor).await?;
     if !parts.is_empty() {
         let scan = PartsScan {
             user_id: &user_id,

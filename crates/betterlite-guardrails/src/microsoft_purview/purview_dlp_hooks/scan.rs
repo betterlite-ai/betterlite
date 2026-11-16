@@ -51,6 +51,7 @@ pub(super) async fn scan_and_record(
     if let Some(invocation) = targets.invocation {
         return outcome
             .write_record(invocation, &mut record_context)
+            .map(|_response| ())
             .map_err(PurviewHookError::from);
     }
     let ContentOutcome { result, record } = outcome;

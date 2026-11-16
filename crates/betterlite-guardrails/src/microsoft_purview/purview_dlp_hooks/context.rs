@@ -13,7 +13,7 @@ use crate::purview_graph_client::user_id_resolution::KeyIdentity;
 pub struct RecordTargets<'targets> {
     pub base: &'targets GuardrailBase,
     pub invocation: Option<&'targets mut GuardrailInvocation>,
-    pub sink: &'targets dyn GuardrailSpanSink,
+    pub sink: &'targets (dyn GuardrailSpanSink + Sync),
     pub log_target: Option<&'targets mut GuardrailLogTarget>,
 }
 
@@ -24,6 +24,6 @@ pub struct HookContext<'context> {
     pub redactor: Arc<Redactor>,
     pub record_base: &'context GuardrailBase,
     pub invocation: Option<&'context mut GuardrailInvocation>,
-    pub sink: &'context dyn GuardrailSpanSink,
+    pub sink: &'context (dyn GuardrailSpanSink + Sync),
     pub log_target: Option<&'context mut GuardrailLogTarget>,
 }
