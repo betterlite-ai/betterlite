@@ -36,6 +36,14 @@ pub enum Hub {
     Http(HubClient),
     // the oracle's adapter answers both fetches with failure, as LiteLLM's patched handler does
     Unreachable,
+    // the oracle's adapter answers each fetch from the case it sends, as a patched LiteLLM handler does
+    Map(HubMap),
+}
+
+#[derive(Debug)]
+pub struct HubMap {
+    pub configs: BTreeMap<String, TokenizerConfig>,
+    pub templates: BTreeMap<String, ChatTemplateFile>,
 }
 
 #[derive(Debug, Error)]
@@ -193,11 +201,28 @@ fn redirect_target(url: &Url, response: &UpstreamResponse) -> Option<Url> {
     url.join(location).ok()
 }
 
+impl HubMap {
+    fn config(&self, model: &str) -> TokenizerConfig {
+        self.configs
+            .get(model)
+            .cloned()
+            .unwrap_or(TokenizerConfig::Failure)
+    }
+
+    fn template(&self, model: &str) -> ChatTemplateFile {
+        self.templates
+            .get(model)
+            .cloned()
+            .unwrap_or(ChatTemplateFile::Failure)
+    }
+}
+
 impl Hub {
     pub(super) async fn tokenizer_config(&self, model: &str) -> Result<TokenizerConfig, HubError> {
         match self {
             Self::Http(client) => client.tokenizer_config(model).await,
             Self::Unreachable => Ok(TokenizerConfig::Failure),
+            Self::Map(map) => Ok(map.config(model)),
         }
     }
 
@@ -205,6 +230,7 @@ impl Hub {
         match self {
             Self::Http(client) => client.chat_template_file(model).await,
             Self::Unreachable => ChatTemplateFile::Failure,
+            Self::Map(map) => map.template(model),
         }
     }
 }
