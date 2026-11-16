@@ -1,16 +1,24 @@
 import base64
 
 import litellm
+from pydantic import JsonValue
+
 from openai_speech import run as speech_outcome
 from openai_speech.types import (
     ClientSpec,
+)
+from openai_speech.types import (
     Input as SpeechInput,
+)
+from openai_speech.types import (
     Reply as SpeechReply,
+)
+from openai_speech.types import (
     Request as SpeechRequest,
 )
-from openai_transcription import exchange as transcription_outcome
-from openai_transcription.probe import Answer as TranscriptionAnswer, Probe as TranscriptionProbe
-from pydantic import JsonValue
+from openai_transcription.exchange import exchange as transcription_outcome
+from openai_transcription.probe import Answer as TranscriptionAnswer
+from openai_transcription.probe import Probe as TranscriptionProbe
 
 from .cases import AudioCases, SpeechCase, TranscriptionCase
 from .support import BYTES, OBJECT, OBJECTS, SPEECH_MAX_RETRIES, TEXT, TIMEOUT

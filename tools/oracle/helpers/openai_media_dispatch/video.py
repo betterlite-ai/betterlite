@@ -2,7 +2,10 @@ import base64
 from typing import Literal
 
 import litellm
-from openai_videos import CONFIG as VIDEO_CONFIG, create_ops, reply_ops, request_ops
+from pydantic import JsonValue
+
+from openai_videos import create_ops, reply_ops, request_ops
+from openai_videos.config import CONFIG as VIDEO_CONFIG
 from openai_videos.views import (
     BytesReference,
     ContentReplyCall,
@@ -21,7 +24,6 @@ from openai_videos.views import (
     VideoReplyOps,
     VideoRequestOps,
 )
-from pydantic import JsonValue
 
 from .cases import VideoCases, VideoCreateCase, VideoLifecycleCase
 from .support import MODEL, OBJECT, OBJECTS, TEXT, leaf_parts, required
@@ -89,7 +91,11 @@ def video_lifecycle(case: VideoLifecycleCase) -> JsonValue:
 def lifecycle_list(case: VideoLifecycleCase, base: str) -> JsonValue:
     encoded = base64.b64encode(case["reply"].encode()).decode("ascii")
     call = ListRequestCall(
-        op="list_request", api_base=base, after=case["after"], limit=case["limit"], order=case["order"]
+        op="list_request",
+        api_base=base,
+        after=case["after"],
+        limit=case["limit"],
+        order=case["order"],
     )
     reply = ListReplyCall(op="list_response", provider=case["provider"], body_base64=encoded)
     return lifecycle_answer("GET", call, reply, "query")
@@ -139,14 +145,12 @@ def lifecycle_answer(
     sent = OBJECT.validate_python(request_ops(request))
     params: JsonValue = sent["params"] if source == "query" else {}
     body: JsonValue = sent["params"] if source == "body" else None
-    match reply["op"]:
-        case "content_response":
-            content = OBJECT.validate_python(reply_ops(reply))
-            answer: JsonValue = {
-                "body": base64.b64decode(TEXT.validate_python(content["body_base64"])).decode()
-            }
-        case ("list_response" | "status_response" | "delete_response" | "remix_response"):
-            answer = reply_ops(reply)
+    answer: JsonValue = OBJECT.validate_python(reply_ops(reply))
+    if reply["op"] == "content_response":
+        content = OBJECT.validate_python(answer)
+        answer = {
+            "body": base64.b64decode(TEXT.validate_python(content["body_base64"])).decode()
+        }
     return {
         "request": {
             "method": method,

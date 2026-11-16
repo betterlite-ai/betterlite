@@ -2,12 +2,12 @@ import base64
 from typing import Final
 
 import litellm
+from pydantic import JsonValue, TypeAdapter
+
 from openai_video_edits import (
     CreateCharacterRequest,
-    EditBody,
     EditRequest,
     ExtensionRequest,
-    Fixture,
     GetCharacterRequest,
     create_character_reply,
     create_character_value,
@@ -18,9 +18,8 @@ from openai_video_edits import (
     get_character_reply,
     get_character_value,
 )
-from openai_video_edits.fixtures import BytesFixture
-from openai_videos import CONFIG as VIDEO_CONFIG
-from pydantic import JsonValue, TypeAdapter
+from openai_video_edits.fixtures import BytesFixture, EditBody, Fixture
+from openai_videos.config import CONFIG as VIDEO_CONFIG
 
 from .cases import VideoExtendedCase
 from .support import OBJECT, OBJECTS, TEXT, leaf_parts, required

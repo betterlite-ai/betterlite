@@ -2,16 +2,21 @@ import base64
 import json
 
 import litellm
+from pydantic import JsonValue
+
 from openai_image_edits import (
-    FileSpec,
     Probe as ImageEditProbe,
+)
+from openai_image_edits import (
     transform_value as image_edit_outcome,
 )
-from openai_image_generation.probe import Answer as ImageAnswer, Probe as ImageProbe
+from openai_image_edits.files import FileSpec
+from openai_image_generation.probe import Answer as ImageAnswer
+from openai_image_generation.probe import Probe as ImageProbe
 from openai_image_generation.request import request_value as image_generation_outcome
-from openai_image_variations.probe import Probe as VariationProbe, Reply as VariationReply
+from openai_image_variations.probe import Probe as VariationProbe
+from openai_image_variations.probe import Reply as VariationReply
 from openai_image_variations.request import request_value as variation_outcome
-from pydantic import JsonValue
 
 from .cases import (
     ImageCases,
@@ -49,7 +54,11 @@ def image_answer(outcome: dict[str, JsonValue], request: dict[str, JsonValue]) -
     if error is None:
         return {"request": request, "reply": image_reply(outcome["result"]), "error": None}
     raised = OBJECT.validate_python(error)
-    return {"request": request, "reply": None, "error": {"mapped": raised["mapped"], "status": raised["status"]}}
+    return {
+        "request": request,
+        "reply": None,
+        "error": {"mapped": raised["mapped"], "status": raised["status"]},
+    }
 
 
 def file_specs(files: list[ImageFile]) -> list[FileSpec | None]:
