@@ -2,9 +2,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::{ImageFiles, ImageParams};
 use betterlite_openai::image_edits::request::ImageEditForm;
 
-use crate::image_generation::flux::{
-    FLUX2_OPENAI_PARAMS, supported_params as generation_supported_params,
-};
+use crate::image_generation::flux::supported_params as generation_supported_params;
 use crate::image_generation::params::map_openai_params;
 
 use super::error::ImageEditError;

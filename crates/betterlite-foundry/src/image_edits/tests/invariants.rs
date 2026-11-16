@@ -72,27 +72,26 @@ fn foundry_image_edit_credential_identity_isolation() {
 
 #[test]
 fn foundry_image_edit_secret_safe_failure() {
-    let configured = support::foundry_settings(Some("https://azure.test"), Some(SECRET));
     let client_secret = support::object(&format!(
         r#"{{"tenant_id": "tenant", "client_id": "client", "client_secret": "{CLIENT_SECRET}"}}"#
     ));
     let keyless = support::foundry_settings(Some("https://azure.test"), None);
-    let failures = [
-        validate_failure(&keyless, &client_secret),
-        url_failure(&configured),
-        params_failure(),
-    ];
-    for failure in &failures {
-        let rendered = format!("{failure:?} {failure}");
-        assert!(
-            !rendered.contains(SECRET),
-            "an error exposed the configured key: {rendered}"
-        );
-        assert!(
-            !rendered.contains(CLIENT_SECRET),
-            "an error exposed the client secret: {rendered}"
-        );
-    }
+    let configured = support::foundry_settings(Some("https://azure.test"), Some(SECRET));
+    assert_secret_safe(&validate_failure(&keyless, &client_secret));
+    assert_secret_safe(&url_failure(&configured));
+    assert_secret_safe(&params_failure());
+}
+
+fn assert_secret_safe(failure: &ImageEditError) {
+    let rendered = format!("{failure:?} {failure}");
+    assert!(
+        !rendered.contains(SECRET),
+        "an error exposed the configured key: {rendered}"
+    );
+    assert!(
+        !rendered.contains(CLIENT_SECRET),
+        "an error exposed the client secret: {rendered}"
+    );
 }
 
 fn validate_failure(settings: &FoundrySettings, params: &Object) -> ImageEditError {

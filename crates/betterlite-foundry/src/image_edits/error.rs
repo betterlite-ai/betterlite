@@ -42,14 +42,21 @@ pub enum ImageEditError {
     ReplyEncoding(#[source] serde_json::Error),
 }
 
+enum ProviderFailure<'a> {
+    Params(&'a FoundryImageError),
+    Mai(&'a MaiImageError),
+    Status(u16),
+}
+
 impl ImageEditError {
     // FLUX raises ValueError with its own 400s, and a non-JSON MAI reply keeps the provider status through B668
-    #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    fn provider_failure(&self) -> Option<ProviderFailure<'_>> {
         match self {
-            Self::Params(error) => error.status_code(),
-            Self::Mai(error) => error.status_code(),
-            Self::Projection(ImageReplyError::ResponseObject { status, .. }) => Some(*status),
+            Self::Params(error) => Some(ProviderFailure::Params(error)),
+            Self::Mai(error) => Some(ProviderFailure::Mai(error)),
+            Self::Projection(ImageReplyError::ResponseObject { status, .. }) => {
+                Some(ProviderFailure::Status(*status))
+            }
             Self::UnsupportedModel { .. }
             | Self::ApiBaseRequired
             | Self::ApiVersionRequired
@@ -66,22 +73,20 @@ impl ImageEditError {
     }
 
     #[must_use]
+    pub fn status_code(&self) -> Option<u16> {
+        match self.provider_failure()? {
+            ProviderFailure::Params(error) => error.status_code(),
+            ProviderFailure::Mai(error) => error.status_code(),
+            ProviderFailure::Status(status) => Some(status),
+        }
+    }
+
+    #[must_use]
     pub fn llm_provider(&self) -> Option<&'static str> {
-        match self {
-            Self::Params(error) => error.llm_provider(),
-            Self::Mai(error) => error.llm_provider(),
-            Self::UnsupportedModel { .. }
-            | Self::ApiBaseRequired
-            | Self::ApiVersionRequired
-            | Self::Flux2PromptRequired
-            | Self::Flux2ImageRequired
-            | Self::Flux2NoReferenceImages
-            | Self::Flux2TooManyReferenceImages { .. }
-            | Self::UnsupportedImageType { .. }
-            | Self::Url(_)
-            | Self::Credentials(_)
-            | Self::Projection(_)
-            | Self::ReplyEncoding(_) => None,
+        match self.provider_failure()? {
+            ProviderFailure::Params(error) => error.llm_provider(),
+            ProviderFailure::Mai(error) => error.llm_provider(),
+            ProviderFailure::Status(_) => None,
         }
     }
 }
