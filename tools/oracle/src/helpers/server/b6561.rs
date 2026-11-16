@@ -3,7 +3,8 @@ use betterlite_server::guardrails::provider_forms::project::{project_model, with
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // the oracle case env is empty, so LiteLLM reads DEFAULT_MAX_RECURSE_DEPTH's 100 at import
 const MAX_DEPTH: usize = 100;
