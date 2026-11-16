@@ -52,7 +52,7 @@ fn databricks_completion_prefers_the_context_then_the_globals() {
     );
     assert_eq!(
         call.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some(&String::from("context-key"))
+        Some("context-key")
     );
     assert_eq!(
         call.headers
@@ -90,7 +90,7 @@ fn databricks_completion_reads_the_environment_when_no_setting_is_given() {
     );
     assert_eq!(
         calls[0].api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some(&String::from("env-key"))
+        Some("env-key")
     );
 }
 
@@ -115,7 +115,7 @@ fn databricks_completion_prefers_the_global_key_over_the_databricks_key() {
             .api_key
             .as_ref()
             .map(ExposeSecret::expose_secret),
-        Some(&String::from("global-key"))
+        Some("global-key")
     );
 }
 
@@ -258,7 +258,7 @@ fn snowflake_completion_passes_the_context_values_and_logs_only_a_failure() {
     assert_eq!(call.custom_llm_provider, "snowflake");
     assert_eq!(
         call.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some(&String::from("pat/abc"))
+        Some("pat/abc")
     );
     assert!(state.model_call_details.get("original_response").is_some());
 
@@ -362,7 +362,7 @@ fn databricks_completion_treats_an_empty_context_setting_as_unset() {
     assert_eq!(call.api_base.as_deref(), Some("https://global.example.com"));
     assert_eq!(
         call.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some(&String::from("global-key"))
+        Some("global-key")
     );
 }
 
@@ -387,7 +387,7 @@ fn databricks_completion_skips_an_empty_global_key() {
             .api_key
             .as_ref()
             .map(ExposeSecret::expose_secret),
-        Some(&String::from("databricks-key"))
+        Some("databricks-key")
     );
 }
 
@@ -411,6 +411,6 @@ fn databricks_completion_skips_an_empty_databricks_key() {
             .api_key
             .as_ref()
             .map(ExposeSecret::expose_secret),
-        Some(&String::from("env-key"))
+        Some("env-key")
     );
 }

@@ -157,7 +157,7 @@ async fn snowflake(
     validate_environment(
         &mut headers,
         &call.model,
-        api_key.as_ref().map(|value| value.expose_secret().as_str()),
+        api_key.as_ref().map(|value| value.expose_secret()),
     )?;
     let body = transform_embedding_request(&call.input, &call.model, &optional_params);
     let bytes = serde_json::to_vec(&body).map_err(|source| DispatchError::Encode { source })?;

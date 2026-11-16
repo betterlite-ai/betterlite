@@ -25,7 +25,7 @@ fn databricks_environment_reads_the_environment() {
             .client_secret
             .as_ref()
             .map(ExposeSecret::expose_secret),
-        Some(&String::from("client-secret"))
+        Some("client-secret")
     );
     assert_eq!(
         resolved.api_base.as_deref(),

@@ -222,11 +222,8 @@ fn snowflake_request(
     )
     .or_value_error()?;
     let mut headers = call.headers.clone().unwrap_or_default();
-    let key = call
-        .api_key
-        .as_ref()
-        .map(|value| value.expose_secret().clone());
-    snowflake_headers(&mut headers, &call.model, key.as_deref()).or_value_error()?;
+    let key = call.api_key.as_ref().map(|value| value.expose_secret());
+    snowflake_headers(&mut headers, &call.model, key).or_value_error()?;
     Ok((url, header_map(&headers)))
 }
 
