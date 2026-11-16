@@ -25,7 +25,8 @@ const PARAMS: &str = r#"{"metadata":{"session_id":"s1","agent_id":"agent-1"}}"#;
 async fn charging_positive_cost_adds_to_the_session_spend() {
     let handler = handler(FakeCache::new());
     let registry = agent_registry_with(&[BUDGET_ONE]);
-    let event = success(Some(&json(PARAMS)), Some(amount("0.25")));
+    let params = json(PARAMS);
+    let event = success(Some(&params), Some(amount("0.25")));
     handler.async_log_success_event(&registry, &event).await;
     assert_eq!(handler.cache.memory(KEY), Some(amount("0.25")));
 }

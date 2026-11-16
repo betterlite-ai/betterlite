@@ -11,10 +11,10 @@ use super::cache::SessionBudgetCache;
 mod tests;
 
 // _get_current_spend: the Redis value wins, and an exception or a non-number falls back to the local cache
-pub(crate) async fn current_spend<C: SessionBudgetCache>(
-    handler: &SessionBudgetHandler<C>,
-    key: &str,
-) -> Decimal {
+pub(crate) async fn current_spend<C>(handler: &SessionBudgetHandler<C>, key: &str) -> Decimal
+where
+    C: SessionBudgetCache,
+{
     if handler.cache.redis_configured() {
         let read = handler.cache.redis_spend(key).await;
         if let Some(spend) = redis_spend(read) {
@@ -31,31 +31,30 @@ pub(crate) async fn current_spend<C: SessionBudgetCache>(
 }
 
 // _increment_spend: the Lua script first, and the in-memory read-add-write when it is absent or fails
-pub(crate) async fn add_spend<C: SessionBudgetCache>(
-    handler: &SessionBudgetHandler<C>,
-    key: &str,
-    amount: Decimal,
-) {
-    if let Some(script) = handler.script.as_ref() {
-        match handler
-            .cache
-            .run_increment_script(script, key, amount, handler.ttl)
-            .await
-        {
-            Ok(_total) => return,
-            Err(failure) => tracing::warn!(
-                "MaxBudgetPerSessionHandler: Redis INCRBYFLOAT failed, falling back to in-memory: {failure}"
-            ),
-        }
+pub(crate) async fn add_spend<C>(handler: &SessionBudgetHandler<C>, key: &str, amount: Decimal)
+where
+    C: SessionBudgetCache,
+{
+    let Some(script) = handler.script.as_ref() else {
+        add_in_memory(handler, key, amount).await;
+        return;
+    };
+    let increment = handler
+        .cache
+        .run_increment_script(script, key, amount, handler.ttl)
+        .await;
+    if let Err(failure) = increment {
+        tracing::warn!(
+            "MaxBudgetPerSessionHandler: Redis INCRBYFLOAT failed, falling back to in-memory: {failure}"
+        );
+        add_in_memory(handler, key, amount).await;
     }
-    add_in_memory(handler, key, amount).await;
 }
 
-async fn add_in_memory<C: SessionBudgetCache>(
-    handler: &SessionBudgetHandler<C>,
-    key: &str,
-    amount: Decimal,
-) {
+async fn add_in_memory<C>(handler: &SessionBudgetHandler<C>, key: &str, amount: Decimal)
+where
+    C: SessionBudgetCache,
+{
     let current = handler.cache.memory_spend(key).await;
     let spent = current
         .as_ref()
@@ -69,17 +68,20 @@ async fn add_in_memory<C: SessionBudgetCache>(
 }
 
 // _get_current_spend's Redis branch: it fails over to the local cache instead of failing the request
-fn redis_spend<E: Display>(read: Result<Option<CachedSpend>, E>) -> Option<Decimal> {
+fn redis_spend<E>(read: Result<Option<CachedSpend>, E>) -> Option<Decimal>
+where
+    E: Display,
+{
     match read {
-        Ok(Some(value)) => match spend_amount(&value) {
-            Some(spend) => Some(spend),
-            None => {
+        Ok(Some(value)) => spend_amount(&value).map_or_else(
+            || {
                 tracing::warn!(
                     "MaxBudgetPerSessionHandler: Redis GET returned a value that is not a number, falling back to in-memory"
                 );
                 None
-            }
-        },
+            },
+            Some,
+        ),
         Ok(None) => Some(Decimal::ZERO),
         Err(failure) => {
             tracing::warn!(

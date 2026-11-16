@@ -67,18 +67,18 @@ impl<C: SessionBudgetCache> SessionBudgetHandler<C> {
         let Some(session_id) = admission::session_id_from(data) else {
             return Ok(());
         };
-        let Some(max_budget) = max_budget else {
+        let Some(budget) = max_budget else {
             return Ok(());
         };
         let cache_key = format!("{{session_budget:{session_id}}}:spend");
         let current_spend = spend::current_spend(self, &cache_key).await;
-        if current_spend < max_budget {
+        if current_spend < budget {
             return Ok(());
         }
         let request = admission::ExceededRequest {
             session_id,
             current_spend,
-            max_budget,
+            max_budget: budget,
             data,
         };
         Err(admission::exceeded_error(self, router, &request))

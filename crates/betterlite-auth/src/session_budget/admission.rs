@@ -33,10 +33,10 @@ pub(crate) fn max_budget_for(
     registry: &AgentRegistry,
     agent_id: Option<&str>,
 ) -> Result<Option<Decimal>, SessionBudgetError> {
-    let Some(agent_id) = agent_id else {
+    let Some(id) = agent_id else {
         return Ok(None);
     };
-    let Some(agent) = get_agent_by_id(registry, agent_id) else {
+    let Some(agent) = get_agent_by_id(registry, id) else {
         return Ok(None);
     };
     let Some(raw) = agent.litellm_params.get(MAX_BUDGET_PER_SESSION) else {
@@ -44,10 +44,10 @@ pub(crate) fn max_budget_for(
     };
     let value: Json =
         serde_json::from_str(raw.get()).map_err(|source| SessionBudgetError::BudgetJson {
-            agent_id: agent_id.to_owned(),
+            agent_id: id.to_owned(),
             source,
         })?;
-    budget_amount(&value, agent_id)
+    budget_amount(&value, id)
 }
 
 // float() on the configured value: a number or numeric text is the budget, and null means no budget
@@ -92,11 +92,14 @@ fn requested_model(data: &Json) -> Option<&str> {
 }
 
 // the 429 async_pre_call_hook raises: RateLimitType.BUDGET with the resolved model and provider
-pub(crate) fn exceeded_error<C: SessionBudgetCache>(
+pub(crate) fn exceeded_error<C>(
     handler: &SessionBudgetHandler<C>,
     router: Option<&dyn DeploymentSnapshot>,
     request: &ExceededRequest<'_>,
-) -> SessionBudgetError {
+) -> SessionBudgetError
+where
+    C: SessionBudgetCache,
+{
     let (model, llm_provider) = resolve_rate_limit_provider(
         requested_model(request.data),
         handler.resolver.as_ref(),

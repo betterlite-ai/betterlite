@@ -41,9 +41,7 @@ fn metadata_of(params: &Json) -> Option<&Json> {
     let Json::Object(fields) = params else {
         return None;
     };
-    let Some(metadata) = fields.get("metadata") else {
-        return None;
-    };
+    let metadata = fields.get("metadata")?;
     let Json::Object(_) = metadata else {
         return None;
     };

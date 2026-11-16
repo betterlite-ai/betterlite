@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use rust_decimal::Decimal;
@@ -72,8 +73,8 @@ async fn in_memory_increment_records_the_configured_ttl() {
 
 #[tokio::test]
 async fn in_memory_increment_runs_when_the_redis_cache_has_no_script() {
-    let mut cache = FakeCache::with_redis();
-    cache.holds_script = false;
+    let cache = FakeCache::with_redis();
+    cache.holds_script.store(false, Ordering::SeqCst);
     let handler = handler(cache);
     assert!(handler.script.is_none());
     add_spend(&handler, KEY, amount("0.25")).await;
@@ -130,8 +131,8 @@ async fn redis_missing_key_reads_as_zero_without_the_local_cache() {
 
 #[tokio::test]
 async fn redis_read_failure_uses_the_in_memory_fallback() {
-    let mut cache = FakeCache::with_redis();
-    cache.fails_redis_read = true;
+    let cache = FakeCache::with_redis();
+    cache.fails_redis_read.store(true, Ordering::SeqCst);
     cache.preload_memory(KEY, amount("1.25"));
     let handler = handler(cache);
     assert_eq!(current_spend(&handler, KEY).await, amount("1.25"));
@@ -168,8 +169,8 @@ async fn lua_script_increment_carries_the_key_amount_and_ttl() {
 
 #[tokio::test]
 async fn redis_increment_failure_uses_the_in_memory_fallback() {
-    let mut cache = FakeCache::with_redis();
-    cache.fails_script = true;
+    let cache = FakeCache::with_redis();
+    cache.fails_script.store(true, Ordering::SeqCst);
     let handler = handler(cache);
     add_spend(&handler, KEY, amount("0.25")).await;
     assert_eq!(handler.cache.memory(KEY), Some(amount("0.25")));
@@ -178,8 +179,8 @@ async fn redis_increment_failure_uses_the_in_memory_fallback() {
 
 #[tokio::test]
 async fn redis_increment_failure_adds_to_the_existing_local_spend() {
-    let mut cache = FakeCache::with_redis();
-    cache.fails_script = true;
+    let cache = FakeCache::with_redis();
+    cache.fails_script.store(true, Ordering::SeqCst);
     cache.preload_memory(KEY, amount("0.5"));
     let handler = handler(cache);
     add_spend(&handler, KEY, amount("0.25")).await;

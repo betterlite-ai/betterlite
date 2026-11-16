@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use betterlite_error::rate_limit::ProxyRateLimitError;
@@ -49,9 +50,9 @@ pub(crate) struct ScriptRun {
 
 pub(crate) struct FakeCache {
     pub(crate) redis: bool,
-    pub(crate) holds_script: bool,
-    pub(crate) fails_redis_read: bool,
-    pub(crate) fails_script: bool,
+    pub(crate) holds_script: AtomicBool,
+    pub(crate) fails_redis_read: AtomicBool,
+    pub(crate) fails_script: AtomicBool,
     pub(crate) registered: Mutex<Vec<String>>,
     pub(crate) memory: Mutex<BTreeMap<String, CachedSpend>>,
     pub(crate) redis_values: Mutex<BTreeMap<String, CachedSpend>>,
@@ -64,9 +65,9 @@ impl FakeCache {
     pub(crate) fn new() -> Self {
         Self {
             redis: false,
-            holds_script: true,
-            fails_redis_read: false,
-            fails_script: false,
+            holds_script: AtomicBool::new(true),
+            fails_redis_read: AtomicBool::new(false),
+            fails_script: AtomicBool::new(false),
             registered: Mutex::new(Vec::new()),
             memory: Mutex::new(BTreeMap::new()),
             redis_values: Mutex::new(BTreeMap::new()),
@@ -158,7 +159,7 @@ impl SessionBudgetCache for FakeCache {
     }
 
     fn register_increment_script(&self, script: &str) -> Option<FakeScript> {
-        if !self.holds_script {
+        if !self.holds_script.load(Ordering::SeqCst) {
             return None;
         }
         self.registered.lock().unwrap().push(script.to_owned());
@@ -169,7 +170,7 @@ impl SessionBudgetCache for FakeCache {
         &self,
         key: &str,
     ) -> impl Future<Output = Result<Option<CachedSpend>, FakeFailure>> + Send {
-        if self.fails_redis_read {
+        if self.fails_redis_read.load(Ordering::SeqCst) {
             return ready(Err(FakeFailure));
         }
         ready(Ok(self.redis_values.lock().unwrap().get(key).cloned()))
@@ -182,7 +183,7 @@ impl SessionBudgetCache for FakeCache {
         amount: Decimal,
         ttl: Duration,
     ) -> impl Future<Output = Result<Decimal, FakeFailure>> + Send {
-        if self.fails_script {
+        if self.fails_script.load(Ordering::SeqCst) {
             return ready(Err(FakeFailure));
         }
         self.script_runs.lock().unwrap().push(ScriptRun {
