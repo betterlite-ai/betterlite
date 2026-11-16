@@ -1,0 +1,46 @@
+task: B4083
+deviations:
+  - what: >-
+      A cache read that fails returns no active jobs and stores nothing, so sampling pauses for that request
+      and the next request fills the cache. LiteLLM's hook does the same around its cache-first read, and the
+      ten-second TTL bounds the pause.
+    why: >-
+      Keep the sampling loop lock-free and never block request logging on a transient cache or database fault;
+      B118 retries on the next request because the failed read is not cached.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L851-L903
+  - what: >-
+      The counter write is injected as the SpendCounter trait's add_spend(counter_key, cost: Decimal) instead
+      of LiteLLM's callable field, which takes and returns floats. Production adapters over
+      B3015::increment_spend_counter implement the trait in B8660, and tests inject an in-memory counter. A
+      failed write logs at warn and continues, so the attempt row is still recorded.
+    why: >-
+      Money in betterlite is Decimal end to end (no-float-money), and the counter is external to the shadow
+      pipeline, so tests must control it without a proxy global. The write still happens before the attempt
+      insert, so a lost row leaves the job's budget gate closed on the next read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L828-L845
+  - what: >-
+      The counter read is not part of this loader: LiteLLM reads the cross-pod counter with the fill-time
+      spend as its fallback inside the per-request budget gate, and that gate is B4085's spending logic.
+      B4083 supplies the counter key and the fill-time spend from attempt stats.
+    why: >-
+      The task's out_of_scope puts spending logic in B4081/B4085, and the sampling admission B4083 owns
+      already skips a job whose fill-time spend reached its budget, the same check LiteLLM makes before
+      sampling. A loader-side reader with no caller would be dead surface.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1075-L1084
+  - what: >-
+      A funnel flush drops the batch it snapshotted on any database error instead of retrying it, logging the
+      job and its dropped counters at error level.
+    why: >-
+      The counters are advisory coverage stats and the spend update job runs again on its next cycle; a
+      repeated increment is worse than an undercount, the same call LiteLLM makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/shadow_eval_funnel.py#L47-L65
+  - what: >-
+      The loader takes its database as an injected Option<Arc<Database>> instead of resolving the proxy's global
+      prisma_client through _default_prisma_provider. With no database it returns no active jobs and fills no
+      cache, the same empty result LiteLLM returns once its provider yields None.
+    why: >-
+      betterlite has no proxy globals, so the proxy that owns the client injects it and a test supplies a fake
+      table set, as rule dependencies-in-constructors requires. Leaving the cache unfilled keeps the next request
+      retrying, as LiteLLM's None path does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1377-L1382
+kept_bugs: []
