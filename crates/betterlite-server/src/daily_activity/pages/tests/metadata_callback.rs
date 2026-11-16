@@ -1,19 +1,15 @@
 #![cfg(test)]
 
 use betterlite_analytics::daily_metrics::SpendMetrics;
+use rust_decimal::Decimal;
 
 use super::read::{PageCallbacks, get_daily_activity};
 use super::record::DailySpendRecord;
-use super::support::{money, page_repository, request, row};
+use super::support::{metrics, money, page_repository, request, row};
 
 #[tokio::test]
 async fn callback_overrides_the_computed_totals() {
-    let callback = |_records: &[DailySpendRecord]| -> SpendMetrics {
-        let mut metrics = SpendMetrics::default();
-        metrics.spend = money("42");
-        metrics.total_tokens = 7;
-        metrics
-    };
+    let callback = |_records: &[DailySpendRecord]| -> SpendMetrics { metrics(money("42"), 7, 0) };
     let mut record = row("1", "2025-03-10", "sk-a");
     record.spend = money("1");
     let repository = page_repository(vec![record], 1);
@@ -42,10 +38,9 @@ async fn absent_callback_uses_the_aggregated_totals() {
 #[tokio::test]
 async fn callback_receives_the_page_records() {
     let callback = |records: &[DailySpendRecord]| -> SpendMetrics {
-        let mut metrics = SpendMetrics::default();
-        metrics.spend = records.iter().map(|record| record.spend).sum();
-        metrics.total_api_requests = i64::try_from(records.len()).unwrap();
-        metrics
+        let spend: Decimal = records.iter().map(|record| record.spend).sum();
+        let requests = i64::try_from(records.len()).unwrap();
+        metrics(spend, 0, requests)
     };
     let mut first = row("1", "2025-03-10", "sk-a");
     first.spend = money("1");

@@ -32,25 +32,25 @@ fn distinct_record() -> DailySpendRecord {
 }
 
 fn distinct_metrics() -> SpendMetrics {
-    let mut metrics = SpendMetrics::default();
-    metrics.spend = money("1.25");
-    metrics.flat_cost = money("0.5");
-    metrics.prompt_tokens = 100;
-    metrics.completion_tokens = 40;
-    metrics.cache_read_input_tokens = 7;
-    metrics.cache_creation_input_tokens = 11;
-    metrics.compression_saved_tokens = 3;
-    metrics.compression_savings_spend = money("0.2");
-    metrics.prompt_caching_savings_spend = money("0.3");
-    metrics.gateway_caching_savings = money("0.4");
-    metrics.autorouter_savings_spend = money("0.6");
-    metrics.total_tokens = 140;
-    metrics.successful_requests = 8;
-    metrics.failed_requests = 1;
-    metrics.api_requests = 9;
-    metrics.total_response_time_ms = 1500;
-    metrics.timed_requests = 6;
-    metrics
+    SpendMetrics {
+        spend: money("1.25"),
+        flat_cost: money("0.5"),
+        prompt_tokens: 100,
+        completion_tokens: 40,
+        cache_read_input_tokens: 7,
+        cache_creation_input_tokens: 11,
+        compression_saved_tokens: 3,
+        compression_savings_spend: money("0.2"),
+        prompt_caching_savings_spend: money("0.3"),
+        gateway_caching_savings: money("0.4"),
+        autorouter_savings_spend: money("0.6"),
+        total_tokens: 140,
+        successful_requests: 8,
+        failed_requests: 1,
+        api_requests: 9,
+        total_response_time_ms: 1500,
+        timed_requests: 6,
+    }
 }
 
 #[test]
@@ -205,12 +205,12 @@ fn absent_providers_are_keyed_as_unknown() {
 
 #[test]
 fn entities_use_the_record_id_and_its_metadata() {
-    let mut fixture = BreakdownFixture::default();
-    fixture.entity_id_field = Some("user_id");
-    fixture.entity_metadata = Some(entity_metadata(&[
-        ("user-7", fields(&[("plan", "pro")])),
-        ("Unassigned", fields(&[("plan", "free")])),
-    ]));
+    let fixture = BreakdownFixture::default()
+        .with_entity_field("user_id")
+        .with_entity_metadata(entity_metadata(&[
+            ("user-7", fields(&[("plan", "pro")])),
+            ("Unassigned", fields(&[("plan", "free")])),
+        ]));
     let mut record = spend_record("2025-03-10", "sk-real");
     record.entity_id = Some(text("user-7"));
     record.spend = money("1.25");
@@ -227,12 +227,12 @@ fn entities_use_the_record_id_and_its_metadata() {
 
 #[test]
 fn entities_without_an_id_use_unassigned() {
-    let mut fixture = BreakdownFixture::default();
-    fixture.entity_id_field = Some("user_id");
-    fixture.entity_metadata = Some(entity_metadata(&[(
-        "Unassigned",
-        fields(&[("plan", "free")]),
-    )]));
+    let fixture = BreakdownFixture::default()
+        .with_entity_field("user_id")
+        .with_entity_metadata(entity_metadata(&[(
+            "Unassigned",
+            fields(&[("plan", "free")]),
+        )]));
     let mut record = spend_record("2025-03-10", "sk-real");
     record.spend = money("1.25");
     let breakdown = breakdown_of(&[record], &fixture).unwrap();

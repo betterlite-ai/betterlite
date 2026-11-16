@@ -11,8 +11,13 @@ use super::metadata::{EntityMetadata, MetadataFields};
 use super::record::DailySpendRecord;
 
 macro_rules! accumulate {
-    ($target:expr, $value:expr) => {
-        $target = $target.checked_add($value).ok_or(PagesError::Overflow)?
+    ($target:ident, $field:ident, $value:expr) => {
+        $target.$field = $target.$field.checked_add($value).ok_or(PagesError::Overflow)?
+    };
+    ($target:ident, $record:ident, $($field:ident),+ $(,)?) => {
+        $(
+            accumulate!($target, $field, $record.$field);
+        )+
     };
 }
 
@@ -142,8 +147,8 @@ fn update_dimension(
             api_key_breakdown: IndexMap::new(),
         });
     update_metrics(&mut bucket.metrics, record)?;
-    api_key_metadata.map_or(Ok(()), |api_key_metadata| {
-        update_key_breakdown(&mut bucket.api_key_breakdown, api_key_metadata, record)
+    api_key_metadata.map_or(Ok(()), |metadata| {
+        update_key_breakdown(&mut bucket.api_key_breakdown, metadata, record)
     })
 }
 
@@ -188,51 +193,31 @@ pub(super) fn update_metrics(
     existing: &mut SpendMetrics,
     record: &DailySpendRecord,
 ) -> Result<(), PagesError> {
-    accumulate!(existing.spend, record.spend);
-    accumulate!(existing.flat_cost, record.flat_cost);
-    accumulate!(existing.prompt_tokens, record.prompt_tokens);
-    accumulate!(existing.completion_tokens, record.completion_tokens);
     accumulate!(
-        existing.cache_read_input_tokens,
-        record.cache_read_input_tokens
+        existing,
+        record,
+        spend,
+        flat_cost,
+        prompt_tokens,
+        completion_tokens,
+        cache_read_input_tokens,
+        cache_creation_input_tokens,
+        compression_saved_tokens,
+        compression_savings_spend,
+        prompt_caching_savings_spend,
+        gateway_caching_savings,
+        autorouter_savings_spend,
+        api_requests,
+        successful_requests,
+        failed_requests,
+        total_response_time_ms,
+        timed_requests
     );
-    accumulate!(
-        existing.cache_creation_input_tokens,
-        record.cache_creation_input_tokens
-    );
-    accumulate!(
-        existing.compression_saved_tokens,
-        record.compression_saved_tokens
-    );
-    accumulate!(
-        existing.compression_savings_spend,
-        record.compression_savings_spend
-    );
-    accumulate!(
-        existing.prompt_caching_savings_spend,
-        record.prompt_caching_savings_spend
-    );
-    accumulate!(
-        existing.gateway_caching_savings,
-        record.gateway_caching_savings
-    );
-    accumulate!(
-        existing.autorouter_savings_spend,
-        record.autorouter_savings_spend
-    );
-    accumulate!(existing.api_requests, record.api_requests);
-    accumulate!(existing.successful_requests, record.successful_requests);
-    accumulate!(existing.failed_requests, record.failed_requests);
-    accumulate!(
-        existing.total_response_time_ms,
-        record.total_response_time_ms
-    );
-    accumulate!(existing.timed_requests, record.timed_requests);
     let added_tokens = record
         .prompt_tokens
         .checked_add(record.completion_tokens)
         .ok_or(PagesError::Overflow)?;
-    accumulate!(existing.total_tokens, added_tokens);
+    accumulate!(existing, total_tokens, added_tokens);
     Ok(())
 }
 

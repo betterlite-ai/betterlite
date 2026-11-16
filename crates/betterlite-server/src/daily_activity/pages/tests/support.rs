@@ -19,7 +19,7 @@ use std::future::{Future, ready};
 use std::sync::Mutex;
 use std::time::SystemTime;
 
-use betterlite_analytics::daily_metrics::BreakdownMetrics;
+use betterlite_analytics::daily_metrics::{BreakdownMetrics, SpendMetrics};
 
 use super::breakdown::{BreakdownContext, update_breakdown_metrics};
 use super::error::PagesError;
@@ -33,6 +33,28 @@ pub(crate) fn text(value: &str) -> String {
 
 pub(crate) fn money(value: &str) -> Decimal {
     value.parse::<Decimal>().unwrap()
+}
+
+pub(crate) fn metrics(spend: Decimal, total_tokens: i64, api_requests: i64) -> SpendMetrics {
+    SpendMetrics {
+        spend,
+        flat_cost: Decimal::ZERO,
+        prompt_tokens: 0,
+        completion_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
+        compression_saved_tokens: 0,
+        compression_savings_spend: Decimal::ZERO,
+        prompt_caching_savings_spend: Decimal::ZERO,
+        gateway_caching_savings: Decimal::ZERO,
+        autorouter_savings_spend: Decimal::ZERO,
+        total_tokens,
+        successful_requests: 0,
+        failed_requests: 0,
+        api_requests,
+        total_response_time_ms: 0,
+        timed_requests: 0,
+    }
 }
 
 pub(crate) fn at(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> DateTime<Utc> {
@@ -184,8 +206,21 @@ impl BreakdownFixture {
         }
     }
 
+    #[must_use]
     pub(crate) fn with_key_row(mut self, row: KeyMetadataRow) -> Self {
         self.api_key_metadata.insert(row.api_key.clone(), row);
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_entity_field(mut self, field: &'static str) -> Self {
+        self.entity_id_field = Some(field);
+        self
+    }
+
+    #[must_use]
+    pub(crate) fn with_entity_metadata(mut self, metadata: EntityMetadata) -> Self {
+        self.entity_metadata = Some(metadata);
         self
     }
 }
@@ -268,7 +303,12 @@ impl DailyActivityDatabase for FakeDatabase {
         tokens: &'database [String],
     ) -> DatabaseFuture<'database, Vec<VerificationTokenRow>> {
         self.token_calls.lock().unwrap().push(tokens.to_vec());
-        Box::pin(ready(Ok(Vec::new())))
+        let reply: Result<Vec<VerificationTokenRow>, DbError<RowError>> = if self.fail {
+            Err(DbError::NoDbConnected)
+        } else {
+            Ok(Vec::new())
+        };
+        Box::pin(ready(reply))
     }
 
     fn deleted_tokens<'database>(

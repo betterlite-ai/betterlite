@@ -20,9 +20,7 @@ fn sentinel_record() -> DailySpendRecord {
 }
 
 fn fixture() -> BreakdownFixture {
-    let mut fixture = BreakdownFixture::default();
-    fixture.entity_id_field = Some("user_id");
-    fixture
+    BreakdownFixture::default().with_entity_field("user_id")
 }
 
 #[test]

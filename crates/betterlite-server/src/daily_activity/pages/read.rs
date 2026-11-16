@@ -61,21 +61,14 @@ where
     Clock: Fn() -> DateTime<Utc> + Sync,
 {
     let scope = page_scope(request)?;
-    let Some(page_size) =
-        NonZeroI64::new(request.page_size).filter(|size| size.get().is_positive())
-    else {
-        return Err(PagesError::Repository(
-            DailyActivityRepositoryError::Pagination,
-        ));
-    };
+    let page_size = NonZeroI64::new(request.page_size)
+        .filter(|size| size.get().is_positive())
+        .ok_or_else(|| PagesError::Repository(DailyActivityRepositoryError::Pagination))?;
     let page_data = repository
         .daily_rows(&scope, request.page, page_size.get())
         .await?;
-    let records: Vec<DailySpendRecord> = page_data
-        .rows
-        .into_iter()
-        .map(DailySpendRecord::from)
-        .collect();
+    let rows = page_data.rows;
+    let records: Vec<DailySpendRecord> = rows.into_iter().map(DailySpendRecord::from).collect();
     let entity_metadata = resolved_entity_metadata(request, &records).await;
     let aggregated = aggregate_spend_records(
         repository,
@@ -84,12 +77,10 @@ where
         entity_metadata.as_ref(),
     )
     .await?;
-    let totals = request
-        .callbacks
-        .metadata_metrics
-        .map_or(aggregated.totals, |metadata_metrics| {
-            metadata_metrics(&records)
-        });
+    let callback = request.callbacks.metadata_metrics;
+    let totals = callback.map_or(aggregated.totals, |metadata_metrics| {
+        metadata_metrics(&records)
+    });
     let position = page_position(request.page, page_size, page_data.total_count);
     Ok(DailySpendPage {
         results: aggregated.results,
