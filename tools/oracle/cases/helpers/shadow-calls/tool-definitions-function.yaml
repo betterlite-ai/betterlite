@@ -1,0 +1,12 @@
+kind: helper
+name: shadow-tool-definitions-function
+call:
+  b4084:
+    operation: tool_definitions
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Get the weather for a city
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,266 @@
+id: B9967
+title: Deploy deadline outcome does not race its own lock
+description: >-
+  Fix the flaky deploy deadline classification in the native migration recovery. The tests-2 job of main
+  run 43786629672 (https://github.com/betterlite-ai/betterlite/actions/runs/43786629672) failed
+  postgres_slow_statement_is_a_deploy_timeout at
+  crates/betterlite-db/src/migration_recovery/tests/postgres.rs:255 after 2.71 s: the assertion
+  matches!(outcome, DeployOutcome::TimedOut) failed without printing the outcome. The cause is a race
+  inside one deploy, not between tests.
+
+
+  MigrationDeploy::run (crates/betterlite-db/src/migration_deploy.rs) wraps the whole apply in
+  timeout_at(deadline, ...). apply first sets statement_timeout to the time left with set_config, then
+  polls pg_try_advisory_lock(72_707_369) until it holds the session lock, then runs the catalog; a normal
+  exit sends pg_advisory_unlock. When the tokio deadline fires, run drops the connection and answers
+  DeployError::Deadline. The Postgres backend can still be inside pg_sleep: it keeps the session advisory
+  lock until statement_timeout cancels the statement and the backend sees the closed socket. Because
+  statement_timeout starts counting after the set_config round trip, its expiry lands slightly after the
+  tokio deadline, so the deadline normally fires first. classify in
+  crates/betterlite-db/src/migration_recovery/steps/deploy.rs then calls deadline_outcome. That opens a
+  new connection, reads pg_locks, and answers Contention when the lock is still held. A deploy that ran
+  out of its own budget is then charged to the 600 second contention budget instead of spending one of
+  its four attempts, and the outcome depends on whether the old backend exited before that read.
+
+
+  Pinned LiteLLM reports the two cases by the phase the deploy reached. subprocess.TimeoutExpired from
+  prisma_toolchain.run_prisma (prisma_toolchain.py L217-L247) is a timeout: it logs "prisma migrate
+  deploy attempt %s timed out after %ss, retrying" and spends an attempt (utils.py L1067-L1075), and
+  run_prisma kills the process group on the way out, so a timed-out deploy cannot keep Prisma's lock. A
+  non-zero exit whose stderr carries P1002 and "advisory lock" is contention: it logs the advisory-lock
+  wait and charges the elapsed time with budget.after_contention without spending an attempt (utils.py
+  L1216-L1221). betterlite's error variant has to say which phase the deadline ended, so the outcome no
+  longer depends on a lock read after the fact.
+
+
+  In migration_deploy.rs add LockWait(#[source] Elapsed) to DeployError with the message "migration
+  deployment deadline elapsed while waiting for the migration lock". Keep run's Client::take and the
+  comment above it. run calls a new private async fn deploy(&self, client: &PostgresClient, deadline:
+  Instant) -> Result<(), DeployError>, then drops the connection and returns its result. deploy awaits
+  timeout_at(deadline, self.acquire(client)): Err(elapsed) returns DeployError::LockWait(elapsed) and
+  Ok(result) propagates with ?. It then awaits timeout_at(deadline, self.apply(client, deadline)):
+  Err(elapsed) returns DeployError::Deadline(elapsed) and Ok(result) returns the apply result. acquire is
+  the loop moved out of apply: query_one("SELECT pg_try_advisory_lock($1)", &[&LOCK_ID]), return Ok(())
+  on true, otherwise sleep(Duration::from_millis(10)) and retry. apply keeps limit as its first
+  statement, so statement_timeout is set after the lock is acquired and the phase boundary is exactly
+  the acquisition; its search_path, ledger::prepare, per-migration limit, ledger::apply and unlock on a
+  normal return stay as they are. On an apply deadline the apply future is dropped, so no unlock query
+  runs on the dead connection, and the session lock leaves only with the backend. Both phases keep the
+  connection out of the pool on every exit.
+
+
+  In steps/deploy.rs map the variants and delete the inference: Err(DeployError::LockWait(_)) answers
+  DeployOutcome::Contention { detail: CONTENTION_DETAIL.to_owned() } and Err(DeployError::Deadline(_))
+  answers DeployOutcome::TimedOut. Delete deadline_outcome, deploy_lock_held, lock_state, the comment
+  "A deadline with a released lock means this deploy held it and ran out of time; a held one means it
+  waited" and the PRISMA_LOCK_KEY import. connect stays for identity_row, timeout for
+  unfinished_identity, and timeout_at for the P3005 baseline check in deploy_once. No other module
+  matches DeployError, so only classify gains arms.
+
+
+  In crates/betterlite-db/src/migration_deploy/tests.rs add deploy_reports_lock_wait: take a pool
+  client, run SELECT pg_advisory_lock(72707369::bigint) on it, build db.service(&[("locked", "SELECT
+  1")]), run it on another pool client with a 300 ms deadline, keep the error, release the holder with
+  SELECT pg_advisory_unlock_all(), then assert the error is DeployError::LockWait with {error:?} and
+  that _prisma_migrations has no row. Release the holder before the assertion, so a failure leaves the
+  next test in the db-migration-locks group a free lock.
+
+
+  In crates/betterlite-db/src/migration_recovery/tests/postgres.rs remove the two deploy_lock_held calls
+  from postgres_lock_contention_is_typed; the held lock and the 200 ms deadline still answer Contention.
+  Rewrite postgres_slow_statement_is_a_deploy_timeout so it cannot depend on which timeout fires first:
+  the catalog migration's SQL is SELECT set_config('statement_timeout', '0', false); SELECT pg_sleep(30),
+  the budget stays 2 seconds, and the tokio deadline is then the only way the deploy ends while the
+  backend keeps running and holding LOCK_ID. After steps.deploy(...) returns, before the assert, find the
+  granted lock holder with SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid
+  = 1 AND classid::bigint = 0 AND objid::bigint = $1 bound to PRISMA_LOCK_KEY, run SELECT
+  pg_terminate_backend($1), and wait at most 5 seconds in 10 ms steps until SELECT EXISTS (SELECT 1 FROM
+  pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 1 AND classid::bigint = 0 AND
+  objid::bigint = $1) answers false. Then assert matches!(outcome, DeployOutcome::TimedOut) with
+  {outcome:?}. On main this test fails
+  with Contention: the sleeping backend still holds the lock when deadline_outcome reads pg_locks. Run it
+  on main before the production change and keep that failure as the red evidence.
+
+
+  In crates/betterlite-db/src/migration_recovery/tests/setup.rs delete the deploy_lock_held half of
+  recovery_query_timeout_is_typed, including its assertion; the unfinished_identity half stays.
+
+
+  docs/deviations/B717.yaml row 2 ends with the old inference. Replace its last two sentences with
+  "advisory-lock contention is a deploy deadline that expires before the Prisma lock is acquired. A
+  deploy deadline that expires after the lock is acquired is the native equivalent of the subprocess
+  timeout, whether or not the statement cancellation (SQLSTATE 57014) arrives." Keep the why and the
+  link. Write no docs/deviations/B9967.yaml: the fix removes a betterlite-only inference and restores
+  the phase mapping pinned LiteLLM reports from TimeoutExpired and P1002, so there is no new
+  user-visible difference to log.
+
+
+  Size: about 25 changed production lines in migration_deploy.rs, a net deletion of about 30 in
+  steps/deploy.rs, about 40 changed lines in the rewritten Postgres test, 20 in migration_deploy/tests.rs
+  and 4 in the deviation row.
+scope:
+  paths:
+  - crates/betterlite-db/src/migration_deploy.rs
+  - crates/betterlite-db/src/migration_deploy/tests.rs
+  - crates/betterlite-db/src/migration_recovery/steps/deploy.rs
+  - crates/betterlite-db/src/migration_recovery/tests/postgres.rs
+  - crates/betterlite-db/src/migration_recovery/tests/setup.rs
+  - docs/deviations/B717.yaml
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1067-L1075
+  why: The TimeoutExpired branch logs the timed-out deploy attempt and spends one attempt, the timeout the fixed outcome must reach.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1216-L1221
+  why: The P1002 advisory-lock branch is contention and charges the elapsed time without spending an attempt.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1090-L1092
+  why: The 5 to 14 second pause runs only after an attempt was spent, so misreporting a timeout as contention changes retry timing.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L217-L247
+  why: run_prisma kills the process group when the timeout expires, so a timed-out deploy cannot keep Prisma's advisory lock.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/prisma_toolchain.py#L110-L127
+  why: migration_lock_timeout defaults to 600 seconds and prisma_migrate_deploy_timeout defaults to at least 600, the two budgets the native attempt budget mirrors.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-proxy-extras/litellm_proxy_extras/utils.py#L1046-L1054
+  why: The v2 resolver reads the deploy timeout and seeds the attempt budget with migration_lock_timeout before it runs migrate deploy.
+dod:
+- text: >-
+    A deadline that expires while the deploy is still polling for the Prisma lock returns
+    DeployError::LockWait, and recovery answers Contention from that variant without reading pg_locks;
+    the wait phase writes no ledger row and never acquires the lock.
+  proof: [deploy-lock-wait-tests, recovery-contention-tests]
+- text: >-
+    A deadline that expires after the lock is acquired returns DeployError::Deadline even while the old
+    backend still holds LOCK_ID, recovery answers TimedOut, and the timed-out backend still exits with
+    the session lock released.
+  proof: [recovery-timeout-tests, deploy-tests]
+- text: >-
+    No pg_locks read decides a deploy outcome: deadline_outcome, deploy_lock_held and lock_state are
+    gone from steps/deploy.rs and PRISMA_LOCK_KEY is no longer imported there.
+  proof: [no-lock-inference]
+- text: >-
+    docs/deviations/B717.yaml row 2 says contention is a deploy deadline that expires before the Prisma
+    lock is acquired and that a deadline after acquisition is the native subprocess timeout, and no
+    longer says contention is inferred from a held lock.
+  proof: [deviation-wording]
+- text: >-
+    The wider deploy and recovery suites still pass, including the ledger, baseline, deadlock and
+    session-release tests the phase split touches.
+  proof: [deploy-tests, recovery-tests, identity-timeout-tests]
+checks:
+  optional: []
+  commands:
+  - id: deploy-lock-wait-tests
+    why: The wait phase is not a typed LockWait, or the deploy writes to the ledger before it holds the lock.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_deploy/tests.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_deploy::tests::deploy_reports_lock_wait$/)'
+  - id: deploy-tests
+    why: The phase split broke the deploy suite, or a timed-out deploy no longer releases its session.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_deploy.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_deploy::tests::/)'
+  - id: recovery-contention-tests
+    why: A lock held by another session no longer answers Contention, or the test still calls deploy_lock_held.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/tests/postgres.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_lock_contention_is_typed$/)'
+  - id: recovery-timeout-tests
+    why: A deadline after the lock is acquired is still classified from pg_locks and can answer Contention.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/tests/postgres.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::postgres_slow_statement_is_a_deploy_timeout$/)'
+  - id: recovery-tests
+    why: The classification split broke the wider recovery suite.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/steps/deploy.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^migration_recovery::tests::/)'
+  - id: identity-timeout-tests
+    why: The identity read's command timeout is no longer a typed QueryTimeout.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-db/src/migration_recovery/tests/setup.rs)"
+      && cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/migration_recovery::tests::setup::recovery_query_timeout_is_typed$/)'
+  - id: no-lock-inference
+    why: The pg_locks inference still decides the deploy outcome.
+    run: >-
+      ! grep -qF 'deploy_lock_held' crates/betterlite-db/src/migration_recovery/steps/deploy.rs
+      && ! grep -qF 'lock_state' crates/betterlite-db/src/migration_recovery/steps/deploy.rs
+      && ! grep -qF 'deadline_outcome' crates/betterlite-db/src/migration_recovery/steps/deploy.rs
+      && ! grep -qF 'PRISMA_LOCK_KEY' crates/betterlite-db/src/migration_recovery/steps/deploy.rs
+  - id: deviation-wording
+    why: The B717 row still describes the removed lock inference, or the corrected sentence is missing.
+    run: >-
+      awk '{ joined = joined " " $0 } END { exit index(joined, "expires before the Prisma lock is acquired") == 0 }' docs/deviations/B717.yaml
+      && awk '{ joined = joined " " $0 } END { exit index(joined, "with the Prisma lock still held") != 0 }' docs/deviations/B717.yaml
+oracle_cases: []
+deviations: []
+out_of_scope:
+- >-
+  B717's retry budgets and pause (policy.rs and migration_ledger/budget.rs): the four attempts, the 600
+  second contention budget and the 5 to 15 second pause keep their behavior; only the outcome that
+  reaches them changes.
+- >-
+  The statement_timeout value, its set_config and the catalog SQL semantics: limit and
+  migration_deploy/ledger.rs are unchanged.
+- >-
+  The pg_locks read in migration_deploy/fixtures.rs::clear_deployment_lock: it is test teardown, not
+  classification, and it stays.
+- >-
+  The P3005 baseline check under the deploy deadline in PgSteps::deploy_once: a deadline there still
+  answers DeployOutcome::TimedOut.
+- >-
+  Rows 1 and 3 of docs/deviations/B717.yaml, every other deviation file, and a new
+  docs/deviations/B9967.yaml: the fix restores the phase mapping pinned LiteLLM reports, so there is no
+  new difference to log.
+- >-
+  Test isolation: only migration_deploy, migration_drift, migration_ledger, migration_recovery and
+  request_log_indexes take LOCK_ID, and .config/nextest.toml already runs them one at a time, so no
+  group or nextest change belongs to this task.
+pitfalls:
+- >-
+  Set statement_timeout after the lock is acquired. If limit runs before acquire, a lock-wait deadline
+  can be canceled by SQLSTATE 57014 and surface as DeployError::Migration or DeployError::Database.
+  step_outcome maps both to TimedOut, so the contention case disappears.
+- >-
+  On the apply deadline do not send pg_advisory_unlock. The connection is dropped on purpose; a query
+  sent after the timeout queues behind the running statement and hangs, and the backend keeps the lock
+  until it exits.
+- >-
+  Keep Client::take and the drop outside both phases. A session lock returned to the pool leaks to the
+  next request.
+- >-
+  In the red test the migration batch's first statement must be SELECT set_config('statement_timeout',
+  '0', false). With is_local true the setting would revert at the end of the implicit transaction, and
+  with the deadline's value still set the sleep gets 57014 and the test measures the old race again.
+- >-
+  The granted lock row for a bigint key has locktype 'advisory', objsubid 1, classid 0 and objid equal
+  to the key. Bind the pid query with objid::bigint = $1; an uncast oid comparison does not accept an
+  i64 parameter.
+- >-
+  Read the holder pid only after the deploy future returns, then terminate it. Reading earlier cannot
+  prove the lock outlived the deadline.
+- >-
+  Clean up before the final assert. The old backend sleeps for 30 seconds while holding LOCK_ID, and
+  the next test in the serialized db-migration-locks group would wait on it.
+- >-
+  The new deploy test releases its holder lock before asserting, or a failure leaves the advisory lock
+  on a pooled session and the fixture teardown waits 5 seconds for it.
+- >-
+  DeployError is matched exhaustively only in classify. Add the LockWait and Deadline arms there and do
+  not add a wildcard arm.
+- >-
+  LockWait and Deadline both wrap tokio's Elapsed as #[source]. Do not collapse them into one variant
+  with a bool.
+- >-
+  Keep the two existing recovery test names, postgres_slow_statement_is_a_deploy_timeout and
+  postgres_lock_contention_is_typed; the checks and the reviewers' history find them by name.
+- >-
+  Do not touch .config/nextest.toml and do not add a test isolation entry: the db-migration-locks group
+  already serializes every test that takes LOCK_ID.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

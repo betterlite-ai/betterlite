@@ -22,6 +22,7 @@ use crate::tls::{TlsError, apply_policy};
 
 pub mod limits;
 pub mod mock;
+pub mod model_info;
 pub mod multipart;
 pub mod outbound;
 pub mod pool;

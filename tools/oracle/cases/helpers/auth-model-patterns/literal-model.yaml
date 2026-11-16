@@ -1,0 +1,20 @@
+kind: helper
+name: auth-model-patterns-literal-model
+call:
+  auth_model_patterns:
+    steps:
+      - {object_kind: key, model: "gpt-4o", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-4o-mini", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "anything", models: [], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "whatever", models: ["*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-4o", models: ["gpt-*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt", models: ["gpt-*"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "any-model", models: ["all-proxy-models"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "gpt-4o", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: team, model: "gpt-4o-mini", models: ["gpt-4o"], team_id: "team-1", team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: org, model: "gpt-4o", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: org, model: "gpt-4o-mini", models: ["gpt-4o"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-4o", models: ["gpt-4o", "gpt-4o-mini"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+      - {object_kind: key, model: "gpt-4o", models: ["gpt-4o-mini"], team_id: null, team_models: [], team_model_aliases: {}, key_aliases: null, access_group_ids: [], deployments: [], model_group_alias: {}, global_aliases: {}}
+env: {}
+compare: {ignore: []}
