@@ -1,0 +1,27 @@
+kind: helper
+name: studio-veo-provider-field-passthrough
+call:
+  studio_veo_request:
+    requests:
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        params: {size: 1280x720, seconds: '8', aspectRatio: 9:16, durationSeconds: 5}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        params: {negativePrompt: blurry, personGeneration: allow_adult, sampleCount: 3}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        params:
+          lastFrame: {image: {bytesBase64Encoded: abc, mimeType: image/png}}
+          referenceImages: [{image: {gcsUri: 'gs://bucket/reference.png'}}]
+          video: {uri: files/abc}
+          parameters: {sampleCount: 2}
+          model: gemini/veo-3
+          prompt: the nested prompt
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {seconds: eight, durationSeconds: 5}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {personGeneration: ''}}
+env: {}
+compare: {ignore: []}
