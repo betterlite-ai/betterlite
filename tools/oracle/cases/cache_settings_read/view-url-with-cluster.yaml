@@ -1,0 +1,13 @@
+kind: helper
+name: cache-settings-read-view-url-with-cluster
+call:
+  b4307:
+    stored:
+      type: "redis"
+      url: "redis://:secret@url-host:6379/0"
+      host: "url-host"
+      port: "6379"
+      redis_startup_nodes: [["127.0.0.1", 7000]]
+    environment: {}
+env: {}
+compare: {ignore: []}

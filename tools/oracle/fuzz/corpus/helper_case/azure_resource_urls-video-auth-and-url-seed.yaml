@@ -1,0 +1,11 @@
+kind: helper
+name: azure-resource-urls-video_auth_and_url-seed
+call:
+  azure_resource_urls:
+    video_auth_and_url:
+      urls:
+        - {api_base: "https://r.example", api_version: "2025-01-01", module: {}, environment: {}}
+      auth:
+        - {resource: video, headers: {}, api_key: pos, params: {api_key: ''}, module: {}, environment: {}}
+env: {}
+compare: {ignore: []}
