@@ -1,0 +1,30 @@
+kind: helper
+name: fal-video-prepare-h3-auto-duration
+call:
+  fal_video_prepare:
+    operation: h3_auto_duration
+    models:
+      - "minimax/h3/hailuo-02"
+      - "minimax/H3/hailuo-02"
+      - "minimax/h3"
+      - "fal-ai/minimax/h3/x"
+      - ""
+    seconds:
+      - "auto"
+      - "4"
+      - "4.9"
+      - 4
+      - 4.9
+      - -2.9
+      - " 2 "
+      - "2.5e0"
+      - "1e3"
+      - 1000
+      - 0
+      - true
+      - null
+      - "abc"
+      - ""
+env: {}
+compare:
+  ignore: []

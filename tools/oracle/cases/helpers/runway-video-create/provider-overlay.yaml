@@ -1,0 +1,44 @@
+kind: helper
+name: runway-video-create-provider-overlay
+call:
+  runway_video_create:
+    operation: create
+    params:
+      model: gen4_turbo
+      prompt: a cat surfing
+      calls:
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params:
+            size: 1280x720
+            seconds: '2.9'
+            user: someone
+            extra_headers: {X-Test: one}
+            model: ignored-model
+            prompt: ignored-prompt
+            seed: 7
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params:
+            size: 64x64x2
+            seconds: '4'
+            ratio: '1920:1080'
+            duration: 10
+            promptText: override text
+        - api_base: null
+          api_key: null
+          litellm_params_api_key: null
+          global_api_key: null
+          environment: {RUNWAYML_API_SECRET: secret}
+          params:
+            input_reference: 'https://img.test/c.png'
+            size: '1280*720'
+            seconds: soon
+env: {}
+compare: {ignore: []}

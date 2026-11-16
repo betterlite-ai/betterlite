@@ -49,6 +49,8 @@ pub enum DeployError {
     },
     #[error("migration deployment deadline elapsed")]
     Deadline(#[source] Elapsed),
+    #[error("migration deployment deadline elapsed while waiting for the migration lock")]
+    LockWait(#[source] Elapsed),
 }
 
 pub struct MigrationDeploy {
@@ -61,23 +63,37 @@ impl MigrationDeploy {
     pub async fn run(&self, client: Client, deadline: Instant) -> Result<(), DeployError> {
         // A session lock must never return to the pool, including when this future is dropped.
         let connection = Client::take(client);
-        let result = timeout_at(deadline, self.apply(&connection, deadline)).await;
+        let result = self.deploy(&connection, deadline).await;
         drop(connection);
-        result.map_err(DeployError::Deadline)?
+        result
     }
 
-    async fn apply(&self, client: &PostgresClient, deadline: Instant) -> Result<(), DeployError> {
-        limit(client, deadline).await?;
+    async fn deploy(&self, client: &PostgresClient, deadline: Instant) -> Result<(), DeployError> {
+        match timeout_at(deadline, self.acquire(client)).await {
+            Err(elapsed) => return Err(DeployError::LockWait(elapsed)),
+            Ok(result) => result?,
+        }
+        match timeout_at(deadline, self.apply(client, deadline)).await {
+            Err(elapsed) => Err(DeployError::Deadline(elapsed)),
+            Ok(result) => result,
+        }
+    }
+
+    async fn acquire(&self, client: &PostgresClient) -> Result<(), DeployError> {
         loop {
             let acquired: bool = client
                 .query_one("SELECT pg_try_advisory_lock($1)", &[&LOCK_ID])
                 .await?
                 .get(0);
             if acquired {
-                break;
+                return Ok(());
             }
             sleep(Duration::from_millis(10)).await;
         }
+    }
+
+    async fn apply(&self, client: &PostgresClient, deadline: Instant) -> Result<(), DeployError> {
+        limit(client, deadline).await?;
         let result = async {
             let schema = format!("\"{}\"", self.schema.replace('"', "\"\""));
             client

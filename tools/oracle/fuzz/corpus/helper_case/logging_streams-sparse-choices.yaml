@@ -1,0 +1,22 @@
+kind: helper
+name: logging-streams-sparse-choices
+call:
+  logging_streams:
+    probes:
+      - operation: stream
+        chunk_lists:
+          - [{choices: [{index: 0, delta: {content: "a"}}]}, {choices: [{delta: {content: "z"}}]}]
+          - [{choices: [{index: 0, delta: {content: ""}}]}]
+          - [{choices: [{index: 3, delta: {content: "d"}}]}]
+          - [{choices: [{index: -1, delta: {content: "negative"}}]}]
+          - [{choices: [{index: 0, delta: {content: "x"}}]}, {choices: [{index: 2, delta: {content: "y"}}]}, {choices: [{index: 0, delta: {content: "z"}}]}]
+      - operation: chat
+        responses:
+          - {choices: [{message: {content: a}}, {message: null}]}
+          - {choices: [{message: {role: user, content: u}}]}
+          - {choices: [{message: {role: critic, content: c}}]}
+          - {choices: [{message: {content: [a]}}]}
+          - {choices: []}
+          - {id: chatcmpl-1}
+env: {}
+compare: {ignore: []}

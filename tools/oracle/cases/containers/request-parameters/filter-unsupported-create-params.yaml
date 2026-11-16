@@ -1,0 +1,21 @@
+kind: helper
+name: filter-unsupported-create-params
+call:
+  b3361:
+    function: create_params
+    provider: "openai"
+    passed_params:
+      name: "n"
+      expires_after: {anchor: last_active_at, minutes: 30}
+      file_ids: ["file_1"]
+      extra_headers: {X-A: "b"}
+      extra_body: {k: "v"}
+calls:
+  - b3361:
+      function: create_params
+      provider: "azure"
+      passed_params:
+        file_ids: ["file_1"]
+        extra_body: {k: "v"}
+env: {}
+compare: {ignore: []}

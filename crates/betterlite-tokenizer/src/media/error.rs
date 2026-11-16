@@ -27,6 +27,8 @@ pub enum MediaError {
     Fetch(#[from] ImageFetchError),
     #[error("the content nesting exceeds {limit} levels")]
     TooDeep { limit: usize },
+    #[error("the content asks for more than {limit} remote image downloads")]
+    TooManyRemoteFetches { limit: usize },
     #[error("the token count does not fit in a machine word")]
     Overflow,
     #[error("the image tokens could not be counted: {0}")]

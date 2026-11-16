@@ -1,0 +1,64 @@
+kind: helper
+name: chat-response-stream-items-lifecycle-defaults
+call:
+  chat_response_stream_items:
+    model: m
+    request_value: hi
+    responses_api_request:
+      instructions: be brief
+      temperature: 0.2
+      text: {format: {type: text}}
+      tools:
+        - type: function
+          name: f
+          parameters: {type: object, properties: {}}
+      top_p: 0.9
+      truncation: disabled
+      user: grace
+      metadata: {trace: t1}
+      max_output_tokens: 99
+      parallel_tool_calls: false
+      previous_response_id: resp_prev
+      reasoning: {effort: high}
+      store: false
+    custom_llm_provider: azure
+    litellm_metadata:
+      model_info: {id: deployment-1}
+    now: 10
+    uuid_ids: [u]
+    steps:
+      - kind: initial
+      - kind: initial
+      - kind: initial
+calls:
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request: {}
+      custom_llm_provider: null
+      litellm_metadata: null
+      now: 10
+      uuid_ids: [u]
+      steps:
+        - kind: initial
+        - kind: initial
+  - chat_response_stream_items:
+      model: m
+      request_value: hi
+      responses_api_request:
+        instructions: null
+        temperature: null
+        text: null
+        tools: null
+        top_p: null
+        truncation: null
+        user: null
+        metadata: null
+      custom_llm_provider: openai
+      litellm_metadata: {model_info: {id: deployment-2}}
+      now: 11
+      uuid_ids: [v]
+      steps:
+        - kind: initial
+env: {}
+compare: {ignore: []}
