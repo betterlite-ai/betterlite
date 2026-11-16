@@ -27,6 +27,7 @@ use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 use tokio::runtime::{Builder, Runtime};
 use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
@@ -259,6 +260,6 @@ where
 {
     let logs = DebugLogs::default();
     let subscriber = registry().with(logs.clone());
-    let result = tracing::subscriber::with_default(subscriber, run);
+    let result = with_default(subscriber, run);
     (result, logs.messages())
 }

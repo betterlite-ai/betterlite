@@ -1,5 +1,4 @@
 use betterlite_anthropic::capabilities::effort::EffortError;
-use betterlite_config::sections::anthropic_capability_catalog::Settings;
 
 use crate::converse_options::budget::clamp_thinking_budget_tokens;
 use crate::converse_options::config::{class_attributes, config_blocks, get_config};
@@ -78,11 +77,10 @@ fn handle(
     optional: &mut ParamMap,
 ) -> Result<(), ConverseOptionsError> {
     let catalogs = fixture.catalogs();
-    let budgets = Settings::default();
     let lookup = Answers::new(&[]);
     let sources = ReasoningSources {
         catalogs: &catalogs,
-        budgets: &budgets,
+        budgets: &fixture.budgets,
         lookup: &lookup,
         packaged: fixture.packaged(),
     };
@@ -133,7 +131,7 @@ fn nova2_name_detection() {
         "us.us.amazon.nova-2-lite-v1:0",
         "bedrock/converse/bedrock/amazon.nova-2-lite-v1:0",
         "nova-2imported-v1:0",
-        "amazon.nova-2-lite-v1:0/us.",
+        "nova-2-lite-v1:0/us.",
     ] {
         assert!(!is_nova_2_model(model), "{model} is not a Nova 2 model");
     }
@@ -626,7 +624,7 @@ fn budget_leaves_other_shapes() {
         r#"{"thinking": {"budget_tokens": null}}"#,
         r#"{"thinking": {"type": "enabled"}}"#,
         r#"{"thinking": "enabled"}"#,
-        r#"{}"#,
+        "{}",
     ] {
         assert_eq!(clamp(source, 1024), params(source), "{source} is untouched");
     }
