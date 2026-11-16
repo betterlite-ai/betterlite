@@ -30,8 +30,8 @@ pub enum FoundryEmbeddingError {
         field: &'static str,
         expected: &'static str,
     },
-    #[error("the provider answer has too few {source} entries")]
-    TooFewEntries { source: &'static str },
+    #[error("the provider answer has too few {entries} entries")]
+    TooFewEntries { entries: &'static str },
     #[error("the llm_provider-num_tokens header {value:?} is not a token count")]
     TokenCount { value: String },
     #[error("the embeddings request cannot be written as JSON: {source}")]

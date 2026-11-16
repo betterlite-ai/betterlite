@@ -201,7 +201,7 @@ fn short_result_lists() {
     assert!(matches!(
         error,
         FoundryEmbeddingError::TooFewEntries {
-            source: "image embeddings"
+            entries: "image embeddings"
         }
     ));
     let images = strings(&[IMAGE_URI, "hello", IMAGE_URI]);
@@ -212,7 +212,7 @@ fn short_result_lists() {
     assert!(matches!(
         error,
         FoundryEmbeddingError::TooFewEntries {
-            source: "text embeddings"
+            entries: "text embeddings"
         }
     ));
 }

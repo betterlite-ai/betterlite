@@ -347,7 +347,7 @@ fn short_lists() {
     assert!(matches!(
         error,
         FoundryEmbeddingError::TooFewEntries {
-            source: "text embeddings"
+            entries: "text embeddings"
         }
     ));
     let empty_image = r#"{"object":"list","data":[],"model":"image-model"}"#;
@@ -356,7 +356,7 @@ fn short_lists() {
     assert!(matches!(
         error,
         FoundryEmbeddingError::TooFewEntries {
-            source: "image embeddings"
+            entries: "image embeddings"
         }
     ));
 }

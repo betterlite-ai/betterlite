@@ -21,9 +21,11 @@ use http::header::{
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
+mod failure;
 mod input;
 mod tests;
 
+use failure::{Failure, failure, helper_error};
 use input::{ClientName, FlowCall, Input, ReplyCall};
 
 #[derive(Default)]
@@ -147,48 +149,6 @@ impl TextEmbedding for Recorder {
         reply.additional_headers = projected_headers(&self.reply.image_reply().headers);
         ready(Ok(reply))
     }
-}
-
-// the Python class each failure corresponds to in LiteLLM's conversion path
-enum Failure {
-    Class(&'static str),
-    Status(u16),
-    Reply(u16),
-}
-
-fn failure(error: &FoundryEmbeddingError) -> Option<Failure> {
-    match error {
-        FoundryEmbeddingError::ApiBaseMissing
-        | FoundryEmbeddingError::ApiKeyMissing
-        | FoundryEmbeddingError::TokenCount { .. } => Some(Failure::Class("ValueError")),
-        FoundryEmbeddingError::ImageDataMissing | FoundryEmbeddingError::TextDataMissing => {
-            Some(Failure::Class("Exception"))
-        }
-        FoundryEmbeddingError::Provider { status } => Some(Failure::Status(*status)),
-        FoundryEmbeddingError::ReplyError { status } => Some(Failure::Reply(*status)),
-        FoundryEmbeddingError::Json { source } if source.is_data() => {
-            Some(Failure::Class("ResponseValidationError"))
-        }
-        FoundryEmbeddingError::Json { .. } => Some(Failure::Class("JSONDecodeError")),
-        FoundryEmbeddingError::DataMissing => Some(Failure::Class("KeyError")),
-        FoundryEmbeddingError::TooFewEntries { .. } => Some(Failure::Class("IndexError")),
-        FoundryEmbeddingError::Transport { .. } => Some(Failure::Class("TransportError")),
-        FoundryEmbeddingError::FieldType { .. }
-        | FoundryEmbeddingError::Encode { .. }
-        | FoundryEmbeddingError::Header { .. }
-        | FoundryEmbeddingError::Text(_) => None,
-    }
-}
-
-fn helper_error(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
 }
 
 fn flow_answer(

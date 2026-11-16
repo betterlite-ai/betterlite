@@ -14,7 +14,9 @@ use crate::embeddings::call::{
     TextEmbeddingCall, embedding, projected_headers,
 };
 use crate::embeddings::error::FoundryEmbeddingError;
-use crate::embeddings::reply::{EmbeddingReply, FoundryEmbeddingResponse, decode_foundry_embedding};
+use crate::embeddings::reply::{
+    EmbeddingReply, FoundryEmbeddingResponse, decode_foundry_embedding,
+};
 use crate::embeddings::request::FoundryEmbeddingOptions;
 
 pub(super) const BASE: &str = "https://acct.services.ai.azure.com";
@@ -249,8 +251,7 @@ pub(super) fn request<'call>(
 }
 
 pub(super) fn reply(body: &str, headers: &[(&str, &str)]) -> EmbeddingReply {
-    let mut decoded =
-        decode_foundry_embedding(body.as_bytes()).expect("a valid reply fixture");
+    let mut decoded = decode_foundry_embedding(body.as_bytes()).expect("a valid reply fixture");
     decoded.additional_headers = projected_headers(&header_map(&pairs(headers)));
     decoded
 }

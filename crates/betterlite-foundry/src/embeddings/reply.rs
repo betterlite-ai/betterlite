@@ -174,11 +174,11 @@ fn combined(
     for index in 0..input_len {
         let chosen = if image_indices.contains(&index) {
             images.next().ok_or(FoundryEmbeddingError::TooFewEntries {
-                source: "image embeddings",
+                entries: "image embeddings",
             })?
         } else {
             texts.next().ok_or(FoundryEmbeddingError::TooFewEntries {
-                source: "text embeddings",
+                entries: "text embeddings",
             })?
         };
         combined.push(chosen.clone());

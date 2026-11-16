@@ -69,27 +69,20 @@ fn sync_replaces_client() {
 }
 
 fn async_reuses_supplied() {
-    let input = strings(&[IMAGE_URI]);
-    let secret = key("case-key");
-    let mut call = request(MODEL, &input);
-    call.mode = EmbeddingMode::Async;
-    call.api_key = Some(&secret);
-    let supplied = ImageClient {
-        answer: Answer::json(IMAGE_ONE),
-        seen: Seen::default(),
-    };
-    let factory = Factory::new(Answer::json(IMAGE_ONE));
-    let held = SuppliedClient {
-        mode: EmbeddingMode::Async,
-        client: &supplied,
-    };
-    run(&call, Some(held), &factory, &Text::replying(TEXT_EMPTY)).unwrap();
+    let (supplied, factory) = async_with_supplied(EmbeddingMode::Async);
     assert_eq!(supplied.seen.lock().unwrap().len(), 1);
     assert!(factory.requests().is_empty());
     assert!(factory.async_timeouts().is_empty());
 }
 
 fn async_mismatched_supplied() {
+    let (supplied, factory) = async_with_supplied(EmbeddingMode::Sync);
+    assert!(supplied.seen.lock().unwrap().is_empty());
+    assert_eq!(factory.async_timeouts(), vec![Duration::from_secs(5)]);
+    assert_eq!(factory.requests().len(), 1);
+}
+
+fn async_with_supplied(held_mode: EmbeddingMode) -> (ImageClient, Factory) {
     let input = strings(&[IMAGE_URI]);
     let secret = key("case-key");
     let mut call = request(MODEL, &input);
@@ -101,13 +94,11 @@ fn async_mismatched_supplied() {
     };
     let factory = Factory::new(Answer::json(IMAGE_ONE));
     let held = SuppliedClient {
-        mode: EmbeddingMode::Sync,
+        mode: held_mode,
         client: &supplied,
     };
     run(&call, Some(held), &factory, &Text::replying(TEXT_EMPTY)).unwrap();
-    assert!(supplied.seen.lock().unwrap().is_empty());
-    assert_eq!(factory.async_timeouts(), vec![Duration::from_secs(5)]);
-    assert_eq!(factory.requests().len(), 1);
+    (supplied, factory)
 }
 
 fn images_before_text() {

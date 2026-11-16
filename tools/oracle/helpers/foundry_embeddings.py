@@ -134,13 +134,12 @@ class FlowState:
 
 def reply_response(reply: ReplyCall, request: httpx.Request) -> httpx.Response:
     headers = {header["name"]: header["value"] for header in reply["headers"]}
-    answer = httpx.Response(
+    return httpx.Response(
         reply["status"],
         headers=headers,
         content=reply["body"],
         request=request,
     )
-    return answer
 
 
 class Transport(httpx.MockTransport):
@@ -331,7 +330,7 @@ def failure_outcome(state: FlowState, kind: str, status: int | None) -> dict[str
 
 def answer_outcome(state: FlowState, response: EmbeddingResponse) -> dict[str, JsonValue]:
     view = REPLY.validate_json(response.model_dump_json())
-    hidden: dict[str, JsonValue] = response._hidden_params  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L582
+    hidden: dict[str, JsonValue] = response._hidden_params  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L582
     usage: dict[str, JsonValue] = {
         "prompt_tokens": view["usage"]["prompt_tokens"],
         "completion_tokens": view["usage"]["completion_tokens"],
