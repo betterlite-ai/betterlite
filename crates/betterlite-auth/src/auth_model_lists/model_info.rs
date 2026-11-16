@@ -50,7 +50,7 @@ pub fn expand_wildcard_deployments(
     }
     expanded
 }
-// absent or non-object parameters read as none; invalid typed parameters drop the row.
+// absent or non-object parameters read as none; invalid typed parameters keep the row unexpanded.
 fn parse_parameters(object: &JsonObject) -> Result<Option<ModelParameters>, ParameterError> {
     if object.is_empty() {
         return Ok(None);
