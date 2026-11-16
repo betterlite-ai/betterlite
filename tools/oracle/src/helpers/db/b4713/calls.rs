@@ -116,7 +116,10 @@ async fn stored_view(
     let Some(payload) = oauth else {
         let byok = get_user_credential(store, cipher, user_id, server_id)
             .await
-            .or_value_error()?;
+            .or_value_error()?
+            .map_or(Value::Null, |secret| {
+                Value::String(secret.expose_secret().to_owned())
+            });
         return Ok(json!({"refused": refused, "oauth": Value::Null, "byok": byok}));
     };
     Ok(json!({"refused": refused, "oauth": payload_summary(&payload)?, "byok": Value::Null}))
