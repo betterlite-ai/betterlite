@@ -110,7 +110,10 @@ def cell(text: str) -> JsonValue:
 
 def token_type_of(point: RawPoint) -> str:
     attributes = point["attributes"]
-    return attributes.get(TOKEN_TYPE_ATTRIBUTE, "")
+    token_type = attributes.get(TOKEN_TYPE_ATTRIBUTE)
+    if token_type is None:
+        return ""
+    return token_type
 
 
 def points_of(metric: RawMetric) -> list[Point]:
