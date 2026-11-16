@@ -27,7 +27,7 @@ use betterlite_tokenizer::engine::limits::{
 };
 use betterlite_tokenizer::engine::selection::Selector;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Fixture {
     pub(super) counter: Counter,

@@ -18,7 +18,7 @@ use tokio::task::JoinSet;
 use tokio::time::sleep;
 
 use super::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 // A reply that outlasts the checker's deadline is how the mock reports a timeout.
 const TIMEOUT_REPLY_DELAY: Duration = Duration::from_secs(5);

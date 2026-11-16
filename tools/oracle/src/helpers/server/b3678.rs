@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::future::Future;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_server::guardrails::bedrock_passthrough::event_stream::hook::de_anonymize_event_stream;
@@ -12,13 +11,15 @@ use betterlite_server::guardrails::bedrock_passthrough::text_paths::SkipFlags;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod frames;
 mod scripted;
 
 use frames::{decode_stream, encode_stream};
 use scripted::{ScriptedGuardrail, ScriptedHook};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -106,7 +107,8 @@ fn input_texts(input: &TextsRequest) -> HelperResult {
         system: input.skip_system,
         tool: input.skip_tool,
     };
-    let outcome = block_on(process_input_messages(&mut data, &guardrail, skip, None))?;
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
+    let outcome = runtime.block_on(process_input_messages(&mut data, &guardrail, skip, None));
     outcome.or_value_error()?;
     let seen = guardrail.seen();
     Ok(json!({
@@ -132,13 +134,14 @@ fn output_texts(input: &TextsResponse) -> HelperResult {
         None => None,
     };
     let guardrail = ScriptedGuardrail::new(input.returned_texts.clone());
-    let outcome = block_on(process_output_response(
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
+    let outcome = runtime.block_on(process_output_response(
         &mut response,
         &guardrail,
         None,
         BTreeMap::new(),
         request_data.as_ref(),
-    ))?;
+    ));
     outcome.or_value_error()?;
     let seen = guardrail.seen();
     Ok(json!({
@@ -153,12 +156,13 @@ fn stream(input: &StreamInput) -> HelperResult {
     let hook = ScriptedHook {
         replace: input.replace.clone(),
     };
-    let outcome = block_on(de_anonymize_event_stream(
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
+    let outcome = runtime.block_on(de_anonymize_event_stream(
         &body,
         &hook,
         &BTreeMap::new(),
         &BTreeMap::new(),
-    ))?;
+    ));
     let rewritten = outcome.or_value_error()?;
     decode_stream(&rewritten)
 }
@@ -175,14 +179,4 @@ fn guardrail_map(
         );
     }
     Ok(converted)
-}
-
-fn block_on<F, T>(future: F) -> Result<T, Box<HelperError>>
-where
-    F: Future<Output = T>,
-{
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_value_error()?;
-    Ok(runtime.block_on(future))
 }

@@ -16,7 +16,8 @@ use thiserror::Error;
 
 use super::input::{CacheSpec, Call};
 use super::server::{FakeServer, connect_cache};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Error)]
 pub(crate) enum Failure {

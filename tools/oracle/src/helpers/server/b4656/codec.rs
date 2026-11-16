@@ -3,7 +3,7 @@ use betterlite_server::mcp::outbound_credentials::cache_codec::OAuthTokenCacheCo
 use serde_json::Value;
 
 use super::{parse_token, text, value_error, view};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn fake_codec() -> OAuthTokenCacheCodec {
     OAuthTokenCacheCodec {

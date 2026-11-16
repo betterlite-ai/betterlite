@@ -15,6 +15,7 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use super::fields::{
     certificate_fields, managed_fields, password_fields, secret_fields, workload_fields,
 };
+use tracing::subscriber;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -242,7 +243,7 @@ where
 {
     let messages = Messages::default();
     let subscriber = tracing_subscriber::registry().with(messages.clone());
-    let result = tracing::subscriber::with_default(subscriber, run);
+    let result = subscriber::with_default(subscriber, run);
     let captured = messages
         .0
         .lock()

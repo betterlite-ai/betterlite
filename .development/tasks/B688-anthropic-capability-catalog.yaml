@@ -299,7 +299,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*")"
       && grep -lq 'anthropic_capability_catalog' tools/oracle/fuzz/corpus/helper_case/anthropic_capability_catalog*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_capability_catalog$/)'
+      && cargo nextest run --locked -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_capability_catalog$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: config-default-reasoning-effort-minimal-thinking-budget
     why: DEFAULT_REASONING_EFFORT_MINIMAL_THINKING_BUDGET lacks a production config loader case.

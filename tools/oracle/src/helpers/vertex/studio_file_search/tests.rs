@@ -5,25 +5,25 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn call_input(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-file-search")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     case.call.input
 }
 
-fn run_case(file: &str) -> Value {
+fn run_case_file(file: &str) -> Value {
     super::Op::decode_and_run(&call_input(file)).unwrap()
 }
 
 #[test]
 fn helper_seeds_select_studio_file_search() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -53,7 +53,7 @@ fn an_unknown_function_is_not_an_input() {
 
 #[test]
 fn oracle_capabilities_publish_the_native_endpoints() {
-    let result = run_case("no-params-auth.yaml");
+    let result = run_case_file("no-params-auth.yaml");
     assert_eq!(
         result["calls"][0],
         json!({
@@ -69,7 +69,7 @@ fn oracle_capabilities_publish_the_native_endpoints() {
 
 #[test]
 fn oracle_environment_never_resolves_a_key_without_params() {
-    let result = run_case("no-params-auth.yaml");
+    let result = run_case_file("no-params-auth.yaml");
     assert_eq!(
         result["calls"][1],
         json!({"headers": {
@@ -93,7 +93,7 @@ fn oracle_missing_search_key_is_a_value_error() {
 
 #[test]
 fn oracle_base_keeps_trailing_slashes() {
-    let result = run_case("untrimmed-base.yaml");
+    let result = run_case_file("untrimmed-base.yaml");
     assert_eq!(result["calls"][0]["url"], "https://cfg.example///v1beta");
     assert_eq!(result["calls"][1]["url"], "/v1beta");
     assert_eq!(
@@ -133,7 +133,7 @@ fn metadata_filter(body: &Value) -> &str {
 
 #[test]
 fn oracle_filter_scalars_keep_python_spelling() {
-    let result = run_case("filter-scalar-spelling.yaml");
+    let result = run_case_file("filter-scalar-spelling.yaml");
     assert_eq!(
         metadata_filter(&result["calls"][0]["body"]),
         "genre = \"drama\" AND missing = None AND score = 2.5 AND verified = True AND year = 2024 AND zero = 0"
@@ -150,7 +150,7 @@ fn oracle_filter_scalars_keep_python_spelling() {
 
 #[test]
 fn oracle_result_limit_requests_one_candidate() {
-    let result = run_case("result-limit-one.yaml");
+    let result = run_case_file("result-limit-one.yaml");
     assert_eq!(result["calls"][0]["body"].get("generationConfig"), None);
     assert_eq!(
         result["calls"][1]["body"]["generationConfig"],
@@ -169,7 +169,7 @@ fn oracle_result_limit_requests_one_candidate() {
 
 #[test]
 fn oracle_grounding_dedupes_supports() {
-    let result = run_case("grounding-and-support-dedup.yaml");
+    let result = run_case_file("grounding-and-support-dedup.yaml");
     assert_eq!(
         result["calls"][0],
         json!({
@@ -207,7 +207,7 @@ fn oracle_grounding_dedupes_supports() {
 
 #[test]
 fn oracle_empty_retrieved_text_keeps_identifiers() {
-    let result = run_case("empty-retrieved-text.yaml");
+    let result = run_case_file("empty-retrieved-text.yaml");
     assert_eq!(
         result["calls"][0],
         json!({
@@ -247,7 +247,7 @@ fn oracle_empty_retrieved_text_keeps_identifiers() {
 
 #[test]
 fn oracle_create_keeps_the_complete_store_id() {
-    let result = run_case("complete-store-id.yaml");
+    let result = run_case_file("complete-store-id.yaml");
     assert_eq!(
         result["calls"][0],
         json!({

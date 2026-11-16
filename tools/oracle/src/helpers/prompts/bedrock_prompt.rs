@@ -22,7 +22,9 @@ use betterlite_prompts::bedrock_tool_results::error::BedrockToolResultsError;
 use betterlite_prompts::bedrock_tools::capabilities::{BedrockToolCapabilities, CachePointSupport};
 use tokio::runtime::Builder;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 const GENERATED_ID: &str = "generated-id";
 // LiteLLM's default MAX_IMAGE_URL_DOWNLOAD_SIZE_MB; the cases never set the variable
@@ -41,7 +43,7 @@ impl Resolve for RefusingResolver {
     }
 }
 
-fn failure(status: Option<u16>, error: &dyn std::fmt::Display) -> Box<HelperError> {
+fn failure(status: Option<u16>, error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: "BedrockPrompt".to_owned(),
         status,

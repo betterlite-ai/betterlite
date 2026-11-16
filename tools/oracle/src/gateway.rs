@@ -6,7 +6,8 @@ use crate::OracleError;
 use crate::cli::Options;
 use crate::http;
 use crate::paths::free_port;
-use crate::process::{Gateway, GatewaySpec, sync_litellm};
+use crate::process::{Gateway, GatewaySpec};
+use betterlite_oracle_runner::helpers::sync_litellm;
 
 pub(crate) mod dashboard_fixture;
 

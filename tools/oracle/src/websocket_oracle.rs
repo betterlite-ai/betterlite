@@ -1,7 +1,7 @@
-use crate::compare::helper::HelperOutput;
 use crate::websocket_driver::compare_transcript;
 use crate::websocket_driver::provider::ProviderObservation;
 use crate::websocket_driver::service::{Arguments, ServiceTag};
+use betterlite_oracle_runner::compare::helper::HelperOutput;
 use serde::{Deserialize, Serialize};
 use serde_with::{As, FromInto, Same};
 use std::collections::BTreeMap;

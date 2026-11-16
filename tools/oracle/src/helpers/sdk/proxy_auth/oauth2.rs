@@ -17,7 +17,7 @@ use tokio::task::JoinSet;
 use url::{Url, form_urlencoded};
 
 use super::Moment;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 struct Reply {

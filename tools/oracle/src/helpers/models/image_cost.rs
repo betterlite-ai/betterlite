@@ -13,7 +13,8 @@ use serde_json::json;
 
 use input::Input;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -69,7 +70,7 @@ fn image_cost_error(error: &ImageCostError) -> Box<HelperError> {
 // A macro_rules body is an opaque token tree, not a parsed fn, so the shared skeleton lives here once.
 macro_rules! run_op {
     ($name:ident, $input:ty, |$fields:ident| $calculator:expr, |$value:ident| $format:expr) => {
-        fn $name($fields: &$input) -> crate::helpers::HelperResult {
+        fn $name($fields: &$input) -> HelperResult {
             let $value = $calculator.map_err(|error| image_cost_error(&error))?;
             Ok(json!({ "cost": $format }))
         }
@@ -155,10 +156,10 @@ run_op!(
     },
     |value| value.map(|amount| amount.normalize().to_string())
 );
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Default(fields) => run_default(fields),
             Input::Openai(fields) => run_openai(fields),

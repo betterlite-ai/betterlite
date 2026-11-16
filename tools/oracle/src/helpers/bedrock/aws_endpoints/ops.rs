@@ -24,7 +24,8 @@ use super::input::{
     BedrockModelIdCase, DefaultEndpointCase, Input, LlmRegionCase, NonLlmRegionCase,
     RuntimeEndpointCase, StsKwargsCase,
 };
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, serde::Serialize)]
 struct KwargsJson {

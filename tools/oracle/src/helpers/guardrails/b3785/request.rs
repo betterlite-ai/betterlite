@@ -1,7 +1,7 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailMessage;
 
-use crate::case::UpstreamAnswer;
+use betterlite_oracle_runner::case::UpstreamAnswer;
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]

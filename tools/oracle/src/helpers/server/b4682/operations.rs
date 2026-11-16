@@ -10,6 +10,9 @@ use betterlite_server::mcp::catalog_guard::types::{MCPServer, MCPTool};
 use serde_json::{Value, json};
 
 use super::input::{PinnedInput, ServerInput, ToolInput};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_server::mcp::catalog_guard::description_overrides;
 
 mod scan;
 
@@ -28,7 +31,7 @@ pub(super) fn sanitize_headers(
     identity: &[String],
     client_auth: &str,
     custom_key: Option<&str>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let context = HeaderSanitizeContext {
         upstream_credential_names: credentials,
         identity_header_names: identity,
@@ -42,7 +45,7 @@ pub(super) fn sanitize_headers(
 pub(super) fn run_pin(
     inputs: &[ToolInput],
     pin_inputs: &BTreeMap<String, PinnedInput>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let catalog_tools = convert_tools(inputs)?;
     let (served, drift) = pin_tool_catalog(&catalog_tools, &to_pins(pin_inputs)?);
     Ok(json!({
@@ -57,19 +60,18 @@ pub(super) fn run_override(
     inputs: &[ToolInput],
     overrides: &BTreeMap<String, String>,
     prefix: Option<&str>,
-) -> crate::helpers::HelperResult {
-    let served =
-        betterlite_server::mcp::catalog_guard::description_overrides::apply_description_overrides(
-            &convert_tools(inputs)?,
-            &override_server(overrides, prefix),
-            &PrefixPolicy::default(),
-        );
+) -> HelperResult {
+    let served = description_overrides::apply_description_overrides(
+        &convert_tools(inputs)?,
+        &override_server(overrides, prefix),
+        &PrefixPolicy::default(),
+    );
     serde_json::to_value(served).map_err(|source| error("SerializationError", source.to_string()))
 }
 
 fn to_pins(
     pin_inputs: &BTreeMap<String, PinnedInput>,
-) -> Result<BTreeMap<String, PinnedMCPTool>, Box<crate::helpers::HelperError>> {
+) -> Result<BTreeMap<String, PinnedMCPTool>, Box<HelperError>> {
     pin_inputs
         .iter()
         .map(|(name, value)| Ok((name.clone(), to_pinned(value)?)))
@@ -88,9 +90,7 @@ fn override_server(overrides: &BTreeMap<String, String>, prefix: Option<&str>) -
     }
 }
 
-pub(super) fn convert_tools(
-    inputs: &[ToolInput],
-) -> Result<Vec<MCPTool>, Box<crate::helpers::HelperError>> {
+pub(super) fn convert_tools(inputs: &[ToolInput]) -> Result<Vec<MCPTool>, Box<HelperError>> {
     let mut tools = Vec::with_capacity(inputs.len());
     for input in inputs {
         tools.push(MCPTool::try_from(input)?);
@@ -99,7 +99,7 @@ pub(super) fn convert_tools(
 }
 
 impl TryFrom<&ToolInput> for MCPTool {
-    type Error = Box<crate::helpers::HelperError>;
+    type Error = Box<HelperError>;
 
     fn try_from(input: &ToolInput) -> Result<Self, Self::Error> {
         Ok(Self {
@@ -120,7 +120,7 @@ impl TryFrom<&ToolInput> for MCPTool {
     }
 }
 
-fn to_pinned(input: &PinnedInput) -> Result<PinnedMCPTool, Box<crate::helpers::HelperError>> {
+fn to_pinned(input: &PinnedInput) -> Result<PinnedMCPTool, Box<HelperError>> {
     let input_schema = json_object(&input.input_schema)?;
     let encoded = serde_json::to_string(&json!({
         "description": input.description,
@@ -132,14 +132,14 @@ fn to_pinned(input: &PinnedInput) -> Result<PinnedMCPTool, Box<crate::helpers::H
 
 pub(super) fn json_object(
     values: &BTreeMap<String, Value>,
-) -> Result<BTreeMap<String, JsonValue>, Box<crate::helpers::HelperError>> {
+) -> Result<BTreeMap<String, JsonValue>, Box<HelperError>> {
     values
         .iter()
         .map(|(name, value)| Ok((name.clone(), json_value(value)?)))
         .collect()
 }
 
-fn json_value(value: &Value) -> Result<JsonValue, Box<crate::helpers::HelperError>> {
+fn json_value(value: &Value) -> Result<JsonValue, Box<HelperError>> {
     let encoded = serde_json::to_string(value)
         .map_err(|source| error("SerializationError", source.to_string()))?;
     serde_json::from_str(&encoded).map_err(|source| error("InvalidJsonValue", source.to_string()))
@@ -157,8 +157,8 @@ pub(super) fn to_server(input: &ServerInput) -> MCPServer {
     }
 }
 
-pub(super) fn error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

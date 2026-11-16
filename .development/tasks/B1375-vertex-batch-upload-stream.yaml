@@ -72,7 +72,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_batch_upload.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_batch_upload)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_batch_upload_corpus)'
       why: Invalid UTF-8, split lines and malformed bodies reach decode_openai_batch_line.
     - id: upload-row-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::batch_upload::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_upload*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^batch_upload::/)'
       why: Seed assertions select call.vertex_batch_upload and reject an empty fixture set.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-upload/embeddings-fanout.yaml

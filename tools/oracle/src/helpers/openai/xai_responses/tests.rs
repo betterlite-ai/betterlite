@@ -5,11 +5,12 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_xai_responses() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -42,9 +43,9 @@ fn helper_seeds_select_xai_responses() {
 #[case::single_tool_and_null_metadata("single-tool-and-null-metadata.yaml", r#"[{"store":true,"model":"grok-4","tools":[{"type":"web_search","filters":{"allowed_domains":["one.example"]}}]},{"tools":["plain"]},{"tools":[]},{"tools":0}]"#)]
 #[case::terminal_cost_only("terminal-cost-only.yaml", r#"[{"cost":"1.25","ticks":12500000000},{"cost":"1.25","ticks":12500000000},{"cost":"0.25","ticks":-5},{"cost":null,"ticks":null},{"cost":"0.5","ticks":5000000000,"class":"ResponseCompletedEvent"},{"cost":"0.25","ticks":2500000000,"class":"ResponseIncompleteEvent"},{"cost":null,"ticks":5000000000,"class":"ResponseCreatedEvent"},{"cost":null,"ticks":null,"class":"GenericEvent"}]"#)]
 fn the_native_helper_answers_like_litellm(#[case] file: &str, #[case] litellm: &str) {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/xai-responses")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();

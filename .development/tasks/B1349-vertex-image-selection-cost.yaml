@@ -58,7 +58,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_image_policy.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Catalog and generic pricing inputs are fixtures for these pure policy functions.
     - id: image-policy-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::image_policy::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_image_policy*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^image_policy::/)'
       why: New seed files must select vertex_image_policy under call.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-image-policy/non-gemini-uses-imagen.yaml

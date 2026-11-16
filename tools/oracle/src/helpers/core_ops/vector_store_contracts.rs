@@ -16,7 +16,10 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use fixtures::Fixture;
+use tokio::runtime::Builder;
 
 mod fixtures;
 
@@ -90,10 +93,10 @@ pub(crate) struct ForwardInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::OptionalParameterFilters { create, search } => {
                 Ok(optional_filters(create, search))
@@ -169,7 +172,7 @@ fn slot_value(slot: Option<&Slot>, field: &'static str) -> Option<SlotValue> {
     }
 }
 
-fn defaults_report(input: &DefaultsInput) -> crate::helpers::HelperResult {
+fn defaults_report(input: &DefaultsInput) -> HelperResult {
     let fixture = Fixture { record: false };
     let api_key = input.api_key.as_deref().map(SecretString::from);
     let (signed_headers, signed_body) = fixture.sign_request(SignRequest {
@@ -226,7 +229,7 @@ fn decimal_number(decimal: rust_decimal::Decimal) -> Value {
     text.parse::<Number>().map_or(Value::Null, Value::Number)
 }
 
-fn forward(input: &ForwardInput, asynchronous: bool) -> crate::helpers::HelperResult {
+fn forward(input: &ForwardInput, asynchronous: bool) -> HelperResult {
     let mut logging = VectorStoreLogging::default();
     let request = SearchRequest {
         vector_store_id: &input.vector_store_id,
@@ -238,7 +241,7 @@ fn forward(input: &ForwardInput, asynchronous: bool) -> crate::helpers::HelperRe
         extra_body: input.extra_body.as_ref(),
     };
     let pair = if asynchronous {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| fixture_error(error.to_string()))?;
@@ -257,8 +260,8 @@ fn forward(input: &ForwardInput, asynchronous: bool) -> crate::helpers::HelperRe
     }))
 }
 
-fn fixture_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn fixture_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("ValueError"),
         status: None,
         error_type: None,

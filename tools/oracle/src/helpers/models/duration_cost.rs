@@ -4,6 +4,8 @@ use betterlite_models::duration_cost::openai_seconds::{cost_per_second, video_ge
 use betterlite_models::duration_cost::video::{VideoCostRequest, default_video_cost_calculator};
 use betterlite_models::duration_cost::wall_clock::per_second_pricing_cost;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -96,15 +98,15 @@ impl PriceLookup for CaseLookup {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_inner(input).map_err(|error| duration_cost_error(&error))
     }
 }
 
-fn duration_cost_error(error: &DurationCostError) -> Box<crate::helpers::HelperError> {
+fn duration_cost_error(error: &DurationCostError) -> Box<HelperError> {
     let class = match error {
         DurationCostError::UnknownModel { .. } => "UnknownModel",
         DurationCostError::NoCharacterOrTokenPricing { .. } => "NoCharacterOrTokenPricing",
@@ -112,7 +114,7 @@ fn duration_cost_error(error: &DurationCostError) -> Box<crate::helpers::HelperE
         DurationCostError::Price(_) => "Price",
         DurationCostError::TokenCost(_) => "TokenCost",
     };
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

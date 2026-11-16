@@ -1,5 +1,8 @@
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use betterlite_core::api::vertex_location::{
+    DEFAULT_SPEECH_LOCATION, speech_to_text_host, validate_vertex_location, validate_vertex_project,
+};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::api::audio_file_input::language::normalize_language_to_bcp47;
@@ -8,46 +11,14 @@ use betterlite_openai::reasoning_models::DropParams;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::model_urls::base_url::validate_vertex_location;
 use crate::vertex_recognition::error::VertexRecognitionError;
 use crate::vertex_recognition::types::{RecognitionConfig, RecognitionFeatures, RecognizeRequest};
 
-pub const DEFAULT_LOCATION: &str = "us";
 pub const AUTO_LANGUAGE_CODE: &str = "auto";
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 2] = ["language", "response_format"];
 pub const SUPPORTED_RESPONSE_FORMATS: [&str; 2] = ["json", "text"];
 
-const URL_UNSAFE_PROJECT_CHARS: [char; 9] = ['/', '?', '#', '\\', ':', ' ', '\t', '\n', '\r'];
 const VERTEX_AI_PREFIX: &str = "vertex_ai/";
-
-pub fn validate_speech_location(location: Option<&str>) -> Result<&str, VertexRecognitionError> {
-    validate_vertex_location(Some(location.unwrap_or(DEFAULT_LOCATION)))
-        .map_err(|source| VertexRecognitionError::Location { source })
-}
-
-#[must_use]
-pub fn speech_to_text_host(location: &str) -> String {
-    if location == "global" {
-        "speech.googleapis.com".to_owned()
-    } else {
-        format!("{location}-speech.googleapis.com")
-    }
-}
-
-pub fn validate_speech_project(project: &str) -> Result<&str, VertexRecognitionError> {
-    // an empty id, a parent path or any of these characters would move the request to another resource
-    let unsafe_project = project.is_empty()
-        || project.contains("..")
-        || project
-            .chars()
-            .any(|character| URL_UNSAFE_PROJECT_CHARS.contains(&character));
-    if unsafe_project {
-        return Err(VertexRecognitionError::Project {
-            project: project.to_owned(),
-        });
-    }
-    Ok(project)
-}
 
 pub fn map_openai_params(
     non_default: &Object,
@@ -100,11 +71,12 @@ pub fn complete_url(
     project: Option<&str>,
     credential_project: Option<&str>,
 ) -> Result<String, VertexRecognitionError> {
-    let checked_location = validate_speech_location(location)?;
+    let checked_location =
+        validate_vertex_location(Some(location.unwrap_or(DEFAULT_SPEECH_LOCATION)))?;
     let Some(requested) = project.or(credential_project) else {
         return Err(VertexRecognitionError::ProjectRequired);
     };
-    let project_id = validate_speech_project(requested)?;
+    let project_id = validate_vertex_project(requested)?;
     let base = api_base.map_or_else(
         || format!("https://{}", speech_to_text_host(checked_location)),
         str::to_owned,

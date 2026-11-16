@@ -1,8 +1,9 @@
-use crate::helpers::OrHelperError as _;
 use betterlite_context::cloud_storage::{
     self, Encoding,
     policy::{self, LegacyCloudSetting, TrustedCloudCredentials},
 };
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, de::IgnoredAny};
 use serde_json::json;
 #[derive(Deserialize)]
@@ -54,9 +55,9 @@ pub(crate) enum Input {
     },
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::CloudUriDetection { value } => Ok(
                 json!({"value": cloud_storage::is_managed_cloud_storage_uri(text(Some(value)).unwrap_or(""))}),

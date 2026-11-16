@@ -11,6 +11,8 @@ use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::usage_sum::{PromptTokensDetails, Usage, UsageNumber};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::pricing::ProviderPricing;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
@@ -162,10 +164,10 @@ fn request<'input>(input: &'input Input, usage: Option<&'input Usage>) -> CallPr
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let usage = input.usage.as_ref().map(usage_block);
         let catalog = ModelCatalog::default();
         let names = BTreeSet::new();
@@ -190,7 +192,7 @@ impl crate::helpers::Helper for Op {
             },
         )
         .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "CallPriceError".to_owned(),
                 status: None,
                 error_type: None,

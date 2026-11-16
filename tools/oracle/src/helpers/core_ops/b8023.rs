@@ -14,7 +14,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 type Loaded<M> = Result<<M as SearchMapping>::Config, Box<HelperError>>;
 

@@ -3,14 +3,15 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::{Helper as _, invoke};
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, invoke};
 
 use super::input::{Call, Input};
 
 #[test]
 fn helper_seeds_select_bedrock_signing() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<_> = fs::read_dir(corpus)
         .expect("the corpus directory should be readable")
         .map(|entry| entry.expect("a corpus entry should be readable").path())
@@ -32,7 +33,7 @@ fn helper_seeds_select_bedrock_signing() {
             let input: Input =
                 serde_json::from_value(case.call.input.clone()).expect("a seed should decode");
             assert!(!input.calls.is_empty());
-            assert!(invoke(&case.call).ok, "{}", path.display());
+            assert!(invoke(&[crate::GROUP], &case.call).ok, "{}", path.display());
             variant(&input.calls[0])
         })
         .collect();

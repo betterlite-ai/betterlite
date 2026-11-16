@@ -1,3 +1,4 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::mcp::message_tracing::meta_carrier;
 use rmcp::model::MetaObject;
 
@@ -9,10 +10,10 @@ pub(crate) struct Input {
     meta: Option<MetaObject>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let carrier = meta_carrier(input.meta.as_ref());
         Ok(serde_json::to_value(carrier)?)
     }

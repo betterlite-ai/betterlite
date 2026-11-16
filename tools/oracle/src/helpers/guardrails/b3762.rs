@@ -3,8 +3,8 @@ mod support;
 
 use serde_json::Value;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
 
 pub(crate) struct Op;
 
@@ -97,7 +97,7 @@ fn default_surface() -> String {
     "chat".to_owned()
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

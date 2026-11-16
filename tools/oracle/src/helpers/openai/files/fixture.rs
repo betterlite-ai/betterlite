@@ -13,6 +13,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use std::str;
 use thiserror::Error;
 
 #[derive(Debug, Default, Deserialize)]
@@ -133,7 +134,7 @@ impl Fixture {
                             "name": part.name,
                             "filename": part.file_name,
                             "content_type": part.content_type,
-                            "text": std::str::from_utf8(&part.data).unwrap_or_default(),
+                            "text": str::from_utf8(&part.data).unwrap_or_default(),
                         })
                     })
                     .collect::<Vec<Value>>(),

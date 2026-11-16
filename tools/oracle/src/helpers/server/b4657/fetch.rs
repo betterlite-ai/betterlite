@@ -14,7 +14,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::support::{cred_tag, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct FetchInput {

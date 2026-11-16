@@ -4,6 +4,7 @@ use betterlite_logging::otel::config::destination::SpanScope;
 use betterlite_logging::otel::config::{
     CaptureMessageContent, ExporterOwner, ExporterSpec, Settings,
 };
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -38,7 +39,7 @@ struct ExporterInput {
 }
 
 impl BaseInput {
-    pub(crate) fn settings(&self) -> Result<Settings, Box<crate::helpers::HelperError>> {
+    pub(crate) fn settings(&self) -> Result<Settings, Box<HelperError>> {
         let exporters = self
             .exporters
             .iter()
@@ -73,7 +74,7 @@ fn fixed_settings() -> Settings {
 }
 
 impl ExporterInput {
-    fn spec(&self) -> Result<ExporterSpec, Box<crate::helpers::HelperError>> {
+    fn spec(&self) -> Result<ExporterSpec, Box<HelperError>> {
         let owner = match self.owner.as_deref() {
             None => None,
             Some("arize") => Some(ExporterOwner::ArizeAx),
@@ -99,8 +100,8 @@ impl ExporterInput {
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

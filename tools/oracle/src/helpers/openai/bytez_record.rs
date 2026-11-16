@@ -7,6 +7,7 @@ use betterlite_openai::bytez_wire::messages::{
 use betterlite_openai::bytez_wire::params::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use betterlite_openai::bytez_wire::reply::{ReplyInput, decode_bytez_reply};
 use betterlite_openai::bytez_wire::request::request_body;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Object;
 use betterlite_provider::bytez_stream_call::error::BytezStreamError;
 use betterlite_provider::bytez_stream_call::stream::BytezCustomStream;
@@ -87,10 +88,10 @@ pub(crate) struct ReplyEntry {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(match input {
             Input::Options { mappings, .. } => json!({
                 "supported": SUPPORTED_OPENAI_PARAMS,

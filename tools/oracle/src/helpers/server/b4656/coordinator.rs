@@ -8,7 +8,7 @@ use serde_json::Value;
 use tokio::task::yield_now;
 
 use super::{StoreResult, outcome, result_view, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) type Coordinator =
     InProcessRefreshCoordinator<Option<OAuthToken>, TokenStoreUnavailable>;

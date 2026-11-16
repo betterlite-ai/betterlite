@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use betterlite_context::agentic_loop_plan::{FollowupMessage, JsonMap};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_websearch::call_transformation::outcome::SearchResult;
 use betterlite_websearch::call_transformation::wire::{
     Call, CallFunction, CallKind, Input as ToolInput,
@@ -18,6 +20,8 @@ use betterlite_websearch::records::RichWebSearchInput;
 use serde::{Deserialize, Serialize};
 use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
+use std::fmt::Display;
+use std::mem;
 use tokio::runtime::Builder;
 
 #[derive(Clone, Copy, Deserialize)]
@@ -131,8 +135,8 @@ impl ScriptedSearch {
 
     fn recorded(&self) -> Vec<RecordedSearch> {
         match self.searches.lock() {
-            Ok(mut searches) => std::mem::take(&mut *searches),
-            Err(poisoned) => std::mem::take(&mut poisoned.into_inner()),
+            Ok(mut searches) => mem::take(&mut *searches),
+            Err(poisoned) => mem::take(&mut poisoned.into_inner()),
         }
     }
 }
@@ -193,10 +197,10 @@ impl ToolCall {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = CaseInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let searcher = Arc::new(ScriptedSearch::new(&input.searches));
         let calls: Vec<Call> = input.tool_calls.iter().map(ToolCall::to_call).collect();
         let shared = Arc::clone(&searcher);
@@ -270,12 +274,12 @@ fn rerun_value(rerun: &ChatRerunRequest) -> Result<Value, FollowupError> {
     Ok(Value::Object(value))
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "SearchPlanError".to_owned(),
         status: None,
         error_type: None,

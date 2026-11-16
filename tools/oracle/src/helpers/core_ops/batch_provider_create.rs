@@ -19,7 +19,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -239,10 +240,10 @@ fn step_outcome(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let catalog = ModelCatalog::parse(b"{}", UnknownFields::Reject).or_config_error()?;
         let names = BTreeSet::new();
         let environment = BTreeMap::new();

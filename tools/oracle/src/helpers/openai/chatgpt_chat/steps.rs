@@ -10,6 +10,7 @@ use serde_json::Value;
 
 use super::fixture::{FixedSession, FixtureError, Login, Recording};
 use super::{HeadersInput, Input, NormalizeInput, ParamsInput, ProviderInfoInput, Step};
+use tokio::runtime::Builder;
 
 fn decode_chunks(chunks: &[Value]) -> Result<Vec<Chunk>, FixtureError> {
     chunks
@@ -40,7 +41,7 @@ fn provider_value(
     spec: &ProviderInfoInput,
 ) -> Result<Object, FixtureError> {
     let api_base = config.authenticator.api_base().to_owned();
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let info = runtime.block_on(config.provider_info(
         &spec.model,
         spec.api_base.as_deref(),
@@ -93,7 +94,7 @@ fn params_value(config: &ChatGptConfig<Recording<Login>>, spec: &ParamsInput) ->
 fn normalize_value(spec: &NormalizeInput) -> Result<Object, FixtureError> {
     let sync = ChatGptToolCallNormalizer::from(decode_chunks(&spec.chunks)?.into_iter())
         .collect::<Vec<_>>();
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let asynchronous = runtime.block_on(collect_async(decode_chunks(&spec.chunks)?));
     let mut output = Object::new();
     output.insert(String::from("sync"), project(&sync)?);

@@ -10,7 +10,8 @@ use serde_json::{Value, json};
 
 use self::fixture::{FixtureError, assemble};
 use self::steps::step_value;
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod steps;

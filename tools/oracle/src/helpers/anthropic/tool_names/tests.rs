@@ -3,11 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[test]
 fn helper_seeds_select_anthropic_tool_names() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -39,6 +40,6 @@ fn basic_null_survives_the_oracle_envelope() {
     let source =
         include_str!("../../../../fuzz/corpus/helper_case/anthropic_tool_names-basic-null.yaml");
     let case = serde_saphyr::from_str::<HelperCase>(source).unwrap();
-    let run = crate::helpers::run_case(&case, false).unwrap();
-    assert!(matches!(run, crate::helpers::HelperRun::Match));
+    let run = run_case(&[crate::GROUP], &case, false).unwrap();
+    assert!(matches!(run, HelperRun::Match));
 }

@@ -2,8 +2,9 @@ use betterlite_logging::otel::model::payloads::service::{ServiceLoggerPayload, S
 
 use super::ServiceInput;
 use super::values::helper_error;
+use betterlite_oracle_helper_api::error::HelperError;
 
-pub(super) fn service_type(name: &str) -> Result<ServiceType, Box<crate::helpers::HelperError>> {
+pub(super) fn service_type(name: &str) -> Result<ServiceType, Box<HelperError>> {
     match name {
         "redis" => Ok(ServiceType::Redis),
         "postgres" => Ok(ServiceType::Postgres),
@@ -33,7 +34,7 @@ pub(super) fn service_type(name: &str) -> Result<ServiceType, Box<crate::helpers
 
 pub(super) fn service_payload(
     input: &ServiceInput,
-) -> Result<ServiceLoggerPayload, Box<crate::helpers::HelperError>> {
+) -> Result<ServiceLoggerPayload, Box<HelperError>> {
     Ok(ServiceLoggerPayload {
         service: service_type(&input.service)?,
         call_type: input.call_type.clone(),

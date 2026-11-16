@@ -5,7 +5,7 @@ use betterlite_models::model_registration::merge::{
 };
 use serde::Deserialize;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use project::project;
 use registration::{Scenario, register};
 use routing::{Deployment, RegionCall, order_filter, region};
@@ -34,7 +34,7 @@ pub(crate) enum Input {
     Region(Box<RegionCall>),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

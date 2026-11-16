@@ -17,7 +17,8 @@ use tokio::runtime::Builder;
 
 use self::fakes::{CallLog, HelperCallFailure, HelperRouter, RecordingCalls};
 use self::input::{Input, Method, ModelRow};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

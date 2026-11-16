@@ -4,7 +4,8 @@ use aws_smithy_types::str_bytes::StrBytes;
 use serde_json::Value;
 
 use super::FrameInput;
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn encode_stream(
     frames: &[FrameInput],

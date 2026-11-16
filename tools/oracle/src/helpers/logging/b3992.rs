@@ -10,7 +10,9 @@ use chrono::NaiveDateTime;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_logging::s3_v2::connection::Credentials;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -139,7 +141,7 @@ fn summary(parameters: &S3Parameters<Value>) -> Value {
     })
 }
 
-fn credentials_summary(credentials: &betterlite_logging::s3_v2::connection::Credentials) -> Value {
+fn credentials_summary(credentials: &Credentials) -> Value {
     json!({
         "aws_access_key_id": credentials.aws_access_key_id.as_ref().map(secrecy::ExposeSecret::expose_secret),
         "aws_secret_access_key": credentials.aws_secret_access_key.as_ref().map(secrecy::ExposeSecret::expose_secret),

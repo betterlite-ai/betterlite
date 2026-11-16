@@ -7,7 +7,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use self::fixtures::World;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 mod agents;
 mod fakes;
@@ -57,7 +58,7 @@ pub(crate) enum StopKind {
 
 fn finish<M>(world: &World, stdout: &[u8], outcome: Result<(), M>, click: bool) -> serde_json::Value
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     let error = outcome.err().map(|failure| {
         let class = if click { "ClickException" } else { "UpError" };

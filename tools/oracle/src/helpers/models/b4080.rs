@@ -18,18 +18,20 @@ use betterlite_server::judge_targets::router::JudgeRouter;
 use betterlite_server::judge_targets::sdk::JudgeSdk;
 use betterlite_server::judge_targets::{judge_acompletion, judge_target};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{DispatchInput, Input, QueryInput, ServedModels, TargetInput};
+use tokio::runtime::Builder;
 
 mod input;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Parse { raw } => {
                 let verdict =
@@ -41,7 +43,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_target(target: &TargetInput) -> crate::helpers::HelperResult {
+fn run_target(target: &TargetInput) -> HelperResult {
     let mut bundled = BundledCatalog::default();
     let catalog = bundled.get();
     let (known, environment, custom) = (BTreeSet::new(), BTreeMap::new(), BTreeSet::new());
@@ -106,8 +108,8 @@ fn dispatch_value(
     dispatch: &DispatchInput,
     router_calls: &Arc<Mutex<Vec<JudgeCall>>>,
     sdk_calls: &Arc<Mutex<Vec<JudgeCall>>>,
-) -> crate::helpers::HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+) -> HelperResult {
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error))?;
     let outcome = runtime.block_on(judge_acompletion(
@@ -142,7 +144,7 @@ fn recorded(calls: &Arc<Mutex<Vec<JudgeCall>>>) -> Option<JudgeCall> {
         .cloned()
 }
 
-fn call_value(kind: &str, call: &JudgeCall) -> crate::helpers::HelperResult {
+fn call_value(kind: &str, call: &JudgeCall) -> HelperResult {
     let mut fields = serde_json::Map::new();
     fields.insert(
         "kind".to_owned(),

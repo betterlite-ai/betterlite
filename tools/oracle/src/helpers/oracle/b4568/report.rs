@@ -1,8 +1,8 @@
 use super::Setup;
 use super::fakes::{Launcher, Recorder};
-use crate::helpers::HelperError;
 use betterlite_cli::agent_launch::EnvVars;
 use betterlite_cli::agent_run::error::AgentRunError;
+use betterlite_oracle_helper_api::error::HelperError;
 use serde_json::{Map, Value, json};
 use std::fmt;
 use std::fs;

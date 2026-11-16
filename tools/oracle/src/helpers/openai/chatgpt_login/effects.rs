@@ -1,9 +1,9 @@
 use std::collections::VecDeque;
 use std::future::ready;
-use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
+use std::{fs, io};
 
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::chatgpt::login::http::{
@@ -81,7 +81,7 @@ impl Time {
         }
         self.now = self.now.saturating_add(seconds);
         if let Some(replacement) = self.replacement.take() {
-            self.failure = std::fs::write(&self.path, replacement).err();
+            self.failure = fs::write(&self.path, replacement).err();
         }
     }
 }

@@ -8,7 +8,7 @@ use serde::Deserialize;
 
 use super::emit::DetailInput;
 use super::support::to_json;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

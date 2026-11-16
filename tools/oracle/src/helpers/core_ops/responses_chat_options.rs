@@ -20,7 +20,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CacheEntry {
@@ -161,10 +162,10 @@ struct Output {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let cache = tool_cache(&input.cache).or_value_error()?;
         let parameters = Parameters {
             supported: input.supported_openai_params.clone(),

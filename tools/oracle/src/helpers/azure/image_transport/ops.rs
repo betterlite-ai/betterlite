@@ -13,13 +13,15 @@ use betterlite_config::loader::ConfigLoader;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{Constructor, Fixture, FixtureClock, FixtureTransport, lock};
 use super::input::{Input, Step};
+use tokio::runtime::Builder;
 
 pub(crate) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure(&error))?;
@@ -211,6 +213,6 @@ fn headers_value(headers: &HeaderMap) -> Value {
 
 fn body_value(body: &[u8]) -> Value {
     serde_json::from_slice(body).unwrap_or_else(|_| {
-        std::str::from_utf8(body).map_or(Value::Null, |text| Value::String(text.to_owned()))
+        str::from_utf8(body).map_or(Value::Null, |text| Value::String(text.to_owned()))
     })
 }

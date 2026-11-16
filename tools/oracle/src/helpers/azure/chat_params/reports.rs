@@ -16,7 +16,7 @@ use super::input::{
     AliasCall, AliasStep, AllowlistCall, Install, MapStep, MappingCall, StreamCall, StreamStep,
     TransformCall, TransformStep,
 };
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Clone, Copy)]
 pub(super) enum Series {

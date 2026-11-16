@@ -73,7 +73,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/vertex_veo_operation.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/vertex_veo_operation)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_vertex_veo_operation_corpus)'
       why: Completed-operation and malformed base64 seeds use the production decoder.
     - id: veo-operation-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::veo_operation::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_veo_operation*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^veo_operation::/)'
       why: Newly authored operation cases are recognized by shared helper parsing.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-veo-operation/missing-operation-name.yaml

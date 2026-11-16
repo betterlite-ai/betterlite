@@ -6,7 +6,7 @@ use secrecy::SecretSlice;
 use serde_json::{Value, json};
 
 use super::cipher_settings::invalid;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

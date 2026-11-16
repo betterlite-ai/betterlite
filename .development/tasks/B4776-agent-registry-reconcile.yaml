@@ -110,7 +110,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_registry::migration_retry::/)'
     - id: oracle-cases
       why: the registry ids, loads and lookups differ from LiteLLM's on the same input
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-registry)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4776::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-registry)" && cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b4776::/)'
 oracle_cases:
   - tools/oracle/cases/agent-registry/ids-ascii-entry.yaml
   - tools/oracle/cases/agent-registry/ids-non-ascii-and-escapes.yaml

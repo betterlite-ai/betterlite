@@ -3,11 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_voyage_contextual() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -30,9 +31,9 @@ fn helper_seeds_select_voyage_contextual() {
 #[case::text("malformed-text-reply.yaml", 503)]
 #[case::contextual("malformed-contextual-reply.yaml", 429)]
 fn malformed_replies_keep_exception_status(#[case] file: &str, #[case] status: u16) {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/voyage-contextual")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -52,9 +53,9 @@ fn malformed_replies_keep_exception_status(#[case] file: &str, #[case] status: u
 #[case::empty_key("credentials-empty-key.yaml", "Bearer ")]
 #[case::explicit("credentials-explicit.yaml", "Bearer supplied")]
 fn oracle_credentials_reach_headers(#[case] file: &str, #[case] authorization: &str) {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/voyage-contextual")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -66,10 +67,9 @@ fn oracle_credentials_reach_headers(#[case] file: &str, #[case] authorization: &
 
 #[test]
 fn oracle_null_usage_defaults_to_zero() {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("cases/helpers/voyage-contextual/null-token-usage.yaml");
+    let path = Path::new(ORACLE_DIR).join("cases/helpers/voyage-contextual/null-token-usage.yaml");
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let result = super::Op::decode_and_run(&case.call.input).unwrap();
     let expected = serde_json::json!({"prompt_tokens": 0_u32, "total_tokens": 0_u32});

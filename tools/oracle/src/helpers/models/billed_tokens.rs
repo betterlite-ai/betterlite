@@ -9,21 +9,23 @@ use serde_json::{Value, json};
 
 mod catalog;
 mod input;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{Input, Operation};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input.operation {
             Operation::Counts => Ok(json!(project_billed_token_counts(input.usage))),
             Operation::CustomCost | Operation::CustomBreakdown => run_custom(input),
             Operation::Catalog | Operation::Savings => catalog::run(input),
         };
         result.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "BilledTokenError".to_owned(),
                 status: None,
                 error_type: None,

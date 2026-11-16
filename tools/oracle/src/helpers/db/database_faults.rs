@@ -1,4 +1,6 @@
 use betterlite_db::database_faults::{self, DbError, ErrorType};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 pub(crate) struct Op;
@@ -80,10 +82,10 @@ impl From<&DbError> for Output {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Classification { error } => {
                 serde_json::to_value(Output::from(&DbError::from(error)))
@@ -103,7 +105,7 @@ impl crate::helpers::Helper for Op {
             }
         };
         output.map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

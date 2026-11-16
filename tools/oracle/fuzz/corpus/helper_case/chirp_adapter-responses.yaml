@@ -1,0 +1,27 @@
+kind: helper
+name: chirp-adapter-responses-seed
+call:
+  chirp_adapter:
+    function: responses
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: sess_seed
+    configure: '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":16000},"transcription":{"model":"chirp_2","language":"en"}}}}}'
+    state:
+      session_configuration_request: null
+      current_output_item_id: item_seed
+      current_response_id: null
+      current_delta_chunks: null
+      current_item_chunks: null
+      current_conversation_id: null
+      current_delta_type: audio
+    frames:
+      - kind: text
+        value: '{"kind":"configured"}'
+      - kind: text
+        value: '{"kind":"response","speech_event":"none","results":[{"transcript":"seed","is_final":true}],"billed_seconds":1.0}'
+      - kind: bytes
+        base64: bm8=
+env: {}
+compare: {ignore: []}

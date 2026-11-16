@@ -19,9 +19,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use server::{Captured, Reply, Server};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -57,7 +60,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| failure(&error))?;
@@ -177,7 +180,7 @@ fn ocr_failure(error: &OcrError) -> Box<HelperError> {
     })
 }
 
-pub(super) fn failure(error: &dyn std::fmt::Display) -> Box<HelperError> {
+pub(super) fn failure(error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: "B6805Oracle".to_owned(),
         status: None,

@@ -16,7 +16,9 @@ use serde_json::{Value, json};
 
 use super::input::{ErrorClassCall, SignCall, SigningCall};
 use super::ops::{config, invalid};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::{Builder, Runtime};
 
 fn epoch(seconds: i64) -> Result<SystemTime, Box<HelperError>> {
     let bounded = u64::try_from(seconds).map_err(invalid)?;
@@ -25,8 +27,8 @@ fn epoch(seconds: i64) -> Result<SystemTime, Box<HelperError>> {
         .ok_or_else(|| invalid("now is out of range"))
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(invalid)

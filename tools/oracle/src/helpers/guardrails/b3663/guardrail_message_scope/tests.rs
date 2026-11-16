@@ -3,8 +3,8 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[rstest::rstest]
 #[case::anthropic_sse_multiline_blocks("anthropic-sse-multiline-blocks")]
@@ -54,18 +54,18 @@ use crate::helpers::{HelperRun, run_case};
 #[case::unappliable_request_rewrite_exception("unappliable-request-rewrite-exception")]
 #[case::unappliable_request_rewrite_unknown_name("unappliable-request-rewrite-unknown-name")]
 fn cases_match_litellm(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/guardrail-message-scope")
         .join(format!("{name}.yaml"));
     let source = fs::read_to_string(path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    let result = run_case(&case, false).unwrap();
+    let result = run_case(&[crate::GROUP], &case, false).unwrap();
     assert!(matches!(result, HelperRun::Match));
 }
 
 #[test]
 fn replays_the_guardrail_message_scope_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let replayed = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -77,7 +77,7 @@ fn replays_the_guardrail_message_scope_corpus() {
         .map(|path| {
             let source = fs::read_to_string(&path).unwrap();
             let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-            crate::case::helper::validate_helper(&path, &case).unwrap();
+            validate_helper(&path, &case).unwrap();
         })
         .count();
     assert!(replayed >= 1);

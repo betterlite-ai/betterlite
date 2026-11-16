@@ -22,7 +22,8 @@ use serde_json::json;
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::{BatchRequestInput, DeploymentInput, EntityInput, Input, OutputEstimateRequestInput};
 use warnings::WarningLog;

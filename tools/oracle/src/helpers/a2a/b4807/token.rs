@@ -14,7 +14,8 @@ use serde_json::{Map, Value, json};
 use url::form_urlencoded;
 
 use super::failure;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Deserialize)]
 pub(crate) struct Step {
@@ -92,11 +93,7 @@ impl TokenTransport for Recorder<'_> {
     }
 }
 
-fn run_step(
-    runtime: &tokio::runtime::Runtime,
-    store: &Arc<BoundedTokenCache>,
-    step: &Step,
-) -> Value {
+fn run_step(runtime: &Runtime, store: &Arc<BoundedTokenCache>, step: &Step) -> Value {
     let seen = Mutex::new(Vec::new());
     let tokens = BearerTokens {
         transport: Recorder {
@@ -135,7 +132,7 @@ fn run_step(
 }
 
 pub(super) fn run_steps(steps: &[Step]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))?;
     let store = Arc::new(BoundedTokenCache::new(NonZeroUsize::MIN));

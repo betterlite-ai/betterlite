@@ -11,8 +11,8 @@ use betterlite_azure::azure_managed_identity::imds::ProbePolicy;
 use betterlite_azure::azure_managed_identity::runtime::{
     ImdsIo, ManagedIdentityIo, Scheduler, TokenFiles, WorkloadIo,
 };
-use betterlite_azure::oidc_exchange::AzureOidcExchange;
 use betterlite_azure::oidc_exchange::transport::{Clock as OidcClock, Transport as OidcTransport};
+use betterlite_azure::oidc_exchange::{AzureOidcExchange, OidcExchangeError};
 use betterlite_config::sections::azure_oidc_exchange::Settings;
 use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -154,7 +154,7 @@ impl TokenFiles for Fixture {
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum FixtureError {
     #[error(transparent)]
-    Exchange(#[from] betterlite_azure::oidc_exchange::OidcExchangeError),
+    Exchange(#[from] OidcExchangeError),
     #[error(transparent)]
     Redaction(#[from] RedactionError),
     #[error("the fixture clock is out of range")]
