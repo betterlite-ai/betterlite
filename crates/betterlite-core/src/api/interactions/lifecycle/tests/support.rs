@@ -147,10 +147,12 @@ impl InteractionLifecycleConfig for Config {
         &self,
         request: &InteractionIdRequest<'_>,
     ) -> Result<PreparedRequest, FixtureError> {
-        Ok(PreparedRequest {
-            url: interaction_url(request, ":cancel"),
-            params: Params::from([("state".to_owned(), JsonValue::Text("cancelled".to_owned()))]),
-        })
+        let mut prepared = self.transform_delete_request(request)?;
+        prepared.url.push_str(":cancel");
+        prepared
+            .params
+            .insert("state".to_owned(), JsonValue::Text("cancelled".to_owned()));
+        Ok(prepared)
     }
 
     fn transform_cancel_response(
