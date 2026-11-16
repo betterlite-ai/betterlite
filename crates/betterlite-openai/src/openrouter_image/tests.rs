@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
@@ -16,7 +17,9 @@ use crate::api::image_contracts::records::{ImageData, ImageHttpResponse, ImagePa
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::OpenRouterError;
 
-use super::decode::{OpenRouterImageReply, ReplyDecodeError, decode_openrouter_image_reply};
+use super::decode::{
+    OpenRouterImageReply, OpenRouterImageUsage, ReplyDecodeError, decode_openrouter_image_reply,
+};
 use super::shared::{
     authorization, get_error_class, map_quality_to_image_size, map_size_to_aspect_ratio,
     resolved_base, resolved_key,
@@ -282,19 +285,25 @@ fn usage_is_read_when_it_is_a_non_empty_object() {
         r#"{"usage": {"prompt_tokens": 7, "total_tokens": 9, "completion_tokens_details": {"image_tokens": 2}, "prompt_tokens_details": {"image_tokens": 1}, "cost": 0.25, "cost_details": {"upstream": 0.2}}}"#,
     )
     .expect("the reply decodes");
-    let usage = reply.usage.expect("the usage is kept");
-    assert_eq!(usage.prompt_tokens, Some(number(7)));
-    assert_eq!(usage.total_tokens, Some(number(9)));
     assert_eq!(
-        usage.completion_tokens_details,
-        Some(json(r#"{"image_tokens": 2}"#))
+        reply.usage,
+        Some(OpenRouterImageUsage {
+            prompt_tokens: 7,
+            total_tokens: 9,
+            output_image_tokens: 2,
+            input_image_tokens: 1,
+            cost: Some(0.25),
+            cost_details: IndexMap::from([(String::from("upstream"), json("0.2"))]),
+        })
     );
-    assert_eq!(
-        usage.prompt_tokens_details,
-        Some(json(r#"{"image_tokens": 1}"#))
-    );
-    assert_eq!(usage.cost, Some(json("0.25")));
-    assert_eq!(usage.cost_details, Some(json(r#"{"upstream": 0.2}"#)));
+}
+
+#[rstest]
+#[case::unknown_key(r#"{"usage": {"other": 1}}"#)]
+#[case::null_count(r#"{"usage": {"prompt_tokens": null}}"#)]
+fn a_usage_object_with_any_key_is_kept(#[case] body: &str) {
+    let reply = decode(body).expect("the reply decodes");
+    assert_eq!(reply.usage, Some(OpenRouterImageUsage::default()));
 }
 
 #[test]
@@ -317,8 +326,6 @@ fn the_model_is_kept_as_the_reply_sends_it() {
         .expect("the reply decodes")
         .model;
     assert_eq!(model, Some(Json::Null));
-    let model = decode(r#"{"model": 5}"#).expect("the reply decodes").model;
-    assert_eq!(model, Some(number(5)));
     let model = decode("{}").expect("the reply decodes").model;
     assert_eq!(model, None);
 }
@@ -342,49 +349,74 @@ fn non_standard_json_is_a_parse_error(#[case] body: &str) {
 }
 
 #[rstest]
-#[case::body_list("[]")]
-#[case::body_null("null")]
-#[case::body_number("5")]
-#[case::choices_object(r#"{"choices": {}}"#)]
-#[case::choices_null(r#"{"choices": null}"#)]
-#[case::choice_number(r#"{"choices": [5]}"#)]
-#[case::message_null(r#"{"choices": [{"message": null}]}"#)]
-#[case::images_object(r#"{"choices": [{"message": {"images": {}}}]}"#)]
-#[case::entry_number(r#"{"choices": [{"message": {"images": [5]}}]}"#)]
-#[case::image_url_number(r#"{"choices": [{"message": {"images": [{"image_url": 5}]}}]}"#)]
-#[case::image_url_null(r#"{"choices": [{"message": {"images": [{"image_url": null}]}}]}"#)]
-#[case::url_number(r#"{"choices": [{"message": {"images": [{"image_url": {"url": 5}}]}}]}"#)]
-#[case::usage_list(r#"{"usage": []}"#)]
-#[case::usage_number(r#"{"usage": 5}"#)]
-fn a_wrong_shape_is_a_decode_error(#[case] body: &str) {
+#[case::body_list("[]", "")]
+#[case::body_null("null", "")]
+#[case::body_number("5", "")]
+#[case::choices_object(r#"{"choices": {}}"#, "choices")]
+#[case::choices_null(r#"{"choices": null}"#, "choices")]
+#[case::choice_number(r#"{"choices": [5]}"#, "choices[0]")]
+#[case::choice_list(r#"{"choices": [[]]}"#, "choices[0]")]
+#[case::message_null(r#"{"choices": [{"message": null}]}"#, "choices[0].message")]
+#[case::images_object(
+    r#"{"choices": [{"message": {"images": {}}}]}"#,
+    "choices[0].message.images"
+)]
+#[case::entry_number(
+    r#"{"choices": [{"message": {"images": [5]}}]}"#,
+    "choices[0].message.images[0]"
+)]
+#[case::image_url_number(
+    r#"{"choices": [{"message": {"images": [{"image_url": 5}]}}]}"#,
+    "choices[0].message.images[0].image_url"
+)]
+#[case::image_url_null(
+    r#"{"choices": [{"message": {"images": [{"image_url": null}]}}]}"#,
+    "choices[0].message.images[0].image_url"
+)]
+#[case::url_number(
+    r#"{"choices": [{"message": {"images": [{"image_url": {"url": 5}}]}}]}"#,
+    "choices[0].message.images[0].image_url.url"
+)]
+#[case::usage_list(r#"{"usage": []}"#, "usage")]
+#[case::usage_number(r#"{"usage": 5}"#, "usage")]
+#[case::prompt_tokens_text(r#"{"usage": {"prompt_tokens": "7"}}"#, "usage.prompt_tokens")]
+#[case::prompt_tokens_float(r#"{"usage": {"prompt_tokens": 1.5}}"#, "usage.prompt_tokens")]
+#[case::total_tokens_bool(r#"{"usage": {"total_tokens": true}}"#, "usage.total_tokens")]
+#[case::completion_details_list(
+    r#"{"usage": {"completion_tokens_details": []}}"#,
+    "usage.completion_tokens_details"
+)]
+#[case::completion_image_text(
+    r#"{"usage": {"completion_tokens_details": {"image_tokens": "2"}}}"#,
+    "usage.completion_tokens_details.image_tokens"
+)]
+#[case::prompt_details_list(
+    r#"{"usage": {"prompt_tokens_details": []}}"#,
+    "usage.prompt_tokens_details"
+)]
+#[case::prompt_image_text(
+    r#"{"usage": {"prompt_tokens_details": {"image_tokens": "4"}}}"#,
+    "usage.prompt_tokens_details.image_tokens"
+)]
+#[case::cost_text(r#"{"usage": {"cost": "0.5"}}"#, "usage.cost")]
+#[case::cost_details_text(r#"{"usage": {"cost_details": "x"}}"#, "usage.cost_details")]
+#[case::model_number(r#"{"model": 5}"#, "model")]
+fn a_wrong_shape_names_the_field(#[case] body: &str, #[case] path: &str) {
     let error = decode(body).expect_err("the shape is wrong");
-    assert!(matches!(error, ReplyDecodeError::Shape(..)));
+    assert!(matches!(error, ReplyDecodeError::Shape { .. }));
+    let prefix = if path.is_empty() {
+        String::from("invalid type: ")
+    } else {
+        format!("{path}: invalid ")
+    };
+    let message = error.to_string();
+    assert!(message.starts_with(&prefix), "{message}");
 }
 
-#[rstest]
-#[case::choices(r#"{"choices": {}}"#, "choices must be a list")]
-#[case::choice(r#"{"choices": [5]}"#, "each choice must be an object")]
-#[case::message(r#"{"choices": [{"message": 5}]}"#, "message must be an object")]
-#[case::images(
-    r#"{"choices": [{"message": {"images": 5}}]}"#,
-    "images must be a list"
-)]
-#[case::entry(
-    r#"{"choices": [{"message": {"images": [5]}}]}"#,
-    "each image must be an object"
-)]
-#[case::image_url(
-    r#"{"choices": [{"message": {"images": [{"image_url": 5}]}}]}"#,
-    "image_url must be an object"
-)]
-#[case::url(
-    r#"{"choices": [{"message": {"images": [{"image_url": {"url": 5}}]}}]}"#,
-    "image_url.url must be a string"
-)]
-#[case::usage(r#"{"usage": 5}"#, "usage must be an object")]
-fn a_wrong_shape_names_the_field(#[case] body: &str, #[case] message: &str) {
-    let error = decode(body).expect_err("the shape is wrong");
-    assert_eq!(error.to_string(), message);
+#[test]
+fn a_syntax_error_after_a_shape_error_is_a_parse_error() {
+    let error = decode(r#"{"choices": 5} trailing"#).expect_err("the body is not JSON");
+    assert!(matches!(error, ReplyDecodeError::Json { .. }));
 }
 
 #[test]

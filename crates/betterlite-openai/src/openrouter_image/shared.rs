@@ -36,14 +36,8 @@ pub enum ImageConfigError {
         #[source]
         source: io::Error,
     },
-    #[error("{path} must be a whole number")]
-    UsageCount { path: &'static str },
-    #[error("{path} must be an object")]
-    UsageDetails { path: &'static str },
     #[error("usage.cost must be a finite number")]
     Cost,
-    #[error("usage.cost_details must be an object")]
-    CostDetails,
     #[error("usage.prompt_tokens minus its input image tokens does not fit in a whole number")]
     TextTokens,
 }
@@ -121,92 +115,40 @@ pub fn reply_error(
             status_code: i64::from(raw.status_code),
             headers: raw.headers.clone(),
         },
-        ReplyDecodeError::Shape(message) => transform_error(stage, message),
+        ReplyDecodeError::Shape { source } => transform_error(stage, &source.to_string()),
     }
-}
-fn whole_number(value: Option<&Json>, path: &'static str) -> Result<i64, ImageConfigError> {
-    match value {
-        None | Some(Json::Null) => Ok(0),
-        Some(Json::Number(number)) => number.as_i64().ok_or(ImageConfigError::UsageCount { path }),
-        Some(_) => Err(ImageConfigError::UsageCount { path }),
-    }
-}
-fn details_image_tokens(
-    value: Option<&Json>,
-    details_path: &'static str,
-    tokens_path: &'static str,
-) -> Result<i64, ImageConfigError> {
-    match value {
-        None | Some(Json::Null) => Ok(0),
-        Some(Json::Object(details)) => whole_number(details.get("image_tokens"), tokens_path),
-        Some(_) => Err(ImageConfigError::UsageDetails { path: details_path }),
-    }
-}
-struct Counts {
-    prompt: i64,
-    output: i64,
-    total: i64,
-}
-fn usage_counts(usage: &OpenRouterImageUsage) -> Result<Counts, ImageConfigError> {
-    let prompt = whole_number(usage.prompt_tokens.as_ref(), "usage.prompt_tokens")?;
-    let total = whole_number(usage.total_tokens.as_ref(), "usage.total_tokens")?;
-    let output = details_image_tokens(
-        usage.completion_tokens_details.as_ref(),
-        "usage.completion_tokens_details",
-        "usage.completion_tokens_details.image_tokens",
-    )?;
-    Ok(Counts {
-        prompt,
-        output,
-        total,
-    })
 }
 fn apply_cost(
     usage: &OpenRouterImageUsage,
     hidden: &mut ImageHiddenParams,
 ) -> Result<(), ImageConfigError> {
-    match &usage.cost {
-        None | Some(Json::Null) => {}
-        Some(Json::Number(number)) => {
-            let amount = number
-                .as_f64()
-                .and_then(Number::from_f64)
-                .ok_or(ImageConfigError::Cost)?;
-            hidden
-                .additional_headers
-                .insert(String::from(COST_HEADER), Json::Number(amount));
-        }
-        Some(_) => return Err(ImageConfigError::Cost),
+    if let Some(cost) = usage.cost {
+        let amount = Number::from_f64(cost).ok_or(ImageConfigError::Cost)?;
+        hidden
+            .additional_headers
+            .insert(String::from(COST_HEADER), Json::Number(amount));
     }
-    match &usage.cost_details {
-        None | Some(Json::Null) => Ok(()),
-        Some(Json::Object(details)) if details.is_empty() => Ok(()),
-        Some(Json::Object(details)) => {
-            let merged = hidden
-                .response_cost_details
-                .get_or_insert_with(IndexMap::new);
-            for (name, value) in details {
-                merged.insert(name.clone(), value.clone());
-            }
-            Ok(())
-        }
-        Some(_) => Err(ImageConfigError::CostDetails),
+    if !usage.cost_details.is_empty() {
+        hidden
+            .response_cost_details
+            .get_or_insert_with(IndexMap::new)
+            .extend(usage.cost_details.clone());
     }
+    Ok(())
 }
 pub fn apply_generation_usage(
     usage: &OpenRouterImageUsage,
     response: &mut ImageResponse,
     hidden: &mut ImageHiddenParams,
 ) -> Result<(), ImageConfigError> {
-    let counts = usage_counts(usage)?;
     response.usage = Some(ImageUsage {
-        input_tokens: counts.prompt,
+        input_tokens: usage.prompt_tokens,
         input_tokens_details: ImageInputTokens {
             image_tokens: 0,
-            text_tokens: counts.prompt,
+            text_tokens: usage.prompt_tokens,
         },
-        output_tokens: counts.output,
-        total_tokens: counts.total,
+        output_tokens: usage.output_image_tokens,
+        total_tokens: usage.total_tokens,
     });
     apply_cost(usage, hidden)
 }
@@ -215,24 +157,18 @@ pub fn apply_edit_usage(
     response: &mut ImageResponse,
     hidden: &mut ImageHiddenParams,
 ) -> Result<(), ImageConfigError> {
-    let counts = usage_counts(usage)?;
-    let image_tokens = details_image_tokens(
-        usage.prompt_tokens_details.as_ref(),
-        "usage.prompt_tokens_details",
-        "usage.prompt_tokens_details.image_tokens",
-    )?;
-    let text_tokens = counts
-        .prompt
-        .checked_sub(image_tokens)
+    let text_tokens = usage
+        .prompt_tokens
+        .checked_sub(usage.input_image_tokens)
         .ok_or(ImageConfigError::TextTokens)?;
     response.usage = Some(ImageUsage {
-        input_tokens: counts.prompt,
+        input_tokens: usage.prompt_tokens,
         input_tokens_details: ImageInputTokens {
-            image_tokens,
+            image_tokens: usage.input_image_tokens,
             text_tokens,
         },
-        output_tokens: counts.output,
-        total_tokens: counts.total,
+        output_tokens: usage.output_image_tokens,
+        total_tokens: usage.total_tokens,
     });
     apply_cost(usage, hidden)
 }

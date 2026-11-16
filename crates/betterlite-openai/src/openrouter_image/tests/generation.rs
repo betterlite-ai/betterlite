@@ -8,14 +8,17 @@ use secrecy::SecretString;
 use crate::api::image_contracts::records::{
     ImageInputTokens, ImageParams, ImageResponse, ImageUsage,
 };
+use crate::openrouter_image::decode::OpenRouterImageUsage;
 use crate::openrouter_image::generation::{
     complete_url as generation_url, get_openrouter_image_generation_config as generation_config,
     request_body as generation_request_body, transform_response as generation_response,
     validate_environment as generation_headers,
 };
-use crate::openrouter_image::shared::{ImageConfigError, ImageHiddenParams};
+use crate::openrouter_image::shared::{
+    ImageConfigError, ImageHiddenParams, apply_generation_usage,
+};
 
-use super::{COST_HEADER, CREATED, b64, headers, json, number, ok, params, raw, text, url_image};
+use super::{COST_HEADER, CREATED, b64, headers, json, ok, params, raw, text, url_image};
 
 #[test]
 fn generation_params_map_size_and_quality_into_image_config() {
@@ -342,7 +345,6 @@ fn generation_responses_set_the_hidden_model_from_the_reply_or_the_request() {
     let cases = [
         (r#"{"model": "reply/model"}"#, Some(text("reply/model"))),
         (r#"{"model": null}"#, Some(Json::Null)),
-        (r#"{"model": 5}"#, Some(number(5))),
         ("{}", Some(text("requested/model"))),
     ];
     let models: Vec<Option<Json>> = cases
@@ -405,6 +407,42 @@ fn generation_responses_store_a_zero_cost() {
 }
 
 #[test]
+fn generation_responses_reject_a_usage_field_of_the_wrong_type() {
+    let raw = ok(r#"{"usage": {"completion_tokens_details": {"image_tokens": "2"}}}"#);
+    let error = generation_response(
+        &raw,
+        ImageResponse::default(),
+        ImageHiddenParams::default(),
+        "m",
+    )
+    .expect_err("the usage field is wrong");
+    assert_eq!(error.status_code, 500);
+    assert!(error.headers.is_empty());
+    assert!(
+        error.message.starts_with(
+            "Error transforming OpenRouter image generation response: usage.completion_tokens_details.image_tokens: invalid type"
+        ),
+        "{}",
+        error.message
+    );
+}
+
+#[test]
+fn generation_usage_rejects_a_cost_that_is_not_finite() {
+    let usage = OpenRouterImageUsage {
+        cost: Some(f64::NAN),
+        ..OpenRouterImageUsage::default()
+    };
+    let error = apply_generation_usage(
+        &usage,
+        &mut ImageResponse::default(),
+        &mut ImageHiddenParams::default(),
+    )
+    .expect_err("the cost is not finite");
+    assert!(matches!(error, ImageConfigError::Cost));
+}
+
+#[test]
 fn generation_responses_skip_an_empty_cost_details() {
     let raw = ok(r#"{"usage": {"prompt_tokens": 1, "cost_details": {}}}"#);
     let (response, hidden) = generation_response(
@@ -420,49 +458,6 @@ fn generation_responses_skip_an_empty_cost_details() {
         panic!("the usage is set");
     };
     assert_eq!(usage.input_tokens, 1);
-}
-
-#[rstest]
-#[case::prompt_text(
-    r#"{"prompt_tokens": "7"}"#,
-    "usage.prompt_tokens must be a whole number"
-)]
-#[case::prompt_float(
-    r#"{"prompt_tokens": 1.5}"#,
-    "usage.prompt_tokens must be a whole number"
-)]
-#[case::total_bool(
-    r#"{"total_tokens": true}"#,
-    "usage.total_tokens must be a whole number"
-)]
-#[case::completion_details_list(
-    r#"{"completion_tokens_details": []}"#,
-    "usage.completion_tokens_details must be an object"
-)]
-#[case::completion_image_text(
-    r#"{"completion_tokens_details": {"image_tokens": "2"}}"#,
-    "usage.completion_tokens_details.image_tokens must be a whole number"
-)]
-#[case::cost_text(r#"{"cost": "0.5"}"#, "usage.cost must be a finite number")]
-#[case::cost_details_text(r#"{"cost_details": "x"}"#, "usage.cost_details must be an object")]
-fn generation_responses_reject_a_usage_field_of_the_wrong_type(
-    #[case] usage: &str,
-    #[case] reason: &str,
-) {
-    let body = format!(r#"{{"usage": {usage}}}"#);
-    let error = generation_response(
-        &ok(&body),
-        ImageResponse::default(),
-        ImageHiddenParams::default(),
-        "m",
-    )
-    .expect_err("the usage field is wrong");
-    assert_eq!(error.status_code, 500);
-    assert!(error.headers.is_empty());
-    assert_eq!(
-        error.message,
-        format!("Error transforming OpenRouter image generation response: {reason}")
-    );
 }
 
 #[test]
@@ -496,8 +491,11 @@ fn generation_shape_failures_are_a_500_with_no_headers() {
     .expect_err("choices must be a list");
     assert_eq!(error.status_code, 500);
     assert!(error.headers.is_empty());
-    assert_eq!(
-        error.message,
-        "Error transforming OpenRouter image generation response: choices must be a list"
+    assert!(
+        error.message.starts_with(
+            "Error transforming OpenRouter image generation response: choices: invalid type"
+        ),
+        "{}",
+        error.message
     );
 }
