@@ -2,9 +2,11 @@ use std::time::TryFromFloatSecsError;
 
 use betterlite_error::dispatch::{DispatchInput, RawException, dispatch};
 use betterlite_error::error::ErrorClass;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingStateError;
 use betterlite_openai::api::container_contracts::error::{BaseLlmException, ContainerError};
 use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
+use betterlite_openai::containers::container_file_http::transport::TransferError;
 use betterlite_redact::secret::Redactor;
 use thiserror::Error;
 
@@ -57,20 +59,52 @@ pub fn failure(
     error: ContainerFileOpError,
     provider: &str,
     redactor: &Redactor,
+    route: Option<CallRoute<'_>>,
 ) -> ContainerFileFailureError {
     let class = dispatch(
-        &DispatchInput::Raw(Box::new(exception(&error, provider))),
+        &DispatchInput::Raw(Box::new(exception(&error, provider, route))),
         redactor,
     );
     ContainerFileFailureError { error, class }
 }
 
-// a provider exception keeps its status; everything else reaches exception_type's catchall
-fn exception(error: &ContainerFileOpError, provider: &str) -> RawException {
+// the method and handler form that sent the call, which decides whether a timeout was caught
+#[derive(Clone, Copy)]
+pub struct CallRoute<'route> {
+    pub method: &'route str,
+    pub asynchronous: bool,
+}
+
+// a provider exception keeps its status, a caught transport timeout is a 408, and everything else reaches exception_type's catchall
+fn exception(
+    error: &ContainerFileOpError,
+    provider: &str,
+    route: Option<CallRoute<'_>>,
+) -> RawException {
     if let Some(provider_error) = upstream(error) {
         return provider_status(provider_error, provider);
     }
-    value_error(error, provider)
+    if timed_out(error, route) {
+        return call_error(error, provider, Some(408), "");
+    }
+    call_error(error, provider, None, "ValueError")
+}
+
+// a timeout is caught on POST in both forms and on DELETE only in the blocking handler, so elsewhere it reaches the catchall
+fn timed_out(error: &ContainerFileOpError, route: Option<CallRoute<'_>>) -> bool {
+    let Some(route) = route else {
+        return false;
+    };
+    let caught = route.method == "POST" || (route.method == "DELETE" && !route.asynchronous);
+    if !caught {
+        return false;
+    }
+    matches!(
+        error,
+        ContainerFileOpError::Handler(ContainerFileHttpError::Transfer(TransferError::Transport(
+            TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
+        )))
+    )
 }
 
 // a handler-level and a config-level upstream exception both keep their status
@@ -101,16 +135,21 @@ fn provider_status(upstream: &BaseLlmException, provider: &str) -> RawException 
     }
 }
 
-fn value_error(error: &ContainerFileOpError, provider: &str) -> RawException {
+fn call_error(
+    error: &ContainerFileOpError,
+    provider: &str,
+    status_code: Option<u16>,
+    exception_type: &str,
+) -> RawException {
     let message = error.to_string();
     RawException {
         model: String::new(),
         custom_llm_provider: provider.to_owned(),
         error_str: message.clone(),
-        status_code: None,
+        status_code,
         status_code_is_synthesized: false,
         message: Some(message),
         body: None,
-        exception_type: "ValueError".to_owned(),
+        exception_type: exception_type.to_owned(),
     }
 }

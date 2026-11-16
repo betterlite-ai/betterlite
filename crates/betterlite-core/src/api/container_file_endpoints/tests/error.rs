@@ -4,7 +4,8 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    StubDecode, StubReply, TIMEOUT_SECONDS, decoding_to, fixture, list_call, logging, retrieve_call,
+    StubDecode, StubReply, TIMEOUT_SECONDS, decoding_to, fixture, list_call, logging,
+    retrieve_call, upload_call,
 };
 
 #[test]
@@ -177,6 +178,101 @@ fn error_decode_failure_uses_the_callers_provider() {
     assert_eq!(context.provider.as_deref(), Some("openai"));
     assert_eq!(context.model.as_deref(), Some(""));
     assert!(fixture.handler.seen().is_empty());
+}
+
+#[test]
+fn error_upload_timeout_maps_to_the_timeout_class() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Timeout { connect: false };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "upload_container_file",
+            &upload_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the provider times out");
+    let ErrorClass::Timeout(details) = &failure.class else {
+        panic!("a transport timeout on a POST maps to the timeout class");
+    };
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.provider.as_deref(), Some("openai"));
+    assert!(details.context.message.contains("read timeout"));
+}
+
+#[test]
+fn error_delete_timeout_maps_to_the_timeout_class() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Timeout { connect: true };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "delete_container_file",
+            &retrieve_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the provider times out");
+    assert!(matches!(failure.class, ErrorClass::Timeout(_)));
+    assert_eq!(
+        failure.error.to_string(),
+        "the connection was not made within the connect timeout"
+    );
+}
+
+#[test]
+fn error_get_timeout_stays_a_connection_error() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Timeout { connect: false };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "retrieve_container_file",
+            &retrieve_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the provider times out");
+    let ErrorClass::ApiConnection(context) = &failure.class else {
+        panic!("a GET timeout is not caught and maps to a connection error");
+    };
+    assert_eq!(context.provider.as_deref(), Some("openai"));
+}
+
+#[test]
+fn error_upload_provider_status_keeps_its_status() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Status {
+        status_code: 404,
+        message: "no such container".to_owned(),
+    };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "upload_container_file",
+            &upload_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the provider fails");
+    assert!(matches!(failure.class, ErrorClass::NotFound(_)));
+}
+
+#[test]
+fn error_upload_non_timeout_failure_stays_a_connection_error() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Suspended;
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .container_file_call(
+            "upload_container_file",
+            &upload_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .expect_err("the handler fails");
+    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
 }
 
 #[test]

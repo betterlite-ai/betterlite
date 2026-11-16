@@ -34,6 +34,7 @@ pub(super) struct ReadyCall<'deps> {
     params: Object,
     values: BTreeMap<String, ParamValue>,
     timeout: Duration,
+    pub(super) method: &'deps str,
     pub(super) provider: String,
 }
 
@@ -86,6 +87,7 @@ pub(super) fn prepare<'deps>(
         params,
         values,
         timeout,
+        method: entry.method.as_str(),
         provider: site.provider.clone(),
     }))
 }
@@ -107,10 +109,10 @@ fn decode_managed_id(
     let Some(managed) = site.call.container_id.as_deref() else {
         return Ok((None, params));
     };
-    let decoded = decoder.decode(managed, &site.provider, &params)?;
-    site.provider = decoded.custom_llm_provider;
-    params = decoded.litellm_params;
-    Ok((Some(decoded.container_id), params))
+    let resolved = decoder.decode(managed, &site.provider, &params)?;
+    site.provider = resolved.custom_llm_provider;
+    params = resolved.litellm_params;
+    Ok((Some(resolved.container_id), params))
 }
 
 fn find_endpoint<'endpoints>(
@@ -261,7 +263,9 @@ fn mock_reply(
     let body = match mock {
         Json::Text(text) => serde_json::from_str::<Json>(text)
             .map_err(|source| ContainerFileOpError::MockJson { source })?,
-        other => other.clone(),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+            mock.clone()
+        }
     };
     match endpoint.response_type.as_str() {
         "ContainerFileListResponse" => decode_mock(endpoint, &body).map(ContainerFileReply::List),

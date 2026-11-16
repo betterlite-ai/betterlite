@@ -5,6 +5,7 @@ use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -20,6 +21,7 @@ use betterlite_openai::api::container_contracts::records::{
     DeleteContainerFileResponse, DeleteContainerResult,
 };
 use betterlite_openai::containers::container_file_http::request::ParamValue;
+use betterlite_openai::containers::container_file_http::transport::TransferError;
 use betterlite_openai::containers::container_file_http::{
     ContainerFileHttpError, ContainerFileReply, ContainerFileUpload, ReplyResult,
 };
@@ -174,6 +176,8 @@ pub(super) enum StubReply {
     Bytes(Vec<u8>),
     Status { status_code: u16, message: String },
     ConfigStatus { status_code: u16, message: String },
+    Timeout { connect: bool },
+    Suspended,
 }
 
 impl StubReply {
@@ -201,7 +205,23 @@ impl StubReply {
                     headers: BTreeMap::new(),
                 },
             ))),
+            Self::Timeout { connect } => Err(ContainerFileHttpError::Transfer(
+                TransferError::Transport(timeout_source(*connect)),
+            )),
+            Self::Suspended => Err(ContainerFileHttpError::Suspended),
         }
+    }
+}
+
+// reqwest has no public error constructor, so a proxy URL it refuses gives the source of a timeout
+fn timeout_source(connect: bool) -> TransportError {
+    let error = reqwest::Proxy::all("::")
+        .err()
+        .expect("a proxy URL without a host is rejected");
+    if connect {
+        TransportError::ConnectTimeout(error)
+    } else {
+        TransportError::Deadline(error)
     }
 }
 

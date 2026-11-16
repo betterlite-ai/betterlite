@@ -83,6 +83,20 @@ deviations:
       REQUEST_TIMEOUT, and Duration::from_secs_f64 is banned because it panics, so the value is checked
       where it first becomes a Duration.
     link: ""
+  - what: >-
+      A transport deadline or connect timeout the handler returns on a POST (blocking and async) or on a
+      blocking DELETE reaches B185 as a 408 with the container provider in the context and betterlite's own
+      message. LiteLLM's HTTPHandler.post, AsyncHTTPHandler.post and blocking HTTPHandler.delete catch
+      httpx.TimeoutException and raise litellm.Timeout, whose message is "Connection timed out after
+      {timeout} seconds." and whose llm_provider is "litellm-httpx-handler" with model "default-model-name".
+      A GET or async DELETE timeout is uncaught there and reaches this module's ValueError-like connection
+      error, where LiteLLM's router turns the raw httpx.TimeoutException into a 500.
+    why: >-
+      The 408 is the status LiteLLM's Timeout carries, and the resolved container provider is the one a
+      caller can act on; litellm-httpx-handler names an internal client, not a provider either side routes
+      by, and betterlite has no litellm.Timeout that escapes the module.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
 kept_bugs:
   - what: >-
       The mock short circuit runs before the provider is parsed or its container config looked up, so a

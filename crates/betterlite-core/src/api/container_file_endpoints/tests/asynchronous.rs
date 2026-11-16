@@ -6,7 +6,7 @@ use betterlite_openai::containers::container_file_http::ContainerFileReply;
 
 use super::support::{
     HandlerForm, LIST_JSON, StubReply, TIMEOUT_SECONDS, decoding_to, file_list, file_object,
-    fixture, list_call, logging, retrieve_call,
+    fixture, list_call, logging, retrieve_call, upload_call,
 };
 
 #[tokio::test]
@@ -93,6 +93,44 @@ async fn async_prepare_error_uses_the_resolved_provider() {
     };
     assert_eq!(context.provider.as_deref(), Some("bogus"));
     assert_eq!(context.model.as_deref(), Some(""));
+}
+
+#[tokio::test]
+async fn error_async_upload_timeout_maps_to_the_timeout_class() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Timeout { connect: false };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .acontainer_file_call(
+            "aupload_container_file",
+            &upload_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .await
+        .expect_err("the provider times out");
+    let ErrorClass::Timeout(details) = &failure.class else {
+        panic!("a transport timeout on an async POST maps to the timeout class");
+    };
+    assert_eq!(details.original_status.0, 408);
+    assert_eq!(details.context.provider.as_deref(), Some("openai"));
+}
+
+#[tokio::test]
+async fn error_async_delete_timeout_stays_a_connection_error() {
+    let mut fixture = fixture();
+    fixture.handler.reply = StubReply::Timeout { connect: true };
+    let endpoints = fixture.endpoints();
+    let failure = endpoints
+        .acontainer_file_call(
+            "adelete_container_file",
+            &retrieve_call(),
+            &logging(),
+            TIMEOUT_SECONDS,
+        )
+        .await
+        .expect_err("the provider times out");
+    assert!(matches!(failure.class, ErrorClass::ApiConnection(_)));
 }
 
 #[tokio::test]
