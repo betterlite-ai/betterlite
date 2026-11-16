@@ -1,27 +1,15 @@
 task: B3103
 deviations:
-  - what: >-
-      The module does not call a language model itself. It takes a model client and a data source from its caller
-      through UsageChatParts, and the caller owns the route, auth and keep-alive pings.
-    why: >-
-      B3103 covers ai_usage_chat.py only, and litellm.acompletion belongs to the router tasks, so the module gets
-      them through traits.
+  - what: The module does not call a language model itself. It takes a model client and a data source from its caller through UsageChatParts, and the caller owns the route, auth and keep-alive pings.
+    why: B3103 covers ai_usage_chat.py only, and litellm.acompletion belongs to the router tasks, so the module gets them through traits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L581-L586
-  - what: >-
-      The assistant message that carries the tool calls is sent back to the model with role, content and tool_calls
-      only.
-    why: >-
-      LiteLLM sends choice.message.model_dump() with its null extras (function_call, audio, provider_specific_fields);
-      they carry no meaning for the follow-up call.
+  - what: The assistant message that carries the tool calls is sent back to the model with role, content and tool_calls only.
+    why: LiteLLM sends choice.message.model_dump() with its null extras (function_call, audio, provider_specific_fields); they carry no meaning for the follow-up call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L595
-  - what: >-
-      Tool-argument text that is not a JSON object of string values ends the stream with the generic error event.
-    why: >-
-      LiteLLM declares the arguments as a string map and a wrong shape is outside docs/compatibility.md; the result
-      is the same error event LiteLLM sends for unparseable JSON.
+  - what: Tool-argument text that is not a JSON object of string values ends the stream with the generic error event.
+    why: LiteLLM declares the arguments as a string map and a wrong shape is outside docs/compatibility.md; the result is the same error event LiteLLM sends for unparseable JSON.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L514
-  - what: >-
-      Summaries read the typed paginated response, with no JSON dump in between.
+  - what: Summaries read the typed paginated response, with no JSON dump in between.
     why: Same numbers and text, one less conversion; the oracle cases feed the dump shape and compare the text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L371-L425
 kept_bugs: []

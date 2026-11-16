@@ -14,40 +14,7 @@ TOOL_NAMES: Final[dict[str, str]] = {
 }
 
 
-class MetricsInput(TypedDict, total=False):
-    spend: float
-    api_requests: int
-    total_tokens: int
-
-
-class EntryInput(TypedDict, total=False):
-    metrics: MetricsInput
-    metadata: dict[str, str]
-
-
-class BreakdownInput(TypedDict, total=False):
-    models: dict[str, EntryInput]
-    providers: dict[str, EntryInput]
-    entities: dict[str, EntryInput]
-
-
-class DayInput(TypedDict, total=False):
-    date: str
-    metrics: MetricsInput
-    breakdown: BreakdownInput
-
-
-class MetadataInput(TypedDict, total=False):
-    total_spend: float
-    total_api_requests: int
-    total_successful_requests: int
-    total_failed_requests: int
-    total_tokens: int
-
-
-class PageInput(TypedDict):
-    results: list[DayInput]
-    metadata: MetadataInput
+PageInput: TypeAlias = dict[str, JsonValue]
 
 
 class ToolsCall(TypedDict):
@@ -133,7 +100,7 @@ def run(input_value: Input) -> JsonValue:
     if input_value["function"] == "fetch_args":
         return {"kwargs": fetch_kwargs_value(input_value)}
     if input_value["function"] == "sse":
-        return {"frame": sse_frame_value(input_value["event"])}
+        return {"frame": ai_usage_chat._sse(input_value["event"])}  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L457
     return {"summary": page_summary(input_value)}
 
 
@@ -175,7 +142,3 @@ def page_summary(call: SummaryUsageCall | SummaryEntityCall) -> str:
     return ai_usage_chat._summarise_entity_data(  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L403-L425
         data, label
     )
-
-
-def sse_frame_value(event: ToolCallEvent | ChunkEvent) -> str:
-    return ai_usage_chat._sse(event)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L456-L457

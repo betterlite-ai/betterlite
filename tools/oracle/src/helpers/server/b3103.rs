@@ -1,9 +1,7 @@
 use betterlite_analytics::daily_metrics::DailySpendPage;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::usage_ai_chat::fetch_args::{
-    FetchArguments, parse_csv_ids, resolve_fetch_kwargs,
-};
+use betterlite_server::usage_ai_chat::fetch_args::{parse_csv_ids, resolve_fetch_kwargs};
 use betterlite_server::usage_ai_chat::prompt::build_system_prompt;
 use betterlite_server::usage_ai_chat::sse::{SseEvent, sse_frame};
 use betterlite_server::usage_ai_chat::summary::{
@@ -13,7 +11,7 @@ use betterlite_server::usage_ai_chat::tools::{UsageTool, tools_for_role};
 use chrono::NaiveDate;
 use indexmap::IndexMap;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 pub(crate) struct Op;
 
@@ -31,7 +29,7 @@ pub(crate) enum Input {
         raw: Option<String>,
     },
     FetchArgs {
-        tool: ToolInput,
+        tool: UsageTool,
         arguments: IndexMap<String, String>,
         user_id: Option<String>,
         is_admin: bool,
@@ -41,45 +39,11 @@ pub(crate) enum Input {
     },
     SummaryEntity {
         page: DailySpendPage,
-        label: LabelInput,
+        label: EntityLabel,
     },
     Sse {
         event: SseEvent,
     },
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ToolInput {
-    Usage,
-    Team,
-    Tag,
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum LabelInput {
-    Team,
-    Tag,
-}
-
-impl ToolInput {
-    const fn tool(self) -> UsageTool {
-        match self {
-            Self::Usage => UsageTool::Usage,
-            Self::Team => UsageTool::Team,
-            Self::Tag => UsageTool::Tag,
-        }
-    }
-}
-
-impl LabelInput {
-    const fn label(self) -> EntityLabel {
-        match self {
-            Self::Team => EntityLabel::Team,
-            Self::Tag => EntityLabel::Tag,
-        }
-    }
 }
 
 impl Helper for Op {
@@ -97,12 +61,16 @@ impl Helper for Op {
                 arguments,
                 user_id,
                 is_admin,
-            } => fetch_kwargs(*tool, arguments, user_id.as_deref(), *is_admin),
+            } => {
+                let fetch = resolve_fetch_kwargs(*tool, arguments, user_id.as_deref(), *is_admin)
+                    .or_value_error()?;
+                Ok(json!({ "kwargs": fetch }))
+            }
             Input::SummaryUsage { page } => Ok(json!({
                 "summary": summarise_usage_data(page).or_value_error()?
             })),
             Input::SummaryEntity { page, label } => Ok(json!({
-                "summary": summarise_entity_data(page, label.label()).or_value_error()?
+                "summary": summarise_entity_data(page, *label).or_value_error()?
             })),
             Input::Sse { event } => Ok(json!({ "frame": sse_frame(event) })),
         }
@@ -111,57 +79,6 @@ impl Helper for Op {
 
 fn day(text: &str) -> Result<NaiveDate, Box<HelperError>> {
     NaiveDate::parse_from_str(text, "%Y-%m-%d").or_value_error()
-}
-
-fn fetch_kwargs(
-    tool: ToolInput,
-    arguments: &IndexMap<String, String>,
-    user_id: Option<&str>,
-    is_admin: bool,
-) -> HelperResult {
-    let fetch = resolve_fetch_kwargs(tool.tool(), arguments, user_id, is_admin).or_value_error()?;
-    Ok(json!({ "kwargs": kwargs(&fetch) }))
-}
-
-fn kwargs(fetch: &FetchArguments) -> Value {
-    match fetch {
-        FetchArguments::Global {
-            start_date,
-            end_date,
-            user_id,
-        } => match user_id {
-            Some(id) => json!({
-                "start_date": start_date,
-                "end_date": end_date,
-                "user_id": id,
-            }),
-            None => json!({ "start_date": start_date, "end_date": end_date }),
-        },
-        FetchArguments::Team {
-            start_date,
-            end_date,
-            team_ids,
-        } => match team_ids {
-            Some(ids) => json!({
-                "start_date": start_date,
-                "end_date": end_date,
-                "team_ids": ids,
-            }),
-            None => json!({ "start_date": start_date, "end_date": end_date }),
-        },
-        FetchArguments::Tag {
-            start_date,
-            end_date,
-            tags,
-        } => match tags {
-            Some(names) => json!({
-                "start_date": start_date,
-                "end_date": end_date,
-                "tags": names,
-            }),
-            None => json!({ "start_date": start_date, "end_date": end_date }),
-        },
-    }
 }
 
 mod tests;
