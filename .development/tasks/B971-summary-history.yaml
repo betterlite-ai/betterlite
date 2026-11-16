@@ -115,7 +115,7 @@ checks:
     run: test -f tools/oracle/helpers/summary_history.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: the shared helper parser does not recognize summary_history
-    run: grep -qE '^[[:space:]]+summary_history:' tools/oracle/fuzz/corpus/helper_case/summary_history-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: grep -qE '^[[:space:]]+summary_history:' tools/oracle/fuzz/corpus/helper_case/summary_history-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-cases
     why: there are no newly authored history scenarios
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/summary-history)"
