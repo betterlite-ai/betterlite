@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, TimeDelta};
+use chrono::{DateTime, TimeDelta, Utc};
 
 use crate::budget_permission_rows::JsonData;
 
@@ -275,6 +275,32 @@ fn oauth_store_keeps_the_scopes_when_given() {
     assert_eq!(
         stored_payload(&table).scopes,
         Some(vec!["read".to_owned(), "write".to_owned()])
+    );
+}
+
+#[test]
+fn oauth_payload_writes_python_isoformat_timestamps() {
+    let mut request = oauth_request();
+    request.expires_in = Some(3600);
+    let moment = DateTime::parse_from_rfc3339("2024-01-02T03:04:05.123456+00:00")
+        .expect("a fractional timestamp")
+        .with_timezone(&Utc);
+    let payload = super::super::oauth_payload(&request, moment).expect("the payload builds");
+    assert_eq!(
+        payload.connected_at.as_deref(),
+        Some("2024-01-02T03:04:05.123456+00:00")
+    );
+    assert_eq!(
+        payload.expires_at.as_deref(),
+        Some("2024-01-02T04:04:05.123456+00:00")
+    );
+    let whole = DateTime::parse_from_rfc3339("2024-01-02T03:04:05+00:00")
+        .expect("a whole-second timestamp")
+        .with_timezone(&Utc);
+    let payload = super::super::oauth_payload(&request, whole).expect("the payload builds");
+    assert_eq!(
+        payload.connected_at.as_deref(),
+        Some("2024-01-02T03:04:05+00:00")
     );
 }
 

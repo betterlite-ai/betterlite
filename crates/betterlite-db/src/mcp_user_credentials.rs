@@ -129,10 +129,14 @@ pub fn is_oauth_credential_expired(
     let Some(expires) = parse_iso_moment(expires_at) else {
         return false;
     };
+    expires_within_buffer(Utc::now(), expires, buffer_seconds)
+}
+
+// now + buffer > expires, the comparison LiteLLM makes; a token expiring exactly at the deadline is still live
+fn expires_within_buffer(now: DateTime<Utc>, expires: DateTime<Utc>, buffer_seconds: i64) -> bool {
     let Some(buffer) = TimeDelta::try_seconds(buffer_seconds) else {
         return false;
     };
-    let now = Utc::now();
     now.checked_add_signed(buffer)
         .is_some_and(|deadline| deadline > expires)
 }

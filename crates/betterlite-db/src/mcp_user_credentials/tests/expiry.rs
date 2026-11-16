@@ -55,6 +55,17 @@ fn expiry_buffer_leaves_a_token_expiring_after_the_buffer_live() {
 }
 
 #[test]
+fn expiry_buffer_leaves_a_token_expiring_exactly_at_the_deadline_live() {
+    let moment = DateTime::parse_from_rfc3339("2024-01-02T03:04:05+00:00")
+        .expect("a fixed moment")
+        .with_timezone(&Utc);
+    let expires = moment + TimeDelta::try_seconds(60).expect("the lifetime fits");
+    assert!(!super::super::expires_within_buffer(moment, expires, 60));
+    let just_inside = expires - TimeDelta::try_seconds(1).expect("the lifetime fits");
+    assert!(super::super::expires_within_buffer(moment, just_inside, 60));
+}
+
+#[test]
 fn expiry_buffer_can_be_negative_and_keeps_a_past_token_live() {
     assert!(!is_oauth_credential_expired(
         &payload(PAST),
