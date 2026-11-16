@@ -1,4 +1,5 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_models::call_helpers::headers::AdditionalHeaders;
+use betterlite_models::decisions::Json;
 
 use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::reply::FoundryEmbeddingResponse;
@@ -23,22 +24,28 @@ pub fn map_azure_model_group(model: &str) -> &str {
 pub fn transform_response(
     response: &mut FoundryEmbeddingResponse,
 ) -> Result<(), FoundryEmbeddingError> {
-    let headers = response.additional_headers.clone();
-    let tokens = headers
-        .get(NUM_TOKENS_HEADER)
-        .and_then(Json::as_str)
+    let tokens = header_text(&response.additional_headers, NUM_TOKENS_HEADER)
         .filter(|text| !text.is_empty());
     if let Some(tokens) = tokens {
         response.usage.prompt_tokens = token_count(tokens)?;
     }
-    let group = headers
-        .get(MODEL_GROUP_HEADER)
-        .and_then(Json::as_str)
+    let group = header_text(&response.additional_headers, MODEL_GROUP_HEADER)
         .filter(|text| !text.is_empty());
     if let Some(group) = group {
         response.model = Some(map_azure_model_group(group).to_owned());
     }
     Ok(())
+}
+
+// LiteLLM reads the header as a string; every other value is not a header text
+fn header_text<'headers>(
+    headers: &'headers AdditionalHeaders,
+    name: &str,
+) -> Option<&'headers str> {
+    match headers.get(name) {
+        Some(Json::Text(text)) => Some(text.as_str()),
+        _ => None,
+    }
 }
 
 // Python's int() trims the string; anything else that is not a token count is a conversion failure

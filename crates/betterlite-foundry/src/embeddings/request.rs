@@ -1,6 +1,5 @@
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::media::base64_string::is_base64_encoded;
 use indexmap::IndexMap;
 use serde::Serialize;
 
@@ -60,20 +59,4 @@ pub fn transform_request<'input>(
         text_input,
         image_indices,
     }
-}
-
-// LiteLLM classifies an input as an image only through its data: URI check, re-encoding the payload
-#[must_use]
-pub fn is_base64_encoded(text: &str) -> bool {
-    let Some(rest) = text.strip_prefix("data:") else {
-        return false;
-    };
-    let Some((_header, remainder)) = rest.split_once(',') else {
-        return false;
-    };
-    let payload = remainder.split(',').next().unwrap_or_default();
-    let Ok(decoded) = STANDARD.decode(payload) else {
-        return false;
-    };
-    STANDARD.encode(decoded) == payload
 }

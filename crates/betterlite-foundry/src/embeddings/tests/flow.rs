@@ -6,8 +6,8 @@ use crate::embeddings::call::{EmbeddingMode, SuppliedClient};
 use crate::embeddings::error::FoundryEmbeddingError;
 
 use super::support::{
-    Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, ImageClient, MODEL, Seen, TEXT_EMPTY, TEXT_ONE, Text,
-    key, object, request, run, strings,
+    Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, ImageClient, MODEL, Seen, TEXT_EMPTY, TEXT_ONE,
+    Text, key, object, request, run, strings,
 };
 
 pub(super) fn inline_image_embedding() {
@@ -44,6 +44,10 @@ fn sync_reuses_supplied() {
     assert_eq!(
         sent[0].headers.get("authorization").unwrap(),
         "Bearer case-key"
+    );
+    assert_eq!(
+        sent[0].headers.get("content-type").unwrap(),
+        "application/json"
     );
     let body: Object = serde_json::from_slice(&sent[0].body).unwrap();
     assert_eq!(

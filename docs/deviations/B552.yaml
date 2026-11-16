@@ -15,7 +15,7 @@ deviations:
   - what: 'A reply with a present null object field is a typed FieldType error naming the field; LiteLLM assigns the null and returns a response whose object is null.'
     why: 'docs/compatibility.md makes a value of the wrong type an error that names the field, so the string field does not silently become null.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L767
-  - what: "Reply data entries are parsed into B004's embedding record, so entry fields that record does not declare are dropped; LiteLLM copies the raw reply dictionaries through."
+  - what: "Reply data entries are parsed into B004's embedding record, so entry fields that record does not declare are dropped and an entry missing object, embedding or index is a typed Json error; LiteLLM copies the raw reply dictionaries through, so an entry without object still becomes an embedding."
     why: "The task binds the response projection to B004's embedding conversion, and its record is the typed entry betterlite carries."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
   - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'

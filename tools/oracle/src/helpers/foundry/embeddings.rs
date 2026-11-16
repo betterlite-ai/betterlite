@@ -15,7 +15,9 @@ use betterlite_foundry::embeddings::reply::{
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use http::header::{AUTHORIZATION, HeaderMap, HeaderName, HeaderValue};
+use http::header::{
+    AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue,
+};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
@@ -67,6 +69,12 @@ impl Reply {
                 headers.insert(name, value);
             }
         }
+        // the Python fixture answers through httpx, which sets content-length on every reply
+        if !headers.contains_key(CONTENT_LENGTH)
+            && let Ok(value) = HeaderValue::from_str(&self.body.len().to_string())
+        {
+            headers.insert(CONTENT_LENGTH, value);
+        }
         ImageReply {
             status: self.status,
             headers,
@@ -102,6 +110,7 @@ impl ImageTransport for Recorder {
                 "kind": "image",
                 "url": request.url,
                 "authorization": authorization,
+                "content_type": request.headers.get(CONTENT_TYPE).and_then(|value| value.to_str().ok()),
                 "body": body,
             }));
         ready(Ok(self.reply.image_reply()))
@@ -218,6 +227,7 @@ fn response_value(response: &FoundryEmbeddingResponse) -> Value {
             "completion_tokens": response.usage.completion_tokens,
             "total_tokens": response.usage.total_tokens,
         },
+        "additional_headers": &response.additional_headers,
     })
 }
 

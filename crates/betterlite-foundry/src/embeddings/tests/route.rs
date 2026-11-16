@@ -5,8 +5,8 @@ use crate::embeddings::error::FoundryEmbeddingError;
 use crate::embeddings::route::models_route_base;
 
 use super::support::{
-    Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, MODEL, TEXT_EMPTY, TEXT_ONE, Text, key, request, run,
-    strings,
+    Answer, BASE, Factory, IMAGE_ONE, IMAGE_URI, MODEL, TEXT_EMPTY, TEXT_ONE, Text, key, request,
+    run, strings,
 };
 
 pub(super) fn foundry_models_embeddings_route() {
@@ -21,7 +21,10 @@ pub(super) fn foundry_models_embeddings_route() {
 
 fn route_bases() {
     assert_eq!(models_route_base(None), None);
-    assert_eq!(models_route_base(Some(BASE)), Some(format!("{BASE}/models")));
+    assert_eq!(
+        models_route_base(Some(BASE)),
+        Some(format!("{BASE}/models"))
+    );
     assert_eq!(
         models_route_base(Some(&format!("{BASE}/"))),
         Some(format!("{BASE}/models"))
@@ -109,7 +112,10 @@ fn sync_guards() {
     call.api_key = Some(&secret);
     call.api_base = None;
     let missing_base = run(&call, None, &factory, &text).unwrap_err();
-    assert!(matches!(missing_base, FoundryEmbeddingError::ApiBaseMissing));
+    assert!(matches!(
+        missing_base,
+        FoundryEmbeddingError::ApiBaseMissing
+    ));
     assert_eq!(
         missing_base.to_string(),
         "api_base is None. Please set AZURE_AI_API_BASE or dynamically via `api_base` param, to make the request."
@@ -156,6 +162,10 @@ fn async_without_guards() {
     assert_eq!(
         requests[0].headers.get("authorization").unwrap(),
         "Bearer async-key"
+    );
+    assert_eq!(
+        requests[0].headers.get("content-type").unwrap(),
+        "application/json"
     );
     assert_eq!(factory.async_timeouts(), vec![Duration::from_secs(5)]);
     assert!(factory.sync_timeouts().is_empty());

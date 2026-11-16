@@ -2,13 +2,11 @@ use std::future::Future;
 use std::time::Duration;
 
 use betterlite_azure::image_transport::{ImageRequest, ImageTransport};
-use betterlite_models::call_helpers::headers::{
-    AdditionalHeaders, HeaderSource, process_response_headers,
-};
+use betterlite_models::call_helpers::headers::{AdditionalHeaders, OPENAI_RESPONSE_HEADERS};
+use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingRecord;
 use http::Method;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
-use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::embeddings::cohere::transform_response;
@@ -219,14 +217,25 @@ fn reply_data(
         .ok_or(missing)
 }
 
-// LiteLLM projects the reply headers onto the response so the Cohere transform can read them
+// LiteLLM's get_response_headers repeats the limit and remaining names bare, never the reset pair
 #[must_use]
 pub fn projected_headers(headers: &HeaderMap) -> AdditionalHeaders {
-    let mut pairs = IndexMap::new();
+    let mut pairs = AdditionalHeaders::new();
     for (name, value) in headers {
-        if let Ok(text) = value.to_str() {
-            pairs.insert(name.as_str().to_owned(), text.to_owned());
+        let Ok(text) = value.to_str() else {
+            continue;
+        };
+        let name = name.as_str();
+        let text = Json::Text(text.to_owned());
+        if OPENAI_RESPONSE_HEADERS.contains(&name) && !name.contains("reset") {
+            pairs.insert(name.to_owned(), text.clone());
         }
+        let key = if name.contains("llm_provider") {
+            name.to_owned()
+        } else {
+            format!("llm_provider-{name}")
+        };
+        pairs.insert(key, text);
     }
-    process_response_headers(HeaderSource::Upstream(&pairs))
+    pairs
 }

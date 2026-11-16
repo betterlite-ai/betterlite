@@ -7,7 +7,6 @@ publish.workspace = true
 
 [dependencies]
 async-trait = "0.1.92"
-base64 = "0.23.1"
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-context = { path = "../betterlite-context" }

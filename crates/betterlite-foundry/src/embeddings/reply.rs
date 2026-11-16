@@ -58,18 +58,6 @@ struct RawUsage {
     total_tokens: u32,
 }
 
-impl RawUsage {
-    fn usage(self) -> EmbeddingUsage {
-        EmbeddingUsage {
-            prompt_tokens: self.prompt_tokens,
-            completion_tokens: self.completion_tokens,
-            completion_tokens_details: None,
-            prompt_tokens_details: None,
-            total_tokens: self.total_tokens,
-        }
-    }
-}
-
 impl Default for FoundryEmbeddingResponse {
     fn default() -> Self {
         Self {
@@ -119,7 +107,13 @@ pub fn decode_foundry_embedding(body: &[u8]) -> Result<EmbeddingReply, FoundryEm
         object: raw.object.flatten(),
         model: raw.model,
         data: raw.data,
-        usage: raw.usage.flatten().map(RawUsage::usage),
+        usage: raw.usage.flatten().map(|usage| EmbeddingUsage {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            completion_tokens_details: None,
+            prompt_tokens_details: None,
+            total_tokens: usage.total_tokens,
+        }),
         additional_headers: AdditionalHeaders::default(),
     })
 }

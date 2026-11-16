@@ -160,6 +160,7 @@ class Transport(httpx.MockTransport):
                 "kind": "image",
                 "url": str(request.url),
                 "authorization": request.headers.get("authorization"),
+                "content_type": request.headers.get("content-type"),
                 "body": body,
             }
         else:
@@ -328,6 +329,7 @@ def failure_outcome(state: FlowState, kind: str, status: int | None) -> dict[str
 
 def answer_outcome(state: FlowState, response: EmbeddingResponse) -> dict[str, JsonValue]:
     view = REPLY.validate_json(response.model_dump_json())
+    hidden: dict[str, JsonValue] = response._hidden_params  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType, reportUnknownVariableType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L582
     usage: dict[str, JsonValue] = {
         "prompt_tokens": view["usage"]["prompt_tokens"],
         "completion_tokens": view["usage"]["completion_tokens"],
@@ -338,6 +340,7 @@ def answer_outcome(state: FlowState, response: EmbeddingResponse) -> dict[str, J
         "model": view["model"],
         "data": view["data"],
         "usage": usage,
+        "additional_headers": hidden["additional_headers"],
     }
     return outcome(state, answer, None)
 
