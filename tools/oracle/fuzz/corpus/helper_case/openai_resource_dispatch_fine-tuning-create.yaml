@@ -1,0 +1,10 @@
+kind: helper
+name: openai-resource-dispatch-fine-tuning-create-seed
+call:
+  openai_resource_dispatch:
+    case: fine_tuning_create
+    status: 200
+    create: {model: gpt-4o-mini-2024-07-18, training_file: file-1}
+    reply: {id: ftjob-1, object: fine_tuning.job, created_at: 1700000000, model: gpt-4o-mini-2024-07-18, organization_id: org-1, result_files: [], status: queued, training_file: file-1, hyperparameters: {}}
+env: {}
+compare: {ignore: []}

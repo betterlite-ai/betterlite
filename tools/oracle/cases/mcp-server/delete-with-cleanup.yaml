@@ -1,0 +1,17 @@
+kind: helper
+name: mcp-server-delete-with-cleanup
+call:
+  b4712:
+    function: delete
+    salt_key: b4712-salt
+    touched_by: admin
+    payload: {}
+    rows:
+      - {server_id: srv-del, server_name: Delete Me, transport: sse}
+      - {server_id: srv-keep, server_name: Keep Me, transport: sse}
+    server_id: srv-del
+    ttl_seconds: 0
+    users: [u1, u2]
+env:
+  LITELLM_SALT_KEY: b4712-salt
+compare: {ignore: []}

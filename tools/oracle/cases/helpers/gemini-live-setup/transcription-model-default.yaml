@@ -1,0 +1,24 @@
+kind: helper
+name: transcription-model-default
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-3.5-transcribe-live
+        session: {}
+      - op: session_update
+        model: gemini-3.5-transcribe-live
+        session:
+          modalities: [audio]
+      - op: session_update
+        model: vertex_ai/gemini-3.5-transcribe-live
+        session:
+          modalities: [audio, text]
+      - op: session_update
+        model: x/gemini-3.5-transcribe-live
+        session: {}
+      - op: automatic
+        model: gemini-3.5-transcribe-live
+        defer_setup: false
+env: {}
+compare: {ignore: []}
