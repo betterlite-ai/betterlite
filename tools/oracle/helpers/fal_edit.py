@@ -1,9 +1,9 @@
-import datetime as dt
 import io
 import os
 import tempfile
+from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Literal, NotRequired, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -13,23 +13,35 @@ from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.custom_httpx.llm_http_handler import BaseLLMHTTPHandler
 from litellm.llms.fal_ai.image_edit import get_fal_ai_image_edit_config
 from litellm.llms.fal_ai.image_edit.transformation import to_data_url
-from litellm.types.images.main import ImageEditOptionalRequestParams
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 from typing_extensions import override
 
-JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 PARAMS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 GENERIC_MODEL = "openai/gpt-image-2/edit"
-TUPLE_NAME = "fal-edit-tuple-fixture.bin"
-PROVIDER = "fal_ai"
-ORACLE_API_KEY = "fal-edit-oracle"
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 Prepared: TypeAlias = str | bytes | Path | io.BytesIO | tuple[str, bytes]
 Options: TypeAlias = dict[str, JsonValue | list[Prepared | None]]
-EditParams: TypeAlias = ImageEditOptionalRequestParams
 JsonObject: TypeAlias = dict[str, JsonValue]
+
+
+class EditParams(TypedDict, total=False):
+    background: Literal["transparent", "opaque", "auto"] | None
+    input_fidelity: Literal["high", "low"] | None
+    mask: str | None
+    n: int | None
+    quality: Literal["high", "medium", "low", "standard", "auto"] | None
+    response_format: Literal["url", "b64_json"] | None
+    size: str | None
+    user: str | None
+    imageConfig: dict[str, JsonValue] | None
+
+
+class ErrorRecord(BaseModel):
+    status_code: int
 
 
 class EditConfig(Protocol):
@@ -46,6 +58,23 @@ class EditConfig(Protocol):
     def transform_image_edit_response(
         self, model: str, raw_response: httpx.Response, logging_obj: Logging
     ) -> ImageResponse: ...
+
+
+class ConfigSelector(Protocol):
+    def __call__(self, model: str) -> EditConfig: ...
+
+
+class EditHandler(Protocol):
+    @property
+    def image_edit_handler(self) -> Callable[
+        [str, list[Prepared | None], str | None, BaseImageEditConfig, Options, str,
+         GenericLiteLLMParams, Logging, float, None, None, HTTPHandler],
+        ImageResponse | Awaitable[ImageResponse],
+    ]: ...
+
+
+SELECT_CONFIG: ConfigSelector = get_fal_ai_image_edit_config
+HANDLER: EditHandler = BaseLLMHTTPHandler()
 
 
 class ContentInput(TypedDict):
@@ -77,7 +106,7 @@ class ValueInput(TypedDict):
 
 class PreparedImage(TypedDict):
     image: Prepared | None
-    position: int | None
+    reader: io.BytesIO | None
 
 
 Source: TypeAlias = ContentInput | PathInput | ReaderInput | ValueInput
@@ -144,58 +173,56 @@ class ProbeLogging(Logging):
         del args, params
 
 
-def fixture_path(name: str, content: list[int]) -> Path:
-    path = Path(tempfile.gettempdir()) / name
-    path.write_bytes(bytes(content))
-    return path
-
-
-def source_outcome(source: Source) -> JsonValue:
-    if source["kind"] == "reader":
-        reader = io.BytesIO(bytes(source["content"]))
-        reader.seek(source["position"])
-        try:
-            url = to_data_url(reader)
-        except ValueError as error:
-            return {"error": {"status": None, "message": str(error)}}
-        return {"data_url": url, "position": reader.tell()}
-    try:
-        if source["kind"] == "tuple":
-            url = to_data_url((TUPLE_NAME, bytes(source["content"])))
-        elif source["kind"] == "value":
-            url = to_data_url(source["value"])
-        elif source["kind"] == "path":
-            url = to_data_url(fixture_path(source["name"], source["content"]))
-        else:
-            url = to_data_url(bytes(source["content"]))
-    except ValueError as error:
-        return {"error": {"status": None, "message": str(error)}}
-    return {"data_url": url, "position": None}
-
-
 def prepared_image(entry: PrepareImage | None) -> PreparedImage:
     if entry is None:
-        return {"image": None, "position": None}
+        return {"image": None, "reader": None}
     if entry["kind"] == "text":
-        return {"image": entry["text"], "position": None}
+        return {"image": entry["text"], "reader": None}
     if entry["kind"] == "reader":
         reader = io.BytesIO(bytes(entry["content"]))
         reader.seek(entry["position"])
-        return {"image": reader, "position": entry["position"]}
+        return {"image": reader, "reader": reader}
     if entry["kind"] == "path":
-        return {"image": fixture_path(entry["name"], entry["content"]), "position": None}
+        path = Path(tempfile.gettempdir()) / entry["name"]
+        path.write_bytes(bytes(entry["content"]))
+        return {"image": path, "reader": None}
     if entry["kind"] == "tuple":
-        return {"image": (TUPLE_NAME, bytes(entry["content"])), "position": None}
-    return {"image": bytes(entry["content"]), "position": None}
+        return {"image": ("fal-edit-tuple-fixture.bin", bytes(entry["content"])), "reader": None}
+    return {"image": bytes(entry["content"]), "reader": None}
+
+
+def reader_positions(items: list[PreparedImage]) -> list[JsonValue]:
+    positions: list[JsonValue] = []
+    for item in items:
+        reader = item["reader"]
+        positions.append(None if reader is None else reader.tell())
+    return positions
+
+
+def source_outcome(source: Source) -> JsonValue:
+    image: Prepared | JsonValue
+    reader: io.BytesIO | None = None
+    if source["kind"] == "value":
+        image = source["value"]
+    else:
+        prepared = prepared_image(source)
+        image = prepared["image"]
+        reader = prepared["reader"]
+    try:
+        url = to_data_url(image)
+    except ValueError as error:
+        return {"error": {"status": None, "message": str(error)}}
+    return {"data_url": url, "position": None if reader is None else reader.tell()}
 
 
 def edit_body(call: PrepareCall, images: list[Prepared | None], options: Options) -> JsonObject:
     recorder = Recorder()
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder)))
-    config: BaseImageEditConfig = get_fal_ai_image_edit_config(call["model"])
-    BaseLLMHTTPHandler().image_edit_handler(
-        call["model"], images, call.get("prompt"), config, options, PROVIDER,
-        GenericLiteLLMParams(api_key=ORACLE_API_KEY), ProbeLogging(), 30.0, None, None, client,
+    config = get_fal_ai_image_edit_config(call["model"])
+    HANDLER.image_edit_handler(
+        call["model"], images, call.get("prompt"), config, options, "fal_ai",
+        GenericLiteLLMParams(api_key="fal-edit-oracle"), ProbeLogging(), 30.0, None, None,
+        client,
     )
     if recorder.body is None:
         raise ValueError("the edit handler sent no request")
@@ -214,23 +241,21 @@ def prepare_outcome(call: PrepareCall) -> JsonValue:
         body = edit_body(call, images, options)
     except ValueError as error:
         return {"error": {"status": None, "message": str(error)}}
-    return JSON.validate_python(
-        {
-            "body": body,
-            "positions": [item["position"] for item in prepared],
-            "mask_positions": [item["position"] for item in mask_prepared],
-        }
-    )
+    return {
+        "body": body,
+        "positions": reader_positions(prepared),
+        "mask_positions": reader_positions(mask_prepared),
+    }
 
 
 def map_outcome(call: MapCall) -> JsonValue:
-    config: EditConfig = get_fal_ai_image_edit_config(call["model"])
-    supported: list[str] = config.get_supported_openai_params(call["model"])
-    cases: list[JsonValue] = []
-    for options in call["options"]:
-        mapped = config.map_openai_params(options, call["model"], drop_params=False)
-        cases.append({"params": PARAMS.validate_python(mapped)})
-    return {"supported": [JSON.validate_python(name) for name in supported], "cases": cases}
+    config = SELECT_CONFIG(call["model"])
+    supported: list[JsonValue] = [*config.get_supported_openai_params(call["model"])]
+    cases: list[JsonValue] = [
+        {"params": config.map_openai_params(options, call["model"], drop_params=False)}
+        for options in call["options"]
+    ]
+    return {"supported": supported, "cases": cases}
 
 
 def url_outcome(call: UrlCall) -> JsonValue:
@@ -241,34 +266,26 @@ def url_outcome(call: UrlCall) -> JsonValue:
     urls: list[JsonValue] = []
     for api_base in call["api_bases"]:
         for model in call["models"]:
-            config: EditConfig = get_fal_ai_image_edit_config(model)
+            config = SELECT_CONFIG(model)
             url = config.get_complete_url(model=model, api_base=api_base, litellm_params={})
             urls.append({"model": model, "api_base": api_base, "url": url})
     return {"urls": urls}
-
-
-def logging_object() -> Logging:
-    return Logging(
-        model=GENERIC_MODEL, messages=None, stream=False, call_type="image_edit",
-        start_time=dt.datetime(2026, 1, 1, tzinfo=dt.UTC), litellm_call_id="b1526",
-        function_id="b1526",
-    )
 
 
 def reply_outcome(call: ReplyInput) -> JsonValue:
     response = httpx.Response(
         call["status"], headers=call.get("headers"), content=call["body"].encode()
     )
-    config: EditConfig = get_fal_ai_image_edit_config(GENERIC_MODEL)
     try:
-        reply = config.transform_image_edit_response(
-            model=GENERIC_MODEL, raw_response=response, logging_obj=logging_object()
+        reply = SELECT_CONFIG(GENERIC_MODEL).transform_image_edit_response(
+            model=GENERIC_MODEL, raw_response=response, logging_obj=ProbeLogging()
         )
-    except BaseLLMException as error:
-        return {"error": {"status": error.status_code}}
+    except PROVIDER_ERROR as error:
+        record = ErrorRecord.model_validate(error, from_attributes=True)
+        return {"error": {"status": record.status_code}}
     dumped = PARAMS.validate_json(reply.model_dump_json())
     dumped.pop("created", None)
-    return JSON.validate_python(dumped)
+    return dumped
 
 
 def run(input_value: Input) -> JsonValue:
