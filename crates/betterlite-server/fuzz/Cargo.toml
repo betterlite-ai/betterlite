@@ -220,3 +220,10 @@ path = "fuzz_targets/spend_totals_query.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "guardrail_write_body"
+path = "fuzz_targets/guardrail_write_body.rs"
+test = false
+doc = false
+bench = false
