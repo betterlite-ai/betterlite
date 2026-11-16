@@ -101,5 +101,4 @@ fn log_config_error(error: &ConfigError, location: &Path) {
     }
 }
 
-#[cfg(test)]
 mod tests;
