@@ -44,7 +44,6 @@ const BOOLEAN_FIELDS: [&str; 4] = [
 ];
 
 // The environment fills only what the stored settings leave out; a stored key present even with null keeps its value.
-// An empty variable counts as unset, and a Boolean field reads as a bool when its text is one the shared parser knows.
 #[must_use]
 pub fn overlay_environment(
     stored: &Map<String, Value>,
