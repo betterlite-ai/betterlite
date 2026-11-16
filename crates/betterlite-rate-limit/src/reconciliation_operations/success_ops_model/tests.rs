@@ -59,26 +59,26 @@ fn without_a_reservation_the_router_group_names_the_model_scopes() {
         success_increments(&routed_parts()),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{team:team-1}:tokens".to_owned(), 15.0, Some(60)),
-            ("{organization:org-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{team:team-1}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{organization:org-1}:tokens".to_owned(), 15.0_f64, Some(60)),
             (
                 "{model_per_key:key-1:alias-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_team:team-1:alias-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_organization:org-1:alias-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_project:proj-1:alias-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
         ]
@@ -95,26 +95,26 @@ fn a_reserved_model_wins_over_the_router_group() {
         success_increments(&parts),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{team:team-1}:tokens".to_owned(), 15.0, Some(60)),
-            ("{organization:org-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{team:team-1}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{organization:org-1}:tokens".to_owned(), 15.0_f64, Some(60)),
             (
                 "{model_per_key:key-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_team:team-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_organization:org-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_project:proj-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
         ]
@@ -140,8 +140,8 @@ fn without_a_model_group_there_are_no_model_scopes() {
         success_increments(&parts),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{team:team-1}:tokens".to_owned(), 15.0, Some(60)),
-            ("{organization:org-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{team:team-1}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{organization:org-1}:tokens".to_owned(), 15.0_f64, Some(60)),
         ]
     );
 }
@@ -149,42 +149,35 @@ fn without_a_model_group_there_are_no_model_scopes() {
 #[test]
 fn a_reserved_model_names_the_scopes_without_a_router_group() {
     let parts = SuccessParts {
-        response: SuccessResponseFixture::Modelled(ResponseObject::Usage(usage(10, 5))),
-        logging: model_scope_metadata(),
         slot: slot_from(reserved_parts("gpt-4", "reserved-group")),
-        combined_usage: None,
-        rate_limit_type: TokenRateLimitType::Total,
-        metadata: MetadataMap::new(),
-        request_user: None,
         model_group: None,
-        call_id: None,
         groups: BTreeMap::new(),
-        window_size: 60,
+        ..routed_parts()
     };
     assert_eq!(
         success_increments(&parts),
         vec![
             ("{api_key:key-1}:tokens".to_owned(), 15.0_f64, Some(60)),
-            ("{team:team-1}:tokens".to_owned(), 15.0, Some(60)),
-            ("{organization:org-1}:tokens".to_owned(), 15.0, Some(60)),
+            ("{team:team-1}:tokens".to_owned(), 15.0_f64, Some(60)),
+            ("{organization:org-1}:tokens".to_owned(), 15.0_f64, Some(60)),
             (
                 "{model_per_key:key-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_team:team-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_organization:org-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
             (
                 "{model_per_project:proj-1:reserved-group}:tokens".to_owned(),
-                15.0,
+                15.0_f64,
                 Some(60)
             ),
         ]

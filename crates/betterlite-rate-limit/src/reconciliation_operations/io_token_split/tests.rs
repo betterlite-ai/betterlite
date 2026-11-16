@@ -9,10 +9,10 @@ use crate::reconciliation_operations::tests::support::{
 use crate::request_stash::{RequestStashSlot, StashState};
 use crate::usage_resolution::ResponseObject;
 
-fn reserved_slot() -> RequestStashSlot {
+fn reserved_slot(input_scopes: &[(&str, &str)]) -> RequestStashSlot {
     slot_from(StashState {
         itpm_reserved_tokens: 40,
-        itpm_reserved_scopes: scopes(&[ITPM_SCOPE]),
+        itpm_reserved_scopes: scopes(input_scopes),
         otpm_reserved_tokens: 20,
         otpm_reserved_scopes: scopes(&[OTPM_SCOPE]),
         owner_litellm_call_id: None,
@@ -32,7 +32,7 @@ fn reserved_slot() -> RequestStashSlot {
 
 #[test]
 fn each_side_settles_its_own_token_count() {
-    let slot = reserved_slot();
+    let slot = reserved_slot(&[ITPM_SCOPE]);
     let response = ResponseObject::Usage(usage(100, 50));
     assert_eq!(
         reservation_tuples(&io_ops(&slot, &io_reconciliation(&response, None))),
@@ -59,24 +59,7 @@ fn each_side_settles_its_own_token_count() {
 
 #[test]
 fn every_input_scope_gets_the_same_input_delta() {
-    let slot = slot_from(StashState {
-        itpm_reserved_tokens: 40,
-        itpm_reserved_scopes: scopes(&[ITPM_SCOPE, ("model_per_key", "key-1:gpt-4")]),
-        otpm_reserved_tokens: 20,
-        otpm_reserved_scopes: scopes(&[OTPM_SCOPE]),
-        owner_litellm_call_id: None,
-        rate_limit_response: None,
-        parallel_slot: None,
-        reserved_tokens: 0,
-        reserved_model: None,
-        reserved_scopes: BTreeSet::new(),
-        itpm_reserved_windows: BTreeSet::new(),
-        otpm_reserved_windows: BTreeSet::new(),
-        batch_enqueued_reservation: None,
-        batch_tpd_refund_ops: Vec::new(),
-        reservation_released: false,
-        tpm_limited_tags: BTreeSet::new(),
-    });
+    let slot = reserved_slot(&[ITPM_SCOPE, ("model_per_key", "key-1:gpt-4")]);
     let response = ResponseObject::Usage(usage(100, 50));
     assert_eq!(
         reservation_tuples(&io_ops(&slot, &io_reconciliation(&response, None))),

@@ -288,15 +288,10 @@ pub(crate) fn logging_metadata() -> ScopeMetadata {
 
 pub(crate) fn model_scope_metadata() -> ScopeMetadata {
     ScopeMetadata {
-        user_api_key_hash: Some("key-1".to_owned()),
         user_api_key_team_id: Some("team-1".to_owned()),
         user_api_key_org_id: Some("org-1".to_owned()),
         user_api_key_project_id: Some("proj-1".to_owned()),
-        user_api_key_user_id: None,
-        user_api_key_end_user_id: None,
-        agent_id: None,
-        session_id: None,
-        trace_id: None,
+        ..logging_metadata()
     }
 }
 
@@ -307,12 +302,12 @@ pub(crate) fn success_increments(parts: &SuccessParts) -> Vec<(String, f64, Opti
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl io::Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
