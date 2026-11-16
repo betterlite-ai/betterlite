@@ -153,3 +153,6 @@ mod failure_calls;
 
 #[path = "container_file_upload/tests/async_calls.rs"]
 mod async_calls;
+
+#[path = "container_file_upload/tests/http_failure.rs"]
+mod http_failure;
