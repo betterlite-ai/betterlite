@@ -1,0 +1,13 @@
+kind: helper
+name: mcp-user-credentials-parse-oauth-valid
+call:
+  b4713:
+    function: get_oauth_credential
+    salt_key: b4713-salt
+    user_id: u1
+    server_id: s1
+    rows:
+      - {user_id: u1, server_id: s1, credential_b64: 'eyJ0eXBlIjogIm9hdXRoMiIsICJhY2Nlc3NfdG9rZW4iOiAidG9rLTEyMyIsICJyZWZyZXNoX3Rva2VuIjogInJlZi00NTYiLCAiY29ubmVjdGVkX2F0IjogIjIwMjQtMDEtMDJUMDM6MDQ6MDUrMDA6MDAiLCAiZXhwaXJlc19hdCI6ICIyMDMwLTAxLTAyVDAzOjA0OjA1KzAwOjAwIiwgInNjb3BlcyI6IFsicmVhZCIsICJ3cml0ZSJdfQ==', updated_at: "2024-01-02T03:04:05+00:00"}
+env:
+  LITELLM_SALT_KEY: b4713-salt
+compare: {ignore: []}
