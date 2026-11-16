@@ -67,29 +67,6 @@ pub fn propagate_usage_cost(
     );
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum CacheCounter {
-    Cached,
-    Write,
-    Creation,
-}
-
-#[must_use]
-pub fn cache_token_count(details: Option<&TokenDetails>, counters: &[CacheCounter]) -> i64 {
-    let Some(counted) = details else {
-        return 0;
-    };
-    counters
-        .iter()
-        .filter_map(|counter| match counter {
-            CacheCounter::Cached => counted.cached_tokens,
-            CacheCounter::Write => counted.cache_write_tokens,
-            CacheCounter::Creation => counted.cache_creation_tokens,
-        })
-        .find(|count| *count != 0)
-        .unwrap_or(0)
-}
-
 // PromptTokensDetailsWrapper resolves cache_write_tokens first and mirrors it into cache_creation_tokens.
 #[must_use]
 pub fn coerce_token_details(details: Option<&TokenDetails>) -> Option<TokenDetails> {
@@ -110,48 +87,6 @@ pub fn coerce_token_details(details: Option<&TokenDetails>) -> Option<TokenDetai
         extra: counted.extra.clone(),
     };
     Some(coerced)
-}
-
-pub fn backfill_cache_usage(usage: &mut Usage) {
-    let counted = coerce_token_details(usage.prompt_tokens_details.as_ref());
-    let cached = cache_token_count(counted.as_ref(), &[CacheCounter::Cached]);
-    let creation = cache_token_count(
-        counted.as_ref(),
-        &[CacheCounter::Write, CacheCounter::Creation],
-    );
-    let read_missing = usage
-        .extra
-        .get("cache_read_input_tokens")
-        .is_none_or(|value| matches!(value, JsonValue::Null));
-    let creation_missing = usage
-        .extra
-        .get("cache_creation_input_tokens")
-        .is_none_or(|value| matches!(value, JsonValue::Null));
-    if read_missing {
-        usage.extra.insert(
-            "cache_read_input_tokens".to_owned(),
-            JsonValue::Number(Number::from(cached)),
-        );
-    }
-    if creation_missing {
-        usage.extra.insert(
-            "cache_creation_input_tokens".to_owned(),
-            JsonValue::Number(Number::from(creation)),
-        );
-    }
-    if counted.is_some() {
-        usage.prompt_tokens_details = counted;
-    }
-    if usage.prompt_tokens_details.is_none() {
-        let defaults = TokenDetails {
-            cached_tokens: Some(0),
-            cache_write_tokens: None,
-            cache_creation_tokens: None,
-            cache_creation_token_details: None,
-            extra: JsonObject::new(),
-        };
-        usage.prompt_tokens_details = Some(defaults);
-    }
 }
 
 #[must_use]

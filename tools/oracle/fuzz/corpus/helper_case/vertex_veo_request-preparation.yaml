@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-veo-request-preparation
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-fast-generate-001, prompt: a seed prompt, api_base: 'https://mock', params: {image: 'gs://bucket/seed.png', seconds: '8', size: 1280x720}, extra_body: {sampleCount: 1}}
+    edits:
+      - prompt: a seed edit
+        api_base: 'https://mock/'
+        video_id: 'video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnZlcnRleF9haTttb2RlbF9pZDp2ZW8tMy4wLWdlbmVyYXRlLTAwMTt2aWRlb19pZDpwcm9qZWN0cy9wL2xvY2F0aW9ucy9sL3B1Ymxpc2hlcnMvZ29vZ2xlL21vZGVscy92ZW8tMy4wLWdlbmVyYXRlLTAwMS9vcGVyYXRpb25zL29wLTE='
+        extra_body: {negativePrompt: blurry}
+        prefetched: {done: true, response: {videos: [{bytesBase64Encoded: QUJD, mimeType: video/webm}]}}
+env: {}
+compare: {ignore: []}

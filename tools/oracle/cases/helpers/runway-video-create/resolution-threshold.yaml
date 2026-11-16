@@ -1,0 +1,52 @@
+kind: helper
+name: runway-video-create-resolution-threshold
+call:
+  runway_video_create:
+    operation: reply
+    params:
+      model: gen4_turbo
+      calls:
+        - provider: null
+          request_data: {ratio: '799:750'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '800:750'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1499:1000'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1500:1000'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1999:2000'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '2000:2000'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '0:0'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '0600:1000'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1280:720:2'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: ':720'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1280:'}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: 1280}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {}
+          body: '{"id":"t"}'
+        - provider: null
+          request_data: {ratio: '1200:800'}
+          body: '{"id":"t"}'
+env: {}
+compare: {ignore: []}

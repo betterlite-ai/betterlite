@@ -1,0 +1,67 @@
+kind: helper
+name: optional-native-selection
+call:
+  foundry_anthropic_count:
+    function: counter
+    cases:
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        request_timeout: 17.5
+        litellm_params: {api_key: params-key, api_base: https://params.services.ai.azure.com}
+        environment: {AZURE_AI_API_KEY: environment-key, AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        environment: {AZURE_AI_API_KEY: environment-key, AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        environment: {AZURE_AI_API_KEY: environment-key}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        environment: {AZURE_AD_TOKEN: fixture-token, AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        globals: {api_key: global-key}
+        litellm_params: {api_base: https://params.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        environment: {AZURE_AI_API_KEY: "", AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: null, api_base: https://params.services.ai.azure.com}
+        environment: {AZURE_AI_API_KEY: environment-key}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        provider: azure_ai
+        request_model: requested-model
+        litellm_params: {api_key: params-key, api_base: ""}
+        environment: {AZURE_AI_API_BASE: https://env.services.ai.azure.com}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+env: {}
+compare: {ignore: []}

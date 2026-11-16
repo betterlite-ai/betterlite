@@ -1,0 +1,34 @@
+kind: helper
+name: anthropic-http-stream-stream-post
+call:
+  anthropic_http_stream:
+    scenario: stream_post
+    api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
+    model: claude-3-5-sonnet
+    json_mode: true
+    headers:
+      content-type: application/json
+      x-api-key: sk-ant-secret
+      anthropic-version: "2023-06-01"
+    request_header_names: [content-type, x-api-key]
+    response_header_names: [x-request-id, content-type]
+    data: '{"model":"claude-3-5-sonnet","stream":true}'
+    request_data: {}
+    speed: fast
+    reverse_map:
+      t_sanitized: Original Name
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: null
+    upstream_headers:
+      content-type: application/json
+      x-request-id: req-1
+    upstream_lines:
+      - 'data: {"type":"ping"}'
+    upstream_body: null
+    failure_message: null
+env: {}
+compare: {ignore: []}

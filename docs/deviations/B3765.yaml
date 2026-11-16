@@ -1,0 +1,9 @@
+task: B3765
+deviations:
+  - what: A timeout that is negative, not a number or too large for a duration is refused when the guardrail starts. LiteLLM hands the value to httpx and fails on the first compression call.
+    why: The same input fails every call, so startup is where an operator can act on it, and a request never waits on a setting that cannot work.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L755-L761
+  - what: The caller scope is read from the serialized user_api_key_auth object under the logging object's litellm_params or its call details, so an object a client put in an earlier-scanned metadata bag is trusted when no proxy-set carrier exists. LiteLLM trusts only a live UserAPIKeyAuth instance, which a JSON request body cannot carry.
+    why: betterlite's request data is JSON end to end, so the object the proxy sets and one a client sends have the same shape. The proxy-written litellm_params carrier is scanned first, so authenticated traffic keeps its tenant boundary; traffic that reaches the hook without that carrier runs in a single trust domain, the case LiteLLM returns an empty scope for.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/compresr/compresr.py#L343-L370
+kept_bugs: []

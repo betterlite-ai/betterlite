@@ -1,0 +1,4 @@
+litellm_settings:
+  max_budget: 250.75
+general_settings:
+  store_prompts_in_spend_logs: false
