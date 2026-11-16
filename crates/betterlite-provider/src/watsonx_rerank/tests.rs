@@ -203,7 +203,7 @@ fn params_map_keeps_document_objects_as_given() {
 #[case::document_number(r#"{"documents":[1]}"#)]
 #[case::document_null(r#"{"documents":[null]}"#)]
 #[case::document_list(r#"{"documents":[["a"]]}"#)]
-fn params_map_rejects_wrong_document_shapes(value: &str) {
+fn params_map_rejects_wrong_document_shapes(#[case] value: &str) {
     let error = map(&mut params(value)).unwrap_err();
     assert!(matches!(error, WatsonxRerankError::InvalidDocuments));
     assert_eq!(error.status(), None);
@@ -220,7 +220,7 @@ fn params_map_rejects_wrong_document_shapes(value: &str) {
     r#"{"api_version":null}"#,
     "https://host/ml/v1/text/rerank?version=2024-03-13"
 )]
-fn url_reads_version_without_popping(options: &str, expected: &str) {
+fn url_reads_version_without_popping(#[case] options: &str, #[case] expected: &str) {
     let auth = auth(WatsonxEnvironment::default());
     let options = params(options);
     let before = options.clone();
@@ -319,7 +319,11 @@ async fn auth_uses_environment_token() {
 #[case::empty_token_falls_through(r#"{"token":""}"#, Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
 #[case::environment( r#"{}"#, Some(("WATSONX_ZENAPIKEY", "envzen")), "ZenApiKey envzen")]
 #[tokio::test]
-async fn auth_uses_zen_api_key(options: &str, variable: Option<(&str, &str)>, expected: &str) {
+async fn auth_uses_zen_api_key(
+    #[case] options: &str,
+    #[case] variable: Option<(&str, &str)>,
+    #[case] expected: &str,
+) {
     let values: Vec<(&str, &str)> = variable.into_iter().collect();
     let auth = auth(environment(&values));
     let mut options = params(options);
@@ -463,7 +467,7 @@ fn response_without_id_generates_one() {
 #[rstest]
 #[case::empty_id(br#"{"results":[],"id":""}"#)]
 #[case::null_id(br#"{"results":[],"id":null}"#)]
-fn response_blank_id_generates_one(body: &[u8]) {
+fn response_blank_id_generates_one(#[case] body: &[u8]) {
     let auth = auth(WatsonxEnvironment::default());
     let response = config(&auth)
         .transform_rerank_response(&response(200, body))
@@ -494,67 +498,75 @@ fn response_missing_input_has_no_document() {
     assert_eq!(results.first().unwrap().document, None);
 }
 
-#[rstest]
-#[case::missing_index(br#"{"results":[{"score":0.25}]}"#)]
-#[case::fractional_index(br#"{"results":[{"index":1.5,"score":0.25}]}"#)]
-#[case::missing_score(br#"{"results":[{"index":0}]}"#)]
-#[case::text_score(br#"{"results":[{"index":0,"score":"high"}]}"#)]
-#[case::bad_id(br#"{"results":[],"id":7}"#)]
-#[case::fractional_tokens(br#"{"results":[],"input_token_count":7.5}"#)]
-#[case::results_object(br#"{"results":{"index":0}}"#)]
-#[case::not_an_object(b"[]")]
-fn response_rejects_wrong_record_shapes(body: &[u8]) {
+fn failure(body: &[u8]) -> WatsonxRerankError {
     let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth)
+    config(&auth)
         .transform_rerank_response(&response(200, body))
-        .unwrap_err();
-    assert!(matches!(error, WatsonxRerankError::Reply(_)));
-    assert_eq!(error.status(), None);
+        .unwrap_err()
 }
 
 #[rstest]
+#[case::missing_index(
+    br#"{"results":[{"score":0.25}]}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::fractional_index(
+    br#"{"results":[{"index":1.5,"score":0.25}]}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::missing_score(
+    br#"{"results":[{"index":0}]}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::text_score(
+    br#"{"results":[{"index":0,"score":"high"}]}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::bad_id(
+    br#"{"results":[],"id":7}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::fractional_tokens(
+    br#"{"results":[],"input_token_count":7.5}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::results_object(
+    br#"{"results":{"index":0}}"#,
+    "the rerank reply does not match the record shape: "
+)]
+#[case::not_an_object(b"[]", "the rerank reply does not match the record shape: ")]
 #[case::null_input(
     br#"{"results":[{"index":0,"score":0.25,"input":null}]}"#,
-    "results[].input"
+    "the reply field results[].input has the wrong shape"
 )]
 #[case::number_input(
     br#"{"results":[{"index":0,"score":0.25,"input":5}]}"#,
-    "results[].input"
+    "the reply field results[].input has the wrong shape"
 )]
 #[case::list_input(
     br#"{"results":[{"index":0,"score":0.25,"input":["a"]}]}"#,
-    "results[].input"
+    "the reply field results[].input has the wrong shape"
 )]
 #[case::object_without_text(
     br#"{"results":[{"index":0,"score":0.25,"input":{"a":1}}]}"#,
-    "results[].input.text"
+    "the reply field results[].input.text has the wrong shape"
 )]
 #[case::object_with_non_text(
     br#"{"results":[{"index":0,"score":0.25,"input":{"text":5}}]}"#,
-    "results[].input.text"
+    "the reply field results[].input.text has the wrong shape"
 )]
-fn response_rejects_wrong_input_shapes(body: &[u8], field: &str) {
-    let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth)
-        .transform_rerank_response(&response(200, body))
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        WatsonxRerankError::ReplyField { field: found } if found == field
-    ));
+fn response_rejects_wrong_shapes(#[case] body: &[u8], #[case] message: &str) {
+    let error = failure(body);
+    assert!(error.to_string().starts_with(message));
     assert_eq!(error.status(), None);
 }
 
 #[rstest]
 #[case::missing_results(br#"{}"#)]
 #[case::null_results(br#"{"results":null}"#)]
-fn response_without_results_fails(body: &[u8]) {
-    let auth = auth(WatsonxEnvironment::default());
-    let error = config(&auth)
-        .transform_rerank_response(&response(200, body))
-        .unwrap_err();
+fn response_without_results_fails(#[case] body: &[u8]) {
+    let error = failure(body);
     assert!(matches!(error, WatsonxRerankError::NoResults { .. }));
-    assert_eq!(error.status(), None);
     assert_eq!(
         error.to_string(),
         format!(

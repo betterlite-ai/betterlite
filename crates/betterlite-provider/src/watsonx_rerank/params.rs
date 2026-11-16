@@ -80,23 +80,25 @@ fn inputs(value: &Json) -> Result<Json, WatsonxRerankError> {
     Ok(Json::List(converted))
 }
 
-fn parameters(mapped: &mut Params) -> Option<&mut IndexMap<String, Json>> {
-    let value = mapped
-        .entry(String::from("parameters"))
-        .or_insert_with(|| Json::Object(IndexMap::new()));
+fn as_object(value: &mut Json) -> Option<&mut IndexMap<String, Json>> {
     match value {
         Json::Object(fields) => Some(fields),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
     }
 }
 
+fn parameters(mapped: &mut Params) -> Option<&mut IndexMap<String, Json>> {
+    as_object(
+        mapped
+            .entry(String::from("parameters"))
+            .or_insert_with(|| Json::Object(IndexMap::new())),
+    )
+}
+
 fn return_options(mapped: &mut Params) -> Option<&mut IndexMap<String, Json>> {
-    let parameters = parameters(mapped)?;
-    let value = parameters
-        .entry(String::from("return_options"))
-        .or_insert_with(|| Json::Object(IndexMap::new()));
-    match value {
-        Json::Object(fields) => Some(fields),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
-    }
+    as_object(
+        parameters(mapped)?
+            .entry(String::from("return_options"))
+            .or_insert_with(|| Json::Object(IndexMap::new())),
+    )
 }

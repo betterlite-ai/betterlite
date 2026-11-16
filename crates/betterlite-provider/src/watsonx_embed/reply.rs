@@ -1,5 +1,3 @@
-use std::str;
-
 use betterlite_openai::embedding::EmbeddingVector;
 use serde::Deserialize;
 
@@ -22,14 +20,7 @@ pub fn decode_watsonx_embedding_reply(
     bytes: &[u8],
 ) -> Result<WatsonxEmbeddingReply, WatsonxEmbeddingError> {
     serde_json::from_slice(bytes).map_err(|source| WatsonxEmbeddingError::InvalidResponse {
-        body: body_text(bytes),
+        body: String::from_utf8_lossy(bytes).into_owned(),
         source,
     })
-}
-
-fn body_text(bytes: &[u8]) -> String {
-    let Ok(text) = str::from_utf8(bytes) else {
-        return format!("{} bytes that are not UTF-8", bytes.len());
-    };
-    text.to_owned()
 }

@@ -231,7 +231,11 @@ async fn auth_without_key_is_missing_iam_key() {
     r#"{"api_version":null}"#,
     "https://host/ml/v1/audio/transcriptions?version=2024-03-13"
 )]
-fn url_is_base_plus_audio_path(api_base: &str, given: &str, expected: &str) {
+fn url_is_base_plus_audio_path(
+    #[case] api_base: &str,
+    #[case] given: &str,
+    #[case] expected: &str,
+) {
     let auth = auth(WatsonxEnvironment::default());
     let options = options(given);
     let before = options.clone();
@@ -302,7 +306,7 @@ fn url_with_non_text_version_names_the_field() {
     r#"{"language":null,"prompt":"hi"}"#,
     r#"[["model","granite"],["prompt","hi"]]"#
 )]
-fn request_fields_in_order(given: &str, expected: &str) {
+fn request_fields_in_order(#[case] given: &str, #[case] expected: &str) {
     let auth = auth(WatsonxEnvironment::default());
     let request = config(&auth)
         .transform_audio_request("granite", file(), &options(given))
@@ -318,7 +322,7 @@ fn request_fields_in_order(given: &str, expected: &str) {
 #[case::project_number(r#"{"project_id":5}"#, "project_id")]
 #[case::watsonx_project_number(r#"{"project_id":null,"watsonx_project":5}"#, "watsonx_project")]
 #[case::space_number(r#"{"space_id":5}"#, "space_id")]
-fn request_rejects_non_text_ids(given: &str, field: &str) {
+fn request_rejects_non_text_ids(#[case] given: &str, #[case] field: &str) {
     let auth = auth(WatsonxEnvironment::default());
     let error = config(&auth)
         .transform_audio_request("granite", file(), &options(given))
@@ -393,7 +397,7 @@ fn reply_empty_text_is_kept() {
 #[case::missing_both(br#"{"task":"transcribe"}"#)]
 #[case::null_text_and_usage(br#"{"text":null,"usage":null}"#)]
 #[case::only_model(br#"{"model":"m"}"#)]
-fn reply_without_text_or_usage_fails(body: &[u8]) {
+fn reply_without_text_or_usage_fails(#[case] body: &[u8]) {
     let auth = auth(WatsonxEnvironment::default());
     let error = config(&auth).transform_audio_response(body).unwrap_err();
     assert!(matches!(error, WatsonxAudioError::MissingFields { .. }));
@@ -411,7 +415,7 @@ fn reply_without_text_or_usage_fails(body: &[u8]) {
 #[case::not_json(b"not json")]
 #[case::not_an_object(b"[]")]
 #[case::text_number(br#"{"text":5}"#)]
-fn reply_rejects_malformed_bodies(body: &[u8]) {
+fn reply_rejects_malformed_bodies(#[case] body: &[u8]) {
     let auth = auth(WatsonxEnvironment::default());
     let error = config(&auth).transform_audio_response(body).unwrap_err();
     assert_eq!(error.status(), None);

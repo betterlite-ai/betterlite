@@ -1,3 +1,4 @@
+use betterlite_openai::watsonx_audio::error::api_status;
 use betterlite_openai::watsonx_auth::error::WatsonxError;
 use thiserror::Error;
 
@@ -30,22 +31,10 @@ impl From<WatsonxError> for WatsonxEmbeddingError {
 }
 
 impl WatsonxEmbeddingError {
-    // the embedding path raises WatsonXAIError only for credentials and URL failures; every reply failure stays untyped
     #[must_use]
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::Watsonx(error) => match error.as_ref() {
-                WatsonxError::Api { status_code, .. } => Some(*status_code),
-                WatsonxError::IamApiKeyRequired
-                | WatsonxError::InvalidField { .. }
-                | WatsonxError::InvalidHeader { .. }
-                | WatsonxError::IamUrl(_)
-                | WatsonxError::IamStatus { .. }
-                | WatsonxError::IamTransport(_)
-                | WatsonxError::IamReply(_)
-                | WatsonxError::IamReplyField { .. }
-                | WatsonxError::Cache(_) => None,
-            },
+            Self::Watsonx(error) => api_status(error),
             Self::UnsupportedInput
             | Self::InvalidField { .. }
             | Self::InvalidResponse { .. }

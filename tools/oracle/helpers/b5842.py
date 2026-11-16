@@ -18,11 +18,13 @@ from litellm.types.llms.openai import AllEmbeddingInputValues
 from litellm.types.rerank import RerankResponse
 from litellm.types.utils import EmbeddingResponse, TranscriptionResponse
 from pydantic import BaseModel, JsonValue, TypeAdapter
+from pydantic.main import IncEx
 
 Object: TypeAlias = dict[str, JsonValue]
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 EMPTY: Object = {}
-POST = "https://localhost"
+REQUEST = httpx.Request("POST", "https://localhost")
+KEEP_PARAMS = False
 START = datetime(2024, 1, 1, tzinfo=UTC)
 
 
@@ -66,12 +68,12 @@ class RerankConfig(Protocol):
 
 
 class AudioConfig(Urls, Protocol):
-    # the request dataclass holds a dict or bytes, so the form data comes back through the view below
-    def transform_audio_transcription_request(  # ast-grep-ignore: no-long-names
+    # the request dataclass holds a dict or bytes, so the form comes back through a view
+    def transform_audio_transcription_request(
         self, model: str, audio: tuple[str, bytes, str], params: Object, extra: Object, /
     ) -> AudioTranscriptionRequestData: ...
 
-    def transform_audio_transcription_response(  # ast-grep-ignore: no-long-names
+    def transform_audio_transcription_response(
         self, raw: httpx.Response, /
     ) -> TranscriptionResponse: ...
 
@@ -91,34 +93,40 @@ class AudioRequestView(BaseModel):
     data: Object
 
 
-class EmbedItem(TypedDict):
-    object: str
-    index: int
-    embedding: JsonValue
+class AudioFile(TypedDict):
+    filename: str
+    content_type: str
+    content: str
 
 
-class EmbedUsage(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-
-
-class EmbedReply(TypedDict):
-    object: str
-    data: list[EmbedItem]
-    usage: EmbedUsage
-
-
-class Step(TypedDict, total=False):
+class EmbedStep(TypedDict):
     model: str
     input: AllEmbeddingInputValues
     options: Object
-    headers: dict[str, str]
     api_base: str | None
+    reply: str | None
+
+
+class RerankStep(TypedDict):
+    model: str
+    options: Object
+    headers: dict[str, str]
     api_key: str | None
-    file: dict[str, str] | None
     reply: str | None
     status: int | None
+
+
+class AudioStep(TypedDict):
+    model: str
+    options: Object
+    api_base: str | None
+    file: AudioFile | None
+    reply: str | None
+
+
+class PassthroughStep(TypedDict):
+    api_base: str | None
+    api_key: str | None
     endpoint: str
     query: Object | None
     data: Object
@@ -130,11 +138,17 @@ class Input(TypedDict):
     step: JsonValue
 
 
-STEP: TypeAdapter[Step] = TypeAdapter(Step)
-EMBED_REPLY: TypeAdapter[EmbedReply] = TypeAdapter(EmbedReply)
-EMBED: EmbedConfig = IBMWatsonXEmbeddingConfig()
+CONVERTED: IncEx = {
+    "object": True,
+    "data": True,
+    "usage": {"prompt_tokens": True, "completion_tokens": True, "total_tokens": True},
+}
+# BaseConfig.__init__ only passes, and __new__ keeps mypy from reading the untyped call
+EMBED: EmbedConfig = IBMWatsonXEmbeddingConfig.__new__(IBMWatsonXEmbeddingConfig)
 RERANK: RerankConfig = IBMWatsonXRerankConfig()
-AUDIO: AudioConfig = IBMWatsonXAudioTranscriptionConfig()
+AUDIO: AudioConfig = IBMWatsonXAudioTranscriptionConfig.__new__(
+    IBMWatsonXAudioTranscriptionConfig
+)
 PASSTHROUGH: PassthroughConfig = WatsonxPassthroughConfig()
 LOGGING = Logging(
     model="model", messages=None, stream=False, call_type="embedding",
@@ -142,11 +156,7 @@ LOGGING = Logging(
 )
 
 
-def posted(body: str, status: int = 200) -> httpx.Response:
-    return httpx.Response(status, content=body.encode(), request=httpx.Request("POST", POST))
-
-
-def embed(step: Step) -> JsonValue:
+def embed(step: EmbedStep) -> JsonValue:
     options = dict(step["options"])
     url = EMBED.get_complete_url(step["api_base"], None, step["model"], options, EMPTY)
     body = EMBED.transform_embedding_request(step["model"], step["input"], options, EMPTY)
@@ -154,7 +164,7 @@ def embed(step: Step) -> JsonValue:
     if (text := step["reply"]) is not None:
         response = EMBED.transform_embedding_response(
             step["model"],
-            posted(text),
+            httpx.Response(200, content=text.encode(), request=REQUEST),
             EmbeddingResponse(object="list"),
             LOGGING,
             None,
@@ -162,16 +172,14 @@ def embed(step: Step) -> JsonValue:
             EMPTY,
             EMPTY,
         )
-        # the model and usage detail fields depend on the caller's response object, so only the converted fields are compared
-        reply = JSON.validate_json(
-            EMBED_REPLY.dump_json(EMBED_REPLY.validate_json(response.model_dump_json()))
-        )
+        # model and usage details come from the caller's response, so only converted fields compare
+        reply = JSON.validate_json(response.model_dump_json(include=CONVERTED))
     return {"url": url, "request": body, "reply": reply}
 
 
-def rerank(step: Step) -> JsonValue:
+def rerank(step: RerankStep) -> JsonValue:
     options = dict(step["options"])
-    mapped = RERANK.map_cohere_rerank_params(options, step["model"], False, "", [])
+    mapped = RERANK.map_cohere_rerank_params(options, step["model"], KEEP_PARAMS, "", [])
     auth_options = dict(options)
     headers = RERANK.validate_environment(
         dict(step["headers"]), step["model"], step["api_key"], auth_options
@@ -179,9 +187,10 @@ def rerank(step: Step) -> JsonValue:
     request = RERANK.transform_rerank_request(step["model"], dict(mapped), EMPTY)
     reply: JsonValue = None
     if (text := step["reply"]) is not None and (status := step["status"]) is not None:
+        raw = httpx.Response(status, content=text.encode(), request=REQUEST)
         reply = JSON.validate_json(
             RERANK.transform_rerank_response(
-                step["model"], posted(text, status), RerankResponse(), LOGGING
+                step["model"], raw, RerankResponse(), LOGGING
             ).model_dump_json()
         )
     return {
@@ -195,7 +204,7 @@ def rerank(step: Step) -> JsonValue:
     }
 
 
-def audio(step: Step) -> JsonValue:
+def audio(step: AudioStep) -> JsonValue:
     options = dict(step["options"])
     url = AUDIO.get_complete_url(step["api_base"], None, step["model"], options, EMPTY)
     request: JsonValue = None
@@ -219,12 +228,14 @@ def audio(step: Step) -> JsonValue:
     reply: JsonValue = None
     if (text := step["reply"]) is not None:
         reply = JSON.validate_json(
-            AUDIO.transform_audio_transcription_response(posted(text)).model_dump_json()
+            AUDIO.transform_audio_transcription_response(
+                httpx.Response(200, content=text.encode(), request=REQUEST)
+            ).model_dump_json()
         )
     return {"url": url, "request": request, "reply": reply}
 
 
-def passthrough(step: Step) -> JsonValue:
+def passthrough(step: PassthroughStep) -> JsonValue:
     url, base = PASSTHROUGH.get_complete_url(
         step["api_base"], None, "model", step["endpoint"], step["query"], EMPTY
     )
@@ -238,11 +249,11 @@ def passthrough(step: Step) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     os.environ.update(input_value["env"])
-    step = STEP.validate_python(input_value["step"])
+    step = input_value["step"]
     if input_value["family"] == "embed":
-        return embed(step)
+        return embed(TypeAdapter(EmbedStep).validate_python(step))
     if input_value["family"] == "rerank":
-        return rerank(step)
+        return rerank(TypeAdapter(RerankStep).validate_python(step))
     if input_value["family"] == "audio":
-        return audio(step)
-    return passthrough(step)
+        return audio(TypeAdapter(AudioStep).validate_python(step))
+    return passthrough(TypeAdapter(PassthroughStep).validate_python(step))

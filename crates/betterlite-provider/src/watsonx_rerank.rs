@@ -47,10 +47,14 @@ impl<T: WatsonxTransport> WatsonxRerankConfig<'_, T> {
             resolved.extend(headers);
             return Ok(resolved);
         }
-        let token = take_secret(options, "token")?
-            .or_else(|| non_empty(self.auth.environment.watsonx_token.clone()));
-        let zen_api_key = take_secret(options, "zen_api_key")?
-            .or_else(|| non_empty(self.auth.environment.watsonx_zenapikey.clone()));
+        let token = take_secret(options, "token")?.or_else(|| {
+            let env_token = self.auth.environment.watsonx_token.clone();
+            env_token.filter(|secret| !secret.expose_secret().is_empty())
+        });
+        let zen_api_key = take_secret(options, "zen_api_key")?.or_else(|| {
+            let env_zen = self.auth.environment.watsonx_zenapikey.clone();
+            env_zen.filter(|secret| !secret.expose_secret().is_empty())
+        });
         let authorization = match (token, zen_api_key) {
             (Some(token), _) => format!("Bearer {}", token.expose_secret()),
             (None, Some(zen_api_key)) => format!("ZenApiKey {}", zen_api_key.expose_secret()),
@@ -104,7 +108,7 @@ impl<T: WatsonxTransport> WatsonxRerankConfig<'_, T> {
         };
         let Some(results) = reply.results else {
             return Err(WatsonxRerankError::NoResults {
-                body: body_text(&raw.body),
+                body: String::from_utf8_lossy(&raw.body).into_owned(),
             });
         };
         let mut transformed = Vec::with_capacity(results.len());
@@ -171,15 +175,4 @@ fn take_secret(
             Err(WatsonxRerankError::NotText { field })
         }
     }
-}
-
-fn non_empty(secret: Option<SecretString>) -> Option<SecretString> {
-    secret.filter(|secret| !secret.expose_secret().is_empty())
-}
-
-fn body_text(bytes: &[u8]) -> String {
-    let Ok(text) = std::str::from_utf8(bytes) else {
-        return format!("{} bytes that are not UTF-8", bytes.len());
-    };
-    text.to_owned()
 }

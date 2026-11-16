@@ -142,7 +142,7 @@ fn url_with_invalid_base_fails() {
 #[case::stream_missing("{}", false)]
 #[case::stream_text(r#"{"stream":"true"}"#, false)]
 #[case::stream_null(r#"{"stream":null}"#, false)]
-fn streaming_follows_a_boolean_stream_key(data: &str, expected: bool) {
+fn streaming_follows_a_boolean_stream_key(#[case] data: &str, #[case] expected: bool) {
     let environment = WatsonxEnvironment::default();
     assert_eq!(
         config(&environment).is_streaming_request("/v1/chat", &options(data)),

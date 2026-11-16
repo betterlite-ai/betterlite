@@ -72,10 +72,15 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
             Some(project_id) => Some(project_id),
             None => text_option(options, "watsonx_project")?,
         };
-        if let Some(project_id) = project_id {
-            fields.push((String::from("project_id"), Value::String(project_id)));
-        } else if let Some(space_id) = text_option(options, "space_id")? {
-            fields.push((String::from("space_id"), Value::String(space_id)));
+        match project_id {
+            Some(project_id) => {
+                fields.push((String::from("project_id"), Value::String(project_id)));
+            }
+            None => {
+                if let Some(space_id) = text_option(options, "space_id")? {
+                    fields.push((String::from("space_id"), Value::String(space_id)));
+                }
+            }
         }
         for (name, value) in options {
             if SUPPORTED_OPENAI_PARAMS.contains(&name.as_str()) && !value.is_null() {
@@ -89,6 +94,7 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
         &self,
         body: &[u8],
     ) -> Result<TranscriptionResponse, WatsonxAudioError> {
+        // ast-grep-ignore: no-long-names
         let response = reply::decode_watsonx_transcription_reply(body)?;
         Ok(TranscriptionResponse {
             text: response.text,

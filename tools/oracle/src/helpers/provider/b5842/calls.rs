@@ -9,7 +9,6 @@ use betterlite_openai::watsonx_auth::WatsonxAuth;
 use betterlite_openai::watsonx_auth::transport::WatsonxTransport;
 use betterlite_openai::watsonx_auth::types::WatsonxParams;
 use betterlite_openai::watsonx_passthrough::WatsonxPassthroughConfig;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::api::rerank_contracts::{
     Headers, MapCohereRerankParams, Params, RerankProviderResponse,
 };
@@ -23,30 +22,22 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::input::Step;
-use super::raised;
+use super::raised::Raised;
 
-pub(super) type Outcome = Result<Value, Box<HelperError>>;
+type Outcome = Result<Value, Raised>;
 
 pub(super) fn embed<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
     let config = WatsonxEmbeddingConfig {
         environment: &auth.environment,
     };
-    let Some(input) = step.input.as_ref() else {
-        return Err(raised(None));
-    };
+    let input = step.input.as_ref().ok_or_else(Raised::default)?;
     let mut options: WatsonxParams = step.options.clone().into_iter().collect();
-    let url = config
-        .get_complete_url(step.api_base.as_deref(), &mut options)
-        .map_err(|error| raised(error.status()))?;
-    let body = config
-        .transform_embedding_request(&step.model, input, options)
-        .map_err(|error| raised(error.status()))?;
+    let url = config.get_complete_url(step.api_base.as_deref(), &mut options)?;
+    let body = config.transform_embedding_request(&step.model, input, options)?;
     let mut reply = Value::Null;
     if let Some(text) = &step.reply {
-        let decoded = decode_watsonx_embedding_reply(text.as_bytes())
-            .map_err(|error| raised(error.status()))?;
-        let response = WatsonxEmbeddingConfig::transform_embedding_response(&step.model, decoded)
-            .map_err(|error| raised(error.status()))?;
+        let decoded = decode_watsonx_embedding_reply(text.as_bytes())?;
+        let response = WatsonxEmbeddingConfig::transform_embedding_response(&step.model, decoded)?;
         let usage = response.usage;
         reply = json!({
             "object": response.object,
@@ -67,7 +58,7 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
         new_id: Uuid::nil,
     };
     let mut options: Params = serde_json::from_value(Value::Object(step.options.clone()))
-        .map_err(|_error| raised(None))?;
+        .map_err(|_error| Raised::default())?;
     let mapped = map_cohere_rerank_params(&MapCohereRerankParams {
         non_default_params: &mut options,
         model: &step.model,
@@ -81,16 +72,13 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
         max_chunks_per_doc: None,
         max_tokens_per_doc: None,
         instruction: None,
-    })
-    .map_err(|error| raised(error.status()))?;
+    })?;
     let mut auth_options = options.clone();
     let api_key = step.api_key.clone().map(SecretString::from);
     let headers = config
         .validate_environment(step.headers.clone(), api_key.as_ref(), &mut auth_options)
-        .await
-        .map_err(|error| raised(error.status()))?;
-    let request = transform_rerank_request(&step.model, mapped.clone(), &auth.environment)
-        .map_err(|error| raised(error.status()))?;
+        .await?;
+    let request = transform_rerank_request(&step.model, mapped.clone(), &auth.environment)?;
     let mut reply = Value::Null;
     if let (Some(text), Some(status)) = (&step.reply, step.status) {
         let raw = RerankProviderResponse {
@@ -98,14 +86,11 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
             headers: Headers::new(),
             body: text.as_bytes().to_vec(),
         };
-        let response = config
-            .transform_rerank_response(&raw)
-            .map_err(|error| raised(error.status()))?;
-        reply = json!(response);
+        reply = json!(config.transform_rerank_response(&raw)?);
     }
     let lowered: Headers = headers
-        .iter()
-        .map(|(name, value)| (name.to_lowercase(), value.clone()))
+        .into_iter()
+        .map(|(name, value)| (name.to_lowercase(), value))
         .collect();
     Ok(json!({
         "map": mapped,
@@ -117,9 +102,7 @@ pub(super) async fn rerank<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &St
 
 pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> Outcome {
     let config = WatsonxAudioConfig { auth };
-    let url = config
-        .get_complete_url(step.api_base.as_deref(), &step.options)
-        .map_err(|error| raised(error.status()))?;
+    let url = config.get_complete_url(step.api_base.as_deref(), &step.options)?;
     let mut request = Value::Null;
     if let Some(file) = &step.file {
         let processed = ProcessedAudioFile {
@@ -127,9 +110,7 @@ pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> 
             filename: file.filename.clone(),
             content_type: file.content_type.clone(),
         };
-        let built = config
-            .transform_audio_request(&step.model, processed, &step.options)
-            .map_err(|error| raised(error.status()))?;
+        let built = config.transform_audio_request(&step.model, processed, &step.options)?;
         let data: Object = built.fields.into_iter().collect();
         request = json!({
             "data": data,
@@ -142,10 +123,7 @@ pub(super) fn audio<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Step) -> 
     }
     let mut reply = Value::Null;
     if let Some(text) = &step.reply {
-        let response = config
-            .transform_audio_response(text.as_bytes())
-            .map_err(|error| raised(error.status()))?;
-        reply = json!(response);
+        reply = json!(config.transform_audio_response(text.as_bytes())?);
     }
     Ok(json!({"url": url, "request": request, "reply": reply}))
 }
@@ -166,13 +144,9 @@ pub(super) fn passthrough<T: WatsonxTransport>(auth: &WatsonxAuth<T>, step: &Ste
         request_query_params: step.query.as_ref(),
         litellm_params: &empty,
     };
-    let (url, base) = config
-        .get_complete_url(&request)
-        .map_err(|error| raised(error.status()))?;
+    let (url, base) = config.get_complete_url(&request)?;
     let api_key = step.api_key.clone().map(SecretString::from);
-    let key = config
-        .get_api_key(api_key.as_ref())
-        .map_err(|error| raised(error.status()))?;
+    let key = config.get_api_key(api_key.as_ref())?;
     Ok(json!({
         "url": {"url": url.as_str(), "base": base},
         "stream": config.is_streaming_request(&step.endpoint, &step.data),

@@ -1,5 +1,3 @@
-use std::str;
-
 use serde_json::{Map, Value};
 
 use super::error::WatsonxAudioError;
@@ -20,7 +18,7 @@ pub fn decode_watsonx_transcription_reply(
     let usage_is_set = fields.get("usage").is_some_and(|usage| !usage.is_null());
     if text.is_none() && !usage_is_set {
         return Err(WatsonxAudioError::MissingFields {
-            body: body_text(bytes),
+            body: String::from_utf8_lossy(bytes).into_owned(),
         });
     }
     fields.entry(String::from("usage")).or_insert(Value::Null);
@@ -28,11 +26,4 @@ pub fn decode_watsonx_transcription_reply(
         text,
         extra: fields,
     })
-}
-
-fn body_text(bytes: &[u8]) -> String {
-    let Ok(text) = str::from_utf8(bytes) else {
-        return format!("{} bytes that are not UTF-8", bytes.len());
-    };
-    text.to_owned()
 }

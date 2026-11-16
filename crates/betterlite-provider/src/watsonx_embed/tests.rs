@@ -94,7 +94,12 @@ fn supported_params_are_empty() {
     r#"{"api_version":""}"#,
     "https://host/ml/v1/text/embeddings?version=2024-03-13"
 )]
-fn url_is_base_plus_embeddings_path(api_base: &str, model: &str, options: &str, expected: &str) {
+fn url_is_base_plus_embeddings_path(
+    #[case] api_base: &str,
+    #[case] model: &str,
+    #[case] options: &str,
+    #[case] expected: &str,
+) {
     let mut options = params(options);
     let url = config(&WatsonxEnvironment::default())
         .get_complete_url(Some(api_base), &mut options)
@@ -142,7 +147,7 @@ fn url_with_non_text_version_names_the_field() {
 #[case::text(r#""hello""#, r#"["hello"]"#)]
 #[case::list(r#"["a","b"]"#, r#"["a","b"]"#)]
 #[case::empty_list("[]", "[]")]
-fn request_copies_text_input(input: &str, inputs: &str) {
+fn request_copies_text_input(#[case] input: &str, #[case] inputs: &str) {
     let input: EmbeddingInput = serde_json::from_str(input).unwrap();
     let body = config(&project_environment())
         .transform_embedding_request("granite", &input, WatsonxParams::new())
@@ -217,7 +222,7 @@ fn request_without_project_or_space_is_401() {
 #[rstest]
 #[case::token_ids(r#"[1,2]"#)]
 #[case::token_lists(r#"[[1],[2]]"#)]
-fn request_rejects_token_input(input: &str) {
+fn request_rejects_token_input(#[case] input: &str) {
     let input: EmbeddingInput = serde_json::from_str(input).unwrap();
     let error = config(&project_environment())
         .transform_embedding_request("granite", &input, WatsonxParams::new())
@@ -308,7 +313,7 @@ fn response_null_usage_count_defaults_to_zero() {
 #[case::not_an_object(b"[]")]
 #[case::not_json(b"not json")]
 #[case::fractional_token_count(br#"{"input_token_count":7.5}"#)]
-fn response_rejects_malformed_bodies(body: &[u8]) {
+fn response_rejects_malformed_bodies(#[case] body: &[u8]) {
     let error = decode_watsonx_embedding_reply(body).unwrap_err();
     assert!(matches!(
         error,

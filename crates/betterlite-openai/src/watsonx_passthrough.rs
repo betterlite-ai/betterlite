@@ -11,6 +11,7 @@ use crate::passthrough::transformation::BasePassthroughConfig;
 use crate::passthrough::transformation::types::{
     PassthroughError, PassthroughUrlRequest, RelayedBody,
 };
+use crate::watsonx_audio::error::api_status;
 use crate::watsonx_auth::credentials::get_watsonx_credentials;
 use crate::watsonx_auth::environment::WatsonxEnvironment;
 use crate::watsonx_auth::error::WatsonxError;
@@ -42,22 +43,10 @@ impl From<WatsonxError> for WatsonxPassthroughError {
 }
 
 impl WatsonxPassthroughError {
-    // the passthrough relay keeps the shared credential status and leaves every other failure untyped
     #[must_use]
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::Watsonx(error) => match error.as_ref() {
-                WatsonxError::Api { status_code, .. } => Some(*status_code),
-                WatsonxError::IamApiKeyRequired
-                | WatsonxError::InvalidField { .. }
-                | WatsonxError::InvalidHeader { .. }
-                | WatsonxError::IamUrl(_)
-                | WatsonxError::IamStatus { .. }
-                | WatsonxError::IamTransport(_)
-                | WatsonxError::IamReply(_)
-                | WatsonxError::IamReplyField { .. }
-                | WatsonxError::Cache(_) => None,
-            },
+            Self::Watsonx(error) => api_status(error),
             Self::Passthrough(_) | Self::Provider(_) => None,
         }
     }

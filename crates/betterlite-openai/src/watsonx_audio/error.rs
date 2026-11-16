@@ -25,23 +25,21 @@ impl From<WatsonxError> for WatsonxAudioError {
 }
 
 impl WatsonxAudioError {
-    // the audio config puts IBMWatsonXMixin first, so credentials and URL failures carry its status and the rest stay untyped
     #[must_use]
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::Watsonx(error) => match error.as_ref() {
-                WatsonxError::Api { status_code, .. } => Some(*status_code),
-                WatsonxError::IamApiKeyRequired
-                | WatsonxError::InvalidField { .. }
-                | WatsonxError::InvalidHeader { .. }
-                | WatsonxError::IamUrl(_)
-                | WatsonxError::IamStatus { .. }
-                | WatsonxError::IamTransport(_)
-                | WatsonxError::IamReply(_)
-                | WatsonxError::IamReplyField { .. }
-                | WatsonxError::Cache(_) => None,
-            },
+            Self::Watsonx(error) => api_status(error),
             Self::NotText { .. } | Self::InvalidReply { .. } | Self::MissingFields { .. } => None,
         }
+    }
+}
+
+// only the shared credential and URL failures carry a status in the four watsonx endpoint families
+#[must_use]
+pub fn api_status(error: &WatsonxError) -> Option<u16> {
+    if let WatsonxError::Api { status_code, .. } = error {
+        Some(*status_code)
+    } else {
+        None
     }
 }
