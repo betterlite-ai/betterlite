@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -7,10 +6,11 @@ use rstest::rstest;
 
 use super::support::{
     CALL_ID, NOW, ORIGINAL, SCOPE, TOOL_CONVERSATION, apply_as_caller, content_of, conversation,
-    guardrail, guardrail_at, log_target, reply, serve,
+    guardrail, log_target, reply, serve,
 };
 use crate::compresr_recovery::hash::{content_hash, recovery_marker};
 use crate::compresr_recovery::store::{Originals, StoreKey};
+use crate::compresr_writeback::apply_compression;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::inputs::GuardrailLogTarget;
 
@@ -74,15 +74,15 @@ async fn unscoped_request_gets_no_marker_recovery(#[case] target: Option<Guardra
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, "");
     let mut caller = target;
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            caller.as_mut(),
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        caller.as_mut(),
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), text("short"));
     assert!(output.tools.is_none());
     let store = guardrail.recovery.as_ref().unwrap();
@@ -96,32 +96,33 @@ async fn unscoped_request_gets_no_marker_recovery(#[case] target: Option<Guardra
     );
 }
 
+#[rstest]
+#[case::the_first_warning(0, 100, 1000)]
+#[case::before_the_next_warning(1000, 999, 1000)]
+#[case::at_the_next_warning(1000, 1000, 1900)]
 #[tokio::test]
-async fn the_scope_warning_repeats_once_per_interval_recovery() {
+async fn the_scope_warning_repeats_once_per_interval_recovery(
+    #[case] warned_until: u64,
+    #[case] now: u64,
+    #[case] expected: u64,
+) {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
-    let clock = Arc::new(Mutex::new(Duration::from_secs(100)));
-    let reader = Arc::clone(&clock);
-    let guardrail = guardrail_at(
-        &server.base,
-        "",
-        Box::new(move || *reader.lock().unwrap_or_else(PoisonError::into_inner)),
+    let mut guardrail = guardrail(&server.base, "");
+    *guardrail.no_scope_warning_until.lock().unwrap() = Duration::from_secs(warned_until);
+    guardrail.runtime.clock = Box::new(move || Duration::from_secs(now));
+    apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        *guardrail.no_scope_warning_until.lock().unwrap(),
+        Duration::from_secs(expected)
     );
-    let mut observed = Vec::new();
-    for seconds in [100, 999, 1000] {
-        *clock.lock().unwrap() = Duration::from_secs(seconds);
-        guardrail
-            .apply(
-                conversation(TOOL_CONVERSATION, ""),
-                &mut BTreeMap::new(),
-                GuardrailInputType::Request,
-                None,
-            )
-            .await
-            .unwrap();
-        observed.push(*guardrail.no_scope_warning_until.lock().unwrap());
-    }
-    let expected = [1000, 1000, 1900].map(Duration::from_secs);
-    assert_eq!(observed, expected);
 }
 
 #[tokio::test]
@@ -129,15 +130,15 @@ async fn a_request_without_a_call_id_gets_no_marker_recovery() {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, "");
     let mut target = log_target(SCOPE, "");
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            Some(&mut target),
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        Some(&mut target),
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), text("short"));
     assert!(output.tools.is_none());
     assert_eq!(
@@ -225,10 +226,15 @@ async fn later_turns_add_to_the_same_call_recovery() {
     let second = TOOL_CONVERSATION.replace("long tool output one", "long tool output two");
     apply_as_caller(&guardrail, conversation(&second, "")).await;
     let store = guardrail.recovery.as_ref().unwrap();
-    for original in [ORIGINAL, "long tool output two"] {
-        let found = store.retrieve(Some(&key(SCOPE)), &content_hash(original), NOW);
-        assert_eq!(found, Some(original.to_owned()));
-    }
+    let second_original = "long tool output two";
+    assert_eq!(
+        store.retrieve(Some(&key(SCOPE)), &content_hash(ORIGINAL), NOW),
+        Some(ORIGINAL.to_owned())
+    );
+    assert_eq!(
+        store.retrieve(Some(&key(SCOPE)), &content_hash(second_original), NOW),
+        Some(second_original.to_owned())
+    );
 }
 
 #[tokio::test]
@@ -241,14 +247,14 @@ async fn an_empty_call_id_falls_through_to_the_next_recovery() {
         .litellm_params
         .get_or_insert_with(BTreeMap::new)
         .insert("litellm_call_id".to_owned(), text(CALL_ID));
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            Some(&mut target),
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        Some(&mut target),
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), marked("short"));
 }

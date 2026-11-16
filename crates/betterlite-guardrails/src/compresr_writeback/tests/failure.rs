@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use super::support::{TOOL_CONVERSATION, conversation, guardrail, reply, serve};
+use crate::compresr_writeback::apply_compression;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 
@@ -24,21 +25,21 @@ const NOTHING_LISTENING: &str = "http://127.0.0.1:9";
 #[case::unexpected_shape(200, r#"{"data":"secret upstream body"}"#, UNEXPECTED_SHAPE)]
 #[tokio::test]
 async fn upstream_problem_fail_closed(
-    #[case] status: u16,
+    #[case] http_status: u16,
     #[case] body: &str,
     #[case] message: &str,
 ) {
-    let server = serve(status, body).await;
+    let server = serve(http_status, body).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
-    let failure = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap_err();
+    let failure = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap_err();
     let GuardrailFailure::HttpObject { status, detail } = &failure else {
         panic!("a failed compression is an HTTP error, got {failure:?}");
     };
@@ -54,15 +55,15 @@ async fn upstream_problem_fail_closed(
 #[tokio::test]
 async fn unreachable_service_fail_closed() {
     let guardrail = guardrail(NOTHING_LISTENING, NO_RECOVERY);
-    let failure = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap_err();
+    let failure = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(&failure, GuardrailFailure::HttpObject { status: 502, detail }
             if detail.get("error") == Some(&GuardrailValue::Text(UNREACHABLE.to_owned())))
@@ -77,15 +78,15 @@ async fn a_mismatched_batch_fail_closed() {
     )
     .await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
-    let failure = guardrail
-        .apply(
-            conversation(TWO_TOOLS, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap_err();
+    let failure = apply_compression(
+        &guardrail,
+        conversation(TWO_TOOLS, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(&failure, GuardrailFailure::HttpObject { status: 502, detail }
             if detail.get("error") == Some(&GuardrailValue::Text(BATCH.to_owned())))
@@ -102,10 +103,15 @@ async fn upstream_problem_fail_open(#[case] status: u16, #[case] body: &str) {
     let guardrail = guardrail(&server.base, OPEN);
     let input = conversation(TOOL_CONVERSATION, "");
     let mut data = BTreeMap::new();
-    let output = guardrail
-        .apply(input.clone(), &mut data, GuardrailInputType::Request, None)
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut data,
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(data.is_empty());
 }
@@ -114,14 +120,14 @@ async fn upstream_problem_fail_open(#[case] status: u16, #[case] body: &str) {
 async fn unreachable_service_fail_open() {
     let guardrail = guardrail(NOTHING_LISTENING, OPEN);
     let input = conversation(TOOL_CONVERSATION, "");
-    let output = guardrail
-        .apply(
-            input.clone(),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
 }

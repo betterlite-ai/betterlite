@@ -42,143 +42,142 @@ struct Recovery<'store> {
 
 // A failed compression is a 502 with the generic message, never the upstream body or the API key
 fn failure(error: &CompresrTransportError) -> GuardrailFailure {
-    match error.status_code() {
-        Some(status) => GuardrailFailure::HttpObject {
+    error.status_code().map_or_else(
+        || GuardrailFailure::Other(error.to_string()),
+        |status| GuardrailFailure::HttpObject {
             status,
             detail: IndexMap::from([("error".to_owned(), GuardrailValue::Text(error.to_string()))]),
         },
-        None => GuardrailFailure::Other(error.to_string()),
-    }
+    )
 }
 
-impl CompresrGuardrail {
-    // None when nothing is to be compressed: another hook, the bypass header, no messages or no eligible one
-    fn plan(
-        &self,
-        inputs: &GuardrailApiInputs,
-        request_data: &BTreeMap<String, GuardrailValue>,
-        input_type: GuardrailInputType,
-    ) -> Option<Plan> {
-        if input_type != GuardrailInputType::Request || self.should_bypass(request_data) {
-            return None;
-        }
-        let messages = inputs
-            .structured_messages
-            .as_deref()
-            .filter(|rows| !rows.is_empty())?;
-        let plan = self.plan_targets(messages);
-        (!plan.targets.is_empty()).then_some(plan)
+// None when nothing is to be compressed: another hook, the bypass header, no messages or no eligible one
+fn plan_request(
+    guardrail: &CompresrGuardrail,
+    inputs: &GuardrailApiInputs,
+    request_data: &BTreeMap<String, GuardrailValue>,
+    input_type: GuardrailInputType,
+) -> Option<Plan> {
+    if input_type != GuardrailInputType::Request || guardrail.should_bypass(request_data) {
+        return None;
     }
+    let messages = inputs
+        .structured_messages
+        .as_deref()
+        .filter(|rows| !rows.is_empty())?;
+    let plan = select::plan_targets(guardrail, messages);
+    (!plan.targets.is_empty()).then_some(plan)
+}
 
-    pub async fn apply(
-        &self,
-        inputs: GuardrailApiInputs,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        input_type: GuardrailInputType,
-        logging_obj: Option<&mut GuardrailLogTarget>,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        let Some(plan) = self.plan(&inputs, request_data, input_type) else {
-            return Ok(inputs);
-        };
-        let started = (self.runtime.clock)();
-        let outcome = self
-            .transport
-            .compress(&plan.targets)
-            .await
-            .map_err(|error| failure(&error))?;
-        let ended = (self.runtime.clock)();
-        let CompressOutcome::Results(results) = outcome else {
-            return Ok(inputs);
-        };
-        let compressed = Compressed {
-            plan: &plan,
-            results: &results,
-            started,
-            ended,
-        };
-        self.finish(inputs, request_data, logging_obj, &compressed)
-    }
+pub async fn apply_compression(
+    guardrail: &CompresrGuardrail,
+    inputs: GuardrailApiInputs,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    input_type: GuardrailInputType,
+    logging_obj: Option<&mut GuardrailLogTarget>,
+) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    let Some(plan) = plan_request(guardrail, &inputs, request_data, input_type) else {
+        return Ok(inputs);
+    };
+    let started = (guardrail.runtime.clock)();
+    let outcome = guardrail
+        .transport
+        .compress(&plan.targets)
+        .await
+        .map_err(|error| failure(&error))?;
+    let ended = (guardrail.runtime.clock)();
+    let CompressOutcome::Results(results) = outcome else {
+        return Ok(inputs);
+    };
+    let compressed = Compressed {
+        plan: &plan,
+        results: &results,
+        started,
+        ended,
+    };
+    finish_request(guardrail, inputs, request_data, logging_obj, &compressed)
+}
 
-    fn finish(
-        &self,
-        mut inputs: GuardrailApiInputs,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        logging_obj: Option<&mut GuardrailLogTarget>,
-        compressed: &Compressed<'_>,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        let now = (self.runtime.clock)();
-        let recovery = self.recovery_for(logging_obj.as_deref(), now);
-        let rows = inputs.structured_messages.take().unwrap_or_default();
-        let existing = recovery.as_ref().map(|active| &active.existing);
-        let applied = self.apply_compression_results(rows, compressed, existing);
-        // Untouched inputs go back as they came, so a handler that detects edits by comparison sees none
-        if applied.messages_compressed == 0 {
-            tracing::debug!("Compresr: service returned no compressed content; request unchanged");
-            return Ok(GuardrailApiInputs {
-                structured_messages: Some(applied.messages),
-                ..inputs
-            });
-        }
-        self.record_success(request_data, logging_obj, &applied, compressed);
-        let mirrored = mirror::mirror_texts_channel(inputs.texts.as_deref(), &applied.replacements);
-        let mut tools = inputs.tools.take();
-        if let Some(active) = &recovery
-            && !applied.originals.is_empty()
-        {
-            active.store.store(
-                &active.key,
-                applied.originals,
-                now,
-                self.settings.max_bytes_per_call,
-            );
-            tools = Some(
-                merged_tools(tools.as_deref())
-                    .map_err(|error| GuardrailFailure::Other(error.to_string()))?,
-            );
-        }
-        Ok(GuardrailApiInputs {
-            texts: mirrored.or(inputs.texts),
-            tools,
+fn finish_request(
+    guardrail: &CompresrGuardrail,
+    mut inputs: GuardrailApiInputs,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    logging_obj: Option<&mut GuardrailLogTarget>,
+    compressed: &Compressed<'_>,
+) -> Result<GuardrailApiInputs, GuardrailFailure> {
+    let now = (guardrail.runtime.clock)();
+    let recovery = recovery_for(guardrail, logging_obj.as_deref(), now);
+    let rows = inputs.structured_messages.take().unwrap_or_default();
+    let existing = recovery.as_ref().map(|active| &active.existing);
+    let applied = results::apply_compression_results(guardrail, rows, compressed, existing);
+    // Untouched inputs go back as they came, so a handler that detects edits by comparison sees none
+    if applied.messages_compressed == 0 {
+        tracing::debug!("Compresr: service returned no compressed content; request unchanged");
+        return Ok(GuardrailApiInputs {
             structured_messages: Some(applied.messages),
             ..inputs
-        })
+        });
     }
-
-    // Recovery needs a per-tenant scope, since the call id alone is client-settable, and a call id to file the originals under
-    fn recovery_for(
-        &self,
-        log: Option<&GuardrailLogTarget>,
-        now: Duration,
-    ) -> Option<Recovery<'_>> {
-        let store = self.recovery.as_ref()?;
-        let scope = scope::caller_scope(log);
-        if scope.is_empty() {
-            self.warn_without_scope(now);
-            return None;
-        }
-        let key = StoreKey::resolve(scope::call_id(log), &scope)?;
-        let existing = store.existing_originals(Some(&key));
-        Some(Recovery {
-            store,
-            key,
-            existing,
-        })
-    }
-
-    // Once per interval, so a standing misconfiguration stays visible without flooding the log
-    fn warn_without_scope(&self, now: Duration) {
-        let mut until = self
-            .no_scope_warning_until
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        if now < *until {
-            return;
-        }
-        *until = now.saturating_add(NO_SCOPE_WARNING_INTERVAL);
-        tracing::warn!(
-            "Compresr: enable_retrieval is on but this request has no per-key auth scope; compressing without recovery (compresr_retrieve tool not injected). Configure virtual-key auth to enable recovery."
+    records::record_success(guardrail, request_data, logging_obj, &applied, compressed);
+    let mirrored = mirror::mirror_texts_channel(inputs.texts.as_deref(), &applied.replacements);
+    let mut tools = inputs.tools.take();
+    if let Some(active) = &recovery
+        && !applied.originals.is_empty()
+    {
+        active.store.store(
+            &active.key,
+            applied.originals,
+            now,
+            guardrail.settings.max_bytes_per_call,
+        );
+        tools = Some(
+            merged_tools(tools.as_deref())
+                .map_err(|error| GuardrailFailure::Other(error.to_string()))?,
         );
     }
+    Ok(GuardrailApiInputs {
+        texts: mirrored.or(inputs.texts),
+        tools,
+        structured_messages: Some(applied.messages),
+        ..inputs
+    })
+}
+
+// Recovery needs a per-tenant scope, since the call id alone is client-settable, and a call id to file the originals under
+fn recovery_for<'store>(
+    guardrail: &'store CompresrGuardrail,
+    log: Option<&GuardrailLogTarget>,
+    now: Duration,
+) -> Option<Recovery<'store>> {
+    let store = guardrail.recovery.as_ref()?;
+    let scope = scope::caller_scope(log);
+    if scope.is_empty() {
+        warn_without_scope(guardrail, now);
+        return None;
+    }
+    let key = StoreKey::resolve(scope::call_id(log), &scope)?;
+    let existing = store.existing_originals(Some(&key));
+    Some(Recovery {
+        store,
+        key,
+        existing,
+    })
+}
+
+// Once per interval, so a standing misconfiguration stays visible without flooding the log
+fn warn_without_scope(guardrail: &CompresrGuardrail, now: Duration) {
+    let mut until = guardrail
+        .no_scope_warning_until
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if now < *until {
+        return;
+    }
+    *until = now.saturating_add(NO_SCOPE_WARNING_INTERVAL);
+    drop(until);
+    tracing::warn!(
+        "Compresr: enable_retrieval is on but this request has no per-key auth scope; compressing without recovery (compresr_retrieve tool not injected). Configure virtual-key auth to enable recovery."
+    );
 }
 
 impl GuardrailContract for CompresrGuardrail {
@@ -189,8 +188,7 @@ impl GuardrailContract for CompresrGuardrail {
         input_type: GuardrailInputType,
         logging_obj: Option<&mut GuardrailLogTarget>,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        self.apply(inputs, request_data, input_type, logging_obj)
-            .await
+        apply_compression(self, inputs, request_data, input_type, logging_obj).await
     }
 
     fn get_config_model(&self) -> Option<GuardrailValue> {

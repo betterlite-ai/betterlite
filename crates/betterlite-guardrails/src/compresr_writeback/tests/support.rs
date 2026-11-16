@@ -16,6 +16,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use crate::compresr_settings::{Clock, CompresrGuardrail, CompresrRuntime};
+use crate::compresr_writeback::apply_compression;
 use crate::generic_guardrail_contracts::{GuardrailInputType, GuardrailMessage};
 use crate::guardrail_base::inputs::{GuardrailApiInputs, GuardrailLogTarget};
 
@@ -127,17 +128,7 @@ pub(super) fn guardrail_at(base: &str, params: &str, clock: Clock) -> CompresrGu
 }
 
 pub(super) fn guardrail(base: &str, params: &str) -> CompresrGuardrail {
-    let runtime = CompresrRuntime {
-        clock: Box::new(|| NOW),
-        event_hook: None,
-    };
-    CompresrGuardrail::new(
-        &configured(base, params),
-        &BTreeMap::<String, String>::new(),
-        runtime,
-        reqwest::Client::default(),
-    )
-    .unwrap()
+    guardrail_at(base, params, Box::new(|| NOW))
 }
 
 pub(super) fn messages(json: &str) -> Vec<GuardrailMessage> {
@@ -160,15 +151,15 @@ pub(super) async fn apply_as_caller(
     input: GuardrailApiInputs,
 ) -> GuardrailApiInputs {
     let mut target = log_target(SCOPE, CALL_ID);
-    guardrail
-        .apply(
-            input,
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            Some(&mut target),
-        )
-        .await
-        .unwrap()
+    apply_compression(
+        guardrail,
+        input,
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        Some(&mut target),
+    )
+    .await
+    .unwrap()
 }
 
 pub(super) fn field(value: &GuardrailValue, name: &str) -> GuardrailValue {

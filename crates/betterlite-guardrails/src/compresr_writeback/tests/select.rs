@@ -1,6 +1,7 @@
 use rstest::rstest;
 
 use super::support::{guardrail, messages};
+use crate::compresr_writeback::select::select_targets;
 
 const ALL_ROLES: &str = r#"[{"role":"system","content":"system prompt"},{"role":"user","content":"first user"},{"role":"tool","content":"tool output"},{"role":"function","content":"function output"},{"role":"assistant","content":"assistant text"},{"role":"user","content":"last user"}]"#;
 const UNUSED_BASE: &str = "http://127.0.0.1:9";
@@ -18,7 +19,7 @@ const UNUSED_BASE: &str = "http://127.0.0.1:9";
 fn flags_decide_select_targets(#[case] params: &str, #[case] expected: &[usize]) {
     let guardrail = guardrail(UNUSED_BASE, params);
     assert_eq!(
-        guardrail.select_targets(&messages(ALL_ROLES), Some(5)),
+        select_targets(&guardrail, &messages(ALL_ROLES), Some(5)),
         expected
     );
 }
@@ -32,15 +33,15 @@ fn history_and_last_user_together_select_targets() {
     let rows = messages(
         r#"[{"role":"user","content":"first user"},{"role":"user","content":"second user"}]"#,
     );
-    assert_eq!(guardrail.select_targets(&rows, Some(1)), [0, 1]);
-    assert_eq!(guardrail.select_targets(&rows, None), [0, 1]);
+    assert_eq!(select_targets(&guardrail, &rows, Some(1)), [0, 1]);
+    assert_eq!(select_targets(&guardrail, &rows, None), [0, 1]);
 }
 
 #[rstest]
 #[case::one_short_of_the_minimum(r#""abcd""#, false)]
 #[case::exactly_the_minimum(r#""abcde""#, true)]
-#[case::counts_characters_not_bytes(r#""ééééé""#, true)]
-#[case::four_multibyte_characters_are_short(r#""éééé""#, false)]
+#[case::counts_characters_not_bytes("\"\\u00e9\\u00e9\\u00e9\\u00e9\\u00e9\"", true)]
+#[case::four_multibyte_characters_are_short("\"\\u00e9\\u00e9\\u00e9\\u00e9\"", false)]
 #[case::text_parts_join_with_a_blank_line(
     r#"[{"type":"text","text":"ab"},{"type":"text","text":"cd"}]"#,
     true
@@ -50,17 +51,20 @@ fn history_and_last_user_together_select_targets() {
     r#"[{"type":"text","text":"long enough text"},{"type":"image_url","image_url":{"url":"x"}}]"#,
     false
 )]
-#[case::empty_part_list(r#"[]"#, false)]
+#[case::empty_part_list("[]", false)]
 #[case::null_content("null", false)]
 fn minimum_and_shape_decide_select_targets(#[case] content: &str, #[case] selected: bool) {
     let guardrail = guardrail(UNUSED_BASE, "");
     let rows = messages(&format!(r#"[{{"role":"tool","content":{content}}}]"#));
-    assert_eq!(!guardrail.select_targets(&rows, None).is_empty(), selected);
+    assert_eq!(
+        !select_targets(&guardrail, &rows, None).is_empty(),
+        selected
+    );
 }
 
 #[test]
 fn missing_content_is_not_selected_select_targets() {
     let guardrail = guardrail(UNUSED_BASE, "");
     let rows = messages(r#"[{"role":"tool"}]"#);
-    assert!(guardrail.select_targets(&rows, None).is_empty());
+    assert!(select_targets(&guardrail, &rows, None).is_empty());
 }

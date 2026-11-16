@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use super::support::{TOOL_CONVERSATION, conversation, guardrail, reply, serve};
+use crate::compresr_writeback::apply_compression;
 use crate::compresr_writeback::mirror::mirror_texts_channel;
 use crate::compresr_writeback::results::Replacements;
 use crate::generic_guardrail_contracts::GuardrailInputType;
@@ -58,15 +59,15 @@ async fn identical_text_with_two_queries_ambiguous(
 ) {
     let server = serve(200, &reply(results)).await;
     let guardrail = guardrail(&server.base, "      enable_retrieval: false\n");
-    let output = guardrail
-        .apply(
-            conversation(TWO_IDENTICAL, TEXTS),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TWO_IDENTICAL, TEXTS),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output.texts, Some(texts(expected)));
 }
 
@@ -74,14 +75,14 @@ async fn identical_text_with_two_queries_ambiguous(
 async fn texts_stay_when_nothing_compresses_mirror() {
     let server = serve(200, &reply(&[("long tool output one", 10, 10)])).await;
     let guardrail = guardrail(&server.base, "      enable_retrieval: false\n");
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, r#","texts":["long tool output one"]"#),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, r#","texts":["long tool output one"]"#),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output.texts, Some(texts(&["long tool output one"])));
 }

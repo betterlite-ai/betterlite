@@ -11,7 +11,7 @@ use rstest::rstest;
 use super::error::CompresrSettingsError;
 use super::{
     CompresrGuardrail, CompresrRuntime, Compressible, DEFAULT_API_BASE, DEFAULT_COMPRESSION_MODEL,
-    DEFAULT_MAX_BYTES_PER_CALL, DEFAULT_MIN_CHARS_TO_COMPRESS, DEFAULT_TARGET_COMPRESSION_RATIO,
+    DEFAULT_COMPRESSION_RATIO, DEFAULT_MAX_BYTES_PER_CALL, DEFAULT_MIN_CHARS_TO_COMPRESS,
 };
 use crate::compresr_transport::DEFAULT_COMPRESS_TIMEOUT;
 use crate::generic_guardrail_contracts::UnreachableFallback;
@@ -68,21 +68,26 @@ fn targets(kinds: &[Compressible]) -> BTreeSet<Compressible> {
 }
 
 #[test]
-fn litellm_defaults_init() {
+fn litellm_transport_defaults_init() {
     let guardrail = build(KEY, &[]).unwrap();
     let transport = &guardrail.transport.settings;
     assert_eq!(guardrail.guardrail_name, "squeeze");
     assert_eq!(transport.api_base, DEFAULT_API_BASE);
     assert_eq!(transport.model, DEFAULT_COMPRESSION_MODEL);
     assert_eq!(
-        Some(transport.target_compression_ratio),
-        Some(DEFAULT_TARGET_COMPRESSION_RATIO)
+        transport.target_compression_ratio,
+        DEFAULT_COMPRESSION_RATIO
     );
     assert!(transport.coarse && transport.dynamic);
     assert!(transport.dynamic_min_ratio.is_none() && transport.dynamic_max_ratio.is_none());
     assert!(transport.compression_params.is_empty());
     assert_eq!(transport.timeout, DEFAULT_COMPRESS_TIMEOUT);
     assert_eq!(transport.fallback, UnreachableFallback::FailClosed);
+}
+
+#[test]
+fn litellm_settings_defaults_init() {
+    let guardrail = build(KEY, &[]).unwrap();
     let settings = &guardrail.settings;
     assert_eq!(
         settings.min_chars_to_compress,

@@ -5,6 +5,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::support::{
     TOOL_CONVERSATION, content_of, conversation, field, guardrail, reply, sent, serve,
 };
+use crate::compresr_writeback::apply_compression;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::contract::GuardrailContract as _;
 
@@ -23,15 +24,15 @@ async fn compresses_one_tool_output_apply_guardrail() {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let mut data = BTreeMap::new();
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut data,
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), text("short"));
     assert_eq!(content_of(&output, 0), text("find the answer"));
     let requests = sent(&server);
@@ -58,15 +59,15 @@ async fn compresses_one_tool_output_apply_guardrail() {
 async fn compresses_a_batch_by_position_apply_guardrail() {
     let server = serve(200, &reply(&[("first", 10, 4), ("second", 20, 8)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
-    let output = guardrail
-        .apply(
-            conversation(TWO_TOOLS, ""),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TWO_TOOLS, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), text("first"));
     assert_eq!(content_of(&output, 3), text("second"));
     let requests = sent(&server);
@@ -89,15 +90,15 @@ async fn responses_are_left_alone_apply_guardrail() {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let input = conversation(TOOL_CONVERSATION, "");
-    let output = guardrail
-        .apply(
-            input.clone(),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Response,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Response,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(sent(&server).is_empty());
 }
@@ -111,15 +112,15 @@ async fn nothing_to_compress_apply_guardrail(#[case] rows: &str) {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let input = conversation(rows, "");
-    let output = guardrail
-        .apply(
-            input.clone(),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(sent(&server).is_empty());
 }
@@ -129,15 +130,15 @@ async fn request_without_structured_messages_apply_guardrail() {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let input = conversation("null", r#","texts":["long tool output one"]"#);
-    let output = guardrail
-        .apply(
-            input.clone(),
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(sent(&server).is_empty());
 }
@@ -151,13 +152,28 @@ async fn an_unchanged_result_is_not_a_compression_apply_guardrail(#[case] return
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let input = conversation(TOOL_CONVERSATION, "");
     let mut data = BTreeMap::new();
-    let output = guardrail
-        .apply(input.clone(), &mut data, GuardrailInputType::Request, None)
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut data,
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(data.is_empty());
     assert_eq!(sent(&server).len(), 1);
+}
+
+fn first_record(data: &BTreeMap<String, GuardrailValue>) -> &GuardrailValue {
+    let GuardrailValue::Object(metadata) = &data["metadata"] else {
+        panic!("the record goes under metadata");
+    };
+    let GuardrailValue::Array(records) = &metadata["standard_logging_guardrail_information"] else {
+        panic!("the records are a list");
+    };
+    records.first().unwrap()
 }
 
 #[tokio::test]
@@ -165,25 +181,16 @@ async fn records_the_statistics_apply_guardrail() {
     let server = serve(200, &reply(&[("first", 10, 4), ("second", 20, 8)])).await;
     let guardrail = guardrail(&server.base, NO_RECOVERY);
     let mut data = BTreeMap::new();
-    guardrail
-        .apply(
-            conversation(TWO_TOOLS, ""),
-            &mut data,
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
-    let GuardrailValue::Object(metadata) = data.get("metadata").unwrap() else {
-        panic!("the record goes under metadata");
-    };
-    let GuardrailValue::Array(records) = metadata
-        .get("standard_logging_guardrail_information")
-        .unwrap()
-    else {
-        panic!("the records are a list");
-    };
-    let record = records.first().unwrap();
+    apply_compression(
+        &guardrail,
+        conversation(TWO_TOOLS, ""),
+        &mut data,
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
+    let record = first_record(&data);
     assert_eq!(field(record, "guardrail_name"), text("squeeze"));
     assert_eq!(field(record, "guardrail_provider"), text("compresr"));
     assert_eq!(field(record, "guardrail_status"), text("success"));
@@ -215,15 +222,15 @@ async fn the_texts_channel_follows_the_compression_apply_guardrail() {
         TOOL_CONVERSATION,
         r#","texts":["find the answer","long tool output one"]"#,
     );
-    let output = guardrail
-        .apply(
-            input,
-            &mut BTreeMap::new(),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input,
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         output.texts,
         Some(vec!["find the answer".to_owned(), "short".to_owned()])
@@ -244,15 +251,15 @@ async fn the_header_skips_the_compression_bypass() {
         "      allow_bypass_header: true\n      enable_retrieval: false\n",
     );
     let input = conversation(TOOL_CONVERSATION, "");
-    let output = guardrail
-        .apply(
-            input.clone(),
-            &mut bypass_data("TRUE"),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        input.clone(),
+        &mut bypass_data("TRUE"),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(output, input);
     assert!(sent(&server).is_empty());
 }
@@ -267,15 +274,15 @@ async fn the_header_skips_the_compression_bypass() {
 async fn the_header_does_not_apply_bypass(#[case] params: &str, #[case] value: &str) {
     let server = serve(200, &reply(&[("short", 10, 4)])).await;
     let guardrail = guardrail(&server.base, params);
-    let output = guardrail
-        .apply(
-            conversation(TOOL_CONVERSATION, ""),
-            &mut bypass_data(value),
-            GuardrailInputType::Request,
-            None,
-        )
-        .await
-        .unwrap();
+    let output = apply_compression(
+        &guardrail,
+        conversation(TOOL_CONVERSATION, ""),
+        &mut bypass_data(value),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(content_of(&output, 2), text("short"));
     assert_eq!(sent(&server).len(), 1);
 }

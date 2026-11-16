@@ -46,41 +46,41 @@ fn compression_stats(model: &str, applied: &Applied) -> GuardrailValue {
     GuardrailValue::Object(stats)
 }
 
-impl CompresrGuardrail {
-    pub(super) fn record_success(
-        &self,
-        request_data: &mut BTreeMap<String, GuardrailValue>,
-        log_target: Option<&mut GuardrailLogTarget>,
-        applied: &Applied,
-        window: &Compressed<'_>,
-    ) {
-        let mut settings = GuardrailSettings::default();
-        let guardrail_name = Some(self.guardrail_name.clone());
-        settings.guardrail_name.clone_from(&guardrail_name);
-        settings.event_hook.clone_from(&self.runtime.event_hook);
-        let base = GuardrailBase {
-            settings,
-            mode: None,
-        };
-        let mut context = GuardrailRecordContext {
-            base: &base,
-            request_data,
-            log_target,
-            sink: &NoSpan,
-        };
-        let input = GuardrailRecordInput {
-            guardrail_response: compression_stats(&self.transport.settings.model, applied),
-            guardrail_status: GuardrailStatus::Success,
-            start_time: Some(window.started.as_secs_f64()),
-            end_time: Some(window.ended.as_secs_f64()),
-            duration: Some(window.ended.saturating_sub(window.started).as_secs_f64()),
-            masked_entity_count: None,
-            guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
-            event_type: None,
-            tracing_detail: None,
-        };
-        if let Err(error) = add_guardrail_record(&mut context, input) {
-            tracing::warn!(%error, "Compresr: guardrail record could not be written");
-        }
+pub(super) fn record_success(
+    guardrail: &CompresrGuardrail,
+    request_data: &mut BTreeMap<String, GuardrailValue>,
+    log_target: Option<&mut GuardrailLogTarget>,
+    applied: &Applied,
+    window: &Compressed<'_>,
+) {
+    let mut settings = GuardrailSettings::default();
+    let guardrail_name = Some(guardrail.guardrail_name.clone());
+    settings.guardrail_name.clone_from(&guardrail_name);
+    settings
+        .event_hook
+        .clone_from(&guardrail.runtime.event_hook);
+    let base = GuardrailBase {
+        settings,
+        mode: None,
+    };
+    let mut context = GuardrailRecordContext {
+        base: &base,
+        request_data,
+        log_target,
+        sink: &NoSpan,
+    };
+    let input = GuardrailRecordInput {
+        guardrail_response: compression_stats(&guardrail.transport.settings.model, applied),
+        guardrail_status: GuardrailStatus::Success,
+        start_time: Some(window.started.as_secs_f64()),
+        end_time: Some(window.ended.as_secs_f64()),
+        duration: Some(window.ended.saturating_sub(window.started).as_secs_f64()),
+        masked_entity_count: None,
+        guardrail_provider: Some(GUARDRAIL_PROVIDER.to_owned()),
+        event_type: None,
+        tracing_detail: None,
+    };
+    if let Err(error) = add_guardrail_record(&mut context, input) {
+        tracing::warn!(%error, "Compresr: guardrail record could not be written");
     }
 }

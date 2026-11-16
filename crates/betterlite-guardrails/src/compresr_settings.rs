@@ -21,7 +21,7 @@ mod tests;
 pub const BYPASS_HEADER: &str = "x-compresr-bypass";
 pub const DEFAULT_API_BASE: &str = "https://api.compresr.ai";
 pub const DEFAULT_COMPRESSION_MODEL: &str = "latte_v2";
-pub const DEFAULT_TARGET_COMPRESSION_RATIO: f64 = 0.5;
+pub const DEFAULT_COMPRESSION_RATIO: f64 = 0.5;
 pub const DEFAULT_MIN_CHARS_TO_COMPRESS: usize = 500;
 pub const DEFAULT_MAX_BYTES_PER_CALL: usize = 10 * 1024 * 1024;
 pub const UI_FRIENDLY_NAME: &str = "Compresr (context compression)";
@@ -104,7 +104,7 @@ fn transport_settings(
             .unwrap_or_else(|| DEFAULT_COMPRESSION_MODEL.to_owned()),
         target_compression_ratio: tuning
             .target_compression_ratio
-            .unwrap_or(DEFAULT_TARGET_COMPRESSION_RATIO),
+            .unwrap_or(DEFAULT_COMPRESSION_RATIO),
         coarse: tuning.coarse.unwrap_or(true),
         dynamic: tuning.dynamic.unwrap_or(true),
         dynamic_min_ratio: tuning.dynamic_min_ratio,

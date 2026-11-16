@@ -82,43 +82,41 @@ impl Applied {
     }
 }
 
-impl CompresrGuardrail {
-    // A result counts only when it is non-empty text that differs from the original; recovery None turns markers off
-    pub(super) fn apply_compression_results(
-        &self,
-        messages: Vec<GuardrailMessage>,
-        answer: &Compressed<'_>,
-        recovery: Option<&Originals>,
-    ) -> Applied {
-        let mut applied = Applied {
-            messages,
-            originals: Originals::new(),
-            replacements: Replacements::default(),
-            messages_compressed: 0,
-            tokens_before: 0,
-            tokens_after: 0,
-            recovery_bytes: recovery.map_or(0, entry_bytes),
+// A result counts only when it is non-empty text that differs from the original; recovery None turns markers off
+pub(super) fn apply_compression_results(
+    guardrail: &CompresrGuardrail,
+    messages: Vec<GuardrailMessage>,
+    answer: &Compressed<'_>,
+    recovery: Option<&Originals>,
+) -> Applied {
+    let mut applied = Applied {
+        messages,
+        originals: Originals::new(),
+        replacements: Replacements::default(),
+        messages_compressed: 0,
+        tokens_before: 0,
+        tokens_after: 0,
+        recovery_bytes: recovery.map_or(0, entry_bytes),
+    };
+    let planned = answer.plan.indices.iter().zip(&answer.plan.targets);
+    for ((&target_idx, target), result) in planned.zip(answer.results) {
+        let original = target.context.as_str();
+        let Some(compressed) = result
+            .compressed_context
+            .as_deref()
+            .filter(|text| !text.is_empty() && *text != original)
+        else {
+            continue;
         };
-        let planned = answer.plan.indices.iter().zip(&answer.plan.targets);
-        for ((&target_idx, target), result) in planned.zip(answer.results) {
-            let original = target.context.as_str();
-            let Some(compressed) = result
-                .compressed_context
-                .as_deref()
-                .filter(|text| !text.is_empty() && *text != original)
-            else {
-                continue;
-            };
-            applied.messages_compressed = applied.messages_compressed.saturating_add(1);
-            let mut text = compressed.to_owned();
-            if let Some(existing) = recovery
-                && let Some(marker) =
-                    applied.attach_recovery(existing, original, self.settings.max_bytes_per_call)
-            {
-                text.push_str(&marker);
-            }
-            applied.write(target_idx, original, &text, result);
+        applied.messages_compressed = applied.messages_compressed.saturating_add(1);
+        let mut text = compressed.to_owned();
+        if let Some(existing) = recovery
+            && let Some(marker) =
+                applied.attach_recovery(existing, original, guardrail.settings.max_bytes_per_call)
+        {
+            text.push_str(&marker);
         }
-        applied
+        applied.write(target_idx, original, &text, result);
     }
+    applied
 }
