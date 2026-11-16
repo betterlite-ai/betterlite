@@ -5,10 +5,12 @@ use std::collections::BTreeSet;
 use betterlite_config::sections::mcp_env_values::StdioPolicy;
 use betterlite_db::mcp_stored_contracts::{MCPAuth, MCPTransport};
 use betterlite_prompts::arguments::json::Json;
+use rstest::rstest;
 
 use crate::server_payload::RequestError;
 use crate::server_payload::request::{
-    NewMCPServerRequest, UpdateMCPServerRequest, is_per_server_oauth_discovery_eligible,
+    MCPApprovalStatus, NewMCPServerRequest, UpdateMCPServerRequest,
+    is_per_server_oauth_discovery_eligible,
 };
 use crate::server_record::OAuth2Flow;
 
@@ -438,4 +440,17 @@ fn eligibility_needs_every_condition() {
         None,
         false
     ));
+}
+
+#[rstest]
+#[case::pending(MCPApprovalStatus::PendingReview, "pending_review")]
+#[case::active(MCPApprovalStatus::Active, "active")]
+#[case::rejected(MCPApprovalStatus::Rejected, "rejected")]
+#[case::draft(MCPApprovalStatus::Draft, "draft")]
+fn approval_status_texts_match_litellm(#[case] status: MCPApprovalStatus, #[case] text: &str) {
+    assert_eq!(status.as_str(), text);
+    assert_eq!(
+        serde_json::to_string(&status).unwrap(),
+        format!("\"{text}\"")
+    );
 }
