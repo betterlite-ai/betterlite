@@ -30,7 +30,11 @@ fn env_with_keys() -> FamilyEnv {
 }
 
 #[rstest]
-#[case::dashscope(DashscopeFamily::Dashscope, crate::dashscope_chat::DEFAULT_BASE, false)]
+#[case::dashscope(
+    DashscopeFamily::Dashscope,
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    false
+)]
 #[case::qwencloud(
     DashscopeFamily::QwenCloud,
     "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
@@ -87,10 +91,13 @@ fn a_brand_chat_config_falls_through_to_the_dashscope_key(#[case] family: Dashsc
 #[test]
 fn the_plain_embedding_identity_reads_only_the_dashscope_key() {
     let identity = embedding_identity(DashscopeFamily::Dashscope, &env_with_keys());
-    assert_eq!(identity.default_base, crate::dashscope_chat::DEFAULT_BASE);
+    assert_eq!(
+        identity.default_base,
+        "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    );
     assert_eq!(
         identity.missing_key_message,
-        crate::dashscope_embedding::DASHSCOPE_MISSING_KEY_MESSAGE
+        "DashScope API key is required. Set 'DASHSCOPE_API_KEY' env var or pass api_key explicitly."
     );
     assert_eq!(identity.env_base.as_deref(), Some("https://env.test/v1"));
     assert_eq!(
@@ -226,12 +233,9 @@ fn the_plain_image_identity_takes_the_international_host_and_the_dashscope_key()
     let identity = image_identity(DashscopeFamily::Dashscope, &env_with_keys());
     assert_eq!(
         identity.default_image_base,
-        crate::dashscope_image::DEFAULT_API_BASE
+        "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
     );
-    assert_eq!(
-        identity.missing_key_message,
-        crate::dashscope_image::MISSING_KEY_MESSAGE
-    );
+    assert_eq!(identity.missing_key_message, "DASHSCOPE_API_KEY is not set");
     assert_eq!(
         identity.env_image_base.as_deref(),
         Some("https://env.test/image")
