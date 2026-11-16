@@ -1,0 +1,6 @@
+task: B657
+deviations:
+  - what: A Responses input naming more than 256 distinct remote image URLs fails with TooManyRemoteUrls before any fetch.
+    why: LiteLLM fetches every URL a caller sends, so one request can make the gateway download without end; the limit is the one the other inline media paths use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L147-L154
+kept_bugs: []

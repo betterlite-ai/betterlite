@@ -1,0 +1,117 @@
+kind: helper
+name: cohere-model-group
+call:
+  foundry_embeddings:
+    flows:
+      - mode: sync
+        model: offer-cohere-embed-multili-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: offer-cohere-embed-multili-paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: offer-cohere-embed-english-paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: offer-cohere-embed-multili-paygo-extra}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: custom-group}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: ''}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}]}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: llm_provider-azureml-model-group, value: Offer-Cohere-Embed-Multili-Paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: x-azureml-model-group, value: offer-cohere-embed-multili-paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: azureml-model-group, value: offer-cohere-embed-english-paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+      - mode: sync
+        model: offer-cohere-embed-english-paygo
+        input: ['data:image/png;base64,AAAA']
+        options: {}
+        api_base: https://acct.services.ai.azure.com/v1
+        api_key: case-key
+        timeout: 5
+        image_reply: {status: 200, headers: [{name: azureml-model-group, value: offer-cohere-embed-multili-paygo}], body: '{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"raw-model"}'}
+        text_reply: {status: 200, headers: [], body: '{"object":"list","data":[],"model":"text-model","usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+        client: none
+env: {}
+compare: {ignore: []}
