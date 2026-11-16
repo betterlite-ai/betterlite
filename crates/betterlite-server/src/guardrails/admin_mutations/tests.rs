@@ -25,6 +25,7 @@ use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
 use betterlite_guardrails::guardrail_registry::build::GuardrailFactories;
+use betterlite_guardrails::guardrail_registry::error::RegistryError;
 use betterlite_guardrails::guardrail_registry::handler::{
     HandlerSettings, InMemoryGuardrailHandler,
 };
@@ -48,6 +49,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use crate::auth::auth_identity::AuthContext;
 
 use super::body::{BodyError, WriteRequest, decode_patch_body, decode_write_request};
+use super::error::MutationError;
 use super::review_rows::{
     PostgresReviewRows, ReviewRow, ReviewRows, ReviewRowsBinding, ReviewRowsError,
 };
@@ -268,6 +270,25 @@ pub(super) fn first_issue(body: &str) -> JsonData {
         JsonData::Array(items) => items.first().cloned().expect("one issue"),
         other => panic!("the detail is not a list: {other:?}"),
     }
+}
+
+#[test]
+fn error_keeps_the_typed_cause() {
+    let registry = MutationError::Registry {
+        source: RegistryError::MissingGuardrailType,
+    };
+    let cause = std::error::Error::source(&registry).expect("a registry cause");
+    assert_eq!(cause.to_string(), "guardrail_type is required");
+    let rows = MutationError::ReviewRows {
+        source: ReviewRowsError::MissingRow {
+            guardrail_id: "g1".to_owned(),
+        },
+    };
+    let cause = std::error::Error::source(&rows).expect("a review rows cause");
+    assert_eq!(
+        cause.to_string(),
+        "Guardrail with ID g1 not found after the update"
+    );
 }
 
 pub(super) fn stamp(text: &str) -> Timestamp {
