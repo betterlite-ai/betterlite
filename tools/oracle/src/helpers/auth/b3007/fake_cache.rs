@@ -19,10 +19,10 @@ pub(super) struct FakeFailure;
 
 pub(super) struct FakeCache {
     mode: RedisMode,
-    memory: Mutex<BTreeMap<String, CachedSpend>>,
-    memory_ttls: Mutex<BTreeMap<String, u64>>,
-    redis: Mutex<BTreeMap<String, CachedSpend>>,
-    redis_ttls: Mutex<BTreeMap<String, u64>>,
+    pub(super) memory: Mutex<BTreeMap<String, CachedSpend>>,
+    pub(super) memory_ttls: Mutex<BTreeMap<String, u64>>,
+    pub(super) redis: Mutex<BTreeMap<String, CachedSpend>>,
+    pub(super) redis_ttls: Mutex<BTreeMap<String, u64>>,
 }
 
 impl FakeCache {
@@ -51,24 +51,6 @@ impl FakeCache {
         })
     }
 
-    pub(super) fn memory_state(&self) -> (BTreeMap<String, f64>, BTreeMap<String, u64>) {
-        let values = self.memory.lock().unwrap_or_else(PoisonError::into_inner);
-        let ttls = self
-            .memory_ttls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        (amounts(&values), ttls.clone())
-    }
-
-    pub(super) fn redis_state(&self) -> (BTreeMap<String, f64>, BTreeMap<String, u64>) {
-        let values = self.redis.lock().unwrap_or_else(PoisonError::into_inner);
-        let ttls = self
-            .redis_ttls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        (amounts(&values), ttls.clone())
-    }
-
     fn read(store: &Mutex<BTreeMap<String, CachedSpend>>, key: &str) -> Option<CachedSpend> {
         store
             .lock()
@@ -92,6 +74,18 @@ impl FakeCache {
         }
         next
     }
+}
+
+pub(super) fn state(
+    values: &Mutex<BTreeMap<String, CachedSpend>>,
+    ttls: &Mutex<BTreeMap<String, u64>>,
+) -> (BTreeMap<String, f64>, BTreeMap<String, u64>) {
+    let spent = {
+        let locked = values.lock().unwrap_or_else(PoisonError::into_inner);
+        amounts(&locked)
+    };
+    let lifetimes = ttls.lock().unwrap_or_else(PoisonError::into_inner).clone();
+    (spent, lifetimes)
 }
 
 impl SessionBudgetCache for FakeCache {

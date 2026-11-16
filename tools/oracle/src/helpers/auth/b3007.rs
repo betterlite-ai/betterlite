@@ -23,7 +23,7 @@ use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use fake_cache::FakeCache;
-use input::Charge;
+use fake_cache::state;
 use input::Input;
 use input::PreCall;
 
@@ -87,10 +87,19 @@ async fn execute(input: &Input) -> HelperResult {
         outcomes.push(pre_call_outcome(&handler, &registry, call).await);
     }
     for call in &input.charges {
-        outcomes.push(charge_outcome(&handler, &registry, call).await);
+        let cost = call
+            .response_cost
+            .as_ref()
+            .and_then(|number| amount_from_text(&number.to_string()));
+        let event = SuccessEvent {
+            litellm_params: call.litellm_params.as_ref(),
+            response_cost: cost,
+        };
+        handler.async_log_success_event(&registry, &event).await;
+        outcomes.push(json!({"kind": "charge", "outcome": "logged"}));
     }
-    let (memory, memory_ttls) = handler.cache.memory_state();
-    let (redis, redis_ttls) = handler.cache.redis_state();
+    let (memory, memory_ttls) = state(&handler.cache.memory, &handler.cache.memory_ttls);
+    let (redis, redis_ttls) = state(&handler.cache.redis, &handler.cache.redis_ttls);
     Ok(json!({
         "ttl": handler.ttl.as_secs(),
         "script_registered": handler.script.is_some(),
@@ -127,21 +136,4 @@ async fn pre_call_outcome(
         }
         Err(other) => json!({"kind": "pre_call", "outcome": "error", "message": other.to_string()}),
     }
-}
-
-async fn charge_outcome(
-    handler: &SessionBudgetHandler<FakeCache>,
-    registry: &AgentRegistry,
-    call: &Charge,
-) -> Value {
-    let cost = call
-        .response_cost
-        .as_ref()
-        .and_then(|number| amount_from_text(&number.to_string()));
-    let event = SuccessEvent {
-        litellm_params: call.litellm_params.as_ref(),
-        response_cost: cost,
-    };
-    handler.async_log_success_event(registry, &event).await;
-    json!({"kind": "charge", "outcome": "logged"})
 }
