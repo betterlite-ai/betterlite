@@ -9,14 +9,18 @@ deviations:
       parsing at runtime, and a working setup always gets the list.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1506-L1525
   - what: >-
-      The text after "Invalid YAML syntax: " is serde-saphyr's, not PyYAML's, and the
-      parser follows YAML 1.2, so yes, no, on, off and YAML 1.1-only scalars such as 1:30
-      stay plain text where PyYAML reads a boolean or a base-60 integer. A date such as
-      2024-01-01 stays text too, where PyYAML loads a datetime.
+      The text after "Invalid YAML syntax: " is serde-saphyr's, not PyYAML's, and scalar
+      typing follows serde-saphyr: it reads YAML 1.2 numbers, so a leading-zero integer
+      such as 012 is the number 12 here and octal 10 in PyYAML, 08 is 8 here and text
+      there, a sexagesimal such as 1:30 is text here and 90 there, 0o17 is 15 here and
+      text there, and a bare y or n is a boolean here and text there. A date such as
+      2024-01-01 stays text, where PyYAML loads a datetime. yes/no/on/off and
+      true/false are booleans in both parsers.
     why: >-
-      PyYAML's marks and messages are not reproducible. A text keyword and a text action
-      are what the entry checks compare, so a 1.2 parse keeps working files working; an
-      oracle case for bad syntax compares the status and valid only.
+      PyYAML's marks and messages are not reproducible, and serde-saphyr is the workspace's
+      parser. A working blocked-words file spells keyword and action as text, which both
+      parsers read the same way; an oracle case for bad syntax compares the status and
+      valid only.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1575
   - what: >-
       A body that never reaches the declared model (not JSON, not an object, or a value of

@@ -74,7 +74,12 @@ const PATCH_FAILURE_KINDS: [&str; 5] = [
     "submit_failure",
     "post_call_failure",
 ];
-const UNLOGGED_SUCCESS_KINDS: [&str; 3] = ["pre_call", "runner_call", "sink_record"];
+const UNLOGGED_SUCCESS_KINDS: [&str; 4] = [
+    "pre_call",
+    "runner_call",
+    "sink_record",
+    "post_call_success",
+];
 const UNLOGGED_FAILURE_KINDS: [&str; 4] = [
     "pre_call",
     "runner_call",
@@ -379,14 +384,14 @@ async fn blocked_words_counts_the_valid_entries() {
 }
 
 #[tokio::test]
-async fn blocked_words_reads_yaml_1_2_scalars_as_text() {
+async fn blocked_words_reads_yes_as_a_boolean_like_pyyaml() {
     let world = World::new();
     let content = "blocked_words:\n  - keyword: yes\n    action: MASK\n";
     let (status, verdict) = blocked_words(&world, &file_body(content)).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
         verdict,
-        value(r#"{"valid":true,"message":"Valid YAML file with 1 blocked word(s)"}"#)
+        value(r#"{"valid":false,"errors":["Entry 0: 'keyword' must be a string"]}"#)
     );
 }
 

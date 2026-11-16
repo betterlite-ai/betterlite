@@ -317,11 +317,17 @@ pub(super) struct FakeSink {
     pub(super) events: Arc<Mutex<Vec<Event>>>,
 }
 
+impl FakeSink {
+    fn record(&self, record: &GuardrailInvocationRecord) {
+        self.events.lock().unwrap().push(Event::SinkRecord {
+            record: Box::new(record.clone()),
+        });
+    }
+}
+
 impl GuardrailSpanSink for FakeSink {
     fn emit(&self, record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
-        self.events.lock().unwrap().push(Event::SinkRecord {
-            record: record.clone(),
-        });
+        self.record(record);
         Ok(())
     }
 }

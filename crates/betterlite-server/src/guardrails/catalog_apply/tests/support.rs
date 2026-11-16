@@ -217,7 +217,7 @@ pub(super) enum Event {
         cache_hit: bool,
     },
     SinkRecord {
-        record: GuardrailInvocationRecord,
+        record: Box<GuardrailInvocationRecord>,
     },
 }
 
@@ -313,21 +313,34 @@ impl Event {
                 end_time: *end_time,
                 cache_hit: *cache_hit,
             }),
-            _ => None,
+            Self::MarkPassThrough { .. }
+            | Self::RunnerCall { .. }
+            | Self::Hook { .. }
+            | Self::FailureHandler { .. }
+            | Self::SuccessHandler { .. }
+            | Self::SinkRecord { .. } => None,
         }
     }
 
     fn marked_messages(&self) -> Option<Vec<OpaqueParams>> {
         match self {
             Self::MarkPassThrough { messages } => Some(messages.clone()),
-            _ => None,
+            Self::RunnerCall { .. }
+            | Self::Hook { .. }
+            | Self::FailureHandler { .. }
+            | Self::SuccessHandler { .. }
+            | Self::SinkRecord { .. } => None,
         }
     }
 
     fn sink_record(&self) -> Option<GuardrailInvocationRecord> {
         match self {
-            Self::SinkRecord { record } => Some(record.clone()),
-            _ => None,
+            Self::SinkRecord { record } => Some(record.as_ref().clone()),
+            Self::MarkPassThrough { .. }
+            | Self::RunnerCall { .. }
+            | Self::Hook { .. }
+            | Self::FailureHandler { .. }
+            | Self::SuccessHandler { .. } => None,
         }
     }
 }
