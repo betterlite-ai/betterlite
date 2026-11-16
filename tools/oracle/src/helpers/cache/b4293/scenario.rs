@@ -13,7 +13,9 @@ use serde_json::json;
 
 use super::input::{Call, Fields};
 use super::server::{FAILURE, FakeRedis, connect_cache, delete_lengths, set_expiries};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::slice;
 
 const EXPIRY: Duration = Duration::from_secs(1);
 const LOCAL: CacheOptions = CacheOptions {
@@ -82,7 +84,7 @@ async fn read(call: &Fields, batched: bool) -> HelperResult {
         let redis = Arc::clone(&scenario.redis);
         let (_batches, found) = request_redis_batch_scope(EXPIRY, async {
             let batch = active_request_redis_batch(&redis)?;
-            let _misses = batch.mget(std::slice::from_ref(&call.key)).await;
+            let _misses = batch.mget(slice::from_ref(&call.key)).await;
             scenario.cache.async_get_cache(&call.key, false).await
         })
         .await;

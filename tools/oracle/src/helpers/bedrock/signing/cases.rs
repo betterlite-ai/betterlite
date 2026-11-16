@@ -3,7 +3,6 @@ use super::input::{
     ServiceRequest as ServiceRequestInput,
 };
 use super::ops::{credentials_json, credentials_of, epoch, runtime, signed_result};
-use crate::helpers::{HelperError, OrHelperError as _};
 use betterlite_bedrock::aws_settings::sources::Credentials;
 use betterlite_bedrock::credentials::error::CredentialError;
 use betterlite_bedrock::signing::batch::sign_batch_request;
@@ -11,9 +10,11 @@ use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::executor::{AwsSigningExecutor, sign_request_off_loop_if_aws};
 use betterlite_bedrock::signing::service::sign_service_request;
 use betterlite_bedrock::signing::target::{RegionInputs, TargetRequest, request_target};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use serde_json::{Value, json};
 use std::future::ready;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::thread;
 use std::thread::ThreadId;
 use tracing::subscriber::with_default;
 use tracing_subscriber::registry;
@@ -67,7 +68,7 @@ pub(super) fn off_loop_case(case: &OffLoop) -> Result<Value, Box<HelperError>> {
             value: case.value.clone(),
             context: case.context.clone(),
             span_id: span.id(),
-            caller: std::thread::current().id(),
+            caller: thread::current().id(),
         };
         let steps = runtime.block_on(observed_steps(&probe, &case.failure));
         drop(entered);
@@ -112,7 +113,7 @@ impl Probe {
             "value": &self.value,
             "context": self.context,
             "context_preserved": tracing::Span::current().id() == self.span_id,
-            "off_caller_thread": std::thread::current().id() != self.caller,
+            "off_caller_thread": thread::current().id() != self.caller,
         })
     }
 }

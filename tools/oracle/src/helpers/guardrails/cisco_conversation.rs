@@ -10,7 +10,8 @@ use betterlite_guardrails::cisco_conversation::{Fields, normalize_content};
 use serde_json::value::RawValue;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -53,10 +54,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         outcome(input.clone()).map_err(|error| {
             Box::new(HelperError {
                 class: "InvalidInput".to_owned(),

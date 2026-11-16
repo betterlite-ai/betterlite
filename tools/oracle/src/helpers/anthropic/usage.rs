@@ -5,7 +5,9 @@ use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::helpers::{HelperCall, HelperError, invoke};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -41,7 +43,7 @@ impl ReasoningTokenCounter for TokenizerCounter {
                 "count_response_tokens": true,
             }),
         };
-        let output = invoke(&call);
+        let output = invoke(&[betterlite_oracle_tokenizer::GROUP], &call);
         if let Some(error) = output.error {
             return Err(TokenCountFailure {
                 message: error.message,
@@ -63,10 +65,10 @@ impl ReasoningTokenCounter for TokenizerCounter {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let failure = |message: String| {
             Box::new(HelperError {
                 class: "AnthropicUsage".to_owned(),

@@ -1,6 +1,8 @@
 use betterlite_models::tiered_pricing::{
     Scalar, Tier, TierRange, TieredPricingError, select_tier_for_input, tier_rate,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -32,12 +34,12 @@ pub(crate) struct Input {
     fallback_cost_key: Option<CostKey>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_inner(input).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "TieredPricingError".to_owned(),
                 status: None,
                 error_type: None,

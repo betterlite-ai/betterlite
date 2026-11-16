@@ -7,13 +7,16 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::{RunCall, RunDispatch, RunInvocation, RunsApi};
 use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 use wire::{RecordingHandler, Wire};
 
-pub(super) fn invalid_input(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn invalid_input(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -22,7 +25,7 @@ pub(super) fn invalid_input(message: String) -> Box<crate::helpers::HelperError>
         message,
     })
 }
-fn client_options(fields: &Fields) -> Result<ClientOptions, Box<crate::helpers::HelperError>> {
+fn client_options(fields: &Fields) -> Result<ClientOptions, Box<HelperError>> {
     let options = &fields.options;
     let timeout = options
         .timeout
@@ -45,7 +48,7 @@ const fn selected(kind: ClientKind, streaming: bool) -> &'static str {
         (ClientKind::Async, true) => "async_stream",
     }
 }
-fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn failure(error: &ThreadRunsError) -> Result<Value, Box<HelperError>> {
     match error {
         ThreadRunsError::Status(status, _) => Ok(json!({"kind": "status", "status": status})),
         ThreadRunsError::MissingApiKey => Ok(json!({"kind": "configuration"})),
@@ -74,7 +77,7 @@ async fn stream_outcome(
     wire: &Wire,
     stream: RunStream<Wire>,
     calls: Arc<Mutex<Vec<String>>>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     let kind = selected(stream.kind, true);
     let events = stream.consume().await;
     let logged = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
@@ -93,10 +96,7 @@ async fn stream_outcome(
         })),
     }
 }
-async fn round_outcome(
-    fields: &Fields,
-    round: &Round,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+async fn round_outcome(fields: &Fields, round: &Round) -> Result<Value, Box<HelperError>> {
     let wire = Wire::new(&round.replies)?;
     let api = RunsApi {
         transport: Arc::clone(&wire),
@@ -133,10 +133,10 @@ async fn round_outcome(
     }
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(|error| invalid_input(error.to_string()))?;

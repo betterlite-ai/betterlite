@@ -8,7 +8,8 @@ use uuid::Uuid;
 
 use super::FixedIds;
 use super::wire::{event_summary, failure, header_pair, parse_ids, prompt_start_summary};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Clone, Copy)]
 pub(super) enum Summary {

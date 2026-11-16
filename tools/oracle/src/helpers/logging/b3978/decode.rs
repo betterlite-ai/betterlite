@@ -10,7 +10,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
