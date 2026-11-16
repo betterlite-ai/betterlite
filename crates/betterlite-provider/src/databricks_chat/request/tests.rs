@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::future::{Future, ready};
 
 use async_trait::async_trait;
@@ -10,6 +11,7 @@ use betterlite_core::api::messages_native_transform::capabilities::{
     ADAPTIVE_THINKING, LegacyShapes, Thinking, ThinkingCapabilities,
 };
 use betterlite_models::decisions::Json as DecisionJson;
+use betterlite_openai::error::ProviderError;
 use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -17,7 +19,9 @@ use secrecy::SecretString;
 use serde_json::{Number, Value, json};
 
 use crate::databricks_auth::environment::DatabricksEnv;
+use crate::databricks_auth::error::DatabricksError;
 use crate::databricks_auth::oauth::{OauthReply, OauthTokenRequest, OauthTokenSource};
+use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::request::params::map_openai_params;
 use crate::databricks_chat::request::tools::convert_anthropic_tool;
 use crate::databricks_chat::request::{
@@ -650,4 +654,33 @@ fn a_null_description_is_left_out() {
             }
         })
     );
+}
+
+#[test]
+fn a_databricks_error_keeps_its_status_message_and_headers_as_a_provider_error() {
+    let error = DatabricksChatError::Databricks(DatabricksError {
+        status_code: 401,
+        message: String::from("bad token"),
+        headers: Some(BTreeMap::from([(String::from("x-id"), String::from("7"))])),
+    });
+    assert_eq!(error.status_code(), 401);
+    let provider = ProviderError::from(error);
+    assert_eq!(provider.status_code, 401);
+    assert_eq!(provider.message, "bad token");
+    assert_eq!(
+        provider.headers,
+        Some(vec![(String::from("x-id"), String::from("7"))])
+    );
+}
+
+#[test]
+fn a_response_error_without_headers_has_no_provider_headers() {
+    let error = DatabricksChatError::Response {
+        status_code: 503,
+        message: String::from("down"),
+        headers: BTreeMap::new(),
+    };
+    let provider = ProviderError::from(error);
+    assert_eq!(provider.status_code, 503);
+    assert_eq!(provider.headers, None);
 }
