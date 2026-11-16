@@ -12,14 +12,15 @@ use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.op.as_str() {
             "init" => {
                 let guardrail = settings(input)?;
@@ -170,7 +171,7 @@ const fn fallback_name(fallback: UnreachableFallback) -> &'static str {
     }
 }
 
-fn parse_response(input: &Input) -> crate::helpers::HelperResult {
+fn parse_response(input: &Input) -> HelperResult {
     let _guardrail = settings(input)?;
     let status = StatusCode::from_u16(input.answer.status.unwrap_or(200))
         .map_err(|error| failure("AktoError", None, error.to_string()))?;

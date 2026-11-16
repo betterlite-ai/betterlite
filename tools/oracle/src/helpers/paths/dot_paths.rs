@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_paths::paths::delete::remove;
 use betterlite_paths::paths::lookup::find_or;
 use betterlite_paths::paths::{Document, PathLimits};
@@ -25,10 +27,10 @@ const LIMITS: PathLimits = PathLimits {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let result = match input {
             Input::Get {
                 data,
@@ -45,7 +47,7 @@ impl crate::helpers::Helper for Op {
             Input::Delete { data, path } => remove(&LIMITS, &Document { json: data.clone() }, path),
         };
         result.map(|document| document.json).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "PathError".to_owned(),
                 status: None,
                 error_type: None,

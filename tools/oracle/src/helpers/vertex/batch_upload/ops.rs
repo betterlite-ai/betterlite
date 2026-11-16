@@ -36,7 +36,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 const MAX_LINE_BYTES: usize = 0x0010_0000;
 
@@ -168,7 +170,7 @@ fn build_mappers() -> Result<Mappers, Box<HelperError>> {
 }
 
 pub(super) fn run(input: &Input) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let mappers = build_mappers()?;
     let options = OptionSettings::default();
     let schema = SchemaSettings::default();

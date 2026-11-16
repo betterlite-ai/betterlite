@@ -4,7 +4,8 @@ use betterlite_models::baseline_history::replay::advance_baseline_history;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -16,7 +17,7 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Input) -> HelperResult {

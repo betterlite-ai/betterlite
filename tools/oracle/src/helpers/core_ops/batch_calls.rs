@@ -2,9 +2,13 @@ use betterlite_core::batch::{
     execution::{Batch, BatchLimits, Item, Mode},
     selection::{all_responses, first_ordered_model_result},
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 use std::time::Duration;
 use thiserror::Error;
+use tokio::runtime::Builder;
 use tokio::{sync::watch, task::JoinSet};
 
 #[derive(Clone, Copy, Deserialize)]
@@ -61,10 +65,10 @@ enum MessageResult {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
@@ -73,11 +77,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "BatchError".to_owned(),
         message: error.to_string(),
         status: None,
@@ -87,10 +91,7 @@ where
     })
 }
 
-fn schedule(
-    requested: &[usize],
-    count: usize,
-) -> Result<Vec<usize>, Box<crate::helpers::HelperError>> {
+fn schedule(requested: &[usize], count: usize) -> Result<Vec<usize>, Box<HelperError>> {
     let order = if requested.is_empty() {
         (0..count).collect()
     } else {
@@ -104,7 +105,7 @@ fn schedule(
     Ok(order)
 }
 
-fn prepare(input: &Input) -> Result<Batch<Outcome, usize>, Box<crate::helpers::HelperError>> {
+fn prepare(input: &Input) -> Result<Batch<Outcome, usize>, Box<HelperError>> {
     if !matches!(input.mode, Operation::Messages) && input.models.len() != input.results.len() {
         return Err(failure("models and results must have equal lengths"));
     }
@@ -140,7 +141,7 @@ fn prepare(input: &Input) -> Result<Batch<Outcome, usize>, Box<crate::helpers::H
     })
 }
 
-async fn run(input: &Input) -> crate::helpers::HelperResult {
+async fn run(input: &Input) -> HelperResult {
     let batch = prepare(input)?;
     let mut owners = JoinSet::new();
     let (turn, _) = watch::channel(0_usize);
@@ -171,10 +172,7 @@ async fn run(input: &Input) -> crate::helpers::HelperResult {
     encode(input.mode, report.results)
 }
 
-fn encode(
-    mode: Operation,
-    results: Vec<Result<Option<String>, ProbeError>>,
-) -> crate::helpers::HelperResult {
+fn encode(mode: Operation, results: Vec<Result<Option<String>, ProbeError>>) -> HelperResult {
     match mode {
         Operation::Messages => serde_json::to_value(
             results
