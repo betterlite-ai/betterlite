@@ -10,6 +10,7 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::decisions::Json;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -115,8 +116,14 @@ fn runway_task_settings() {
     assert_eq!(defaults.api_version, "2024-11-06");
     assert_eq!(defaults.polling_timeout_seconds, 600);
     assert!(defaults.api_secret.is_none() && defaults.api_key.is_none());
-    let empty = settings(&[("RUNWAYML_API_BASE", ""), ("RUNWAYML_POLLING_TIMEOUT", "")]).unwrap();
+    let empty = settings(&[
+        ("RUNWAYML_API_BASE", ""),
+        ("RUNWAYML_DEFAULT_API_VERSION", ""),
+        ("RUNWAYML_POLLING_TIMEOUT", ""),
+    ])
+    .unwrap();
     assert_eq!(empty.api_base, "https://api.dev.runwayml.com");
+    assert_eq!(empty.api_version, "2024-11-06");
     assert_eq!(empty.polling_timeout_seconds, 600);
     let set = settings(&[
         ("RUNWAYML_API_BASE", "https://other.test"),
@@ -407,11 +414,37 @@ fn mixed_outputs_keep_every_member() {
     assert_eq!(members[3], TaskOutput::Unsupported(r#"{"n":1}"#.to_owned()));
 }
 
+#[test]
+fn video_fields_keep_presence_and_credits() {
+    let body = br#"{"id":"t","status":"SUCCEEDED","createdAt":"2025-11-11T21:48:50.448Z","completedAt":null,"output":"u","progress":0.5,"estimatedCost":{"credits":5}}"#;
+    let task = decode_runway_task(body).unwrap();
+    assert_eq!(
+        task.created_at.value(),
+        Some(&Json::Text("2025-11-11T21:48:50.448Z".to_owned()))
+    );
+    assert_eq!(task.completed_at.value(), Some(&Json::Null));
+    assert_eq!(task.output, Some(TaskOutputs::Text("u".to_owned())));
+    assert!(task.progress.is_some_and(|progress| progress > 0.0));
+    assert!(matches!(task.estimated_credits(), Some(Json::Number(_))));
+    let plain = decode_runway_task(br#"{"estimatedCost":[{"credits":5}]}"#).unwrap();
+    assert_eq!(plain.estimated_credits(), None);
+    let absent = decode_runway_task(b"{}").unwrap();
+    assert_eq!(absent.created_at.value(), None);
+    assert_eq!(absent.completed_at.value(), None);
+    assert_eq!(absent.estimated_credits(), None);
+}
+
 #[rstest]
 fn replays_the_runway_task_corpus(#[files("fuzz/corpus/runway_task/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     if let Ok(task) = decode_runway_task(&bytes) {
         assert_eq!(str::from_utf8(&bytes).map(str::len), Ok(bytes.len()));
         drop(task.state());
+        drop(task.created_at.value());
+        drop(task.completed_at.value());
+        drop(task.estimated_credits());
+        drop(task.failure.or_default("unknown"));
+        drop(task.failure_code.or_default("unknown"));
+        drop(task.progress);
     }
 }
