@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::Duration;
 
-use betterlite_openai::api::audio_file_input::AudioFile;
+use betterlite_openai::api::audio_file_input::{AudioFile, AudioTuple, TupleContent};
 use http::Method;
 use serde_json::json;
 
@@ -125,6 +125,47 @@ async fn uploaded_success_runs_create_poll_fetch_and_deletes_both() {
         }
         support::LogRecord::PreCall { .. } => panic!("the second record is the post-call"),
     }
+}
+
+#[tokio::test]
+async fn a_tuple_audio_file_uploads_its_streamed_content_with_the_tuple_filename() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let answers = vec![
+        answer(200, r#"{"id":"file_1"}"#),
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed","audio_duration_ms":1500}"#),
+        answer(200, r#"{"text":"hello"}"#),
+        answer(200, "{}"),
+        answer(200, "{}"),
+    ];
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = params(&[("soniox_max_polling_attempts", json!(1))]);
+    let call = call(&case_params, false);
+    let mut stream = support::NamedStream::new("inner.mp3", AUDIO_CONTENT);
+    let mut file = AudioFile::Tuple(AudioTuple {
+        filename: "clip.mp3",
+        content: Some(TupleContent::Stream(&mut stream)),
+    });
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(
+            &call,
+            target(Some(&mut file), &mut response, &mut logger),
+            None,
+        )
+        .await;
+
+    assert!(outcome.is_ok(), "{outcome:?}");
+    let calls = recorder.calls();
+    let parts = multipart_parts(&calls[0].body);
+    assert_eq!(parts.len(), 1);
+    assert_eq!(parts[0].file_name.as_deref(), Some("clip.mp3"));
+    assert_eq!(parts[0].content_type.as_deref(), Some("audio/mpeg"));
+    assert_eq!(parts[0].data, AUDIO_CONTENT);
+    assert_eq!(response.text.as_deref(), Some("hello"));
 }
 
 #[tokio::test]
