@@ -3,8 +3,8 @@ from typing import cast
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.llms.openai import OpenAITextCompletionUserMessage as UserMessage
-from litellm.types.llms.openai import ResponseInputParam
 from litellm.types.router import GenericLiteLLMParams
+from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import JsonValue
 
 from b5832.records import (
@@ -56,10 +56,11 @@ def extra_body_step(step: ExtraBodyStep) -> JsonValue:
 
 
 def completion_step(step: CompletionStep) -> JsonValue:
-    messages = [
-        UserMessage(role="user", content=message["content"]) for message in step["messages"]
-    ]
     try:
+        messages = [
+            UserMessage(role="user", content=message["content"])
+            for message in step["messages"]
+        ]
         request = COMPLETION.transform_text_completion_request(
             step["model"], messages, optional_params_of(step), {}
         )
@@ -75,7 +76,7 @@ def headers_step(step: HeadersStep) -> JsonValue:
         "litellm_session_id": session.get("litellm_session_id"),
         "litellm_metadata": session.get("litellm_metadata"),
     }
-    params = GenericLiteLLMParams.model_validate(fields)
+    params = GenericLiteLLMParams.model_validate(fields)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381
     try:
         authorized = CONFIG.validate_environment(
             headers=step["headers"], model=MODEL, litellm_params=params

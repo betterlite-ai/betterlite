@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Final, Literal, NotRequired, Protocol, TypedDict
+from typing import Final, Literal, NotRequired, Protocol, TypedDict, cast
 
 import httpx
 import litellm
@@ -7,10 +7,10 @@ from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.fireworks_ai.completion.transformation import FireworksAITextCompletionConfig
 from litellm.llms.fireworks_ai.responses.transformation import FireworksAIResponsesAPIConfig
 from litellm.types.llms.openai import OpenAITextCompletionUserMessage as UserMessage
-from litellm.types.llms.openai import ResponseInputParam
 from litellm.types.responses.main import DeleteResponseResult
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import LlmProviders
+from openai.types.responses.response_input_param import ResponseInputParam
 from pydantic import JsonValue, TypeAdapter
 
 MODEL: Final = "accounts/fireworks/models/test-model"
@@ -179,8 +179,8 @@ class ResponsesConfig(Protocol):
     ) -> DeleteResponseResult: ...
 
 
-COMPLETION: TextCompletionConfig = FireworksAITextCompletionConfig()
-CONFIG: ResponsesConfig = FireworksAIResponsesAPIConfig()
+COMPLETION = cast(TextCompletionConfig, FireworksAITextCompletionConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/completion/transformation.py#L23
+CONFIG = cast(ResponsesConfig, FireworksAIResponsesAPIConfig())  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/responses/transformation.py#L118
 
 
 def model_cost_of(parsed: Input) -> dict[str, dict[str, JsonValue]]:
