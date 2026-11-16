@@ -6,4 +6,7 @@ deviations:
   - what: A reply whose root is not a JSON object, or whose candidates, content, parts or inlineData values are not the declared shapes, fails with a typed Shape error naming the path, where LiteLLM's candidate loop raises an uncaught AttributeError or TypeError as HTTP 500.
     why: The declared shapes are an object holding a candidates list of contents with part objects, so such a reply is malformed; betterlite names the failure instead of answering 500, and no working setup receives one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L211-L220
+  - what: A file record whose position cannot be read, whose rewind fails or whose read fails ends in a typed Stream error carrying the io error, where LiteLLM lets the OSError escape the transform as an unhandled 500.
+    why: The record is the caller's upload, so the failure is named and chained instead of crashing the request; no working setup sends a stream that refuses to be read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_gemini_transformation.py#L249-L264
 kept_bugs: []
