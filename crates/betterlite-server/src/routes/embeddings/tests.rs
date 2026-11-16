@@ -23,7 +23,11 @@ use tower::ServiceExt as _;
 use super::{EmbeddingError, dispatch_failure, embedding_port_failure, embedding_routes, render};
 use crate::server::chat_setup::chat_executor;
 use crate::server::chat_setup::provider_call::CallError;
-use betterlite_core::operation::embedding::route_error;
+use async_trait::async_trait;
+use betterlite_core::operation::embedding::{
+    EmbeddingCall, EmbeddingCallInput, EmbeddingFailure, EmbeddingResult, route_error,
+};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[derive(serde::Deserialize)]
 struct ErrorEnvelope {
@@ -488,4 +492,70 @@ async fn an_unmocked_embedding_goes_through_the_provider_framework() {
         envelope.error.message,
         "betterlite does not serve azure embeddings yet"
     );
+}
+
+struct CountingVertex {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl EmbeddingCall for CountingVertex {
+    async fn embed(
+        &self,
+        _call: EmbeddingCallInput<'_>,
+    ) -> Result<EmbeddingResult, EmbeddingFailure> {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        Err(EmbeddingFailure::Mismatched)
+    }
+}
+
+async fn status_with_vertex(deployment: &str) -> (StatusCode, usize) {
+    let yaml = format!("model_list:\n  - {{model_name: emb, litellm_params: {{{deployment}}}}}\n");
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let vertex = Arc::new(CountingVertex {
+        calls: AtomicUsize::new(0),
+    });
+    let handle = Arc::clone(&vertex);
+    let installed: Arc<dyn EmbeddingCall> = handle;
+    let request = Request::post("/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"emb","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor), Some(installed))
+        .oneshot(request)
+        .await
+        .expect("response");
+    (response.status(), vertex.calls.load(Ordering::SeqCst))
+}
+
+#[tokio::test]
+async fn a_vertex_ai_embedding_reaches_the_installed_vertex_call() {
+    let (_status, calls) =
+        status_with_vertex("model: vertex_ai/text-embedding-004, api_base: 'http://127.0.0.1:1'")
+            .await;
+    assert_eq!(calls, 1);
+}
+
+#[tokio::test]
+async fn a_mocked_vertex_ai_embedding_never_reaches_the_vertex_call() {
+    let (status, calls) = status_with_vertex(
+        "model: vertex_ai/text-embedding-004, api_base: 'http://127.0.0.1:1', mock_response: [0.1]",
+    )
+    .await;
+    assert_eq!(calls, 0);
+    assert_eq!(status, StatusCode::OK);
+}
+
+#[tokio::test]
+async fn another_provider_never_reaches_the_vertex_call() {
+    let (status, calls) =
+        status_with_vertex("model: azure/embed, api_base: 'http://127.0.0.1:1', api_key: k").await;
+    assert_eq!(calls, 0);
+    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
 }

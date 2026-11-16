@@ -14,6 +14,7 @@ use betterlite_config::sections::vertex_credential_sources::vertex_settings::Adc
 use betterlite_config::types::{Config, ProxyTrust};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
+use betterlite_tokenizer::engine::limits::BlockingCounter as _;
 use betterlite_vertex::aws_federation::AwsCredentialsResolver as _;
 use betterlite_vertex::credential_sources::error::CredentialSourceError;
 use betterlite_vertex::credential_sources::sdk::{
@@ -27,7 +28,7 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::counter::RuntimeTextCounter;
+use super::counter::{InlineCounter, RuntimeTextCounter};
 use super::executor::{UnavailableAws, VertexCredentialExecutor};
 use super::{VertexEmbeddingSetupError, token_counter, vertex_embedding_calls};
 use crate::server::chat_setup::chat_executor;
@@ -171,6 +172,17 @@ async fn load_reports_an_unreadable_credential() {
     let result = executor.load(Some(&credentials), Some("project")).await;
     assert!(matches!(result, Err(CredentialCacheError::Load(_))));
     assert!(executor.handles.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn the_inline_counter_runs_each_job_where_it_is_called() {
+    let counted = InlineCounter.count(Box::new(|| Ok(7))).await.unwrap();
+    assert_eq!(counted, 7);
+    let converted = InlineCounter
+        .convert(Box::new(|| Ok(vec![3, 4])))
+        .await
+        .unwrap();
+    assert_eq!(converted, vec![3, 4]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
