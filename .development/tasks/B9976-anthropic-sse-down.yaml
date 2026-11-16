@@ -1,0 +1,77 @@
+id: B9976
+title: Anthropic SSE helpers move down to betterlite-guardrails
+description: >-
+  B3669 built LiteLLM's guardrail SSE helpers (litellm/proxy/guardrails/anthropic_sse.py) in betterlite-server, as
+  crates/betterlite-server/src/guardrails/anthropic_sse. LiteLLM's guardrail hooks import them from that one module
+  (tool_permission.py imports assemble_anthropic_sse_stream and anthropic_sse_chunks_from_response; presidio,
+  bedrock_guardrails and model_armor use it too), and betterlite builds those hooks in betterlite-guardrails and
+  lower crates. betterlite-server depends on betterlite-guardrails, so the hooks cannot reach the helpers, and B3813
+  wrote a second copy of the assembly and re-encoding. The helpers move down so every hook calls the one copy.
+
+
+  Move only, no behaviour change. With git mv, crates/betterlite-server/src/guardrails/anthropic_sse.rs and
+  anthropic_sse/** become crates/betterlite-guardrails/src/anthropic_sse.rs and anthropic_sse/**, tests included.
+  The plan commit already declares `pub mod anthropic_sse;` in betterlite-guardrails' lib.rs over an empty
+  anthropic_sse.rs, and the moved file replaces it (git mv -f). Inside the module,
+  `betterlite_guardrails::guardrail_message_scope` becomes `crate::guardrail_message_scope` and
+  `crate::guardrails::anthropic_sse` becomes `crate::anthropic_sse`. betterlite-guardrails gains the
+  betterlite-streaming dependency the module uses (betterlite-streaming does not depend on betterlite-guardrails).
+  betterlite-server's guardrails.rs drops `pub mod anthropic_sse;`. The fuzz target fuzz_targets/anthropic_sse.rs
+  and its corpus/anthropic_sse folder move from crates/betterlite-server/fuzz to crates/betterlite-guardrails/fuzz,
+  with the [[bin]] entry and the target's `use betterlite_server::guardrails::anthropic_sse::...` paths now
+  `betterlite_guardrails::anthropic_sse::...`; replays_the_anthropic_sse_corpus keeps reading
+  fuzz/corpus/anthropic_sse, now under betterlite-guardrails. Test names stay the same apart from the dropped
+  `guardrails::` prefix.
+scope:
+  paths:
+  - crates/betterlite-server/src/guardrails.rs
+  - crates/betterlite-server/src/guardrails/anthropic_sse.rs
+  - crates/betterlite-server/src/guardrails/anthropic_sse/**
+  - crates/betterlite-server/fuzz/Cargo.toml
+  - crates/betterlite-server/fuzz/fuzz_targets/anthropic_sse.rs
+  - crates/betterlite-server/fuzz/corpus/anthropic_sse/**
+  - crates/betterlite-guardrails/Cargo.toml
+  - crates/betterlite-guardrails/src/anthropic_sse.rs
+  - crates/betterlite-guardrails/src/anthropic_sse/**
+  - crates/betterlite-guardrails/fuzz/Cargo.toml
+  - crates/betterlite-guardrails/fuzz/fuzz_targets/anthropic_sse.rs
+  - crates/betterlite-guardrails/fuzz/corpus/anthropic_sse/**
+  - Cargo.lock
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L21-L24
+  why: A guardrail hook imports the helpers from the shared anthropic_sse module, which is why they belong below every hook.
+dod:
+- text: >-
+    The anthropic_sse helpers, their tests, the fuzz target and its corpus live in betterlite-guardrails, unchanged,
+    and betterlite-server no longer has them.
+  proof: [guardrails-sse-tests, server-guardrail-tests, moved]
+checks:
+  optional: []
+  commands:
+  - id: guardrails-sse-tests
+    why: The moved helpers or their corpus replay fail in betterlite-guardrails.
+    run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^anthropic_sse::/)'
+  - id: server-guardrail-tests
+    why: betterlite-server no longer builds or its guardrail streaming broke after the move.
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::chat_guardrail_translation::streaming::/)'
+  - id: moved
+    why: The module or its fuzz target is still in betterlite-server.
+    run: >-
+      test -f crates/betterlite-guardrails/src/anthropic_sse.rs &&
+      test -f crates/betterlite-guardrails/fuzz/fuzz_targets/anthropic_sse.rs &&
+      ! test -e crates/betterlite-server/src/guardrails/anthropic_sse.rs &&
+      ! grep -q -F 'pub mod anthropic_sse;' crates/betterlite-server/src/guardrails.rs &&
+      ! git grep -q -F 'betterlite_server::guardrails::anthropic_sse' -- crates
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Any change to what the helpers do. B3813 and the other hooks switch to the moved module in their own tasks.
+- StreamItem stays in betterlite-guardrails' guardrail_message_scope.
+pitfalls:
+- Use git mv so each file keeps its history; the budget counts the move as deleted plus added lines (about 300 each way outside tests and the corpus).
+- Tests keep their module paths under anthropic_sse, so only the `guardrails::` prefix changes in any test filter.
+review_level: standard
+budget:
+  max_changed_lines: 800
+  max_new_expects: 0

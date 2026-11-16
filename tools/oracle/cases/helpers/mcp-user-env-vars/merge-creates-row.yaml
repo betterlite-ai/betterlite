@@ -1,0 +1,14 @@
+kind: helper
+name: mcp-user-env-vars-merge-creates-row
+call:
+  b4714:
+    function: merge
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-1
+    updates: {API_KEY: first-secret}
+    allowed_names: [API_KEY]
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

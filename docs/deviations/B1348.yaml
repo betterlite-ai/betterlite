@@ -1,0 +1,35 @@
+task: B1348
+deviations:
+  - what: >-
+      The mask travels to transform_image_edit_request as its own typed ImagenFileInput argument, where LiteLLM copies
+      the mask record into the mapped params dict under "mask" and the transform reads it from there.
+    why: a file record is bytes or a stream rather than JSON, so betterlite's ImageParams cannot carry it; the
+      reference list and the parameters the request sends are the same either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L64-L65
+  - what: >-
+      A base64 string in a dict's data, bytes or content key over 50 MiB, and a JSON input document over 50 MiB, are
+      refused with a typed TooLarge error before decoding, where LiteLLM hands any length to base64.b64decode and
+      parses any document size.
+    why: Rule bounded-inputs caps every input from outside, and the 50 MiB ceiling is the shared media cap; a working
+      image edit never approaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L301-L312
+  - what: >-
+      A file record whose position cannot be read, whose rewind fails or whose read fails ends in a typed Stream error
+      carrying the io error, where LiteLLM's BytesIO and BufferedReader branches at L318-L335 and its generic read()
+      branch at L346-L350 let the OSError escape the transform as an unhandled 500.
+    why: The record is the caller's upload, so the failure is named and chained instead of crashing the request; no
+      working setup sends a stream that refuses to be read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L318-L350
+kept_bugs:
+  - what: >-
+      A mask's referenceId is len(reference_images) + 1, so it repeats an earlier raw referenceId whenever the mask
+      follows one or more raw references that survived a skipped None entry.
+    why: a working setup's request already carries the colliding ids and this task keeps LiteLLM's wire format, so
+      betterlite sends the same referenceIds rather than renumbering them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L278
+  - what: >-
+      A list or tuple record is read through its first non-None member only, and every later member is ignored, so a
+      filename-first tuple refuses the file name instead of trying the bytes that follow it.
+    why: a working setup passes its reference images in this shape and relies on the first member being read; reading
+      the remaining members would send references LiteLLM never sends.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L295-L299

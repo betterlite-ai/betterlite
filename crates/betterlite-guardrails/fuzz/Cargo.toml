@@ -192,3 +192,10 @@ path = "fuzz_targets/pillar_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "anthropic_sse"
+path = "fuzz_targets/anthropic_sse.rs"
+test = false
+doc = false
+bench = false
