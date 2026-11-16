@@ -475,6 +475,45 @@ async fn a_boolean_duration_is_refused_where_python_reads_a_float() {
 }
 
 #[tokio::test]
+async fn a_duration_past_the_decimal_range_is_refused_after_the_post_call() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let mut answers = vec![
+        answer(200, r#"{"id":"file_1"}"#),
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed","audio_duration_ms":1e30}"#),
+        answer(200, r#"{"text":"hello"}"#),
+    ];
+    answers.push(answer(200, "{}"));
+    answers.push(answer(200, "{}"));
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let call = call(&case_params, false);
+    let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
+    let mut file = AudioFile::Stream(&mut stream);
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(
+            &call,
+            target(Some(&mut file), &mut response, &mut logger),
+            None,
+        )
+        .await;
+
+    match outcome.expect_err("the duration is past what Decimal holds") {
+        PipelineError::Duration { field, .. } => assert_eq!(field, "audio_duration_ms"),
+        other => panic!("expected the duration error, got {other:?}"),
+    }
+    assert_eq!(response.text.as_deref(), Some("hello"));
+    let calls = recorder.calls();
+    assert_eq!(calls.len(), 6);
+    assert_eq!(calls[4].method, Method::DELETE);
+    assert_eq!(calls[5].method, Method::DELETE);
+}
+
+#[tokio::test]
 async fn a_bad_api_base_fails_the_create_without_a_request() {
     let effects = support::Effects::default();
     let book = support::LogBook::default();
