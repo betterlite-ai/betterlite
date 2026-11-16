@@ -10,15 +10,15 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
-use betterlite_config::loader::startup::process_environment;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::gcs_response_cache::GcsResponseCacheSettings;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource as _;
+use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use betterlite_logging::gcs_mock::auth::{
     AccessToken, EnsureAccessToken, GetTokenAndUrl, TokenAndUrl, VertexAuth,
 };
+use betterlite_logging::gcs_mock::request::{GcsReadRequest, GcsRequest};
 use rstest::rstest;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
@@ -29,8 +29,9 @@ use tokio::time::timeout;
 use tracing::instrument::WithSubscriber as _;
 
 use super::body::decode_body;
-use super::headers::ProcessEnvironment;
-use super::{Disconnect as _, GcsCache, key_prefix, object_name};
+use super::headers::build_headers;
+use super::{GcsCache, key_prefix};
+use crate::s3_cache::Disconnect as _;
 use crate::s3_cache::entry::CachedEntry;
 
 const TOKEN: &str = "fixed-token";
@@ -45,10 +46,22 @@ struct FixedAuthError;
 #[derive(Clone, Debug)]
 struct FixedAuth {
     fail: bool,
+    projects: Arc<Mutex<Vec<Option<String>>>>,
 }
 
 impl FixedAuth {
-    fn access_token(&self) -> Result<AccessToken, FixedAuthError> {
+    fn new(fail: bool) -> Self {
+        Self {
+            fail,
+            projects: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn access_token(&self, request: &EnsureAccessToken) -> Result<AccessToken, FixedAuthError> {
+        self.projects
+            .lock()
+            .unwrap()
+            .push(request.project_id.clone());
         if self.fail {
             return Err(FixedAuthError);
         }
@@ -65,16 +78,16 @@ impl VertexAuth for FixedAuth {
 
     async fn ensure_access_token_async(
         &self,
-        _request: EnsureAccessToken,
+        request: EnsureAccessToken,
     ) -> Result<AccessToken, FixedAuthError> {
-        self.access_token()
+        self.access_token(&request)
     }
 
     fn ensure_access_token(
         &self,
-        _request: EnsureAccessToken,
+        request: EnsureAccessToken,
     ) -> Result<AccessToken, FixedAuthError> {
-        self.access_token()
+        self.access_token(&request)
     }
 
     fn get_token_and_url(&self, request: GetTokenAndUrl) -> Result<TokenAndUrl, FixedAuthError> {
@@ -205,13 +218,27 @@ fn settings_with(
     }
 }
 
+fn environment(pairs: &[(&str, &str)]) -> Arc<dyn EnvironmentSource> {
+    Arc::new(
+        pairs
+            .iter()
+            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+            .collect::<BTreeMap<String, String>>(),
+    )
+}
+
 fn cache_at(
     base_url: &str,
     cache_settings: &GcsResponseCacheSettings,
     auth: FixedAuth,
 ) -> GcsCache<FixedAuth> {
-    GcsCache::new(cache_settings, auth, proxied_client(), Some(base_url))
-        .expect("the GCS cache builds")
+    GcsCache::new(
+        cache_settings,
+        auth,
+        proxied_client(),
+        Some(base_url),
+        environment(&[]),
+    )
 }
 
 fn cache_address(listener: &TcpListener) -> String {
@@ -220,7 +247,7 @@ fn cache_address(listener: &TcpListener) -> String {
 
 fn cache_on(listener: &TcpListener, path: &str) -> GcsCache<FixedAuth> {
     let base_url = cache_address(listener);
-    cache_at(&base_url, &settings(path), FixedAuth { fail: false })
+    cache_at(&base_url, &settings(path), FixedAuth::new(false))
 }
 
 fn cache_on_with(
@@ -266,9 +293,36 @@ fn prefix_from_gcs_path(#[case] path: &str, #[case] expected: &str) {
 #[case::plus("", "a+b", "a%2Bb")]
 #[case::unicode("", "héllo", "h%C3%A9llo")]
 #[case::safe_marks("", "a_b.c-d~e", "a_b.c-d~e")]
-#[case::prefix("cache/", "response:key", "cache%2Fresponse%3Akey")]
-fn object_name_percent_encoding(#[case] prefix: &str, #[case] key: &str, #[case] expected: &str) {
-    assert_eq!(object_name(prefix, key), expected);
+#[case::prefix("cache", "response:key", "cache%2Fresponse%3Akey")]
+#[tokio::test]
+async fn object_name_percent_encoding(
+    #[case] path: &str,
+    #[case] key: &str,
+    #[case] expected: &str,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let cache = cache_on(&listener, path);
+    let value = decode_body(br#"{"value":true}"#).unwrap();
+    let operation = async {
+        let (read, read_request) = tokio::join!(
+            cache.async_get_cache(key),
+            serve(&listener, &response("404 Not Found", b""))
+        );
+        assert!(read.is_none());
+        let text = String::from_utf8(read_request).unwrap();
+        let target = format!("GET /storage/v1/b/responses/o/{expected}?alt=media HTTP/1.1\r\n");
+        assert!(text.starts_with(&target), "{text}");
+        let ((), write_request) = tokio::join!(
+            cache.async_set_cache(key, &value),
+            serve(&listener, &response("200 OK", b""))
+        );
+        let text = String::from_utf8(write_request).unwrap();
+        let target = format!(
+            "POST /upload/storage/v1/b/responses/o?uploadType=media&name={expected} HTTP/1.1\r\n"
+        );
+        assert!(text.starts_with(&target), "{text}");
+    };
+    timeout(Duration::from_secs(5), operation).await.unwrap();
 }
 
 #[rstest]
@@ -280,7 +334,7 @@ async fn write_url_and_body(#[case] bucket: &str) {
     let cache = cache_on_with(
         &listener,
         &settings_with(bucket, Some(SERVICE_ACCOUNT), "cache"),
-        FixedAuth { fail: false },
+        FixedAuth::new(false),
     );
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
@@ -326,11 +380,7 @@ async fn write_ignores_failure_status(#[case] status: &str) {
 
 #[tokio::test]
 async fn write_swallows_transport_error() {
-    let cache = cache_at(
-        "http://127.0.0.1:0",
-        &settings(""),
-        FixedAuth { fail: false },
-    );
+    let cache = cache_at("http://127.0.0.1:0", &settings(""), FixedAuth::new(false));
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let ((), log) = timeout(
         Duration::from_secs(5),
@@ -347,7 +397,7 @@ async fn write_swallows_transport_error() {
 #[tokio::test]
 async fn write_swallows_header_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let cache = cache_on_with(&listener, &settings(""), FixedAuth { fail: true });
+    let cache = cache_on_with(&listener, &settings(""), FixedAuth::new(true));
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let ((), log) = timeout(
         Duration::from_secs(5),
@@ -430,7 +480,7 @@ async fn read_miss_on_bad_json_logs_error(#[case] body: &[u8]) {
 #[tokio::test]
 async fn read_miss_on_header_failure() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let cache = cache_on_with(&listener, &settings(""), FixedAuth { fail: true });
+    let cache = cache_on_with(&listener, &settings(""), FixedAuth::new(true));
     let (value, log) = timeout(
         Duration::from_secs(5),
         capture_log(cache.async_get_cache("key")),
@@ -618,11 +668,11 @@ async fn async_hit_is_silent() {
 fn default_base_url_is_storage_googleapis() {
     let cache = GcsCache::new(
         &settings(""),
-        FixedAuth { fail: false },
+        FixedAuth::new(false),
         proxied_client(),
         None,
-    )
-    .unwrap();
+        environment(&[]),
+    );
     let debug = format!("{cache:?}");
     assert!(debug.contains("https://storage.googleapis.com"), "{debug}");
 }
@@ -631,11 +681,11 @@ fn default_base_url_is_storage_googleapis() {
 fn mock_environment_is_ignored() {
     let cache = GcsCache::new(
         &settings(""),
-        FixedAuth { fail: false },
+        FixedAuth::new(false),
         proxied_client(),
         None,
-    )
-    .unwrap();
+        environment(&[("GCS_MOCK", "true"), ("GCS_MOCK_LATENCY_MS", "1")]),
+    );
     assert!(!cache.base.is_mock_mode);
     assert!(!cache.base.client.settings.enabled);
 }
@@ -644,7 +694,7 @@ fn mock_environment_is_ignored() {
 async fn base_url_trailing_slash_is_trimmed() {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("{}/", cache_address(&listener));
-    let cache = cache_at(&base_url, &settings(""), FixedAuth { fail: false });
+    let cache = cache_at(&base_url, &settings(""), FixedAuth::new(false));
     let value = decode_body(br#"{"value":true}"#).unwrap();
     let operation = async {
         let ((), request) = tokio::join!(
@@ -686,12 +736,78 @@ async fn credentials_absent_from_debug_output() {
     assert!(!log.contains(TOKEN), "{log}");
 }
 
-#[test]
-fn process_environment_is_read_live() {
-    let environment = ProcessEnvironment;
-    let path = process_environment().get("PATH").cloned();
-    assert_eq!(environment.get("PATH"), path);
-    assert_eq!(environment.snapshot().get("PATH").cloned(), path);
+#[tokio::test]
+async fn project_id_comes_from_the_injected_environment() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let auth = FixedAuth::new(false);
+    let cache = GcsCache::new(
+        &settings(""),
+        auth.clone(),
+        proxied_client(),
+        Some(cache_address(&listener).as_str()),
+        environment(&[("GOOGLE_SECRET_MANAGER_PROJECT_ID", "injected-project")]),
+    );
+    let operation = async {
+        let (value, _) = tokio::join!(
+            cache.async_get_cache("key"),
+            serve(&listener, &response("404 Not Found", b""))
+        );
+        assert!(value.is_none());
+    };
+    timeout(Duration::from_secs(5), operation).await.unwrap();
+    assert_eq!(
+        *auth.projects.lock().unwrap(),
+        [Some("injected-project".to_owned())]
+    );
+}
+
+#[tokio::test]
+async fn project_id_is_absent_without_the_environment_variable() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let auth = FixedAuth::new(false);
+    let cache = GcsCache::new(
+        &settings(""),
+        auth.clone(),
+        proxied_client(),
+        Some(cache_address(&listener).as_str()),
+        environment(&[]),
+    );
+    let operation = async {
+        let (value, _) = tokio::join!(
+            cache.async_get_cache("key"),
+            serve(&listener, &response("404 Not Found", b""))
+        );
+        assert!(value.is_none());
+    };
+    timeout(Duration::from_secs(5), operation).await.unwrap();
+    assert_eq!(*auth.projects.lock().unwrap(), [None::<String>]);
+}
+
+#[tokio::test]
+async fn built_headers_hide_the_token_from_debug() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let cache = cache_on(&listener, "");
+    let headers = build_headers(
+        &cache.base,
+        cache.bucket_name.clone(),
+        cache.service_account_path.clone(),
+    )
+    .await
+    .unwrap();
+    let request = GcsRequest::Get(GcsReadRequest {
+        url: "https://storage.googleapis.com/storage/v1/b/responses/o/key".to_owned(),
+        params: BTreeMap::new(),
+        headers: headers.clone(),
+        follow_redirects: None,
+    });
+    let debug = format!("{request:?}");
+    assert!(debug.contains("Sensitive"), "{debug}");
+    assert!(!debug.contains(TOKEN), "{debug}");
+    assert!(headers.get("authorization").unwrap().is_sensitive());
+    assert_eq!(
+        headers.get("authorization").unwrap().to_str().unwrap(),
+        format!("Bearer {TOKEN}")
+    );
 }
 
 #[test]

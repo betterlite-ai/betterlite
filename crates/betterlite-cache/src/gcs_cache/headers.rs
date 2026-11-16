@@ -1,9 +1,6 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use betterlite_config::loader::startup::process_environment;
 use betterlite_logging::gcs_client::gcs_storage_auth::GcsBucketBase;
-use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use betterlite_logging::gcs_client::gcs_storage_auth::error::GcsClientError;
 use betterlite_logging::gcs_client::gcs_storage_auth::sync_header_behaviors::sync_construct_request_headers;
 use betterlite_logging::gcs_logger::transport::PooledGcsClient;
@@ -12,20 +9,6 @@ use http::header::{HeaderMap, HeaderName, HeaderValue, InvalidHeaderName, Invali
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::runtime::Handle;
 use tokio::task::JoinError;
-
-// the sync header operation asks for GOOGLE_SECRET_MANAGER_PROJECT_ID on every call
-#[derive(Debug)]
-pub(super) struct ProcessEnvironment;
-
-impl EnvironmentSource for ProcessEnvironment {
-    fn get(&self, name: &str) -> Option<String> {
-        process_environment().remove(name)
-    }
-
-    fn snapshot(&self) -> BTreeMap<String, String> {
-        process_environment()
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum HeaderError<Auth>
@@ -73,12 +56,12 @@ where
         .map_err(|source| HeaderError::Build { source })?;
     let mut map = HeaderMap::new();
     for (name, value) in &headers {
-        map.insert(
-            HeaderName::from_bytes(name.as_bytes())
-                .map_err(|source| HeaderError::Name { source })?,
-            HeaderValue::from_str(value.expose_secret())
-                .map_err(|source| HeaderError::Value { source })?,
-        );
+        let header_name = HeaderName::from_bytes(name.as_bytes())
+            .map_err(|source| HeaderError::Name { source })?;
+        let mut header_value = HeaderValue::from_str(value.expose_secret())
+            .map_err(|source| HeaderError::Value { source })?;
+        header_value.set_sensitive(true);
+        map.insert(header_name, header_value);
     }
     Ok(map)
 }

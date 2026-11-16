@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fmt;
-use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::sections::gcs_response_cache::GcsResponseCacheSettings;
@@ -9,13 +8,15 @@ use betterlite_logging::gcs_client::gcs_storage_auth::GcsBucketBase;
 use betterlite_logging::gcs_client::gcs_storage_auth::environment_source::EnvironmentSource;
 use betterlite_logging::gcs_logger::transport::PooledGcsClient;
 use betterlite_logging::gcs_mock::auth::{GcsMockAuth, VertexAuth};
-use betterlite_logging::gcs_mock::client::{GcsHttpClient as _, create_mock_gcs_client};
+use betterlite_logging::gcs_mock::client::{GcsHttpClient as _, GcsMockClient};
 use betterlite_logging::gcs_mock::request::{GcsReadRequest, GcsRequest, GcsWriteRequest};
+use betterlite_logging::gcs_mock::settings::{DEFAULT_LATENCY, GcsMockSettings};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::SecretString;
 use tokio::runtime::Handle;
 use tokio::task::JoinSet;
 
+use crate::s3_cache::Disconnect;
 use crate::s3_cache::entry::CachedEntry;
 
 pub mod body;
@@ -25,7 +26,7 @@ mod tests;
 
 use self::body::decode_body;
 use self::error::GcsCacheError;
-use self::headers::{ProcessEnvironment, build_headers};
+use self::headers::build_headers;
 
 pub const DEFAULT_BASE_URL: &str = "https://storage.googleapis.com";
 
@@ -57,11 +58,17 @@ where
         auth: Auth,
         client: ProxiedClient,
         base_url: Option<&str>,
-    ) -> Result<Self, GcsCacheError> {
-        let transport = PooledGcsClient { client };
-        let gcs_client = create_mock_gcs_client(&BTreeMap::new(), Some(transport))
-            .map_err(|source| GcsCacheError::Mock { source })?;
-        let environment: Arc<dyn EnvironmentSource> = Arc::new(ProcessEnvironment);
+        environment: Arc<dyn EnvironmentSource>,
+    ) -> Self {
+        // the cache never reads GCS_MOCK, so the client is always the real transport
+        let gcs_client = GcsMockClient {
+            settings: GcsMockSettings {
+                enabled: false,
+                latency: DEFAULT_LATENCY,
+            },
+            real: Some(PooledGcsClient { client }),
+            mocks_initialized: false,
+        };
         let base = GcsBucketBase {
             is_mock_mode: gcs_client.settings.enabled,
             bucket_name: Some(settings.bucket_name.clone()),
@@ -74,7 +81,7 @@ where
             vertex_instances: Mutex::new(BTreeMap::new()),
             environment,
         };
-        Ok(Self {
+        Self {
             base: Arc::new(base),
             bucket_name: settings.bucket_name.clone(),
             service_account_path: settings.service_account_path.clone(),
@@ -83,7 +90,7 @@ where
                 .unwrap_or(DEFAULT_BASE_URL)
                 .trim_end_matches('/')
                 .to_owned(),
-        })
+        }
     }
 
     pub fn set_cache(&self, runtime: &Handle, key: &str, value: &CachedEntry) {
@@ -100,7 +107,10 @@ where
     pub async fn async_set_cache(&self, key: &str, value: &CachedEntry) {
         let serialized = match serde_json::to_vec(value) {
             Ok(serialized) => serialized,
-            Err(source) => return failed_write(key, &source),
+            Err(source) => {
+                tracing::debug!(key = %key, error = %source, "GCS cache write failed");
+                return;
+            }
         };
         let headers = match build_headers(
             &self.base,
@@ -110,9 +120,13 @@ where
         .await
         {
             Ok(headers) => headers,
-            Err(source) => return failed_write(key, &source),
+            Err(source) => {
+                tracing::debug!(key = %key, error = %source, "GCS cache write failed");
+                return;
+            }
         };
-        let name = object_name(&self.key_prefix, key);
+        let name =
+            utf8_percent_encode(&format!("{}{key}", self.key_prefix), &QUOTE_SAFE_NONE).to_string();
         let url = format!(
             "{}/upload/storage/v1/b/{}/o?uploadType=media&name={name}",
             self.base_url, self.bucket_name
@@ -128,7 +142,7 @@ where
             content: Some(serialized),
         });
         if let Err(source) = self.base.client.send(request).await {
-            failed_write(key, &source);
+            tracing::debug!(key = %key, error = %source, "GCS cache write failed");
         }
     }
 
@@ -156,7 +170,8 @@ where
             Ok(headers) => headers,
             Err(source) => return failed_read(key, &source),
         };
-        let name = object_name(&self.key_prefix, key);
+        let name =
+            utf8_percent_encode(&format!("{}{key}", self.key_prefix), &QUOTE_SAFE_NONE).to_string();
         let url = format!(
             "{}/storage/v1/b/{}/o/{name}?alt=media",
             self.base_url, self.bucket_name
@@ -210,10 +225,6 @@ where
     }
 }
 
-pub trait Disconnect {
-    fn disconnect(&self) -> impl Future<Output = ()> + Send;
-}
-
 impl<Auth> Disconnect for GcsCache<Auth>
 where
     Auth: VertexAuth + Clone + Send + Sync + 'static,
@@ -226,19 +237,6 @@ fn key_prefix(gcs_path: &str) -> String {
         return String::new();
     }
     format!("{}/", gcs_path.trim_end_matches('/'))
-}
-
-fn object_name(prefix: &str, key: &str) -> String {
-    let name = format!("{prefix}{key}");
-    let encoded = utf8_percent_encode(&name, &QUOTE_SAFE_NONE);
-    encoded.to_string()
-}
-
-fn failed_write<E>(key: &str, source: &E)
-where
-    E: fmt::Display,
-{
-    tracing::debug!(key = %key, error = %source, "GCS cache write failed");
 }
 
 fn failed_read<E>(key: &str, source: &E) -> Option<CachedEntry>

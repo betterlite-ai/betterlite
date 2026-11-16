@@ -16,7 +16,7 @@ deviations:
     why: LiteLLM's httpx client follows redirects by default. B173's ProxiedClient is used through B3997's PooledGcsClient, which sends one request and never follows a redirect; betterlite-logging belongs to another task.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
   - what: The cache ignores GCS_MOCK, so its calls always use the real token and the real transport.
-    why: LiteLLM's GCSBucketBase constructor installs the GCS mock when GCS_MOCK is set (fake Vertex tokens plus patched GET and DELETE handlers), and GCSCache builds a base on every call. In betterlite that mock belongs to the GCS logging client (B3996) and serves its fixtures; the cache builds its base with an empty mock environment. GCS_MOCK exists to test LiteLLM itself without a bucket, so no working cache setup relies on it.
+    why: LiteLLM's GCSBucketBase constructor installs the GCS mock when GCS_MOCK is set (fake Vertex tokens plus patched GET and DELETE handlers), and GCSCache builds a base on every call. In betterlite that mock belongs to the GCS logging client (B3996) and serves its fixtures; the cache builds its base with the mock switched off and never reads the mock settings. GCS_MOCK exists to test LiteLLM itself without a bucket, so no working cache setup relies on it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gcs_bucket/gcs_bucket_base.py#L32-L36
 kept_bugs:
   - what: Writes ignore the response status and the cache's TTL kwargs, so a refused upload is silent and an object never expires through cache metadata.
