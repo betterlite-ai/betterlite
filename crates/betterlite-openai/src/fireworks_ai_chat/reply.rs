@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::{HiddenParams, Json as HiddenJson};
 use betterlite_prompts::arguments::json::Json;
@@ -30,6 +32,7 @@ pub struct ReplyInput<'request> {
     pub clock: fn() -> i64,
 }
 
+#[derive(Debug)]
 pub struct Reply {
     pub response: ChatResponse,
     pub hidden_params: HiddenParams,
@@ -79,7 +82,7 @@ pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, FireworksChat
 
 // raw_response.json() failed: FireworksAIException keeps the text, the status and the headers
 fn not_json(input: &ReplyInput<'_>, source: &serde_json::Error) -> FireworksChatError {
-    let text = std::str::from_utf8(input.body).unwrap_or_default();
+    let text = from_utf8(input.body).unwrap_or_default();
     let message = format!("Unable to get json response - {source}, Original Response: {text}");
     let headers: Headers = input
         .headers
@@ -94,10 +97,10 @@ fn not_json(input: &ReplyInput<'_>, source: &serde_json::Error) -> FireworksChat
 }
 
 // the same bytes already parsed as JSON, so a second JSON error only repeats the not-JSON one
-fn reply_error(input: &ReplyInput<'_>, source: CompatibleWireError) -> FireworksChatError {
-    match source {
-        CompatibleWireError::Json(source) => not_json(input, &source),
-        CompatibleWireError::Reply(source) => FireworksChatError::Reply { source },
+fn reply_error(input: &ReplyInput<'_>, failure: CompatibleWireError) -> FireworksChatError {
+    match failure {
+        CompatibleWireError::Json(error) => not_json(input, &error),
+        CompatibleWireError::Reply(error) => FireworksChatError::Reply { source: error },
     }
 }
 
@@ -118,13 +121,7 @@ fn repair_content_tool_calls(
     tools: Option<&Json>,
     identifier: fn() -> Uuid,
 ) {
-    let Some(tools) = tools else {
-        return;
-    };
-    if matches!(tools, Json::Null) {
-        return;
-    }
-    let Some(names) = function_names(tools) else {
+    let Some(names) = tools.and_then(function_names) else {
         return;
     };
     for choice in &mut response.choices {

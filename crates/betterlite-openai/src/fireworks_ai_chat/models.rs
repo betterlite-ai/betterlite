@@ -1,3 +1,5 @@
+use std::str::from_utf8;
+
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
@@ -22,8 +24,8 @@ pub fn get_models_request(
     api_key: Option<&SecretString>,
     env: &FireworksChatEnv,
 ) -> Result<ModelListRequest, FireworksChatError> {
-    let (base, api_key) = provider_info(api_base, api_key, env);
-    let Some(api_key) = api_key else {
+    let (base, resolved_key) = provider_info(api_base, api_key, env);
+    let Some(key) = resolved_key else {
         return Err(FireworksChatError::ModelListCredentials);
     };
     let account = env
@@ -36,7 +38,7 @@ pub fn get_models_request(
     let url = format!("{root}/v1/accounts/{account}/models");
     let headers = Headers::from([(
         AUTHORIZATION.to_owned(),
-        format!("Bearer {}", api_key.expose_secret()),
+        format!("Bearer {}", key.expose_secret()),
     )]);
     Ok(ModelListRequest { url, headers })
 }
@@ -60,7 +62,7 @@ pub fn decode_models_response(
         return Err(FireworksChatError::ModelsTooLarge);
     }
     if status != 200 {
-        let body = std::str::from_utf8(bytes).unwrap_or_default();
+        let body = from_utf8(bytes).unwrap_or_default();
         return Err(FireworksChatError::ModelListStatus {
             status,
             body: body.to_owned(),

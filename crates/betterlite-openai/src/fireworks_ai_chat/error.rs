@@ -61,9 +61,8 @@ pub enum FireworksChatError {
 impl FireworksChatError {
     // a ValueError in LiteLLM carries no status, and helper cases compare the status only
     #[must_use]
-    pub fn status_code(&self) -> Option<u16> {
+    pub const fn status_code(&self) -> Option<u16> {
         match self {
-            Self::MissingApiKey(_) => None,
             Self::Response(error) => Some(error.status_code),
             Self::Content(error) => Some(error.status_code()),
             Self::Definitions(_)
@@ -73,7 +72,8 @@ impl FireworksChatError {
             | Self::Tools
             | Self::StreamOptions => Some(400),
             Self::Reply { .. } | Self::MessageShape { .. } => Some(500),
-            Self::ModelListCredentials
+            Self::MissingApiKey(_)
+            | Self::ModelListCredentials
             | Self::AccountId
             | Self::ModelListStatus { .. }
             | Self::ModelsDecode { .. }
