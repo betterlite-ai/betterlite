@@ -117,6 +117,9 @@ path = "src/helpers/logging/otlp_normalization/tests.rs"
 [[test]]
 name = "dashboard_governance_case"
 path = "src/dashboard_governance_fixture/decoder.rs"
+[[test]]
+name = "azure_transcription_seeds"
+path = "src/helpers/azure/transcription/tests.rs"
 [lints]
 workspace = true
 [package.metadata.cargo-shear]

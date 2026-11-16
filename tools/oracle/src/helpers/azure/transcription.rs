@@ -1,5 +1,4 @@
 mod exchange;
-mod tests;
 
 use std::collections::BTreeMap;
 use std::io::{self, Read};
