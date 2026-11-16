@@ -44,6 +44,8 @@ fn rate_limit_dimension_tests_behavior(#[case] dimension: RateLimitDimension, #[
 #[case::non_text_error_falls_through(json!({"error": 42, "message": "fallback"}), "fallback")]
 #[case::object_json(json!({"foo": "bar"}), "{\"foo\":\"bar\"}")]
 #[case::number(json!(7), "7")]
+#[case::boolean(json!(true), "true")]
+#[case::array(json!(["a"]), "[\"a\"]")]
 fn coerce_message_tests_behavior(#[case] detail: Payload, #[case] expected: &str) {
     assert_eq!(coerce_message(&detail), expected);
 }
@@ -104,11 +106,28 @@ fn new_keeps_given_fields() {
     assert_eq!(error.to_string(), "slow down");
 }
 
+#[test]
+fn explicit_empty_model_and_provider_stay_empty() {
+    let init = ProxyRateLimitErrorInit {
+        detail: json!(null),
+        headers: None,
+        category: None,
+        rate_limit_type: None,
+        model: Some(String::new()),
+        llm_provider: Some(String::new()),
+    };
+    let error = ProxyRateLimitError::new(init).expect("no headers means nothing to reject");
+    assert_eq!(error.model, "");
+    assert_eq!(error.llm_provider, "");
+}
+
 #[rstest]
 #[case::text(json!("z"), "z")]
 #[case::integer(json!(5), "5")]
 #[case::float(json!(1.5), "1.5")]
 #[case::empty_text(json!(""), "")]
+#[case::boolean(json!(true), "true")]
+#[case::object(json!({"a": 1}), "{\"a\":1}")]
 fn header_values_are_stringified(#[case] value: Payload, #[case] expected: &str) {
     let error = error_with_headers(BTreeMap::from([(String::from("x-test"), value)]));
     let headers = error.headers.expect("headers were given");
