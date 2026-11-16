@@ -8,7 +8,7 @@ use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_guardrails::cisco_conversation::Fields;
 use betterlite_guardrails::cisco_inspection::construct::CiscoInspectionGuardrail;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
-use betterlite_guardrails::guardrail_base::settings::GuardrailSettings;
+use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use betterlite_oracle_runner::mock::MockProvider;
@@ -82,9 +82,23 @@ pub(super) fn selection(settings: &Value) -> Result<GuardrailBase, Box<HelperErr
         .map_err(|error| fail("InvalidInput", error.to_string()))?;
     let configured = GuardrailSettings {
         guardrail_name: Some("cisco-ai-defense".to_owned()),
+        supported_event_hooks: None,
         event_hook,
         default_on: matches!(settings.get("default_on"), Some(Value::Bool(true))),
-        ..GuardrailSettings::default()
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        run_in_parallel: false,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
+        timeout: None,
+        switches: GuardrailSwitches::default(),
     };
     GuardrailBase::new(configured, true)
         .map_err(|error| fail("GuardrailBaseError", error.to_string()))
