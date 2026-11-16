@@ -2,12 +2,12 @@ use std::collections::BTreeMap;
 
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::api::image_contracts::records::{ImageData, ImageHeaders, ImageParams};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
 mod answers;
-
-use crate::helpers::{Helper, HelperError, HelperResult};
 
 use answers::{
     cost_answer, edit_map_answer, edit_request_answer, environment_answer, map_answer,

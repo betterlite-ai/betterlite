@@ -17,6 +17,7 @@ use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
 use betterlite_openai::api::image_contracts::records::{
     ImageFile, ImageHeaders, ImageHttpResponse, ImageResponse,
 };
+use betterlite_oracle_helper_api::error::HelperError;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
@@ -24,7 +25,6 @@ use super::{
     CostCall, EditMapCall, EditRequestCall, Endpoint, EnvironmentCall, ImageSeed, MapCall,
     ReplyCall, RequestCall, UrlCall,
 };
-use crate::helpers::HelperError;
 
 // No case replaces the shared cost map, so every price comes from the record the call carries.
 struct NoPrices;
