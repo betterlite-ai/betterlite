@@ -15,6 +15,8 @@ use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
 use betterlite_models::token_cost::prompt_overlap::PromptExtras;
 use betterlite_models::token_rates::ModelInfo;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
@@ -170,16 +172,16 @@ impl PriceLookup for NoLookup {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Calculator(fields) => run_calculator(fields),
             Input::Prompt(fields) => run_prompt(fields),
         }
         .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "BatchCostError".to_owned(),
                 status: None,
                 error_type: None,

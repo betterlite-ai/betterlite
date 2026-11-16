@@ -48,7 +48,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_gemini_edit.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: The reference adapter exercises methods on in-memory file records only.
     - id: gemini-edit-fixtures
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_edit*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_edit::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_gemini_edit*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^gemini_edit::/)'
       why: Added fixture bytes must deserialize the vertex_gemini_edit call variant.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-gemini-edit/user-object-contents.yaml

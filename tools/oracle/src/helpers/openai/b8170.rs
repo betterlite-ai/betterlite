@@ -14,7 +14,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

@@ -9,7 +9,8 @@ use serde_json::{Map, Value, json};
 use super::Function;
 use super::input::Probe;
 use super::support::{NOW, Recorder, invalid, observe};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn value(probe: &Probe, function: Function) -> HelperResult {
     let family = select_image_family(&probe.model);

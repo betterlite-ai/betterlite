@@ -3,6 +3,8 @@ use betterlite_models::ocr_pricing::{
     ocr_batch_cost, ocr_cost,
 };
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
@@ -106,12 +108,12 @@ impl PriceLookup for CaseLookup {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_inner(input).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "OcrCostError".to_owned(),
                 status: None,
                 error_type: None,

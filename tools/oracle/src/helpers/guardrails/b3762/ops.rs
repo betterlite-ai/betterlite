@@ -20,7 +20,12 @@ use super::support::{
 use super::{
     ChatInput, McpRequestInput, McpResponseInput, PostCallInput, PostInspectionInput, PreCallInput,
 };
-use crate::helpers::HelperResult;
+use betterlite_config::sections::cisco_verdict_contracts::{
+    FallbackAction, FlaggedAction, InspectionType,
+};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::collections::BTreeMap;
+use tokio::runtime::Runtime;
 
 pub(super) fn construct(settings: &Value) -> HelperResult {
     let configured = configure(settings, None)?;
@@ -29,16 +34,16 @@ pub(super) fn construct(settings: &Value) -> HelperResult {
         "api_base": configured.api_base,
         "inspect_path": configured.inspect_path,
         "inspection_type": match configured.inspection_type {
-            betterlite_config::sections::cisco_verdict_contracts::InspectionType::Chat => "chat",
-            betterlite_config::sections::cisco_verdict_contracts::InspectionType::Mcp => "mcp",
+            InspectionType::Chat => "chat",
+            InspectionType::Mcp => "mcp",
         },
         "on_flagged_action": match configured.on_flagged_action {
-            betterlite_config::sections::cisco_verdict_contracts::FlaggedAction::Block => "block",
-            betterlite_config::sections::cisco_verdict_contracts::FlaggedAction::Monitor => "monitor",
+            FlaggedAction::Block => "block",
+            FlaggedAction::Monitor => "monitor",
         },
         "fallback_on_error": match configured.fallback_on_error {
-            betterlite_config::sections::cisco_verdict_contracts::FallbackAction::Allow => "allow",
-            betterlite_config::sections::cisco_verdict_contracts::FallbackAction::Block => "block",
+            FallbackAction::Allow => "allow",
+            FallbackAction::Block => "block",
         },
         "timeout_seconds": configured.timeout,
     }))
@@ -48,7 +53,7 @@ pub(super) fn headers(settings: &Value) -> HelperResult {
     let guardrail = guardrail(settings, None)?;
     let map = build_headers(&guardrail)
         .map_err(|error| fail("CiscoAIDefenseGuardrailAPIError", error.to_string()))?;
-    let mut rendered = std::collections::BTreeMap::new();
+    let mut rendered = BTreeMap::new();
     for (name, value) in &map {
         let text = value
             .to_str()
@@ -161,14 +166,14 @@ macro_rules! mcp_op {
 mcp_op!(
     mcp_request,
     McpRequestInput,
-    |runtime: &tokio::runtime::Runtime, guardrail, data, _args| {
+    |runtime: &Runtime, guardrail, data, _args| {
         runtime.block_on(inspect_mcp_request(guardrail, data))
     }
 );
 mcp_op!(
     mcp_response,
     McpResponseInput,
-    |runtime: &tokio::runtime::Runtime, guardrail, data, args: &McpResponseInput| {
+    |runtime: &Runtime, guardrail, data, args: &McpResponseInput| {
         let response_json = Json::parse(&args.response.to_string());
         runtime.block_on(inspect_mcp_response(guardrail, data, &response_json))
     }

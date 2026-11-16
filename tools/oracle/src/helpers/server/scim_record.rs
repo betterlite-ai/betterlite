@@ -1,7 +1,9 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::scim_records::discovery::{ResourceType, Schema};
 use betterlite_server::scim_records::user::{Active, User};
 use betterlite_server::scim_records::{ResourceKind, ScimResource, decode_scim_resource};
+use serde::de::Error;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 pub(crate) struct Op;
@@ -58,6 +60,6 @@ fn decode(value: &str, kind: ResourceKind) -> Result<Output, serde_json::Error> 
             record: user,
         }),
         Ok(resource) => Ok(Output::Resource(resource)),
-        Err(error) => Err(serde::de::Error::custom(error)),
+        Err(error) => Err(Error::custom(error)),
     }
 }

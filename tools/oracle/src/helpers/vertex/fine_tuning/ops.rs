@@ -8,7 +8,7 @@ use jiff::tz::TimeZone;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]

@@ -23,11 +23,12 @@ use uuid::Uuid;
 use super::logs::Warnings;
 use super::oauth::{CapabilityLookup, identity, oauth};
 use super::{CHAT_FAILURE, STREAM_FAILURE, Settings, Step, failure};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Runtime;
 
 pub(super) struct Run<'request> {
     pub(super) settings: &'request Settings,
-    pub(super) runtime: &'request tokio::runtime::Runtime,
+    pub(super) runtime: &'request Runtime,
 }
 
 impl Run<'_> {

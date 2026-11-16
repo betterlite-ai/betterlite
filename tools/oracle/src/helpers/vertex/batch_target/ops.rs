@@ -2,7 +2,7 @@ use betterlite_vertex::vertex_batch_create::target::{BatchTargetInput, vertex_ba
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

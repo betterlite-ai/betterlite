@@ -5,11 +5,12 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_xai_files() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -34,9 +35,9 @@ fn helper_seeds_select_xai_files() {
 #[case::list_stop_and_delete_default("list-stop-and-delete-default.yaml", r#"[["https://api.x.ai/v1/files",[["pagination_token","tok"]]],[{"id":"f1","bytes":0,"created_at":1700000000,"filename":"","object":"file","purpose":"batch","status":"uploaded"}],null,null,{"raised":null},["https://api.x.ai/v1/files",[["pagination_token","t"]]],{"raised":500},[],{"id":"file-1","deleted":true,"object":"file"},{"id":"file-2","deleted":false,"object":"file"},{"raised":null},{"raised":401}]"#)]
 #[case::upload_defaults("upload-defaults.yaml", r#"["Bearer sk-key","https://api.x.ai/v1/files","https://proxy.example/v1/files",{"id":"file-1","bytes":0,"created_at":1700000000,"filename":"","object":"file","purpose":"batch","status":"uploaded"},{"id":"file-2","bytes":5,"created_at":12,"filename":"f","object":"file","purpose":"batch","status":"uploaded","expires_at":5},{"raised":null},{"raised":404}]"#)]
 fn the_native_helper_answers_like_litellm(#[case] file: &str, #[case] litellm: &str) {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/xai-files")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();

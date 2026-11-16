@@ -4,14 +4,20 @@ use std::sync::{Arc, PoisonError};
 
 use betterlite_openai::chatgpt::login::ChatGptLogin;
 use betterlite_openai::chatgpt::login::error::LoginError;
-use betterlite_openai::chatgpt::token_store::ChatGptTokenStore;
+use betterlite_openai::chatgpt::token_store::{ChatGptTokenStore, StoreError};
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_config::loader::{ConfigError, ConfigLoader};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fs;
+use std::io::Error;
+use tokio::runtime::Builder;
+use tracing::subscriber;
 
 mod effects;
 
@@ -47,11 +53,11 @@ impl Helper for Op {
 #[derive(Debug, thiserror::Error)]
 enum FixtureError {
     #[error("fixture IO failed")]
-    Io(#[from] std::io::Error),
+    Io(#[from] Error),
     #[error("fixture configuration failed")]
-    Config(#[from] betterlite_config::loader::ConfigError),
+    Config(#[from] ConfigError),
     #[error("fixture store failed")]
-    Store(#[from] betterlite_openai::chatgpt::token_store::StoreError),
+    Store(#[from] StoreError),
 }
 
 const fn class(error: &LoginError) -> &'static str {
@@ -69,7 +75,7 @@ fn assemble(
     directory: &Path,
     events: &effects::Events,
 ) -> Result<Login, FixtureError> {
-    let mut settings = betterlite_config::loader::ConfigLoader {
+    let mut settings = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }
     .load("")?
@@ -113,7 +119,7 @@ fn summary(
             Some(json!({ "class": class(error), "status": error.status() })),
         ),
     };
-    let file = std::fs::read_to_string(path)
+    let file = fs::read_to_string(path)
         .ok()
         .map(|text| serde_json::from_str(&text).unwrap_or(Value::String(text)));
     let recorded = events
@@ -136,15 +142,14 @@ fn run_fixture(input: &Input) -> Result<Value, FixtureError> {
     let directory = tempfile::tempdir()?;
     let path = directory.path().join("auth.json");
     if let Some(record) = &input.record {
-        std::fs::write(&path, record)?;
+        fs::write(&path, record)?;
     }
     let events: effects::Events = Arc::default();
     let mut login = assemble(input, directory.path(), &events)?;
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let subscriber = tracing_subscriber::registry().with(effects::Diagnostics(Arc::clone(&events)));
-    let outcome = tracing::subscriber::with_default(subscriber, || {
-        runtime.block_on(login.get_access_token())
-    });
+    let outcome =
+        subscriber::with_default(subscriber, || runtime.block_on(login.get_access_token()));
     if let Some(error) = login.store.clock.failure.take() {
         return Err(FixtureError::Io(error));
     }
