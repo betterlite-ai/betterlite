@@ -35,6 +35,7 @@ const FIXED_NOW_NANOS: u64 = 1_000_000_000_000_000;
 const LATENCY_STEP_NANOS: u64 = 123_456_000;
 const LATENCY_SECONDS: f64 = 0.123456;
 const LATENCY_MILLIS: f64 = 123.5;
+const QUARTER_MILLI_NANOS: u64 = 250_000;
 
 struct FakePoster {
     replies: Mutex<VecDeque<ScriptedReply>>,
@@ -486,6 +487,33 @@ async fn records_an_evaluated_allow() {
     assert_eq!(text(recorded.get("correlation_id").unwrap()), "corr-1");
     assert_eq!(decimal(recorded.get("latency_ms").unwrap()), LATENCY_MILLIS);
     assert!(!recorded.contains_key("reason"));
+}
+
+// A latency that lands exactly on a half tenth rounds away from zero here, where Python's round moves it to the even tenth
+#[tokio::test]
+async fn a_quarter_millisecond_latency_rounds_away_from_zero() {
+    let poster = Arc::new(FakePoster::new(Arc::new(AtomicU64::new(0))));
+    poster.enqueue(allow_replies());
+    let clock = Arc::new(AtomicU64::new(0));
+    let step = Arc::clone(&clock);
+    let handle: Arc<dyn Fn() -> SystemTime + Send + Sync> = Arc::new(move || {
+        let nanos = step.fetch_add(QUARTER_MILLI_NANOS, Ordering::Relaxed);
+        UNIX_EPOCH.checked_add(Duration::from_nanos(nanos)).unwrap()
+    });
+    let guardrail = Agent365Guardrail::new(
+        settings(UnreachableFallback::FailClosed),
+        Arc::clone(&poster),
+        true,
+        handle,
+    )
+    .unwrap();
+    let mut data = request_data();
+    let outcome = run(&guardrail, &mut data).await;
+    assert!(outcome.is_ok());
+    let fields = record_fields(&data);
+    let recorded = response(fields);
+    assert_eq!(decimal(recorded.get("latency_ms").unwrap()), 0.3);
+    assert_eq!(duration_of(fields), &GuardrailValue::Decimal(0.00025));
 }
 
 #[tokio::test]
