@@ -115,10 +115,7 @@ impl<T: WatsonxTransport> WatsonxRerankConfig<'_, T> {
             Some(id) if !id.is_empty() => id,
             Some(_) | None => (self.new_id)().to_string(),
         };
-        let input_tokens = match reply.input_token_count {
-            None => Some(0_i64),
-            Some(count) => count,
-        };
+        let input_tokens = reply.input_token_count.unwrap_or(Some(0_i64));
         Ok(RerankResponse {
             id: Some(id),
             results: Some(transformed),

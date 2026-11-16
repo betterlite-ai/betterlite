@@ -31,10 +31,7 @@ impl<T: WatsonxTransport> WatsonxAudioConfig<'_, T> {
         options: &Object,
         api_key: Option<&SecretString>,
     ) -> Result<HeaderMap, WatsonxAudioError> {
-        let mut params: WatsonxParams = options
-            .iter()
-            .map(|(name, value)| (name.clone(), value.clone()))
-            .collect();
+        let mut params: WatsonxParams = options.clone().into_iter().collect();
         let mut resolved = self
             .auth
             .validate_environment(headers, &mut params, api_key)

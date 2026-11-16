@@ -1,0 +1,28 @@
+kind: helper
+name: watsonx-embed-reply-usage
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/reply/model, why: LiteLLM leaves the model null because its caller passes an empty EmbeddingResponse.}
+call:
+  b5842:
+    family: embed
+    env: {WATSONX_PROJECT_ID: env-project}
+    step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[{"embedding":[0.1,2]}],"input_token_count":3}'}
+calls:
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[{"embedding":[3]}]}'}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[]}'}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"input_token_count":2}'}
+  - b5842:
+      family: embed
+      env: {WATSONX_PROJECT_ID: env-project}
+      step: {model: granite-embedding, input: hello, options: {}, api_base: "https://host", reply: '{"results":[{"embedding":"YWJj"}]}'}

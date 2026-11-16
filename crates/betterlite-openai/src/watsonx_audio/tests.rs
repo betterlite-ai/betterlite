@@ -433,3 +433,17 @@ fn error_status_comes_from_the_shared_api_error() {
     });
     assert_eq!(error.status(), Some(404));
 }
+
+#[test]
+fn replays_the_watsonx_transcription_reply_corpus() {
+    let seen = std::fs::read_dir("fuzz/corpus/watsonx_transcription_reply")
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .inspect(|path| {
+            let bytes = std::fs::read(path).unwrap();
+            let _reply = super::reply::decode_watsonx_transcription_reply(&bytes);
+        })
+        .count();
+    assert!(seen > 0_usize);
+}
