@@ -139,9 +139,9 @@ fn create_interaction_takes_the_api_base_from_litellm_params() {
         "{}",
         received.head
     );
-    let recorded = logging.pre_call.as_ref().unwrap();
+    let pre_call = logging.pre_call.as_ref().unwrap();
     assert_eq!(
-        recorded.api_base,
+        pre_call.api_base,
         format!("http://{}/base/v1beta/interactions", serving.address)
     );
 }
