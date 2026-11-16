@@ -62,10 +62,14 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1613-L1618
   - what: >-
       An action value that is a list or a mapping is echoed as "[a]" or "{k: 1}" in the
-      "'BLOCK' or 'MASK'" message, where Python's str() prints "['a']" or "{'k': 1}".
+      "'BLOCK' or 'MASK'" message, where Python's str() prints "['a']" or "{'k': 1}", and a
+      number spelled in another radix or form is echoed as the value serde-saphyr read: an
+      action of 012 prints "12.0" where Python's str() prints "10", and 08 prints "8.0"
+      where it prints "08".
     why: >-
-      The message repeats the value as it was written for text and scalar values, which
-      match Python's str (None, True, 5, 1.5). A container in action is never a working
-      blocked-words file, and Rust prints containers its own way.
+      The message repeats the value as it was written for text and for scalars Python
+      prints the same way (None, True, 5, 1.5, 0x10). A container in action, or a number,
+      is never a working blocked-words file, and rendering the Python value of each
+      spelling would need PyYAML's resolver again.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1602
 kept_bugs: []
