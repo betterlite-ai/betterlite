@@ -1,9 +1,23 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::PathBuf;
+
 use rstest::rstest;
 
 use super::shared::tokens;
+use crate::presidio_streams::coalesce::split_sse_preface;
 use crate::presidio_streams::unmask_sse::unmask_sse_bytes_chunk;
+
+#[rstest]
+fn replays_the_presidio_streams_sse_corpus(
+    #[files("fuzz/corpus/presidio_streams_sse/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).unwrap();
+    drop(unmask_sse_bytes_chunk(&bytes, &tokens()));
+    let (preface, rest) = split_sse_preface(&bytes);
+    assert_eq!([preface, rest].concat(), bytes);
+}
 
 #[rstest]
 #[case::done_marker("data: [DONE]\n\n")]

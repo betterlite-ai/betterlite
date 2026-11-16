@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
+use betterlite_core::api::api_boundaries::ApiLimits;
 
 use super::shared::{
-    Events, Harness, Kind, capture_logs, chat, logged_text, ok, request_data,
+    Events, Harness, Kind, START_FRAME, bytes, capture_logs, chat, logged_text, ok, request_data,
     spawn_person_analyzer, upstream_failure,
 };
 use crate::presidio_streams::error::PresidioStreamError;
@@ -21,7 +22,6 @@ async fn a_blocked_entity_is_raised_without_yielding_the_chunks() {
         .await;
     let error = result.unwrap_err();
     assert!(error.is_blocked());
-    assert_eq!(error.status(), 400);
     assert!(sent.is_empty());
 }
 
@@ -53,8 +53,63 @@ async fn a_reader_that_went_away_is_never_swallowed() {
     assert!(!logged_text(&captured).contains("Error masking"));
 }
 
+#[tokio::test]
+async fn a_chunk_past_the_byte_ceiling_is_raised_not_flushed() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let huge = "x".repeat(ApiLimits::default().max_json_bytes);
+    let (sent, result) = harness
+        .run(Kind::Mask, &mut request, ok(vec![chat("a"), chat(&huge)]))
+        .await;
+    assert!(matches!(
+        result.unwrap_err(),
+        PresidioStreamError::OverBudget { .. }
+    ));
+    assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn the_chunk_count_ceiling_is_raised_not_flushed() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let events = ok(vec![chat("a"); ApiLimits::default().max_items + 1]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
+    assert!(matches!(
+        result.unwrap_err(),
+        PresidioStreamError::OverBudget { .. }
+    ));
+    assert!(sent.is_empty());
+}
+
+#[tokio::test]
+async fn a_chunk_count_at_the_ceiling_is_masked() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let events = ok(vec![chat("a"); ApiLimits::default().max_items]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
+    result.unwrap();
+    assert_eq!(sent.len(), 1);
+}
+
+#[tokio::test]
+async fn an_anthropic_stream_past_the_byte_ceiling_is_raised() {
+    let harness = Harness::new();
+    let mut request = request_data("{}");
+    let huge = format!(
+        "data: {}\n\n",
+        "x".repeat(ApiLimits::default().max_json_bytes)
+    );
+    let events = ok(vec![bytes(START_FRAME), bytes(&huge)]);
+    let (sent, result) = harness.run(Kind::Mask, &mut request, events).await;
+    assert!(matches!(
+        result.unwrap_err(),
+        PresidioStreamError::OverBudget { .. }
+    ));
+    assert!(sent.is_empty());
+}
+
 #[test]
-fn the_error_statuses_follow_the_wrapped_failure() {
+fn only_a_blocked_entity_is_a_blocked_error() {
     let blocked = PresidioStreamError::<std::io::Error>::Actions(
         crate::presidio_actions::error::PresidioActionsError::BlockedEntity {
             entity_type: "PERSON".to_owned(),
@@ -62,8 +117,6 @@ fn the_error_statuses_follow_the_wrapped_failure() {
         },
     );
     assert!(blocked.is_blocked());
-    assert_eq!(blocked.status(), 400);
     let closed = PresidioStreamError::<std::io::Error>::ConsumerClosed;
     assert!(!closed.is_blocked());
-    assert_eq!(closed.status(), 500);
 }

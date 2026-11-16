@@ -9,6 +9,9 @@ deviations:
   - what: A response.completed event is unmasked through its JSON, so the dict form and the object form of a content block are one case, and a block or output item that is not a JSON object is skipped.
     why: A JSON event has no attribute-style objects. LiteLLM skips an item that has no text attribute, which is the same set of skipped items.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1551-L1572
+  - what: The buffers the hooks keep (the chat chunks of the masking and unmasking paths, and the raw frames of the Anthropic path) fail with an OverBudget error once they pass 16 MiB of chunk content or 64 * 1024 chunks, and the buffered chunks are not flushed. LiteLLM buffers a stream without a limit.
+    why: The buffers hold untrusted provider output, so they stay inside the byte and item limits ApiBoundaries applies to a reply body and an item list, through the shared RetentionBudget, as the Noma streaming hook does. A real answer reaches neither limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1438-L1500
 kept_bugs:
   - what: A failure while masking buffered chat chunks that is not a blocked entity (the Presidio call failing, the assembly failing) is logged and the buffered chunks go out unmasked, so the stream fails open.
     why: A setup that streams through an unreliable Presidio today still gets its answers, and failing closed would turn those into errors. The non-streaming path fails closed, which makes the two paths differ.

@@ -4,6 +4,7 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc::{Receiver, Sender};
 
 use super::assembly::StreamAssembly;
+use super::budget::Retention;
 use super::coalesce::{Coalesced, Coalescer};
 use super::error::{PresidioStreamError, StreamError};
 use super::mask_anthropic::mask_anthropic_sse_stream;
@@ -69,6 +70,14 @@ where
     Ok(vec![StreamEvent::Chat(streamed)])
 }
 
+// What the masking run holds while it waits for the end of the stream
+#[derive(Default)]
+struct MaskState {
+    all_chunks: Vec<Box<RawValue>>,
+    retention: Retention,
+    passthrough: bool,
+}
+
 // Applies Presidio masking to a streamed answer (the apply_to_output path); only a failure that can leave the stream half-sent is swallowed
 pub async fn stream_apply_output_masking<A>(
     run: &mut StreamRun<'_, A>,
@@ -77,24 +86,27 @@ pub async fn stream_apply_output_masking<A>(
 where
     A: StreamAssembly,
 {
-    let mut all_chunks = Vec::new();
-    let Err(error) = apply_output_masking(run, input, &mut all_chunks).await else {
+    let mut state = MaskState::default();
+    let Err(error) = apply_output_masking(run, input, &mut state).await else {
         return Ok(());
     };
-    if all_chunks.is_empty()
+    if state.all_chunks.is_empty()
         || error.is_blocked()
-        || matches!(error, PresidioStreamError::ConsumerClosed)
+        || matches!(
+            error,
+            PresidioStreamError::ConsumerClosed | PresidioStreamError::OverBudget { .. }
+        )
     {
         return Err(error);
     }
     tracing::error!("Error masking streaming PII output: {error}");
-    send_chat_chunks::<A>(run.out, &all_chunks).await
+    send_chat_chunks::<A>(run.out, &state.all_chunks).await
 }
 
 async fn apply_output_masking<A>(
     run: &mut StreamRun<'_, A>,
     input: &mut Receiver<Result<StreamEvent, ModelStreamError>>,
-    all_chunks: &mut Vec<Box<RawValue>>,
+    state: &mut MaskState,
 ) -> Result<(), StreamError<A>>
 where
     A: StreamAssembly,
@@ -105,39 +117,57 @@ where
         searching: true,
         ready: VecDeque::new(),
     };
-    let mut passthrough = false;
     while let Some(item) = stream.coalesce_first_sse_frame().await {
         let coalesced = item.map_err(|source| PresidioStreamError::Upstream { source })?;
         let Coalesced::Event(event) = coalesced else {
             run.out.send(coalesced.into_event()).await?;
             continue;
         };
-        match event {
-            StreamEvent::Chat(chunk) if !passthrough => all_chunks.push(chunk),
-            StreamEvent::Bytes(chunk)
-                if !passthrough
-                    && all_chunks.is_empty()
-                    && run.assembly.is_anthropic_sse_stream(&chunk) =>
-            {
-                for masked in mask_anthropic_sse_stream(run, chunk, &mut stream).await? {
-                    run.out.send(masked).await?;
-                }
-                return Ok(());
-            }
-            StreamEvent::Bytes(chunk) => {
-                passthrough = passthrough || all_chunks.is_empty();
-                run.out.send(StreamEvent::Bytes(chunk)).await?;
-            }
-            StreamEvent::Chat(_) => run.out.send(event).await?,
-            StreamEvent::Other(_) => {
-                flush_unmaskable_buffer::<A>(all_chunks, run.out).await?;
-                all_chunks.clear();
-                passthrough = true;
-                run.out.send(event).await?;
-            }
+        if mask_event(run, state, event, &mut stream).await? {
+            return Ok(());
         }
     }
-    mask_remaining_chunks(run, all_chunks, passthrough).await
+    mask_remaining_chunks(run, &state.all_chunks, state.passthrough).await
+}
+
+// Handles one event after the first frame; true when the Anthropic path has taken the rest of the stream
+async fn mask_event<A>(
+    run: &mut StreamRun<'_, A>,
+    state: &mut MaskState,
+    event: StreamEvent,
+    stream: &mut Coalescer<'_>,
+) -> Result<bool, StreamError<A>>
+where
+    A: StreamAssembly,
+{
+    match event {
+        StreamEvent::Chat(chunk) if !state.passthrough => {
+            state.retention.accept::<A::Error>(chunk.get().len())?;
+            state.all_chunks.push(chunk);
+        }
+        StreamEvent::Bytes(chunk)
+            if !state.passthrough
+                && state.all_chunks.is_empty()
+                && run.assembly.is_anthropic_sse_stream(&chunk) =>
+        {
+            for masked in mask_anthropic_sse_stream(run, chunk, stream).await? {
+                run.out.send(masked).await?;
+            }
+            return Ok(true);
+        }
+        StreamEvent::Bytes(chunk) => {
+            state.passthrough = state.passthrough || state.all_chunks.is_empty();
+            run.out.send(StreamEvent::Bytes(chunk)).await?;
+        }
+        StreamEvent::Chat(_) => run.out.send(event).await?,
+        StreamEvent::Other(_) => {
+            flush_unmaskable_buffer::<A>(&state.all_chunks, run.out).await?;
+            state.all_chunks.clear();
+            state.passthrough = true;
+            run.out.send(event).await?;
+        }
+    }
+    Ok(false)
 }
 
 async fn mask_remaining_chunks<A>(

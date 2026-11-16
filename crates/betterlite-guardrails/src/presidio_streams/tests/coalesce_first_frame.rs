@@ -5,7 +5,7 @@ use crate::presidio_streams::coalesce::MAX_FIRST_SSE_FRAME_BYTES;
 
 #[test]
 fn the_byte_cap_is_64_kib() {
-    assert_eq!(MAX_FIRST_SSE_FRAME_BYTES, 65_536);
+    assert_eq!(MAX_FIRST_SSE_FRAME_BYTES, 0x1_0000);
 }
 
 #[tokio::test]

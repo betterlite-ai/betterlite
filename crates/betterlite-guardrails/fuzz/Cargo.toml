@@ -192,3 +192,10 @@ path = "fuzz_targets/pillar_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "presidio_streams_sse"
+path = "fuzz_targets/presidio_streams_sse.rs"
+test = false
+doc = false
+bench = false

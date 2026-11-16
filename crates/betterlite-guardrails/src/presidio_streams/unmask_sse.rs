@@ -9,12 +9,11 @@ use crate::presidio_response::wire::to_raw;
 pub type Fields = IndexMap<String, Box<RawValue>>;
 pub type PiiTokens = IndexMap<String, String>;
 
-fn text_field(fields: &Fields, key: &str) -> Option<String> {
-    serde_json::from_str(fields.get(key)?.get()).ok()
-}
-
 // A data line is rewritten only when it is a text_delta whose text holds a token, and any line that does not parse stays as it was
 fn unmask_data_line(raw_json: &str, tokens: &PiiTokens) -> Option<String> {
+    let text_field = |fields: &Fields, key: &str| -> Option<String> {
+        serde_json::from_str(fields.get(key)?.get()).ok()
+    };
     let mut event: Fields = serde_json::from_str(raw_json).ok()?;
     if text_field(&event, "type")? != "content_block_delta" {
         return None;
@@ -120,7 +119,10 @@ pub fn unmask_other_event(
     let Ok(mut fields) = serde_json::from_str::<Fields>(event.get()) else {
         return Ok(event);
     };
-    if text_field(&fields, "type").as_deref() != Some("response.completed") {
+    let event_type = fields
+        .get("type")
+        .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok());
+    if event_type.as_deref() != Some("response.completed") {
         return Ok(event);
     }
     unmask_completed_event(&mut fields, tokens)?;

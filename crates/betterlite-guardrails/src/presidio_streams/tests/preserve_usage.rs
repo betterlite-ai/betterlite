@@ -13,7 +13,7 @@ use crate::presidio_streams::unmask::preserve_usage_from_last_chunk;
 #[case::a_null_chunk_usage_is_not_copied(r#"{"choices":[]}"#, &[r#"{"usage":null}"#], None)]
 #[case::only_the_last_chunk_counts(r#"{"choices":[]}"#, &[r#"{"usage":{"total_tokens":7}}"#, r#"{"b":2}"#], None)]
 #[case::no_chunks(r#"{"choices":[]}"#, &[], None)]
-#[case::a_chunk_that_is_not_an_object(r#"{"choices":[]}"#, &[r#"[1]"#], None)]
+#[case::a_chunk_that_is_not_an_object(r#"{"choices":[]}"#, &["[1]"], None)]
 fn preserve_usage_cases(
     #[case] assembled: &str,
     #[case] chunks: &[&str],

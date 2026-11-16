@@ -1,5 +1,6 @@
 use std::error::Error as StdError;
 
+use betterlite_core::api::messages_native_stream::retention::RetainedOutputLimit;
 use thiserror::Error;
 use tokio::sync::mpsc::error::SendError;
 
@@ -36,6 +37,13 @@ where
     Response(#[from] PresidioResponseError),
     #[error(transparent)]
     Actions(#[from] PresidioActionsError),
+    #[error("the streamed response is over the buffer budget of {bytes} bytes and {chunks} chunks")]
+    OverBudget {
+        bytes: usize,
+        chunks: usize,
+        #[source]
+        source: RetainedOutputLimit,
+    },
     // The reader dropped the stream, which ends LiteLLM's generator without an error
     #[error("the stream reader went away")]
     ConsumerClosed,
@@ -55,18 +63,6 @@ where
                     PresidioActionsError::BlockedEntity { .. }
                 ))
         )
-    }
-
-    #[must_use]
-    pub const fn status(&self) -> u16 {
-        match self {
-            Self::Actions(source) => source.status(),
-            Self::Response(source) => source.status(),
-            Self::Upstream { .. }
-            | Self::Assembly { .. }
-            | Self::Json { .. }
-            | Self::ConsumerClosed => 500,
-        }
     }
 }
 

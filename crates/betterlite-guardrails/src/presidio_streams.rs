@@ -5,6 +5,7 @@ use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_response::HookContext;
 
 pub mod assembly;
+pub mod budget;
 pub mod coalesce;
 pub mod error;
 pub mod hook;

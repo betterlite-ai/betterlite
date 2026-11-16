@@ -1,4 +1,5 @@
 use super::assembly::StreamAssembly;
+use super::budget::{Retention, event_len};
 use super::coalesce::Coalescer;
 use super::error::{PresidioStreamError, StreamError};
 use super::{StreamEvent, StreamRun};
@@ -14,10 +15,14 @@ pub async fn mask_anthropic_sse_stream<A>(
 where
     A: StreamAssembly,
 {
+    let mut retention = Retention::default();
+    retention.accept::<A::Error>(first_chunk.len())?;
     let mut chunks = vec![StreamEvent::Bytes(first_chunk)];
     while let Some(item) = rest.coalesce_first_sse_frame().await {
         let coalesced = item.map_err(|source| PresidioStreamError::Upstream { source })?;
-        chunks.push(coalesced.into_event());
+        let event = coalesced.into_event();
+        retention.accept::<A::Error>(event_len(&event))?;
+        chunks.push(event);
     }
     let raw_chunks: Vec<Vec<u8>> = chunks
         .iter()

@@ -4,6 +4,7 @@ use serde_json::value::RawValue;
 use tokio::sync::mpsc::Receiver;
 
 use super::assembly::StreamAssembly;
+use super::budget::Retention;
 use super::error::{PresidioStreamError, StreamError};
 use super::mask::send_chat_chunks;
 use super::unmask_sse::{Fields, PiiTokens, unmask_other_event, unmask_sse_bytes_chunk};
@@ -50,7 +51,10 @@ where
     let Err(error) = unmask_stream(run, input, &tokens, &mut remaining).await else {
         return Ok(());
     };
-    if matches!(error, PresidioStreamError::ConsumerClosed) {
+    if matches!(
+        error,
+        PresidioStreamError::ConsumerClosed | PresidioStreamError::OverBudget { .. }
+    ) {
         return Err(error);
     }
     tracing::error!("Error in PII streaming processing: {error}");
@@ -67,12 +71,16 @@ where
     A: StreamAssembly,
 {
     let mut saw_non_chat_chunk = false;
+    let mut retention = Retention::default();
     while let Some(received) = input.recv().await {
         match received.map_err(|source| PresidioStreamError::Upstream { source })? {
             StreamEvent::Chat(chunk) if saw_non_chat_chunk => {
                 run.out.send(StreamEvent::Chat(chunk)).await?;
             }
-            StreamEvent::Chat(chunk) => remaining.push(chunk),
+            StreamEvent::Chat(chunk) => {
+                retention.accept::<A::Error>(chunk.get().len())?;
+                remaining.push(chunk);
+            }
             StreamEvent::Bytes(chunk) if tokens.is_empty() => {
                 run.out.send(StreamEvent::Bytes(chunk)).await?;
             }
