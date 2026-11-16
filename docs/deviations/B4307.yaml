@@ -1,0 +1,8 @@
+task: B4307
+deviations:
+  - what: >-
+      The text after the "Error fetching cache settings" prefix in a 500 body is betterlite error text, not the Python
+      exception text.
+    why: Python exception strings (repr of a JSONDecodeError or a prisma error) have no Rust equivalent; status and the prefix match.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L504-L505
+kept_bugs: []
