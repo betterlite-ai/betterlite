@@ -1,0 +1,41 @@
+kind: helper
+name: studio-veo-consumed-image-cursor
+call:
+  studio_veo_request:
+    requests:
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        image: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 4}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        input_reference: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 0}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        input_reference: {kind: dict, value: {bytesBase64Encoded: abc, mimeType: image/png}}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        input_reference: {kind: 'null'}
+        image: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 2}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        input_reference: {kind: dict, value: {gcsUri: 'gs://bucket/reference.png'}}
+        image: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 2}
+      - model: veo-3
+        prompt: a prompt
+        api_key: oracle-key
+        input_reference: {kind: file, data: iVBORw0KGgpzdHVkaW8gaW1hZ2U=, position: 4}
+        image: {kind: dict, value: {gcsUri: 'gs://bucket/image.png'}}
+calls:
+  - studio_veo_request:
+      requests:
+        - model: veo-3
+          prompt: a prompt
+          api_key: oracle-key
+          image: {kind: text, value: 'gs://bucket/image.png'}
+env: {}
+compare: {ignore: []}

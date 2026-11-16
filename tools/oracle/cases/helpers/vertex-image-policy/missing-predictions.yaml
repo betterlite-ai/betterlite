@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-image-policy-missing-predictions
+call:
+  vertex_image_policy:
+    models: []
+    billing: []
+    replies:
+      - {kind: convert, body: {}, existing: [OLD]}
+env: {}
+compare: {ignore: []}

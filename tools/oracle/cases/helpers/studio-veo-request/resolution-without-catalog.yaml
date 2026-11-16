@@ -1,0 +1,14 @@
+kind: helper
+name: studio-veo-resolution-without-catalog
+call:
+  studio_veo_request:
+    requests:
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1280x720}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1920x1080}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 720x1280}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1080x1920}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1024x1024}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: ''}}
+      - {model: veo-9.9-not-a-model, prompt: a prompt, api_key: oracle-key, params: {size: 1280x720}}
+env: {}
+compare: {ignore: []}
