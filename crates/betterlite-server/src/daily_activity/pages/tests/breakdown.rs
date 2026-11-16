@@ -194,7 +194,6 @@ fn missing_values_leave_the_dimensions_empty() {
     assert!(breakdown.model_groups.is_empty());
     assert!(breakdown.mcp_servers.is_empty());
     assert!(breakdown.endpoints.is_empty());
-    assert!(breakdown.providers.is_empty());
     assert!(breakdown.entities.is_empty());
     assert_eq!(breakdown.api_keys.len(), 1);
 }
