@@ -1,0 +1,34 @@
+kind: helper
+name: compatible-chat-plan-seed-extra-body-wins
+call:
+  compatible_chat_plan:
+    calls:
+      - model: seed-model
+        messages: [{role: user, content: seed}]
+        custom_llm_provider: openai_like
+        api_base: https://fixture.example/v2
+        api_key: null
+        headers: {Authorization: Bearer seed}
+        optional_params:
+          max_tokens: 4
+          json_mode: true
+          max_retries: 1
+          extra_body: {max_tokens: 9, response_format: {type: json_object}}
+        custom_endpoint: false
+        timeout: null
+        mode: async
+        fake_stream: false
+        status: 200
+        watch_headers: [authorization]
+        reply:
+          id: seed-3
+          object: chat.completion
+          created: 1700000102
+          model: seed-served
+          choices:
+            - index: 0
+              message: {role: assistant, content: '{"seed": true}'}
+              finish_reason: stop
+          usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}
+env: {}
+compare: {ignore: []}

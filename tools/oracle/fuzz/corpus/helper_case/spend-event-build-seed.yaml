@@ -1,0 +1,17 @@
+kind: helper
+name: spend-event-build-seed
+call:
+  spend_event_projection:
+    function: build
+    kwargs: {model: gpt-4, response_cost: 0.25, complete_streaming_response: null}
+    litellm_params: {preset_cache_key: key-1}
+    metadata: {user_api_key_auth: {budget_reservation: {id: r1}}}
+    litellm_metadata: null
+    typed_auth: {metadata: null, litellm_metadata: null}
+    response: {kind: mapping, fields: {id: resp-1}}
+    start_time: "2026-01-01T00:00:00Z"
+    end_time: "2026-01-01T00:00:01Z"
+    store_bodies: false
+    cache: "on"
+env: {}
+compare: {ignore: []}
