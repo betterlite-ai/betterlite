@@ -1,11 +1,15 @@
+use std::str::FromStr as _;
 use std::sync::Mutex;
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use serde_json::Number;
 
 use super::support::{FakeAssembly, json, state};
 use crate::fields::usage::Usage;
+use crate::logging_state::LoggingState;
 use crate::logging_streams::assembly::{
     PromptCountError, PromptCounter, StreamBuild, partial_stream_handoff, successful_stream_handoff,
 };
@@ -18,6 +22,57 @@ fn completed() -> Json {
     json(
         r#"{"id":"chatcmpl-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
     )
+}
+
+fn recovering_usage() -> Usage {
+    Usage {
+        prompt_tokens: 4,
+        completion_tokens: 3,
+        total_tokens: 7,
+        prompt_tokens_details: None,
+        completion_tokens_details: None,
+        server_tool_use: None,
+        cost: None,
+        extras: IndexMap::new(),
+    }
+}
+
+fn cost_json(value: &str) -> Json {
+    Json::Number(Number::from_str(value).expect("a number"))
+}
+
+fn combined_usage(state: &LoggingState) -> Json {
+    state
+        .model_call_details
+        .get("combined_usage_object")
+        .cloned()
+        .expect("the partial handoff records the combined usage object")
+}
+
+fn field(recorded: &Json, name: &str) -> Json {
+    let Json::Object(fields) = recorded else {
+        panic!("the combined usage is an object");
+    };
+    fields
+        .get(name)
+        .cloned()
+        .expect("the combined usage carries the field")
+}
+
+fn cached_tokens(recorded: &Json) -> Json {
+    let Json::Object(details) = field(recorded, "prompt_tokens_details") else {
+        panic!("the combined usage carries prompt tokens details");
+    };
+    details
+        .get("cached_tokens")
+        .cloned()
+        .expect("the combined usage carries cached tokens")
+}
+
+fn partial_response(details: &str) -> Json {
+    json(&format!(
+        r#"{{"model":"gpt-4o","usage":{{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"prompt_tokens_details":{details}}}}}"#
+    ))
 }
 
 fn hands_over_a_complete_response() {
@@ -34,9 +89,9 @@ fn hands_over_nothing_when_the_assembly_is_empty() {
 
 fn hands_over_usage_when_the_builder_fails() {
     let mut assembly = FakeAssembly::failing();
-    assembly.usage = Usage::default();
+    assembly.usage = recovering_usage();
     let build = successful_stream_handoff(&assembly, None);
-    assert!(matches!(build, StreamBuild::UsageOnly(usage) if usage == Usage::default()));
+    assert!(matches!(build, StreamBuild::UsageOnly(usage) if usage == recovering_usage()));
 }
 
 fn passes_the_prompt_counter_through() {
@@ -63,12 +118,14 @@ fn records_partial_usage_and_cost() {
         Some(Decimal::from(3))
     });
     assert_eq!(cost, Some(Decimal::from(3)));
-    let recorded = state
-        .model_call_details
-        .get("combined_usage_object")
-        .cloned();
-    assert!(matches!(recorded, Some(Json::Object(_))));
-    assert!(state.model_call_details.contains_key("response_cost"));
+    assert_eq!(
+        state.model_call_details.get("response_cost"),
+        Some(&cost_json("3.0"))
+    );
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "prompt_tokens"), json("10"));
+    assert_eq!(field(&recorded, "completion_tokens"), json("5"));
+    assert_eq!(field(&recorded, "total_tokens"), json("15"));
     assert_eq!(
         seen.into_inner().unwrap(),
         Some(Json::Text("gpt-4o".to_owned()))
@@ -80,7 +137,71 @@ fn records_a_zero_cost_when_the_calculator_gives_none() {
     let assembly = FakeAssembly::complete(completed());
     let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| None);
     assert_eq!(cost, Some(Decimal::ZERO));
-    assert!(state.model_call_details.contains_key("response_cost"));
+    assert_eq!(
+        state.model_call_details.get("response_cost"),
+        Some(&cost_json("0.0"))
+    );
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "prompt_tokens"), json("10"));
+    assert_eq!(field(&recorded, "completion_tokens"), json("5"));
+    assert_eq!(field(&recorded, "total_tokens"), json("15"));
+}
+
+fn backfills_cache_usage_from_prompt_details() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(partial_response(
+        r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
+    ));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_read_input_tokens"), json("12"));
+    assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("4"));
+    assert_eq!(cached_tokens(&recorded), json("12"));
+}
+
+fn defaults_missing_cache_usage_to_zero() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(json(
+        r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}"#,
+    ));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_read_input_tokens"), json("0"));
+    assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("0"));
+    assert_eq!(cached_tokens(&recorded), json("0"));
+}
+
+fn keeps_cache_usage_the_provider_already_set() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(json(
+        r#"{"model":"gpt-4o","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15,"cache_read_input_tokens":9,"prompt_tokens_details":{"cached_tokens":12}}}"#,
+    ));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_read_input_tokens"), json("9"));
+    assert_eq!(cached_tokens(&recorded), json("9"));
+}
+
+fn backfills_cache_creation_from_creation_details() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(partial_response(r#"{"cache_creation_tokens":6}"#));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_read_input_tokens"), json("0"));
+    assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("6"));
+}
+
+fn backfills_cache_creation_from_nested_details() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(partial_response(r#"{"cache_creation_input_tokens":5}"#));
+    let cost = partial_stream_handoff(&assembly, None, &mut state, |_response| Some(Decimal::ONE));
+    assert_eq!(cost, Some(Decimal::ONE));
+    let recorded = combined_usage(&state);
+    assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("5"));
 }
 
 fn keeps_the_assembled_model_when_the_call_has_no_model() {
@@ -159,6 +280,13 @@ fn skips_partial_usage_when_the_assembly_is_empty() {
 #[case::handoff_passes_a_missing_counter_through(passes_a_missing_prompt_counter_through)]
 #[case::partial_handoff_records_usage_and_cost(records_partial_usage_and_cost)]
 #[case::partial_handoff_records_a_zero_cost(records_a_zero_cost_when_the_calculator_gives_none)]
+#[case::partial_handoff_backfills_cache_usage(backfills_cache_usage_from_prompt_details)]
+#[case::partial_handoff_defaults_missing_cache_usage(defaults_missing_cache_usage_to_zero)]
+#[case::partial_handoff_keeps_provider_cache_usage(keeps_cache_usage_the_provider_already_set)]
+#[case::partial_handoff_backfills_cache_creation(backfills_cache_creation_from_creation_details)]
+#[case::partial_handoff_backfills_nested_cache_creation(
+    backfills_cache_creation_from_nested_details
+)]
 #[case::partial_handoff_keeps_the_routed_model(
     keeps_the_assembled_model_when_the_call_has_no_model
 )]

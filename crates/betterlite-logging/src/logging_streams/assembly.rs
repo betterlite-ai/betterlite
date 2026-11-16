@@ -9,6 +9,7 @@ use crate::fields::usage::parse::usage_from_mapping;
 // ast-grep-ignore: no-long-names
 use crate::logging_failure::partial_usage::record_partial_usage_for_failure;
 use crate::logging_state::LoggingState;
+use crate::logging_streams::cache_usage::backfill_cache_usage;
 
 pub type PromptCounter<'counter> =
     dyn Fn() -> Result<i64, PromptCountError> + Send + Sync + 'counter;
@@ -79,7 +80,8 @@ where
             return None;
         }
     };
-    let usage = response_usage(&response)?;
+    let mut usage = response_usage(&response)?;
+    backfill_cache_usage(&mut usage);
     let response = with_call_model(response, &state.model);
     let cost = response_cost(&response).unwrap_or(Decimal::ZERO);
     // ast-grep-ignore: no-long-names
