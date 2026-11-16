@@ -1,7 +1,7 @@
 id: B8132
 milestone: M11 distribution
 title: Standalone Helm chart scaling and ingress
-status: todo
+status: done
 depends_on: [B8130]
 file: tasks/B8132-helm-chart-scaling.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "helm/litellm-helm/templates/keda.yaml"
 parent: B151
 split_from: B152
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2184
