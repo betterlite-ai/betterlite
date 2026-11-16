@@ -53,13 +53,34 @@ fn client_inputs(outcome: &ClientOutcome<'_>) -> (Option<String>, Option<i64>, O
     }
 }
 
+// the SDK turns azure_endpoint into <endpoint>/openai and keeps a deployment base_url, always ending in a slash
+fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>) {
+    let Some(inputs) = inputs else {
+        return (None, None);
+    };
+    match inputs {
+        ClientInputs::Azure(azure) => {
+            let base_url = match (&azure.endpoint.azure_endpoint, &azure.endpoint.base_url) {
+                (Some(endpoint), _) => Some(format!("{}/openai/", endpoint.trim_end_matches('/'))),
+                (None, Some(path)) => Some(format!("{}/", path.trim_end_matches('/'))),
+                (None, None) => None,
+            };
+            (base_url, Some(azure.api_version.clone()))
+        }
+        ClientInputs::OpenAiV1(v1) => (v1.base_url.clone(), None),
+    }
+}
+
 pub(crate) fn projection(outcome: &ClientOutcome<'_>) -> Value {
     let (api_key, max_retries, timeout) = client_inputs(outcome);
+    let (base_url, api_version) = rebuilt(outcome.inputs.as_ref());
     json!({
         "class": class_name(outcome.kind),
         "api_key": api_key,
         "max_retries": max_retries,
         "organization": Value::Null,
         "timeout_default": timeout.is_none(),
+        "base_url": base_url,
+        "api_version": api_version,
     })
 }

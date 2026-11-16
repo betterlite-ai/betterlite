@@ -56,15 +56,15 @@ enum Call {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Supplied {
-    OpenAi,
-    AsyncOpenAi,
-    AzureOpenAi,
-    AsyncAzureOpenAi,
+    OpenAiSync,
+    OpenAiAsync,
+    AzureSync,
+    AzureAsync,
 }
 
 impl Supplied {
     const fn is_async(self) -> bool {
-        matches!(self, Self::AsyncOpenAi | Self::AsyncAzureOpenAi)
+        matches!(self, Self::OpenAiAsync | Self::AzureAsync)
     }
 }
 
@@ -112,6 +112,8 @@ struct Projection {
     max_retries: Option<i64>,
     timeout: Option<f64>,
     organization: Option<String>,
+    base_url: Option<String>,
+    api_version: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -298,7 +300,7 @@ fn settings() -> ClientSettings {
 
 fn ignored_settings() -> ClientSettings {
     let mut settings = settings();
-    settings.timeout = Some(7.5);
+    settings.timeout = Some(7.5_f64);
     settings.max_retries = Some(7);
     settings.organization = Some("org-x".to_owned());
     settings
@@ -391,6 +393,11 @@ fn built_by(step: Step, builder: BuilderMode) -> Step {
     Step { builder, ..step }
 }
 
+fn versioned(mut step: Step, version: &str) -> Step {
+    step.args.api_version = Some(version.to_owned());
+    step
+}
+
 fn after(step: Step, after: &str, limit: i64) -> Step {
     Step {
         after: Some(after.to_owned()),
@@ -406,11 +413,11 @@ fn create_data(text: &str) -> FineTuneCreate {
 fn wire_body(data: &FineTuneCreate) -> String {
     let mut body = serde_json::to_value(data).expect("the create data serializes");
     if let Some(map) = body.as_object_mut() {
-        let extra = map
+        let extra_body = map
             .remove("extra_body")
             .and_then(|value| value.as_object().cloned());
-        if let Some(extra) = extra {
-            map.extend(extra);
+        if let Some(extra_body) = extra_body {
+            map.extend(extra_body);
         }
     }
     body.to_string()
@@ -522,12 +529,33 @@ fn projection(outcome: &ClientOutcome<'_>) -> Projection {
         }
         None => (None, None, None),
     };
+    let (base_url, api_version) = rebuilt(outcome.inputs.as_ref());
     Projection {
         class,
         api_key,
         max_retries,
         timeout,
         organization: None,
+        base_url,
+        api_version,
+    }
+}
+
+// the SDK turns azure_endpoint into <endpoint>/openai and keeps a deployment base_url, always ending in a slash
+fn rebuilt(inputs: Option<&ClientInputs<'_>>) -> (Option<String>, Option<String>) {
+    let Some(inputs) = inputs else {
+        return (None, None);
+    };
+    match inputs {
+        ClientInputs::Azure(azure) => {
+            let base_url = match (&azure.endpoint.azure_endpoint, &azure.endpoint.base_url) {
+                (Some(endpoint), _) => Some(format!("{}/openai/", endpoint.trim_end_matches('/'))),
+                (None, Some(path)) => Some(format!("{}/", path.trim_end_matches('/'))),
+                (None, None) => None,
+            };
+            (base_url, Some(azure.api_version.clone()))
+        }
+        ClientInputs::OpenAiV1(v1) => (v1.base_url.clone(), None),
     }
 }
 
@@ -652,7 +680,10 @@ impl<S: tracing::Subscriber> Layer<S> for Messages {
     }
 }
 
-fn capture<T, F: FnOnce() -> T>(run: F) -> (T, Vec<String>) {
+fn capture<T, F>(run: F) -> (T, Vec<String>)
+where
+    F: FnOnce() -> T,
+{
     let messages = Messages::default();
     let subscriber = tracing_subscriber::registry().with(messages.clone());
     let result = with_default(subscriber, run);

@@ -1,5 +1,5 @@
 import asyncio
-from collections.abc import Callable, Coroutine
+from collections.abc import Coroutine
 from typing import Literal, NotRequired, TypeAlias, TypedDict, cast
 
 import httpx
@@ -12,9 +12,12 @@ from openai import DEFAULT_TIMEOUT, AsyncAzureOpenAI, AsyncOpenAI, AzureOpenAI, 
 from pydantic import JsonValue, TypeAdapter
 
 ENDPOINT = "https://fixture.test"
+KEY = "supplied-key"
+VERSION = "2024-10-21"
 
 JSON = TypeAdapter(JsonValue)
 WIRE = TypeAdapter(dict[str, JsonValue])
+API_VERSION = TypeAdapter(str | None)
 
 
 class ErrorBody(TypedDict):
@@ -78,10 +81,11 @@ def record_call(request: httpx.Request, log: list[JsonValue]) -> None:
     elif request.method == "POST":
         log.append({"create": WIRE.validate_json(request.content)})
     elif path.endswith("/jobs"):
-        limit = request.url.params.get("limit")
+        after = request.url.params.get_list("after")
+        limit = request.url.params.get_list("limit")
         listed: JsonObject = {
-            "after": request.url.params.get("after"),
-            "limit": None if limit is None else int(limit),
+            "after": after[0] if after else None,
+            "limit": int(limit[0]) if limit else None,
         }
         log.append({"list": listed})
     else:
@@ -90,7 +94,7 @@ def record_call(request: httpx.Request, log: list[JsonValue]) -> None:
 
 def response_for(reply: Reply | None) -> httpx.Response:
     if reply is None:
-        return httpx.Response(200, json={})
+        return httpx.Response(200, json=JSON.validate_python({}))
     return httpx.Response(reply["status"], json=reply["body"])
 
 
@@ -103,10 +107,10 @@ class Record:
         return response_for(STATE.reply)
 
 
-REAL_AZURE_CLIENT = BaseAzureLLM.get_azure_openai_client
+REAL_AZURE_CLIENT = BaseAzureLLM.get_azure_openai_client  # type: ignore[misc]  # noqa: E501  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
 
 
-def build_client(
+def build_client(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
     self: BaseAzureLLM,
     *,
     api_key: str | None = None,
@@ -116,20 +120,13 @@ def build_client(
     litellm_params: dict[str, JsonValue] | None = None,
     _is_async: bool = False,
     model: str | None = None,
-) -> SdkClient | None:  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/common_utils.py#L480-L489
+) -> SdkClient | None:
     if STATE.builder == "none":
         return None
     if STATE.builder == "wrong_async":
         return STATE.mode_client
     return REAL_AZURE_CLIENT(
-        self,
-        api_key=api_key,
-        api_base=api_base,
-        api_version=api_version,
-        client=client,
-        litellm_params=litellm_params,
-        _is_async=_is_async,
-        model=model,
+        self, api_key, api_base, api_version, client, litellm_params, _is_async, model
     )
 
 
@@ -137,45 +134,25 @@ BaseAzureLLM.get_azure_openai_client = build_client  # type: ignore[assignment, 
 
 
 def make_client(kind: str, log: list[JsonValue]) -> SdkClient:
-    transport = httpx.MockTransport(Record(log))
+    wire = httpx.MockTransport(Record(log))
     if kind == "openai":
         return OpenAI(
-            api_key="supplied-key",
-            base_url=ENDPOINT,
-            max_retries=0,
-            http_client=httpx.Client(transport=transport),
+            api_key=KEY, base_url=ENDPOINT, max_retries=0, http_client=httpx.Client(transport=wire)
         )
     if kind == "async_openai":
-        return AsyncOpenAI(
-            api_key="supplied-key", base_url=ENDPOINT, max_retries=0, http_client=httpx.AsyncClient(transport=transport)
-        )
+        http_client = httpx.AsyncClient(transport=wire)
+        return AsyncOpenAI(api_key=KEY, base_url=ENDPOINT, max_retries=0, http_client=http_client)
     if kind == "azure_openai":
         return AzureOpenAI(
-            api_key="supplied-key",
-            api_version="2024-10-21",
-            azure_endpoint=ENDPOINT,
-            max_retries=0,
-            http_client=httpx.Client(transport=transport),
+            api_key=KEY, api_version=VERSION, azure_endpoint=ENDPOINT,
+            max_retries=0, http_client=httpx.Client(transport=wire),
         )
     if kind == "async_azure_openai":
         return AsyncAzureOpenAI(
-            api_key="supplied-key",
-            api_version="2024-10-21",
-            azure_endpoint=ENDPOINT,
-            max_retries=0,
-            http_client=httpx.AsyncClient(transport=transport),
+            api_key=KEY, api_version=VERSION, azure_endpoint=ENDPOINT,
+            max_retries=0, http_client=httpx.AsyncClient(transport=wire),
         )
     raise ValueError(f"unknown supplied client {kind}")
-
-
-def mode_client() -> SdkClient:
-    return AzureOpenAI(
-        api_key="mode-key",
-        api_version="2024-10-21",
-        azure_endpoint=ENDPOINT,
-        max_retries=0,
-        http_client=httpx.Client(transport=httpx.MockTransport(Record(STATE.calls))),
-    )
 
 
 def settle(result: ModelResult) -> JsonValue:
@@ -190,7 +167,9 @@ def settle(result: ModelResult) -> JsonValue:
 
 def project(step: Step, supplied: SdkClient | None, *, is_async: bool) -> JsonValue:
     api = AzureOpenAIFineTuningAPI()
-    built = api.get_openai_client(**step["args"], client=supplied, _is_async=is_async)
+    built = api.get_openai_client(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L181-L204
+        **step["args"], client=supplied, _is_async=is_async
+    )
     if built is None:
         raise ValueError("the client builder returned no client")
     return {
@@ -199,6 +178,8 @@ def project(step: Step, supplied: SdkClient | None, *, is_async: bool) -> JsonVa
         "max_retries": built.max_retries,
         "organization": built.organization,
         "timeout_default": built.timeout == DEFAULT_TIMEOUT,
+        "base_url": str(built.base_url),
+        "api_version": API_VERSION.validate_python(built.default_query.get("api-version")),
     }
 
 
@@ -207,7 +188,7 @@ def create_job(step: Step, supplied: SdkClient | None, *, is_async: bool) -> Jso
     if data is None:
         raise ValueError("a create step carries no data")
     api = AzureOpenAIFineTuningAPI()
-    created = api.create_fine_tuning_job(
+    created = api.create_fine_tuning_job(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/fine_tuning/handler.py#L58-L99
         _is_async=is_async, create_fine_tuning_job_data=data, client=supplied, **step["args"]
     )
     return settle(created)
@@ -215,19 +196,16 @@ def create_job(step: Step, supplied: SdkClient | None, *, is_async: bool) -> Jso
 
 def list_jobs(step: Step, supplied: SdkClient | None, *, is_async: bool) -> JsonValue:
     api = AzureOpenAIFineTuningAPI()
-    lister = cast(Callable[..., ModelResult], api.list_fine_tuning_jobs)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L227-L249
-    return settle(
-        lister(
-            _is_async=is_async,
-            client=supplied,
-            after=step.get("after"),
-            limit=step.get("limit"),
-            **step["args"],
-        )
-    )
+    listed = cast(ModelResult, api.list_fine_tuning_jobs(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/fine_tuning/handler.py#L201-L241
+        _is_async=is_async, client=supplied, after=step.get("after"), limit=step.get("limit"),
+        **step["args"],
+    ))
+    return settle(listed)
 
 
-def job_action(step: Step, supplied: SdkClient | None, *, is_async: bool, cancel: bool) -> JsonValue:
+def job_action(
+    step: Step, supplied: SdkClient | None, *, is_async: bool, cancel: bool
+) -> JsonValue:
     api = AzureOpenAIFineTuningAPI()
     job_id = step.get("job_id")
     if job_id is None:
@@ -239,15 +217,15 @@ def job_action(step: Step, supplied: SdkClient | None, *, is_async: bool, cancel
             )
         )
     return settle(
-        api.retrieve_fine_tuning_job(_is_async=is_async, fine_tuning_job_id=job_id, client=supplied, **step["args"])
+        api.retrieve_fine_tuning_job(
+            _is_async=is_async, fine_tuning_job_id=job_id, client=supplied, **step["args"]
+        )
     )
 
 
 def act(step: Step) -> JsonValue:
     action = step["action"]
-    is_async = step.get("is_async")
-    if is_async is None:
-        is_async = False
+    is_async = bool(step.get("is_async"))
     kind = step.get("client")
     supplied = None if kind is None else make_client(kind, STATE.supplied_calls)
     if action == "project":
@@ -289,7 +267,9 @@ def run_step(step: Step) -> JsonObject:
     STATE.reply = step.get("reply")
     builder = step.get("builder")
     STATE.builder = "default" if builder is None else builder
-    STATE.mode_client = None if STATE.builder != "wrong_async" else mode_client()
+    STATE.mode_client = (
+        make_client("azure_openai", STATE.calls) if STATE.builder == "wrong_async" else None
+    )
     litellm.client_session = httpx.Client(transport=httpx.MockTransport(Record(STATE.calls)))
     litellm.aclient_session = httpx.AsyncClient(transport=httpx.MockTransport(Record(STATE.calls)))
     reported = outcome(step)
@@ -303,4 +283,4 @@ def run_step(step: Step) -> JsonObject:
 
 def run(input_value: Input) -> JsonValue:
     steps = [run_step(step) for step in input_value["steps"]]
-    return {"steps": steps}
+    return JSON.validate_python({"steps": steps})

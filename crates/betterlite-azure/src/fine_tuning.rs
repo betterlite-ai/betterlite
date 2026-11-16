@@ -24,16 +24,19 @@ pub fn ensure_training_type(data: &mut FineTuneCreate) {
         .and_then(|value| value.as_object())
         .cloned()
         .unwrap_or_default();
-    body.insert("trainingType".to_owned(), serde_json::json!(1));
+    body.insert("trainingType".to_owned(), serde_json::json!(1_i32));
     data.extra
         .insert("extra_body".to_owned(), serde_json::json!(body));
     tracing::debug!("Azure fine-tuning: defaulting trainingType=1 (supervised)");
 }
 
-pub fn request_fine_tuning_job<M: ClientMaterializer>(
+pub fn request_fine_tuning_job<M>(
     connection: Connection<'_, '_, M>,
     request: &JobRequest<'_>,
-) -> Result<FineTuneJob, AzureFineTuneError> {
+) -> Result<FineTuneJob, AzureFineTuneError>
+where
+    M: ClientMaterializer,
+{
     let is_async = connection.is_async;
     let client = connection.open()?;
     let reply = match request {
@@ -50,20 +53,26 @@ pub fn request_fine_tuning_job<M: ClientMaterializer>(
     decode_fine_tune_job(&bytes, true).map_err(AzureFineTuneError::from)
 }
 
-pub fn create_fine_tuning_job<M: ClientMaterializer>(
+pub fn create_fine_tuning_job<M>(
     connection: Connection<'_, '_, M>,
     data: &mut FineTuneCreate,
-) -> Result<FineTuneJob, AzureFineTuneError> {
+) -> Result<FineTuneJob, AzureFineTuneError>
+where
+    M: ClientMaterializer,
+{
     ensure_training_type(data);
     request_fine_tuning_job(connection, &JobRequest::Create(data))
 }
 
 // the inherited list returns the SDK page as it is; only single job replies carry the Azure normalization
-pub fn list_fine_tuning_jobs<M: ClientMaterializer>(
+pub fn list_fine_tuning_jobs<M>(
     connection: Connection<'_, '_, M>,
     after: Option<&str>,
     limit: Option<i64>,
-) -> Result<Vec<u8>, AzureFineTuneError> {
+) -> Result<Vec<u8>, AzureFineTuneError>
+where
+    M: ClientMaterializer,
+{
     let is_async = connection.is_async;
     let client = connection.open()?;
     if !is_async {

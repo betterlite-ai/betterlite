@@ -215,9 +215,9 @@ fn azure_statuses_map_to_openai() {
 }
 
 fn list_pages_keep_azure_status_values() {
-    let pending_page = page(&job_json("pending", r#"null"#, "null"), true);
+    let pending_page = page(&job_json("pending", "null", "null"), true);
     let observed = run(&list(&pending_page));
-    assert_eq!(observed.outcome, Outcome::Page(pending_page.clone()));
+    assert_eq!(observed.outcome, Outcome::Page(pending_page));
 }
 
 fn unknown_status_is_a_validation_error() {
@@ -247,7 +247,7 @@ fn organization_result_files_null() {
     let expected_bodies = [
         job_json("queued", r#""""#, "[]"),
         job_json("queued", r#""""#, "[]"),
-        filled.clone(),
+        filled,
     ];
     for (step, expected) in steps.iter().zip(expected_bodies.iter()) {
         let observation = run(step);
@@ -259,16 +259,16 @@ fn organization_result_files_null() {
 }
 
 fn azure_finetune_client_rebuild() {
-    for (step, class) in projection_cases() {
+    for (step, class, base_url, api_version) in projection_cases() {
         let observation = run(&step);
-        assert_eq!(observation.outcome, projected(class));
+        assert_eq!(observation.outcome, projected(class, base_url, api_version));
         assert!(observation.calls.is_empty());
         assert!(observation.supplied_calls.is_empty());
     }
     let queued = job_json("queued", ORG, "[]");
     let rebuilt = run(&supplied(
         create(NO_TRAINING_TYPE, &queued),
-        Supplied::AzureOpenAi,
+        Supplied::AzureSync,
     ));
     assert_eq!(
         rebuilt,
@@ -276,22 +276,54 @@ fn azure_finetune_client_rebuild() {
     );
 }
 
-fn projection_cases() -> [(Step, &'static str); 4] {
+fn projection_cases() -> [(Step, &'static str, &'static str, Option<&'static str>); 5] {
     [
-        (project(Supplied::OpenAi, false), "AzureOpenAI"),
-        (project(Supplied::AsyncOpenAi, false), "AzureOpenAI"),
-        (project(Supplied::AzureOpenAi, true), "AsyncAzureOpenAI"),
-        (project(Supplied::AsyncAzureOpenAi, false), "AzureOpenAI"),
+        (
+            project(Supplied::OpenAiSync, false),
+            "AzureOpenAI",
+            "https://fixture.test/openai/",
+            Some("2024-10-21"),
+        ),
+        (
+            project(Supplied::OpenAiAsync, false),
+            "AzureOpenAI",
+            "https://fixture.test/openai/",
+            Some("2024-10-21"),
+        ),
+        (
+            project(Supplied::AzureSync, true),
+            "AsyncAzureOpenAI",
+            "https://fixture.test/openai/",
+            Some("2024-10-21"),
+        ),
+        (
+            project(Supplied::AzureAsync, false),
+            "AzureOpenAI",
+            "https://fixture.test/openai/",
+            Some("2024-10-21"),
+        ),
+        (
+            versioned(project(Supplied::OpenAiSync, false), "v1"),
+            "OpenAI",
+            "https://fixture.test/openai/v1/",
+            None,
+        ),
     ]
 }
 
-fn projected(class: &'static str) -> Outcome {
+fn projected(
+    class: &'static str,
+    base_url: &'static str,
+    api_version: Option<&'static str>,
+) -> Outcome {
     Outcome::Projection(Projection {
         class,
         api_key: Some("key-1".to_owned()),
         max_retries: Some(2),
         timeout: None,
         organization: None,
+        base_url: Some(base_url.to_owned()),
+        api_version: api_version.map(str::to_owned),
     })
 }
 
