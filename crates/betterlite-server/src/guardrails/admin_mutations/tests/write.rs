@@ -64,6 +64,24 @@ async fn create_echoes_a_null_guardrail_info() {
 }
 
 #[tokio::test]
+async fn create_echoes_the_optional_request_columns() {
+    let harness = harness();
+    let payload = r#"{"guardrail":{"guardrail_id":"client-id","guardrail_name":"my-guard","litellm_params":{"guardrail":"bedrock","mode":"pre_call"},"policy_template":"tpl","created_at":"2026-01-02T03:04:05Z","updated_at":"2026-01-02T03:04:06Z"}}"#;
+    let (status, body) = send(
+        harness.router,
+        request("POST", "/guardrails", Some(admin()), Some(payload)),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let parsed = parse(&body);
+    assert_eq!(keys(&parsed).len(), 6);
+    assert_ne!(text(field(&parsed, "guardrail_id")), "client-id");
+    assert_eq!(text(field(&parsed, "policy_template")), "tpl");
+    assert_eq!(text(field(&parsed, "created_at")), "2026-01-02T03:04:05Z");
+    assert_eq!(text(field(&parsed, "updated_at")), "2026-01-02T03:04:06Z");
+}
+
+#[tokio::test]
 async fn create_rejects_an_unsupported_guardrail() {
     let (captured, _guard) = capture();
     let harness = harness();
