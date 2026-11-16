@@ -1,0 +1,24 @@
+task: B3781
+deviations:
+  - what: A monitor mode check runs on copies of the request data, the user auth and the response, so the standard_logging_guardrail_information record it writes is not attached to the live request.
+    why: A detached task cannot hold the caller's mutable borrow of the request. LiteLLM's background task shares the dict, and only its logging record and its debug lines are visible there, since monitor mode never rewrites content.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L567-L574
+  - what: Background checks are spawned into the guardrail's task tracker with the current Tokio runtime handle. A missing runtime is logged as "Failed to create background Noma task" and the hook still returns the request.
+    why: The server must own and drain every task it starts, so asyncio.create_task becomes a tracked spawn. Python raises RuntimeError without a running loop and LiteLLM catches it in the same place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L156-L164
+  - what: The streaming hook returns the list of chunks to yield after it has buffered the whole stream, and stream_chunk_builder and MockResponseIterator are an injected StreamAssembly trait instead of a call into LiteLLM's helpers.
+    why: LiteLLM yields nothing before the stream is fully buffered, so a list is the same observable output. The chunk assembly and the one-chunk replay belong to the streaming crates and are passed in rather than copied here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L798-L841
+  - what: The streaming hook fails with an OverBudget error once the buffered answer passes the API boundary ceilings of 16 MiB of chunk content or 64 * 1024 chunks, where LiteLLM buffers the stream without a limit.
+    why: The buffer holds untrusted provider output, so it stays inside the byte and item limits ApiBoundaries applies to a reply body and an item list, through the shared RetentionBudget. A real answer reaches neither limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L806-L808
+  - what: The failure record a hook writes when the Noma call fails carries no OTEL span, only the standard logging record in the request data.
+    why: The record writer takes its span sink from the hook dispatcher, which does not exist yet, so a no-op sink stands in until the dispatcher passes one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1296-L1302
+kept_bugs:
+  - what: The streaming hook never asks should_run_guardrail, so a stream is scanned even when the guardrail is configured for another event hook or is not requested on the call.
+    why: A setup that lists noma next to a streaming route sees its responses scanned today, and skipping the scan would stop that without a warning.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L798-L841
+  - what: For an MCP tool call both the pre-call and the moderation hook are gated as pre_mcp_call, while the scan and its record keep the hook's own event (pre_call or during_call).
+    why: The record's guardrail_mode shows pre_call or during_call for an MCP call, and logging consumers may already filter on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/noma/noma.py#L555-L584

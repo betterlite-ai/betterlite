@@ -94,7 +94,7 @@ checks:
       run: test -f tools/oracle/helpers/user_contracts.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: helper-case-corpus
       why: No newly added contract seed exercises the helper decoder.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/user-contracts-*')" && grep -rlq user_contracts tools/oracle/fuzz/corpus/helper_case/user-contracts-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/user-contracts-*')" && grep -rlq user_contracts tools/oracle/fuzz/corpus/helper_case/user-contracts-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/user-contracts/update-validator-timing.yaml
   - tools/oracle/cases/helpers/user-contracts/create-delete-bounds.yaml

@@ -1,0 +1,46 @@
+kind: helper
+name: a2a-chat-registry-fills-missing
+call:
+  b8100:
+    op: registry
+    agents:
+      - name: plain
+        card: {url: http://plain.test}
+        params:
+          api_key: stored-key
+          headers: {X-Stored: "1"}
+          timeout: 7
+          stream: false
+      - name: typed
+        card: {url: http://typed.test}
+        params:
+          api_key: 7
+          headers: {X-Stored: "2"}
+    probes:
+      - agent_name: plain
+        api_base: null
+        api_key: null
+        headers: null
+        optional_params: {temperature: 0.4}
+      - agent_name: plain
+        api_base: http://caller
+        api_key: caller-key
+        headers: {A: b}
+        optional_params: {}
+      - agent_name: typed
+        api_base: null
+        api_key: null
+        headers: {}
+        optional_params: {}
+      - agent_name: plain
+        api_base: null
+        api_key: null
+        headers: {A: b}
+        optional_params: {}
+      - agent_name: plain
+        api_base: null
+        api_key: null
+        headers: {}
+        optional_params: {timeout: 99}
+env: {}
+compare: {ignore: []}

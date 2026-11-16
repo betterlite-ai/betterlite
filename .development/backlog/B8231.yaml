@@ -1,7 +1,7 @@
 id: B8231
 milestone: M8 platform
 title: Registry read-through and JSON merge patch
-status: todo
+status: done
 depends_on: [B4776, B3683]
 file: tasks/B8231-registry-read-through.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/common_utils/json_merge_patch.py"
 parent: B124
 split_from: B124
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2139

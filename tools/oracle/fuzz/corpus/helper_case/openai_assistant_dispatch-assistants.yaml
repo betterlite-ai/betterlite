@@ -1,0 +1,14 @@
+kind: helper
+name: openai-assistant-dispatch-assistants-seed
+call:
+  openai_assistant_dispatch:
+    kind: assistants
+    operation: list_assistants
+    api_base: "https://example.test/v1"
+    api_key: sk-fixture
+    params: {order: asc, limit: 5, before: null, after: null}
+    replies:
+      - status: 200
+        body: {object: list, data: [{id: asst_1, object: assistant, created_at: 1, model: gpt-4o, tools: []}], first_id: asst_1, last_id: asst_1, has_more: false}
+env: {}
+compare: {ignore: []}

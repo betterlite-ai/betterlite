@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-chat-azure-ai-response-model
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    responses:
+      - model: deployment
+        body: |-
+          {"id":"chatcmpl-fixture","object":"chat.completion","created":1700000000,"model":"provider-sent","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7},"system_fingerprint":"fp-fixture"}
+      - model: deployment
+        body: |-
+          {"id":"chatcmpl-fixture","object":"chat.completion","created":1700000000,"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}
+      - model: deployment
+        body: |-
+          {"id":"chatcmpl-fixture","object":"chat.completion","created":1700000000,"model":null,"choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"length"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}
+      - model: deployment
+        body: |-
+          {"id":"chatcmpl-fixture","object":"chat.completion","created":1700000000,"model":"azure_ai/inner","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":3,"completion_tokens":4,"total_tokens":7}}
+env: {}
+compare: {ignore: []}

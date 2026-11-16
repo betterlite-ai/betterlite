@@ -1,0 +1,92 @@
+id: B9972
+title: Config load runs on its own stack
+description: >-
+  Fix a stack overflow that blocks every new config section. ConfigLoader::load in crates/betterlite-config/src/loader.rs
+  parses the whole document once per section (RawSections::parse calls parse_view for each of about 400 sections) and
+  then converts the sections, and a deeply nested value is walked recursively in both steps. On a 2 MiB test thread the
+  claude_gateway_policy test resolves_references_through_the_deepest_mapping_yaml_allows, which loads a mapping 60
+  levels deep (serde-saphyr allows 64), sits just under the limit on main. B600 (bedrock_converse_options) and B8293
+  (prompts) each add a section, and with either one the test aborts with "has overflowed its stack" (merge queue runs
+  https://github.com/betterlite-ai/betterlite/actions/runs/43862056666 and https://github.com/betterlite-ai/betterlite/actions/runs/43860934262).
+  The test passes on main 4d9932ca58 and aborts on B8293's head bbee231484 with the CI profile (CARGO_PROFILE_DEV_DEBUG=0,
+  CARGO_PROFILE_TEST_DEBUG=0). LiteLLM loads the same file with yaml.safe_load and has no such limit, so the depth a
+  config may have must not depend on which thread calls the loader.
+
+
+  Rust change. ConfigLoader::load runs its current body on a scoped thread that std::thread::Builder starts with a fixed
+  stack size, named config-load, and returns that thread's result. Use std::thread::scope with Builder::spawn_scoped so
+  the thread borrows self and source; the body stays as it is today, moved unchanged into a private method on
+  ConfigLoader. Put the size in a const in loader.rs, 64 MiB, with a one-line comment that the loader walks deep YAML once
+  per section. A failure to start the thread becomes a new ConfigError variant LoadThread { source: std::io::Error }
+  with the message "could not start the config load thread: {source}" and the category "load_thread". A panic inside the
+  thread is passed on with std::panic::resume_unwind, so a panic stays a panic. The impl block gains the bound L: Sync,
+  since the thread borrows the lookup.
+
+
+  Tests. In crates/betterlite-config/src/sections/claude_gateway_policy/tests.rs add deep_yaml_loads_on_small_stack: it
+  starts a std::thread::Builder thread with stack_size(1024 * 1024), calls the module's load with
+  nested_settings_yaml(60) and GATEWAY_URL set, joins it, and asserts the managed settings equal
+  nested_expected(60, Json::Text("https://gateway.example".to_owned())), as resolves_references_through_the_deepest_mapping_yaml_allows
+  does. Reuse those two helpers; do not write a second nested YAML builder. On main the 1 MiB thread overflows and the
+  test process aborts, so the test is red before the fix and green after it.
+scope:
+  paths:
+  - "crates/betterlite-config/tests/agent_host_settings.rs"
+  - "crates/betterlite-config/tests/**"
+  - "crates/betterlite-config/src/sections/password_policy/tests.rs"
+  - "crates/betterlite-config/src/sections/includes.rs"
+  - "crates/betterlite-config/src/sections/azure_default_chain/tests.rs"
+  - "crates/betterlite-config/src/loader/startup.rs"
+  - "crates/betterlite-config/src/**"
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/sections/claude_gateway_policy/tests.rs
+  - crates/betterlite/src/diagnostic_commands.rs
+  - tools/oracle/src/helpers/guardrails/b3762/support.rs
+  - tools/oracle/src/helpers/guardrails/b3767.rs
+  - tools/oracle/src/helpers/guardrails/b3769.rs
+  - tools/oracle/src/helpers/guardrails/b3778.rs
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5475-L5493
+  why: _get_config_from_file reads the config file with yaml.safe_load, and nothing about the calling thread limits how deep the file may nest.
+dod:
+- text: >-
+    A config whose managed settings mapping is 60 levels deep loads from a thread with a 1 MiB stack and resolves its
+    os.environ reference.
+  proof: [deep-yaml-small-stack]
+- text: >-
+    Every betterlite-config test still passes, the 2 MiB deep mapping test included.
+  proof: [config-tests]
+- text: >-
+    ConfigLoader::load starts its own thread with a fixed stack size, and a failure to start it is the load_thread error.
+  proof: [load-thread]
+checks:
+  optional: []
+  commands:
+  - id: deep-yaml-small-stack
+    why: Loading a deeply nested config still uses the caller's stack.
+    run: >-
+      cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::claude_gateway_policy::tests::deep_yaml_loads_on_small_stack$/)'
+  - id: config-tests
+    why: Moving the load to its own thread broke another config test.
+    run: cargo nextest run --locked -p betterlite-config --no-tests=fail
+  - id: load-thread
+    why: The loader has no fixed-size thread, or a failed start is not the load_thread error.
+    run: >-
+      grep -q -F 'stack_size(' crates/betterlite-config/src/loader.rs && grep -q -F 'spawn_scoped' crates/betterlite-config/src/loader.rs
+      && grep -q -F '"load_thread"' crates/betterlite-config/src/loader.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+- Making the YAML walk iterative or lowering the nesting serde-saphyr allows.
+- The config-section tasks that tripped the overflow (B600, B8293); they pass once this lands.
+- Other entry points that call parse_view directly (scim_role_settings.rs, spend_storage.rs); they parse one small view.
+pitfalls:
+- 'Do not change resolves_references_through_the_deepest_mapping_yaml_allows or nested_settings_yaml; the depth of 60 stays.'
+- 'The new test must call load on a thread with a 1 MiB stack; on the test thread itself it proves nothing.'
+- 'Keep resume_unwind for a panic in the load thread; do not turn a panic into a ConfigError.'
+- 'If a caller''s EnvironmentLookup is not Sync and the bound breaks it, report it with the file and line instead of working around the bound.'
+review_level: standard
+budget:
+  max_changed_lines: 200
+  max_new_expects: 0

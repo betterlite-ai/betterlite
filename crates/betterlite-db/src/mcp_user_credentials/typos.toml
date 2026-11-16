@@ -1,0 +1,3 @@
+[default.extend-words]
+# the test ciphertexts are LiteLLM's own bytes under the test salt key, so this run of letters is random, not a word
+Ue = "Ue"

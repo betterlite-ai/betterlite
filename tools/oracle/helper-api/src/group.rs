@@ -1,5 +1,6 @@
 use crate::helper::HelperResult;
 
+#[derive(Clone, Copy)]
 pub struct Group {
     pub invoke: fn(&str, &serde_json::Value) -> Option<HelperResult>,
     pub check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,

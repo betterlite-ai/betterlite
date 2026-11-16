@@ -1,0 +1,27 @@
+task: B4308
+deviations:
+  - what: "The text after \"Cache connection test failed: \" and in the error member is betterlite's own error text, not the Python exception text."
+    why: "Python exception strings (a redis-py connection error, a TypeError from a bad keyword) have no Rust equivalent; the status, the message prefix and the null or non-null error member match LiteLLM."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L557-L566
+  - what: "A settings map with redis_startup_nodes (cluster mode) answers status \"failed\" with the B4299 cluster error, while LiteLLM builds a RedisClusterCache and tests it."
+    why: "No task wires B4299's Cache to the cluster constructor yet, so Cache::open returns its unsupported-type error; the route reports it in the failed answer. B4323, B4325, B4326, B5220 and B5640 own the cluster cache and B4299 must call it before this goes away."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L188-L218
+  - what: "A valid non-admin key answers 403 with a {\"detail\": \"...\"} body, while LiteLLM's admin-only route check raises a plain Exception that auth_exception_handler turns into a 401 auth_error envelope."
+    why: "betterlite's management routes carry the admin-only check in the route (as guardrails/custom_code_test does), so a forbidden caller gets the route's own 403 and detail body instead of an authentication failure."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/route_checks.py#L249-L257
+  - what: "An explicit socket_timeout null tests with B4321's 5.0 second default, while LiteLLM only assigns socket_timeout to the redis client when it is not None, so the null leaves the client without that timeout."
+    why: "The bridge drops null keyword arguments, and B4321's connect fills an absent socket_timeout with RedisCache.__init__'s 5.0 default and has no way to build a client without one; a Redis that answers PING after more than 5 seconds passes the test in LiteLLM and fails it in betterlite."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L604-L650
+  - what: "A null value for a name no redis client knows is dropped, so the test still runs, while LiteLLM passes the null through Cache's **kwargs and redis.Redis raises TypeError for the unknown name, which the endpoint answers as a failed test."
+    why: "B4321's typed option map has no null member, so the bridge drops every null except an explicit url null; the unknown option is then absent instead of rejected, which is the opposite of LiteLLM's outcome for that input."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L213-L219
+  - what: "The named Cache options that only shape caching (mode, namespace, ttl, redis_flush_size, disk_cache_dir, supported_call_types, semantic cache settings and the s3/azure/qdrant credentials) are accepted and ignored instead of being bound into the temporary cache."
+    why: "The route only builds the cache to call test_connection, which pings Redis; none of those options reach the connection or the answer, and the temporary cache is dropped before returning."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L218
+  - what: "_backend is accepted and ignored; over HTTP LiteLLM assigns the posted JSON value to Cache's backend and the test then fails on it, while a real BaseCache object can only be passed in process."
+    why: "A cache backend is an in-process object. Constructing one from a JSON member would let the caller choose the answer without touching Redis, so the bridge drops the name and tests the connection the rest of the map describes."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L188
+  - what: "The debug line writes the redacted settings as a cache_settings field of the message \"Testing cache connection with settings\", while LiteLLM appends the redacted Python dict to that message with %s."
+    why: "Rust log lines are structured key-value pairs, so the message text and the redacted value are the same but a parser that reads the value out of the message text finds it in the field instead."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L542-L543
+kept_bugs: []
