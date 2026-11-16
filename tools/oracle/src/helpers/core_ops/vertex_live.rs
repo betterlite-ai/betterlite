@@ -82,6 +82,7 @@ impl Helper for Op {
 }
 
 struct Live<'live> {
+    policy: &'live VertexLivePolicy,
     catalog: &'live ModelCatalog,
     schema: &'live SchemaSettings,
 }
@@ -91,20 +92,24 @@ fn answer(
     catalog: &ModelCatalog,
     schema: &SchemaSettings,
 ) -> Result<Value, Box<HelperError>> {
-    let warnings = Warnings::default();
-    let subscriber = tracing_subscriber::registry().with(warnings.clone());
-    let live = Live { catalog, schema };
-    let value = with_default(subscriber, || dispatch(call, &live))?;
-    Ok(json!({"value": value, "warnings": warnings.labels()}))
-}
-
-fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
     let session = call.session();
     let policy = VertexLivePolicy {
         project: session.project.clone(),
         region: session.location.clone(),
         access_token: SecretString::from(session.access_token.clone()),
     };
+    let warnings = Warnings::default();
+    let subscriber = tracing_subscriber::registry().with(warnings.clone());
+    let live = Live {
+        policy: &policy,
+        catalog,
+        schema,
+    };
+    let value = with_default(subscriber, || dispatch(call, &live))?;
+    Ok(json!({"value": value, "warnings": warnings.labels()}))
+}
+
+fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
     match call {
         Call::Mime { formats, .. } => Ok(json!({
             "mimes": formats.iter().map(String::as_str).map(audio_mime_type).collect::<Vec<_>>(),
@@ -115,12 +120,12 @@ fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
             headers,
             ..
         } => Ok(endpoint(
-            &policy,
+            live.policy,
             api_base.as_deref(),
             api_key.as_deref(),
             headers,
         )),
-        Call::Automatic { model, .. } => automatic(&policy, model),
+        Call::Automatic { model, .. } => automatic(live.policy, model),
         Call::Transform {
             model,
             message,
@@ -128,16 +133,13 @@ fn dispatch(call: &Call, live: &Live<'_>) -> Result<Value, Box<HelperError>> {
             ..
         } => {
             let input = VertexLiveInput {
-                policy: &policy,
+                policy: live.policy,
                 catalog: live.catalog,
                 schema: live.schema,
+                model: model.as_str(),
+                session_configuration_request: session_configuration_request.as_deref(),
             };
-            transform(
-                &input,
-                model,
-                message,
-                session_configuration_request.as_deref(),
-            )
+            transform(&input, message)
         }
     }
 }
@@ -150,7 +152,7 @@ fn endpoint(
 ) -> Value {
     let environment = policy.environment(headers);
     let api_key_used =
-        api_key.is_some_and(|api_key| environment.values().any(|value| value.contains(api_key)));
+        api_key.is_some_and(|key| environment.values().any(|value| value.contains(key)));
     json!({
         "url": policy.complete_url(api_base),
         "environment": environment,
@@ -170,32 +172,21 @@ fn automatic(policy: &VertexLivePolicy, model: &str) -> Result<Value, Box<Helper
     Ok(json!({"setup": setup}))
 }
 
-fn transform(
-    live: &VertexLiveInput<'_>,
-    model: &str,
-    message: &Value,
-    session_configuration_request: Option<&str>,
-) -> Result<Value, Box<HelperError>> {
+fn transform(input: &VertexLiveInput<'_>, message: &Value) -> Result<Value, Box<HelperError>> {
     let encoded = serde_json::to_vec(message).or_value_error()?;
     let mut client = VertexLiveClient::default();
     let messages = client
-        .transform_realtime_request(
-            &encoded,
-            usize::MAX,
-            model,
-            session_configuration_request,
-            live,
-        )
+        .transform_realtime_request(&encoded, usize::MAX, input)
         .or_value_error()?;
     let parsed = messages
         .iter()
-        .map(|message| serde_json::from_str::<Value>(message).or_value_error())
+        .map(|raw| serde_json::from_str::<Value>(raw).or_value_error())
         .collect::<Result<Vec<_>, _>>()?;
     Ok(json!({"messages": parsed}))
 }
 
 impl Call {
-    fn session(&self) -> &Session {
+    const fn session(&self) -> &Session {
         match self {
             Self::Endpoint { session, .. }
             | Self::Mime { session, .. }
