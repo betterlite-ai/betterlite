@@ -180,11 +180,22 @@ async fn models(store: &dyn TotalsStore, caller: Caller, requested: LimitQuery) 
         Caller::Internal { user_id: None } => {
             responses::detail_error(StatusCode::INTERNAL_SERVER_ERROR, NO_USER_ID)
         }
-        Caller::Internal { user_id: Some(_) } | Caller::Global if limit < 0 => invalid_limit(limit),
         Caller::Internal {
             user_id: Some(user_id),
-        } => rows_response(store.user_models_by_spend(&user_id, limit).await, None),
-        Caller::Global => rows_response(store.models_by_spend(limit).await, None),
+        } => {
+            if limit < 0 {
+                invalid_limit(limit)
+            } else {
+                rows_response(store.user_models_by_spend(&user_id, limit).await, None)
+            }
+        }
+        Caller::Global => {
+            if limit < 0 {
+                invalid_limit(limit)
+            } else {
+                rows_response(store.models_by_spend(limit).await, None)
+            }
+        }
     }
 }
 
