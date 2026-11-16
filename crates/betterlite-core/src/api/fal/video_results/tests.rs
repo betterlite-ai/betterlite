@@ -580,8 +580,12 @@ fn the_provider_wraps_the_video_id(#[case] provider: Option<&str>, #[case] expec
 
 #[test]
 fn the_probe_url_only_loses_a_trailing_status_suffix() {
-    let reply = decode_fal_video_reply(200, &VideoHeaders::new(), br#"{"status": "COMPLETED"}"#)
-        .expect("the reply decodes");
+    let reply = decode_fal_video_reply(
+        200,
+        &VideoHeaders::new(),
+        br#"{"status": "COMPLETED", "response_url": "https://cdn.example/elsewhere"}"#,
+    )
+    .expect("the reply decodes");
     let request = StatusRequest {
         url: Url::parse("https://queue.fal.run/fal-ai/kling-video/requests/req-1")
             .expect("the job url parses"),
