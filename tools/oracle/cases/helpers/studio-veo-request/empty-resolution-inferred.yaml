@@ -1,0 +1,13 @@
+kind: helper
+name: studio-veo-empty-resolution-inferred
+call:
+  studio_veo_request:
+    requests:
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1280x720, resolution: ''}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1280x720, resolution: 1080p}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1280x720, resolution: 720p}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1920x1080, resolution: null}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {resolution: ''}}
+      - {model: veo-3, prompt: a prompt, api_key: oracle-key, params: {size: 1024x1024, resolution: ''}}
+env: {}
+compare: {ignore: []}
