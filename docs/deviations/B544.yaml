@@ -14,6 +14,15 @@ deviations:
       betterlite validates the same body with the shared serde response record rather than a pydantic model,
       so the error class differs while the observable status of the failure is the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L347-L353
+  - what: >-
+      A decoded api_base path that holds '?' or '#' fails as "api_base contains a path that cannot be
+      rewritten" instead of httpx's InvalidURL "Invalid URL component 'path'"; both failures carry no HTTP
+      status.
+    why: >-
+      betterlite's shared InvalidUrl has no path-component variant, and both betterlite-http and azure_urls.rs
+      lie outside this task's scope, so the websocket rewrite reuses the Azure URL error raised for a path it
+      cannot rewrite; the failure, its missing status and the oracle row match LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L202-L203
 kept_bugs:
   - what: >-
       The websocket URL downgrades every non-https api_base to ws, including one that already starts with
