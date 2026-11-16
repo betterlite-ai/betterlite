@@ -1,0 +1,12 @@
+kind: helper
+name: databricks-chat-url-seed
+call:
+  b5841:
+    function: url
+    cases:
+    - model: databricks/anthropic.claude-3-5-sonnet
+      api_base: https://adb-1.cloud.databricks.com/serving-endpoints/
+    - model: databricks-meta-llama-3-1-70b
+      api_base: https://adb-1.cloud.databricks.com/
+env: {}
+compare: {ignore: []}

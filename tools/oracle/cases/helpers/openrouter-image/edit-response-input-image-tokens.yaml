@@ -1,0 +1,58 @@
+kind: helper
+name: openrouter-image-edit-response-input-image-tokens
+call:
+  b5830:
+    op: edit_reply
+    cases:
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[{"message":{"images":[{"image_url":{"url":"data:image/png;base64,QUJD"}}]}}],"usage":{"prompt_tokens":10,"total_tokens":20,"completion_tokens_details":{"image_tokens":4},"prompt_tokens_details":{"image_tokens":4},"cost":0.5,"cost_details":{"upstream_inference_cost":0.25}}}'
+        status: 200
+        headers: {}
+        created: 1700000030
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[{"message":{"images":[{"image_url":{"url":"https://images.example/edited.png"}}]}}],"usage":{"prompt_tokens":7,"total_tokens":9,"completion_tokens_details":{"image_tokens":2}}}'
+        status: 200
+        headers: {}
+        created: 1700000031
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":5,"prompt_tokens_details":{}}}'
+        status: 200
+        headers: {}
+        created: 1700000032
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":3,"prompt_tokens_details":{"image_tokens":4}}}'
+        status: 200
+        headers: {}
+        created: 1700000033
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"total_tokens":8,"prompt_tokens_details":{"image_tokens":4}}}'
+        status: 200
+        headers: {}
+        created: 1700000034
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[]}'
+        status: 200
+        headers: {}
+        created: 1700000035
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"cost":0.1}}'
+        status: 200
+        headers: {}
+        created: 1700000036
+      - model: google/gemini-2.5-flash-image
+        body: '{"model":null,"choices":[]}'
+        status: 200
+        headers: {}
+        created: 1700000037
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":6,"prompt_tokens_details":null}}'
+        status: 200
+        headers: {}
+        created: 1700000038
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":null}'
+        status: 200
+        headers: {}
+        created: 1700000039
+env: {}
+compare: {ignore: []}

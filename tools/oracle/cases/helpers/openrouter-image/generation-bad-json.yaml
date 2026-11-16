@@ -1,0 +1,78 @@
+kind: helper
+name: openrouter-image-generation-bad-json
+call:
+  b5830:
+    op: generation_reply
+    cases:
+      - model: google/gemini-2.5-flash-image
+        body: not json
+        status: 502
+        headers: {Content-Type: text/plain}
+        created: 1700000020
+calls:
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: nope
+          status: 200
+          headers: {}
+          created: 1700000021
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '{"choices": 5}'
+          status: 200
+          headers: {}
+          created: 1700000022
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '{"choices":[{"message":{"images":5}}]}'
+          status: 200
+          headers: {}
+          created: 1700000023
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '{"usage": 5, "choices": []}'
+          status: 200
+          headers: {}
+          created: 1700000024
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: 'null'
+          status: 200
+          headers: {}
+          created: 1700000025
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '[]'
+          status: 200
+          headers: {}
+          created: 1700000026
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '{"choices":[{"message":{"images":[{"image_url":5}]}}]}'
+          status: 200
+          headers: {}
+          created: 1700000027
+  - b5830:
+      op: generation_reply
+      cases:
+        - model: google/gemini-2.5-flash-image
+          body: '{"choices":[{"message":{"images":[{"image_url":{"url":5}}]}}]}'
+          status: 200
+          headers: {}
+          created: 1700000028
+env: {}
+compare: {ignore: []}
