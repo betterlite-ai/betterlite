@@ -6,6 +6,7 @@ pub(crate) mod file_size;
 pub(crate) mod globs;
 mod lint_table;
 pub(crate) mod module_tree;
+pub(crate) mod oracle_groups;
 mod scope;
 pub(crate) mod shared_names;
 mod tests;

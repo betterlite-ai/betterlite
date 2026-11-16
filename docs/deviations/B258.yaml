@@ -1,26 +1,6 @@
 task: B258
 deviations:
   - what: >-
-      Exact image counting reads local bytes only. calculate_img_tokens and the dimension helpers take a
-      data URL and never fetch an http or https URL, while LiteLLM downloads the URL inside
-      get_image_dimensions. An explicit use_default_image_token_count=true still returns the default
-      count without a fetch.
-    why: >-
-      B009, B183 and the bounded-inputs rule forbid fetching request-supplied media URLs. A caller that
-      needs the exact count passes the image bytes as a data URL.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L248
-  - what: >-
-      Open, waiting for Max: token counting keeps no remote image fetch and works from local bytes with
-      default-count behavior, instead of sharing SSRF-checked remote dimensions with the B009/B183
-      downloader. The public counting helpers default use_default_image_token_count to false and may
-      fetch in LiteLLM.
-    why: >-
-      B5083's SSRF-checked downloader is not wired into this path yet. Request media URLs are
-      fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
-    link: >-
-      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L408-L443
-  - what: >-
       Image bytes are decoded through B183's bounded data-URL decoder: the string must be a data: URL
       with a ;base64, marker, the base64 must be canonical, and the decoded payload may not exceed 50
       MiB. LiteLLM splits the string on its first comma, decodes the rest leniently, and has no cap for

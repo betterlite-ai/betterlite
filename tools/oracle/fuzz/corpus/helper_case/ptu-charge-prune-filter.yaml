@@ -1,0 +1,12 @@
+kind: helper
+name: ptu-charge-prune-filter-seed
+call:
+  ptu_charge:
+    steps:
+      prune:
+        kind: prune
+        date: "2026-03-01"
+        run_started_micros: 1772366400000000
+        scanned_ids: [model-b, model-a]
+env: {}
+compare: {ignore: []}
