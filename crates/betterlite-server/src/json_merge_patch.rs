@@ -12,7 +12,6 @@ pub enum MergePatchError {
     TooDeep { max: u32 },
 }
 
-#[must_use]
 pub fn apply_json_merge_patch(
     target: &JsonValue,
     patch: &JsonValue,

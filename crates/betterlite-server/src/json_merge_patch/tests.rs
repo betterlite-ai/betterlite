@@ -33,7 +33,7 @@ fn nested_array(depth: usize) -> JsonValue {
 #[rstest]
 #[case::overwrite_a_key(r#"{"a":"b"}"#, r#"{"a":"c"}"#, r#"{"a":"c"}"#)]
 #[case::add_a_key(r#"{"a":"b"}"#, r#"{"b":"c"}"#, r#"{"a":"b","b":"c"}"#)]
-#[case::remove_a_key(r#"{"a":"b"}"#, r#"{"a":null}"#, r#"{}"#)]
+#[case::remove_a_key(r#"{"a":"b"}"#, r#"{"a":null}"#, "{}")]
 #[case::remove_one_of_two_keys(r#"{"a":"b","b":"c"}"#, r#"{"a":null}"#, r#"{"b":"c"}"#)]
 #[case::replace_an_array_with_a_scalar(r#"{"a":["b"]}"#, r#"{"a":"c"}"#, r#"{"a":"c"}"#)]
 #[case::replace_a_scalar_with_an_array(r#"{"a":"c"}"#, r#"{"a":["b"]}"#, r#"{"a":["b"]}"#)]
@@ -45,12 +45,12 @@ fn nested_array(depth: usize) -> JsonValue {
 #[case::replace_an_array_of_objects(r#"{"a":[{"b":"c"}]}"#, r#"{"a":[1]}"#, r#"{"a":[1]}"#)]
 #[case::replace_an_array_target(r#"["a","b"]"#, r#"["c","d"]"#, r#"["c","d"]"#)]
 #[case::replace_the_target_with_an_array(r#"{"a":"b"}"#, r#"["c"]"#, r#"["c"]"#)]
-#[case::replace_the_target_with_null(r#"{"a":"foo"}"#, r#"null"#, r#"null"#)]
+#[case::replace_the_target_with_null(r#"{"a":"foo"}"#, "null", "null")]
 #[case::replace_the_target_with_a_string(r#"{"a":"foo"}"#, r#""bar""#, r#""bar""#)]
 #[case::keep_a_null_key_of_the_target(r#"{"e":null}"#, r#"{"a":1}"#, r#"{"e":null,"a":1}"#)]
-#[case::merge_into_an_array_target(r#"[1,2]"#, r#"{"a":"b","c":null}"#, r#"{"a":"b"}"#)]
+#[case::merge_into_an_array_target("[1,2]", r#"{"a":"b","c":null}"#, r#"{"a":"b"}"#)]
 #[case::a_nested_null_creates_the_parent_object(
-    r#"{}"#,
+    "{}",
     r#"{"a":{"bb":{"ccc":null}}}"#,
     r#"{"a":{"bb":{}}}"#
 )]
