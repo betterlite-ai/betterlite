@@ -510,7 +510,7 @@ run "module_owns_everything_by_default" {
       aws_elasticache_replication_group.this[0].automatic_failover_enabled == (var.redis_num_replicas >= 1),
       aws_elasticache_replication_group.this[0].multi_az_enabled == (var.redis_num_replicas >= 1),
       aws_elasticache_replication_group.this[0].apply_immediately == true,
-      aws_elasticache_replication_group.this[0].at_rest_encryption_enabled == true,
+      tostring(aws_elasticache_replication_group.this[0].at_rest_encryption_enabled) == "true",
       aws_elasticache_replication_group.this[0].transit_encryption_enabled == true,
     ])
     error_message = "Redis must be a TLS-only 7.1 replication group of a primary plus the default replica, with automatic failover and multi-AZ on."
