@@ -16,15 +16,15 @@ use super::support;
 
 const SPEEDS: [Option<f64>; 10] = [
     None,
-    Some(1.0),
-    Some(2.0),
-    Some(0.5),
-    Some(0.25),
-    Some(4.0),
-    Some(5.0),
-    Some(0.125),
-    Some(1.0625),
-    Some(0.0625),
+    Some(1.0_f64),
+    Some(2.0_f64),
+    Some(0.5_f64),
+    Some(0.25_f64),
+    Some(4.0_f64),
+    Some(5.0_f64),
+    Some(0.125_f64),
+    Some(1.0625_f64),
+    Some(0.0625_f64),
 ];
 
 const RATES: [Option<&str>; 10] = [
@@ -178,8 +178,8 @@ fn native_speech_cases(#[case] case: u8) {
 fn plain_text_ssml_escaping() {
     let (_, mapped) = support::map(
         None,
-        SpeechOptionalParams::default(),
-        SpeechKwargs::default(),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
     );
     let escaped = support::data("a & b < c > d \" e ' f", None, &mapped);
     assert_eq!(
@@ -207,7 +207,7 @@ fn speed_views(speeds: &[Option<f64>]) -> Vec<(Option<String>, String)> {
             response_format: None,
             speed: *speed,
         };
-        let (_, mapped) = support::map(None, optional, SpeechKwargs::default());
+        let (_, mapped) = support::map(None, &optional, &SpeechKwargs::default());
         let body = support::data("hi", None, &mapped).ssml_body;
         views.push((mapped.rate, body));
     }
@@ -223,25 +223,17 @@ fn speed_rate_boundaries() {
     assert!(views[3].1.contains("<prosody rate='-50%'>"));
     assert!(views[7].1.contains("<prosody rate='-87%'>"));
     for speed in [f64::INFINITY, f64::NAN, f64::MAX] {
-        assert!(convert_speed_to_rate(speed).is_err());
+        convert_speed_to_rate(speed).unwrap_err();
     }
 }
 
 fn voice_language() {
     for (voice, lang, expected) in VOICE_LANGUAGE_CASES {
-        let spelled = voice.map(str::to_owned).map(Json::Text);
-        let kwargs = SpeechKwargs {
-            style: None,
-            styledegree: None,
-            role: None,
-            lang: lang.map(str::to_owned),
-        };
-        let (name, mapped) =
-            support::map(spelled.as_ref(), SpeechOptionalParams::default(), kwargs);
-        let body = support::data("hi", name.as_deref(), &mapped).ssml_body;
+        let (_, body) = support::speech_body(voice, lang);
         assert!(body.contains(expected), "{body}");
-        assert!(body.contains("<speak version='1.0'"));
-        assert!(body.contains("xml:lang='en-US'"));
+        assert!(body.contains(
+            "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'>"
+        ));
     }
 }
 
@@ -267,7 +259,7 @@ fn style_matrix() {
             role: role.map(str::to_owned),
             lang: None,
         };
-        let (_, mapped) = support::map(None, SpeechOptionalParams::default(), kwargs);
+        let (_, mapped) = support::map(None, &SpeechOptionalParams::default(), &kwargs);
         let body = support::data("x<y", None, &mapped).ssml_body;
         assert!(body.contains("<prosody rate='0%'>x&lt;y</prosody>"));
         assert_eq!(body.contains("<mstts:express-as"), wrapped);
@@ -285,7 +277,7 @@ fn style_literals() {
         role: Some("Boy".to_owned()),
         lang: Some("es-ES".to_owned()),
     };
-    let (_, mapped) = support::map(None, SpeechOptionalParams::default(), ordered);
+    let (_, mapped) = support::map(None, &SpeechOptionalParams::default(), &ordered);
     let body = support::data("plain & text", None, &mapped).ssml_body;
     assert!(body.contains(
         "<mstts:express-as style='cheerful' styledegree='0.5' role='Boy'><prosody rate='0%'>plain &amp; text</prosody></mstts:express-as>"
@@ -296,8 +288,8 @@ fn style_literals() {
         role: Some("Senior_Male".to_owned()),
         lang: None,
     };
-    let (_, mapped) = support::map(None, SpeechOptionalParams::default(), literal);
-    let escaped_text = support::data("x<y", None, &mapped).ssml_body;
+    let (_, literal_mapped) = support::map(None, &SpeechOptionalParams::default(), &literal);
+    let escaped_text = support::data("x<y", None, &literal_mapped).ssml_body;
     assert!(escaped_text.contains("<mstts:express-as style='a&b\"c' role='Senior_Male'>"));
 }
 
@@ -309,8 +301,8 @@ fn existing_ssml() {
 fn ssml_passthrough() {
     let (_, mapped) = support::map(
         None,
-        SpeechOptionalParams::default(),
-        SpeechKwargs::default(),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
     );
     let passthrough = [
         "<speak version='1.0' xml:lang='en-US'><voice name='en-US-AriaNeural'>Hi</voice></speak>",
@@ -333,8 +325,8 @@ fn ssml_passthrough() {
 fn ssml_generated() {
     let (_, mapped) = support::map(
         None,
-        SpeechOptionalParams::default(),
-        SpeechKwargs::default(),
+        &SpeechOptionalParams::default(),
+        &SpeechKwargs::default(),
     );
     let generated = support::data("<SPEAK>x</SPEAK><speakx>y</speakx>", None, &mapped);
     assert!(
@@ -346,7 +338,7 @@ fn ssml_generated() {
         response_format: Some("wav".to_owned()),
         speed: None,
     };
-    let (_, wav_mapped) = support::map(None, wav, SpeechKwargs::default());
+    let (_, wav_mapped) = support::map(None, &wav, &SpeechKwargs::default());
     let wav_data = support::data("<speak>Hi</speak>", None, &wav_mapped);
     assert_eq!(wav_data.ssml_body, "<speak>Hi</speak>");
     assert_eq!(
@@ -381,7 +373,7 @@ fn response_format_header() {
             response_format: format.map(str::to_owned),
             speed: None,
         };
-        let (_, mapped) = support::map(None, optional, SpeechKwargs::default());
+        let (_, mapped) = support::map(None, &optional, &SpeechKwargs::default());
         assert_eq!(mapped.output_format, expected);
         let mut caller = BTreeMap::new();
         caller.insert(
@@ -410,7 +402,7 @@ fn binary_native_speech() {
         (200_u16, "ID3audio", Some("audio/mpeg")),
         (400, "", Some("application/json")),
         (500, "error text", Some("text/plain")),
-        (204, "звук", None),
+        (204, "\u{437}\u{432}\u{443}\u{43a}", None),
     ];
     for (status, body, content_type) in cases {
         let mut headers = BTreeMap::new();
@@ -439,14 +431,8 @@ fn binary_native_speech() {
 
 fn native_voice_map() {
     for (voice, expected_name, spoken) in VOICE_CASES {
-        let spelled = voice.map(str::to_owned).map(Json::Text);
-        let (name, mapped) = support::map(
-            spelled.as_ref(),
-            SpeechOptionalParams::default(),
-            SpeechKwargs::default(),
-        );
+        let (name, body) = support::speech_body(voice, None);
         assert_eq!(name.as_deref(), expected_name);
-        let body = support::data("hi", name.as_deref(), &mapped).ssml_body;
         assert!(body.contains(&format!("<voice name='{spoken}'>")));
     }
     non_string_voices();
@@ -462,8 +448,8 @@ fn non_string_voices() {
     for voice in &non_strings {
         let (name, mapped) = support::map(
             Some(voice),
-            SpeechOptionalParams::default(),
-            SpeechKwargs::default(),
+            &SpeechOptionalParams::default(),
+            &SpeechKwargs::default(),
         );
         assert!(name.is_none());
         let body = support::data("hi", None, &mapped).ssml_body;

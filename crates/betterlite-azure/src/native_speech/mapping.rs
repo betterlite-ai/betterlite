@@ -36,10 +36,10 @@ pub fn map_openai_params(
     let mapped_voice = voice
         .and_then(Json::as_str)
         .map(|name| lookup(&VOICE_MAPPINGS, name).to_owned());
-    let output_format = match optional.response_format.as_deref() {
-        Some(name) => lookup(&FORMAT_MAPPINGS, name),
-        None => DEFAULT_OUTPUT_FORMAT,
-    };
+    let output_format = optional
+        .response_format
+        .as_deref()
+        .map_or(DEFAULT_OUTPUT_FORMAT, |name| lookup(&FORMAT_MAPPINGS, name));
     let rate = optional.speed.map(convert_speed_to_rate).transpose()?;
     let mapped = MappedParams {
         output_format: output_format.to_owned(),

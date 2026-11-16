@@ -18,7 +18,19 @@ use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::{
-    Bases, BinaryCases, Formats, HeaderCases, Input, Speeds, StyleCases, Texts, VoiceCases, Voices,
+    Bases, BinaryCases, Formats, HeaderCases, Input, Speeds, StyleCase, StyleCases, Texts,
+    VoiceCases, Voices,
+};
+
+const NO_OPTIONS: SpeechOptionalParams = SpeechOptionalParams {
+    response_format: None,
+    speed: None,
+};
+const NO_KWARGS: SpeechKwargs = SpeechKwargs {
+    style: None,
+    styledegree: None,
+    role: None,
+    lang: None,
 };
 
 struct Prepared {
@@ -47,99 +59,103 @@ impl Prepared {
             data,
         })
     }
-}
 
-fn voice_view(prepared: Prepared) -> HelperResult {
-    Ok(json!({
-        "voice": prepared.mapped_voice,
-        "ssml": prepared.data.ssml_body,
-    }))
-}
-
-fn text_views(texts: &Texts) -> HelperResult {
-    let optional = SpeechOptionalParams::default();
-    let kwargs = SpeechKwargs::default();
-    let mut bodies = Vec::with_capacity(texts.inputs.len());
-    for text in &texts.inputs {
-        bodies.push(
-            Prepared::new(text, None, &optional, &kwargs)?
-                .data
-                .ssml_body,
-        );
-    }
-    Ok(json!({ "bodies": bodies }))
-}
-
-fn speed_views(speeds: &Speeds) -> HelperResult {
-    let kwargs = SpeechKwargs::default();
-    let mut views = Vec::with_capacity(speeds.speeds.len());
-    for speed in &speeds.speeds {
-        let optional = SpeechOptionalParams {
-            response_format: None,
-            speed: *speed,
-        };
-        let prepared = Prepared::new("hi", None, &optional, &kwargs)?;
-        views.push(json!({
-            "rate": prepared.mapped.rate,
-            "ssml": prepared.data.ssml_body,
-        }));
-    }
-    Ok(json!({ "speeds": views }))
-}
-
-fn voice_views(cases: &VoiceCases) -> HelperResult {
-    let optional = SpeechOptionalParams::default();
-    let mut views = Vec::with_capacity(cases.cases.len());
-    for case in &cases.cases {
-        let kwargs = SpeechKwargs {
-            style: None,
-            styledegree: None,
-            role: None,
-            lang: case.lang.clone(),
-        };
-        views.push(voice_view(Prepared::new(
-            "hi",
-            case.voice.as_ref(),
-            &optional,
-            &kwargs,
-        )?)?);
-    }
-    Ok(json!({ "voices": views }))
-}
-
-fn style_views(cases: &StyleCases) -> HelperResult {
-    let optional = SpeechOptionalParams::default();
-    let mut views = Vec::with_capacity(cases.cases.len());
-    for case in &cases.cases {
+    fn styled(text: &str, case: &StyleCase) -> Result<Self, Box<HelperError>> {
         let kwargs = SpeechKwargs {
             style: case.style.clone(),
             styledegree: case.styledegree.clone(),
             role: case.role.clone(),
             lang: case.lang.clone(),
         };
-        let prepared = Prepared::new("hi", None, &optional, &kwargs)?;
-        views.push(json!({
-            "style": prepared.mapped.style,
-            "styledegree": prepared.mapped.styledegree,
-            "role": prepared.mapped.role,
-            "lang": prepared.mapped.lang,
-            "ssml": prepared.data.ssml_body,
-        }));
+        Self::new(text, None, &NO_OPTIONS, &kwargs)
     }
+}
+
+fn rows<T, F>(cases: &[T], mut view: F) -> HelperResult
+where
+    F: FnMut(&T) -> HelperResult,
+{
+    let mut rows = Vec::with_capacity(cases.len());
+    for case in cases {
+        rows.push(view(case)?);
+    }
+    Ok(json!(rows))
+}
+
+fn voice_row(voice: Option<&Json>, lang: Option<String>) -> HelperResult {
+    let kwargs = SpeechKwargs {
+        style: None,
+        styledegree: None,
+        role: None,
+        lang,
+    };
+    let prepared = Prepared::new("hi", voice, &NO_OPTIONS, &kwargs)?;
+    Ok(json!({
+        "voice": prepared.mapped_voice,
+        "ssml": prepared.data.ssml_body,
+    }))
+}
+
+fn text_row(text: &str) -> HelperResult {
+    Ok(json!(
+        Prepared::new(text, None, &NO_OPTIONS, &NO_KWARGS)?
+            .data
+            .ssml_body
+    ))
+}
+
+fn speed_row(speed: Option<f64>) -> HelperResult {
+    let optional = SpeechOptionalParams {
+        response_format: None,
+        speed,
+    };
+    let prepared = Prepared::new("hi", None, &optional, &NO_KWARGS)?;
+    Ok(json!({ "rate": prepared.mapped.rate, "ssml": prepared.data.ssml_body }))
+}
+
+fn style_row(case: &StyleCase) -> HelperResult {
+    let prepared = Prepared::styled("hi", case)?;
+    Ok(json!({
+        "style": prepared.mapped.style,
+        "styledegree": prepared.mapped.styledegree,
+        "role": prepared.mapped.role,
+        "lang": prepared.mapped.lang,
+        "ssml": prepared.data.ssml_body,
+    }))
+}
+
+fn ssml_row(text: &str) -> HelperResult {
+    let prepared = Prepared::new(text, None, &NO_OPTIONS, &NO_KWARGS)?;
+    Ok(json!({
+        "ssml": prepared.data.ssml_body,
+        "header": prepared.data.headers.get("X-Microsoft-OutputFormat"),
+    }))
+}
+
+fn text_views(texts: &Texts) -> HelperResult {
+    let bodies = rows(&texts.inputs, text_row)?;
+    Ok(json!({ "bodies": bodies }))
+}
+
+fn speed_views(speeds: &Speeds) -> HelperResult {
+    let views = rows(&speeds.speeds, |speed| speed_row(*speed))?;
+    Ok(json!({ "speeds": views }))
+}
+
+fn voice_views(cases: &VoiceCases) -> HelperResult {
+    let voices = rows(&cases.cases, |case| {
+        voice_row(case.voice.as_ref(), case.lang.clone())
+    })?;
+    Ok(json!({ "voices": voices }))
+}
+
+fn style_views(cases: &StyleCases) -> HelperResult {
+    let views = rows(&cases.cases, style_row)?;
     Ok(json!({ "cases": views }))
 }
 
 fn ssml_views(texts: &Texts) -> HelperResult {
-    let optional = SpeechOptionalParams::default();
-    let kwargs = SpeechKwargs::default();
-    let mut views = Vec::with_capacity(texts.inputs.len());
-    for text in &texts.inputs {
-        let prepared = Prepared::new(text, None, &optional, &kwargs)?;
-        views.push(json!({
-            "ssml": prepared.data.ssml_body,
-            "header": prepared.data.headers.get("X-Microsoft-OutputFormat"),
-        }));
-    }
+    let views = rows(&texts.inputs, ssml_row)?;
     Ok(json!({ "inputs": views }))
 }
 
@@ -158,20 +174,20 @@ fn endpoint_views(bases: &Bases) -> HelperResult {
     Ok(json!({ "results": results }))
 }
 
+fn format_row(format: Option<&str>) -> HelperResult {
+    let optional = SpeechOptionalParams {
+        response_format: format.map(str::to_owned),
+        speed: None,
+    };
+    let prepared = Prepared::new("hi", None, &optional, &NO_KWARGS)?;
+    Ok(json!({
+        "output_format": prepared.mapped.output_format,
+        "header": prepared.data.headers.get("X-Microsoft-OutputFormat"),
+    }))
+}
+
 fn format_views(formats: &Formats) -> HelperResult {
-    let kwargs = SpeechKwargs::default();
-    let mut views = Vec::with_capacity(formats.formats.len());
-    for format in &formats.formats {
-        let optional = SpeechOptionalParams {
-            response_format: format.clone(),
-            speed: None,
-        };
-        let prepared = Prepared::new("hi", None, &optional, &kwargs)?;
-        views.push(json!({
-            "output_format": prepared.mapped.output_format,
-            "header": prepared.data.headers.get("X-Microsoft-OutputFormat"),
-        }));
-    }
+    let views = rows(&formats.formats, |format| format_row(format.as_deref()))?;
     Ok(json!({ "formats": views }))
 }
 
@@ -198,17 +214,7 @@ fn binary_views(cases: &BinaryCases) -> HelperResult {
 }
 
 fn voice_map_views(voices: &Voices) -> HelperResult {
-    let optional = SpeechOptionalParams::default();
-    let kwargs = SpeechKwargs::default();
-    let mut views = Vec::with_capacity(voices.voices.len());
-    for voice in &voices.voices {
-        views.push(voice_view(Prepared::new(
-            "hi",
-            Some(voice),
-            &optional,
-            &kwargs,
-        )?)?);
-    }
+    let views = rows(&voices.voices, |voice| voice_row(Some(voice), None))?;
     Ok(json!({ "voices": views }))
 }
 
@@ -225,7 +231,7 @@ fn header_views(cases: &HeaderCases) -> HelperResult {
     Ok(json!({ "cases": views }))
 }
 
-pub(super) fn invoke(input: &Input) -> HelperResult {
+pub(super) fn build_answer(input: &Input) -> HelperResult {
     match input {
         Input::PlainTextSsmlEscaping(texts) => text_views(texts),
         Input::SpeedRateBoundaries(speeds) => speed_views(speeds),

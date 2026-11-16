@@ -12,10 +12,10 @@ use crate::native_speech::request::{SpeechRequestData, SpeechTransform, transfor
 
 pub(crate) fn map(
     voice: Option<&Json>,
-    optional: SpeechOptionalParams,
-    kwargs: SpeechKwargs,
+    optional: &SpeechOptionalParams,
+    kwargs: &SpeechKwargs,
 ) -> (Option<String>, MappedParams) {
-    map_openai_params(voice, &optional, &kwargs).expect("mapped speech parameters")
+    map_openai_params(voice, optional, kwargs).expect("mapped speech parameters")
 }
 
 pub(crate) fn data(text: &str, voice: Option<&str>, mapped: &MappedParams) -> SpeechRequestData {
@@ -25,6 +25,19 @@ pub(crate) fn data(text: &str, voice: Option<&str>, mapped: &MappedParams) -> Sp
         mapped,
         headers: BTreeMap::new(),
     })
+}
+
+pub(crate) fn speech_body(voice: Option<&str>, lang: Option<&str>) -> (Option<String>, String) {
+    let kwargs = SpeechKwargs {
+        style: None,
+        styledegree: None,
+        role: None,
+        lang: lang.map(str::to_owned),
+    };
+    let spelled = voice.map(str::to_owned).map(Json::Text);
+    let (name, mapped) = map(spelled.as_ref(), &SpeechOptionalParams::default(), &kwargs);
+    let body = data("hi", name.as_deref(), &mapped).ssml_body;
+    (name, body)
 }
 
 pub(crate) fn identity(api_base: Option<&str>, api_key: &str) -> NativeSpeechIdentity {

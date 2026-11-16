@@ -57,10 +57,11 @@ pub fn build_ssml(input: &str, voice: &str, mapped: &MappedParams) -> String {
     } else {
         format!("xmlns='{SYNTHESIS_XMLNS}'")
     };
-    let voice_lang = match mapped.lang.as_deref().filter(|lang| !lang.is_empty()) {
-        Some(lang) => format!(" xml:lang='{lang}'"),
-        None => String::new(),
-    };
+    let voice_lang = mapped
+        .lang
+        .as_deref()
+        .filter(|lang| !lang.is_empty())
+        .map_or_else(String::new, |lang| format!(" xml:lang='{lang}'"));
     format!(
         "<speak version='1.0' {xmlns} xml:lang='en-US'>\n    <voice name='{voice}'{voice_lang}>\n        {content}\n    </voice>\n</speak>"
     )

@@ -122,6 +122,6 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        reports::invoke(input)
+        reports::build_answer(input)
     }
 }
