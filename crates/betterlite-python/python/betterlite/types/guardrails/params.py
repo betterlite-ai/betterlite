@@ -1,9 +1,9 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Final, Literal, Self
+from typing import ClassVar, Final, Literal, Required, Self
 
-from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
-from typing_extensions import ReadOnly, Required, TypedDict, override
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.guardrails.core import (
     LakeraCategoryThresholds,
@@ -59,7 +59,7 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.vigil_guard import (
     VigilGuardGuardrailConfigModel,
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.xecguard import XecGuardConfigModel
-from betterlite.types.utils.base import InitValue, ResponseObject
+from betterlite.types.utils.base import ResponseObject
 
 
 class ContentFilterAction(StrEnum):
@@ -182,7 +182,7 @@ class BaseLitellmParams(ContentFilterConfigModel):
         return self
 
 
-class LitellmParams(  # pyright: ignore[reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
+class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
     CiscoAIDefenseGuardrailConfigModel,  # ast-grep-ignore: no-long-names
     PresidioConfigModel,
     BedrockGuardrailConfigModel,
@@ -265,11 +265,14 @@ class LitellmParams(  # pyright: ignore[reportIncompatibleVariableOverride]  # h
             case tuple() | BedrockChecksConfigModel() | None:
                 return self
 
-    @override
-    def __init__(self, **kwargs: InitValue) -> None:
-        if kwargs.get("default_on") is None:
-            kwargs["default_on"] = False
-        super().__init__(**kwargs)
+    @model_validator(mode="before")
+    @classmethod
+    def default_on_false(cls, data: JsonValue | BaseModel) -> JsonValue | BaseModel:
+        match data:
+            case dict() if data.get("default_on") is None:
+                return {**data, "default_on": False}
+            case dict() | list() | str() | bool() | int() | float() | BaseModel() | None:
+                return data
 
 
 class Guardrail(TypedDict, total=False):
@@ -301,6 +304,6 @@ class DynamicGuardrailParams(TypedDict):
     extra_body: ReadOnly[dict[str, JsonValue]]
 
 
-class GUARDRAIL_DEFINITION_LOCATION(StrEnum):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1320
-    DB = "db"
-    CONFIG = "config"
+GUARDRAIL_DEFINITION_LOCATION = StrEnum(
+    "GUARDRAIL_DEFINITION_LOCATION", {"DB": "db", "CONFIG": "config"}
+)

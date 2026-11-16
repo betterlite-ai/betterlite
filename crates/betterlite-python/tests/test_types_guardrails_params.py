@@ -1,6 +1,7 @@
+import json
 import subprocess
 import sys
-from typing import Final, TypedDict
+from typing import Final, TypeAlias, TypedDict
 
 import pytest
 from pydantic import JsonValue, TypeAdapter
@@ -192,9 +193,10 @@ ENDPOINT_NAMES: Final = frozenset({
     "PatchGuardrailRequest",
     "PresidioPerRequestConfig",
 })
-BASE: Final = {"guardrail": "g", "mode": "pre_call"}
-INFO: Final = {"guardrail_name": "n"}
-CASES: Final = [
+Case: TypeAlias = tuple[str, str, dict[str, JsonValue]]
+BASE: Final[dict[str, JsonValue]] = {"guardrail": "g", "mode": "pre_call"}
+INFO: Final[dict[str, JsonValue]] = {"guardrail_name": "n"}
+CASES: Final[list[Case]] = [
     ("action_block", "BlockedWord", {"keyword": "k", "action": "BLOCK"}),
     ("action_bad", "BlockedWord", {"keyword": "k", "action": "block"}),
     ("word_description", "BlockedWord", {"keyword": "k", "action": "MASK", "description": "d"}),
@@ -426,7 +428,7 @@ CASES: Final = [
         {"guardrail_name": "n", "litellm_params": {"api_base": "b"}, "guardrail_info": {"a": 1}},
     ),
 ]
-VALIDATED: Final = [
+VALIDATED: Final[list[Case]] = [
     ("validate_params_default_on", "LitellmParams", BASE),
     ("validate_params_default_on_true", "LitellmParams", {**BASE, "default_on": True}),
     ("validate_params_mode_upper", "LitellmParams", {"guardrail": "g", "mode": "PRE_CALL"}),
@@ -447,8 +449,8 @@ class Report(TypedDict):
 
 @pytest.fixture(scope="module")
 def report() -> Report:
-    cases = TypeAdapter(JsonValue).dump_json(CASES).decode()
-    validated = TypeAdapter(JsonValue).dump_json(VALIDATED).decode()
+    cases = json.dumps(CASES)
+    validated = json.dumps(VALIDATED)
     completed = subprocess.run(
         [sys.executable, "-c", DESCRIBE_SCRIPT, cases, validated],
         check=True,
@@ -508,18 +510,22 @@ def test_mode_union_names() -> None:
 
 
 def test_timeout_names() -> None:
-    assert params.LitellmParams(guardrail="g", mode="m", timeout="3.5").timeout == TIMEOUT_SECONDS
-    assert params.LitellmParams(guardrail="g", mode="m", timeout="").timeout is None
-    assert params.LitellmParams(guardrail="g", mode="m", timeout=2).timeout == float(2)
+    text = params.LitellmParams.model_validate({**BASE, "timeout": "3.5"})
+    empty = params.LitellmParams.model_validate({**BASE, "timeout": ""})
+    whole = params.LitellmParams.model_validate({**BASE, "timeout": 2})
+    assert text.timeout == TIMEOUT_SECONDS
+    assert empty.timeout is None
+    assert whole.timeout == float(2)
 
 
 def test_checks_names() -> None:
-    decision = params.LitellmParams(
-        guardrail="decision_model", mode="m", checks=[{"name": "a", "instructions": "do"}]
+    checks: JsonValue = [{"name": "a", "instructions": "do"}]
+    decision = params.LitellmParams.model_validate(
+        {"guardrail": "decision_model", "mode": "m", "checks": checks}
     )
     assert decision.checks == (DecisionModelCheck(name="a", instructions="do"),)
     with pytest.raises(ValueError, match="only supported by guardrail='decision_model'"):
-        params.LitellmParams(guardrail="g", mode="m", checks=[{"name": "a", "instructions": "do"}])
+        params.LitellmParams.model_validate({**BASE, "checks": checks})
 
 
 def test_enum_names() -> None:
@@ -535,7 +541,7 @@ def test_enum_names() -> None:
     ]
     info = endpoints.GuardrailInfoResponse(guardrail_name="n")
     assert info.guardrail_definition_location == "config"
-    assert params.MCP_SECURITY_ON_VIOLATION == {"block", "alert"}
+    assert {"block", "alert"} == params.MCP_SECURITY_ON_VIOLATION
 
 
 def test_ui_settings_names() -> None:
