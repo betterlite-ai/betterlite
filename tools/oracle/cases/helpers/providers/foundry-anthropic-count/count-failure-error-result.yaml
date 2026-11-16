@@ -41,6 +41,12 @@ call:
         api_base: https://r.services.ai.azure.com
         reply: {status: 200, body: '{"input_tokens":5}'}
       - model: claude-sonnet-4-5
+        messages: []
+        system: be brief
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
         messages: [{role: user, content: hi}]
         api_key: argument-key
         api_base: https://r.services.ai.azure.com

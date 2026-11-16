@@ -40,7 +40,14 @@ impl<T: CountTokensTransport> AzureAnthropicCountTokensHandler<T> {
         &self,
         request: &CountTokensRequest<'_>,
     ) -> Result<FoundryCountReply, ApiError> {
-        validate_request(&request.body)?;
+        // LiteLLM's Foundry handler validates the model and messages only, without system or tools
+        validate_request(&CountTokensBody {
+            model: request.body.model,
+            messages: request.body.messages,
+            tools: None,
+            system: None,
+            optional_params: request.body.optional_params,
+        })?;
         let body = transform_request(&request.body);
         let endpoint = get_count_tokens_endpoint(request.api_base);
         let url = Url::parse(&endpoint).map_err(|source| CountTokensError::Endpoint { source })?;

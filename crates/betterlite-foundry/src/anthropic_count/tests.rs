@@ -509,6 +509,20 @@ fn handler_failure_shapes() {
         not_a_list.result,
         Err(ApiError::Processing { .. })
     ));
+
+    let empty_messages_with_system = run_handle(&Call {
+        messages: Some(Json::List(Vec::new())),
+        system: Some(Json::Text("be brief".to_owned())),
+        ..Call::default()
+    });
+    assert!(
+        matches!(
+            empty_messages_with_system.result,
+            Err(ApiError::Processing { .. })
+        ),
+        "the Foundry handler validates the messages alone, so an empty list fails"
+    );
+    assert!(empty_messages_with_system.seen.is_none());
 }
 
 fn count_error_warnings() {
@@ -752,6 +766,8 @@ struct Call {
     environment_key: Option<SecretString>,
     environment_base: Option<String>,
     messages: Option<Json>,
+    system: Option<Json>,
+    tools: Option<Json>,
     model: String,
     request_model: String,
     timeout: Option<Duration>,
@@ -771,6 +787,8 @@ impl Default for Call {
             environment_key: None,
             environment_base: None,
             messages: Some(serde_json::from_str::<Json>(USER_MESSAGE).expect("valid fixture JSON")),
+            system: None,
+            tools: None,
             model: MODEL.to_owned(),
             request_model: MODEL.to_owned(),
             timeout: None,
@@ -837,8 +855,8 @@ fn run_counter(call: &Call) -> CounterOutcome {
         api_base: call.api_base.as_deref(),
         token: &token,
         request_model: &call.request_model,
-        tools: None,
-        system: None,
+        tools: call.tools.as_ref(),
+        system: call.system.as_ref(),
     };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -876,8 +894,8 @@ fn run_handle(call: &Call) -> HandleOutcome {
         body: CountTokensBody {
             model: &call.model,
             messages: &messages,
-            tools: None,
-            system: None,
+            tools: call.tools.as_ref(),
+            system: call.system.as_ref(),
             optional_params: &IndexMap::new(),
         },
         api_key: &call.api_key,
