@@ -1,4 +1,5 @@
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::api::image_contracts::records::ImageData;
 use crate::dashscope_embedding::error::get_error_class;
@@ -9,11 +10,32 @@ use super::error::DashscopeImageError;
 // a reply shape the image records cannot hold is an unclassified provider failure, which LiteLLM answers with 500
 const SHAPE_FAILURE_STATUS: u16 = 500;
 
-pub fn decode_dashscope_image_reply(
+// DashScope can report an API error inside a 200 body, and only without an output to read
+fn check_body_error(
+    fields: &IndexMap<String, Json>,
+    status_code: u16,
+    headers: &Headers,
+) -> Result<(), DashscopeImageError> {
+    if !fields.contains_key("code") || fields.contains_key("output") {
+        return Ok(());
+    }
+    let message = match fields.get("message") {
+        Some(Json::Text(text)) => text.clone(),
+        _ => serde_json::to_string(fields).unwrap_or_default(),
+    };
+    Err(DashscopeImageError::Reply(get_error_class(
+        &message,
+        status_code,
+        Some(headers),
+    )))
+}
+
+// the status, the JSON parse and the body error all decide whether there is an output to read
+fn read_output(
     bytes: &[u8],
     status_code: u16,
     headers: &Headers,
-) -> Result<Vec<ImageData>, DashscopeImageError> {
+) -> Result<Option<IndexMap<String, Json>>, DashscopeImageError> {
     if status_code != 200 {
         return Err(DashscopeImageError::Reply(get_error_class(
             &body_text(bytes),
@@ -28,26 +50,24 @@ pub fn decode_dashscope_image_reply(
             Some(headers),
         ))
     })?;
-    let Json::Object(fields) = &body else {
+    let Json::Object(mut fields) = body else {
         return Err(shape_error("the reply", headers));
     };
-    // DashScope can report an API error inside a 200 body, and only without an output to read
-    if fields.contains_key("code") && !fields.contains_key("output") {
-        let message = match fields.get("message") {
-            Some(Json::Text(text)) => text.clone(),
-            _ => serde_json::to_string(&body).unwrap_or_default(),
-        };
-        return Err(DashscopeImageError::Reply(get_error_class(
-            &message,
-            status_code,
-            Some(headers),
-        )));
+    check_body_error(&fields, status_code, headers)?;
+    match fields.remove("output") {
+        None => Ok(None),
+        Some(Json::Object(output)) => Ok(Some(output)),
+        Some(_) => Err(shape_error("output", headers)),
     }
-    let Some(output) = fields.get("output") else {
+}
+
+pub fn decode_dashscope_image_reply(
+    bytes: &[u8],
+    status_code: u16,
+    headers: &Headers,
+) -> Result<Vec<ImageData>, DashscopeImageError> {
+    let Some(output) = read_output(bytes, status_code, headers)? else {
         return Ok(Vec::new());
-    };
-    let Json::Object(output) = output else {
-        return Err(shape_error("output", headers));
     };
     let Some(choices) = output.get("choices") else {
         return Ok(Vec::new());
