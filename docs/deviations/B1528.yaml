@@ -1,13 +1,16 @@
 task: B1528
 deviations:
-  - what: A Nano Banana size whose width-to-height ratio sits exactly midway between two supported ratios, such as 37x18 between 21:9 and 16:9, takes the earlier list entry (21:9), where LiteLLM's double arithmetic rounds the two distances differently and picks 16:9.
+  - what: A Nano Banana size whose ratio sits midway between two supported ratios, or close enough that an IEEE double cannot tell the two distances apart, such as 37x18 between 21:9 and 16:9, takes the earlier list entry (21:9), where LiteLLM's double arithmetic rounds the two distances differently and picks 16:9.
     why: betterlite does no float arithmetic and compares the distances as exact fractions, so a mathematical tie keeps the first ratio as the list order intends; the sizes that differ are rare custom sizes and none is one of OpenAI's named sizes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/nano_banana_transformation.py#L80-L96
-  - what: An Imagen or Nano Banana custom size is placed by exact rational comparison, and a dimension that does not fit i64 falls back to 1:1, where LiteLLM divides unbounded Python integers into an IEEE double first.
-    why: betterlite reads Fal sizes with the shared i64 parser and does no float arithmetic; every whole-pixel size below 2^53 gives the same answer both ways, and a size past that is not one a client names.
+  - what: An Imagen size part that Python's int() reads but betterlite's shared i64 parser does not (a dimension past i64, exactly -9223372036854775808, or non-ASCII decimal digits) maps to 1:1 instead of the ratio LiteLLM computes from it, and an Imagen custom size is placed by exact integer comparison where LiteLLM compares an IEEE double, so a ratio within an ulp of a threshold can land on either side.
+    why: betterlite reads Fal sizes with the shared i64 parser in betterlite-models, which is outside this task's scope, and does no float arithmetic; no working image request sends one of those sizes or a ratio within an ulp of a threshold.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/imagen4_transformation.py#L121-L141
-  - what: A ByteDance size string whose width or height does not fit i64 falls back to landscape_4_3, where LiteLLM returns a width/height object with an unbounded integer.
-    why: the shared Flux size mapper reads the string with the i64 parser, and a working image request spells whole pixels well inside i64.
+  - what: A Nano Banana size part that Python's int() reads but betterlite's shared i64 parser does not (a dimension past i64, exactly -9223372036854775808, or non-ASCII decimal digits) selects 1:1 instead of the ratio LiteLLM computes from it.
+    why: betterlite reads Fal sizes with the shared i64 parser in betterlite-models, which is outside this task's scope; no working image request sends such a size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/nano_banana_transformation.py#L80-L96
+  - what: A ByteDance size part that Python's int() reads but betterlite's shared i64 parser does not (a dimension past i64, exactly -9223372036854775808, or non-ASCII decimal digits) maps to landscape_4_3 instead of the width and height object LiteLLM builds.
+    why: the shared Flux size mapper reads the string with the i64 parser in betterlite-models, which is outside this task's scope, and a working image request spells whole pixels well inside i64.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/bytedance_transformation.py#L73-L80
   - what: An Imagen size that is not a string fails with a typed error naming the size field, where LiteLLM raises an unhandled TypeError from the dictionary lookup or the substring test and the client sees a 500.
     why: a 500 where a client mistake belongs hides the cause; a working setup sends size as a string, the type OpenAI declares.
