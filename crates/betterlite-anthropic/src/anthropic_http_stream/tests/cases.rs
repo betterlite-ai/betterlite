@@ -378,11 +378,11 @@ async fn sync_status_rejects() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let Err(error) = (StreamOpening {
+    let Err(error) = StreamOpening {
         clients,
         call: &stream_call(DATA, &messages, &reverse),
         build: stream_build(&FixedIds),
-    })
+    }
     .make_sync_call()
     .await
     else {
@@ -422,11 +422,11 @@ async fn guard_message(messages: &Json, lines: &[&str], limit: usize) -> String 
         module_level_client: &transport,
         logger: &logger,
     };
-    let Err(error) = (StreamOpening {
+    let Err(error) = StreamOpening {
         clients,
         call: &stream_call(DATA, messages, &reverse),
         build: stream_build_with(&FixedIds, limit),
-    })
+    }
     .make_sync_call()
     .await
     else {
@@ -605,11 +605,11 @@ async fn anthropic_http_stream_malformed_api_base() {
         module_level_client: &transport,
         logger: &logger,
     };
-    let Err(error) = (StreamOpening {
+    let Err(error) = StreamOpening {
         clients,
         call: &call,
         build: stream_build(&FixedIds),
-    })
+    }
     .make_call()
     .await
     else {
