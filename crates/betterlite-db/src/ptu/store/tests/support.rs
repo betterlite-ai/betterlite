@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::future::{Future, ready};
 use std::io::{Result as IoResult, Write};
 use std::str;
@@ -11,9 +12,11 @@ use deadpool_postgres::{Client, Manager, Pool};
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::yield_now;
+use tokio_postgres::types::Json;
 use tracing::Subscriber;
 use tracing_subscriber::fmt::MakeWriter;
 
+use crate::budget_permission_rows::JsonData;
 use crate::ptu::charges::pricing::PtuCharge;
 use crate::ptu::store::sentinel::ChargeWrite;
 use crate::ptu::store::sleeper::Sleeper;
@@ -106,6 +109,28 @@ pub(crate) fn write_for<'charge>(charge: &'charge PtuCharge, date: &str) -> Char
             .unwrap()
             .with_timezone(&chrono::Utc),
     }
+}
+
+pub(crate) fn names(ids: &[&str]) -> BTreeSet<String> {
+    ids.iter().map(|id| (*id).to_owned()).collect()
+}
+
+pub(crate) async fn insert_stored_model(
+    client: &Client,
+    model_id: &str,
+    model_name: &str,
+    model_info: &JsonData,
+) {
+    let info = Json(model_info.clone());
+    client
+        .execute(
+            "INSERT INTO \"LiteLLM_ProxyModelTable\" \
+             (\"model_id\", \"model_name\", \"litellm_params\", \"model_info\", \"created_by\", \"updated_by\") \
+             VALUES ($1, $2, '{}'::jsonb, $3, 't', 't')",
+            &[&model_id, &model_name, &info],
+        )
+        .await
+        .unwrap();
 }
 
 #[derive(Clone, Default)]

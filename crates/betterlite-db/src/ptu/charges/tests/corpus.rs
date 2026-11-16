@@ -1,5 +1,6 @@
 use std::fs;
 use std::path::PathBuf;
+use std::str::from_utf8;
 
 use rstest::rstest;
 
@@ -8,11 +9,9 @@ use crate::ptu::charges::decode::decode_ptu_model_info;
 
 fn decodes_anything(bytes: &[u8]) -> bool {
     let as_value = serde_json::from_slice::<JsonData>(bytes)
-        .ok()
-        .is_some_and(|value| decode_ptu_model_info(&value).is_some());
-    let as_text = std::str::from_utf8(bytes)
-        .ok()
-        .is_some_and(|text| decode_ptu_model_info(&JsonData::String(text.to_owned())).is_some());
+        .is_ok_and(|value| decode_ptu_model_info(&value).is_some());
+    let as_text = from_utf8(bytes)
+        .is_ok_and(|text| decode_ptu_model_info(&JsonData::String(text.to_owned())).is_some());
     as_value || as_text
 }
 

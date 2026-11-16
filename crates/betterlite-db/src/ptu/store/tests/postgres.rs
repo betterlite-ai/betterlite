@@ -4,9 +4,11 @@ use std::time::Duration;
 use chrono::{DateTime, NaiveDate, Utc};
 use deadpool_postgres::Client;
 use rust_decimal::Decimal;
-use tokio_postgres::types::Json;
+use tracing::subscriber::set_default;
 
-use super::support::{Recorder, capture_logs, charge, close, database, write_for};
+use super::support::{
+    Recorder, capture_logs, charge, close, database, insert_stored_model, names, write_for,
+};
 use crate::budget_permission_rows::JsonData;
 use crate::ptu::charges::deployment::RouterEntry;
 use crate::ptu::store::StoreError;
@@ -114,7 +116,7 @@ async fn an_update_replaces_the_charge_and_the_display_name() {
 async fn a_create_writes_the_identity_columns_and_leaves_defaults() {
     let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
-    let charge = charge("team-1", "model-a", "display", Decimal::from(3));
+    let charge = charge("team-1", "model-a", "display", Decimal::from(3_i32));
     let write = write_for(&charge, DAY);
     let id = write.id.to_string();
     let mut sleeper = Recorder::default();
@@ -157,7 +159,7 @@ async fn a_permanent_failure_retries_three_times_and_reports_false() {
     let write = write_for(&charge, DAY);
     let mut sleeper = Recorder::default();
     let (logs, subscriber) = capture_logs();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let written = write_charge_with_retry(&client, &mut sleeper, &write).await;
     drop(guard);
     assert!(!written);
@@ -292,14 +294,11 @@ async fn prune_deletes_only_stale_scanned_sentinel_rows_of_the_day() {
          ('other-team', 'team-2', '2026-03-01', '__ptu_flat_cost__', 'model-g', 'n', '', '', '', 0, 0, 0, now(), '2026-03-01 10:00:00', 0)",
     )
     .await;
-    let scanned: BTreeSet<String> = [
+    let scanned = names(&[
         "model-a", "model-b", "model-c", "model-e", "model-f", "model-g",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect();
+    ]);
     let (logs, subscriber) = capture_logs();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let deleted =
         prune_unrefreshed_rows(&client, day(DAY), instant("2026-03-01T12:00:00Z"), &scanned)
             .await
@@ -332,7 +331,7 @@ async fn an_empty_scan_deletes_nothing() {
     )
     .await;
     let (logs, subscriber) = capture_logs();
-    let guard = tracing::subscriber::set_default(subscriber);
+    let guard = set_default(subscriber);
     let deleted = prune_unrefreshed_rows(
         &client,
         day(DAY),
@@ -374,33 +373,12 @@ fn router_entry(source: &str) -> RouterEntry {
 async fn load_models_scans_rows_then_router_entries() {
     let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
-    client
-        .batch_execute(
-            "INSERT INTO \"LiteLLM_ProxyModelTable\" \
-             (\"model_id\", \"model_name\", \"litellm_params\", \"model_info\", \"created_by\", \"updated_by\") \
-             VALUES \
-             ('db-a', 'stored-a', '{}'::jsonb, \
-              '{\"ptu_count\": 2, \"cost_per_ptu_per_hour\": 0.5, \"team_id\": \"team-1\", \"ptu_effective_from\": \"2026-01-01T00:00:00Z\"}'::jsonb, 't', 't'), \
-             ('db-b', 'stored-b', '{}'::jsonb, '{\"other\": 1}'::jsonb, 't', 't'), \
-             ('', 'anonymous', '{}'::jsonb, \
-              '{\"ptu_count\": 1, \"cost_per_ptu_per_hour\": 1, \"team_id\": \"team-1\", \"ptu_effective_from\": \"2026-01-01T00:00:00Z\"}'::jsonb, 't', 't')",
-        )
-        .await
-        .unwrap();
-    let text = Json(
-        r#"{"ptu_count": 1, "cost_per_ptu_per_hour": 1, "team_id": "team-1", "ptu_effective_from": "2026-01-01T00:00:00Z"}"#
-            .to_owned(),
-    );
-    client
-        .execute(
-            "INSERT INTO \"LiteLLM_ProxyModelTable\" \
-             (\"model_id\", \"model_name\", \"litellm_params\", \"model_info\", \"created_by\", \"updated_by\") \
-             VALUES ('db-text', 'stored-text', '{}'::jsonb, $1, 't', 't')",
-            &[&text],
-        )
-        .await
-        .unwrap();
     let terms = r#""ptu_count": 1, "cost_per_ptu_per_hour": 1, "team_id": "team-1", "ptu_effective_from": "2026-01-01T00:00:00Z""#;
+    let priced = info(&format!("{{{terms}}}"));
+    insert_stored_model(&client, "db-a", "stored-a", &priced).await;
+    insert_stored_model(&client, "db-b", "stored-b", &info(r#"{"other": 1}"#)).await;
+    insert_stored_model(&client, "", "anonymous", &priced).await;
+    insert_stored_model(&client, "db-text", "stored-text", &priced).await;
     let entries = [
         router_entry(&format!(r#"{{"id": "cfg-a", {terms}}}"#)),
         router_entry(&format!(r#"{{"id": "db-a", {terms}}}"#)),
@@ -421,13 +399,7 @@ async fn load_models_scans_rows_then_router_entries() {
     );
     assert_eq!(
         loaded.scanned_ids,
-        BTreeSet::from([
-            String::new(),
-            "cfg-a".to_owned(),
-            "db-a".to_owned(),
-            "db-b".to_owned(),
-            "db-text".to_owned(),
-        ])
+        names(&["", "cfg-a", "db-a", "db-b", "db-text"])
     );
     close(fixture, pool, client).await;
 }

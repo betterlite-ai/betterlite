@@ -1,4 +1,3 @@
-use chrono::NaiveDate;
 use rust_decimal::Decimal;
 
 use super::support::{day, moment, ptu_model};
@@ -120,7 +119,7 @@ fn a_floor_before_the_first_date_keeps_the_earliest_start() {
 #[test]
 fn the_first_date_of_the_era_still_reaches_a_later_end() {
     let model = starting("ancient", "0001-01-01T00:00:00Z");
-    let end: NaiveDate = day("0001-01-02");
+    let end = day("0001-01-02");
     let days = backfill_window(&[model], end);
     assert_eq!(days, [day("0001-01-01"), end]);
 }

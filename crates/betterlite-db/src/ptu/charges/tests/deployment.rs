@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::slice::from_ref;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -105,7 +106,7 @@ fn router_entries_accept_a_json_text_model_info() {
 #[test]
 fn a_router_snapshot_does_not_follow_later_edits() {
     let mut router_entry = entry("n", r#"{"id": "model-a", "ptu_count": 2}"#);
-    let deployments = config_deployments(std::slice::from_ref(&router_entry), &BTreeSet::new());
+    let deployments = config_deployments(from_ref(&router_entry), &BTreeSet::new());
     let deployment = deployments.first().unwrap();
     router_entry.model_info = data(r#"{"id": "model-a", "ptu_count": 9}"#);
     assert_eq!(
@@ -173,7 +174,7 @@ fn the_scan_reads_rows_before_config_and_keeps_every_id() {
     assert_eq!(
         loaded.scanned_ids,
         BTreeSet::from([
-            "".to_owned(),
+            String::new(),
             "cfg-a".to_owned(),
             "db-a".to_owned(),
             "db-b".to_owned(),

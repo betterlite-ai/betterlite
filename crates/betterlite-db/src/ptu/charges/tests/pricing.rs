@@ -19,7 +19,7 @@ fn a_full_day_inside_the_window_is_twenty_four_hours() {
     let model = windowed("2025-01-01T00:00:00Z", None);
     assert_eq!(
         active_hours_on_day(&model, day("2026-03-01")).unwrap(),
-        Decimal::from(24)
+        Decimal::from(24_i32)
     );
 }
 
@@ -46,7 +46,7 @@ fn a_window_closing_at_the_next_midnight_excludes_that_day() {
     let model = windowed("2026-01-01T00:00:00Z", Some("2026-03-02T00:00:00Z"));
     assert_eq!(
         active_hours_on_day(&model, day("2026-03-01")).unwrap(),
-        Decimal::from(24)
+        Decimal::from(24_i32)
     );
     assert_eq!(
         active_hours_on_day(&model, day("2026-03-02")).unwrap(),
@@ -83,7 +83,7 @@ fn a_window_closing_before_it_opens_charges_nothing() {
 
 #[rstest]
 #[case::half_past_midnight("2026-03-01T00:30:00Z", Decimal::new(235, 1))]
-#[case::morning("2026-03-01T06:00:00Z", Decimal::from(18))]
+#[case::morning("2026-03-01T06:00:00Z", Decimal::from(18_i32))]
 #[case::last_minutes("2026-03-01T23:52:30Z", Decimal::new(125, 3))]
 fn a_window_opening_mid_day_counts_the_remaining_hours(
     #[case] from: &str,
@@ -98,7 +98,7 @@ fn a_window_opening_mid_day_counts_the_remaining_hours(
 
 #[rstest]
 #[case::half_hour("2026-03-01T00:30:00Z", Decimal::new(5, 1))]
-#[case::evening("2026-03-01T18:00:00Z", Decimal::from(18))]
+#[case::evening("2026-03-01T18:00:00Z", Decimal::from(18_i32))]
 fn a_window_closing_mid_day_counts_the_elapsed_hours(#[case] to: &str, #[case] expected: Decimal) {
     let model = windowed("2026-01-01T00:00:00Z", Some(to));
     assert_eq!(
@@ -113,7 +113,7 @@ fn the_daily_cost_multiplies_count_rate_and_hours() {
     model.effective_from = moment("2026-01-01T00:00:00Z");
     assert_eq!(
         daily_flat_cost(&model, day("2026-03-01")).unwrap(),
-        Decimal::from(48)
+        Decimal::from(48_i32)
     );
 }
 

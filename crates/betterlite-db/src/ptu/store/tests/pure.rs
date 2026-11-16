@@ -1,4 +1,5 @@
 use std::collections::BTreeSet;
+use std::ops::Range;
 
 use chrono::{DateTime, Utc};
 
@@ -11,7 +12,7 @@ fn instant(text: &str) -> DateTime<Utc> {
         .with_timezone(&Utc)
 }
 
-fn ids(range: std::ops::Range<u32>) -> BTreeSet<String> {
+fn ids(range: Range<u32>) -> BTreeSet<String> {
     range.map(|index| format!("model-{index:04}")).collect()
 }
 
