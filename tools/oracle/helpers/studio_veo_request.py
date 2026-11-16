@@ -115,8 +115,7 @@ def prepare(request: Request) -> Prepared:
         params["image"] = image_value(given_image, image)
     given = request.get("params")
     if given is not None:
-        for name, value in given.items():
-            params[name] = value
+        params.update(given)
     return {"params": params, "reference": reference, "image": image}
 
 
