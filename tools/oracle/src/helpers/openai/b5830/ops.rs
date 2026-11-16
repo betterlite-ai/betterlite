@@ -41,20 +41,24 @@ pub(super) fn run(input: &Input) -> HelperResult {
 fn generation_params(cases: &[GenerationParamsCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        let config = generation_config(&case.model);
-        let mapped = config
-            .map_params(
-                &case.non_default_params,
-                case.optional_params.clone(),
-                case.drop_params,
-            )
-            .or_config_error()?;
-        answers.push(json!({
-            "supported": config.supported_params,
-            "params": mapped,
-        }));
+        answers.push(generation_param_answer(case)?);
     }
     Ok(Value::Array(answers))
+}
+
+fn generation_param_answer(case: &GenerationParamsCase) -> HelperResult {
+    let config = generation_config(&case.model);
+    let mapped = config
+        .map_params(
+            &case.non_default_params,
+            case.optional_params.clone(),
+            case.drop_params,
+        )
+        .or_config_error()?;
+    Ok(json!({
+        "supported": config.supported_params,
+        "params": mapped,
+    }))
 }
 fn generation_request(cases: &[GenerationRequestCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
@@ -192,14 +196,15 @@ fn generation_reply(case: &ReplyCase) -> HelperResult {
     }))
 }
 fn edit_reply(case: &ReplyCase) -> HelperResult {
-    let raw = raw_response(case);
-    let (response, hidden) =
-        edit_response(&raw, case.created, &case.model).map_err(reply_failure)?;
-    Ok(json!({
-        "data": response.data.unwrap_or_default(),
-        "usage": response.usage,
-        "hidden": hidden,
-    }))
+    edit_response(&raw_response(case), case.created, &case.model)
+        .map_err(reply_failure)
+        .map(|(response, hidden)| {
+            json!({
+                "data": response.data.unwrap_or_default(),
+                "usage": response.usage,
+                "hidden": hidden,
+            })
+        })
 }
 fn raw_response(case: &ReplyCase) -> ImageHttpResponse {
     ImageHttpResponse {
