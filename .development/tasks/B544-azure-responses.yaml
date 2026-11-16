@@ -101,6 +101,8 @@ description: >-
   wiring lines; 710 planned, 725 maximum changed lines.
 scope:
   paths:
+  - "tools/oracle/src/helpers/azure/urls/sources.rs"
+  - "tools/oracle/src/helpers/azure/urls.rs"
   - crates/betterlite-azure/Cargo.toml
   - crates/betterlite-azure/src/responses.rs
   - crates/betterlite-azure/src/responses/**
