@@ -69,10 +69,7 @@ fn embedding_response(body: &Object) -> Option<Object> {
     let object_is_list =
         matches!(body.get("object"), Some(value) if value.as_str() == Some("list"));
     let data_is_list = matches!(body.get("data"), Some(value) if value.is_array());
-    if object_is_list && data_is_list {
-        return Some(body.clone());
-    }
-    None
+    (object_is_list && data_is_list).then(|| body.clone())
 }
 
 // ResponsesAPIResponse.model_validate requires id, created_at and output
@@ -80,20 +77,14 @@ fn responses_response(body: &Object) -> Option<Object> {
     let id_is_text = matches!(body.get("id"), Some(value) if value.is_string());
     let created_is_integer = matches!(body.get("created_at"), Some(value) if value.is_i64());
     let output_is_list = matches!(body.get("output"), Some(value) if value.is_array());
-    if id_is_text && created_is_integer && output_is_list {
-        return Some(body.clone());
-    }
-    None
+    (id_is_text && created_is_integer && output_is_list).then(|| body.clone())
 }
 
 // ImagesResponse.model_validate requires created and data
 fn image_response(body: &Object) -> Option<Object> {
     let created_is_integer = matches!(body.get("created"), Some(value) if value.is_i64());
     let data_is_list = matches!(body.get("data"), Some(value) if value.is_array());
-    if created_is_integer && data_is_list {
-        return Some(body.clone());
-    }
-    None
+    (created_is_integer && data_is_list).then(|| body.clone())
 }
 
 pub const OPENAI_RELAY_SHAPES: [RelayShape<'static, Object>; 3] = [
