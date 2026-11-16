@@ -10,5 +10,8 @@ call:
         content: hi
     api_base: "{{upstream}}/serving-endpoints"
     api_key: oracle-databricks-key
+    answer:
+      status: 200
+      body: '{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"databricks-meta-llama-3-3-70b-instruct","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}'
 compare:
   ignore: []

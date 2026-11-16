@@ -9,6 +9,9 @@ call:
       - role: user
         content: hi
     api_base: "{{upstream}}"
+    answer:
+      status: 200
+      body: '{"modelId":"cohere.command-r-plus","modelVersion":"1.0","chatResponse":{"text":"hi","finishReason":"COMPLETE"}}'
     env:
       OCI_REGION: us-ashburn-1
       OCI_USER: ocid1.user.oc1..oracle
