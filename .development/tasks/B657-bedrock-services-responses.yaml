@@ -335,8 +335,7 @@ oracle_cases:
 deviations:
 - what: Request http(s) images that need local bytes fail with ImageFetchError status400 before any outbound fetch.
     Inline data and source-forwarded s3:// or other descriptors keep their pinned handling.
-  why: The URL-download product decision is open. Build no downloader, request-path filesystem access or follow-on
-    feature that depends on fetching.
+  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/responses/transformation.py#L80-L345
 out_of_scope:
 - B030 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

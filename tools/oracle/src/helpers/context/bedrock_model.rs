@@ -14,6 +14,7 @@ use betterlite_context::bedrock_model::{
     strip_bedrock_routing_prefix, strip_throughput_suffix,
 };
 use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, json};
 
@@ -97,10 +98,10 @@ fn lazy_catalog_binding_facts() -> serde_json::Value {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut output = Map::new();
         output.insert(
             "region_groups".to_owned(),

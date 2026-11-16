@@ -4,7 +4,7 @@ use betterlite_guardrails::ibm_detector_client::config::IbmDetectorConfig;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
 
-use crate::routing_mock_scripts::{ProviderCall, redact};
+use betterlite_oracle_runner::routing_mock_scripts::{ProviderCall, redact_credentials};
 
 pub(super) fn request_values(recorded: &[ProviderCall], config: &IbmDetectorConfig) -> Vec<Value> {
     let expected_authorization = config
@@ -56,7 +56,7 @@ fn request_headers(
 
 fn authorization_value(recorded: &BTreeMap<String, String>, expected: &str) -> Value {
     let mut probe = BTreeMap::from([("authorization".to_owned(), expected.to_owned())]);
-    redact(&mut probe);
+    redact_credentials(&mut probe);
     if recorded.get("authorization") == probe.get("authorization") {
         Value::String(expected.to_owned())
     } else {

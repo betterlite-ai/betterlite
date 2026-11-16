@@ -6,7 +6,8 @@ use betterlite_vertex::studio_identity::NativeParams;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -24,10 +25,10 @@ struct Call {
     api_base: Option<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let calls = input
             .calls
             .iter()
@@ -37,7 +38,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn resolve(call: &Call) -> crate::helpers::HelperResult {
+fn resolve(call: &Call) -> HelperResult {
     let request = studio_request(&StudioCountInput {
         model: &call.model,
         contents: &call.contents,

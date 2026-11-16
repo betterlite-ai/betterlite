@@ -1,4 +1,5 @@
 use betterlite_openai::search::records::SearchResponse;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::message_content::Message;
 use betterlite_websearch::search_tool_access::hook_kwargs::SearchHookKwargs;
 use betterlite_websearch::search_tool_access::tool_selection::SearchToolConfig;
@@ -76,10 +77,10 @@ enum ErrorKind {
     Unavailable,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::ShortCircuit | Operation::ExecuteSearch => operations::run_search(input),
             Operation::RichSearchInput => operations::rich_search_inputs(input),
