@@ -16,6 +16,7 @@ use crate::session_budget::tests::support::BUDGET_INVALID;
 use crate::session_budget::tests::support::BUDGET_LIST;
 use crate::session_budget::tests::support::BUDGET_NULL;
 use crate::session_budget::tests::support::BUDGET_ONE;
+use crate::session_budget::tests::support::BUDGET_ROUNDING;
 use crate::session_budget::tests::support::BUDGET_TEXT;
 use crate::session_budget::tests::support::BUDGET_TRUE;
 use crate::session_budget::tests::support::BUDGET_ZERO;
@@ -430,5 +431,23 @@ async fn error_detail_names_the_session_and_the_amounts() {
     assert_eq!(
         detail,
         "Session budget exceeded for session s1. Current spend: $1.5000, max_budget_per_session: $1.00."
+    );
+}
+
+#[tokio::test]
+async fn error_detail_rounds_decimal_money_half_to_even() {
+    let cache = FakeCache::new();
+    cache.preload_memory(SPEND_KEY, amount("3.0"));
+    let handler = handler(cache);
+    let registry = agent_registry_with(&[BUDGET_ROUNDING]);
+    let error = check(&handler, &registry, Some("agent-1"), &json(REQUEST))
+        .await
+        .unwrap_err();
+    let Payload::String(detail) = rejection(error).detail else {
+        panic!("the detail is text");
+    };
+    assert_eq!(
+        detail,
+        "Session budget exceeded for session s1. Current spend: $3.0000, max_budget_per_session: $2.68."
     );
 }

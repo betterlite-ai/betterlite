@@ -32,6 +32,7 @@ pub(crate) const BUDGET_INVALID: &str = r#"{"agent_id":"agent-1","agent_name":"a
 pub(crate) const BUDGET_INFINITY: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_budget_per_session":"inf"}}"#;
 pub(crate) const BUDGET_FALSE: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_budget_per_session":false}}"#;
 pub(crate) const BUDGET_LIST: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_budget_per_session":[]}}"#;
+pub(crate) const BUDGET_ROUNDING: &str = r#"{"agent_id":"agent-1","agent_name":"alpha","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"max_budget_per_session":2.675}}"#;
 pub(crate) const NO_BUDGET: &str = r#"{"agent_id":"agent-2","agent_name":"beta","agent_card_params":{"model":"gpt-4o"},"litellm_params":{"other":true}}"#;
 
 #[derive(Debug, Error)]
