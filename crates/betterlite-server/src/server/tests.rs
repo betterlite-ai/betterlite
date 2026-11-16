@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::fs::{File, read_to_string};
 use std::future::pending;
 use std::path::Path;
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,9 +27,11 @@ use tracing::subscriber::set_default;
 use url::Url;
 
 use super::chat_setup::chat_executor;
+use super::component::serve_component;
 use super::connections::{
     CONNECTION_DRAIN_TIMEOUT, configure_connection_builder, serve_connection,
 };
+use super::filter::ComponentRoutes;
 use super::{OUTBOUND_DRAIN_TIMEOUT, run_with_listener};
 
 // Answers with headers and then keeps the response open, so the client holds a lease on it.
@@ -149,4 +152,19 @@ async fn a_connection_closes_after_its_first_response() {
     assert!(raw.starts_with("HTTP/1.1 200 OK\r\n"), "{raw}");
     assert!(raw.ends_with("\r\n\r\nok"), "{raw}");
     serving.join_next().await.unwrap().unwrap();
+}
+
+static NO_ROUTES: phf::Set<&'static str> = phf::phf_set! { "/unrouted" };
+
+// a config that cannot be read stops startup with a failure code before anything binds
+#[test]
+fn a_component_without_a_readable_config_exits_with_failure() {
+    let folder = tempfile::tempdir().unwrap();
+    let routes = ComponentRoutes {
+        prefixes: &[],
+        exact: &NO_ROUTES,
+        mounts: &NO_ROUTES,
+    };
+    let code = serve_component(&folder.path().join("missing.yaml"), "127.0.0.1", 0, routes);
+    assert_eq!(format!("{code:?}"), format!("{:?}", ExitCode::FAILURE));
 }
