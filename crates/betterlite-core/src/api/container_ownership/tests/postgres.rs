@@ -227,13 +227,13 @@ async fn insert_batch_row(writer: &PostgresStore) {
 async fn assert_other_purpose_is_untracked(ownership: &Ownership<'_>) {
     let objects = &ownership.objects;
     let found = objects
-        .find_unique("container:openai:container-other")
+        .find_row("container:openai:container-other", None)
         .await
         .unwrap();
     assert_eq!(found.unwrap().file_purpose, "batch");
     assert!(
         objects
-            .find_container("container:openai:container-other")
+            .find_row("container:openai:container-other", Some("container"))
             .await
             .unwrap()
             .is_none()

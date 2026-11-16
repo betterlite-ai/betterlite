@@ -51,14 +51,11 @@ pub struct ContainerOwnerUpdate {
 pub trait ContainerObjectTable: Send + Sync {
     fn availability(&self) -> Result<(), TableError>;
 
-    fn find_unique(
+    // a purpose narrows the lookup the way find_first's file_purpose filter does; None is find_unique
+    fn find_row(
         &self,
         model_object_id: &str,
-    ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send;
-
-    fn find_container(
-        &self,
-        model_object_id: &str,
+        file_purpose: Option<&str>,
     ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send;
 
     fn find_owned(
@@ -77,24 +74,15 @@ pub trait ContainerObjectTable: Send + Sync {
     ) -> impl Future<Output = Result<(), TableError>> + Send;
 }
 
-macro_rules! row_json {
-    ($filter:literal) => {
-        concat!(
-            "SELECT jsonb_build_object(",
-            "'unified_object_id', row.unified_object_id, ",
-            "'model_object_id', row.model_object_id, ",
-            "'file_purpose', row.file_purpose, ",
-            "'created_by', row.created_by",
-            ")::text FROM \"LiteLLM_ManagedObjectTable\" AS row WHERE ",
-            $filter
-        )
-    };
-}
-
-const FIND_UNIQUE_SQL: &str = row_json!("row.model_object_id = $1 LIMIT 1");
-
-const FIND_CONTAINER_SQL: &str =
-    row_json!("row.model_object_id = $1 AND row.file_purpose = $2 LIMIT 1");
+const FIND_ROW_SQL: &str = concat!(
+    "SELECT jsonb_build_object(",
+    "'unified_object_id', row.unified_object_id, ",
+    "'model_object_id', row.model_object_id, ",
+    "'file_purpose', row.file_purpose, ",
+    "'created_by', row.created_by",
+    ")::text FROM \"LiteLLM_ManagedObjectTable\" AS row ",
+    "WHERE row.model_object_id = $1 AND ($2::text IS NULL OR row.file_purpose = $2) LIMIT 1"
+);
 
 const FIND_OWNED_SQL: &str = "SELECT row.model_object_id FROM \"LiteLLM_ManagedObjectTable\" AS row \
      WHERE row.file_purpose = $1 AND row.created_by = ANY($2::text[])";
@@ -120,15 +108,26 @@ fn decode_row(row: &Row) -> Result<ContainerOwnerRow, TableError> {
 
 async fn query_row(
     store: &PostgresStore,
-    sql: &str,
     params: &Params<'_>,
 ) -> Result<Option<ContainerOwnerRow>, TableError> {
     let client = store.session().await?;
     let found = client
-        .query_opt(sql, params)
+        .query_opt(FIND_ROW_SQL, params)
         .await
         .map_err(|source| TableError::Database(backend(source)))?;
     found.as_ref().map(decode_row).transpose()
+}
+
+async fn write_row(
+    store: &PostgresStore,
+    sql: &str,
+    params: &Params<'_>,
+) -> Result<u64, TableError> {
+    let client = store.session().await?;
+    client
+        .execute(sql, params)
+        .await
+        .map_err(|source| TableError::Database(backend(source)))
 }
 
 async fn query_owned(
@@ -169,93 +168,54 @@ impl ContainerObjectTable for PrismaContainerObjects<'_> {
             .map_err(TableError::Database)
     }
 
-    fn find_unique(
+    async fn find_row(
         &self,
         model_object_id: &str,
-    ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send {
-        async move {
-            let access = self.base.access()?;
-            query_row(access.read, FIND_UNIQUE_SQL, &[&model_object_id]).await
-        }
+        file_purpose: Option<&str>,
+    ) -> Result<Option<ContainerOwnerRow>, TableError> {
+        let access = self.base.access()?;
+        query_row(access.read, &[&model_object_id, &file_purpose]).await
     }
 
-    fn find_container(
-        &self,
-        model_object_id: &str,
-    ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send {
-        async move {
-            let access = self.base.access()?;
-            query_row(
-                access.read,
-                FIND_CONTAINER_SQL,
-                &[&model_object_id, &CONTAINER_OBJECT_PURPOSE],
-            )
-            .await
-        }
+    async fn find_owned(&self, owner_scopes: Vec<String>) -> Result<Vec<String>, TableError> {
+        let access = self.base.access()?;
+        query_owned(access.read, &owner_scopes).await
     }
 
-    fn find_owned(
-        &self,
-        owner_scopes: Vec<String>,
-    ) -> impl Future<Output = Result<Vec<String>, TableError>> + Send {
-        async move {
-            let access = self.base.access()?;
-            query_owned(access.read, &owner_scopes).await
-        }
+    async fn create(&self, write: ContainerOwnerWrite) -> Result<(), TableError> {
+        let access = self.base.access()?;
+        let id = Uuid::new_v4().to_string();
+        let file_object = serde_json::to_string(&write.file_object).map_err(TableError::Row)?;
+        let params: &Params<'_> = &[
+            &id,
+            &write.unified_object_id,
+            &write.model_object_id,
+            &file_object,
+            &write.file_purpose,
+            &write.created_by,
+            &write.updated_by,
+        ];
+        write_row(access.write, CREATE_SQL, params).await?;
+        Ok(())
     }
 
-    fn create(
-        &self,
-        write: ContainerOwnerWrite,
-    ) -> impl Future<Output = Result<(), TableError>> + Send {
-        async move {
-            let access = self.base.access()?;
-            let id = Uuid::new_v4().to_string();
-            let file_object = serde_json::to_string(&write.file_object).map_err(TableError::Row)?;
-            let client = access.write.session().await?;
-            client
-                .execute(
-                    CREATE_SQL,
-                    &[
-                        &id,
-                        &write.unified_object_id,
-                        &write.model_object_id,
-                        &file_object,
-                        &write.file_purpose,
-                        &write.created_by,
-                        &write.updated_by,
-                    ],
-                )
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            Ok(())
-        }
-    }
-
-    fn update(
-        &self,
-        update: ContainerOwnerUpdate,
-    ) -> impl Future<Output = Result<(), TableError>> + Send {
-        async move {
-            let access = self.base.access()?;
-            let file_object =
-                serde_json::to_string(&update.file_object).map_err(TableError::Row)?;
-            let client = access.write.session().await?;
-            let changed = client
-                .execute(
-                    UPDATE_SQL,
-                    &[
-                        &update.model_object_id,
-                        &update.unified_object_id,
-                        &file_object,
-                        &update.updated_by,
-                    ],
-                )
-                .await
-                .map_err(|source| TableError::Database(backend(source)))?;
-            if changed == 0 {
-                return Err(TableError::MissingRow);
-            }
+    async fn update(&self, update: ContainerOwnerUpdate) -> Result<(), TableError> {
+        let access = self.base.access()?;
+        let file_object = serde_json::to_string(&update.file_object).map_err(TableError::Row)?;
+        let changed = write_row(
+            access.write,
+            UPDATE_SQL,
+            &[
+                &update.model_object_id,
+                &update.unified_object_id,
+                &file_object,
+                &update.updated_by,
+            ],
+        )
+        .await?;
+        if changed == 0 {
+            Err(TableError::MissingRow)
+        } else {
             Ok(())
         }
     }

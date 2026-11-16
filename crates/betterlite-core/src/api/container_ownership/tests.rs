@@ -10,8 +10,8 @@ mod response;
 mod support;
 
 use super::cache::{
-    CachedOwner, CachedStoredId, ContainerCaches, NEGATIVE_OWNER_SENTINEL,
-    NEGATIVE_STORED_ID_SENTINEL, allowed_ids_cache_key,
+    CachedText, ContainerCaches, NEGATIVE_OWNER_SENTINEL, NEGATIVE_STORED_ID_SENTINEL,
+    allowed_ids_cache_key,
 };
 use support::{advance, fixed_clock, movable_clock};
 
@@ -19,25 +19,26 @@ use support::{advance, fixed_clock, movable_clock};
 fn cache_owner_round_trips_an_owner() {
     let cache = ContainerCaches::new(fixed_clock()).unwrap();
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Miss
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Miss
     );
     cache
-        .store_owner("container:openai:c1", Some("alice"))
+        .owner
+        .write("container:openai:c1", Some("alice"))
         .unwrap();
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Owned("alice".to_owned())
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Known("alice".to_owned())
     );
 }
 
 #[test]
 fn cache_owner_stores_the_untracked_sentinel() {
     let cache = ContainerCaches::new(fixed_clock()).unwrap();
-    cache.store_owner("container:openai:c1", None).unwrap();
+    cache.owner.write("container:openai:c1", None).unwrap();
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Untracked
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Absent
     );
 }
 
@@ -46,17 +47,18 @@ fn cache_owner_expires_after_the_ttl_boundary() {
     let (clock, now) = movable_clock();
     let cache = ContainerCaches::new(clock).unwrap();
     cache
-        .store_owner("container:openai:c1", Some("alice"))
+        .owner
+        .write("container:openai:c1", Some("alice"))
         .unwrap();
     advance(&now, 1_060.0);
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Owned("alice".to_owned())
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Known("alice".to_owned())
     );
     advance(&now, 1_061.0);
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Miss
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Miss
     );
 }
 
@@ -64,27 +66,29 @@ fn cache_owner_expires_after_the_ttl_boundary() {
 fn cache_stored_id_maps_absent_and_empty_to_the_sentinel() {
     let cache = ContainerCaches::new(fixed_clock()).unwrap();
     assert_eq!(
-        cache.stored_id("container:openai:c1").unwrap(),
-        CachedStoredId::Miss
+        cache.stored_id.read("container:openai:c1").unwrap(),
+        CachedText::Miss
     );
-    cache.store_stored_id("container:openai:c1", None).unwrap();
+    cache.stored_id.write("container:openai:c1", None).unwrap();
     assert_eq!(
-        cache.stored_id("container:openai:c1").unwrap(),
-        CachedStoredId::Absent
-    );
-    cache
-        .store_stored_id("container:openai:c1", Some(""))
-        .unwrap();
-    assert_eq!(
-        cache.stored_id("container:openai:c1").unwrap(),
-        CachedStoredId::Absent
+        cache.stored_id.read("container:openai:c1").unwrap(),
+        CachedText::Absent
     );
     cache
-        .store_stored_id("container:openai:c1", Some("cntr_encoded"))
+        .stored_id
+        .write("container:openai:c1", Some(""))
         .unwrap();
     assert_eq!(
-        cache.stored_id("container:openai:c1").unwrap(),
-        CachedStoredId::Known("cntr_encoded".to_owned())
+        cache.stored_id.read("container:openai:c1").unwrap(),
+        CachedText::Absent
+    );
+    cache
+        .stored_id
+        .write("container:openai:c1", Some("cntr_encoded"))
+        .unwrap();
+    assert_eq!(
+        cache.stored_id.read("container:openai:c1").unwrap(),
+        CachedText::Known("cntr_encoded".to_owned())
     );
 }
 
@@ -92,18 +96,30 @@ fn cache_stored_id_maps_absent_and_empty_to_the_sentinel() {
 fn cache_keeps_a_json_literal_text_unchanged() {
     let cache = ContainerCaches::new(fixed_clock()).unwrap();
     cache
-        .store_owner("container:openai:c1", Some("\"bob\""))
+        .owner
+        .write("container:openai:c1", Some("\"bob\""))
         .unwrap();
     assert_eq!(
-        cache.owner("container:openai:c1").unwrap(),
-        CachedOwner::Owned("\"bob\"".to_owned())
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Known("\"bob\"".to_owned())
     );
     cache
-        .store_stored_id("container:openai:c1", Some("42"))
+        .stored_id
+        .write("container:openai:c1", Some("42"))
         .unwrap();
     assert_eq!(
-        cache.stored_id("container:openai:c1").unwrap(),
-        CachedStoredId::Known("42".to_owned())
+        cache.stored_id.read("container:openai:c1").unwrap(),
+        CachedText::Known("42".to_owned())
+    );
+}
+
+#[test]
+fn cache_owner_keeps_an_empty_owner_apart_from_the_untracked_answer() {
+    let cache = ContainerCaches::new(fixed_clock()).unwrap();
+    cache.owner.write("container:openai:c1", Some("")).unwrap();
+    assert_eq!(
+        cache.owner.read("container:openai:c1").unwrap(),
+        CachedText::Known(String::new())
     );
 }
 

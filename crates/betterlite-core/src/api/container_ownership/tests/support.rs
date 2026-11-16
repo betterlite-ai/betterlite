@@ -12,14 +12,14 @@ use indexmap::IndexMap;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Level};
-use tracing_subscriber::layer::{Context, Layer};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 use tracing_subscriber::registry;
 
 use super::super::repository::{
     ContainerObjectTable, ContainerOwnerRow, ContainerOwnerUpdate, ContainerOwnerWrite,
 };
 use super::super::response::synthetic_container;
-use super::super::{CONTAINER_OBJECT_PURPOSE, ContainerListPage, ContainerListSource};
+use super::super::{ContainerListPage, ContainerListSource};
 
 pub(crate) fn principal(user: &str) -> Principal {
     let document = format!(
@@ -75,6 +75,8 @@ pub(crate) struct State {
     pub(crate) effects: Vec<Effect>,
     pub(crate) rows: BTreeMap<String, ContainerOwnerRow>,
     pub(crate) owned: Vec<String>,
+    pub(crate) created: Vec<ContainerOwnerWrite>,
+    pub(crate) updated: Vec<ContainerOwnerUpdate>,
     pub(crate) failure: Option<&'static str>,
 }
 
@@ -85,6 +87,8 @@ impl Default for State {
             effects: Vec::new(),
             rows: BTreeMap::new(),
             owned: Vec::new(),
+            created: Vec::new(),
+            updated: Vec::new(),
             failure: None,
         }
     }
@@ -102,11 +106,11 @@ impl ScriptedObjects {
         objects
     }
 
-    pub(crate) fn update<Change>(&self, change: Change)
+    pub(crate) fn update<Change, Out>(&self, change: Change) -> Out
     where
-        Change: FnOnce(&mut State),
+        Change: FnOnce(&mut State) -> Out,
     {
-        change(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner));
+        change(&mut self.state.lock().unwrap_or_else(PoisonError::into_inner))
     }
 
     pub(crate) fn effects(&self) -> Vec<Effect> {
@@ -148,55 +152,21 @@ impl ScriptedObjects {
         self.update(|state| state.owned = model_object_ids.to_vec());
     }
 
-    pub(crate) fn created(&self) -> Vec<ContainerOwnerWrite> {
-        self.effects()
-            .into_iter()
-            .filter_map(|effect| match effect {
-                Effect::Create(write) => Some(*write),
-                Effect::FindUnique(_)
-                | Effect::FindContainer(_)
-                | Effect::FindOwned(_)
-                | Effect::Update(_) => None,
-            })
-            .collect()
-    }
-
-    pub(crate) fn updates(&self) -> Vec<ContainerOwnerUpdate> {
-        self.effects()
-            .into_iter()
-            .filter_map(|effect| match effect {
-                Effect::Update(update) => Some(*update),
-                Effect::FindUnique(_)
-                | Effect::FindContainer(_)
-                | Effect::FindOwned(_)
-                | Effect::Create(_) => None,
-            })
-            .collect()
-    }
-
-    fn found_unique(&self, model_object_id: &str) -> Result<Option<ContainerOwnerRow>, TableError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state
-            .effects
-            .push(Effect::FindUnique(model_object_id.to_owned()));
-        let found = state.rows.get(model_object_id).cloned();
-        let failure = state.failure;
-        drop(state);
-        outcome(failure, found)
-    }
-
-    fn found_container(
+    fn found(
         &self,
         model_object_id: &str,
+        file_purpose: Option<&str>,
     ) -> Result<Option<ContainerOwnerRow>, TableError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state
-            .effects
-            .push(Effect::FindContainer(model_object_id.to_owned()));
+        let effect = match file_purpose {
+            Some(_) => Effect::FindContainer(model_object_id.to_owned()),
+            None => Effect::FindUnique(model_object_id.to_owned()),
+        };
+        state.effects.push(effect);
         let found = state
             .rows
             .get(model_object_id)
-            .filter(|row| row.file_purpose == CONTAINER_OBJECT_PURPOSE)
+            .filter(|row| file_purpose.is_none_or(|purpose| row.file_purpose == purpose))
             .cloned();
         let failure = state.failure;
         drop(state);
@@ -215,6 +185,7 @@ impl ScriptedObjects {
     fn written(&self, write: &ContainerOwnerWrite) -> Result<(), TableError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.effects.push(Effect::Create(Box::new(write.clone())));
+        state.created.push(write.clone());
         let failure = state.failure;
         if failure.is_none() {
             state
@@ -229,6 +200,7 @@ impl ScriptedObjects {
     fn changed(&self, update: &ContainerOwnerUpdate) -> Result<(), TableError> {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.effects.push(Effect::Update(Box::new(update.clone())));
+        state.updated.push(update.clone());
         let failure = state.failure;
         let mut missing = false;
         if failure.is_none() {
@@ -258,18 +230,12 @@ impl ContainerObjectTable for ScriptedObjects {
         Err(TableError::Database(DbError::NoDbConnected))
     }
 
-    fn find_unique(
+    fn find_row(
         &self,
         model_object_id: &str,
+        file_purpose: Option<&str>,
     ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send {
-        ready(self.found_unique(model_object_id))
-    }
-
-    fn find_container(
-        &self,
-        model_object_id: &str,
-    ) -> impl Future<Output = Result<Option<ContainerOwnerRow>, TableError>> + Send {
-        ready(self.found_container(model_object_id))
+        ready(self.found(model_object_id, file_purpose))
     }
 
     fn find_owned(

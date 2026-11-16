@@ -1,8 +1,9 @@
-use super::cache::CachedStoredId;
+use super::cache::CachedText;
 use super::errors::ContainerOwnershipError;
 use super::repository::ContainerObjectTable;
 use super::{
-    ContainerForwardingParams, ContainerIdentity, ContainerOwnership, container_model_object_id,
+    CONTAINER_OBJECT_PURPOSE, ContainerForwardingParams, ContainerIdentity, ContainerOwnership,
+    container_model_object_id,
 };
 use crate::api::response_id_codecs::container::decode_container_id;
 
@@ -41,22 +42,23 @@ where
         &identity.original_container_id,
         &identity.custom_llm_provider,
     );
-    match ownership.caches.stored_id(&model_object_id)? {
-        CachedStoredId::Absent => return Ok(None),
-        CachedStoredId::Known(stored_id) => return Ok(Some(stored_id)),
-        CachedStoredId::Miss => {}
+    match ownership.caches.stored_id.read(&model_object_id)? {
+        CachedText::Absent => return Ok(None),
+        CachedText::Known(stored_id) => return Ok(Some(stored_id)),
+        CachedText::Miss => {}
     }
     if !ownership.database_ready()? {
         return Ok(None);
     }
     let stored_id = ownership
         .objects
-        .find_container(&model_object_id)
+        .find_row(&model_object_id, Some(CONTAINER_OBJECT_PURPOSE))
         .await?
         .and_then(|row| row.unified_object_id)
         .filter(|found| !found.is_empty());
     ownership
         .caches
-        .store_stored_id(&model_object_id, stored_id.as_deref())?;
+        .stored_id
+        .write(&model_object_id, stored_id.as_deref())?;
     Ok(stored_id)
 }

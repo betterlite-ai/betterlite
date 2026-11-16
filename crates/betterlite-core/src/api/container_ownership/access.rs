@@ -1,9 +1,9 @@
-use super::cache::CachedOwner;
+use super::cache::CachedText;
 use super::errors::ContainerOwnershipError;
 use super::repository::ContainerObjectTable;
 use super::{
-    ContainerCaller, ContainerIdentity, ContainerOwnership, container_model_object_id,
-    decode_for_ownership,
+    CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerIdentity, ContainerOwnership,
+    container_model_object_id, decode_for_ownership,
 };
 use crate::api::managed_resource_store::{is_proxy_admin, user_can_access_resource_owner};
 
@@ -38,24 +38,29 @@ where
         &identity.original_container_id,
         &identity.custom_llm_provider,
     );
-    match ownership.caches.owner(&model_object_id)? {
-        CachedOwner::Untracked => return Ok(None),
-        CachedOwner::Owned(owner) => return Ok(Some(owner)),
-        CachedOwner::Miss => {}
+    match ownership.caches.owner.read(&model_object_id)? {
+        CachedText::Absent => return Ok(None),
+        CachedText::Known(owner) => return Ok(Some(owner)),
+        CachedText::Miss => {}
     }
     if !ownership.database_ready()? {
         return Ok(None);
     }
-    let row = ownership.objects.find_container(&model_object_id).await?;
+    let row = ownership
+        .objects
+        .find_row(&model_object_id, Some(CONTAINER_OBJECT_PURPOSE))
+        .await?;
     let owner = row.as_ref().and_then(|found| found.created_by.clone());
     let stored_id = row
         .as_ref()
         .and_then(|found| found.unified_object_id.as_deref());
     ownership
         .caches
-        .store_owner(&model_object_id, owner.as_deref())?;
+        .owner
+        .write(&model_object_id, owner.as_deref())?;
     ownership
         .caches
-        .store_stored_id(&model_object_id, stored_id)?;
+        .stored_id
+        .write(&model_object_id, stored_id)?;
     Ok(owner)
 }

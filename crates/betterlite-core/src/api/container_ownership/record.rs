@@ -37,10 +37,12 @@ where
     store_owned_container(ownership, write, caller.principal).await?;
     ownership
         .caches
-        .store_owner(&model_object_id, Some(&owner.0))?;
+        .owner
+        .write(&model_object_id, Some(&owner.0))?;
     ownership
         .caches
-        .store_stored_id(&model_object_id, Some(container_id))?;
+        .stored_id
+        .write(&model_object_id, Some(container_id))?;
     forget_allowed(ownership, caller.principal)
 }
 
@@ -127,7 +129,7 @@ where
 {
     let Some(existing) = ownership
         .objects
-        .find_unique(&write.model_object_id)
+        .find_row(&write.model_object_id, None)
         .await?
     else {
         ownership.objects.create(write).await?;

@@ -48,14 +48,12 @@ fn record_json(record: &Record) -> Json {
 // _custom_llm_provider_from_responses_response; a non-mapping _hidden_params reads as absent here
 #[must_use]
 pub(crate) fn response_provider(response: &Record) -> String {
-    let provider = response
+    response
         .field(HIDDEN_PARAMS_FIELD)
         .and_then(|hidden| hidden.field("custom_llm_provider"))
-        .and_then(Record::as_text);
-    match provider {
-        Some(provider) if !provider.is_empty() => provider.to_owned(),
-        Some(_) | None => DEFAULT_PROVIDER.to_owned(),
-    }
+        .and_then(Record::as_text)
+        .filter(|provider| !provider.is_empty())
+        .map_or_else(|| DEFAULT_PROVIDER.to_owned(), str::to_owned)
 }
 
 // the file_object a row stores: the dumped response with the resolved provider and upstream id stamped on

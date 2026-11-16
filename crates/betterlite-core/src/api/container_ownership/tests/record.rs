@@ -154,7 +154,7 @@ async fn record_rejects_forbidden_update() {
     assert!(matches!(&error, ContainerOwnershipError::Forbidden));
     assert_eq!(error.status_code(), 403);
     assert_eq!(error.to_string(), "Forbidden");
-    assert!(objects.updates().is_empty());
+    assert!(objects.update(|state| state.updated.is_empty()));
 }
 
 #[tokio::test]
@@ -169,7 +169,7 @@ async fn record_creates_a_row_for_a_new_container() {
     record_container_owner(&ownership, &synthetic_container("container-1"), caller)
         .await
         .unwrap();
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created.len(), 1);
     let write = &created[0];
     assert_eq!(write.unified_object_id, "container-1");
@@ -288,8 +288,8 @@ async fn record_updates_a_row_owned_by_the_caller() {
     record_container_owner(&ownership, &synthetic_container("container-1"), caller)
         .await
         .unwrap();
-    assert!(objects.created().is_empty());
-    let updates = objects.updates();
+    assert!(objects.update(|state| state.created.clone()).is_empty());
+    let updates = objects.update(|state| state.updated.clone());
     assert_eq!(updates.len(), 1);
     assert_eq!(updates[0].model_object_id, "container:azure:container-1");
     assert_eq!(updates[0].unified_object_id, "container-1");
@@ -309,7 +309,7 @@ async fn record_keeps_a_managed_id_as_the_stored_id() {
     record_container_owner(&ownership, &synthetic_container(&managed), caller)
         .await
         .unwrap();
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].unified_object_id, managed);
     assert_eq!(
@@ -331,7 +331,7 @@ async fn record_keeps_a_caller_provider_that_is_not_openai() {
     record_container_owner(&ownership, &synthetic_container(&managed), caller)
         .await
         .unwrap();
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created[0].model_object_id, "container:azure:container-raw");
     let Json::Object(fields) = &created[0].file_object else {
         panic!("the owner file object is a mapping");
@@ -358,7 +358,7 @@ async fn batch_recording_survives_a_container_batch_exception() {
     .unwrap();
     let (logs, _guard) = capture_logs();
     record_response_containers(&ownership, &response, Some(&alice), None).await;
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].model_object_id, "container:azure:container-b");
     let errors = logs.errors();
@@ -376,7 +376,7 @@ async fn batch_recording_reads_the_provider_from_the_hidden_params() {
     )
     .unwrap();
     record_response_containers(&ownership, &response, Some(&alice), None).await;
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created.len(), 1);
     assert_eq!(created[0].model_object_id, "container:azure:container-c");
     let Json::Object(fields) = &created[0].file_object else {
@@ -398,7 +398,7 @@ async fn batch_recording_ignores_an_empty_provider_argument() {
     )
     .unwrap();
     record_response_containers(&ownership, &response, Some(&alice), Some("")).await;
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(created[0].model_object_id, "container:azure:container-c");
 }
 
@@ -412,7 +412,7 @@ async fn batch_recording_prefers_the_caller_provider() {
     )
     .unwrap();
     record_response_containers(&ownership, &response, Some(&alice), Some("anthropic")).await;
-    let created = objects.created();
+    let created = objects.update(|state| state.created.clone());
     assert_eq!(
         created[0].model_object_id,
         "container:anthropic:container-c"

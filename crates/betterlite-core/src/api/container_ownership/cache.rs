@@ -22,109 +22,111 @@ pub(crate) fn allowed_ids_cache_key(owner_scopes: &[String]) -> Result<String, s
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CachedOwner {
-    Miss,
-    Untracked,
-    Owned(String),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum CachedStoredId {
+pub(crate) enum CachedText {
     Miss,
     Absent,
     Known(String),
 }
 
+// one InMemoryCache: the lock is taken here so the callers hold no guard
+struct Slot(Mutex<LocalTtlCache>);
+
+impl Slot {
+    fn new(capacity: i64, clock: Clock) -> Result<Self, CacheError> {
+        let cache = LocalTtlCache::with_clock(
+            Some(capacity),
+            Some(CACHE_TTL_SECONDS),
+            Some(ITEM_KIB),
+            ITEM_KIB,
+            clock,
+        )?;
+        Ok(Self(Mutex::new(cache)))
+    }
+
+    fn with<Out>(&self, action: impl FnOnce(&mut LocalTtlCache) -> Out) -> Out {
+        let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let out = action(&mut guard);
+        drop(guard);
+        out
+    }
+}
+
+// a text cache whose miss and whose "nothing there" answer differ: the second one is stored as a sentinel
+pub(crate) struct SentinelCache {
+    slot: Slot,
+    sentinel: &'static str,
+    blank_is_absent: bool,
+}
+
+impl SentinelCache {
+    fn new(
+        capacity: i64,
+        clock: Clock,
+        sentinel: &'static str,
+        blank_is_absent: bool,
+    ) -> Result<Self, CacheError> {
+        Ok(Self {
+            slot: Slot::new(capacity, clock)?,
+            sentinel,
+            blank_is_absent,
+        })
+    }
+
+    pub(crate) fn read(&self, model_object_id: &str) -> Result<CachedText, CacheError> {
+        let Some(text) = wrapped_text(self.slot.with(|cache| cache.get(model_object_id))?) else {
+            return Ok(CachedText::Miss);
+        };
+        if text == self.sentinel {
+            return Ok(CachedText::Absent);
+        }
+        Ok(CachedText::Known(text))
+    }
+
+    pub(crate) fn write(
+        &self,
+        model_object_id: &str,
+        value: Option<&str>,
+    ) -> Result<(), CacheError> {
+        let stored = value
+            .filter(|text| !(self.blank_is_absent && text.is_empty()))
+            .unwrap_or(self.sentinel);
+        let wrapped = CacheValue::Array(vec![CacheValue::Text(stored.to_owned())]);
+        self.slot
+            .with(|cache| cache.set(model_object_id, wrapped, None))
+    }
+}
+
 pub(crate) struct ContainerCaches {
-    owner: Mutex<LocalTtlCache>,
-    stored_id: Mutex<LocalTtlCache>,
-    allowed: Mutex<LocalTtlCache>,
+    pub(crate) owner: SentinelCache,
+    pub(crate) stored_id: SentinelCache,
+    allowed: Slot,
 }
 
 impl ContainerCaches {
     pub(crate) fn new(clock: Clock) -> Result<Self, CacheError> {
         Ok(Self {
-            owner: Mutex::new(cache(OWNER_CAPACITY, Arc::clone(&clock))?),
-            stored_id: Mutex::new(cache(STORED_ID_CAPACITY, Arc::clone(&clock))?),
-            allowed: Mutex::new(cache(ALLOWED_CAPACITY, clock)?),
+            owner: SentinelCache::new(
+                OWNER_CAPACITY,
+                Arc::clone(&clock),
+                NEGATIVE_OWNER_SENTINEL,
+                false,
+            )?,
+            stored_id: SentinelCache::new(
+                STORED_ID_CAPACITY,
+                Arc::clone(&clock),
+                NEGATIVE_STORED_ID_SENTINEL,
+                true,
+            )?,
+            allowed: Slot::new(ALLOWED_CAPACITY, clock)?,
         })
-    }
-
-    pub(crate) fn owner(&self, model_object_id: &str) -> Result<CachedOwner, CacheError> {
-        let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
-        let cached = guard.get(model_object_id)?;
-        drop(guard);
-        let Some(text) = wrapped_text(cached) else {
-            return Ok(CachedOwner::Miss);
-        };
-        Ok(match text.as_str() {
-            NEGATIVE_OWNER_SENTINEL => CachedOwner::Untracked,
-            _ => CachedOwner::Owned(text),
-        })
-    }
-
-    pub(crate) fn store_owner(
-        &self,
-        model_object_id: &str,
-        owner: Option<&str>,
-    ) -> Result<(), CacheError> {
-        let stored = owner.map_or_else(|| NEGATIVE_OWNER_SENTINEL.to_owned(), str::to_owned);
-        let mut guard = self.owner.lock().unwrap_or_else(PoisonError::into_inner);
-        let written = guard.set(
-            model_object_id,
-            CacheValue::Array(vec![CacheValue::Text(stored)]),
-            None,
-        );
-        drop(guard);
-        written
-    }
-
-    pub(crate) fn stored_id(&self, model_object_id: &str) -> Result<CachedStoredId, CacheError> {
-        let mut guard = self
-            .stored_id
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let cached = guard.get(model_object_id)?;
-        drop(guard);
-        let Some(text) = wrapped_text(cached) else {
-            return Ok(CachedStoredId::Miss);
-        };
-        Ok(match text.as_str() {
-            NEGATIVE_STORED_ID_SENTINEL => CachedStoredId::Absent,
-            _ => CachedStoredId::Known(text),
-        })
-    }
-
-    pub(crate) fn store_stored_id(
-        &self,
-        model_object_id: &str,
-        stored_id: Option<&str>,
-    ) -> Result<(), CacheError> {
-        let stored = stored_id
-            .filter(|found| !found.is_empty())
-            .map_or_else(|| NEGATIVE_STORED_ID_SENTINEL.to_owned(), str::to_owned);
-        let mut guard = self
-            .stored_id
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        let written = guard.set(
-            model_object_id,
-            CacheValue::Array(vec![CacheValue::Text(stored)]),
-            None,
-        );
-        drop(guard);
-        written
     }
 
     pub(crate) fn allowed(&self, cache_key: &str) -> Result<Option<Vec<String>>, CacheError> {
-        let mut guard = self.allowed.lock().unwrap_or_else(PoisonError::into_inner);
-        let cached = guard.get(cache_key)?;
-        drop(guard);
-        let Some(CacheValue::Array(items)) = cached else {
+        let Some(CacheValue::Array(items)) = self.allowed.with(|cache| cache.get(cache_key))?
+        else {
             return Ok(None);
         };
-        let allowed = items.into_iter().filter_map(cached_text).collect();
-        Ok(Some(allowed))
+        Ok(Some(items.into_iter().filter_map(cached_text).collect()))
     }
 
     pub(crate) fn store_allowed(
@@ -132,20 +134,16 @@ impl ContainerCaches {
         cache_key: &str,
         allowed: &[String],
     ) -> Result<(), CacheError> {
-        let items: Vec<CacheValue> = allowed
+        let items = allowed
             .iter()
             .map(|model_object_id| CacheValue::Text(model_object_id.clone()))
             .collect();
-        let mut guard = self.allowed.lock().unwrap_or_else(PoisonError::into_inner);
-        let written = guard.set(cache_key, CacheValue::Array(items), None);
-        drop(guard);
-        written
+        self.allowed
+            .with(|cache| cache.set(cache_key, CacheValue::Array(items), None))
     }
 
     pub(crate) fn forget_allowed(&self, cache_key: &str) {
-        let mut guard = self.allowed.lock().unwrap_or_else(PoisonError::into_inner);
-        guard.delete(cache_key);
-        drop(guard);
+        self.allowed.with(|cache| cache.delete(cache_key));
     }
 }
 
@@ -169,14 +167,4 @@ fn cached_text(value: CacheValue) -> Option<String> {
         | CacheValue::Array(_)
         | CacheValue::Object(_) => None,
     }
-}
-
-fn cache(capacity: i64, clock: Clock) -> Result<LocalTtlCache, CacheError> {
-    LocalTtlCache::with_clock(
-        Some(capacity),
-        Some(CACHE_TTL_SECONDS),
-        Some(ITEM_KIB),
-        ITEM_KIB,
-        clock,
-    )
 }
