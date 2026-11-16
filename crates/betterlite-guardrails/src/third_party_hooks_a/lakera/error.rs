@@ -1,3 +1,6 @@
+use std::string::FromUtf8Error;
+
+use betterlite_http::proxy::limits::ReadError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
@@ -12,6 +15,16 @@ pub enum LakeraHookError {
     Transport {
         #[source]
         source: reqwest::Error,
+    },
+    #[error("the Lakera guardrail answer could not be read")]
+    Read {
+        #[source]
+        source: ReadError,
+    },
+    #[error("the Lakera guardrail error text is not valid UTF-8")]
+    ErrorText {
+        #[source]
+        source: FromUtf8Error,
     },
     #[error("the Lakera guardrail answer is not valid JSON")]
     ResponseJson {
@@ -44,6 +57,8 @@ impl LakeraHookError {
                 | GuardrailSelectionError::DynamicParamsNotObject { .. } => StatusCode::BAD_REQUEST,
             },
             Self::Transport { .. }
+            | Self::Read { .. }
+            | Self::ErrorText { .. }
             | Self::ResponseJson { .. }
             | Self::Encode { .. }
             | Self::Header { .. }

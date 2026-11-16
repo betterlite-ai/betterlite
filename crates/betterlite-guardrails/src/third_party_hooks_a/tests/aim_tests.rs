@@ -1,7 +1,7 @@
 use axum::http::StatusCode;
 
 use super::support::{
-    AimMode, aim_guardrail, chat_data, chat_response, content_of, message, serve_aim,
+    AimMode, aim_guardrail, chat_data, chat_response, content_of, message, serve, serve_aim,
 };
 use crate::aim::error::{AimError, CONTENT_POLICY_VIOLATION};
 use crate::lasso_masking::wire::ModelResponseShape;
@@ -180,4 +180,33 @@ async fn aim_post_call_ignores_choices_without_a_message() {
         .await
         .expect("post_call");
     assert!(captured.lock().expect("captured").is_empty());
+}
+
+#[tokio::test]
+async fn aim_a_failed_call_is_an_internal_error_for_pre_call_and_post_call() {
+    let down = vec![
+        (StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()),
+        (StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()),
+    ];
+    let (base, _server, _captured) = serve("/fw/v1/analyze", down).await;
+    let guardrail = aim_guardrail(&base, false);
+    let mut data = chat_data(&[message("user", "hello")]);
+    let pre_call = aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::PreCall,
+        "completion",
+        None,
+    )
+    .await
+    .expect_err("pre_call");
+    assert!(matches!(&pre_call, ThirdPartyHookError::Aim(_)));
+    assert_eq!(pre_call.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    let mut response = chat_response(&["first"]);
+    let post_call = aim::post_call_success(&guardrail, &data, &mut response, None)
+        .await
+        .expect_err("post_call");
+    assert!(matches!(&post_call, ThirdPartyHookError::Aim(_)));
+    assert_eq!(post_call.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(content_of(&response, 0).as_deref(), Some("first"));
 }

@@ -73,11 +73,13 @@ async fn check_request(
     let payload = build_akto_payload(guardrail, &inputs, request_data, REQUEST_STATUS, false)?;
     let verdict = match verdict_of(guardrail, &payload).await {
         Ok(verdict) => verdict,
-        // only a failed connection or an error status is unreachable; a malformed answer propagates as itself
+        // a failed connection, an error status or an unreadable answer is an unreachable service
         Err(
             error @ (AktoError::Transport { .. }
             | AktoError::HttpStatus { .. }
-            | AktoError::InvalidHeader { .. }),
+            | AktoError::InvalidHeader { .. }
+            | AktoError::ResponseJson { .. }
+            | AktoError::ResponseTooLarge { .. }),
         ) => return Ok(guardrail.handle_unreachable(inputs, &error)?),
         Err(error) => return Err(ThirdPartyHookError::Akto(error)),
     };

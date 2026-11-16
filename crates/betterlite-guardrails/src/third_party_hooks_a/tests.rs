@@ -6,3 +6,4 @@ mod conduct_tests;
 mod lakera_tests;
 mod lasso_tests;
 mod support;
+mod wire_corpus_tests;

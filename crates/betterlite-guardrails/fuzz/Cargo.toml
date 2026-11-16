@@ -192,3 +192,10 @@ path = "fuzz_targets/pillar_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "third_party_hooks_wire"
+path = "fuzz_targets/third_party_hooks_wire.rs"
+test = false
+doc = false
+bench = false

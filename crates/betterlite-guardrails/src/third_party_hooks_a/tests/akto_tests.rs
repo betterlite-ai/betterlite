@@ -349,13 +349,74 @@ async fn akto_error_status_is_unreachable() {
 }
 
 #[tokio::test]
-async fn akto_malformed_answer_is_not_unreachable() {
+async fn akto_malformed_answer_follows_the_configured_fallback() {
     let (base, _server, _captured) = serve(
         "/api/http-proxy",
-        vec![(StatusCode::OK, "not json".to_owned())],
+        vec![
+            (StatusCode::OK, "not json".to_owned()),
+            (StatusCode::OK, "not json".to_owned()),
+        ],
     )
     .await;
-    let guardrail = akto_guardrail(&base, AktoFallback::FailOpen);
+    let mode = LitellmParamsMode::One("pre_call".to_owned());
+    let inputs = akto_inputs();
+    let open = akto_guardrail(&base, AktoFallback::FailOpen);
+    let returned = akto::apply_guardrail(
+        &open,
+        inputs.clone(),
+        &akto_request_data(),
+        GuardrailInputType::Request,
+        &mode,
+    )
+    .await
+    .expect("fail-open");
+    assert_eq!(returned, inputs);
+    let closed = akto_guardrail(&base, AktoFallback::FailClosed);
+    let error = akto::apply_guardrail(
+        &closed,
+        inputs,
+        &akto_request_data(),
+        GuardrailInputType::Request,
+        &mode,
+    )
+    .await
+    .expect_err("fail-closed");
+    assert!(matches!(
+        &error,
+        ThirdPartyHookError::Akto(AktoError::Unreachable)
+    ));
+    assert_eq!(error.status_code(), StatusCode::SERVICE_UNAVAILABLE);
+}
+
+#[tokio::test]
+async fn akto_response_side_send_errors_never_fail_the_request() {
+    let down = vec![(StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned())];
+    let (base, _server, captured) = serve("/api/http-proxy", down).await;
+    let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
+    let inputs = akto_inputs();
+    let returned = akto::apply_guardrail(
+        &guardrail,
+        inputs.clone(),
+        &akto_response_data(),
+        GuardrailInputType::Response,
+        &LitellmParamsMode::One("post_call".to_owned()),
+    )
+    .await
+    .expect("response");
+    assert_eq!(returned, inputs);
+    guardrail.tasks.close();
+    guardrail.tasks.wait().await;
+    assert_eq!(captured.lock().expect("captured").len(), 1);
+}
+
+#[tokio::test]
+async fn akto_blocked_ingest_errors_still_answer_403() {
+    let answers = vec![
+        (StatusCode::OK, blocked_answer()),
+        (StatusCode::INTERNAL_SERVER_ERROR, "down".to_owned()),
+    ];
+    let (base, _server, captured) = serve("/api/http-proxy", answers).await;
+    let guardrail = akto_guardrail(&base, AktoFallback::FailClosed);
     let error = akto::apply_guardrail(
         &guardrail,
         akto_inputs(),
@@ -364,10 +425,9 @@ async fn akto_malformed_answer_is_not_unreachable() {
         &LitellmParamsMode::One("pre_call".to_owned()),
     )
     .await
-    .expect_err("malformed answer");
-    assert!(matches!(
-        &error,
-        ThirdPartyHookError::Akto(AktoError::ResponseJson { .. })
-    ));
-    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+    .expect_err("blocked");
+    assert_eq!(error.status_code(), StatusCode::FORBIDDEN);
+    guardrail.tasks.close();
+    guardrail.tasks.wait().await;
+    assert_eq!(captured.lock().expect("captured").len(), 2);
 }

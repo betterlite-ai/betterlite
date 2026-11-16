@@ -27,9 +27,9 @@ pub struct ClassifixAnswer {
 
 // The classifix messages parse on their own, since LassoResponse has no field for them.
 #[derive(Deserialize)]
-struct MaskedMessages {
+pub struct MaskedMessages {
     #[serde(default)]
-    messages: Option<Vec<LassoMessage>>,
+    pub messages: Option<Vec<LassoMessage>>,
 }
 
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);

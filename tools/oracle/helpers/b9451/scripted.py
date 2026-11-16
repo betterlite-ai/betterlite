@@ -3,7 +3,7 @@ import socketserver
 from collections.abc import AsyncGenerator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from json import dumps
-from typing import Literal, Protocol, TypedDict, TypeVar
+from typing import Literal, NotRequired, Protocol, TypedDict, TypeVar
 from urllib.parse import parse_qsl, urlsplit
 
 from fastapi import HTTPException
@@ -28,6 +28,7 @@ class Answer(TypedDict):
     status: int
     headers: dict[str, str]
     body: Json
+    events: NotRequired[list[str]]
 
 
 class Seen(TypedDict):
@@ -61,7 +62,9 @@ class Scripted:
         body = TypeAdapter(Json).validate_json(text)
         self.seen.append(Seen(path=target.path, query=query, headers=headers, body=body))
         answer = self.answers[len(self.seen) - 1]
-        encoded = dumps(answer["body"]).encode()
+        events = answer.get("events")
+        payload = dumps(answer["body"]) if events is None else "".join(f"data: {event}\n\n" for event in events)
+        encoded = payload.encode()
         lines = [f"HTTP/1.1 {answer['status']} OK", f"Content-Length: {len(encoded)}"]
         lines.extend(f"{name}: {value}" for name, value in answer["headers"].items())
         writer.write("\r\n".join(lines).encode() + b"\r\n\r\n" + encoded)

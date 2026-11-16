@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::enums::{Role, default_roles};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::legacy_guardrails::Settings;
+use betterlite_http::proxy::limits::read_bounded;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderValue};
 use secrecy::ExposeSecret as _;
@@ -22,6 +23,7 @@ use error::{LakeraHookError, rejection_error};
 // enabled_roles come from the item named prompt_injection, not the lakera_prompt_injection callback name
 const CONFIG_ITEM_NAME: &str = "prompt_injection";
 const PROMPT_INJECTION_PATH: &str = "/v1/prompt_injection";
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 pub struct LakeraSelection<'call> {
     pub should_proceed: bool,
@@ -133,29 +135,22 @@ impl LegacyLakeraHooks {
 
     async fn handle_response(
         &self,
-        response: reqwest::Response,
+        mut response: reqwest::Response,
     ) -> Result<(), ThirdPartyHookError> {
         let status = response.status();
-        if status == StatusCode::OK {
-            return self.checked(response).await;
-        }
         // any other 2xx answer is accepted unchecked; an error status fails with its body as the text
-        if status.is_success() {
+        if status.is_success() && status != StatusCode::OK {
             return Ok(());
         }
-        let text = response
-            .text()
+        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
             .await
-            .map_err(|source| LakeraHookError::Transport { source })?;
-        Err(ThirdPartyHookError::Failure { message: text })
-    }
-
-    async fn checked(&self, response: reqwest::Response) -> Result<(), ThirdPartyHookError> {
-        let text = response
-            .text()
-            .await
-            .map_err(|source| LakeraHookError::Transport { source })?;
-        let parsed: LakeraModerationResponse = serde_json::from_str(&text)
+            .map_err(|source| LakeraHookError::Read { source })?;
+        if status != StatusCode::OK {
+            let message =
+                String::from_utf8(body).map_err(|source| LakeraHookError::ErrorText { source })?;
+            return Err(ThirdPartyHookError::Failure { message });
+        }
+        let parsed: LakeraModerationResponse = serde_json::from_slice(&body)
             .map_err(|source| LakeraHookError::ResponseJson { source })?;
         if let Some(rejection) = self.moderation.check_response_flagged(&parsed) {
             return rejection_error(&rejection);
