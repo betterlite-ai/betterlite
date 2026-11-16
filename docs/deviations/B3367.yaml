@@ -48,4 +48,12 @@ deviations:
       Option<f64> cannot tell an omitted argument from an explicit null, and docs/compatibility.md makes an absent or
       null value take the declared default, which is 600.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1361
+  - what: >-
+      A timeout reaches the caller with betterlite's transport message ("the request ran past its read timeout or
+      total deadline") rather than LiteLLM's "Connection timed out after {timeout} seconds."; the Timeout class and
+      its 408 status match.
+    why: >-
+      The timeout is detected by the shared HTTP transport and the failure keeps the handler's message, so the
+      upload module would have to rebuild LiteLLM's wording from the timeout it resolved.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1516-L1521
 kept_bugs: []
