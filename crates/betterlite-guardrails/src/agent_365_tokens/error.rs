@@ -66,7 +66,7 @@ pub enum Agent365TokenError {
     BadAccessToken,
     #[error("HTTP {status}")]
     Throttled { status: u16 },
-    #[error("HTTP {status}")]
+    #[error("Entra token endpoint returned {status}")]
     HttpStatus { status: u16 },
     #[error("the Agent 365 token expiry is out of range")]
     TokenExpiry,
