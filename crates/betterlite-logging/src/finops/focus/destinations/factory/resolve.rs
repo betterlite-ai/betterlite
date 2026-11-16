@@ -39,6 +39,7 @@ pub struct DestinationOverrides {
     pub connection_id: Option<String>,
 }
 
+#[derive(Clone, Copy)]
 enum Text {
     S3Bucket,
     GcsBucket,
@@ -49,6 +50,7 @@ enum Text {
     MavvrikConnectionId,
 }
 
+#[derive(Clone, Copy)]
 enum Credential {
     S3AccessKey,
     S3SecretKey,
