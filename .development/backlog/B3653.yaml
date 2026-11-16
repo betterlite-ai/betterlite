@@ -1,7 +1,7 @@
 id: B3653
 milestone: M5 api families
 title: Deepgram listen and Fal queue spend logging
-status: todo
+status: done
 depends_on: [B068, B1531, B1542]
 file: tasks/B3653-media-relay-logging.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/fal_ai_passthrough_logging_handler.py"
 parent: B103
 split_from: B103
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2045
