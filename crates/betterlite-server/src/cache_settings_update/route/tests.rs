@@ -18,6 +18,7 @@ const NO_DATABASE: &str =
     r#"{"detail":{"error":"Database not connected. Please connect a database."}}"#;
 const STORE_MODEL_IN_DB: &str =
     r#"{"detail":{"error":"Set `'STORE_MODEL_IN_DB='True'` in your env to enable this feature."}}"#;
+const NEW_SETTINGS: &str = r#"{"type":"redis","host":"h","password":"new-secret","ttl":60}"#;
 const UNAUTHENTICATED: &str = r#"{"error":{"message":"the API key is not valid","type":"auth_error","param":"None","code":"401"}}"#;
 
 fn string(value: &str) -> JsonValue {
@@ -112,14 +113,10 @@ async fn route_refuses_a_request_while_store_model_in_db_is_off() {
 }
 
 #[tokio::test]
-async fn route_creates_the_row_and_reinitializes_the_cache() {
+async fn route_stores_the_encrypted_settings_and_redacts_the_reply() {
     let (fake, repository) = support::fake_repository();
-    let reinit = support::reinit();
-    let audit = support::audit(true);
-    let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
-    let body = support::request_body(support::json(
-        r#"{"type":"redis","host":"h","password":"new-secret","ttl":60}"#,
-    ));
+    let harness = support::harness(Some(repository), support::reinit(), support::audit(true));
+    let body = support::request_body(support::json(NEW_SETTINGS));
     let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -135,8 +132,18 @@ async fn route_creates_the_row_and_reinitializes_the_cache() {
         support::json(&upserted[0]).get("password"),
         Some(&string("new-secret"))
     );
-    let expected =
-        support::params(r#"{"type":"redis","host":"h","password":"new-secret","ttl":60}"#);
+}
+
+#[tokio::test]
+async fn route_creates_the_row_and_reinitializes_the_cache() {
+    let (_fake, repository) = support::fake_repository();
+    let reinit = support::reinit();
+    let audit = support::audit(true);
+    let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
+    let body = support::request_body(support::json(NEW_SETTINGS));
+    let (status, _text) = support::post(&harness, Some(support::master_key()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    let expected = support::params(NEW_SETTINGS);
     assert_eq!(
         reinit.calls(),
         vec![
