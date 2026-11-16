@@ -301,9 +301,15 @@ fn encode_container_id_encodes_a_null_target_model_names() {
 fn encode_container_id_returns_the_raw_id_without_routing_metadata() {
     let metadata = json_map(r#"{"model_info": {}}"#);
     let extra_body = json_map(r#"{"other": 1}"#);
+    let null_model_info = json_map(r#"{"model_info": null}"#);
     assert_eq!(
         encode_container_id_in_response("container_1", Some("azure"), Some(&metadata), None)
             .expect("an empty model_info encodes nothing"),
+        "container_1"
+    );
+    assert_eq!(
+        encode_container_id_in_response("container_1", Some("azure"), Some(&null_model_info), None)
+            .expect("a null model_info encodes nothing"),
         "container_1"
     );
     assert_eq!(
