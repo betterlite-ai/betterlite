@@ -1,0 +1,24 @@
+{
+  "api_base": {
+    "description": "The URL of the Hiddenlayer server. If not provided, the `HIDDENLAYER_API_BASE` environment variable is checked or https://api.hiddenlayer.ai is used.",
+    "required": false,
+    "type": "string"
+  },
+  "api_id": {
+    "description": "The Hiddenlayer API Id for the Hiddenlayer API. If not provided, the `HIDDENLAYER_CLIENT_ID` environment variable is checked or https://api.hiddenlayer.ai is used.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The Hiddenlayer Secret Key for the Hiddenlayer API.. If not provided, the `HIDDENLAYER_CLIENT_SECRET` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "ui_friendly_name": "Hiddenlayer Guardrail",
+  "version": {
+    "default_value": 2,
+    "description": "Hiddenlayer guardrail version to use.",
+    "required": false,
+    "type": "number"
+  }
+}

@@ -141,7 +141,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_v2_params::/)'
     - id: s3-params-oracle
       why: every case in the s3-v2-params folder must still match LiteLLM once both summaries report more fields
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_s3_v2_params_case_corpus)'
     - id: helper-python
       why: the b3992 Python adapter must stay lint and type clean after the summary change
       run: uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3992.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json

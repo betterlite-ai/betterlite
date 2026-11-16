@@ -1,0 +1,39 @@
+{
+  "api_base": {
+    "description": "Base URL for the headroom compression service (e.g. https://api.headroom.ai). Falls back to HEADROOM_API_BASE env var.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "API key for the headroom compression service. Falls back to HEADROOM_API_KEY env var.",
+    "required": false,
+    "type": "string"
+  },
+  "ccr_retrieval": {
+    "default_value": true,
+    "description": "Inject the Headroom retrieval tool for hashes declared by the compression service.",
+    "required": false,
+    "type": "boolean"
+  },
+  "model": {
+    "description": "Model name forwarded to the headroom /v1/compress endpoint.",
+    "required": false,
+    "type": "string"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the guardrail",
+    "required": false,
+    "type": "string"
+  },
+  "ui_friendly_name": "Headroom",
+  "unreachable_fallback": {
+    "default_value": "fail_closed",
+    "description": "Behavior when the headroom compression service is unreachable or errors. 'fail_closed' raises an error (default). 'fail_open' logs a critical error and forwards the request uncompressed instead of blocking it.",
+    "options": [
+      "fail_closed",
+      "fail_open"
+    ],
+    "required": false,
+    "type": "select"
+  }
+}

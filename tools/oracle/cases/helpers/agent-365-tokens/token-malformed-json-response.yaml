@@ -1,0 +1,12 @@
+kind: helper
+name: token-malformed-json-response
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: null, raw: "not json"}
+    repeat_last_reply: false
+    steps:
+      - {kind: token, assertion: header.payload.signature}
+env: {}
+compare: {ignore: []}

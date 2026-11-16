@@ -5,6 +5,9 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[features]
+testing = []
+
 [dependencies]
 aho-corasick = "1.1.5"
 async-trait = "0.1.92"
@@ -18,6 +21,7 @@ aws-types = "=1.6.0"
 axum = { workspace = true, features = ["query"] }
 base64 = "0.23.1"
 betterlite-a2a = { path = "../betterlite-a2a" }
+betterlite-analytics = { path = "../betterlite-analytics" }
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-azure = { path = "../betterlite-azure" }
 betterlite-bedrock = { path = "../betterlite-bedrock" }
@@ -42,6 +46,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 betterlite-redis = { path = "../betterlite-redis" }
 betterlite-roi = { path = "../betterlite-roi" }
 betterlite-router = { path = "../betterlite-router" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-semantic = { path = "../betterlite-semantic" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 betterlite-tracing = { path = "../betterlite-tracing" }
@@ -91,6 +96,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
+tokio-postgres.workspace = true
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
@@ -100,6 +106,7 @@ uuid.workspace = true
 
 [dev-dependencies]
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
+betterlite-secrets = { path = "../betterlite-secrets" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true

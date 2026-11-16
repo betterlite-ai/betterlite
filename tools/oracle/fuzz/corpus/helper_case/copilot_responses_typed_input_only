@@ -1,0 +1,29 @@
+kind: helper
+name: typed_input_only
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: [{role: assistant, content: hi}]}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {input: hello}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: {model_info: {input: [{role: assistant, content: hi}]}}
+      - step: auth
+        copilot_key: tid=1
+        headers: {}
+        params: null
+      - step: auth
+        copilot_key: tid=1
+        headers: {editor-version: mine, X-Initiator: user}
+        params: {input: [{role: user, content: [{type: INPUT_IMAGE}]}, {role: assistant}]}
+env: {}
+compare:
+  ignore: []
