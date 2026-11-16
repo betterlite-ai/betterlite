@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
-use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;

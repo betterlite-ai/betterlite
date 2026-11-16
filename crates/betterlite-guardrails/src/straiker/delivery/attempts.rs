@@ -15,7 +15,7 @@ use crate::straiker_webhook::failure::{WebhookFailure, status_failure};
 
 #[derive(Debug, Error)]
 pub enum PayloadError {
-    #[error("request serialization failed: {source}")]
+    #[error("request serialization failed: {0}")]
     Serialize(#[source] serde_json::Error),
     #[error("payload {bytes}B exceeds max_payload_bytes {limit}")]
     TooLarge { bytes: usize, limit: usize },
@@ -25,7 +25,7 @@ pub fn encode<Value>(value: &Value, max_payload_bytes: usize) -> Result<String, 
 where
     Value: Serialize,
 {
-    let body = serde_json::to_string(value).map_err(|source| PayloadError::Serialize(source))?;
+    let body = serde_json::to_string(value).map_err(PayloadError::Serialize)?;
     if body.len() > max_payload_bytes {
         return Err(PayloadError::TooLarge {
             bytes: body.len(),

@@ -12,7 +12,7 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::session::session_id_from_request;
 use crate::straiker::delivery::settings::StraikerSettings;
-use crate::straiker::delivery::{ApplyRequest, DeliveryCall, LITELLM_VERSION, phase_name};
+use crate::straiker::delivery::{ApplyRequest, LITELLM_VERSION, phase_name};
 use crate::straiker::v3::answer_shape::Response;
 use crate::straiker::v3::completion_as_chat::TextCompletionResponse;
 use crate::straiker_webhook::context::{call_surface, destination_host, model_provider};

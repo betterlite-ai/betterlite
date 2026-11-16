@@ -74,11 +74,15 @@ where
             let action = verdict.action.wire_name();
             record_verdict(request.request_data, action, verdict.turn_id.as_deref());
         }
+        let message = verdict
+            .blocked_reason
+            .clone()
+            .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
         if self.settings.api_version != ApiVersion::V1 {
-            return self.enforce_v3(request, &prepared, &verdict);
+            return self.enforce_v3(request, &prepared, &verdict, &message);
         }
         warn_drift(&verdict);
-        self.enforce_v1(request, &object, verdict)
+        self.enforce_v1(request, &object, verdict, &message)
     }
 
     fn prepare(&self, request: &ApplyRequest<'_>, object: &Object) -> Result<Prepared, PlanError> {
@@ -106,17 +110,15 @@ where
         request: &ApplyRequest<'_>,
         object: &Object,
         verdict: Verdict,
+        message: &str,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        let message = verdict
-            .blocked_reason
-            .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
         match verdict.action {
-            VerdictAction::Blocked => Err(self.block(request, &message, true)),
+            VerdictAction::Blocked => Err(self.block(request, message, true)),
             VerdictAction::Intervened => {
                 let streamed = request.input_type == GuardrailInputType::Response
                     && request_is_streamed(object);
                 let Some(texts) = verdict.texts.filter(|_| !streamed) else {
-                    return Err(self.block(request, &message, true));
+                    return Err(self.block(request, message, true));
                 };
                 let mut inputs = request.inputs.clone();
                 inputs.texts = Some(texts);
@@ -126,28 +128,28 @@ where
         }
     }
 
+    // Only a request-phase block that names a control is remembered for replay.
     fn enforce_v3(
         &self,
         request: &ApplyRequest<'_>,
         prepared: &Prepared,
         verdict: &Verdict,
+        message: &str,
     ) -> Result<GuardrailApiInputs, GuardrailFailure> {
         if verdict.action != VerdictAction::Blocked {
             return Ok(request.inputs.clone());
         }
-        let message = verdict
-            .blocked_reason
-            .clone()
-            .unwrap_or_else(|| DEFAULT_BLOCK_MESSAGE.to_owned());
-        if request.input_type == GuardrailInputType::Request
-            && let (Some(prefix), true) = (prepared.prefixes.last(), !verdict.blocked_by.is_empty())
+        let remembered =
+            request.input_type == GuardrailInputType::Request && !verdict.blocked_by.is_empty();
+        if remembered
+            && let Some(prefix) = prepared.prefixes.last()
             && let Err(error) = self
                 .blocked_turns
-                .remember(&prepared.scope, prefix, &message)
+                .remember(&prepared.scope, prefix, message)
         {
             return self.fail(request, &error, false);
         }
-        Err(self.block(request, &message, true))
+        Err(self.block(request, message, true))
     }
 }
 
