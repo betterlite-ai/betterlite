@@ -1,4 +1,3 @@
-use std::str;
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
@@ -83,20 +82,10 @@ fn error_headers(headers: &HeaderMap) -> Headers {
         .collect()
 }
 
-// e.response.text in LiteLLM; bytes that are not UTF-8 keep the valid prefix
-fn error_text(body: &[u8]) -> String {
-    match str::from_utf8(body) {
-        Ok(text) => text.to_owned(),
-        Err(invalid) => {
-            let valid = body.get(..invalid.valid_up_to()).unwrap_or_default();
-            str::from_utf8(valid).map_or_else(|_| String::new(), str::to_owned)
-        }
-    }
-}
-
+// e.response.text in LiteLLM's error handler: the body as UTF-8 with invalid bytes replaced
 fn artifact_failure(response: &UpstreamResponse) -> VideoLifecycleError {
     VideoLifecycleError::ArtifactStatus(get_error_class(
-        &error_text(&response.body),
+        &String::from_utf8_lossy(&response.body),
         response.status,
         &error_headers(&response.headers),
     ))
