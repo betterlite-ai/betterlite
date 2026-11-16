@@ -1,5 +1,6 @@
 use betterlite_core::api::anthropic_beta_config::matrix::{BetaNode, validate_beta_matrix};
 use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
@@ -12,10 +13,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Validate {
                 matrix,

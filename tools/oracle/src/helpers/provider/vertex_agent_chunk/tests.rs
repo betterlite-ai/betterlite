@@ -5,11 +5,12 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+fn run_case_file(file: &str) -> Value {
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/vertex-agent-chunk")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -18,7 +19,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn first_dictionary_text_keeps_the_first_text_part() {
-    let output = run_case("first-dictionary-text.yaml");
+    let output = run_case_file("first-dictionary-text.yaml");
     assert_eq!(
         output,
         json!({
@@ -36,7 +37,7 @@ fn first_dictionary_text_keeps_the_first_text_part() {
 
 #[test]
 fn empty_text_keeps_its_content_and_names_no_role() {
-    let output = run_case("empty-text-role.yaml");
+    let output = run_case_file("empty-text-role.yaml");
     assert_eq!(
         output,
         json!({
@@ -51,7 +52,7 @@ fn empty_text_keeps_its_content_and_names_no_role() {
 
 #[test]
 fn the_finish_reason_is_lowercased_before_it_is_mapped() {
-    let output = run_case("lowercase-finish.yaml");
+    let output = run_case_file("lowercase-finish.yaml");
     assert_eq!(
         output,
         json!({
@@ -72,7 +73,7 @@ fn the_finish_reason_is_lowercased_before_it_is_mapped() {
 
 #[test]
 fn a_partial_usage_metadata_defaults_the_missing_counts() {
-    let output = run_case("partial-usage.yaml");
+    let output = run_case_file("partial-usage.yaml");
     assert_eq!(
         output,
         json!({
@@ -89,7 +90,7 @@ fn a_partial_usage_metadata_defaults_the_missing_counts() {
 
 #[test]
 fn a_state_delta_is_ignored() {
-    let output = run_case("ignored-state-delta.yaml");
+    let output = run_case_file("ignored-state-delta.yaml");
     assert_eq!(
         output,
         json!({
@@ -105,7 +106,7 @@ fn a_state_delta_is_ignored() {
 
 #[test]
 fn helper_seeds_select_vertex_agent_chunk() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())

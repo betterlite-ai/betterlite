@@ -1,4 +1,3 @@
-use crate::helpers::Helper;
 use betterlite_auth::route_match::classifier::{
     is_azure_openai_route, is_llm_api_route, is_mcp_discovery_route,
 };
@@ -9,6 +8,8 @@ use betterlite_auth::route_match::templates::{
     route_matches_wildcard_pattern,
 };
 use betterlite_auth::{auxiliary_routes, management_routes};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -98,7 +99,7 @@ pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::RouteLists(operation) => operation.run(),
             Input::Methods(operation) => operation.run(),
@@ -108,7 +109,7 @@ impl Helper for Op {
 }
 
 impl RouteListInput {
-    fn run(&self) -> crate::helpers::HelperResult {
+    fn run(&self) -> HelperResult {
         match self {
             Self::GetActualRoutes { routes } => actual_routes(routes.as_deref()),
         }
@@ -116,7 +117,7 @@ impl RouteListInput {
 }
 
 impl MethodInput {
-    fn run(&self) -> crate::helpers::HelperResult {
+    fn run(&self) -> HelperResult {
         match self {
             Self::GetRequestMethod { method } => request_method(method.as_deref()),
         }
@@ -209,7 +210,7 @@ fn classify(classifier: Classifier, route: Option<&str>) -> bool {
     }
 }
 
-fn actual_routes(routes: Option<&[String]>) -> crate::helpers::HelperResult {
+fn actual_routes(routes: Option<&[String]>) -> HelperResult {
     let references: Vec<&str> = routes
         .unwrap_or_default()
         .iter()
@@ -219,7 +220,7 @@ fn actual_routes(routes: Option<&[String]>) -> crate::helpers::HelperResult {
         .map_err(|error| helper_error("SerializationError", error.to_string()))
 }
 
-fn request_method(method: Option<&str>) -> crate::helpers::HelperResult {
+fn request_method(method: Option<&str>) -> HelperResult {
     let access = method.map_or(MethodAccess::NoRequest, MethodAccess::Text);
     let parsed_method = get_request_method(access)
         .map_err(|error| helper_error("MethodError", error.to_string()))?;
@@ -227,8 +228,8 @@ fn request_method(method: Option<&str>) -> crate::helpers::HelperResult {
         .map_err(|error| helper_error("SerializationError", error.to_string()))
 }
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

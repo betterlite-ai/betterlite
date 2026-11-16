@@ -11,7 +11,9 @@ use betterlite_server::guardrails::a2a_translation::{input, output, stream};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) struct Op;
 
@@ -115,9 +117,7 @@ impl Helper for Op {
     type Input = Request;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .or_value_error()?;
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         match input {
             Request::Input { scenarios } => {
                 let entries = scenarios.iter().map(Call::Input).collect::<Vec<_>>();
@@ -135,7 +135,7 @@ impl Helper for Op {
     }
 }
 
-fn results(runtime: &tokio::runtime::Runtime, entries: &[Call<'_>]) -> HelperResult {
+fn results(runtime: &Runtime, entries: &[Call<'_>]) -> HelperResult {
     let results = entries
         .iter()
         .map(|entry| call_result(runtime, entry))
@@ -143,7 +143,7 @@ fn results(runtime: &tokio::runtime::Runtime, entries: &[Call<'_>]) -> HelperRes
     Ok(Value::Array(results))
 }
 
-fn call_result(runtime: &tokio::runtime::Runtime, entry: &Call<'_>) -> HelperResult {
+fn call_result(runtime: &Runtime, entry: &Call<'_>) -> HelperResult {
     let guardrail = ScriptedGuardrail::new(entry.reply().cloned());
     match entry {
         Call::Input(scenario) => {
@@ -176,7 +176,7 @@ fn call_result(runtime: &tokio::runtime::Runtime, entry: &Call<'_>) -> HelperRes
 }
 
 fn stream_result(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     scenario: &StreamScenario,
     guardrail: &ScriptedGuardrail,
 ) -> HelperResult {
@@ -197,7 +197,7 @@ fn stream_result(
 
 fn request_data(
     given: Option<&Map<String, Value>>,
-) -> Result<Option<BTreeMap<String, GuardrailValue>>, Box<crate::helpers::HelperError>> {
+) -> Result<Option<BTreeMap<String, GuardrailValue>>, Box<HelperError>> {
     given
         .map(|fields| serde_json::from_value(Value::Object(fields.clone())))
         .transpose()

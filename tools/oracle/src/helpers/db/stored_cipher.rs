@@ -4,7 +4,7 @@ use serde_json::Value;
 use self::app_crypto_ops::{AppCryptoStep, run_app_crypto};
 use self::callback_vars::{CallbackStep, run_callback_vars};
 use self::cipher_settings::KeySource;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod app_crypto_ops;
 mod callback_vars;

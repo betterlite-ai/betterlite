@@ -12,8 +12,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 
-use crate::compare::helper::HelperError;
-use crate::helpers::a2a::b4810::helper_error;
+use crate::b4810::helper_error;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) const FIXED_START: &str = "2026-01-01T00:00:00+00:00";
 

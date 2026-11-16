@@ -9,7 +9,8 @@ use betterlite_prompts::media_metadata::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]

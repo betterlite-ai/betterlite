@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
-use std::fmt;
 use std::net::TcpListener;
 use std::sync::Mutex;
 use std::time::Duration;
+use std::{fmt, io, slice};
 
 use betterlite_config::loader::{ConfigError, ConfigLoader};
 use betterlite_config::sections::lasso_classification::Configured;
@@ -14,10 +14,13 @@ use serde_json::json;
 use serde_json::value::RawValue;
 use ulid::Ulid;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::error::HelperRunError;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+use tokio::runtime::Builder;
 
 type Settings = BTreeMap<String, String>;
 
@@ -75,7 +78,7 @@ impl ConversationCache for Cache {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -163,12 +166,11 @@ fn call(
     answer: Option<&UpstreamAnswer>,
     api_path: Option<&str>,
 ) -> HelperResult {
-    let io = |error: std::io::Error| failure("OSError", None, error.to_string());
-    let mock_error = |error: crate::OracleError| failure("MockError", None, error.to_string());
+    let io = |error: io::Error| failure("OSError", None, error.to_string());
+    let mock_error = |error: HelperRunError| failure("MockError", None, error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
-    let start =
-        |reply| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
+    let start = |reply| MockScript::try_from(slice::from_ref(reply)).and_then(MockProvider::start);
     let mock = answer.map(start).transpose().map_err(mock_error)?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
@@ -182,7 +184,7 @@ fn call(
         tools: Vec::new(),
     };
     let payload = lasso.prepare_payload(Vec::new(), &data, MessageType::Prompt, &Cache::default());
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(io)?;

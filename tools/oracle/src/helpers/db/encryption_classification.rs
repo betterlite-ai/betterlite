@@ -4,6 +4,8 @@ use betterlite_db::encryption_scan::{
     DbCipher, MigrationJson, ScanError, classify_callback_value, classify_secret_map,
     classify_value, iter_callback_var_dicts,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces};
 use serde::{Deserialize, Serialize};
@@ -26,10 +28,10 @@ pub(crate) struct Input {
     pub metadata: Option<MigrationJson>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let cipher = DbCipher {
             settings: CipherSettings {
                 signing_key: Some(input.salt_key.0.clone()),
@@ -48,10 +50,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn classify_input(
-    input: &Input,
-    cipher: &DbCipher,
-) -> Result<LocationReport, Box<crate::helpers::HelperError>> {
+fn classify_input(input: &Input, cipher: &DbCipher) -> Result<LocationReport, Box<HelperError>> {
     let mut report = LocationReport {
         location: String::from("values"),
         scanned: 0,
@@ -86,9 +85,9 @@ fn classify_input(
     Ok(report)
 }
 
-fn helper_error(error: &ScanError) -> Box<crate::helpers::HelperError> {
+fn helper_error(error: &ScanError) -> Box<HelperError> {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "OverflowError".to_owned(),
         status: None,
         error_type: None,

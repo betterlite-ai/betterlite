@@ -2,7 +2,7 @@ mod input;
 mod operations;
 mod tests;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

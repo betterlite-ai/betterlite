@@ -5,10 +5,10 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::case::Case;
-use crate::compare;
-use crate::mock::ProviderRequest;
 use crate::paths::{safe_name, unique_id};
 use crate::sdk_http::capture::Capture;
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 use crate::OracleError;
 use crate::http::Response;
@@ -23,7 +23,7 @@ pub(crate) struct ArtifactInput<'input> {
     pub(crate) second_requests: &'input [ProviderRequest],
     pub(crate) first_log: &'input Path,
     pub(crate) second_log: &'input Path,
-    pub(crate) result: Option<&'input compare::Difference>,
+    pub(crate) result: Option<&'input Difference>,
 }
 
 pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, OracleError> {
@@ -55,7 +55,7 @@ pub(crate) struct SdkArtifactInput<'input> {
     pub(crate) name: &'input str,
     pub(crate) labels: [&'input str; 2],
     pub(crate) captures: [&'input Capture; 2],
-    pub(crate) difference: &'input compare::Difference,
+    pub(crate) difference: &'input Difference,
 }
 
 // both logs and captures stay for a mismatch and for a crash alike

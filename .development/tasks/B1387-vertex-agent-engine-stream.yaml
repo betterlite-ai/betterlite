@@ -65,7 +65,7 @@ checks:
       run: test -f tools/oracle/helpers/vertex_agent_chunk.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Source chunk_parser operates on fixture dictionaries without network IO.
     - id: agent-chunk-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::provider::vertex_agent_chunk::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_agent_chunk*')" && cargo nextest run --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/^vertex_agent_chunk::/)'
       why: The shared parser must recognize call.vertex_agent_chunk on every added seed.
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-agent-chunk/first-dictionary-text.yaml

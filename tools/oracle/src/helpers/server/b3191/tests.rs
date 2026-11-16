@@ -1,6 +1,10 @@
 #![cfg(test)]
 
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
 use rstest::rstest;
+use std::fs;
+use std::path::Path;
 
 #[rstest]
 #[case::agent_fields_list("agent-fields/agent-fields-list")]
@@ -13,13 +17,9 @@ use rstest::rstest;
 #[case::directive_removal("helpers/agent-fields/directive-removal")]
 #[case::agent_catalog_raw("helpers/agent-fields/agent-catalog-raw")]
 fn replays_b3191_against_litellm(#[case] name: &str) {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-    let source = std::fs::read_to_string(root.join(format!("cases/{name}.yaml"))).unwrap();
-    let case =
-        serde_saphyr::from_str::<betterlite_oracle::case::helper::HelperCase>(&source).unwrap();
-    let result = betterlite_oracle::helpers::run_case(&case, false).unwrap();
-    assert!(matches!(
-        result,
-        betterlite_oracle::helpers::HelperRun::Match
-    ));
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let source = fs::read_to_string(root.join(format!("cases/{name}.yaml"))).unwrap();
+    let case = serde_saphyr::from_str::<HelperCase>(&source).unwrap();
+    let result = run_case(&[crate::GROUP], &case, false).unwrap();
+    assert!(matches!(result, HelperRun::Match));
 }

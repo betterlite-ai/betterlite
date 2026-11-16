@@ -9,11 +9,11 @@ use serde_json::{Map, json};
 use self::calls::{content_reply, headers, reply, request, url};
 use self::fixture::call_config;
 use self::input::{Globals, Input};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
