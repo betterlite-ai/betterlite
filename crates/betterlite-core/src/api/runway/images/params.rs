@@ -41,7 +41,9 @@ pub fn map_openai_params(
         }
         if SUPPORTED_OPENAI_PARAMS.contains(&parameter.as_str()) {
             optional_params.insert(parameter.clone(), value.clone());
-        } else if !drop_params {
+            continue;
+        }
+        if !drop_params {
             return Err(RunwayImageError::UnsupportedParameter {
                 parameter: parameter.clone(),
                 model: model.to_owned(),

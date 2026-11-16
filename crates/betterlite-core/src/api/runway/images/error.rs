@@ -25,20 +25,11 @@ pub enum RunwayImageError {
 impl RunwayImageError {
     // Only a submission that fails to decode carries the inherited image error's own HTTP status and headers; every later poll failure keeps its task cause instead.
     #[must_use]
-    pub const fn status(&self) -> Option<u16> {
+    pub const fn submission_answer(&self) -> Option<(u16, &ImageHeaders)> {
         match self {
-            Self::Submission { status, .. } => Some(*status),
-            Self::Task(_)
-            | Self::MissingTaskId
-            | Self::UnsupportedParameter { .. }
-            | Self::InvalidSize => None,
-        }
-    }
-
-    #[must_use]
-    pub const fn headers(&self) -> Option<&ImageHeaders> {
-        match self {
-            Self::Submission { headers, .. } => Some(headers),
+            Self::Submission {
+                status, headers, ..
+            } => Some((*status, headers)),
             Self::Task(_)
             | Self::MissingTaskId
             | Self::UnsupportedParameter { .. }

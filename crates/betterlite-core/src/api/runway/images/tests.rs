@@ -361,6 +361,7 @@ fn other_members_are_skipped() {
     None
 )]
 #[case::null_url(r#"{"url":null}"#, None, None)]
+#[case::numeric_url(r#"{"url":1024}"#, None, None)]
 #[case::nested_value(r#"{"b64_json":"QUJD","meta":{"a":1}}"#, None, Some("QUJD"))]
 fn a_mapping_with_a_non_string_value_still_adds_an_entry(
     #[case] member: &str,
@@ -385,9 +386,9 @@ fn a_mapping_with_a_non_string_value_still_adds_an_entry(
 #[case::text(r#"{"status":"SUCCEEDED","output":"https://o.test/a.png"}"#)]
 #[case::empty_list(r#"{"status":"SUCCEEDED","output":[]}"#)]
 fn a_missing_or_non_list_output_is_an_empty_result(#[case] body: &str) {
-    let finished = apply_task_output(&task(body), response(1700000000, None));
+    let finished = apply_task_output(&task(body), response(1_700_000_000, None));
     assert_eq!(finished.data, Some(Vec::new()));
-    assert_eq!(finished.created, 1700000000);
+    assert_eq!(finished.created, 1_700_000_000);
 }
 
 #[test]
@@ -474,8 +475,7 @@ async fn forwards_only_the_original_authorization_and_version() {
         .transform(&outgoing, &original, response(0, None))
         .await
         .unwrap();
-    let requests = transport.requests.lock().unwrap();
-    let polled = &requests[0].1;
+    let polled = transport.requests.lock().unwrap()[0].1.clone();
     assert_eq!(polled.len(), 2);
     assert_eq!(polled[AUTHORIZATION], "Bearer caller");
     assert!(polled[AUTHORIZATION].is_sensitive());
@@ -501,8 +501,7 @@ async fn missing_request_headers_take_the_configured_defaults() {
         .transform(&outgoing, &ImageHeaders::new(), response(0, None))
         .await
         .unwrap();
-    let requests = transport.requests.lock().unwrap();
-    let polled = &requests[0].1;
+    let polled = transport.requests.lock().unwrap()[0].1.clone();
     assert_eq!(polled.len(), 2);
     assert_eq!(polled[AUTHORIZATION], "");
     assert_eq!(polled["x-runway-version"], "2025-01-01");
@@ -588,8 +587,7 @@ async fn a_submission_that_is_not_json_keeps_the_status_and_headers() {
         .transform(&outgoing, &ImageHeaders::new(), response(0, None))
         .await
         .unwrap_err();
-    assert_eq!(error.status(), Some(502));
-    assert_eq!(error.headers(), Some(&original));
+    assert_eq!(error.submission_answer(), Some((502, &original)));
     assert!(matches!(
         error,
         RunwayImageError::Submission { status: 502, .. }
@@ -621,7 +619,7 @@ async fn a_submission_without_an_id_is_not_polled(#[case] body: &'static str) {
         .unwrap_err();
     assert_eq!(error.to_string(), "RunwayML response missing task ID");
     assert!(matches!(error, RunwayImageError::MissingTaskId));
-    assert_eq!(error.status(), None);
+    assert_eq!(error.submission_answer(), None);
     assert!(transport.requests.lock().unwrap().is_empty());
 }
 
@@ -648,7 +646,7 @@ async fn a_poll_http_error_keeps_its_status() {
         error,
         RunwayImageError::Task(RunwayTaskError::HttpStatus { status: 500 })
     ));
-    assert_eq!(error.status(), None);
+    assert_eq!(error.submission_answer(), None);
 }
 
 #[tokio::test]
@@ -787,11 +785,11 @@ async fn the_transformed_response_keeps_the_existing_created_and_data() {
         .transform(
             &outgoing,
             &ImageHeaders::new(),
-            response(1700000000, Some(vec![existing.clone()])),
+            response(1_700_000_000, Some(vec![existing.clone()])),
         )
         .await
         .unwrap();
-    assert_eq!(finished.created, 1700000000);
+    assert_eq!(finished.created, 1_700_000_000);
     assert_eq!(
         finished.data,
         Some(vec![existing, url_image("https://o.test/new.png")])
@@ -821,11 +819,15 @@ impl Catalog {
 }
 
 impl PriceLookup for Catalog {
-    fn effective_model_info(&self, model: &str, provider: Option<&str>) -> Option<PriceRecord> {
+    fn effective_model_info(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PriceRecord> {
         self.seen
             .lock()
             .unwrap()
-            .push((model.to_owned(), provider.map(str::to_owned)));
+            .push((model.to_owned(), custom_llm_provider.map(str::to_owned)));
         self.entries.get(model).cloned()
     }
 
@@ -833,8 +835,12 @@ impl PriceLookup for Catalog {
         self.entries.get(key).cloned()
     }
 
-    fn effective_priced_model(&self, model: &str, provider: Option<&str>) -> Option<PricedModel> {
-        self.effective_model_info(model, provider)
+    fn effective_priced_model(
+        &self,
+        model: &str,
+        custom_llm_provider: Option<&str>,
+    ) -> Option<PricedModel> {
+        self.effective_model_info(model, custom_llm_provider)
             .map(|record| PricedModel {
                 record,
                 tiered_pricing: Vec::new(),
@@ -897,7 +903,8 @@ fn the_price_lookup_sees_the_runwayml_provider() {
     let seen = catalog.seen.lock().unwrap();
     assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].0, "gen4_image");
-    assert_eq!(seen[0].1.as_deref(), Some(CUSTOM_LLM_PROVIDER));
+    assert_eq!(seen[0].1.as_deref(), Some("runwayml"));
+    assert_eq!(CUSTOM_LLM_PROVIDER, "runwayml");
 }
 
 #[test]
@@ -927,7 +934,7 @@ fn the_requested_size_and_quality_do_not_change_the_charge() {
 
 #[rstest]
 #[case::zero(r#"{"output_cost_per_image":0}"#)]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 fn a_non_image_response_is_refused(#[case] json: &str) {
     let record = priced_record(json);
     let call = PricedImage {
