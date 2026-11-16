@@ -50,15 +50,15 @@ pub fn response_text<W: StreamWire>(wire: &W, body: &GuardrailValue) -> String {
 pub fn delta_field_texts(chunks: &[Chunk]) -> Vec<String> {
     let mut fields: Vec<([Option<&GuardrailValue>; 5], String)> = Vec::new();
     for chunk in chunks {
-        let Some(kind) = chunk.event_type() else {
-            continue;
-        };
-        if !DELTA_EVENTS.contains(&kind) {
-            continue;
-        }
         let Some(payload) = chunk.payload() else {
             continue;
         };
+        if !chunk
+            .event_type()
+            .is_some_and(|kind| DELTA_EVENTS.contains(&kind))
+        {
+            continue;
+        }
         let Some(GuardrailValue::Text(delta)) = field(payload, "delta") else {
             continue;
         };
@@ -86,12 +86,10 @@ pub fn content_to_scan<W: StreamWire>(
     if surface != Surface::Responses {
         return Ok(content);
     }
-    let mut unscanned: Vec<String> = Vec::new();
-    for text in delta_field_texts(chunks) {
-        if !text.is_empty() && !content.contains(text.as_str()) {
-            unscanned.push(text);
-        }
-    }
+    let unscanned: Vec<String> = delta_field_texts(chunks)
+        .into_iter()
+        .filter(|text| !text.is_empty() && !content.contains(text.as_str()))
+        .collect();
     let mut joined = content;
     for text in unscanned {
         if !joined.is_empty() {

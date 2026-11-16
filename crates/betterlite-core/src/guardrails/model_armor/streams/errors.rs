@@ -24,41 +24,35 @@ pub enum StreamError<Failure: 'static> {
 
 // LiteLLM's _error_payload: the error object a terminal stream item carries, with the status a frame would otherwise lose.
 pub fn error_payload(error: &HttpError) -> Result<GuardrailValue, serde_json::Error> {
-    let mut detail = match &error.detail {
+    let mut payload = match &error.detail {
         GuardrailValue::Object(fields) => fields.clone(),
-        other => {
-            let mut fields = BTreeMap::new();
-            let message = detail_text(other)?;
-            fields.insert("message".to_owned(), GuardrailValue::Text(message));
-            fields
-        }
+        other => message_fields(other)?,
     };
-    let found = detail.remove("error");
-    let error_value = match found {
+    let error_value = match payload.remove("error") {
         Some(value) => value,
-        None => GuardrailValue::Object(detail),
+        None => GuardrailValue::Object(payload),
     };
-    let mut payload = match error_value {
+    let mut fields = match error_value {
         GuardrailValue::Object(fields) => fields,
-        other => {
-            let mut fields = BTreeMap::new();
-            let message = detail_text(&other)?;
-            fields.insert("message".to_owned(), GuardrailValue::Text(message));
-            fields
-        }
+        other => message_fields(&other)?,
     };
-    payload.insert(
+    fields.insert(
         "code".to_owned(),
         GuardrailValue::Text(error.status.to_string()),
     );
-    Ok(GuardrailValue::Object(payload))
+    Ok(GuardrailValue::Object(fields))
 }
 
-fn detail_text(detail: &GuardrailValue) -> Result<String, serde_json::Error> {
-    match detail {
-        GuardrailValue::Text(text) => Ok(text.clone()),
-        other => serde_json::to_string(other),
-    }
+fn message_fields(
+    detail: &GuardrailValue,
+) -> Result<BTreeMap<String, GuardrailValue>, serde_json::Error> {
+    let text = match detail {
+        GuardrailValue::Text(text) => text.clone(),
+        other => serde_json::to_string(other)?,
+    };
+    let mut fields = BTreeMap::new();
+    fields.insert("message".to_owned(), GuardrailValue::Text(text));
+    Ok(fields)
 }
 
 // LiteLLM's _stream_error_items: the endpoint's own error wire format, and plain SSE frames where it has none.

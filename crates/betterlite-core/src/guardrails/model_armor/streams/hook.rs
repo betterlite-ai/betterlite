@@ -28,7 +28,6 @@ pub struct StreamSettings {
     pub fail_on_error: bool,
     pub mask_response_content: bool,
 }
-
 // Everything a buffered run reads and writes besides the chunks it decides about.
 pub struct StreamHook<'hook, W: StreamWire> {
     pub wire: &'hook W,
@@ -36,14 +35,6 @@ pub struct StreamHook<'hook, W: StreamWire> {
     pub guardrail_name: &'hook str,
     pub settings: StreamSettings,
     pub chunks: Vec<Chunk>,
-}
-
-struct FinishStep<'hook, W: StreamWire> {
-    hook: StreamHook<'hook, W>,
-    surface: Surface,
-    assembled: Assembly,
-    content: String,
-    armor: GuardrailValue,
 }
 
 // LiteLLM's async_post_call_streaming_iterator_hook: buffer the whole stream, scan it, then yield it whole or refuse it.
@@ -54,8 +45,7 @@ pub async fn buffered_stream<W: StreamWire>(
         return Ok(hook.chunks);
     }
     let surface = classify(hook.wire, &hook.chunks);
-    let assembled = assemble(hook.wire, surface, &hook.chunks).await;
-    let Some(assembled) = assembled else {
+    let Some(assembled) = assemble(hook.wire, surface, &hook.chunks).await else {
         return assembly_failure(hook, surface);
     };
     let content = content_to_scan(hook.wire, surface, &assembled, &hook.chunks)
@@ -63,18 +53,11 @@ pub async fn buffered_stream<W: StreamWire>(
     if content.is_empty() {
         return Ok(hook.chunks);
     }
-    let scanned = hook.wire.scan(&content).await;
-    let armor = match scanned {
+    let armor = match hook.wire.scan(&content).await {
         Ok(armor) => armor,
         Err(failure) => return scan_failure(hook, surface, failure),
     };
-    finish_scan(FinishStep {
-        hook,
-        surface,
-        assembled,
-        content,
-        armor,
-    })
+    finish_scan(hook, surface, assembled, &content, &armor)
 }
 
 fn assembly_failure<W: StreamWire>(
@@ -89,8 +72,7 @@ fn assembly_failure<W: StreamWire>(
     }
     hook.wire
         .applied_guardrail(hook.request_data, hook.guardrail_name);
-    let name = hook.guardrail_name;
-    let detail = format!("{name}: {ASSEMBLY_MESSAGE}");
+    let detail = format!("{}: {ASSEMBLY_MESSAGE}", hook.guardrail_name);
     let error = HttpError {
         status: 500,
         detail: GuardrailValue::Text(detail),
@@ -123,30 +105,36 @@ fn scan_failure<W: StreamWire>(
 }
 
 fn finish_scan<W: StreamWire>(
-    step: FinishStep<'_, W>,
+    mut hook: StreamHook<'_, W>,
+    surface: Surface,
+    assembled: Assembly,
+    content: &str,
+    armor: &GuardrailValue,
 ) -> Result<Vec<Chunk>, StreamError<W::Failure>> {
-    let FinishStep {
-        mut hook,
-        surface,
-        assembled,
-        content,
-        armor,
-    } = step;
     let outcome = resolve_outcome(
         hook.wire,
         hook.settings.mask_response_content,
-        &content,
+        content,
         &assembled,
-        &armor,
+        armor,
     );
-    record_scan(&mut hook, &armor, outcome.blocked);
+    record_metadata(
+        &mut *hook.request_data,
+        hook.wire.logging_response(armor),
+        outcome.blocked,
+    );
+    hook.wire
+        .applied_guardrail(&mut *hook.request_data, hook.guardrail_name);
     if outcome.blocked {
-        let detail = hook.wire.block_detail(BLOCK_MESSAGE, &armor);
-        let error = HttpError {
-            status: 400,
-            detail,
-        };
-        return frame_error(hook.wire, surface, &error);
+        let detail = hook.wire.block_detail(BLOCK_MESSAGE, armor);
+        return frame_error(
+            hook.wire,
+            surface,
+            &HttpError {
+                status: 400,
+                detail,
+            },
+        );
     }
     let Some(sanitized) = outcome.sanitized.as_deref() else {
         return Ok(hook.chunks);
@@ -163,9 +151,9 @@ fn rewritten_stream<W: StreamWire>(
     let Assembly::Model(body) = assembled else {
         return Ok(hook.chunks);
     };
-    let mut body = body.clone();
-    apply_sanitized(&mut body, sanitized);
-    match hook.wire.emit_sanitized(surface, &body) {
+    let mut rewritten = body.clone();
+    apply_sanitized(&mut rewritten, sanitized);
+    match hook.wire.emit_sanitized(surface, &rewritten) {
         Ok(items) => Ok(items),
         Err(error) => {
             if hook.settings.fail_on_error {
@@ -175,16 +163,6 @@ fn rewritten_stream<W: StreamWire>(
             }
         }
     }
-}
-
-fn record_scan<W: StreamWire>(hook: &mut StreamHook<'_, W>, armor: &GuardrailValue, blocked: bool) {
-    record_metadata(
-        &mut *hook.request_data,
-        hook.wire.logging_response(armor),
-        blocked,
-    );
-    hook.wire
-        .applied_guardrail(&mut *hook.request_data, hook.guardrail_name);
 }
 
 fn record_metadata(data: &mut RequestData, logging: GuardrailValue, blocked: bool) {

@@ -20,11 +20,11 @@ pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
             Surface::OpaqueSse
         };
     }
-    let responses = chunks
+    if chunks
         .iter()
         .filter_map(Chunk::event_type)
-        .any(|kind| kind.starts_with("response."));
-    if responses {
+        .any(|kind| kind.starts_with("response."))
+    {
         Surface::Responses
     } else {
         Surface::ChatCompletions
@@ -34,8 +34,8 @@ pub fn classify<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> Surface {
 // LiteLLM's _is_terminal_error_stream: the refusal a preceding guardrail already produced.
 #[must_use]
 pub fn is_terminal_error<W: StreamWire>(wire: &W, chunks: &[Chunk]) -> bool {
-    let every_chunk_errors = chunks
+    chunks
         .iter()
-        .all(|chunk| chunk.event_type() == Some("error"));
-    every_chunk_errors || wire.is_sse_error(chunks)
+        .all(|chunk| chunk.event_type() == Some("error"))
+        || wire.is_sse_error(chunks)
 }

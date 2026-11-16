@@ -29,19 +29,10 @@ pub fn field_mut<'value>(
 
 #[must_use]
 pub fn text_field(value: Option<&GuardrailValue>) -> Option<&str> {
-    match value {
-        Some(GuardrailValue::Text(text)) => Some(text),
-        Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        )
-        | None => None,
-    }
+    let GuardrailValue::Text(text) = value? else {
+        return None;
+    };
+    Some(text.as_str())
 }
 
 impl Chunk {

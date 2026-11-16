@@ -27,10 +27,10 @@ pub fn resolve_outcome<W: StreamWire>(
     if !mask {
         return Outcome::default();
     }
-    let sanitized = wire
+    let Some(sanitized) = wire
         .sanitized_content(armor)
-        .filter(|text| !text.is_empty());
-    let Some(sanitized) = sanitized else {
+        .filter(|text| !text.is_empty())
+    else {
         // An outstanding redaction with nothing to apply would hand the matched content back.
         return Outcome {
             blocked: wire.has_deidentify(armor),
