@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use super::fixture::MapFixture;
 use super::input::{
     CapabilityCall, Endpoint, Install, MapStep, ReplyStep, ResourceStep, Steps, TransformStep,
@@ -16,7 +18,7 @@ use betterlite_azure::responses::url::{
     MODEL_IN_WEBSOCKET_URL, SUPPORTS_NATIVE_WEBSOCKET, complete_url, websocket_url,
 };
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_config::sections::azure_responses::{Resolved, Settings};
+use betterlite_config::sections::azure_responses::VERSION_VARIABLE;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::response_events::RawResponse;
@@ -33,17 +35,16 @@ use tokio::runtime::Runtime;
 const DEFAULT_INPUT_ITEMS_LIMIT: i64 = 20;
 const PROJECTED: [&str; 3] = ["model", "input", "tools"];
 pub(super) fn base_rows(call: &UrlCall) -> Vec<Value> {
-    let settings = Settings {
-        resolved: Box::new(Resolved {
-            default_responses_api_version: call.default_api_version.clone(),
-        }),
-    };
+    let environment = BTreeMap::from([(
+        VERSION_VARIABLE.to_owned(),
+        call.default_api_version.clone(),
+    )]);
     call.steps
         .iter()
-        .map(|step| base_row(step, &settings))
+        .map(|step| base_row(step, &environment))
         .collect()
 }
-fn base_row(step: &UrlStep, settings: &Settings) -> Value {
+fn base_row(step: &UrlStep, environment: &BTreeMap<String, String>) -> Value {
     let key = step.api_key.as_deref().map(SecretString::from);
     let credentials = DeploymentSettings {
         azure_ad_token: None,
@@ -65,7 +66,7 @@ fn base_row(step: &UrlStep, settings: &Settings) -> Value {
     let built = complete_url(
         step.api_base.as_deref(),
         step.api_version.as_deref(),
-        settings,
+        environment,
     );
     if let (Ok(url), Ok(headers)) = (built, validated) {
         json!({"ok": true, "url": url, "headers": headers, "status": Value::Null})

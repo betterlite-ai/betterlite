@@ -9,6 +9,9 @@ deviations:
   - what: "A decoded api_base path that holds '?' or '#' fails as a path that cannot be rewritten instead of httpx's InvalidURL for the path component; both failures carry no HTTP status."
     why: "betterlite's shared InvalidUrl has no path-component variant, and both betterlite-http and azure_urls.rs lie outside this task's scope, so the websocket rewrite reuses the Azure URL error raised for a path it cannot rewrite; the failure, its missing status and the oracle row match LiteLLM's."
     link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L202-L203"
+  - what: "AZURE_DEFAULT_RESPONSES_API_VERSION is read from the injected environment lookup each time the Responses URL is built, where LiteLLM reads it once when litellm.constants is imported."
+    why: "The config section stays zero-size because Sections sits at the loader's stack limit and at clippy's large_futures limit in the server tests (B9972). Both reads give the same version unless the variable changes while the process runs."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L9"
 kept_bugs:
   - what: "The websocket URL downgrades every non-https api_base to ws, including one that already starts with wss://, so that base comes back as ws://."
     why: "LiteLLM switches to wss only when the original scheme is exactly https, and a setup that passes a wss:// base straight through relies on the same URL form, so betterlite keeps it."

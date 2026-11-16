@@ -1,4 +1,5 @@
-use betterlite_config::sections::azure_responses::Settings as ResponsesSettings;
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::sections::azure_responses::default_responses_api_version;
 use betterlite_http::user_url::httpx_url::HttpxUrl;
 use percent_encoding::percent_decode_str;
 
@@ -11,16 +12,19 @@ pub const WEBSOCKET_ROUTE: &str = "/openai/v1/responses";
 pub const MODEL_IN_WEBSOCKET_URL: bool = false;
 pub const SUPPORTS_NATIVE_WEBSOCKET: bool = true;
 
-// The version only fills the query when the caller and the api_base both leave it open
-pub fn complete_url(
+// The version from AZURE_DEFAULT_RESPONSES_API_VERSION only fills the query when the caller and the api_base leave it open
+pub fn complete_url<L>(
     api_base: Option<&str>,
     api_version: Option<&str>,
-    settings: &ResponsesSettings,
-) -> Result<String, AzureUrlError> {
+    environment: &L,
+) -> Result<String, AzureUrlError>
+where
+    L: EnvironmentLookup,
+{
     get_base_azure_url(
         api_base,
         api_version,
-        Some(&settings.resolved.default_responses_api_version),
+        Some(&default_responses_api_version(environment)),
         ROUTE,
     )
 }

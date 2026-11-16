@@ -3,7 +3,7 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_config::sections::azure_responses::{Resolved, Settings};
+use betterlite_config::sections::azure_responses::VERSION_VARIABLE;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::reasoning_models::{
@@ -148,12 +148,8 @@ pub(super) fn runtime() -> Runtime {
     Builder::new_current_thread().build().unwrap()
 }
 
-pub(super) fn settings(version: &str) -> Settings {
-    Settings {
-        resolved: Box::new(Resolved {
-            default_responses_api_version: version.to_owned(),
-        }),
-    }
+pub(super) fn settings(version: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([(VERSION_VARIABLE.to_owned(), version.to_owned())])
 }
 
 pub(super) fn object(text: &str) -> Object {

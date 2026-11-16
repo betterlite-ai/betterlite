@@ -4,18 +4,18 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{DEFAULT_VERSION, Settings, VERSION_VARIABLE};
+use super::{DEFAULT_VERSION, Settings, VERSION_VARIABLE, default_responses_api_version};
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
+// the real loader runs first, so the version is read from the lookup the loaded config was built with
+fn load(source: &str, environment: &[(&str, &str)]) -> Result<String, ConfigError> {
     let lookup = environment
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect::<BTreeMap<_, _>>();
-    Ok(ConfigLoader { lookup }
-        .load(source)?
-        .sections
-        .azure_responses)
+    let loader = ConfigLoader { lookup };
+    loader.load(source)?;
+    Ok(default_responses_api_version(&loader.lookup))
 }
 
 #[rstest]
@@ -27,35 +27,22 @@ fn azure_responses_config_cases(#[case] case: u8) {
     match case {
         0 => {
             let configured = load("", &[(VERSION_VARIABLE, "2025-04-01-preview")]).unwrap();
-            assert_eq!(
-                configured.resolved.default_responses_api_version,
-                "2025-04-01-preview"
-            );
-            let default = load("", &[]).unwrap();
-            assert_eq!(
-                default.resolved.default_responses_api_version,
-                DEFAULT_VERSION
-            );
-            assert_eq!(
-                Settings::default().resolved.default_responses_api_version,
-                "preview"
-            );
+            assert_eq!(configured, "2025-04-01-preview");
+            assert_eq!(load("", &[]).unwrap(), DEFAULT_VERSION);
         }
         1 => {
-            let loaded = load("model_list: []", &[]).unwrap();
-            assert_eq!(loaded.resolved.default_responses_api_version, "preview");
+            assert_eq!(load("model_list: []", &[]).unwrap(), "preview");
         }
         2 => {
-            let loaded = load("", &[(VERSION_VARIABLE, "")]).unwrap();
             assert_eq!(
-                loaded.resolved.default_responses_api_version,
+                load("", &[(VERSION_VARIABLE, "")]).unwrap(),
                 DEFAULT_VERSION
             );
         }
         _ => {
             let error = load(
                 "litellm_settings: {azure_responses_api_version: 2025-04-01-preview}",
-                &[],
+                &[(VERSION_VARIABLE, "2025-04-01-preview")],
             )
             .unwrap_err();
             assert!(
@@ -68,6 +55,6 @@ fn azure_responses_config_cases(#[case] case: u8) {
 }
 
 #[test]
-fn settings_stay_one_pointer_wide() {
-    assert_eq!(size_of::<Settings>(), size_of::<usize>());
+fn settings_add_nothing_to_sections() {
+    assert_eq!(size_of::<Settings>(), 0);
 }
