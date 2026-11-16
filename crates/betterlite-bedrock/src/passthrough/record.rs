@@ -76,6 +76,29 @@ fn converse_stream_chunk(
     chunk: ConverseChunk,
     clock: CollectorClock,
 ) -> Result<StreamChunk, StreamLogError> {
+    let delta = converse_delta(chunk.delta)?;
+    let choice = StreamChoice {
+        index: chunk.index,
+        delta,
+        finish_reason: chunk.finish_reason,
+        logprobs: None,
+        extra: JsonObject::new(),
+    };
+    let usage: Option<Usage> = chunk.usage.as_ref().map(convert).transpose()?;
+    Ok(StreamChunk {
+        id: chunk.id,
+        object: "chat.completion.chunk".to_owned(),
+        created: (clock.instant)().seconds,
+        model: chunk.model,
+        system_fingerprint: None,
+        choices: vec![choice],
+        usage,
+        provider_specific_fields: extra_object(&chunk.provider_specific_fields)?,
+        hidden_params: JsonObject::new(),
+        extra: JsonObject::new(),
+    })
+}
+fn converse_delta(chunk: ConverseDelta) -> Result<StreamDelta, StreamLogError> {
     let ConverseDelta {
         content,
         role,
@@ -83,8 +106,8 @@ fn converse_stream_chunk(
         provider_specific_fields,
         thinking_blocks,
         reasoning_content,
-    } = chunk.delta;
-    let delta = StreamDelta {
+    } = chunk;
+    Ok(StreamDelta {
         content,
         role,
         function_call: None,
@@ -105,26 +128,6 @@ fn converse_stream_chunk(
             .map(extra_object)
             .transpose()?
             .flatten(),
-        extra: JsonObject::new(),
-    };
-    let choice = StreamChoice {
-        index: chunk.index,
-        delta,
-        finish_reason: chunk.finish_reason,
-        logprobs: None,
-        extra: JsonObject::new(),
-    };
-    let usage: Option<Usage> = chunk.usage.as_ref().map(convert).transpose()?;
-    Ok(StreamChunk {
-        id: chunk.id,
-        object: "chat.completion.chunk".to_owned(),
-        created: (clock.instant)().seconds,
-        model: chunk.model,
-        system_fingerprint: None,
-        choices: vec![choice],
-        usage,
-        provider_specific_fields: extra_object(&chunk.provider_specific_fields)?,
-        hidden_params: JsonObject::new(),
         extra: JsonObject::new(),
     })
 }

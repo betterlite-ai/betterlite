@@ -3,6 +3,7 @@ use crate::aws_settings::sources::Credentials;
 use crate::signing::body::Body;
 use crate::signing::endpoint::{RequestHeaders, request_headers};
 use crate::signing::headers::set_exact;
+use ::url::Url;
 use betterlite_logging::python_json::dumps_object;
 use betterlite_models::decisions::Json;
 use betterlite_openai::error::ProviderError;
@@ -18,10 +19,8 @@ use betterlite_streaming::stream_base_assembly::provider_metadata::ChatConfigSel
 use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
 use std::fmt;
 use std::time::SystemTime;
-use url::Url;
 use uuid::Uuid;
 pub mod chunks;
 pub mod collector;
@@ -33,10 +32,10 @@ pub mod reply;
 #[cfg(test)]
 mod tests;
 pub mod url;
+use self::url::PassthroughEnvironment;
 use collector::{BedrockEventStreamCollector, StreamLogAssembler};
 use error::PassthroughFailure;
 use reply::NativeReplyTransform;
-use url::PassthroughEnvironment;
 #[derive(Debug, Clone, Copy)]
 pub struct CollectorClock {
     pub next_id: fn() -> Uuid,
@@ -66,20 +65,61 @@ impl fmt::Debug for BedrockPassthroughPlan<'_> {
             .finish_non_exhaustive()
     }
 }
-fn decisions_json(value: &impl Serialize) -> Result<Json, PassthroughFailure> {
-    serde_json::from_str(&serde_json::to_string(value).map_err(PassthroughFailure::Body)?)
-        .map_err(PassthroughFailure::Body)
+#[must_use]
+pub fn get_bedrock_bearer_token(_litellm_params: &Object) -> Option<SecretString> {
+    None
 }
-fn decisions_object(params: &Object) -> Result<IndexMap<String, Json>, PassthroughFailure> {
-    params
+fn request_body(context: &PassthroughSigning<'_>) -> Result<Vec<u8>, PassthroughFailure> {
+    let data: IndexMap<String, Json> = match context.request_data {
+        None => IndexMap::new(),
+        Some(params) => serde_json::to_string(params)
+            .and_then(|text| serde_json::from_str(&text))
+            .map_err(PassthroughFailure::Body)?,
+    };
+    Ok(dumps_object(&data).into_bytes())
+}
+fn content_type_pairs(headers: &Headers, bearer: bool) -> Vec<(String, Option<String>)> {
+    let mut pairs: Vec<(String, Option<String>)> = headers
         .iter()
-        .map(|(name, value)| Ok((name.clone(), decisions_json(value)?)))
+        .map(|(name, value)| (name.clone(), Some(value.clone())))
+        .collect();
+    let has_content_type = pairs
+        .iter()
+        .any(|(name, _)| name.eq_ignore_ascii_case("content-type"));
+    if bearer || !has_content_type {
+        set_exact(&mut pairs, "Content-Type", "application/json".to_owned());
+    }
+    pairs
+}
+fn supplied_authorization(pairs: &[(String, Option<String>)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
+        .filter_map(|(_, value)| {
+            value
+                .as_ref()
+                .map(|text| ("Authorization".to_owned(), text.clone()))
+        })
         .collect()
 }
-#[must_use]
-pub fn get_bedrock_bearer_token(litellm_params: &Object) -> Option<SecretString> {
-    let _ignored_api_key = litellm_params.get("api_key");
-    None
+fn signing_region(
+    plan: &BedrockPassthroughPlan<'_>,
+    context: &PassthroughSigning<'_>,
+    bearer: bool,
+) -> Result<String, PassthroughFailure> {
+    if bearer {
+        return Ok(String::new());
+    }
+    let explicit = self::url::optional_text(context.litellm_params, "aws_region_name")?;
+    llm_region_name(LlmRegion {
+        explicit: explicit.as_deref(),
+        model: context.model,
+        model_id: None,
+        environment_region_name: plan.environment.region_name.as_deref(),
+        environment_region: plan.environment.region.as_deref(),
+        session_region: plan.environment.session_region.as_deref(),
+    })
+    .map_err(PassthroughFailure::from)
 }
 impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
     type Error = PassthroughFailure;
@@ -91,63 +131,22 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         &self,
         request: &PassthroughUrlRequest<'_>,
     ) -> Result<(Url, String), Self::Error> {
-        url::complete_url(self, request)
+        self::url::complete_url(self, request)
     }
     fn sign_request(
         &self,
         headers: Headers,
         context: &PassthroughSigning<'_>,
     ) -> Result<(Headers, Option<Vec<u8>>), Self::Error> {
-        let request_data = match context.request_data {
-            None => IndexMap::new(),
-            Some(params) => decisions_object(params)?,
-        };
-        let body = dumps_object(&request_data).into_bytes();
+        let body = request_body(context)?;
         let api_key = get_bedrock_bearer_token(context.litellm_params);
         let bearer = crate::aws_settings::bedrock_bearer_token(
             api_key.as_ref(),
             self.identity.bearer_token.as_ref(),
         );
-        let mut pairs: Vec<(String, Option<String>)> = headers
-            .iter()
-            .map(|(name, value)| (name.clone(), Some(value.clone())))
-            .collect();
-        if bearer.is_some() {
-            set_exact(&mut pairs, "Content-Type", "application/json".to_owned());
-        } else if !pairs
-            .iter()
-            .any(|(name, _)| name.eq_ignore_ascii_case("content-type"))
-        {
-            pairs.insert(
-                0,
-                (
-                    "Content-Type".to_owned(),
-                    Some("application/json".to_owned()),
-                ),
-            );
-        }
-        let supplied_authorization: Vec<(String, String)> = pairs
-            .iter()
-            .filter(|(name, _)| name.eq_ignore_ascii_case("authorization"))
-            .filter_map(|(_, value)| {
-                value
-                    .as_ref()
-                    .map(|text| ("Authorization".to_owned(), text.clone()))
-            })
-            .collect();
-        let region = if bearer.is_some() {
-            String::new()
-        } else {
-            let explicit = url::optional_text(context.litellm_params, "aws_region_name")?;
-            llm_region_name(LlmRegion {
-                explicit: explicit.as_deref(),
-                model: context.model,
-                model_id: None,
-                environment_region_name: self.environment.region_name.as_deref(),
-                environment_region: self.environment.region.as_deref(),
-                session_region: self.environment.session_region.as_deref(),
-            })?
-        };
+        let pairs = content_type_pairs(&headers, bearer.is_some());
+        let supplied = supplied_authorization(&pairs);
+        let region = signing_region(self, context, bearer.is_some())?;
         let bounded = pairs.iter().any(|(name, _)| {
             name.eq_ignore_ascii_case("content-length")
                 || name.eq_ignore_ascii_case("transfer-encoding")
@@ -155,7 +154,7 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
         let signed = request_headers(RequestHeaders {
             credentials: self.identity.credentials.as_ref(),
             region: &region,
-            extra_headers: &supplied_authorization,
+            extra_headers: &supplied,
             endpoint: context.api_base,
             data: Body::Bytes(&body),
             headers: &pairs,
@@ -164,12 +163,11 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
             supports_bearer_token: true,
             now: self.identity.now,
         })?;
-        let mut signed_headers = Headers::new();
-        for (name, value) in signed.headers {
-            if bounded || !name.eq_ignore_ascii_case("content-length") {
-                signed_headers.insert(name, value);
-            }
-        }
+        let signed_headers: Headers = signed
+            .headers
+            .into_iter()
+            .filter(|(name, _)| bounded || !name.eq_ignore_ascii_case("content-length"))
+            .collect();
         Ok((signed_headers, Some(signed.body)))
     }
     fn get_error_class(&self, message: &str, status_code: u16, headers: &Headers) -> ProviderError {
@@ -204,10 +202,5 @@ impl BasePassthroughConfig for BedrockPassthroughPlan<'_> {
             self.assembler,
             self.clock,
         ))
-    }
-}
-impl From<ProviderError> for PassthroughFailure {
-    fn from(error: ProviderError) -> Self {
-        Self::Provider(error::ProviderFailure(error))
     }
 }

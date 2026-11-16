@@ -31,12 +31,10 @@ pub struct NativeReplyRequest<'request> {
 pub trait NativeReplyTransform: Sync {
     fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, ProviderError>;
 }
-pub fn logged_reply(
+fn resolved_tag(
     plan: &BedrockPassthroughPlan<'_>,
     target: &PassthroughTarget<'_>,
-    response: &RelayedResponse<'_>,
-    request_data: &Object,
-) -> Result<Option<Json>, PassthroughFailure> {
+) -> Result<Option<ChatConfigTag>, PassthroughFailure> {
     let chat_config_model = if target.endpoint.contains("invoke") {
         format!("invoke/{}", target.model)
     } else if target.endpoint.contains("converse") {
@@ -50,13 +48,24 @@ pub fn logged_reply(
         .map_err(|_error| PassthroughFailure::UnknownProvider {
             provider: target.custom_llm_provider.to_owned(),
         })?;
-    let Some(tag) = plan
+    match plan
         .selector
         .select_chat_config(&chat_config_model, provider)?
-    else {
-        return Err(PassthroughFailure::NoProviderConfig {
+    {
+        Some(tag) => Ok(Some(tag)),
+        None => Err(PassthroughFailure::NoProviderConfig {
             model: target.model.to_owned(),
-        });
+        }),
+    }
+}
+pub fn logged_reply(
+    plan: &BedrockPassthroughPlan<'_>,
+    target: &PassthroughTarget<'_>,
+    response: &RelayedResponse<'_>,
+    request_data: &Object,
+) -> Result<Option<Json>, PassthroughFailure> {
+    let Some(tag) = resolved_tag(plan, target)? else {
+        return Ok(None);
     };
     let optional_params = Object::new();
     let litellm_params = Object::new();

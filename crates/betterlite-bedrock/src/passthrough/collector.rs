@@ -28,13 +28,10 @@ pub struct DecoderFlags {
     pub sync_stream: bool,
     pub json_mode: bool,
 }
-#[must_use]
-pub const fn decoder_flags() -> DecoderFlags {
-    DecoderFlags {
-        sync_stream: true,
-        json_mode: false,
-    }
-}
+pub const DECODER_FLAGS: DecoderFlags = DecoderFlags {
+    sync_stream: true,
+    json_mode: false,
+};
 pub enum DecoderChoice {
     Disabled {
         warning: Option<String>,
@@ -47,11 +44,10 @@ pub enum DecoderChoice {
 }
 #[must_use]
 pub fn decoder_selection(model: &str, endpoint: &str, clock: CollectorClock) -> DecoderChoice {
-    let flags = decoder_flags();
     let options = DecoderOptions {
         model,
-        json_mode: Some(flags.json_mode),
-        sync_stream: flags.sync_stream,
+        json_mode: Some(DECODER_FLAGS.json_mode),
+        sync_stream: DECODER_FLAGS.sync_stream,
         clock: DecoderClock {
             next_id: clock.next_id,
             now: clock.now,
@@ -113,7 +109,7 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             failure: None,
         }
     }
-    pub fn add(&mut self, chunk: &[u8]) -> Result<(), StreamLogError> {
+    pub fn feed(&mut self, chunk: &[u8]) -> Result<(), StreamLogError> {
         let Some(decoder) = self.decoder.as_mut() else {
             return Ok(());
         };
@@ -136,21 +132,11 @@ impl<'plan> BedrockEventStreamCollector<'plan> {
             }
         }
     }
-    pub fn build_logged_response(
-        &mut self,
-        logging_obj: &mut dyn PassthroughLogging,
-    ) -> Option<Json> {
-        let chunks = self.chunks.chunks();
-        if chunks.is_empty() {
-            return None;
-        }
-        self.assembler.assemble(chunks, logging_obj)
-    }
 }
 impl PassthroughStreamCollector for BedrockEventStreamCollector<'_> {
     type Logged = Json;
     fn add(&mut self, chunk: &[u8]) {
-        if let Err(error) = BedrockEventStreamCollector::add(self, chunk) {
+        if let Err(error) = self.feed(chunk) {
             self.failure = Some(error);
         }
     }

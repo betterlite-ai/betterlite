@@ -1,77 +1,54 @@
+use betterlite_openai::openai_base_config::{Headers, Object};
 use serde::Deserialize;
-use serde_json::Value;
-use std::collections::BTreeMap;
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Environment {
-    #[serde(default)]
     pub(super) region_name: Option<String>,
-    #[serde(default)]
     pub(super) runtime_endpoint: Option<String>,
 }
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind")]
+#[serde(rename_all = "lowercase", tag = "kind")]
 pub(crate) enum Input {
-    #[serde(rename = "url")]
     Url {
         #[serde(default)]
         environment: Environment,
         runs: Vec<UrlRun>,
     },
-    #[serde(rename = "sign")]
     Sign {
-        #[serde(default)]
         bearer: Option<String>,
         runs: Vec<SignRun>,
     },
-    #[serde(rename = "reply")]
-    Reply { runs: Vec<ReplyRun> },
-    #[serde(rename = "collector")]
-    Collector {
-        model: String,
-        endpoint: String,
-        split: bool,
-        frames: Vec<Frame>,
+    Reply {
+        runs: Vec<ReplyRun>,
     },
-    #[serde(rename = "selection")]
-    Selection {
-        runs: Vec<SelectionRun>,
-        frames: Vec<Frame>,
+    Collect {
+        runs: Vec<CollectRun>,
+        stream: String,
     },
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct UrlRun {
     pub(super) model: String,
     pub(super) endpoint: String,
-    #[serde(default)]
     pub(super) region: Option<String>,
-    #[serde(default)]
     pub(super) model_id: Option<String>,
-    #[serde(default)]
     pub(super) api_base: Option<String>,
-    #[serde(default)]
     pub(super) runtime_endpoint: Option<String>,
-    #[serde(default)]
-    pub(super) query: Option<BTreeMap<String, String>>,
+    pub(super) query: Option<Object>,
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct SignRun {
     #[serde(default)]
-    pub(super) headers: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(super) data: Option<Value>,
+    pub(super) headers: Headers,
+    pub(super) data: Option<Object>,
 }
 #[derive(Debug, Deserialize)]
 pub(crate) struct ReplyRun {
     pub(super) provider: String,
     pub(super) endpoint: String,
+    pub(super) body: String,
 }
 #[derive(Debug, Deserialize)]
-pub(crate) struct SelectionRun {
+pub(crate) struct CollectRun {
     pub(super) model: String,
     pub(super) endpoint: String,
-}
-#[derive(Debug, Deserialize)]
-pub(crate) struct Frame {
-    pub(super) event_type: String,
-    pub(super) payload: String,
 }

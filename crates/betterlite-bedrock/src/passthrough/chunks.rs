@@ -1,30 +1,21 @@
 use betterlite_streaming::stream_chunk_shaping::records::{JsonValue, StreamChunk, StreamDelta};
 #[must_use]
 pub fn plain_text_delta(chunk: &StreamChunk) -> Option<&str> {
-    if chunk.usage.is_some() {
-        return None;
-    }
-    if chunk
-        .provider_specific_fields
-        .as_ref()
-        .is_some_and(|fields| !fields.is_empty())
-    {
-        return None;
-    }
     let [choice] = chunk.choices.as_slice() else {
         return None;
     };
-    if choice
-        .finish_reason
-        .as_deref()
-        .is_some_and(|reason| !reason.is_empty())
-    {
-        return None;
-    }
-    if choice.logprobs.is_some() {
-        return None;
-    }
-    if delta_carries_more_than_text(&choice.delta) {
+    let blocked = chunk.usage.is_some()
+        || chunk
+            .provider_specific_fields
+            .as_ref()
+            .is_some_and(|fields| !fields.is_empty())
+        || choice
+            .finish_reason
+            .as_deref()
+            .is_some_and(|reason| !reason.is_empty())
+        || choice.logprobs.is_some()
+        || delta_carries_more_than_text(&choice.delta);
+    if blocked {
         return None;
     }
     choice.delta.content.as_deref()
@@ -59,18 +50,17 @@ pub struct CoalescedChunks {
 }
 impl CoalescedChunks {
     pub fn add(&mut self, chunk: StreamChunk) {
-        let text = plain_text_delta(&chunk).map(str::to_owned);
-        if let Some(text) = &text
+        if let Some(text) = plain_text_delta(&chunk)
             && !self.open_text_parts.is_empty()
         {
-            self.open_text_parts.push(text.clone());
+            self.open_text_parts.push(text.to_owned());
             return;
         }
         self.seal_text_run();
-        self.chunks.push(chunk);
-        if let Some(text) = text {
-            self.open_text_parts.push(text);
+        if let Some(text) = plain_text_delta(&chunk) {
+            self.open_text_parts.push(text.to_owned());
         }
+        self.chunks.push(chunk);
     }
     fn seal_text_run(&mut self) {
         seal_run(&mut self.chunks, &self.open_text_parts);
