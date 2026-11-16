@@ -1,23 +1,29 @@
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+
 use crate::count::text::Texter;
 use crate::image::tokens::Mode;
 
-use super::count::{Warning, apply_fallback, count_items, count_text};
+use super::count::{MediaCounter, Warning, apply_fallback, count_items, count_text};
 use super::error::MediaError;
-use super::image_count::{image_source_tokens, image_tokens};
-use super::settings::Settings;
-use super::wire::{Block, Document, FileObject, ImageUrlValue, NestedContent, Object, Source};
+use super::image_count::{image_source_tokens, image_tokens, image_url_parts};
+use super::wire::{Block, Document, NestedContent, Object, Source};
 
-pub(crate) async fn count_block(
-    texter: &Texter<'_>,
+pub(crate) async fn count_block<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
     block: Block,
-    settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     match block {
-        Block::Text { text } => count_text(texter, &text).await,
-        Block::ImageUrl { image_url } => image_url_tokens(&image_url, settings, warnings),
-        Block::Image { source } => image_source_tokens(&source, settings, warnings),
+        Block::Text { text } => count_text(counter.texter, &text).await,
+        Block::ImageUrl { image_url } => {
+            let (url, detail) = image_url_parts(&image_url)?;
+            image_tokens(counter, url, detail, warnings).await
+        }
+        Block::Image { source } => image_source_tokens(counter, &source, warnings).await,
         Block::Document {
             source,
             title,
@@ -28,49 +34,34 @@ pub(crate) async fn count_block(
                 title,
                 context,
             };
-            count_document(texter, document, settings, depth, warnings).await
+            count_document(counter, document, depth, warnings).await
         }
-        Block::File { file } => count_file(texter, file, settings, warnings).await,
+        Block::File { file } => count_file(counter, file.filename, file.file_data, warnings).await,
         Block::ToolUse {
             name,
             input,
             caller,
-        } => count_tool_use(texter, name, input, caller).await,
+        } => count_tool_use(counter.texter, name, input, caller).await,
         Block::ToolResult { content, .. } => match content {
-            Some(value) => count_nested(texter, value, settings, depth, warnings).await,
+            Some(value) => count_nested(counter, value, depth, warnings).await,
             None => Ok(0),
         },
-        Block::Thinking { thinking } => count_text(texter, &thinking).await,
+        Block::Thinking { thinking } => count_text(counter.texter, &thinking).await,
         Block::RedactedThinking => Ok(0),
-        Block::ToolReference { tool_name } => count_text(texter, &tool_name).await,
+        Block::ToolReference { tool_name } => count_text(counter.texter, &tool_name).await,
         Block::Unsupported => Err(MediaError::UnsupportedNestedBlock),
     }
 }
 
-fn image_url_tokens(
-    value: &ImageUrlValue,
-    settings: &Settings,
-    warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
-    match value {
-        ImageUrlValue::Text(text) if text.trim().is_empty() => Err(MediaError::BlankImageUrl),
-        ImageUrlValue::Text(text) => image_tokens(text, Mode::Auto, settings, warnings),
-        ImageUrlValue::Object(object) => {
-            if object.url.is_empty() {
-                return Err(MediaError::EmptyImageUrl);
-            }
-            image_tokens(&object.url, object.detail, settings, warnings)
-        }
-    }
-}
-
-async fn count_document(
-    texter: &Texter<'_>,
+async fn count_document<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
     document: Document,
-    settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     let Document {
         source,
         title,
@@ -78,33 +69,35 @@ async fn count_document(
     } = document;
     let mut total = 0_u64;
     for text in [title, context] {
-        let tokens = count_text(texter, &text).await?;
+        let tokens = count_text(counter.texter, &text).await?;
         total = total.checked_add(tokens).ok_or(MediaError::Overflow)?;
     }
     let nested = match source {
-        Source::Text { data } => count_text(texter, &data).await?,
-        Source::Content { content } => {
-            count_nested(texter, content, settings, depth, warnings).await?
-        }
-        Source::Url { url } => image_tokens(&url, Mode::Auto, settings, warnings)?,
+        Source::Text { data } => count_text(counter.texter, &data).await?,
+        Source::Content { content } => count_nested(counter, content, depth, warnings).await?,
+        Source::Url { url } => image_tokens(counter, &url, Mode::Auto, warnings).await?,
         Source::Base64 | Source::File | Source::Other => {
-            image_tokens("", Mode::Auto, settings, warnings)?
+            image_tokens(counter, "", Mode::Auto, warnings).await?
         }
     };
     total.checked_add(nested).ok_or(MediaError::Overflow)
 }
 
-async fn count_file(
-    texter: &Texter<'_>,
-    file: FileObject,
-    settings: &Settings,
+async fn count_file<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
+    filename: String,
+    file_data: String,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
-    let name_tokens = count_text(texter, &file.filename).await?;
-    if file.file_data.is_empty() {
-        return Ok(name_tokens);
-    }
-    let data_tokens = image_tokens(&file.file_data, Mode::Auto, settings, warnings)?;
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
+    let name_tokens = count_text(counter.texter, &filename).await?;
+    let data_tokens = if file_data.is_empty() {
+        0
+    } else {
+        image_tokens(counter, &file_data, Mode::Auto, warnings).await?
+    };
     name_tokens
         .checked_add(data_tokens)
         .ok_or(MediaError::Overflow)
@@ -126,21 +119,23 @@ async fn count_tool_use(
     Ok(total)
 }
 
-async fn count_nested(
-    texter: &Texter<'_>,
+async fn count_nested<Fetcher>(
+    counter: &MediaCounter<'_, Fetcher>,
     content: NestedContent,
-    settings: &Settings,
     depth: usize,
     warnings: &mut Vec<Warning>,
-) -> Result<u64, MediaError> {
+) -> Result<u64, MediaError>
+where
+    Fetcher: RemoteMediaFetcher + Sync,
+{
     match content {
-        NestedContent::Text(text) => count_text(texter, &text).await,
+        NestedContent::Text(text) => count_text(counter.texter, &text).await,
         NestedContent::Items(items) => {
             let next = depth.saturating_add(1);
-            Box::pin(count_items(texter, &items, settings, next, warnings)).await
+            Box::pin(count_items(counter, &items, next, warnings)).await
         }
         NestedContent::Unreadable(_) => {
-            apply_fallback(MediaError::UnreadableNested, settings, warnings)
+            apply_fallback(MediaError::UnreadableNested, counter.settings, warnings)
         }
     }
 }
