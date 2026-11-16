@@ -1,13 +1,13 @@
 from datetime import datetime
 from enum import StrEnum
-from typing import ClassVar, Literal, Required, Self, TypeAlias
+from typing import ClassVar, Literal, Required, Self
 
 from pydantic import ConfigDict, Field, JsonValue, field_validator, model_validator
-from typing_extensions import ReadOnly, TypedDict, override
+from typing_extensions import ReadOnly, TypedDict
 
 from betterlite.types.guardrails.content_filter import (
-    ContentFilterConfigModel,
     MCP_SECURITY_ON_VIOLATION,
+    ContentFilterConfigModel,
 )
 from betterlite.types.guardrails.core import (
     LakeraCategoryThresholds,
@@ -60,7 +60,7 @@ from betterlite.types.proxy.guardrails.guardrail_hooks.vigil_guard import (
     VigilGuardGuardrailConfigModel,
 )
 from betterlite.types.proxy.guardrails.guardrail_hooks.xecguard import XecGuardConfigModel
-from betterlite.types.utils.base import InitValue, ResponseObject
+from betterlite.types.utils.base import ResponseObject
 
 
 class Mode(ResponseObject):
@@ -151,7 +151,7 @@ class BaseLitellmParams(ContentFilterConfigModel):
         return self
 
 
-class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
+class LitellmParams(  # pyright: ignore[reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1192
     CiscoAIDefenseGuardrailConfigModel,  # ast-grep-ignore: no-long-names
     PresidioConfigModel,
     BedrockGuardrailConfigModel,
@@ -188,7 +188,7 @@ class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompati
 ):
     guardrail: str
     decision_model: str | None = None
-    checks: BedrockChecksConfigModel | tuple[DecisionModelCheck, ...] | None = None  # pyright: ignore[reportIncompatibleVariableOverride]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1229
+    checks: BedrockChecksConfigModel | tuple[DecisionModelCheck, ...] | None = None  # type: ignore[assignment]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1229
     mode: str | list[str] | Mode
 
     @field_validator("timeout", mode="before", check_fields=False)
@@ -212,14 +212,13 @@ class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompati
     @model_validator(mode="after")
     # ast-grep-ignore: no-long-names
     def validate_on_violation_for_guardrail(self) -> Self:
-        if (
-            self.on_violation in MCP_SECURITY_ON_VIOLATION
-            and self.guardrail != SupportedGuardrailIntegrations.MCP_SECURITY.value
-        ):
-            raise ValueError(
-                f"on_violation={self.on_violation!r} is only supported by guardrail='mcp_security'"
-            )
-        return self
+        if self.on_violation not in MCP_SECURITY_ON_VIOLATION:
+            return self
+        if self.guardrail == SupportedGuardrailIntegrations.MCP_SECURITY.value:
+            return self
+        raise ValueError(
+            f"on_violation={self.on_violation!r} is only supported by guardrail='mcp_security'"
+        )
 
     @model_validator(mode="after")
     # ast-grep-ignore: no-long-names
@@ -233,11 +232,14 @@ class LitellmParams(  # pyright: ignore[reportGeneralTypeIssues, reportIncompati
             case tuple() | BedrockChecksConfigModel() | None:
                 return self
 
-    @override
-    def __init__(self, **data: InitValue) -> None:
-        if data.get("default_on") is None:
-            data["default_on"] = False
-        super().__init__(**data)
+    @model_validator(mode="before")
+    @classmethod
+    def default_on_false(cls, data: JsonValue | ResponseObject) -> JsonValue | ResponseObject:
+        match data:
+            case dict() if data.get("default_on") is None:
+                return {**data, "default_on": False}
+            case dict() | list() | str() | bool() | int() | float() | ResponseObject() | None:
+                return data
 
 
 class Guardrail(TypedDict, total=False):
@@ -250,12 +252,8 @@ class Guardrail(TypedDict, total=False):
     updated_at: datetime | None
 
 
-class _GuardrailConfig(TypedDict):
+class guardrailConfig(TypedDict):  # noqa: N801  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
     guardrails: list[Guardrail]
-
-
-# https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
-guardrailConfig: TypeAlias = _GuardrailConfig
 
 
 class GuardrailEventHooks(StrEnum):

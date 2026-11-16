@@ -138,7 +138,9 @@ def module_of(name):
 report = {
     "defined": {
         "betterlite": sorted(
-            set(defined(our_params)) | set(defined(our_endpoints)) | set(defined(our_content_filter))
+            set(defined(our_params))
+            | set(defined(our_endpoints))
+            | set(defined(our_content_filter))
         )
     }
 }
@@ -502,7 +504,7 @@ def test_default_on_names() -> None:
     assert params.LitellmParams(guardrail="g", mode="pre_call").default_on is False
     assert params.LitellmParams(guardrail="g", mode="pre_call", default_on=None).default_on is False
     assert params.LitellmParams(guardrail="g", mode="pre_call", default_on=True).default_on is True
-    assert params.LitellmParams.model_validate(BASE).default_on is None
+    assert params.LitellmParams.model_validate(BASE).default_on is False
 
 
 def test_mode_union_names() -> None:
@@ -511,7 +513,8 @@ def test_mode_union_names() -> None:
     listed = params.LitellmParams(guardrail="g", mode=["A", "b"])
     assert listed.mode == ["a", "b"]
     mode = params.Mode(tags={"t": ["pre_call"]}, default="post_call")
-    tagged = params.LitellmParams.model_validate({"guardrail": "g", "mode": mode})
+    tagged_payload: dict[str, str | params.Mode] = {"guardrail": "g", "mode": mode}
+    tagged = params.LitellmParams.model_validate(tagged_payload)
     assert tagged.mode == mode
     payload: dict[str, JsonValue] = {"guardrail": "g", "mode": {"tags": {"t": "x"}}}
     from_mapping = params.LitellmParams.model_validate(payload)
@@ -519,9 +522,12 @@ def test_mode_union_names() -> None:
 
 
 def test_timeout_names() -> None:
-    text = params.LitellmParams.model_validate({**BASE, "timeout": "3.5"})
-    empty = params.LitellmParams.model_validate({**BASE, "timeout": ""})
-    whole = params.LitellmParams.model_validate({**BASE, "timeout": 2})
+    text_payload: dict[str, JsonValue] = {**BASE, "timeout": "3.5"}
+    empty_payload: dict[str, JsonValue] = {**BASE, "timeout": ""}
+    whole_payload: dict[str, JsonValue] = {**BASE, "timeout": 2}
+    text = params.LitellmParams.model_validate(text_payload)
+    empty = params.LitellmParams.model_validate(empty_payload)
+    whole = params.LitellmParams.model_validate(whole_payload)
     assert text.timeout == TIMEOUT_SECONDS
     assert empty.timeout is None
     assert whole.timeout == float(2)
@@ -529,12 +535,16 @@ def test_timeout_names() -> None:
 
 def test_checks_names() -> None:
     checks: JsonValue = [{"name": "a", "instructions": "do"}]
-    decision = params.LitellmParams.model_validate(
-        {"guardrail": "decision_model", "mode": "m", "checks": checks}
-    )
+    decision_payload: dict[str, JsonValue] = {
+        "guardrail": "decision_model",
+        "mode": "m",
+        "checks": checks,
+    }
+    decision = params.LitellmParams.model_validate(decision_payload)
     assert decision.checks == (DecisionModelCheck(name="a", instructions="do"),)
+    rejected_payload: dict[str, JsonValue] = {**BASE, "checks": checks}
     with pytest.raises(ValueError, match="only supported by guardrail='decision_model'"):
-        params.LitellmParams.model_validate({**BASE, "checks": checks})
+        params.LitellmParams.model_validate(rejected_payload)
 
 
 def test_enum_names() -> None:

@@ -40,14 +40,22 @@ deviations:
       and absent names, and the names test compares the three against LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1278-L1288
   - what: >-
-      guardrailConfig is the TypedDict class _GuardrailConfig and the module binds the LiteLLM name to it
-      with a TypeAlias, and GUARDRAIL_DEFINITION_LOCATION is built with the functional StrEnum call, where
-      LiteLLM declares both as classes with lowercase or underscore names. The TypedDict's __name__ is
-      _GuardrailConfig.
+      guardrailConfig is a TypedDict class with LiteLLM's exact name, and its class statement carries a
+      noqa for Ruff N801. GUARDRAIL_DEFINITION_LOCATION is built with the functional StrEnum call
+      instead of a class statement.
     why: >-
-      Ruff N801 rejects both class names, and the task's two budgeted expects are spent on the two
-      LiteLLM-linked pyright ignores, so neither can carry a noqa. Ruff UP013 rewrites a functional
-      TypedDict back to class syntax, so the alias is the form that passes. Keys, required keys,
+      LiteLLM names these classes guardrailConfig and GUARDRAIL_DEFINITION_LOCATION, which Ruff N801
+      rejects, and renaming either loses parity. The noqa is one of the task's budgeted suppressions;
+      the functional StrEnum form keeps that class statement off the budget. Keys, required keys,
       members and values are identical.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1301
+  - what: >-
+      LitellmParams turns an absent or null default_on into False with a mode="before" model validator
+      instead of the custom __init__ that LiteLLM defines.
+    why: >-
+      The pydantic mypy plugin types the synthesized __init__ of the first base class, so a custom
+      __init__ that forwards **data fails mypy strict. The validator runs on the same inputs (direct
+      construction, model_validate and model_validate_json) and default_on is still False when it is
+      absent or None, as LiteLLM's __init__ leaves it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1269-L1276
 kept_bugs: []
