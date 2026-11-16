@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-existing_ssml-seed
+call: {azure_native_speech: {existing_ssml: {inputs: ['<speak>Hi</speak>', 'plain']}}}
+env: {}
+compare: {ignore: []}

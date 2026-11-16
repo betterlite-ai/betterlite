@@ -30,6 +30,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gcs_cache_body"
+path = "fuzz_targets/gcs_cache_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "cache_types"
 path = "fuzz_targets/cache_types.rs"
 test = false
