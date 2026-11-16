@@ -1,0 +1,14 @@
+kind: helper
+name: azure-transcription-seed-native-config
+call:
+  azure_transcription:
+    function: native_config
+    probes:
+      - model: azure/speech/azure-stt
+        api_key: sk-seed
+        optional_params: {language: fr, response_format: verbose_json}
+        non_default_params: {language: de, prompt: ignored}
+        headers: {Content-Type: audio/wav}
+        bases: ['https://eastus.api.cognitive.microsoft.com']
+env: {}
+compare: {ignore: []}

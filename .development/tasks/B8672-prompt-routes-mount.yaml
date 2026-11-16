@@ -38,6 +38,8 @@ scope:
     - crates/betterlite-server/src/app/admin.rs
     - crates/betterlite-server/src/app/admin/prompts.rs
     - crates/betterlite-server/src/app/admin/prompts/**
+    - crates/betterlite-server/src/routes/prompts/read.rs
+    - crates/betterlite-server/src/routes/prompts/write.rs
     - tools/oracle/cases/prompts/read/**
     - tools/oracle/cases/prompts/write/**
   lint_tables: false
@@ -102,6 +104,7 @@ out_of_scope:
   - "The prompt handlers: B4061 and B4062. The registry and the row conversions: B4059."
   - "Handing the prompt registry to Shared: the foundation parts."
 pitfalls:
+  - "B4061 and B4062 start read.rs and write.rs with `#![expect(dead_code, ...)]` because nothing mounted them. Mounting them makes both expectations unfulfilled, so delete those two lines and change nothing else in those files."
   - GET /prompts/list must stay a static path next to GET /prompts/{prompt_id}; axum prefers the static segment, so do not add a second list route under the parameter.
   - A missing database answers 500 on writes and is not a reason to skip the mount; the read routes still serve the config prompts from the registry.
 review_level: security

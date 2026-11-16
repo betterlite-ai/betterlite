@@ -1,0 +1,13 @@
+{
+  "api_base": {
+    "description": "The API base URL for Alice. If not provided, the `ALICE_API_BASE` environment variable is checked, then `https://api.alice.io`.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The API key for Alice. If not provided, the `ALICE_API_KEY` environment variable is checked.",
+    "required": false,
+    "type": "string"
+  },
+  "ui_friendly_name": "Alice"
+}

@@ -1,0 +1,144 @@
+id: B9969
+title: Azure Responses answers 400 for a tool whose function is not an object
+description: >-
+  Fix the R2 finding on B544's Azure Responses transform. A request tool of the form
+  {"type":"function","function":null} fails in flattened_tool in
+  crates/betterlite-azure/src/responses/request.rs with ResponsesError::InvalidToolFunction, and http_status()
+  in crates/betterlite-azure/src/responses/error.rs answers None for that variant, so the caller turns it into
+  a 500. The value is client input that no provider request can use, so the answer belongs to a 400. LiteLLM
+  fails the same way by accident: its loop pops "function" and calls new_tool.update(function_data), and a null
+  or non-dict value raises an unhandled TypeError (transformation.py L127-L136).
+
+
+  The shared Responses transform already answers 400 for the comparable case of a tool whose parameters is not
+  an object. ResponseInputError::InvalidToolParameters in
+  crates/betterlite-openai/src/response_input/error.rs gives the message
+  "invalid type for 'tools[{index}].parameters': expected an object, but got {found} instead", builds found with
+  source_type_name at crates/betterlite-openai/src/response_input/tools.rs:160, and maps to Some(400) in the
+  same error.rs. Give the existing ResponsesError::InvalidToolFunction variant that same status and message
+  shape; it stays one variant, not a new error type.
+
+
+  Rust changes. crates/betterlite-openai/src/response_input/tools.rs: make source_type_name pub and add
+  #[must_use], because clippy's must_use_candidate is denied once the function is exported.
+  crates/betterlite-openai/src/response_input.rs: add pub use tools::source_type_name; so the Azure crate calls
+  betterlite_openai::response_input::source_type_name. Nothing else in betterlite-openai changes, and the shared
+  transform keeps forwarding a nested function unchanged for every other provider.
+  crates/betterlite-azure/src/responses/error.rs: give the variant fields { index: usize, found: &'static str },
+  the message "invalid type for 'tools[{index}].function': expected an object, but got {found} instead", and
+  Some(400) in http_status(); the match arm becomes Self::InvalidToolFunction { .. }.
+  crates/betterlite-azure/src/responses/request.rs: flattened_tools numbers its entries with enumerate and
+  passes the index into flattened_tool(tool, index). That function matches on fields.shift_remove("function"):
+  None returns Ok(tool.clone()), Json::Object(nested) extends the tool with the nested keys as today, and every
+  other value returns ResponsesError::InvalidToolFunction { index, found: source_type_name(&other) }. A tools
+  value that is not a list still falls through to the shared transform's ToolsNotAList 400.
+
+
+  Tests. Add crates/betterlite-azure/src/responses/tests/tool_function.rs and declare it with mod
+  tool_function; in crates/betterlite-azure/src/responses/tests.rs. a_non_object_function_maps_to_a_bad_request
+  is a plain #[test] that builds ResponsesError::InvalidToolFunction { index: 2, found: "NoneType" }, asserts
+  http_status() is Some(400) and asserts the exact Display text
+  "invalid type for 'tools[2].function': expected an object, but got NoneType instead".
+  a_non_object_function_is_rejected_before_the_request is an #[rstest] table with cases null_function,
+  string_function and array_function: each builds {"tools":[{"type":"function","function":<value>}]} with the
+  value null, "f" and ["f"], calls transform_request("gpt-5", text input, options, None), and asserts the error
+  is ResponsesError::InvalidToolFunction with index 0 and found NoneType, str and list, http_status() Some(400),
+  and a message naming tools[0].function. transform_request returns before it builds a body, so nothing is sent
+  upstream. Both tests fail on the unfixed tree: the unit test names fields the old unit variant lacks, and the
+  request test reads Some(400) where the variant answers None. Update the assertion in tests/strip.rs line 63 to
+  matches!(error, ResponsesError::InvalidToolFunction { index: 0, found: "str" }); leave its other assertions
+  and the other responses cases as they are.
+
+
+  Deviations. Write docs/deviations/B9969.yaml with the row under deviations below. Delete the first deviation
+  row in docs/deviations/B544.yaml, the one that says a non-object function is rejected with no HTTP status,
+  and leave its other deviations and kept_bugs alone. docs/compatibility.md already says a request value of the
+  wrong type answers 400, and the row still goes in: this fixes a LiteLLM 500, and every fixed LiteLLM bug gets
+  a deviation row. Budget: about 25 changed production lines and 10 deviation lines; the tests sit outside the
+  changed-line budget.
+scope:
+  paths:
+  - crates/betterlite-azure/src/responses/error.rs
+  - crates/betterlite-azure/src/responses/request.rs
+  - crates/betterlite-azure/src/responses/tests.rs
+  - crates/betterlite-azure/src/responses/tests/**
+  - crates/betterlite-openai/src/response_input.rs
+  - crates/betterlite-openai/src/response_input/tools.rs
+  - docs/deviations/B544.yaml
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L115-L147
+  why: AzureOpenAIResponsesAPIConfig.transform_responses_api_request and the tool flatten loop at L127-L136, where popping "function" and calling dict.update on a null or non-dict value raises an unhandled TypeError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L330-L359
+  why: _tools_with_object_parameters and _tool_with_object_parameters, where LiteLLM itself raises BadRequestError for a non-object tools[i].parameters; this is the 400 and message shape the Azure flatten error follows.
+dod:
+- text: >-
+    ResponsesError::InvalidToolFunction answers HTTP 400 and its message reads
+    "invalid type for 'tools[N].function': expected an object, but got <type> instead", the shape the shared
+    Responses transform uses for tools[N].parameters.
+  proof: [variant-status]
+- text: >-
+    A request whose tool function is null, a string or an array returns that 400 error from transform_request
+    before a request body exists, so nothing is sent upstream.
+  proof: [request-tests]
+- text: >-
+    The existing responses cases still pass with the reshaped variant, including the strip case that asserts
+    the error for a string function.
+  proof: [existing-responses-tests]
+- text: >-
+    docs/deviations/B9969.yaml lists the 400 with its message and the pinned LiteLLM link, and
+    docs/deviations/B544.yaml no longer says the case is rejected with no HTTP status.
+  proof: [deviation-row]
+checks:
+  optional: []
+  commands:
+  - id: variant-status
+    why: The invalid function variant still answers no HTTP status, or its message no longer follows the shared tool-field shape.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/src/responses/tests/tool_function.rs)"
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/^responses::tests::tool_function::a_non_object_function_maps_to_a_bad_request$/)'
+  - id: request-tests
+    why: A null, string or array function is not rejected with 400 before the body is built.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-azure/src/responses/tests/tool_function.rs)"
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/^responses::tests::tool_function::a_non_object_function_is_rejected_before_the_request::case_/)'
+  - id: existing-responses-tests
+    why: The reshaped variant breaks the existing responses cases or strip.rs was left asserting the unit variant.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-azure/src/responses/tests/strip.rs)"
+      && cargo nextest run --locked -p betterlite-azure --no-tests=fail -E 'test(/::responses_cases::/)'
+  - id: deviation-row
+    why: The new deviation misses the 400 or its pinned link, or B544's no-status row remains.
+    run: >-
+      grep -q -F '400 invalid_request_error' docs/deviations/B9969.yaml && grep -q -F 'llms/azure/responses/transformation.py#L127-L136'
+      docs/deviations/B9969.yaml && ! grep -q -F 'named invalid-tool error and no HTTP status' docs/deviations/B544.yaml
+oracle_cases: []
+deviations:
+- what: >-
+    A request tool whose function holds a value that is not an object is rejected with 400 invalid_request_error
+    and code "400", carrying the message "invalid type for 'tools[N].function': expected an object, but got
+    <type> instead" (NoneType, str or list for the values clients send), the same shape the shared Responses
+    transform uses for a non-object tools[N].parameters.
+  why: >-
+    LiteLLM pops the function value from the copied tool and hands it to dict.update, so a null, string or array
+    raises an unhandled TypeError and the proxy answers 500 for a request no deployment can serve; a 400 is the
+    right answer for input the client sent wrong.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/responses/transformation.py#L127-L136
+out_of_scope:
+- The Responses routes that surface this error to a client; B080 owns them, and this task stops at the transform's status and message.
+- The request-body decoder and its fuzz target from B544; this fix changes only the flatten error.
+- B544's other deviation rows and kept_bugs; only the first deviation row is removed.
+- The shared Responses transform's behavior for OpenAI and every other provider; the betterlite-openai change is only source_type_name's visibility and its re-export.
+pitfalls:
+- 'The shared type-name helper is private today: making source_type_name pub and re-exporting it from response_input.rs is the reuse; do not copy the Json-to-Python-type match into the Azure crate.'
+- 'A public source_type_name needs #[must_use], since clippy::must_use_candidate sits in pedantic, which the workspace denies.'
+- 'A "function": null value is Json::Null, so shift_remove returns Some and the match must error; only a missing key may return the tool unchanged.'
+- 'Keep the message lowercase and without a final period to match the shared betterlite message "invalid type for ... instead"; LiteLLM''s own BadRequestError text is "Invalid type ... instead." and is not the body shape this task follows.'
+- 'The index in the message is the tool''s position in the caller''s tools list, the same index the shared transform reports for tools[i].parameters; number the list before flattening.'
+- 'A tools value that is not a list must keep falling through to the shared transform, which answers 400 ToolsNotAList.'
+- 'B544''s oracle strip case sends a tool with an object function and must keep passing; do not add an oracle case for this input, since LiteLLM raises TypeError there.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

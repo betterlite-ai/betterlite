@@ -1,0 +1,12 @@
+kind: helper
+name: obo-cache-lru-eviction
+call:
+  b3741:
+    function: agent_365_token_exchange
+    replies:
+      - {status: 200, body: {access_token: token-1, expires_in: 3600}, raw: null}
+    repeat_last_reply: true
+    steps:
+      - {kind: token_range, prefix: "assertion-", count: 1001}
+env: {}
+compare: {ignore: []}

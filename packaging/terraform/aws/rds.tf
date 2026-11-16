@@ -1,0 +1,85 @@
+resource "random_password" "db_master_password" {
+  count       = var.create_database ? 1 : 0
+  length      = 32
+  special     = false
+  min_lower   = 4
+  min_upper   = 4
+  min_numeric = 4
+}
+
+resource "aws_db_subnet_group" "this" {
+  count      = var.create_database ? 1 : 0
+  name       = "${local.name}-db"
+  subnet_ids = local.private_subnet_ids
+
+  tags = local.tags
+}
+
+resource "aws_rds_cluster_parameter_group" "this" {
+  count       = var.create_database ? 1 : 0
+  name        = "${local.name}-cluster-pg"
+  family      = "aurora-postgresql${split(".", var.db_engine_version)[0]}"
+  description = "betterlite Aurora Postgres cluster parameters."
+
+  tags = local.tags
+}
+
+resource "aws_rds_cluster" "this" {
+  count                           = var.create_database ? 1 : 0
+  cluster_identifier              = local.name
+  engine                          = "aurora-postgresql"
+  engine_mode                     = "provisioned"
+  engine_version                  = var.db_engine_version
+  database_name                   = var.db_name
+  master_username                 = var.db_master_username
+  master_password                 = random_password.db_master_password[0].result
+  db_subnet_group_name            = aws_db_subnet_group.this[0].name
+  vpc_security_group_ids          = [aws_security_group.rds[0].id]
+  db_cluster_parameter_group_name = aws_rds_cluster_parameter_group.this[0].name
+
+  iam_database_authentication_enabled = true
+  storage_encrypted                   = true
+  apply_immediately                   = true
+
+  skip_final_snapshot       = var.skip_final_snapshot
+  final_snapshot_identifier = var.skip_final_snapshot ? null : "${local.name}-final-${substr(md5(local.name), 0, 8)}"
+
+  backup_retention_period = 7
+  preferred_backup_window = "07:00-09:00"
+
+  tags = local.tags
+}
+
+resource "aws_rds_cluster_instance" "writer" {
+  count              = var.create_database ? 1 : 0
+  identifier         = "${local.name}-writer"
+  cluster_identifier = aws_rds_cluster.this[0].id
+  instance_class     = var.db_instance_class
+  engine             = aws_rds_cluster.this[0].engine
+  engine_version     = aws_rds_cluster.this[0].engine_version
+
+  publicly_accessible          = false
+  performance_insights_enabled = true
+
+  # Tier 0 keeps this instance the writer through a failover
+  promotion_tier = 0
+
+  tags = local.tags
+}
+
+resource "aws_rds_cluster_instance" "reader" {
+  count              = var.create_database ? 1 : 0
+  identifier         = "${local.name}-reader"
+  cluster_identifier = aws_rds_cluster.this[0].id
+  instance_class     = var.db_instance_class
+  engine             = aws_rds_cluster.this[0].engine
+  engine_version     = aws_rds_cluster.this[0].engine_version
+
+  publicly_accessible          = false
+  performance_insights_enabled = true
+
+  # A higher tier is only promoted when the writer instance is gone
+  promotion_tier = 15
+
+  tags = local.tags
+}

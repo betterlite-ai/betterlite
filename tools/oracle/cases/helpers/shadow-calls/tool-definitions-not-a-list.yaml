@@ -1,0 +1,19 @@
+kind: helper
+name: shadow-tool-definitions-not-a-list
+call:
+  b4084:
+    operation: tool_definitions
+    tools:
+      name: an object is not a list
+calls:
+  - b4084:
+      operation: tool_definitions
+      tools: just a string
+  - b4084:
+      operation: tool_definitions
+      tools: null
+  - b4084:
+      operation: tool_definitions
+      tools: 7
+env: {}
+compare: {ignore: []}

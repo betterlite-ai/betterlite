@@ -1,0 +1,164 @@
+id: B9968
+title: Terraform provider client bounds every request
+description: >-
+  LiteLLM's Terraform provider builds its HTTP client with no bound, so a proxy that goes silent hangs terraform
+  apply forever. B7760 vendors the provider at packaging/terraform-provider unchanged, and NewClient in its
+  litellm/client.go (L37-L48) returns a Client whose httpClient is &http.Client{Transport: tr} with no Timeout,
+  while tr is a bare &http.Transport with only TLSClientConfig set, so it has no dial, TLS-handshake or
+  response-header timeout. sendRequest (client.go L385-L439) and MakeRequest (utils.go L86-L108) build every
+  request with http.NewRequest and no context, so a terraform-plugin-sdk resource timeout cannot cancel one, and
+  every response body is read with an uncapped io.ReadAll (client.go L417, utils.go L41, L138, L232 and L298, and
+  the six resource files resource_project.go, resource_team.go, resource_unified_access_group.go,
+  resource_prompt.go, resource_jwt_key_mapping_crud.go and resource_tag.go). No working setup can rely on a hang,
+  so this task fixes it and records the difference.
+
+
+  Change only packaging/terraform-provider/litellm/client.go for production code, and keep NewClient's
+  signature, since provider.go L107 and every test in the package call it. Add four unexported constants:
+  defaultRequestTimeout = 300 * time.Second, defaultDialTimeout = 30 * time.Second,
+  defaultTLSHandshakeTimeout = 10 * time.Second and defaultMaxResponseBytes = 64 << 20. Add clientLimits with the
+  fields requestTimeout time.Duration, dialTimeout time.Duration, tlsHandshakeTimeout time.Duration and
+  maxResponseBytes int64. NewClient calls a new unexported newClient(apiBase, apiKey string, insecureSkipVerify
+  bool, limits clientLimits) *Client with clientLimits{requestTimeout: defaultRequestTimeout, dialTimeout:
+  defaultDialTimeout, tlsHandshakeTimeout: defaultTLSHandshakeTimeout, maxResponseBytes: defaultMaxResponseBytes}.
+  newClient builds &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: insecureSkipVerify},
+  DialContext: (&net.Dialer{Timeout: limits.dialTimeout}).DialContext, TLSHandshakeTimeout:
+  limits.tlsHandshakeTimeout}, leaves every other transport field at its zero value, and builds
+  &http.Client{Transport: &cappedTransport{transport: transport, limit: limits.maxResponseBytes}, Timeout:
+  limits.requestTimeout}.
+
+
+  cappedTransport is a http.RoundTripper that wraps the transport. RoundTrip returns nil and the transport's error
+  when the transport errors, and otherwise replaces response.Body with a cappedBody holding the original body, the
+  limit and the bytes still allowed. cappedBody.Read reads from the original body, subtracts what it read, and
+  returns fmt.Errorf("response body exceeds the %d-byte cap", b.limit) once the total passes the limit. A body of
+  exactly the limit reads to io.EOF, and the first byte past it fails. Closing the cappedBody closes the original.
+  Because the cap sits in the transport, Client.sendRequest, MakeRequest and every resource's io.ReadAll get it
+  with no other production file changing. Leave Proxy unset: a bare http.Transport does not read HTTP_PROXY or
+  HTTPS_PROXY, only http.DefaultTransport sets ProxyFromEnvironment, and adding proxy support is outside this
+  fix. The transport's keep-alive defaults stay as they are.
+
+
+  Write the tests first in a new file packaging/terraform-provider/litellm/client_bounds_test.go, using only the
+  standard library. Against B7760's client.go the file does not build, because newClient and clientLimits do not
+  exist, and TestNewClientSetsDefaultRequestTimeout reports http.Client.Timeout = 0s, want 5m0s. If go runs in
+  your sandbox, run cd packaging/terraform-provider && go test ./litellm/ before the production change, put the
+  failure in the report notes, and say which way you checked. TestNewClientSetsDefaultRequestTimeout calls
+  NewClient("http://localhost:4000", "sk-test", false) and fails unless client.httpClient.Timeout ==
+  300*time.Second. TestRequestFailsWhenServerNeverAnswers starts an httptest server whose handler waits on
+  <-r.Context().Done(), builds newClient(server.URL, "sk-test", false, clientLimits{requestTimeout: 200 *
+  time.Millisecond, dialTimeout: time.Second, tlsHandshakeTimeout: time.Second, maxResponseBytes: 1 << 20}),
+  calls client.GetKey("sk-test"), and fails unless the call returns an error after at least 100 ms and before 5 s.
+  TestResponseBodyOverCapFails starts an httptest server whose handler writes 1024 bytes on /at-cap and 1025 bytes
+  everywhere else, builds a client with a 5 second requestTimeout and maxResponseBytes 1024, and checks three
+  reads: MakeRequest(client, "GET", "/at-cap", nil) with io.ReadAll returns exactly 1024 bytes and no error;
+  MakeRequest(client, "GET", "/over-cap", nil) with io.ReadAll fails with an error containing "1024"; and
+  client.GetKey("sk-test") fails with an error containing "1024". The MakeRequest halves catch a cap added only
+  in sendRequest.
+
+
+  Write docs/deviations/B9968.yaml with task: B9968 and one deviations row: what = the provider bounds every
+  request with a 300 second total timeout, a 30 second dial timeout and a 10 second TLS-handshake timeout, and
+  caps a response body at 64 MiB; why = LiteLLM's client sets none of these and reads every body with an uncapped
+  io.ReadAll, so a proxy that accepts the connection and never answers hangs terraform apply forever and a large
+  response is unbounded; link =
+  https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L37-L48.
+
+
+  Every other file under packaging/terraform-provider keeps B7760's bytes, including client_test.go and the three
+  resource_organization*_test.go files B7760 cleaned of trailing whitespace. Do not add a dependency, a
+  Cargo.toml entry, a Rust test or an oracle case.
+scope:
+  paths:
+    - packaging/terraform-provider/litellm/client.go
+    - packaging/terraform-provider/litellm/client_bounds_test.go
+    - docs/deviations/B9968.yaml
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L37-L48
+    why: NewClient builds the client and transport with no timeout and no response cap, the behavior this task bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L385-L439
+    why: sendRequest builds requests with http.NewRequest and no context and reads each body with io.ReadAll, so the client timeout and the transport cap are the only bounds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/utils.go#L86-L108
+    why: MakeRequest is the other request helper, used by every resource file, and it also calls client.httpClient.Do.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/resource_project.go#L193-L208
+    why: A resource Create builds its request through MakeRequest and reads the body with io.ReadAll, the pattern the other five resource files repeat.
+  - url: https://pkg.go.dev/net/http#Client.Timeout
+    why: Client.Timeout is a total deadline over the response headers and body, so it bounds a proxy that accepts and then stalls.
+  - url: https://pkg.go.dev/net/http#Transport
+    why: DialContext and TLSHandshakeTimeout are the transport fields to set, and Proxy is the field left nil so the existing direct connection behavior stays.
+  - url: https://pkg.go.dev/net/http/httptest#NewServer
+    why: The test server both behavior tests build.
+dod:
+  - text: NewClient's client times out each request at 300 seconds, and client.go defines the dial timeout as 30 seconds, the TLS-handshake timeout as 10 seconds and the response-body cap as 64 MiB.
+    proof: [client-defaults, client-bounds-tests]
+  - text: A test server that accepts the connection and never answers makes a request fail after the test's 200 ms client timeout instead of hanging.
+    proof: [client-bounds-tests]
+  - text: A response body of exactly the cap reads in full, and the first byte past it fails the read with an error naming the cap, through both request helpers.
+    proof: [client-bounds-tests]
+  - text: Every file under packaging/terraform-provider is byte-identical to B7760's copy except client.go and the new client_bounds_test.go.
+    proof: [only-client-changed]
+  - text: docs/deviations/B9968.yaml records the timeouts and the 64 MiB cap with the pinned LiteLLM client.go link.
+    proof: [deviation-row]
+  - text: The module stays gofmt clean, vets, builds and passes its own Go tests offline within 120 seconds.
+    proof: [go-format, go-vet-build, go-tests]
+checks:
+  optional: []
+  commands:
+    - id: client-defaults
+      why: The 300 second request timeout, the 30 second dial timeout, the 10 second TLS-handshake timeout or the 64 MiB body cap is missing or changed.
+      run: >-
+        grep -qE 'defaultRequestTimeout[[:space:]]*=[[:space:]]*300 \* time\.Second' packaging/terraform-provider/litellm/client.go
+        && grep -qE 'defaultDialTimeout[[:space:]]*=[[:space:]]*30 \* time\.Second' packaging/terraform-provider/litellm/client.go
+        && grep -qE 'defaultTLSHandshakeTimeout[[:space:]]*=[[:space:]]*10 \* time\.Second' packaging/terraform-provider/litellm/client.go
+        && grep -qE 'defaultMaxResponseBytes[[:space:]]*=[[:space:]]*64 << 20' packaging/terraform-provider/litellm/client.go
+    - id: client-bounds-tests
+      why: The new timeout and cap tests are missing, do not build or fail.
+      run: >-
+        cd packaging/terraform-provider
+        && test "$(go test -list '^(TestNewClientSetsDefaultRequestTimeout|TestRequestFailsWhenServerNeverAnswers|TestResponseBodyOverCapFails)$' ./litellm/ | grep -c '^Test')" = 3
+        && go test -count=1 -timeout 120s -run '^(TestNewClientSetsDefaultRequestTimeout|TestRequestFailsWhenServerNeverAnswers|TestResponseBodyOverCapFails)$' ./litellm/
+    - id: only-client-changed
+      why: A vendored file other than client.go and the new client_bounds_test.go was added or edited.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- packaging/terraform-provider/litellm/client.go)"
+        && test -z "$(git diff --name-only "$GATE_BASE" -- packaging/terraform-provider | grep -v -x -e packaging/terraform-provider/litellm/client.go -e packaging/terraform-provider/litellm/client_bounds_test.go)"
+    - id: deviation-row
+      why: The timeouts and the 64 MiB cap are not logged as a deviation with the pinned LiteLLM link.
+      run: >-
+        test -f docs/deviations/B9968.yaml
+        && grep -q -F 'client.go#L37-L48' docs/deviations/B9968.yaml
+        && grep -q -F '64 MiB' docs/deviations/B9968.yaml
+        && grep -q -F 'terraform apply' docs/deviations/B9968.yaml
+    - id: go-format
+      why: A Go file is not gofmt clean.
+      run: cd packaging/terraform-provider && test -z "$(gofmt -l .)"
+    - id: go-vet-build
+      why: The module does not vet or build.
+      run: cd packaging/terraform-provider && go vet ./... && go build ./...
+    - id: go-tests
+      why: The provider's own unit tests fail, time out or need the network.
+      run: cd packaging/terraform-provider && go test -timeout 120s -count=1 ./...
+oracle_cases: []
+deviations:
+  - what: The provider bounds every request with a 300 second total timeout, a 30 second dial timeout and a 10 second TLS-handshake timeout, and caps a response body at 64 MiB.
+    why: LiteLLM's client sets none of these and reads every body with an uncapped io.ReadAll, so a proxy that accepts the connection and never answers hangs terraform apply forever and a large response is unbounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/provider/litellm/client.go#L37-L48
+out_of_scope:
+  - "The rest of LiteLLM's client.go, sendRequest, the key methods and the log redaction, and every other vendored file: B7760's backlog entry covers terraform/provider/litellm/** and this task changes only NewClient and adds the transport wrapper."
+  - "B7761 owns tools/ (endpointaudit) and the check of every endpoint the provider calls against betterlite's OpenAPI document."
+  - "B155 owns the provider's docs, examples and release files."
+  - "Changing the request helpers to take a context (NewRequestWithContext) and threading it through every resource: the transport bounds the calls without editing the resource files."
+  - "A provider setting for the timeout or the cap: LiteLLM has none and this task fixes a hang, not a feature."
+  - "Acceptance tests that need TF_ACC or a running proxy stay out, as in B7760."
+pitfalls:
+  - Most resources register the deprecated Create, Read, Update and Delete functions, and resource_key.go registers the Context ones, but none passes its context into the client and the requests are built with http.NewRequest, so a terraform resource timeout never cancels an HTTP call; only the client's own timeout bounds it.
+  - A bare http.Transport ignores HTTP_PROXY and HTTPS_PROXY because only http.DefaultTransport sets ProxyFromEnvironment, and the vendored transport's Proxy is nil. Adding ProxyFromEnvironment while fixing the timeouts would route a working setup's requests through a proxy it does not use today, so leave Proxy nil.
+  - "The cap goes in the RoundTripper, not in sendRequest: the six resource files read their bodies through MakeRequest, so a cap written into sendRequest's io.ReadAll leaves them unbounded."
+  - Allow exactly maxResponseBytes and fail on the next byte; rejecting remaining == 0 refuses a body of exactly the cap, and returning io.EOF at the limit hides the overflow. The cap test reads a 1024 byte body clean and a 1025 byte one as an error naming 1024.
+  - NewClient's signature is used by provider.go L107 and every test in the package, so keep it and move the four values into the unexported constructor, or the package stops building.
+  - gofmt aligns the const block and the struct literals, and the go-format check rejects any file gofmt would change, so format client.go and client_bounds_test.go before committing.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
