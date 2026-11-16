@@ -1,4 +1,7 @@
-use betterlite_prompts::arguments::json::Json;
+use betterlite_logging::python_json::dumps_object;
+use betterlite_models::decisions::Json as EncodedJson;
+use betterlite_prompts::arguments::json::{Json, Object};
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use crate::databricks_chat::error::DatabricksChatError;
@@ -25,16 +28,26 @@ pub struct ContentBlock {
     pub citations: Option<Vec<Json>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct ReasoningSummary {
-    pub text: String,
-    #[serde(default = "default_signature")]
-    pub signature: Option<String>,
+// summary.get("signature", ""): an absent signature is "" while a null one stays null
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct Signature {
+    pub value: Option<String>,
 }
 
-// summary.get("signature", ""): an absent signature is "" while a null one stays null
-fn default_signature() -> Option<String> {
-    Some(String::new())
+impl Default for Signature {
+    fn default() -> Self {
+        Self {
+            value: Some(String::new()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub struct ReasoningSummary {
+    pub text: String,
+    #[serde(default)]
+    pub signature: Signature,
 }
 
 // LiteLLM's ChatCompletionThinkingBlock, the one block shape both the reply and the delta emit
@@ -55,7 +68,7 @@ pub fn extract_content_str(content: Option<&DatabricksContent>) -> Option<String
                 .iter()
                 .filter(|block| block.kind.as_deref() == Some("text"))
                 .filter_map(|block| block.text.as_deref())
-                .collect::<String>(),
+                .collect(),
         ),
     }
 }
@@ -76,18 +89,18 @@ pub fn extract_reasoning(
     if summaries.is_empty() {
         return (None, None);
     }
-    let reasoning = summaries
-        .iter()
-        .map(|summary| summary.text.as_str())
-        .collect::<String>();
     let thinking = summaries
         .iter()
         .map(|summary| ThinkingBlock {
             kind: String::from("thinking"),
             thinking: summary.text.clone(),
-            signature: summary.signature.clone(),
+            signature: summary.signature.value.clone(),
         })
-        .collect::<Vec<ThinkingBlock>>();
+        .collect();
+    let reasoning = summaries
+        .iter()
+        .map(|summary| summary.text.as_str())
+        .collect();
     (Some(reasoning), Some(thinking))
 }
 
@@ -122,4 +135,34 @@ pub fn extract_citations(
         citations.push(Json::List(supported));
     }
     Ok((!citations.is_empty()).then_some(citations))
+}
+
+// The function of a reply or delta tool call as Function(**function) reads it
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub(crate) struct DatabricksFunction {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub arguments: Option<Arguments>,
+    // the tool's JSON schema, which Function only encodes when arguments is null
+    #[serde(default)]
+    pub parameters: Option<IndexMap<String, EncodedJson>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+pub(crate) enum Arguments {
+    Text(String),
+    Encoded(IndexMap<String, EncodedJson>),
+}
+
+impl DatabricksFunction {
+    // Function(**function): a dict is encoded as json.dumps writes it and a null arguments falls back to parameters
+    pub(crate) fn arguments_text(&self) -> String {
+        match (&self.arguments, &self.parameters) {
+            (Some(Arguments::Text(text)), _) => text.clone(),
+            (Some(Arguments::Encoded(fields)), _) | (None, Some(fields)) => dumps_object(fields),
+            (None, None) => String::new(),
+        }
+    }
 }

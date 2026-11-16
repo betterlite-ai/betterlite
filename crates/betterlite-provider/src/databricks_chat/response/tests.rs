@@ -9,9 +9,10 @@ use serde_json::{Value, json};
 use betterlite_prompts::arguments::json::Object;
 
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::response::reply::{Reply, ReplyFunction, ReplyToolCall};
 use crate::databricks_chat::response::tool_calls::repair;
-use crate::databricks_chat::response::{ResponseInput, transform_response};
+use crate::databricks_chat::response::{
+    Reply, ReplyFunction, ReplyToolCall, ResponseInput, transform_response,
+};
 use crate::ollama_chat::ids::IdSource;
 
 struct FixedIds;
@@ -90,7 +91,7 @@ fn message_of(reply: &Value) -> Value {
 fn transforms_a_text_reply_into_the_openai_shape() {
     let output = success(
         &body(json!({"role": "assistant", "content": "hello"})),
-        None,
+        false,
     );
     assert_eq!(
         output,
@@ -460,7 +461,7 @@ fn tool_calls_are_normalized() {
         json!([
             {"function": {"arguments": "{\"a\":1}", "name": "f"}, "id": "t1", "type": "function"},
             {"function": {"arguments": "", "name": "g"}, "id": "generated-id", "type": "function"},
-            {"index": 3, "zz": 1, "function": {"arguments": "{\"b\":2}", "name": "h"}, "id": "t3", "type": "weird"}
+            {"index": 3, "zz": 1, "function": {"arguments": "{\"b\": 2}", "name": "h"}, "id": "t3", "type": "weird"}
         ])
     );
 }
@@ -475,7 +476,7 @@ fn a_dict_arguments_value_is_encoded() {
     let output = message_of(&success(&body(message), false));
     assert_eq!(
         output["tool_calls"][0]["function"]["arguments"],
-        json!("{\"a\":1}")
+        json!("{\"a\": 1}")
     );
 }
 
@@ -496,20 +497,27 @@ fn a_broken_tool_call_is_a_decode_error(#[case] tool_call: Value) {
 }
 
 #[rstest]
-#[case(json!({"id": "t1", "type": "custom", "function": {"name": "f"}}))]
-#[case(json!({"id": "t1", "custom": {"name": "f"}, "function": {"name": "f"}}))]
-fn a_custom_tool_call_is_refused(#[case] tool_call: Value) {
+#[case(
+    json!({"id": "t1", "type": "custom", "function": {"name": "f"}}),
+    json!({"function": {"arguments": "", "name": "f"}, "id": "t1", "type": "custom"})
+)]
+#[case(
+    json!({"id": "t1", "custom": {"name": "f"}, "function": {"name": "f"}}),
+    json!({"custom": {"name": "f"}, "function": {"arguments": "", "name": "f"}, "id": "t1", "type": "function"})
+)]
+fn a_custom_payload_on_a_reply_call_passes_through(
+    #[case] tool_call: Value,
+    #[case] expected: Value,
+) {
     let value = json!({"role": "assistant", "content": null, "tool_calls": [tool_call]});
-    let error = failure(&body(value), false);
-    assert_eq!(error.status_code(), 500);
     assert_eq!(
-        error.to_string(),
-        "a custom tool call in a Databricks reply is not supported"
+        message_of(&success(&body(value), false))["tool_calls"],
+        json!([expected])
     );
 }
 
 #[test]
-fn a_null_custom_key_is_not_a_custom_call() {
+fn a_null_custom_key_passes_through_as_an_extra() {
     let message = json!({
         "role": "assistant",
         "content": null,
@@ -517,6 +525,7 @@ fn a_null_custom_key_is_not_a_custom_call() {
     });
     let output = message_of(&success(&body(message), false));
     assert_eq!(output["tool_calls"][0]["function"]["name"], json!("f"));
+    assert_eq!(output["tool_calls"][0]["custom"], Value::Null);
 }
 
 #[rstest]
@@ -615,7 +624,7 @@ fn json_mode_repairs_a_parallel_call_before_converting() {
         "function": {"name": "multi_tool_use.parallel", "arguments": arguments.to_string()}
     }]);
     let output = success(&json_mode_body(tool_calls), true);
-    assert_eq!(message_of(&output)["content"], json!("{\"a\":1}"));
+    assert_eq!(message_of(&output)["content"], json!("{\"a\": 1}"));
     assert_eq!(message_of(&output)["tool_calls"], json!(null));
 }
 
@@ -673,7 +682,7 @@ fn a_parallel_call_expands_in_place_with_numbered_ids() {
         repaired,
         vec![
             reply_call("t0", "first", "{}"),
-            reply_call("t1_0", "f", "{\"a\":1}"),
+            reply_call("t1_0", "f", "{\"a\": 1}"),
             reply_call("t1_1", "g", "null"),
             reply_call("t2", "last", "[]"),
         ]

@@ -497,14 +497,9 @@ fn a_file_block_without_a_file_is_a_bad_request(#[case] message: Value) {
 }
 
 #[test]
-fn an_image_url_block_without_the_key_is_a_shape_error() {
+fn an_image_url_block_without_the_key_is_left_as_is() {
     let value = json!([{"role": "user", "content": [{"type": "image_url"}]}]);
-    let error = failure(value, OTHER_MODEL);
-    assert_eq!(error.status_code(), 500);
-    assert_eq!(
-        error.to_string(),
-        "an image_url content block is missing its image_url field"
-    );
+    assert_eq!(transformed(value.clone(), OTHER_MODEL), value);
 }
 
 #[test]

@@ -29,7 +29,7 @@ def reply_of(case: ResponseCase) -> Object:
         None,
         json_mode=case["json_mode"],
     )
-    return {"reply": JSON_ADAPTER.validate_python(response.model_dump())}
+    return {"reply": JSON_ADAPTER.validate_json(response.model_dump_json(exclude_unset=True))}
 
 
 def response_value(input_value: Input) -> JsonValue:

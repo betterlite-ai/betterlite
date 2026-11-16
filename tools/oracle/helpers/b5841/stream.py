@@ -4,9 +4,13 @@ from .common import CHAT, JSON_ADAPTER, Input, Object, StreamCase, cases_of, gua
 
 
 def chunks_of(case: StreamCase) -> Object:
-    iterator = CHAT.get_model_response_iterator(None, False, case["json_mode"])
+    iterator = CHAT.get_model_response_iterator(
+        None, sync_stream=False, json_mode=case["json_mode"]
+    )
     chunks = [
-        JSON_ADAPTER.validate_python(iterator.chunk_parser(chunk).model_dump())
+        JSON_ADAPTER.validate_json(
+            iterator.chunk_parser(chunk).model_dump_json(exclude_unset=True)
+        )
         for chunk in case["chunks"]
     ]
     return {"chunks": chunks}

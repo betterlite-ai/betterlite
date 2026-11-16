@@ -2,7 +2,7 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::Number;
 
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::response::reply::Usage;
+use crate::databricks_chat::response::Usage;
 
 // Usage(**block) consumes these kwargs; every other key is forwarded onto the usage object
 const NAMED: [&str; 8] = [
@@ -40,22 +40,35 @@ const SERVER_TOOL_USE: [&str; 3] = [
 
 // usage_from folds the counts, the reasoning details, the prompt cache keys and the forwarded keys
 pub(crate) fn usage_from(block: &Object) -> Result<Usage, DatabricksChatError> {
-    let prompt_tokens = count(block.get("prompt_tokens"), "prompt_tokens")?.unwrap_or(0);
     let completion = count(block.get("completion_tokens"), "completion_tokens")?;
-    let total_tokens = count(block.get("total_tokens"), "total_tokens")?.unwrap_or(0);
-    let mut completion_details = block
-        .get("completion_tokens_details")
-        .and_then(Json::as_object)
-        .filter(|fields| !fields.is_empty())
-        .cloned();
-    apply_reasoning(block, completion, &mut completion_details)?;
-    let prompt_details = prompt_details(block);
+    let mut completion_details = object_of(block.get("completion_tokens_details"));
+    if let Some(reasoning) = present_count(block.get("reasoning_tokens"), "reasoning_tokens")? {
+        let fields = completion_details.get_or_insert_with(Object::new);
+        if matches!(fields.get("reasoning_tokens"), None | Some(Json::Null)) {
+            fields.insert(
+                "reasoning_tokens".to_owned(),
+                Json::Number(Number::from(reasoning)),
+            );
+        }
+        if let Some(completion) = completion
+            && matches!(fields.get("text_tokens"), None | Some(Json::Null))
+        {
+            let mut text = completion.saturating_sub(reasoning);
+            for name in ["image_tokens", "audio_tokens"] {
+                text = text.saturating_sub(present_count(fields.get(name), name)?.unwrap_or(0));
+            }
+            fields.insert(
+                "text_tokens".to_owned(),
+                Json::Number(Number::from(text.max(0))),
+            );
+        }
+    }
     Ok(Usage {
         completion_tokens: completion.unwrap_or(0),
-        prompt_tokens,
-        total_tokens,
+        prompt_tokens: count(block.get("prompt_tokens"), "prompt_tokens")?.unwrap_or(0),
+        total_tokens: count(block.get("total_tokens"), "total_tokens")?.unwrap_or(0),
         completion_tokens_details: completion_details,
-        prompt_tokens_details: prompt_details,
+        prompt_tokens_details: prompt_details(block),
         extra: extras(block),
     })
 }
@@ -66,63 +79,31 @@ fn count(value: Option<&Json>, name: &str) -> Result<Option<i64>, DatabricksChat
         None | Some(Json::Null) => Ok(None),
         Some(Json::Number(number)) if number.as_i64().is_some() => Ok(number.as_i64()),
         Some(Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_)) => {
-            Err(DatabricksChatError::UsageCount {
-                field: name.to_owned(),
+            Err(DatabricksChatError::Shape {
+                message: format!("the {name} of the Databricks usage must be an integer"),
             })
         }
     }
 }
 
-// if reasoning_tokens: it fills completion_tokens_details and derives text_tokens
-fn apply_reasoning(
-    block: &Object,
-    completion: Option<i64>,
-    details: &mut Option<Object>,
-) -> Result<(), DatabricksChatError> {
-    let Some(reasoning) = truthy_integer(block.get("reasoning_tokens"), "reasoning_tokens")? else {
-        return Ok(());
-    };
-    let fields = details.get_or_insert_with(Object::new);
-    if matches!(fields.get("reasoning_tokens"), None | Some(Json::Null)) {
-        fields.insert(
-            "reasoning_tokens".to_owned(),
-            Json::Number(Number::from(reasoning)),
-        );
-    }
-    let Some(completion_tokens) = completion else {
-        return Ok(());
-    };
-    if !matches!(fields.get("text_tokens"), None | Some(Json::Null)) {
-        return Ok(());
-    }
-    let mut text = completion_tokens.saturating_sub(reasoning);
-    for name in ["image_tokens", "audio_tokens"] {
-        if let Some(value) = truthy_integer(fields.get(name), name)? {
-            text = text.saturating_sub(value);
-        }
-    }
-    fields.insert(
-        "text_tokens".to_owned(),
-        Json::Number(Number::from(text.max(0))),
-    );
-    Ok(())
-}
-
 // if reasoning_tokens: a falsy value counts as absent, any other value must be an integer
-fn truthy_integer(value: Option<&Json>, name: &str) -> Result<Option<i64>, DatabricksChatError> {
+fn present_count(value: Option<&Json>, name: &str) -> Result<Option<i64>, DatabricksChatError> {
     if value.is_some_and(|given| !given.is_truthy()) {
         return Ok(None);
     }
     count(value, name)
 }
 
-// prompt_tokens_details, then the prompt cache keys Usage folds into it
-fn prompt_details(block: &Object) -> Option<Object> {
-    let base = block
-        .get("prompt_tokens_details")
+fn object_of(value: Option<&Json>) -> Option<Object> {
+    value
         .and_then(Json::as_object)
         .filter(|fields| !fields.is_empty())
-        .cloned();
+        .cloned()
+}
+
+// prompt_tokens_details, then the prompt cache keys Usage folds into it
+fn prompt_details(block: &Object) -> Option<Object> {
+    let base = object_of(block.get("prompt_tokens_details"));
     let present = base.is_some();
     let mut fields = base.unwrap_or_default();
     if present {
@@ -157,10 +138,8 @@ fn prompt_details(block: &Object) -> Option<Object> {
 
 // PromptTokensDetailsWrapper mirrors cache_write_tokens and cache_creation_tokens onto each other
 fn resolve_cache_write(fields: &mut Object) {
-    if count(fields.get("cache_write_tokens"), "cache_write_tokens")
-        .unwrap_or_default()
-        .is_none()
-    {
+    let write = count(fields.get("cache_write_tokens"), "cache_write_tokens").unwrap_or_default();
+    if write.is_none() {
         let creation = count(fields.get("cache_creation_tokens"), "cache_creation_tokens")
             .unwrap_or_default()
             .or_else(|| {
@@ -213,11 +192,14 @@ fn server_tool_use_fields(value: &Json) -> Json {
     let Json::Object(fields) = value else {
         return value.clone();
     };
-    let mut kept = Object::new();
-    for name in SERVER_TOOL_USE {
-        if let Some(entry) = fields.get(name) {
-            kept.insert(name.to_owned(), entry.clone());
-        }
-    }
-    Json::Object(kept)
+    Json::Object(
+        SERVER_TOOL_USE
+            .iter()
+            .filter_map(|name| {
+                fields
+                    .get(*name)
+                    .map(|entry| ((*name).to_owned(), entry.clone()))
+            })
+            .collect(),
+    )
 }

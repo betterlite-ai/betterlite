@@ -1,6 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use betterlite_openai::chat_content::UrlDownloader;
+use betterlite_openai::chat::ChatMessage;
+use betterlite_openai::chat_content::{ChatContent, ChatContentError, Mode, UrlDownloader};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, ContentPart, Message, strip_name_from_message};
 use betterlite_prompts::message_fields::image_hoist::hoist_tool_message_images;
@@ -10,14 +11,17 @@ use betterlite_prompts::message_fields::tool_reference::drop_tool_reference_part
 
 use crate::databricks_chat::error::DatabricksChatError;
 use crate::databricks_chat::request::CLAUDE;
+use crate::databricks_chat::wire;
 
-mod content_items;
 mod tests;
 
 pub const TOOL_CALLS: &str = "tool_calls";
 pub const TOOL_CALL_ID: &str = "tool_call_id";
+// the parent transform's sentinel provider and a non-openai base keep Databricks's cache_control
+const CONTENT_PROVIDER: &str = "openai";
+const CONTENT_BASE: &str = "https://databricks.example";
 
-// DatabricksConfig._transform_messages, including the parent OpenAI content item pass it ends with
+// DatabricksConfig._transform_messages, ending with the parent OpenAI content item pass
 pub fn transform_messages(
     messages: &[Message],
     model: &str,
@@ -41,8 +45,50 @@ pub fn transform_messages(
         split_parallel_tool_calls(&merge_adjacent_system_messages(&kept))?
     };
     let stripped = drop_tool_reference_parts(&sequenced);
-    let hoisted = hoist_tool_message_images(&stripped);
-    content_items::transform_user_contents(&hoisted, downloads)
+    rewrite_user_contents(hoist_tool_message_images(&stripped), downloads)
+}
+
+// The parent OpenAI _transform_messages rewrites the content items of user messages
+fn rewrite_user_contents(
+    messages: Vec<Message>,
+    downloads: &dyn UrlDownloader,
+) -> Result<Vec<Message>, DatabricksChatError> {
+    let mut rewritten = Vec::with_capacity(messages.len());
+    for message in messages {
+        if message.role != "user" {
+            rewritten.push(message);
+            continue;
+        }
+        let typed: ChatMessage = wire::convert(&message)?;
+        let optional_params = Object::new();
+        let environment: BTreeMap<String, String> = BTreeMap::new();
+        let transformed = ChatContent {
+            model: "",
+            messages: std::slice::from_ref(&typed),
+            optional_params: &optional_params,
+            provider: Some(CONTENT_PROVIDER),
+            api_base: Some(CONTENT_BASE),
+            global_api_base: None,
+            openai_system_messages_first: false,
+            environment: &environment,
+            downloads,
+        }
+        .transform(Mode::Sync)
+        .map_err(content_error)?;
+        let Some(message) = transformed.messages.first() else {
+            continue;
+        };
+        rewritten.push(wire::convert(message)?);
+    }
+    Ok(rewritten)
+}
+
+fn content_error(error: ChatContentError) -> DatabricksChatError {
+    match error {
+        ChatContentError::MissingFile(_) => DatabricksChatError::MissingFile,
+        ChatContentError::Fetch(error) => DatabricksChatError::Fetch(error),
+        ChatContentError::MessageShape { source } => DatabricksChatError::Decode(source),
+    }
 }
 
 // _move_cache_control_into_string_content_block: only a string content moves, and only when the key is set
@@ -61,7 +107,7 @@ fn move_cache_control(mut message: Message) -> Message {
     fields.insert("text".to_owned(), Json::Text(text));
     fields.insert("cache_control".to_owned(), cache_control);
     message.content = Some(Content::Parts(vec![ContentPart {
-        kind: "text".to_owned(),
+        kind: String::from("text"),
         fields,
     }]));
     message
@@ -113,7 +159,6 @@ fn is_bare_assistant(message: &Message) -> bool {
     if message.role != "assistant" {
         return false;
     }
-    // the empty content cleanup already dropped blank text and empty block lists
     let has_content = message.content.is_some();
     let has_tool_calls = message
         .provider_specific_fields
@@ -160,14 +205,15 @@ fn expand_group(
     result: &mut Vec<Message>,
 ) {
     for (position, (call, tool_message)) in matched.iter().zip(tool_messages).enumerate() {
+        let call = Json::clone(call);
         if position == 0 {
             let mut first = message.clone();
             first
                 .provider_specific_fields
-                .insert(TOOL_CALLS.to_owned(), Json::List(vec![Json::clone(call)]));
+                .insert(TOOL_CALLS.to_owned(), Json::List(vec![call]));
             result.push(first);
         } else {
-            result.push(later_call_assistant(Json::clone(call)));
+            result.push(later_call_assistant(call));
         }
         result.push(Message::clone(tool_message));
     }

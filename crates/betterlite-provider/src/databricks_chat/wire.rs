@@ -14,7 +14,6 @@ where
     Source: Serialize + ?Sized,
     Target: DeserializeOwned,
 {
-    serde_json::to_value(value)
-        .map_err(DatabricksChatError::Encode)
-        .and_then(|encoded| serde_json::from_value(encoded).map_err(DatabricksChatError::Decode))
+    let encoded = serde_json::to_value(value).map_err(DatabricksChatError::Encode)?;
+    serde_json::from_value(encoded).map_err(DatabricksChatError::Decode)
 }

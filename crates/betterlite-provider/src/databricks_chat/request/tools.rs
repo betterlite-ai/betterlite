@@ -15,14 +15,12 @@ pub(crate) fn map_tools_for_model(model: &str, value: &Json) -> Result<Json, Dat
     }
     let Json::List(tools) = value else {
         return Err(DatabricksChatError::Shape {
-            message: "the tools value must be a list".to_owned(),
+            message: String::from("the tools value must be a list"),
         });
     };
-    let mapping = map_tools(tools)?;
-    let mut converted = Vec::with_capacity(mapping.tools.len());
-    for tool in &mapping.tools {
-        let encoded_tool: Json = convert(tool)?;
-        converted.push(convert_anthropic_tool(&encoded_tool)?);
+    let mut converted = Vec::with_capacity(tools.len());
+    for tool in &map_tools(tools)?.tools {
+        converted.push(convert_anthropic_tool(&convert(tool)?)?);
     }
     Ok(Json::List(converted))
 }
@@ -31,12 +29,12 @@ pub(crate) fn map_tools_for_model(model: &str, value: &Json) -> Result<Json, Dat
 pub(crate) fn convert_anthropic_tool(value: &Json) -> Result<Json, DatabricksChatError> {
     let Some(fields) = value.as_object() else {
         return Err(DatabricksChatError::Shape {
-            message: "a mapped Anthropic tool must be an object".to_owned(),
+            message: String::from("a mapped Anthropic tool must be an object"),
         });
     };
     let Some(name) = fields.get("name").and_then(Json::as_str) else {
         return Err(DatabricksChatError::Shape {
-            message: "a mapped Anthropic tool is missing its name".to_owned(),
+            message: String::from("a mapped Anthropic tool is missing its name"),
         });
     };
     Ok(build_tool(
@@ -52,18 +50,19 @@ pub(crate) fn build_tool(name: &str, schema: Option<&Json>, description: Option<
         .filter(|given| given.is_truthy())
         .cloned()
         .unwrap_or_else(|| Json::Object(Object::new()));
-    let mut function = Object::new();
-    function.insert("name".to_owned(), Json::Text(name.to_owned()));
-    function.insert("parameters".to_owned(), parameters);
+    let mut function = Object::from_iter([
+        (String::from("name"), Json::Text(name.to_owned())),
+        (String::from("parameters"), parameters),
+    ]);
     if let Some(description) = description
         && !matches!(description, Json::Null)
     {
-        function.insert("description".to_owned(), description.clone());
+        function.insert(String::from("description"), description.clone());
     }
-    let mut tool = Object::new();
-    tool.insert("type".to_owned(), Json::Text("function".to_owned()));
-    tool.insert("function".to_owned(), Json::Object(function));
-    Json::Object(tool)
+    Json::Object(Object::from_iter([
+        (String::from("type"), Json::Text(String::from("function"))),
+        (String::from("function"), Json::Object(function)),
+    ]))
 }
 
 // map_response_format_to_databricks_tool: text formats map to no tool, the rest to json_tool_call
@@ -90,7 +89,7 @@ pub(crate) fn append_wire_tool(
     match params.get_mut("tools") {
         Some(DecisionJson::List(tools)) => tools.push(tool),
         None => {
-            params.insert("tools".to_owned(), DecisionJson::List(vec![tool]));
+            params.insert(String::from("tools"), DecisionJson::List(vec![tool]));
         }
         Some(
             DecisionJson::Null
@@ -100,7 +99,7 @@ pub(crate) fn append_wire_tool(
             | DecisionJson::Object(_),
         ) => {
             return Err(DatabricksChatError::Shape {
-                message: "the existing tools value is not a list".to_owned(),
+                message: String::from("the existing tools value is not a list"),
             });
         }
     }
@@ -109,13 +108,14 @@ pub(crate) fn append_wire_tool(
 
 // The json-mode tool_choice names the response_format tool without arguments
 pub(crate) fn json_tool_choice() -> Json {
-    let mut function = Object::new();
-    function.insert(
-        "name".to_owned(),
-        Json::Text(RESPONSE_FORMAT_TOOL_NAME.to_owned()),
-    );
-    let mut choice = Object::new();
-    choice.insert("type".to_owned(), Json::Text("function".to_owned()));
-    choice.insert("function".to_owned(), Json::Object(function));
-    Json::Object(choice)
+    Json::Object(Object::from_iter([
+        (String::from("type"), Json::Text(String::from("function"))),
+        (
+            String::from("function"),
+            Json::Object(Object::from_iter([(
+                String::from("name"),
+                Json::Text(RESPONSE_FORMAT_TOOL_NAME.to_owned()),
+            )])),
+        ),
+    ]))
 }

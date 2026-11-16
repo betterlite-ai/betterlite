@@ -38,8 +38,6 @@ pub enum DatabricksChatError {
     Shape { message: String },
     #[error("the Databricks response is missing its {key}")]
     MissingKey { key: &'static str },
-    #[error("the {field} of the Databricks usage must be an integer")]
-    UsageCount { field: String },
     #[error("KeyError: '{key}', Got unexpected response from Databricks: {chunk}")]
     ChunkKey { key: &'static str, chunk: String },
     #[error("the created of a Databricks stream chunk is null and no clock is available")]
@@ -59,22 +57,18 @@ impl DatabricksChatError {
     pub const fn status_code(&self) -> u16 {
         match self {
             Self::Databricks(error) => error.status_code,
-            Self::Tools(error) => match error.status_code() {
-                Some(status) => status,
-                None => 400,
-            },
+            Self::Tools(error) => error.status_code().unwrap_or(400),
+            Self::Response { status_code, .. } => *status_code,
             Self::Reasoning(_)
             | Self::Fetch(_)
             | Self::InvalidEffort { .. }
             | Self::ChunkKey { .. }
             | Self::MissingFile => 400,
-            Self::Response { status_code, .. } => *status_code,
             Self::Schema(_)
             | Self::Thinking(_)
             | Self::Base(_)
             | Self::Shape { .. }
             | Self::MissingKey { .. }
-            | Self::UsageCount { .. }
             | Self::NullCreated
             | Self::Encode(_)
             | Self::Decode(_) => 500,
@@ -85,26 +79,12 @@ impl DatabricksChatError {
 impl From<DatabricksChatError> for ProviderError {
     fn from(error: DatabricksChatError) -> Self {
         let headers: Vec<(String, String)> = match &error {
-            DatabricksChatError::Databricks(inner) => return Self::from(inner.clone()),
-            DatabricksChatError::Response { headers, .. } => headers
+            Self::Databricks(inner) => return Self::from(inner.clone()),
+            Self::Response { headers, .. } => headers
                 .iter()
                 .map(|(name, value)| (name.clone(), value.clone()))
                 .collect(),
-            DatabricksChatError::Tools(_)
-            | DatabricksChatError::Schema(_)
-            | DatabricksChatError::Reasoning(_)
-            | DatabricksChatError::Thinking(_)
-            | DatabricksChatError::Base(_)
-            | DatabricksChatError::Fetch(_)
-            | DatabricksChatError::MissingFile
-            | DatabricksChatError::Shape { .. }
-            | DatabricksChatError::MissingKey { .. }
-            | DatabricksChatError::UsageCount { .. }
-            | DatabricksChatError::ChunkKey { .. }
-            | DatabricksChatError::NullCreated
-            | DatabricksChatError::InvalidEffort { .. }
-            | DatabricksChatError::Encode(_)
-            | DatabricksChatError::Decode(_) => Vec::new(),
+            _ => Vec::new(),
         };
         Self::from(ProviderErrorParts {
             status_code: error.status_code(),

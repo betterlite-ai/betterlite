@@ -17,7 +17,11 @@ impl IdSource for FixedIds {
 
 fn parse_with(body: &Value, json_mode: bool) -> Result<StreamChunk, DatabricksChatError> {
     let chunk = serde_json::to_string(body).expect("the fixture chunk encodes");
-    ChunkParser::new(json_mode).parse(&chunk, &FixedIds)
+    ChunkParser {
+        json_mode,
+        last_function_name: None,
+    }
+    .parse(&chunk, &FixedIds)
 }
 
 fn success_with(body: &Value, json_mode: bool) -> Value {
@@ -50,8 +54,6 @@ fn delta_of(chunk: &Value) -> Value {
     chunk["choices"][0]["delta"].clone()
 }
 
-const OPENAI_DELTA: [&str; 5] = ["content", "role", "function_call", "tool_calls", "audio"];
-
 #[test]
 fn a_text_chunk_carries_the_openai_chunk_shape() {
     assert_eq!(
@@ -81,12 +83,16 @@ fn a_text_chunk_carries_the_openai_chunk_shape() {
 
 #[test]
 fn an_empty_delta_dumps_the_five_openai_keys() {
-    let delta = delta_of(&success(&body(json!({}))));
-    let fields = delta.as_object().expect("the delta is an object");
-    assert_eq!(fields.len(), OPENAI_DELTA.len());
-    for name in OPENAI_DELTA {
-        assert_eq!(fields[name], Value::Null, "{name} is null");
-    }
+    assert_eq!(
+        delta_of(&success(&body(json!({})))),
+        json!({
+            "content": null,
+            "role": null,
+            "function_call": null,
+            "tool_calls": null,
+            "audio": null
+        })
+    );
 }
 
 #[test]
@@ -414,6 +420,21 @@ fn a_tool_call_defaults_its_type_and_dumps_a_null_id() {
     );
 }
 
+#[test]
+fn a_tool_call_without_an_id_keeps_it_absent() {
+    let delta = delta_of(&success(&body(json!({
+        "tool_calls": [{"index": 0, "function": {"name": "f", "arguments": "x"}}]
+    }))));
+    assert_eq!(
+        delta["tool_calls"],
+        json!([{
+            "function": {"arguments": "x", "name": "f"},
+            "type": "function",
+            "index": 0
+        }])
+    );
+}
+
 #[rstest]
 #[case(json!([]), json!([]))]
 #[case(json!(null), json!(null))]
@@ -431,14 +452,14 @@ fn a_non_empty_tool_calls_object_is_a_shape_error() {
 #[test]
 fn a_custom_tool_call_passes_through() {
     let delta = delta_of(&success(&body(json!({
-        "tool_calls": [{"index": null, "type": "custom", "custom": {"name": "f", "zz": 1}, "function": null, "id": null, "zz": 2}]
+        "tool_calls": [{"index": null, "type": "custom", "custom": {"name": "f", "zz": 1}, "id": null, "zz": 2}]
     }))));
     assert_eq!(
         delta["tool_calls"],
         json!([{
             "id": null,
             "type": "custom",
-            "custom": {"name": "f", "input": null, "zz": 1},
+            "custom": {"name": "f", "zz": 1},
             "index": 0,
             "zz": 2
         }])
@@ -453,12 +474,19 @@ fn a_custom_tool_call_without_a_type_passes_through() {
     assert_eq!(
         delta["tool_calls"],
         json!([{
-            "id": null,
             "type": null,
-            "custom": {"name": "f", "input": null},
+            "custom": {"name": "f"},
             "index": 0
         }])
     );
+}
+
+#[test]
+fn a_null_function_on_a_tool_call_is_a_shape_error() {
+    let error = failure(&body(
+        json!({"tool_calls": [{"index": 0, "function": null}]}),
+    ));
+    assert_eq!(error.status_code(), 500);
 }
 
 #[test]
@@ -532,7 +560,7 @@ fn json_mode_keeps_a_values_key_that_is_null() {
     }));
     assert_eq!(
         delta_of(&success_with(&chunk, true))["content"],
-        json!("{\"values\":null}")
+        json!("{\"values\": null}")
     );
 }
 
@@ -550,7 +578,7 @@ fn json_mode_turns_a_json_tool_call_into_content() {
         "tool_calls": [{"index": 0, "function": {"name": "json_tool_call", "arguments": "{\"a\": 1}"}}]
     }));
     let delta = delta_of(&success_with(&chunk, true));
-    assert_eq!(delta["content"], json!("{\"a\":1}"));
+    assert_eq!(delta["content"], json!("{\"a\": 1}"));
     assert_eq!(delta["tool_calls"], Value::Null);
 }
 
@@ -561,7 +589,7 @@ fn json_mode_unwraps_the_values_key() {
     }));
     assert_eq!(
         delta_of(&success_with(&chunk, true))["content"],
-        json!("{\"a\":1}")
+        json!("{\"a\": 1}")
     );
 }
 
@@ -604,7 +632,10 @@ fn json_mode_remembers_the_function_name_across_chunks() {
         "tool_calls": [{"index": 0, "function": {"arguments": "{\"b\": 2}"}}]
     }))
     .to_string();
-    let mut parser = ChunkParser::new(true);
+    let mut parser = ChunkParser {
+        json_mode: true,
+        last_function_name: None,
+    };
     parser
         .parse(&first, &FixedIds)
         .expect("the first chunk parses");
@@ -612,7 +643,7 @@ fn json_mode_remembers_the_function_name_across_chunks() {
         .parse(&second, &FixedIds)
         .expect("the second chunk parses");
     let value = serde_json::to_value(&chunk).expect("the chunk serializes");
-    assert_eq!(delta_of(&value)["content"], json!("{\"b\":2}"));
+    assert_eq!(delta_of(&value)["content"], json!("{\"b\": 2}"));
 }
 
 #[test]
@@ -622,7 +653,10 @@ fn json_mode_needs_the_function_key_even_for_a_remembered_name() {
     }))
     .to_string();
     let second = body(json!({"tool_calls": [{"index": 0}]})).to_string();
-    let mut parser = ChunkParser::new(true);
+    let mut parser = ChunkParser {
+        json_mode: true,
+        last_function_name: None,
+    };
     parser
         .parse(&first, &FixedIds)
         .expect("the first chunk parses");

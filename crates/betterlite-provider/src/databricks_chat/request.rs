@@ -19,6 +19,7 @@ pub mod tools;
 mod tests;
 
 pub(crate) const CLAUDE: &str = "claude";
+pub(crate) const PROVIDER: &str = "databricks";
 
 pub const SUPPORTED_OPENAI_PARAMS: [&str; 12] = [
     "stream",
@@ -63,12 +64,10 @@ pub const fn get_required_params() -> [ProviderField; 2] {
 // OpenAIGPTConfig.get_config, completed by AnthropicConfig with its default chat max tokens
 #[must_use]
 pub fn get_config(default_chat_max_tokens: i64) -> Object {
-    let mut config = Object::new();
-    config.insert(
-        "max_tokens".to_owned(),
+    Object::from_iter([(
+        String::from("max_tokens"),
         Json::Number(Number::from(default_chat_max_tokens)),
-    );
-    config
+    )])
 }
 
 // get_complete_url: two dots after the provider prefix turn the AI gateway on and trim the base
@@ -128,7 +127,7 @@ fn non_empty(value: Option<&str>) -> Option<String> {
 }
 
 // A user agent from the optional parameters is popped even when it is null; empty falls through
-fn pop_user_agent(
+pub fn pop_user_agent(
     optional_params: &mut Object,
     name: &str,
 ) -> Result<Option<String>, DatabricksChatError> {
@@ -148,7 +147,7 @@ fn pop_user_agent(
     }
 }
 
-fn pop_user_agent_parameter(
+pub fn pop_user_agent_parameter(
     optional_params: &mut Object,
 ) -> Result<Option<String>, DatabricksChatError> {
     if let Some(user_agent) = pop_user_agent(optional_params, "user_agent")? {

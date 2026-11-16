@@ -1,18 +1,19 @@
 import datetime as dt
 from collections.abc import Callable
-from typing import Literal, ParamSpec, Protocol, TypedDict, runtime_checkable
+from typing import Literal, Protocol, TypedDict, TypeVar, runtime_checkable
 
 import httpx
+from litellm.exceptions import BadRequestError
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.databricks.chat.transformation import DatabricksConfig
+from litellm.llms.databricks.common_utils import DatabricksException
 from litellm.types.utils import CallTypes, ModelResponse, ModelResponseStream
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 JSON_ADAPTER = TypeAdapter(JsonValue)
-FAILURES = ("DatabricksException", "BadRequestError", "ImageFetchError")
 MODEL = "databricks-meta-llama-3-1-70b"
 Object = dict[str, JsonValue]
-Params = ParamSpec("Params")
+CaseT = TypeVar("CaseT")
 ARBITRARY: ConfigDict = ConfigDict(arbitrary_types_allowed=True)
 
 
@@ -56,11 +57,6 @@ class Input(TypedDict, total=False):
     cases: list[JsonValue]
 
 
-class Failure(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-    status_code: int
-
-
 @runtime_checkable
 class StreamIterator(Protocol):
     def chunk_parser(self, chunk: Object) -> ModelResponseStream: ...
@@ -76,16 +72,16 @@ class ChatApi(Protocol):
         model: str,
         optional_params: Object,
         litellm_params: Object,
-        stream: bool | None = None,
     ) -> str: ...
 
-    def validate_environment(
+    def validate_environment(  # noqa: PLR0913  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L211-L220
         self,
         headers: Object,
         model: str,
         messages: list[Object],
         optional_params: Object,
         litellm_params: Object,
+        *,
         api_key: str | None = None,
         api_base: str | None = None,
     ) -> Object: ...
@@ -108,7 +104,7 @@ class ChatApi(Protocol):
         headers: Object,
     ) -> Object: ...
 
-    def transform_response(
+    def transform_response(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L643-L656
         self,
         _model: str,
         raw_response: httpx.Response,
@@ -126,7 +122,11 @@ class ChatApi(Protocol):
     ) -> ModelResponse: ...
 
     def get_model_response_iterator(
-        self, streaming_response: None, sync_stream: bool, json_mode: bool
+        self,
+        streaming_response: None,
+        *,
+        sync_stream: bool,
+        json_mode: bool,
     ) -> StreamIterator: ...
 
 
@@ -152,11 +152,9 @@ def cases_of(input_value: Input) -> list[JsonValue]:
     return cases
 
 
-def guarded(call: Callable[Params, Object], *args: Params.args, **kwargs: Params.kwargs) -> Object:
+def guarded(call: Callable[[CaseT], Object], case: CaseT) -> Object:
     try:
-        return call(*args, **kwargs)
-    except Exception as error:
-        if type(error).__name__ not in FAILURES:
-            raise
-        failure = Failure.model_validate(error)
-        return {"status": failure.status_code}
+        result = call(case)
+    except (DatabricksException, BadRequestError) as error:
+        return {"status": error.status_code}
+    return result

@@ -477,54 +477,59 @@ async fn an_uppercase_claude_model_keeps_response_format_but_maps_the_effort() {
     );
 }
 
+#[rstest]
+#[case::minimal("minimal", 1024, 5120)]
+#[case::low("low", 1024, 5120)]
+#[case::medium("medium", 2048, 6144)]
+#[case::high("high", 4096, 8192)]
+#[case::xhigh("xhigh", 8192, 12288)]
+#[case::max("max", 16384, 20480)]
 #[tokio::test]
-async fn a_reasoning_effort_fills_the_thinking_budget() {
-    for (effort, budget, max_tokens) in [
-        ("minimal", 1024, 5120),
-        ("low", 1024, 5120),
-        ("medium", 2048, 6144),
-        ("high", 4096, 8192),
-        ("xhigh", 8192, 12288),
-        ("max", 16384, 20480),
-    ] {
-        let params = mapped(
-            "databricks-claude-3-5-sonnet",
-            json!({"reasoning_effort": effort}),
-            false,
-        )
-        .await;
-        assert_params(
-            &params,
-            json!({"thinking": {"type": "enabled", "budget_tokens": budget}, "max_tokens": max_tokens}),
-        );
-    }
+async fn a_reasoning_effort_fills_the_thinking_budget(
+    #[case] effort: &str,
+    #[case] budget: i64,
+    #[case] max_tokens: i64,
+) {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({"reasoning_effort": effort}),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({"thinking": {"type": "enabled", "budget_tokens": budget}, "max_tokens": max_tokens}),
+    );
 }
 
+#[rstest]
+#[case::minimal("minimal", "low", 1024, 5120)]
+#[case::low("low", "low", 1024, 5120)]
+#[case::medium("medium", "medium", 2048, 6144)]
+#[case::high("high", "high", 4096, 8192)]
+#[case::xhigh("xhigh", "xhigh", 8192, 12288)]
+#[case::max("max", "max", 16384, 20480)]
 #[tokio::test]
-async fn an_adaptive_model_also_gets_an_output_config_effort() {
-    for (effort, level, budget, max_tokens) in [
-        ("minimal", "low", 1024, 5120),
-        ("low", "low", 1024, 5120),
-        ("medium", "medium", 2048, 6144),
-        ("high", "high", 4096, 8192),
-        ("xhigh", "xhigh", 8192, 12288),
-        ("max", "max", 16384, 20480),
-    ] {
-        let params = mapped(
-            "databricks-claude-adaptive",
-            json!({"reasoning_effort": effort}),
-            true,
-        )
-        .await;
-        assert_params(
-            &params,
-            json!({
-                "thinking": {"type": "enabled", "budget_tokens": budget},
-                "output_config": {"effort": level},
-                "max_tokens": max_tokens
-            }),
-        );
-    }
+async fn an_adaptive_model_also_gets_an_output_config_effort(
+    #[case] effort: &str,
+    #[case] level: &str,
+    #[case] budget: i64,
+    #[case] max_tokens: i64,
+) {
+    let params = mapped(
+        "databricks-claude-adaptive",
+        json!({"reasoning_effort": effort}),
+        true,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "thinking": {"type": "enabled", "budget_tokens": budget},
+            "output_config": {"effort": level},
+            "max_tokens": max_tokens
+        }),
+    );
 }
 
 #[tokio::test]
@@ -619,7 +624,7 @@ async fn a_non_claude_model_keeps_its_reasoning_effort() {
 #[test]
 fn a_tool_without_a_truthy_schema_gets_an_empty_parameters_map() {
     let tool = object(json!({"name": "f", "input_schema": null}));
-    let converted = convert_anthropic_tool(&tool).expect("the tool converts");
+    let converted = convert_anthropic_tool(&Json::Object(tool)).expect("the tool converts");
     assert_eq!(
         serde_json::to_value(&converted).expect("the tool renders"),
         json!({"type": "function", "function": {"name": "f", "parameters": {}}})
@@ -634,7 +639,7 @@ fn a_null_description_is_left_out() {
         "input_schema": {"type": "object", "properties": {}},
         "description": null
     }));
-    let converted = convert_anthropic_tool(&tool).expect("the tool converts");
+    let converted = convert_anthropic_tool(&Json::Object(tool)).expect("the tool converts");
     assert_eq!(
         serde_json::to_value(&converted).expect("the tool renders"),
         json!({

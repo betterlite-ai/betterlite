@@ -20,6 +20,10 @@ fuzz_target!(|bytes: &[u8]| {
             json_mode,
             ids: &RandomIds,
         });
-        let _chunk = ChunkParser::new(json_mode).parse(text, &RandomIds);
+        let _chunk = ChunkParser {
+            json_mode,
+            last_function_name: None,
+        }
+        .parse(text, &RandomIds);
     }
 });

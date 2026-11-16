@@ -1,13 +1,13 @@
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_logging::python_json::dumps;
+use betterlite_models::decisions::Json;
+use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
+use super::{DatabricksToolCall, ReplyFunction, ReplyToolCall};
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::response::reply::{ReplyFunction, ReplyToolCall};
-use crate::databricks_chat::response::wire::DatabricksToolCall;
 use crate::ollama_chat::ids::IdSource;
 
-const CUSTOM: &str = "custom";
 const JSON_TOOL_CALL: &str = "json_tool_call";
 const MULTI_TOOL: &str = "multi_tool_use.parallel";
 
@@ -20,7 +20,7 @@ struct ParallelArguments {
 #[derive(Deserialize)]
 struct ToolUse {
     recipient_name: String,
-    // the arguments of the hidden call, encoded again as they came
+    // the arguments of the hidden call, encoded again as json.dumps writes them
     parameters: Json,
 }
 
@@ -34,15 +34,10 @@ pub(super) fn normalize(
     };
     let mut normalized = Vec::with_capacity(calls.len());
     for call in calls {
-        if call.kind.as_deref() == Some(CUSTOM) || call.custom.is_some() {
-            return Err(DatabricksChatError::Shape {
-                message: String::from("a custom tool call in a Databricks reply is not supported"),
-            });
-        }
         normalized.push(ReplyToolCall {
             extra: call.extra.clone(),
             function: ReplyFunction {
-                arguments: call.function.arguments_text()?,
+                arguments: call.function.arguments_text(),
                 name: call.function.name.clone(),
             },
             id: call.id.clone().unwrap_or_else(|| ids.next_id()),
@@ -76,8 +71,7 @@ pub(super) fn repair(calls: &[ReplyToolCall]) -> Result<Vec<ReplyToolCall>, Data
             repaired.push(ReplyToolCall {
                 extra: Object::new(),
                 function: ReplyFunction {
-                    arguments: serde_json::to_string(&tool_use.parameters)
-                        .map_err(DatabricksChatError::Encode)?,
+                    arguments: dumps(&tool_use.parameters),
                     name: Some(
                         recipient
                             .strip_prefix("functions.")

@@ -132,7 +132,10 @@ pub(super) fn response_of(case: &ResponseCase) -> serde_json::Value {
 }
 
 pub(super) fn stream_of(case: &StreamCase) -> serde_json::Value {
-    let mut parser = ChunkParser::new(case.json_mode);
+    let mut parser = ChunkParser {
+        json_mode: case.json_mode,
+        last_function_name: None,
+    };
     let mut chunks = Vec::with_capacity(case.chunks.len());
     for chunk in &case.chunks {
         let Ok(text) = serde_json::to_string(chunk) else {

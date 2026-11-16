@@ -4,21 +4,21 @@ use betterlite_openai::chat::choice_finish_reason;
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::message_content::{Content, Message};
 use betterlite_prompts::reasoning_fields::content_split::extract_reasoning_content;
+use serde::Deserialize;
+use serde::Serialize;
+use serde_with::rust::double_option;
 
-use crate::databricks_chat::content::{extract_citations, extract_content_str, extract_reasoning};
+use crate::databricks_chat::content::{
+    DatabricksContent, DatabricksFunction, ThinkingBlock, extract_citations, extract_content_str,
+    extract_reasoning,
+};
 use crate::databricks_chat::error::DatabricksChatError;
-use crate::databricks_chat::keyed::Keyed;
 use crate::databricks_chat::response::usage::usage_from;
-use crate::databricks_chat::response::wire::{DatabricksChoice, DatabricksMessage, parse_body};
 use crate::ollama_chat::ids::IdSource;
 
-pub mod reply;
 mod tests;
 mod tool_calls;
 pub(crate) mod usage;
-mod wire;
-
-use reply::{Choice, Reply, ReplyMessage, ReplyToolCall};
 
 pub struct ResponseInput<'value> {
     pub body: &'value str,
@@ -27,6 +27,117 @@ pub struct ResponseInput<'value> {
     pub custom_llm_provider: Option<&'value str>,
     pub json_mode: bool,
     pub ids: &'value dyn IdSource,
+}
+
+// The OpenAI-shaped reply LiteLLM's transform_response builds, serialized the way model_dump writes it
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Reply {
+    pub id: String,
+    pub created: i64,
+    pub model: String,
+    pub object: String,
+    pub system_fingerprint: Option<String>,
+    pub choices: Vec<Choice>,
+    pub usage: Usage,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Choice {
+    pub finish_reason: String,
+    pub index: i64,
+    pub message: ReplyMessage,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_specific_fields: Option<Object>,
+}
+
+// content, role, tool_calls and function_call are always written; the reasoning keys only when set
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ReplyMessage {
+    pub content: Option<String>,
+    pub role: String,
+    pub tool_calls: Option<Vec<ReplyToolCall>>,
+    pub function_call: Option<Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reasoning_content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub thinking_blocks: Option<Vec<ThinkingBlock>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_specific_fields: Option<Object>,
+}
+
+// ChatCompletionMessageToolCall keeps the call keys it does not name, such as index
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReplyToolCall {
+    #[serde(flatten)]
+    pub extra: Object,
+    pub function: ReplyFunction,
+    pub id: String,
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+// Function drops the function keys it does not name, including parameters
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReplyFunction {
+    pub arguments: String,
+    pub name: Option<String>,
+}
+
+// Usage(**block): the three counts, the two detail blocks and the keys it forwards
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Usage {
+    pub completion_tokens: i64,
+    pub prompt_tokens: i64,
+    pub total_tokens: i64,
+    pub completion_tokens_details: Option<Object>,
+    pub prompt_tokens_details: Option<Object>,
+    #[serde(flatten)]
+    pub extra: Object,
+}
+
+// The response dict DatabricksResponse(**raw_response.json()) reads
+#[derive(Debug, Deserialize)]
+struct DatabricksResponse {
+    id: String,
+    created: i64,
+    #[serde(default)]
+    model: Option<String>,
+    choices: Vec<DatabricksChoice>,
+    // Usage(**block) forwards every key it does not name, so the block stays open here
+    usage: Object,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatabricksChoice {
+    #[serde(default, with = "double_option")]
+    index: Option<Option<i64>>,
+    message: DatabricksMessage,
+    #[serde(default, with = "double_option")]
+    finish_reason: Option<Option<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct DatabricksMessage {
+    #[serde(default, with = "double_option")]
+    content: Option<Option<DatabricksContent>>,
+    #[serde(default)]
+    tool_calls: Option<Vec<DatabricksToolCall>>,
+    #[serde(default, with = "double_option")]
+    reasoning_content: Option<Option<String>>,
+    #[serde(default, with = "double_option")]
+    reasoning: Option<Option<String>>,
+}
+
+// ChatCompletionMessageToolCall reads a function from every call and keeps the keys it does not name
+#[derive(Debug, Deserialize)]
+struct DatabricksToolCall {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(rename = "type", default)]
+    kind: Option<String>,
+    function: DatabricksFunction,
+    #[serde(flatten)]
+    extra: Object,
 }
 
 // transform_response: parse the body, then each choice through _transform_dbrx_choices
@@ -51,6 +162,25 @@ pub fn transform_response(input: ResponseInput<'_>) -> Result<Reply, DatabricksC
     })
 }
 
+// DatabricksResponse(**raw_response.json()): only a body that is not a JSON object keeps the response status
+fn parse_body(input: &ResponseInput<'_>) -> Result<DatabricksResponse, DatabricksChatError> {
+    let typed_error = match serde_json::from_str(input.body) {
+        Ok(body) => return Ok(body),
+        Err(source) => source,
+    };
+    match serde_json::from_str::<Object>(input.body) {
+        Ok(_) => Err(DatabricksChatError::Decode(typed_error)),
+        Err(error) => Err(DatabricksChatError::Response {
+            status_code: input.status_code,
+            message: format!(
+                "Unable to get json response - {error}, Original Response: {}",
+                input.body
+            ),
+            headers: input.headers.clone(),
+        }),
+    }
+}
+
 // One DatabricksChoice: the tool call repair, the json mode shortcut, then the message transform
 fn transform_choice(
     choice: DatabricksChoice,
@@ -58,9 +188,9 @@ fn transform_choice(
     ids: &dyn IdSource,
 ) -> Result<Choice, DatabricksChatError> {
     let index = match choice.index {
-        Keyed::Given(given) => given,
-        Keyed::Null => 0,
-        Keyed::Missing => return Err(DatabricksChatError::MissingKey { key: "index" }),
+        Some(Some(index)) => index,
+        Some(None) => 0,
+        None => return Err(DatabricksChatError::MissingKey { key: "index" }),
     };
     let calls = tool_calls::normalize(choice.message.tool_calls.as_deref(), ids)?;
     let repaired = match &calls {
@@ -68,38 +198,38 @@ fn transform_choice(
         None => Vec::new(),
     };
     if let Some(content) = tool_calls::json_mode_content(&repaired, json_mode) {
-        let json_message = ReplyMessage {
-            content: Some(content),
-            role: String::from("assistant"),
-            tool_calls: None,
-            function_call: None,
-            reasoning_content: None,
-            thinking_blocks: None,
-            provider_specific_fields: None,
-        };
         return Ok(Choice {
             finish_reason: String::from("stop"),
             index,
-            message: json_message,
+            message: ReplyMessage {
+                content: Some(content),
+                role: String::from("assistant"),
+                tool_calls: None,
+                function_call: None,
+                reasoning_content: None,
+                thinking_blocks: None,
+                provider_specific_fields: None,
+            },
             provider_specific_fields: None,
         });
     }
-    let message = translated_message(&choice.message, calls)?;
     let (finish_reason, provider_specific_fields) = finish_reason_of(choice.finish_reason)?;
     Ok(Choice {
         finish_reason,
         index,
-        message,
+        message: translated_message(&choice.message, calls)?,
         provider_specific_fields,
     })
 }
 
 // Choices maps a given finish_reason and keeps the raw one when the mapping changed it
-fn finish_reason_of(raw: Keyed<String>) -> Result<(String, Option<Object>), DatabricksChatError> {
+fn finish_reason_of(
+    raw: Option<Option<String>>,
+) -> Result<(String, Option<Object>), DatabricksChatError> {
     let given = match raw {
-        Keyed::Given(text) => Some(text),
-        Keyed::Null => None,
-        Keyed::Missing => {
+        Some(Some(text)) => Some(text),
+        Some(None) => None,
+        None => {
             return Err(DatabricksChatError::MissingKey {
                 key: "finish_reason",
             });
@@ -125,9 +255,9 @@ fn translated_message(
     calls: Option<Vec<ReplyToolCall>>,
 ) -> Result<ReplyMessage, DatabricksChatError> {
     let content = match &message.content {
-        Keyed::Given(content) => Some(content),
-        Keyed::Null => None,
-        Keyed::Missing => return Err(DatabricksChatError::MissingKey { key: "content" }),
+        Some(Some(content)) => Some(content),
+        Some(None) => None,
+        None => return Err(DatabricksChatError::MissingKey { key: "content" }),
     };
     let (block_reasoning, thinking_blocks) = extract_reasoning(content);
     let content_str = extract_content_str(content);
@@ -135,11 +265,8 @@ fn translated_message(
         Some(reasoning) => (Some(reasoning), content_str),
         None => split_reasoning(message, content_str),
     };
-    let provider_specific_fields = extract_citations(content)?.map(|citations| {
-        let mut fields = Object::new();
-        fields.insert(String::from("citations"), Json::List(citations));
-        fields
-    });
+    let provider_specific_fields = extract_citations(content)?
+        .map(|citations| Object::from_iter([(String::from("citations"), Json::List(citations))]));
     Ok(ReplyMessage {
         content: text,
         role: String::from("assistant"),
@@ -162,13 +289,13 @@ fn split_reasoning(
         ("reasoning", &message.reasoning),
     ] {
         match value {
-            Keyed::Given(text) => {
+            Some(Some(text)) => {
                 fields.insert(name.to_owned(), Json::Text(text.clone()));
             }
-            Keyed::Null => {
+            Some(None) => {
                 fields.insert(name.to_owned(), Json::Null);
             }
-            Keyed::Missing => {}
+            None => {}
         }
     }
     let synthetic = Message {
