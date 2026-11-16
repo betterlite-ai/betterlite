@@ -5,7 +5,6 @@ from typing import Final, Literal, NotRequired, TypedDict
 from litellm.exceptions import GuardrailRaisedException
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.tool_permission import ToolPermissionGuardrail
-from litellm.types.llms.anthropic_messages.anthropic_response import AnthropicMessagesResponse
 from litellm.types.utils import ModelResponse, ModelResponseStream
 from pydantic import JsonValue, TypeAdapter
 
@@ -44,7 +43,6 @@ class Bag(TypedDict, total=False):
     function: "Bag | None"
     message: "Bag | None"
     delta: "Bag | None"
-    content_block: "Bag | None"
     metadata: "Bag | None"
     litellm_metadata: "Bag | None"
     applied_guardrails: list[str] | None
@@ -54,18 +52,13 @@ class Choices(TypedDict):
     choices: list[Bag]
 
 
-class AnthropicContent(TypedDict):
+class AnthropicResponse(TypedDict, total=False):
     content: list[Bag]
-
-
-class AnthropicResponse(AnthropicContent, total=False):
     stop_reason: str | None
 
 
-class Blocked(TypedDict):
-    status: int
-    message: str
-    blocked_content: bool
+FIELDS: TypeAdapter[Bag] = TypeAdapter(Bag)
+ANTHROPIC: TypeAdapter[AnthropicResponse] = TypeAdapter(AnthropicResponse)
 
 
 def build_guardrail(input_value: Input) -> ToolPermissionGuardrail:
@@ -80,30 +73,29 @@ def build_guardrail(input_value: Input) -> ToolPermissionGuardrail:
     )
 
 
-def blocked_of(error: GuardrailRaisedException) -> Blocked:
-    return {
+def blocked_of(error: GuardrailRaisedException) -> dict[str, JsonValue]:
+    view: dict[str, JsonValue] = {
         "status": error.status_code,
         "message": error.message,
         "blocked_content": error.blocked_content,
     }
+    return view
 
 
 def function_view(function: Bag | None) -> JsonValue:
     if function is None:
         return None
-    return TypeAdapter(JsonValue).validate_python(
-        {"name": function.get("name"), "arguments": function.get("arguments")}
-    )
+    view: dict[str, JsonValue] = {
+        "name": function.get("name"),
+        "arguments": function.get("arguments"),
+    }
+    return view
 
 
 def tool_call_view(call: Bag) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "id": call.get("id"),
-            "type": call.get("type"),
-            "function": function_view(call.get("function")),
-        }
-    )
+    view: dict[str, JsonValue] = {"id": call.get("id"), "type": call.get("type")}
+    view["function"] = function_view(call.get("function"))
+    return view
 
 
 def message_view(message: Bag | None) -> JsonValue:
@@ -113,63 +105,84 @@ def message_view(message: Bag | None) -> JsonValue:
     calls_view: list[JsonValue] | None = None
     if calls is not None:
         calls_view = [tool_call_view(call) for call in calls]
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "role": message.get("role"),
-            "content": message.get("content"),
-            "tool_calls": calls_view,
-            "function_call": function_view(message.get("function_call")),
-        }
-    )
+    view: dict[str, JsonValue] = {
+        "role": message.get("role"),
+        "content": message.get("content"),
+        "tool_calls": calls_view,
+        "function_call": function_view(message.get("function_call")),
+    }
+    return view
 
 
 def choice_view(choice: Bag) -> JsonValue:
     message = choice.get("message")
     if message is None:
         message = choice.get("delta")
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "index": choice.get("index"),
-            "finish_reason": choice.get("finish_reason"),
-            "message": message_view(message),
-        }
-    )
+    view: dict[str, JsonValue] = {
+        "index": choice.get("index"),
+        "finish_reason": choice.get("finish_reason"),
+        "message": message_view(message),
+    }
+    return view
 
 
-def choices_view(response: Choices) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(
-        [choice_view(choice) for choice in response["choices"]]
-    )
+def choices_view(response: Choices) -> list[JsonValue]:
+    views: list[JsonValue] = [choice_view(choice) for choice in response["choices"]]
+    return views
 
 
 def block_view(block: Bag) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "type": block.get("type"),
-            "text": block.get("text"),
-            "id": block.get("id"),
-            "name": block.get("name"),
-        }
-    )
+    view: dict[str, JsonValue] = {
+        "type": block.get("type"),
+        "text": block.get("text"),
+        "id": block.get("id"),
+        "name": block.get("name"),
+    }
+    return view
 
 
-def anthropic_view(response: AnthropicResponse) -> JsonValue:
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "content": [block_view(block) for block in response["content"]],
-            "stop_reason": response.get("stop_reason"),
-        }
-    )
+def anthropic_view(response: dict[str, JsonValue]) -> JsonValue:
+    typed = ANTHROPIC.validate_python(response)
+    content = typed.get("content")
+    blocks: list[JsonValue] = []
+    if content is not None:
+        blocks = [block_view(block) for block in content]
+    view: dict[str, JsonValue] = {"content": blocks, "stop_reason": typed.get("stop_reason")}
+    return view
 
 
-def applied_guardrails(data: dict[str, JsonValue]) -> list[str] | None:
-    fields = TypeAdapter(Bag).validate_python(data)
+def applied_guardrails(data: dict[str, JsonValue]) -> list[JsonValue] | None:
+    fields = FIELDS.validate_python(data)
     bucket = fields.get("metadata")
     if "litellm_metadata" in data:
         bucket = fields.get("litellm_metadata")
     if bucket is None:
         return None
-    return bucket.get("applied_guardrails")
+    names = bucket.get("applied_guardrails")
+    if names is None:
+        return None
+    view: list[JsonValue] = []
+    for name in names:
+        view.append(name)
+    return view
+
+
+def dump_view(response: ModelResponse | ModelResponseStream) -> JsonValue:
+    parsed = TypeAdapter(Choices).validate_json(response.model_dump_json())
+    view: dict[str, JsonValue] = {"choices": choices_view(parsed)}
+    return view
+
+
+def blocked_from_success(
+    guardrail: ToolPermissionGuardrail,
+    data: dict[str, JsonValue],
+    response: ModelResponse | dict[str, JsonValue],
+) -> dict[str, JsonValue] | None:
+    try:
+        asyncio.run(guardrail.async_post_call_success_hook(data=data, user_api_key_dict=UserAPIKeyAuth(), response=response))  # type: ignore[misc, arg-type]  # pyright: ignore[reportUnknownMemberType, reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L836-L890
+    except GuardrailRaisedException as error:
+        return blocked_of(error)
+    return None
 
 
 def success(input_value: Input) -> JsonValue:
@@ -178,39 +191,20 @@ def success(input_value: Input) -> JsonValue:
     if payload is None:
         raise ValueError("success mode needs a response")
     data = dict(input_value["data"])
-    blocked: Blocked | None = None
     if input_value["format"] == "openai":
         response = ModelResponse(**payload)
-        try:
-            asyncio.run(
-                guardrail.async_post_call_success_hook(
-                    data=data, user_api_key_dict=UserAPIKeyAuth(), response=response
-                )
-            )
-        except GuardrailRaisedException as error:
-            blocked = blocked_of(error)
-        dump = TypeAdapter(Choices).validate_json(response.model_dump_json())
-        response_view = choices_view(dump)
+        blocked = blocked_from_success(guardrail, data, response)
+        response_view = dump_view(response)
     else:
-        anthropic_response = TypeAdapter(AnthropicMessagesResponse).validate_python(payload)
-        try:
-            asyncio.run(
-                guardrail.async_post_call_success_hook(
-                    data=data, user_api_key_dict=UserAPIKeyAuth(), response=anthropic_response
-                )
-            )
-        except GuardrailRaisedException as error:
-            blocked = blocked_of(error)
-        response_view = anthropic_view(
-            TypeAdapter(AnthropicResponse).validate_python(anthropic_response)
-        )
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "blocked": blocked,
-            "response": response_view,
-            "applied_guardrails": applied_guardrails(data),
-        }
-    )
+        anthropic_response = dict(payload)
+        blocked = blocked_from_success(guardrail, data, anthropic_response)
+        response_view = anthropic_view(anthropic_response)
+    answer: dict[str, JsonValue] = {
+        "blocked": blocked,
+        "response": response_view,
+        "applied_guardrails": applied_guardrails(data),
+    }
+    return answer
 
 
 def data_payload(frame: str) -> JsonValue | None:
@@ -231,12 +225,13 @@ def raw_chunk_view(text: str) -> JsonValue:
         payload = data_payload(frame)
         if payload is not None:
             events.append(payload)
-    return TypeAdapter(JsonValue).validate_python({"events": events})
+    view: dict[str, JsonValue] = {"events": events}
+    return view
 
 
 async def openai_source(chunks: list[dict[str, JsonValue]]) -> AsyncIterator[ModelResponseStream]:
     for chunk in chunks:
-        yield ModelResponseStream(**chunk)
+        yield ModelResponseStream(**chunk)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2160
 
 
 async def raw_source(chunks: list[str]) -> AsyncIterator[str]:
@@ -248,7 +243,10 @@ Streamed = ModelResponseStream | bytes | str
 
 
 async def collect_stream(stream: AsyncIterator[Streamed]) -> list[Streamed]:
-    return [item async for item in stream]
+    items: list[Streamed] = []
+    async for item in stream:
+        items.append(item)
+    return items
 
 
 def streamed_view(item: Streamed) -> JsonValue:
@@ -257,15 +255,14 @@ def streamed_view(item: Streamed) -> JsonValue:
             return raw_chunk_view(item.decode("utf-8"))
         case str():
             return raw_chunk_view(item)
-        case ModelResponseStream():
-            chunk = TypeAdapter(Choices).validate_json(item.model_dump_json())
-            return TypeAdapter(JsonValue).validate_python({"choices": choices_view(chunk)})
+        case ModelResponseStream():  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2160
+            return dump_view(item)
 
 
 def streaming(input_value: Input) -> JsonValue:
     guardrail = build_guardrail(input_value)
     data = dict(input_value["data"])
-    blocked: Blocked | None = None
+    blocked: dict[str, JsonValue] | None = None
     if input_value["raw_chunks"]:
         source: AsyncIterator[ModelResponseStream] | AsyncIterator[str] = raw_source(
             input_value["raw_chunks"]
@@ -274,18 +271,15 @@ def streaming(input_value: Input) -> JsonValue:
         source = openai_source(input_value["chunks"])
     collected: list[Streamed] = []
     try:
-        hook = guardrail.async_post_call_streaming_iterator_hook(  # type: ignore[arg-type]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L892-L897
-            UserAPIKeyAuth(), source, data
-        )
+        hook = guardrail.async_post_call_streaming_iterator_hook(UserAPIKeyAuth(), source, data)  # type: ignore[arg-type]  # pyright: ignore[reportArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_permission.py#L892-L970
         collected = asyncio.run(collect_stream(hook))
     except GuardrailRaisedException as error:
         blocked = blocked_of(error)
-    return TypeAdapter(JsonValue).validate_python(
-        {
-            "chunks": [streamed_view(item) for item in collected],
-            "blocked": blocked,
-        }
-    )
+    answer: dict[str, JsonValue] = {
+        "chunks": [streamed_view(item) for item in collected],
+        "blocked": blocked,
+    }
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
