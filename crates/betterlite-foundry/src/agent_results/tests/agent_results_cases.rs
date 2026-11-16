@@ -314,6 +314,19 @@ fn message_delta_stream() {
         );
         let chunks = chunks_of(stream_for(compact).await).await;
         assert_eq!(chunks, vec![delta_chunk("a"), delta_chunk("b")]);
+
+        let malformed = concat!(
+            "event: thread.message.delta\n",
+            "data: []\n",
+            "data: 5\n",
+            "data: {\"delta\": \"nope\"}\n",
+            "data: {\"delta\": {\"content\": \"nope\"}}\n",
+            "data: {\"delta\": {\"content\": [{\"type\": \"text\", \"text\": \"nope\"}]}}\n",
+            "data: {\"delta\": {\"content\": [{\"type\": \"text\", \"text\": {\"value\": 5}}]}}\n",
+            "data: [DONE]\n",
+        );
+        let chunks = chunks_of(stream_for(malformed).await).await;
+        assert_eq!(chunks, vec![terminal_chunk(None, None)]);
     });
 }
 
