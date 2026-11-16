@@ -87,6 +87,19 @@ run "module_owns_everything_by_default" {
 
   assert {
     condition = alltrue([
+      aws_security_group.alb.name == "${local.name}-alb",
+      aws_security_group.tasks.name == "${local.name}-tasks",
+      aws_security_group.rds[0].name == "${local.name}-rds",
+      aws_security_group.redis[0].name == "${local.name}-redis",
+      aws_db_subnet_group.this[0].name == "${local.name}-db",
+      aws_rds_cluster_parameter_group.this[0].name == "${local.name}-cluster-pg",
+      aws_elasticache_subnet_group.this[0].name == "${local.name}-redis",
+    ])
+    error_message = "Every resource must keep the <tenant>-litellm-<env> naming with the per-resource suffix LiteLLM's module uses."
+  }
+
+  assert {
+    condition = alltrue([
       aws_security_group.alb.vpc_id == aws_vpc.this[0].id,
       aws_security_group.tasks.vpc_id == aws_vpc.this[0].id,
       aws_security_group.rds[0].vpc_id == aws_vpc.this[0].id,
