@@ -574,6 +574,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "text_request"
+path = "fuzz_targets/text_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "modelscope_image_reply"
 path = "fuzz_targets/modelscope_image_reply.rs"
 test = false
@@ -639,6 +646,13 @@ bench = false
 [[bin]]
 name = "openai_videos"
 path = "fuzz_targets/openai_videos.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text_response"
+path = "fuzz_targets/text_response.rs"
 test = false
 doc = false
 bench = false
