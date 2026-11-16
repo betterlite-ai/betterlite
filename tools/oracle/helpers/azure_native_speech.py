@@ -1,4 +1,4 @@
-from typing import NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import NotRequired, Protocol, TypeAlias, TypedDict, TypeVar, cast
 
 import httpx
 import litellm
@@ -256,19 +256,34 @@ def header_views(payload: HeaderCases) -> JsonValue:
     return {"cases": cases}
 
 
+T = TypeVar("T")
+
+
+def required(value: T | None, name: str) -> T:
+    if value is None:
+        raise ValueError(f"{name} is required")
+    return value
+
+
 def transport_views(input_value: Input) -> JsonValue:
     match next(iter(input_value), None):
         case "cognitive_to_tts_endpoint":
-            return endpoint_views(input_value["cognitive_to_tts_endpoint"])
+            bases = required(input_value.get("cognitive_to_tts_endpoint"), "api_bases")
+            return endpoint_views(bases)
         case "response_format_header":
-            return format_views(input_value["response_format_header"])
+            formats = required(input_value.get("response_format_header"), "formats")
+            return format_views(formats)
         case "binary_native_speech":
-            return binary_views(input_value["binary_native_speech"])
+            cases = required(input_value.get("binary_native_speech"), "binary cases")
+            return binary_views(cases)
         case "native_voice_map":
-            return voice_map_views(input_value["native_voice_map"])
+            voices = required(input_value.get("native_voice_map"), "voices")
+            return voice_map_views(voices)
         case "native_speech_headers":
-            return header_views(input_value["native_speech_headers"])
-    raise ValueError("expected a transport variant")
+            headers = required(input_value.get("native_speech_headers"), "header cases")
+            return header_views(headers)
+        case _:
+            raise ValueError("expected a transport variant")
 
 
 def run(input_value: Input) -> JsonValue:

@@ -12,7 +12,7 @@ use betterlite_azure::native_speech::request::{
 use betterlite_azure::native_speech::response::{HttpxBinaryResponseContent, RawSpeechResponse};
 use betterlite_prompts::arguments::json::Json;
 use secrecy::SecretString;
-use serde_json::json;
+use serde_json::{Value, json};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
@@ -164,7 +164,7 @@ fn ssml_views(texts: &Texts) -> HelperResult {
     }))
 }
 
-fn endpoint_views(bases: &Bases) -> HelperResult {
+fn endpoint_views(bases: &Bases) -> Value {
     let mut results = Vec::with_capacity(bases.api_bases.len());
     for api_base in &bases.api_bases {
         let identity = NativeSpeechIdentity {
@@ -176,7 +176,7 @@ fn endpoint_views(bases: &Bases) -> HelperResult {
             Err(_) => results.push(json!({ "error": true })),
         }
     }
-    Ok(json!({ "results": results }))
+    json!({ "results": results })
 }
 
 fn format_row(format: Option<&str>) -> HelperResult {
@@ -197,7 +197,7 @@ fn format_views(formats: &Formats) -> HelperResult {
     }))
 }
 
-fn binary_views(cases: &BinaryCases) -> HelperResult {
+fn binary_views(cases: &BinaryCases) -> Value {
     let mut views = Vec::with_capacity(cases.cases.len());
     for case in &cases.cases {
         let mut headers = BTreeMap::new();
@@ -216,7 +216,7 @@ fn binary_views(cases: &BinaryCases) -> HelperResult {
             "bytes": content.body,
         }));
     }
-    Ok(json!({ "cases": views }))
+    json!({ "cases": views })
 }
 
 fn voice_map_views(voices: &Voices) -> HelperResult {
@@ -225,7 +225,7 @@ fn voice_map_views(voices: &Voices) -> HelperResult {
     }))
 }
 
-fn header_views(cases: &HeaderCases) -> HelperResult {
+fn header_views(cases: &HeaderCases) -> Value {
     let mut views = Vec::with_capacity(cases.cases.len());
     for case in &cases.cases {
         let identity = NativeSpeechIdentity {
@@ -235,7 +235,7 @@ fn header_views(cases: &HeaderCases) -> HelperResult {
         let headers = validate_environment(&identity, case.headers.clone());
         views.push(json!({ "headers": headers }));
     }
-    Ok(json!({ "cases": views }))
+    json!({ "cases": views })
 }
 
 pub(super) fn build_answer(input: &Input) -> HelperResult {
@@ -245,10 +245,10 @@ pub(super) fn build_answer(input: &Input) -> HelperResult {
         Input::VoiceLanguage(cases) => voice_views(cases),
         Input::StyleRoleElement(cases) => style_views(cases),
         Input::ExistingSsml(texts) => ssml_views(texts),
-        Input::CognitiveToTtsEndpoint(bases) => endpoint_views(bases),
+        Input::CognitiveToTtsEndpoint(bases) => Ok(endpoint_views(bases)),
         Input::ResponseFormatHeader(formats) => format_views(formats),
-        Input::BinaryNativeSpeech(cases) => binary_views(cases),
+        Input::BinaryNativeSpeech(cases) => Ok(binary_views(cases)),
         Input::NativeVoiceMap(voices) => voice_map_views(voices),
-        Input::NativeSpeechHeaders(cases) => header_views(cases),
+        Input::NativeSpeechHeaders(cases) => Ok(header_views(cases)),
     }
 }
