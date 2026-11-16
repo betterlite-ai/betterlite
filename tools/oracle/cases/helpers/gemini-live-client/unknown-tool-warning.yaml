@@ -1,0 +1,28 @@
+kind: helper
+name: unknown-tool-warning
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_9", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "", "output": "{}"}}'
+      - kind: message
+        tool_calls:
+          - {call_id: call_1, name: get_weather}
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{}"}}'
+      - kind: message
+        tool_calls:
+          - {call_id: call_2, name: ""}
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_2", "output": "{}"}}'
+      - kind: message
+        tool_calls:
+          - {call_id: "", name: ghost}
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{}"}}'
+env: {}
+compare: {ignore: []}

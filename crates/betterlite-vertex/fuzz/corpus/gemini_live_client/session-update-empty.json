@@ -1,0 +1,1 @@
+{"type": "session.update", "session": {"instructions": "be brief", "audio": {"input": {"turn_detection": {"type": "server_vad"}}}}}
