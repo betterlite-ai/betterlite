@@ -88,18 +88,16 @@ def supported_value(model: str) -> JsonValue:
 
 
 def auth_value(step: AuthStep) -> JsonValue:
-    configured = step.get("environment")
     apply_globals(step.get("global_api_base"), step.get("global_api_key"), None)
-    with environment({} if configured is None else configured):
+    with environment({} if step.get("environment") is None else step["environment"]):
         config = config_for(step["model"])
         supplied = step.get("headers")
-        wired = step.get("params")
         try:
             built = config.validate_environment(
                 {} if supplied is None else supplied,
                 step["model"],
                 api_key=step.get("api_key"),
-                litellm_params=wired,
+                litellm_params=step.get("params"),
                 api_base=step.get("api_base"),
             )
         except ValueError:
@@ -113,9 +111,8 @@ def auth_value(step: AuthStep) -> JsonValue:
 
 
 def url_value(step: UrlStep) -> JsonValue:
-    configured = step.get("environment")
     apply_globals(None, None, step.get("global_api_version"))
-    with environment({} if configured is None else configured):
+    with environment({} if step.get("environment") is None else step["environment"]):
         config = config_for(step["model"])
         params: JsonObject = {}
         version = step.get("api_version")
