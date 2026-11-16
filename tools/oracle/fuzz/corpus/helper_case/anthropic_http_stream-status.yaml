@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-http-stream-status-seed
+call:
+  anthropic_http_stream:
+    scenario: handshake_error
+    api_base: https://api.anthropic.com/v1/messages
+    model: claude-3-5-sonnet
+    messages: [{role: user, content: hi}]
+    json_mode: false
+    headers: {content-type: application/json}
+    upstream_status: 400
+    upstream_body: '{"type":"error","error":{"type":"invalid_request_error"}}'
+env: {}
+compare: {ignore: []}
