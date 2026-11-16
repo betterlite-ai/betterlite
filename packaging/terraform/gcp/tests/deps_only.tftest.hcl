@@ -28,9 +28,13 @@ run "default_creates_the_network_and_stores" {
   assert {
     condition = alltrue([
       google_compute_network.this[0].auto_create_subnetworks == false,
+      google_compute_network.this[0].routing_mode == "REGIONAL",
       google_compute_subnetwork.this[0].private_ip_google_access == true,
+      google_compute_subnetwork.this[0].ip_cidr_range == "10.20.0.0/24",
       google_compute_global_address.psa[0].purpose == "VPC_PEERING",
       google_compute_global_address.psa[0].prefix_length == 16,
+      google_vpc_access_connector.this[0].ip_cidr_range == "10.20.1.0/28",
+      google_vpc_access_connector.this[0].machine_type == "e2-micro",
       google_vpc_access_connector.this[0].min_instances == 2,
       google_vpc_access_connector.this[0].max_instances == 3,
     ])
@@ -40,14 +44,22 @@ run "default_creates_the_network_and_stores" {
   assert {
     condition = alltrue([
       google_sql_database_instance.writer.name == "tenant-test-betterlite",
+      google_sql_database_instance.writer.database_version == "POSTGRES_16",
+      google_sql_database_instance.writer.settings[0].edition == "ENTERPRISE",
+      google_sql_database_instance.writer.settings[0].tier == "db-custom-2-7680",
       google_sql_database_instance.writer.settings[0].availability_type == "REGIONAL",
       google_sql_database_instance.writer.settings[0].disk_size == 20,
       google_sql_database_instance.writer.settings[0].disk_autoresize == true,
       google_sql_database_instance.writer.settings[0].backup_configuration[0].enabled == true,
+      google_sql_database_instance.writer.settings[0].backup_configuration[0].point_in_time_recovery_enabled == true,
+      google_sql_database_instance.writer.settings[0].backup_configuration[0].start_time == "07:00",
+      google_sql_database_instance.writer.settings[0].insights_config[0].query_insights_enabled == true,
       google_sql_database_instance.writer.settings[0].ip_configuration[0].ipv4_enabled == false,
+      google_sql_database_instance.writer.deletion_protection == true,
       google_sql_database_instance.reader.name == "tenant-test-betterlite-reader",
       google_sql_database_instance.reader.master_instance_name == "tenant-test-betterlite",
       google_sql_database_instance.reader.settings[0].availability_type == "ZONAL",
+      google_sql_database_instance.reader.deletion_protection == true,
     ])
     error_message = "Cloud SQL must keep a REGIONAL writer with backups and private networking and a ZONAL reader that follows the writer."
   }
@@ -57,11 +69,27 @@ run "default_creates_the_network_and_stores" {
       google_sql_database.this.name == "betterlite",
       google_sql_user.app.name == "betterlite",
       google_secret_manager_secret.db_password.secret_id == "tenant-test-betterlite-db-password",
+      google_redis_instance.this[0].tier == "STANDARD_HA",
+      google_redis_instance.this[0].memory_size_gb == 1,
       google_redis_instance.this[0].connect_mode == "PRIVATE_SERVICE_ACCESS",
       google_redis_instance.this[0].redis_version == "REDIS_7_0",
       google_redis_instance.this[0].auth_enabled == true,
+      local.labels["managed_by"] == "terraform",
     ])
-    error_message = "The database, its user, the password secret and Memorystore must keep the module defaults."
+    error_message = "The database, its user, the password secret, the module label and Memorystore must keep the module defaults."
+  }
+}
+
+run "caller_labels_merge_with_the_module_label" {
+  command = plan
+
+  variables {
+    labels = { team = "platform" }
+  }
+
+  assert {
+    condition     = local.labels["managed_by"] == "terraform" && local.labels["team"] == "platform"
+    error_message = "Caller labels must merge with the module's managed_by label."
   }
 }
 
