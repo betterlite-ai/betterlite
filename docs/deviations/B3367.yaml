@@ -14,7 +14,8 @@ deviations:
       The generic container handler is reached through an UploadExecutor/AsyncUploadExecutor seam that names the
       provider config as ContainerProviderConfig and carries litellm_params as typed JSON values, instead of core
       building the provider config and calling the handler itself. The handler's _is_async argument is the choice
-      between the two executor traits, so the call carries no flag of its own.
+      between the two executor traits, so the call carries no flag of its own, and the logging object arrives through
+      ContainerFileUploadDeps instead of being popped from kwargs.
     why: >-
       Core cannot build a BaseContainerConfig with credentials (the Azure config is B547's and not landed) and cannot
       name serde_json::Map or Value, which clippy.toml disallows; the route layer that holds the credentials builds
@@ -32,8 +33,9 @@ deviations:
       returns an already-mapped exception unchanged, so mapping once gives the same result.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/main.py#L1333-L1338
   - what: >-
-      The resolved timeout reaches the executor as f64 seconds, and the value of litellm.constants.request_timeout
-      enters through ContainerFileUploadDeps instead of being read from the environment here.
+      The resolved timeout reaches the executor as f64 seconds and the httpx.Timeout alternative is not modeled, and
+      the value of litellm.constants.request_timeout enters through ContainerFileUploadDeps instead of being read from
+      the environment here.
     why: >-
       The argument is declared as a float and B3363's handler never sends a timeout; configuration enters betterlite
       through the config crate, and clippy.toml forbids std::env::var outside it.
