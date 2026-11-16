@@ -114,6 +114,14 @@ fn flat_keys_win_over_the_ga_slots() {
 }
 
 #[test]
+fn temperature_alone_keeps_the_generation_config() {
+    assert_eq!(
+        as_json(&mapped(r#"{"temperature": 0.4}"#)),
+        parse::<Json>(r#"{"generationConfig": {"temperature": 0.4}}"#)
+    );
+}
+
+#[test]
 fn max_response_output_tokens_accepts_counts_and_inf() {
     assert_eq!(
         as_json(&mapped(r#"{"max_response_output_tokens": -1}"#)),
