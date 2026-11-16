@@ -65,27 +65,6 @@ where
             .ok_or(UsageChatError::DatabaseNotConnected)
     }
 
-    async fn global_scope(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        user_id: Option<&str>,
-    ) -> PageResult {
-        let scope = daily_activity_scope(ScopeRequest {
-            table: DailyActivityTable::User,
-            entity_id_field: ENTITY_FIELD_USER,
-            entity_id: user_id.map(|id| ScopeIds::One(id.to_owned())),
-            exclude_entity_ids: Vec::new(),
-            api_key: None,
-            start_date,
-            end_date,
-            model: None,
-            timezone_offset_minutes: None,
-            include_current_utc_day: false,
-        })?;
-        self.connected()?.aggregated(&scope).await
-    }
-
     async fn entity_page(
         &self,
         table: DailyActivityTable,
@@ -104,7 +83,19 @@ where
     Repository: UsageActivityRepository,
 {
     async fn global(&self, start_date: &str, end_date: &str, user_id: Option<&str>) -> PageResult {
-        self.global_scope(start_date, end_date, user_id).await
+        let scope = daily_activity_scope(ScopeRequest {
+            table: DailyActivityTable::User,
+            entity_id_field: ENTITY_FIELD_USER,
+            entity_id: user_id.map(|id| ScopeIds::One(id.to_owned())),
+            exclude_entity_ids: Vec::new(),
+            api_key: None,
+            start_date,
+            end_date,
+            model: None,
+            timezone_offset_minutes: None,
+            include_current_utc_day: false,
+        })?;
+        self.connected()?.aggregated(&scope).await
     }
 
     async fn teams(&self, start_date: &str, end_date: &str, team_ids: Ids<'_>) -> PageResult {
