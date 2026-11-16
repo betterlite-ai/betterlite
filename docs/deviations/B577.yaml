@@ -1,8 +1,5 @@
 task: B577
 deviations:
-  - what: betterlite does not fetch request URLs on this path yet. An http:// image selected for local inlining fails before provider transport with ImageFetchError status 400; HTTPS/provider-supported URL descriptors are forwarded without gateway fetching, and supplied inline bytes remain usable.
-    why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1877-L1894
   - what: An optional_params.tools that is null, is not a list, or holds an entry that is not an object never crashes the request. Null keeps the value as sent and reads as declaring no tools for the hosted-tool beta scan and the code-execution insertion; a non-list answers 400 "tools must be a list" and a non-object entry answers 400 "tools entry N is not an object". LiteLLM iterates the value and calls .get on each entry, raising TypeError or AttributeError, which surfaces as a 500.
     why: docs/compatibility.md makes null mean the default and a wrong type an error that names the field; a crash on a documented OpenAI parameter is a bug no working setup can rely on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/chat/transformation.py#L1853-L1862
