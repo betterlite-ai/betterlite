@@ -29,6 +29,19 @@ async fn models_reject_a_negative_limit(#[case] identity: Principal) {
 }
 
 #[tokio::test]
+async fn models_pass_a_zero_limit_to_the_user_aggregation() {
+    let store = store_with(spend_store());
+    let reply = call(
+        "/global/spend/models?limit=0",
+        Some(&internal("u1")),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(store.calls(), vec!["user_models_by_spend(u1,0)".to_owned()]);
+}
+
+#[tokio::test]
 async fn models_report_no_database_before_a_negative_limit() {
     let reply = call(
         "/global/spend/models?limit=-5",
