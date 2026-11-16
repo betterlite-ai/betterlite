@@ -1,0 +1,18 @@
+task: B1373
+deviations:
+  - what: "A page body over 4 MiB, a page root that is not a JSON object and a wrongly typed page field are refused with a 500 that names the field path, and a refused page body that is not UTF-8 keeps the text before its first invalid byte."
+    why: "LiteLLM calls response.json() with no bound and fails later inside the transformation with a Python AttributeError or KeyError when a field has the wrong type, and httpx decodes response.text with replacement characters."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L515-L526"
+  - what: "Every lifecycle request carries one deadline that covers the whole exchange: 600 seconds for retrieve, list and the cancel follow-up GET, and the caller's timeout for the cancel POST."
+    why: "betterlite's transport takes one deadline per request and ends the body read at it; LiteLLM's httpx client applies its 600-second default per operation and its cancel follow-up GET never receives a timeout at this pin."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/handler.py#L629-L633"
+  - what: "A connection that fails before an answer is not retried, so the cancel POST goes out at most once and such a failure is a 500."
+    why: "LiteLLM's async cancel repeats the POST once on ConnectError or RemoteProtocolError on a fresh single-connection client, while its sync cancel does not retry at all; betterlite has one async path and sends each request once, so a cancel is never delivered twice."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851"
+  - what: "The cancel POST and its follow-up GET use betterlite's 10-second connect timeout, where LiteLLM's cached client allows 5 seconds to connect."
+    why: "B173 owns the transport limits every provider shares; a per-provider connect timeout would need a pool-level change outside this task, so a host that accepts the connection between 5 and 10 seconds succeeds here where LiteLLM gives up."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167"
+kept_bugs:
+  - what: "A cancel POST that the provider answers with a non-2xx status reaches the caller as a 500 instead of the provider's status."
+    why: "LiteLLM's sync post raises a MaskedHTTPStatusError, which its exception mapping turns into an APIConnectionError and the proxy answers with 500; betterlite keeps that 500 so a client handling a failed cancel sees what LiteLLM gave it, while the provider status and the first 1000 body characters still reach the log."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1514-L1523"
