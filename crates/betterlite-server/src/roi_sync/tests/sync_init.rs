@@ -3,7 +3,7 @@
 use betterlite_roi::records::ROISyncPhase;
 use chrono::{DateTime, TimeDelta, Utc};
 
-use super::support::{TestClock, inputs, manager, settled};
+use super::support::{TestClock, inputs, manager, settled, system_manager};
 
 #[tokio::test]
 async fn new_reports_an_idle_status_with_zeroed_counters() {
@@ -37,9 +37,9 @@ async fn new_keeps_each_manager_on_its_own_status() {
 }
 
 #[tokio::test]
-async fn new_without_a_clock_stamps_the_system_time() {
+async fn new_with_the_system_clock_stamps_the_system_time() {
     let before = Utc::now();
-    let manager = manager(None);
+    let manager = system_manager();
     let inputs = inputs("o/r", &[]);
     assert!(manager.start(inputs.run()).await);
     let after = Utc::now();

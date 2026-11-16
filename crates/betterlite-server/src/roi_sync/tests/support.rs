@@ -24,7 +24,6 @@ use betterlite_roi::settings::ROISettings;
 use chrono::{DateTime, NaiveDate, Utc};
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -159,6 +158,8 @@ pub(super) fn settings(repos: &[&str]) -> ROISettings {
         identity_map: IndexMap::new(),
     }
 }
+
+const FIXED_NOW: &str = "2026-01-10T00:00:00Z";
 
 #[derive(Clone)]
 pub(super) struct TestClock {
@@ -379,13 +380,6 @@ impl MemoryRepository {
             .unwrap()
             .params
             .insert(name.to_owned(), wire(text));
-    }
-
-    pub(super) fn holding<Value>(name: &str, value: &Value) -> Self
-    where
-        Value: Serialize,
-    {
-        Self::holding_text(name, &serde_json::to_string(value).unwrap())
     }
 
     pub(super) fn refusing_writes() -> Self {
@@ -757,10 +751,23 @@ pub(super) fn inputs(repo_slug: &str, pull_numbers: &[i64]) -> Inputs {
     }
 }
 
+fn fixed_clock() -> SyncClock {
+    TestClock::at(FIXED_NOW).handle()
+}
+
 pub(super) fn manager(clock: Option<SyncClock>) -> SyncManager<Routes> {
     SyncManager::new(
         factory(),
-        clock.unwrap_or_else(|| -> SyncClock { Arc::new(Utc::now) }),
+        clock.unwrap_or_else(fixed_clock),
+        Arc::new(Uuid::new_v4),
+        Arc::new(NoDeclaredCapabilities),
+    )
+}
+
+pub(super) fn system_manager() -> SyncManager<Routes> {
+    SyncManager::new(
+        factory(),
+        Arc::new(Utc::now),
         Arc::new(Uuid::new_v4),
         Arc::new(NoDeclaredCapabilities),
     )
@@ -773,7 +780,7 @@ pub(super) fn no_capabilities() -> Arc<dyn CapabilityLookup> {
 pub(super) fn manager_from(factory: GitHubFactory<Routes>) -> SyncManager<Routes> {
     SyncManager::new(
         factory,
-        Arc::new(Utc::now),
+        fixed_clock(),
         Arc::new(Uuid::new_v4),
         Arc::new(NoDeclaredCapabilities),
     )
@@ -782,7 +789,7 @@ pub(super) fn manager_from(factory: GitHubFactory<Routes>) -> SyncManager<Routes
 pub(super) fn manager_with_id(next_id: UuidSource) -> SyncManager<Routes> {
     SyncManager::new(
         factory(),
-        Arc::new(Utc::now),
+        fixed_clock(),
         next_id,
         Arc::new(NoDeclaredCapabilities),
     )
@@ -793,7 +800,7 @@ pub(super) fn manager_with_capabilities(
 ) -> SyncManager<Routes> {
     SyncManager::new(
         factory(),
-        Arc::new(Utc::now),
+        fixed_clock(),
         Arc::new(Uuid::new_v4),
         capabilities,
     )
