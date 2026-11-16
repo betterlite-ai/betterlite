@@ -12,7 +12,9 @@ use betterlite_tokenizer::count::request::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 mod tests;
 
@@ -135,7 +137,7 @@ fn reply_case(call: &ReplyCall) -> HelperResult {
         messages: &call.messages,
         now: call.now,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     runtime
         .block_on(decode_pegasus_reply(
             call.body.as_bytes(),

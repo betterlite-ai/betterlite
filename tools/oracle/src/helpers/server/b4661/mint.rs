@@ -14,7 +14,8 @@ use serde_json::{Value, json};
 use super::support::{
     ConfigSpec, ManualClock, OutcomeSpec, ScriptedPost, config_from, epoch, value_error,
 };
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct MintInput {

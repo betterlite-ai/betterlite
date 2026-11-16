@@ -16,19 +16,19 @@ use betterlite_tokenizer::engine::error::EngineError;
 use betterlite_tokenizer::engine::fetch::TiktokenFetcher;
 use betterlite_tokenizer::engine::hub::HubDownloader;
 use betterlite_tokenizer::engine::limits::{
-    BuildJob, ConvertJob, CountJob, CountingService, EncodeLimits,
+    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService, EncodeLimits,
 };
 use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::Instant;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::failure;
 
 struct InlineCounter;
 
 #[async_trait::async_trait]
-impl betterlite_tokenizer::engine::limits::BlockingCounter for InlineCounter {
+impl BlockingCounter for InlineCounter {
     async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
         job()
     }

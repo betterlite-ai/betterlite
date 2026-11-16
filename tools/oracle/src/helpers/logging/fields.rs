@@ -11,20 +11,23 @@ use betterlite_logging::fields::usage::{
     ResponseUsage, Usage, UsageError, get_usage_as_dict, get_usage_from_response_obj,
 };
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::DateTime;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use std::fmt::Display;
 use std::str::FromStr as _;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Value;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.get("function").and_then(Value::as_str) {
             Some("cleanup_timestamps") => cleanup(input),
             Some("system_messages") => messages(input),
@@ -38,8 +41,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -49,7 +52,7 @@ fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn encode<T>(value: T) -> crate::helpers::HelperResult
+fn encode<T>(value: T) -> HelperResult
 where
     T: Serialize,
 {
@@ -59,10 +62,7 @@ where
     }
 }
 
-fn optional_value<T>(
-    input: &Value,
-    name: &str,
-) -> Result<Option<T>, Box<crate::helpers::HelperError>>
+fn optional_value<T>(input: &Value, name: &str) -> Result<Option<T>, Box<HelperError>>
 where
     T: DeserializeOwned,
 {
@@ -74,9 +74,7 @@ where
     Ok(Some(parsed))
 }
 
-fn decode_moment(
-    encoded: Option<&Value>,
-) -> Result<Option<Moment>, Box<crate::helpers::HelperError>> {
+fn decode_moment(encoded: Option<&Value>) -> Result<Option<Moment>, Box<HelperError>> {
     match encoded {
         Some(Value::String(text)) => {
             let parsed =
@@ -103,14 +101,14 @@ fn decode_moment(
     }
 }
 
-fn moments(input: &Value) -> Result<[Option<Moment>; 3], Box<crate::helpers::HelperError>> {
+fn moments(input: &Value) -> Result<[Option<Moment>; 3], Box<HelperError>> {
     let start = decode_moment(input.get("start"))?;
     let end = decode_moment(input.get("end"))?;
     let completion = decode_moment(input.get("completion_start"))?;
     Ok([start, end, completion])
 }
 
-fn cleanup(input: &Value) -> crate::helpers::HelperResult {
+fn cleanup(input: &Value) -> HelperResult {
     let [start, end, completion] = moments(input)?;
     match cleanup_timestamps(start.as_ref(), end.as_ref(), completion.as_ref()) {
         Ok(values) => encode(values),
@@ -118,7 +116,7 @@ fn cleanup(input: &Value) -> crate::helpers::HelperResult {
     }
 }
 
-fn round_trip<T>(input: &Value, name: &str) -> crate::helpers::HelperResult
+fn round_trip<T>(input: &Value, name: &str) -> HelperResult
 where
     T: DeserializeOwned + Serialize,
 {
@@ -128,39 +126,39 @@ where
     Err(invalid("a required value is missing"))
 }
 
-fn messages(input: &Value) -> crate::helpers::HelperResult {
+fn messages(input: &Value) -> HelperResult {
     let system = input.get("system").and_then(Value::as_str);
     let decoded = optional_value::<Json>(input, "messages")?;
     encode(append_system_prompt_messages(system, decoded.as_ref()))
 }
 
-fn status(input: &Value) -> crate::helpers::HelperResult {
+fn status(input: &Value) -> HelperResult {
     let parsed = optional_value::<LoggingStatus>(input, "status")?;
     let status = parsed.ok_or_else(|| invalid("status is required"))?;
     let guardrails = optional_value::<Vec<GuardrailInformation>>(input, "guardrail_information")?;
     encode(get_status_fields(status, guardrails.as_deref()))
 }
 
-fn combined_usage(input: &Value) -> Result<Option<Usage>, Box<crate::helpers::HelperError>> {
+fn combined_usage(input: &Value) -> Result<Option<Usage>, Box<HelperError>> {
     let mapping = optional_value::<IndexMap<String, Json>>(input, "combined")?;
     mapping
         .map(|combined| usage_from_mapping(&combined).map_err(|error| invalid(&error.to_string())))
         .transpose()
 }
 
-fn response_usage(input: &Value) -> Result<ResponseUsage<'_>, Box<crate::helpers::HelperError>> {
+fn response_usage(input: &Value) -> Result<ResponseUsage<'_>, Box<HelperError>> {
     optional_value::<IndexMap<String, Json>>(input, "usage")
         .map(|mapping| mapping.map_or(ResponseUsage::Absent, ResponseUsage::Mapping))
 }
 
-fn usage_as_dict(input: &Value) -> crate::helpers::HelperResult {
+fn usage_as_dict(input: &Value) -> HelperResult {
     let combined = combined_usage(input)?;
     let projected = get_usage_as_dict(response_usage(input)?, combined.as_ref(), &responses_usage)
         .map_err(|error| invalid(&error.to_string()))?;
     encode(projected)
 }
 
-fn usage_from_response(input: &Value) -> crate::helpers::HelperResult {
+fn usage_from_response(input: &Value) -> HelperResult {
     let combined = combined_usage(input)?;
     let usage =
         get_usage_from_response_obj(response_usage(input)?, combined.as_ref(), &responses_usage)
@@ -178,16 +176,14 @@ fn responses_usage(mapping: &IndexMap<String, Json>) -> Result<Usage, UsageError
 
 fn provider_error<E>(error: E) -> UsageError
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     UsageError::ProviderConversion {
         reason: error.to_string(),
     }
 }
 
-fn decode_init(
-    encoded: Option<&Value>,
-) -> Result<InitResponseObject, Box<crate::helpers::HelperError>> {
+fn decode_init(encoded: Option<&Value>) -> Result<InitResponseObject, Box<HelperError>> {
     let Some(value) = encoded.filter(|value| !value.is_null()) else {
         return Ok(InitResponseObject::Absent);
     };
@@ -199,7 +195,7 @@ fn decode_init(
     Ok(InitResponseObject::Mapping(mapping))
 }
 
-fn extracted(input: &Value) -> crate::helpers::HelperResult {
+fn extracted(input: &Value) -> HelperResult {
     let headers = optional_value::<AdditionalHeaders>(input, "additional_headers")?;
     let extracted = extract(decode_init(input.get("init"))?, headers);
     let hidden = match extracted.hidden_params {

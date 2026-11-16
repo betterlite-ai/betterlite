@@ -11,7 +11,8 @@ use google_cloud_wkt::Duration as ProtoDuration;
 use jiff::SignedDuration;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

@@ -12,7 +12,8 @@ use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -110,10 +111,10 @@ fn answer(step: &Step) -> Result<Value, Box<HelperError>> {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut answers = Vec::with_capacity(input.steps.len());
         for step in &input.steps {
             answers.push(answer(step)?);

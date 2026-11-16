@@ -6,7 +6,8 @@ use betterlite_models::controls::multipart::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -28,10 +29,10 @@ pub(crate) struct SerializeInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Flatten(fields) => flatten(fields),
             Input::Serialize(fields) => serialize_fields(fields),
@@ -39,7 +40,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn flatten(fields: &FlattenInput) -> crate::helpers::HelperResult {
+fn flatten(fields: &FlattenInput) -> HelperResult {
     let sources: Vec<Option<&JsonValue>> = fields.sources.iter().map(Option::as_ref).collect();
     let flattened =
         flatten_form_field_values(&sources, DEFAULT_MAX_RECURSE_DEPTH).or_value_error()?;
@@ -47,7 +48,7 @@ fn flatten(fields: &FlattenInput) -> crate::helpers::HelperResult {
     Ok(render_fields(pairs.collect()))
 }
 
-fn serialize_fields(fields: &SerializeInput) -> crate::helpers::HelperResult {
+fn serialize_fields(fields: &SerializeInput) -> HelperResult {
     let serialized =
         serialize_multipart_fields(&fields.data, DEFAULT_MAX_RECURSE_DEPTH).or_value_error()?;
     let pairs = serialized

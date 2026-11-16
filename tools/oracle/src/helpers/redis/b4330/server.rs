@@ -19,6 +19,7 @@ use betterlite_redis::redis_connection_settings::model::settings::RedisOverrides
 use betterlite_redis::redis_live_client::LiveClientFactory;
 
 use super::input::Reply;
+use std::error::Error;
 
 const SOCKET_TIMEOUT_SECONDS: f64 = 1.0;
 
@@ -189,7 +190,7 @@ struct Silent;
 
 impl ServiceHooks for Silent {
     fn success(&self, _event: &ServiceEvent) {}
-    fn failure(&self, _event: &ServiceEvent, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn failure(&self, _event: &ServiceEvent, _error: &(dyn Error + Send + Sync)) {}
 }
 
 struct Allow;
@@ -201,14 +202,9 @@ impl BreakerGate for Allow {
 
     fn exit(&self, _admission: BreakerAdmission) {}
 
-    fn record_failure(&self, _error: &(dyn std::error::Error + Send + Sync)) {}
+    fn record_failure(&self, _error: &(dyn Error + Send + Sync)) {}
 
-    fn swallowed(
-        &self,
-        _admission: &BreakerAdmission,
-        _error: &(dyn std::error::Error + Send + Sync),
-    ) {
-    }
+    fn swallowed(&self, _admission: &BreakerAdmission, _error: &(dyn Error + Send + Sync)) {}
 }
 
 const fn blank_overrides() -> RedisOverrides {

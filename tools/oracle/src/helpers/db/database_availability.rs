@@ -6,6 +6,9 @@ use betterlite_db::database_availability::policy::{
 };
 use betterlite_db::database_availability::projection::service_unavailable_error;
 use betterlite_db::database_faults::{DbError, ErrorType};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
 use std::ptr;
 
@@ -44,7 +47,7 @@ enum RawAllow {
     Null(()),
     Boolean(bool),
     Text(String),
-    Other(serde::de::IgnoredAny),
+    Other(IgnoredAny),
 }
 
 #[derive(Clone, Copy, Deserialize)]
@@ -253,13 +256,13 @@ fn run_scenario(scenario: &RawScenario) -> ScenarioOutput {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let scenarios: Vec<ScenarioOutput> = input.scenarios.iter().map(run_scenario).collect();
         serde_json::to_value(scenarios).map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,
