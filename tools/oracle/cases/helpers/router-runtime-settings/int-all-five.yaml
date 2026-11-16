@@ -1,0 +1,14 @@
+kind: helper
+name: router-runtime-settings-int-all-five
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["timeout", "40"]
+      - ["num_retries", 3.9]
+      - ["retry_after", -2.5]
+      - ["allowed_fails", "5"]
+      - ["cooldown_time", 8]
+env: {}
+compare: {ignore: []}

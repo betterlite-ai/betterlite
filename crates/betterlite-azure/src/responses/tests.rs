@@ -10,4 +10,5 @@ mod reasoning;
 mod resources;
 mod strip;
 mod support;
+mod tool_function;
 mod websocket;
