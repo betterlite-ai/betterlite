@@ -434,6 +434,24 @@ async fn oneshot_info_without_dotprompt_content_has_no_template() {
 }
 
 #[tokio::test]
+async fn oneshot_info_malformed_dotprompt_content_has_no_template() {
+    let prompts = registry(vec![dotprompt_prompt(
+        "alpha",
+        "development",
+        "---\n- a\n- b\n---\nHello",
+    )]);
+    let (status, body) = call(
+        state(prompts, None),
+        "/prompts/alpha/info",
+        master_context(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(body["raw_prompt_template"].is_null());
+    assert_eq!(body["prompt_spec"]["version"], json!(1));
+}
+
+#[tokio::test]
 async fn oneshot_info_environments_are_sorted_and_distinct() {
     let table = FakePromptTable::answering(vec![
         stored_prompt("alpha", 1, "production"),
