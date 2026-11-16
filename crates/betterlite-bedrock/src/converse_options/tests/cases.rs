@@ -678,7 +678,19 @@ pub(super) fn supported_param_list() {
         nova
     );
 
-    let mut nova2 = names(&BASE_PARAMS);
+    // This fixture entry declares supports_sampling_params false, so the pair is absent.
+    let mut nova2 = names(&[
+        "max_tokens",
+        "max_completion_tokens",
+        "stream",
+        "stream_options",
+        "stop",
+        "extra_headers",
+        "response_format",
+        "requestMetadata",
+        "service_tier",
+        "parallel_tool_calls",
+    ]);
     nova2.extend(names(&["tools", "web_search_options"]));
     nova2.push("reasoning_effort".to_owned());
     assert_eq!(
