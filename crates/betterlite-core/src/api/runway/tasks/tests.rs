@@ -424,7 +424,7 @@ fn video_fields_keep_presence_and_credits() {
     );
     assert_eq!(task.completed_at.value(), Some(&Json::Null));
     assert_eq!(task.output, Some(TaskOutputs::Text("u".to_owned())));
-    assert!(task.progress.is_some_and(|progress| progress > 0.0));
+    assert!(task.progress.is_some_and(|progress| progress > 0.0_f64));
     assert!(matches!(task.estimated_credits(), Some(Json::Number(_))));
     let plain = decode_runway_task(br#"{"estimatedCost":[{"credits":5}]}"#).unwrap();
     assert_eq!(plain.estimated_credits(), None);

@@ -56,9 +56,8 @@ fn credentials(
 }
 
 fn authorization(found: &VideoCredentials) -> Option<String> {
-    validate_environment(&Headers::new(), found, "2024-11-06")
-        .ok()
-        .and_then(|headers| headers.get("Authorization").cloned())
+    let headers = validate_environment(&Headers::new(), found, "2024-11-06").ok()?;
+    headers.get("Authorization").cloned()
 }
 
 fn created(body: &str, provider: Option<&str>, request: &VideoParams) -> VideoObject {
@@ -405,7 +404,7 @@ fn request_fields_reach_the_reply_and_colons_become_x_in_the_size() {
 #[case::non_digits("1280x720", None)]
 #[case::second_ratio("1280:720:2", None)]
 #[case::signed("-800:720", None)]
-#[case::unicode_digits("١٢٨٠:720", None)]
+#[case::unicode_digits("\u{661}\u{662}\u{668}\u{660}:720", None)]
 #[case::huge("99999999999999999999999999999999999999999:2", Some("4k"))]
 fn ratio_to_resolution_follows_the_area_tiers(#[case] ratio: &str, #[case] expected: Option<&str>) {
     assert_eq!(ratio_to_resolution(Some(&text(ratio))), expected);
@@ -443,7 +442,7 @@ fn usage_carries_duration_resolution_and_reported_credits() {
     let usage = created(body, None, &form.body).usage.unwrap();
     assert_eq!(
         usage.get("duration_seconds").and_then(Value::as_f64),
-        Some(5.0)
+        Some(5.0_f64)
     );
     assert_eq!(
         usage.get("video_resolution").and_then(Value::as_str),
@@ -453,7 +452,7 @@ fn usage_carries_duration_resolution_and_reported_credits() {
         usage
             .get("provider_reported_cost_usd")
             .and_then(Value::as_f64),
-        Some(0.1)
+        Some(0.1_f64)
     );
 }
 
@@ -475,16 +474,16 @@ fn a_non_scalar_duration_leaves_seconds_out() {
 }
 
 #[rstest]
-#[case::zero(0.0, 0)]
-#[case::small(0.005, 0)]
-#[case::tie_up(0.015, 2)]
-#[case::tie_down(0.025, 2)]
-#[case::half(0.5, 50)]
-#[case::float_tie_above(0.545, 54)]
-#[case::float_tie_below(0.575, 58)]
-#[case::whole(1.0, 100)]
-#[case::over(1.5, 100)]
-#[case::negative(-0.5, 0)]
+#[case::zero(0.0_f64, 0)]
+#[case::small(0.005_f64, 0)]
+#[case::tie_up(0.015_f64, 2)]
+#[case::tie_down(0.025_f64, 2)]
+#[case::half(0.5_f64, 50)]
+#[case::float_tie_above(0.545_f64, 54)]
+#[case::float_tie_below(0.575_f64, 58)]
+#[case::whole(1.0_f64, 100)]
+#[case::over(1.5_f64, 100)]
+#[case::negative(-0.5_f64, 0)]
 fn progress_rounds_half_even_and_clamps(#[case] progress: f64, #[case] expected: i64) {
     assert_eq!(progress_percent(progress), expected);
 }
