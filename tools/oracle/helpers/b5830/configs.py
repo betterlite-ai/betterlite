@@ -3,9 +3,9 @@ from io import BytesIO
 from typing import Final, Never, Protocol, runtime_checkable
 
 import httpx
-from litellm.llms.openrouter.image_edit.transformation import OpenRouterImageEditConfig
-from litellm.llms.openrouter.image_generation.transformation import (
-    OpenRouterImageGenerationConfig,
+from litellm.llms.openrouter.image_edit import get_openrouter_image_edit_config
+from litellm.llms.openrouter.image_generation import (
+    get_openrouter_image_generation_config,
 )
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse
@@ -23,10 +23,10 @@ class GenerationConfig(Protocol):
     validate_environment: Callable[
         [Headers, str, list[Never], Object, Object, str | None, str | None], Headers
     ]
-    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
+    transform_image_generation_request: Callable[
         [str, str, Object, Object, Headers], Object
     ]
-    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
+    transform_image_generation_response: Callable[
         [str, httpx.Response, ImageResponse, None, Object, Object, Object, None],
         ImageResponse,
     ]
@@ -57,10 +57,10 @@ class EditConfig(Protocol):
     def map_openai_params(self, params: Object, model: str, *, drop_params: bool) -> Object: ...
 
 
-# LiteLLM types these parameters as bare dicts and an untyped messages list, so the protocols are the declared shape
+# LiteLLM types these parameters as bare dicts, so the protocols hold their shape
 GENERATION: Final[GenerationConfig] = TypeAdapter[GenerationConfig](
     GenerationConfig, config=ARBITRARY
-).validate_python(OpenRouterImageGenerationConfig())
+).validate_python(get_openrouter_image_generation_config(""))
 EDIT: Final[EditConfig] = TypeAdapter[EditConfig](
     EditConfig, config=ARBITRARY
-).validate_python(OpenRouterImageEditConfig())
+).validate_python(get_openrouter_image_edit_config(""))

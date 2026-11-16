@@ -12,12 +12,12 @@ from pydantic import JsonValue
 
 from .configs import EDIT, GENERATION
 from .inputs import (
+    JSON,
     EditRequestCase,
     GenerationParamsCase,
     GenerationRequestCase,
     ImageCase,
     Input,
-    JSON,
     Object,
     ReplyCase,
 )
@@ -60,7 +60,10 @@ def generation_params(cases: list[GenerationParamsCase]) -> JsonValue:
     for case in cases:
         optional = dict(case["optional_params"])
         mapped = GENERATION.map_openai_params(
-            dict(case["non_default_params"]), optional, case["model"], drop_params=case["drop_params"]
+            dict(case["non_default_params"]),
+            optional,
+            case["model"],
+            drop_params=case["drop_params"],
         )
         supported = GENERATION.get_supported_openai_params(case["model"])
         answers.append({"supported": JSON.validate_python(supported), "params": mapped})
@@ -95,32 +98,40 @@ def generation_reply(cases: list[ReplyCase]) -> JsonValue:
 
 
 def edit_params(cases: list[Object]) -> JsonValue:
+    supported = JSON.validate_python(EDIT.get_supported_openai_params(""))
     answers: list[JsonValue] = []
     for case in cases:
-        supported = EDIT.get_supported_openai_params("")
         mapped = EDIT.map_openai_params(dict(case), "", drop_params=False)
-        answers.append({"supported": JSON.validate_python(supported), "params": mapped})
+        answers.append({"supported": supported, "params": mapped})
     return JSON.validate_python(answers)
 
 
 def edit_request(cases: list[EditRequestCase]) -> JsonValue:
-    answers: list[JsonValue] = []
-    for case in cases:
-        activate(case["environment"], case["global_api_key"])
-        url = EDIT.get_complete_url(case["model"], case["api_base"], {})
-        headers = EDIT.validate_environment(
-            dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
-        )
-        source = image_source(case["image"])
-        request, files = EDIT.transform_image_edit_request(
-            case["model"], case["prompt"], source.value, dict(case["optional_params"]),
-            GenericLiteLLMParams(), headers,
-        )
-        answers.append(
-            {"url": url, "headers": JSON.validate_python(headers), "request": JSON.validate_python(request),
-             "files": JSON.validate_python(files), "position": source.position()}
-        )
-    return JSON.validate_python(answers)
+    return JSON.validate_python([edit_request_case(case) for case in cases])
+
+
+def edit_request_case(case: EditRequestCase) -> JsonValue:
+    activate(case["environment"], case["global_api_key"])
+    url = EDIT.get_complete_url(case["model"], case["api_base"], {})
+    headers = EDIT.validate_environment(
+        dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
+    )
+    source = image_source(case["image"])
+    request, files = EDIT.transform_image_edit_request(
+        case["model"],
+        case["prompt"],
+        source.value,
+        dict(case["optional_params"]),
+        GenericLiteLLMParams(),
+        headers,
+    )
+    return {
+        "url": url,
+        "headers": JSON.validate_python(headers),
+        "request": JSON.validate_python(request),
+        "files": JSON.validate_python(files),
+        "position": source.position(),
+    }
 
 
 def edit_reply(cases: list[ReplyCase]) -> JsonValue:
@@ -133,18 +144,16 @@ def edit_reply(cases: list[ReplyCase]) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    result: JsonValue
     match input_value["op"]:
         case "generation_params":
-            result = generation_params(input_value["cases"])
+            return generation_params(input_value["cases"])
         case "generation_request":
-            result = generation_request(input_value["cases"])
+            return generation_request(input_value["cases"])
         case "generation_reply":
-            result = generation_reply(input_value["cases"])
+            return generation_reply(input_value["cases"])
         case "edit_params":
-            result = edit_params(input_value["cases"])
+            return edit_params(input_value["cases"])
         case "edit_request":
-            result = edit_request(input_value["cases"])
+            return edit_request(input_value["cases"])
         case "edit_reply":
-            result = edit_reply(input_value["cases"])
-    return result
+            return edit_reply(input_value["cases"])

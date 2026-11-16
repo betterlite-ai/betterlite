@@ -61,9 +61,13 @@ def image_values(data: list[ImageDatum]) -> list[JsonValue]:
 
 def usage_fields(usage: UsageFields) -> Object:
     details = usage["input_tokens_details"]
+    token_details: TokenDetails = {
+        "image_tokens": details["image_tokens"],
+        "text_tokens": details["text_tokens"],
+    }
     return {
         "input_tokens": usage["input_tokens"],
-        "input_tokens_details": {"image_tokens": details["image_tokens"], "text_tokens": details["text_tokens"]},
+        "input_tokens_details": token_details,
         "output_tokens": usage["output_tokens"],
         "total_tokens": usage["total_tokens"],
     }
@@ -89,20 +93,20 @@ def reply_usage(parsed: ImageReply) -> Object | None:
     return usage_fields(usage)
 
 
-def generation_fields(reply: ImageResponse) -> Object:
-    parsed = REPLY.validate_json(reply.model_dump_json())
+def reply_fields(parsed: ImageReply, reply: ImageResponse) -> Object:
     return {
-        "created": parsed["created"],
         "data": image_values(parsed["data"]),
         "usage": reply_usage(parsed),
         "hidden": hidden_fields(reply),
     }
+
+
+def generation_fields(reply: ImageResponse) -> Object:
+    parsed = REPLY.validate_json(reply.model_dump_json())
+    fields = reply_fields(parsed, reply)
+    fields["created"] = parsed["created"]
+    return fields
 
 
 def edit_fields(reply: ImageResponse) -> Object:
-    parsed = REPLY.validate_json(reply.model_dump_json())
-    return {
-        "data": image_values(parsed["data"]),
-        "usage": reply_usage(parsed),
-        "hidden": hidden_fields(reply),
-    }
+    return reply_fields(REPLY.validate_json(reply.model_dump_json()), reply)
