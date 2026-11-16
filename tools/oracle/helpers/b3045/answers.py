@@ -1,12 +1,7 @@
 from typing import Literal
 
 from litellm.types.llms.openai import ResponseAPIUsage
-from litellm.types.rerank import (
-    RerankBilledUnits,
-    RerankResponse,
-    RerankResponseMeta,
-    RerankTokens,
-)
+from litellm.types.rerank import RerankResponse
 from litellm.types.utils import EmbeddingResponse, Usage
 from pydantic import JsonValue, TypeAdapter
 
@@ -28,19 +23,17 @@ from .operations import (
 
 
 def rerank_response(input_value: ResponseInput) -> RerankResponse:
-    metadata: RerankResponseMeta = {}
+    metadata: dict[str, JsonValue] = {}
     tokens = input_value.get("rerank_tokens")
     if tokens is not None:
-        rerank_tokens: RerankTokens = {
+        metadata["tokens"] = {
             "input_tokens": tokens["input_tokens"],
             "output_tokens": tokens["output_tokens"],
         }
-        metadata["tokens"] = rerank_tokens
     billed_total = input_value.get("billed_units_total_tokens")
     if billed_total is not None:
-        billed_units: RerankBilledUnits = {"total_tokens": billed_total}
-        metadata["billed_units"] = billed_units
-    return RerankResponse(meta=metadata)
+        metadata["billed_units"] = {"total_tokens": billed_total}
+    return RerankResponse.model_validate({"meta": metadata})
 
 
 def response_api_response(
