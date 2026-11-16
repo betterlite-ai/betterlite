@@ -27,7 +27,7 @@ deviations:
   - what: A size string part written in non-ASCII decimal digits, such as Arabic-Indic, falls back to the family preset, where Python's int() reads those digits as a number.
     why: betterlite's shared size reader accepts ASCII digits only; a working request spells its size in ASCII.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L106-L115
-  - what: A size string padded with U+001C to U+001F is not trimmed by betterlite, so it falls back to the family preset where Python's strip() and int() remove those characters and read the dimensions.
-    why: Python's str.strip() removes the four information separators before the Ideogram alias lookup, while Rust's trim leaves them; Python's int() rejects them too, so only the trimmed Ideogram path differs, and no working request sends them around a size.
+  - what: An Ideogram size string padded with U+001C to U+001F falls back to square_hd, where Python's strip() removes those characters and reads the 512x512 alias as square.
+    why: Python's str.strip() removes the four information separators before the Ideogram alias lookup, while Rust's trim leaves them; Python's int() rejects them too, so Stable Diffusion matches betterlite on the same input, and no working request sends them around a size.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/image_generation/ideogram_v3_transformation.py#L102-L115
 kept_bugs: []
