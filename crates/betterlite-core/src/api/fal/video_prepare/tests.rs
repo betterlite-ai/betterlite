@@ -331,6 +331,7 @@ fn model_paths_come_from_the_first_requests_segment(
 #[case::missing("/fal-ai/model/status", None)]
 #[case::requests_last("/fal-ai/model/requests", None)]
 #[case::first_requests_wins("/a/requests/one/requests/two", Some("one"))]
+#[case::empty_segment_before_the_id("/fal-ai/model/requests//req-1", Some("req-1"))]
 fn request_ids_follow_the_first_requests_segment(
     #[case] path: &str,
     #[case] expected: Option<&str>,
