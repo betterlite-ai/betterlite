@@ -1,10 +1,10 @@
 use std::future::Future;
 
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_models::decisions::Json;
 
 use super::sse_stream::{anthropic_message_start, joined_sse_stream, parsed_sse_events};
+use crate::guardrail_message_scope::StreamItem;
 
 mod tests;
 

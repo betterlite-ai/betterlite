@@ -1,7 +1,7 @@
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_models::decisions::Json;
 
 use super::sse_stream::{event_type, joined_sse_stream, parsed_sse_events, raw_chunk_bytes};
+use crate::guardrail_message_scope::StreamItem;
 
 mod tests;
 

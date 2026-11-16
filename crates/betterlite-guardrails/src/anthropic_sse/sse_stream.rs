@@ -1,8 +1,9 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::responses_tool_namespaces::values::Fields;
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_models::decisions::Json;
 use betterlite_streaming::passthrough_reconstruction::events::extract_sse_data;
+
+use crate::guardrail_message_scope::StreamItem;
 
 // A relayed chunk is raw when it is the text or the bytes of a frame, and parsed when it is an object.
 #[must_use]

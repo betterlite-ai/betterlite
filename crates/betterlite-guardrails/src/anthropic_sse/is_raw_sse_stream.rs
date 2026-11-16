@@ -1,6 +1,5 @@
-use betterlite_guardrails::guardrail_message_scope::StreamItem;
-
 use super::sse_stream::raw_chunk_bytes;
+use crate::guardrail_message_scope::StreamItem;
 
 mod tests;
 

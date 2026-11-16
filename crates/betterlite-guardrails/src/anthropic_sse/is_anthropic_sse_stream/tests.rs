@@ -3,7 +3,7 @@
 use rstest::rstest;
 
 use super::is_anthropic_sse_stream;
-use crate::guardrails::anthropic_sse::tests::support::{
+use crate::anthropic_sse::tests::support::{
     GOOGLE_FRAME, MESSAGE_START, bytes_chunk, object_chunk, text_chunk,
 };
 

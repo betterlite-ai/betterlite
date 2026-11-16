@@ -1,6 +1,7 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
-use betterlite_guardrails::guardrail_message_scope::{Object, StreamItem};
+
+use crate::guardrail_message_scope::{Object, StreamItem};
 
 pub(crate) const MESSAGE_START: &str = "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_1\", \"model\": \"claude-x\"}}\n\n";
 pub(crate) const PING: &str = "event: ping\ndata: {\"type\": \"ping\"}\n\n";

@@ -3,7 +3,7 @@
 use rstest::rstest;
 
 use super::is_sse_error_stream;
-use crate::guardrails::anthropic_sse::tests::support::{
+use crate::anthropic_sse::tests::support::{
     CHAT_ERROR, ERROR_EVENT, MESSAGE_START, bytes_chunk, object_chunk, text_chunk,
 };
 
