@@ -8,7 +8,7 @@ use betterlite_models::provider_metadata_factory::adapters::AzureFoundryModelInf
 use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
 use crate::anthropic_count::handler::FoundryCountHandler;
 use crate::model_router as router;
@@ -32,7 +32,7 @@ const NULL_NAME_ROUTER_MODEL_HIDDEN: &str =
 const NUMBER_NAME_ROUTER_MODEL_HIDDEN: &str =
     r#"{"litellm_model_name":7,"model":"model_router/hidden"}"#;
 const PLAIN_NAME_HIDDEN: &str = r#"{"litellm_model_name":"plain-deployment"}"#;
-const EMPTY_HIDDEN: &str = r#"{}"#;
+const EMPTY_HIDDEN: &str = "{}";
 
 #[rstest]
 #[case::strip_model_router_prefix(strip_model_router_prefix)]
@@ -222,7 +222,7 @@ fn native_token_counter_selection() {
         counter
             .environment_api_key
             .as_ref()
-            .map(|key| key.expose_secret()),
+            .map(ExposeSecret::expose_secret),
         Some("environment-key")
     );
 }

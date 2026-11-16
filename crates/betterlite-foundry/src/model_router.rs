@@ -13,7 +13,9 @@ use thiserror::Error;
 use crate::anthropic_count::counter::AzureAnthropicTokenCounter;
 use crate::anthropic_count::handler::FoundryCountHandler;
 use crate::chat::request::RequestError;
+use crate::chat::request::transform_request as parent_transform_request;
 use crate::chat::response::ResponseError;
+use crate::chat::response::transform_response as parent_transform_response;
 
 mod tests;
 
@@ -45,16 +47,13 @@ pub fn strip_model_router_prefix(model: &str) -> &str {
     model
 }
 
+// ast-grep-ignore: no-one-line-functions
 pub fn transform_request(
     model: &str,
     messages: &[Message],
     optional_params: &Object,
 ) -> Result<Object, RequestError> {
-    crate::chat::request::transform_request(
-        strip_model_router_prefix(model),
-        messages,
-        optional_params,
-    )
+    parent_transform_request(strip_model_router_prefix(model), messages, optional_params)
 }
 
 pub fn transform_response(
@@ -63,7 +62,7 @@ pub fn transform_response(
     existing_hidden: &Object,
 ) -> Result<RoutedChatResponse, ResponseError> {
     let base_model = strip_model_router_prefix(model);
-    let response = crate::chat::response::transform_response(base_model, body)?;
+    let response = parent_transform_response(base_model, body)?;
     // get_hidden_params_dict reads the response's hidden map, which the typed response hands in here
     let mut hidden = existing_hidden.clone();
     insert_selected_model(&mut hidden, &response.model);
@@ -88,14 +87,13 @@ pub fn is_model_router_call(model: Option<&str>, hidden: Option<&Object>) -> boo
     if selected_model(hidden).is_some() {
         return true;
     }
-    let deployment = hidden
-        .and_then(|params| {
-            params
-                .get("litellm_model_name")
-                .filter(|value| !value.is_null())
-        })
-        .or_else(|| hidden.and_then(|params| params.get("model")))
-        .and_then(|value| value.as_str());
+    let reported_name = hidden.and_then(|params| {
+        params
+            .get("litellm_model_name")
+            .filter(|value| !value.is_null())
+            .or_else(|| params.get("model"))
+    });
+    let deployment = reported_name.and_then(|value| value.as_str());
     let deployment_is_router =
         deployment.is_some_and(|name| get_azure_ai_route(name) == AzureAiRoute::ModelRouter);
     let caller_is_router =
