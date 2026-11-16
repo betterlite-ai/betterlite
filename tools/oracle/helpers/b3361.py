@@ -7,7 +7,11 @@ from litellm.containers.utils import (
 from litellm.llms.base_llm.containers.transformation import BaseContainerConfig
 from litellm.types.containers.main import (
     ContainerCreateOptionalRequestParams as CreateOptionalParams,
+)
+from litellm.types.containers.main import (
     ContainerListOptionalRequestParams as ListOptionalParams,
+)
+from litellm.types.containers.main import (
     DeleteContainerResult,
 )
 from litellm.types.router import GenericLiteLLMParams
@@ -93,7 +97,7 @@ Call = (
 
 
 def decode_answer(call: DecodeCall) -> dict[str, JsonValue]:
-    params = GenericLiteLLMParams.model_validate(call["litellm_params"])
+    params = GenericLiteLLMParams.model_validate(call["litellm_params"])  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381
     original, provider, updated = decode_managed_container_id_for_request(
         call["container_id"], call["custom_llm_provider"], params
     )
@@ -105,28 +109,34 @@ def decode_answer(call: DecodeCall) -> dict[str, JsonValue]:
     }
 
 
-def create_optional_answer(call: CreateOptionalCall) -> dict[str, JsonValue]:
-    optional = REQUESTS.get_requested_container_create_optional_param(
+def create_optional_answer(
+    requests: ContainerRequests, call: CreateOptionalCall
+) -> dict[str, JsonValue]:
+    optional = requests.get_requested_container_create_optional_param(
         call["passed_params"]
     )
     return {"params": JSON.validate_python(optional)}
 
 
-def filter_create_answer(call: FilterCreateCall) -> dict[str, JsonValue]:
+def filter_create_answer(
+    requests: ContainerRequests, call: FilterCreateCall
+) -> dict[str, JsonValue]:
     config = ProviderConfigManager.get_provider_container_config(
         LlmProviders(call["provider"])
     )
     if config is None:
         raise ValueError(f"{call['provider']} is not a known provider")
-    optional = REQUESTS.get_requested_container_create_optional_param(
+    optional = requests.get_requested_container_create_optional_param(
         call["passed_params"]
     )
-    params = REQUESTS.get_optional_params_container_create(config, optional)
+    params = requests.get_optional_params_container_create(config, optional)
     return {"params": params}
 
 
-def list_optional_answer(call: ListOptionalCall) -> dict[str, JsonValue]:
-    optional = REQUESTS.get_requested_container_list_optional_param(
+def list_optional_answer(
+    requests: ContainerRequests, call: ListOptionalCall
+) -> dict[str, JsonValue]:
+    optional = requests.get_requested_container_list_optional_param(
         call["passed_params"]
     )
     return {"params": JSON.validate_python(optional)}
@@ -157,11 +167,11 @@ def run(input_value: Call) -> JsonValue:
     if input_value["function"] == "decode_managed_id":
         return decode_answer(input_value)
     if input_value["function"] == "create_optional_params":
-        return create_optional_answer(input_value)
+        return create_optional_answer(REQUESTS, input_value)
     if input_value["function"] == "create_params":
-        return filter_create_answer(input_value)
+        return filter_create_answer(REQUESTS, input_value)
     if input_value["function"] == "list_optional_params":
-        return list_optional_answer(input_value)
+        return list_optional_answer(REQUESTS, input_value)
     if input_value["function"] == "encode_container_id":
         return encode_answer(input_value)
     return provider_config_answer(input_value)
