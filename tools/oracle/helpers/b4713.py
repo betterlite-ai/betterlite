@@ -185,9 +185,11 @@ class FakeTable(PrismaWrapper):
         return self
 
     async def __aexit__(
-        self, kind: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
-    ) -> None:
-        pass
+        self,
+        _kind: type[BaseException] | None,
+        _value: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None: ...
 
     async def find_unique(self, where: Where) -> FakeRow | None:
         user_id, server_id = where_pair(where)
