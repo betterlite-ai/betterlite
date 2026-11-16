@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::{Future, ready};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -44,12 +45,12 @@ struct AgentLoadResync {
 }
 
 impl Resync for AgentLoadResync {
-    async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
+    fn resync(&self, _key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.found {
             self.agents.lock().unwrap().push(self.agent.clone());
         }
-        Ok(self.found)
+        ready(Ok(self.found))
     }
 }
 
@@ -153,12 +154,12 @@ struct GuardrailLoadResync {
 }
 
 impl Resync for GuardrailLoadResync {
-    async fn resync(&self, _key: &str) -> Result<bool, ResyncError> {
+    fn resync(&self, _key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
         self.calls.fetch_add(1, Ordering::SeqCst);
         if self.found {
             self.present.store(true, Ordering::SeqCst);
         }
-        Ok(self.found)
+        ready(Ok(self.found))
     }
 }
 

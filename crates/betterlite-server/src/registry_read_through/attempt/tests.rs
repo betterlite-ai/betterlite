@@ -137,24 +137,22 @@ async fn a_remembered_miss_is_answered_while_another_key_resyncs() {
     let calls = Arc::new(AtomicUsize::new(0));
     let started = Arc::new(Notify::new());
     let release = Arc::new(Notify::new());
-    let read_through = Arc::new(RegistryReadThrough::new(BlockingResync {
+    let read_through = RegistryReadThrough::new(BlockingResync {
         calls: Arc::clone(&calls),
         started: Arc::clone(&started),
         release: Arc::clone(&release),
-    }));
+    });
     assert!(!read_through.attempt("a").await);
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    let slow = tokio::spawn({
-        let read_through = Arc::clone(&read_through);
-        async move { read_through.attempt("b").await }
-    });
-    started.notified().await;
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    let answered = timeout(Duration::from_millis(1), read_through.attempt("a")).await;
+    let (slow, answered) = tokio::join!(read_through.attempt("b"), async {
+        started.notified().await;
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        let answered = timeout(Duration::from_millis(1), read_through.attempt("a")).await;
+        release.notify_one();
+        answered
+    },);
     assert_eq!(answered, Ok(false));
-    assert_eq!(calls.load(Ordering::SeqCst), 2);
-    release.notify_one();
-    assert!(!slow.await.unwrap());
+    assert!(!slow);
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
 
