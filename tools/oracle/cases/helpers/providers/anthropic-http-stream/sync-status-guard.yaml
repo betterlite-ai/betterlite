@@ -1,0 +1,34 @@
+kind: helper
+name: anthropic-http-stream-sync-status-guard
+call:
+  anthropic_http_stream:
+    scenario: sync_status_guard
+    api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
+    model: claude-3-5-sonnet
+    json_mode: true
+    headers:
+      content-type: application/json
+      x-api-key: sk-ant-secret
+      anthropic-version: "2023-06-01"
+    request_header_names: [content-type]
+    response_header_names: [x-request-id]
+    data: '{"model":"claude-3-5-sonnet","stream":true}'
+    request_data: {}
+    speed: null
+    reverse_map: {}
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: 529
+    upstream_headers:
+      content-type: text/event-stream
+      x-request-id: req-overloaded
+    upstream_lines:
+      - 'data: {"type":"ping"}'
+      - 'data: {"type":"message_stop"}'
+    upstream_body: null
+    failure_message: null
+env: {}
+compare: {ignore: []}
