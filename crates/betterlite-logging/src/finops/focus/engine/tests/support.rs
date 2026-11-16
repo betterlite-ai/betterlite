@@ -14,7 +14,7 @@ use crate::finops::focus::engine::{ExportSettings, FocusExportEngine, format_for
 use crate::finops::metering::clock::UtcClock;
 use crate::focus_records::destinations::{FocusDestination, FocusTimeWindow};
 use crate::focus_records::table::FocusTable;
-use crate::focus_records::transformer::{TransformError, UsageRow};
+use crate::focus_records::transformer::{TransformError, UsageRow, transform};
 
 pub(super) const PREFIX: &str = "focus-exports";
 
@@ -285,27 +285,7 @@ impl Harness {
 }
 
 pub(super) fn harness(export_format: &str, rows: Vec<UsageRow>, now: DateTime<Utc>) -> Harness {
-    let destination = RecordingDestination::default();
-    let source = RecordingSource {
-        calls: Arc::new(Mutex::new(Vec::new())),
-        rows,
-    };
-    let factory = RecordingFactory {
-        calls: Arc::new(Mutex::new(Vec::new())),
-        destination: destination.clone(),
-    };
-    let engine = FocusExportEngine::new(
-        settings(export_format),
-        factory,
-        source.clone(),
-        FixedClock { now },
-    )
-    .expect("the recording factory builds a destination");
-    Harness {
-        engine,
-        destination,
-        source,
-    }
+    harness_with_transform(export_format, rows, now, transform)
 }
 
 pub(super) fn harness_with_transform(

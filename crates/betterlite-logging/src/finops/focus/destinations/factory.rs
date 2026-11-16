@@ -64,9 +64,13 @@ where
         prefix: &str,
         overrides: &DestinationOverrides,
     ) -> Result<Self::Destination, FactoryError> {
+        let sources = resolve::Sources {
+            overrides,
+            environment: self.environment.as_ref(),
+        };
         match Provider::parse(provider)? {
             Provider::S3 => {
-                let settings = resolve::s3(overrides, self.environment.as_ref())?;
+                let settings = resolve::s3(&sources)?;
                 let connection = S3Connection {
                     http: self.s3_http,
                     environment: self.environment,
@@ -77,19 +81,19 @@ where
                     .map_err(FactoryError::S3Destination)
             }
             Provider::Vantage => {
-                let settings = resolve::vantage(overrides, self.environment.as_ref())?;
+                let settings = resolve::vantage(&sources)?;
                 VantageDestination::new(self.vantage, settings)
                     .map(Destination::Vantage)
                     .map_err(FactoryError::VantageDestination)
             }
             Provider::Gcs => {
-                let settings = resolve::gcs(overrides, self.environment.as_ref())?;
+                let settings = resolve::gcs(&sources)?;
                 FocusGcsDestination::new(self.gcs, prefix, settings)
                     .map(Destination::Gcs)
                     .map_err(FactoryError::GcsDestination)
             }
             Provider::Mavvrik => {
-                let settings = resolve::mavvrik(overrides, self.environment.as_ref());
+                let settings = resolve::mavvrik(&sources);
                 FocusMavvrikDestination::new(self.mavvrik, settings)
                     .map(Destination::Mavvrik)
                     .map_err(FactoryError::MavvrikDestination)

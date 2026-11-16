@@ -39,159 +39,169 @@ pub struct DestinationOverrides {
     pub connection_id: Option<String>,
 }
 
-fn text_or_environment(
-    value: Option<&str>,
-    variable: &str,
-    environment: &dyn EnvironmentLookup,
-) -> Option<String> {
-    match value {
-        Some(value) => Some(value.to_owned()),
-        None => environment
-            .lookup(variable)
-            .filter(|found| !found.is_empty()),
+enum Text {
+    S3Bucket,
+    GcsBucket,
+    S3Region,
+    S3Endpoint,
+    VantageBaseUrl,
+    MavvrikApiEndpoint,
+    MavvrikConnectionId,
+}
+
+enum Credential {
+    S3AccessKey,
+    S3SecretKey,
+    S3SessionToken,
+    GcsServiceAccount,
+    VantageApiKey,
+    VantageToken,
+    MavvrikApiKey,
+}
+
+// a setting comes from the override first and from its environment variable only when the override is absent
+pub(super) struct Sources<'a> {
+    pub(super) overrides: &'a DestinationOverrides,
+    pub(super) environment: &'a dyn EnvironmentLookup,
+}
+
+impl Sources<'_> {
+    fn text(&self, setting: Text) -> Option<String> {
+        let (chosen, variable) = match setting {
+            Text::S3Bucket => (
+                self.overrides.bucket_name.as_deref(),
+                S3_BUCKET_NAME_VARIABLE,
+            ),
+            Text::GcsBucket => (
+                self.overrides.bucket_name.as_deref(),
+                GCS_BUCKET_NAME_VARIABLE,
+            ),
+            Text::S3Region => (self.overrides.region_name.as_deref(), S3_REGION_VARIABLE),
+            Text::S3Endpoint => (self.overrides.endpoint_url.as_deref(), S3_ENDPOINT_VARIABLE),
+            Text::VantageBaseUrl => (
+                self.overrides.base_url.as_deref(),
+                VANTAGE_BASE_URL_VARIABLE,
+            ),
+            Text::MavvrikApiEndpoint => (
+                self.overrides.api_endpoint.as_deref(),
+                MAVVRIK_API_ENDPOINT_VARIABLE,
+            ),
+            Text::MavvrikConnectionId => (
+                self.overrides.connection_id.as_deref(),
+                MAVVRIK_CONNECTION_ID_VARIABLE,
+            ),
+        };
+        chosen.map(str::to_owned).or_else(|| {
+            self.environment
+                .lookup(variable)
+                .filter(|found| !found.is_empty())
+        })
+    }
+
+    fn secret(&self, credential: Credential) -> Option<SecretString> {
+        let (chosen, variable) = match credential {
+            Credential::S3AccessKey => (
+                self.overrides.aws_access_key_id.as_ref(),
+                S3_ACCESS_KEY_VARIABLE,
+            ),
+            Credential::S3SecretKey => (
+                self.overrides.aws_secret_access_key.as_ref(),
+                S3_SECRET_KEY_VARIABLE,
+            ),
+            Credential::S3SessionToken => (
+                self.overrides.aws_session_token.as_ref(),
+                S3_SESSION_TOKEN_VARIABLE,
+            ),
+            Credential::GcsServiceAccount => (
+                self.overrides.service_account_json.as_ref(),
+                GCS_SERVICE_ACCOUNT_VARIABLE,
+            ),
+            Credential::VantageApiKey => {
+                (self.overrides.api_key.as_ref(), VANTAGE_API_KEY_VARIABLE)
+            }
+            Credential::VantageToken => (
+                self.overrides.integration_token.as_ref(),
+                VANTAGE_TOKEN_VARIABLE,
+            ),
+            Credential::MavvrikApiKey => {
+                (self.overrides.api_key.as_ref(), MAVVRIK_API_KEY_VARIABLE)
+            }
+        };
+        chosen
+            .map(SecretString::expose_secret)
+            .map(str::to_owned)
+            .or_else(|| {
+                self.environment
+                    .lookup(variable)
+                    .filter(|found| !found.is_empty())
+            })
+            .map(SecretString::from)
+    }
+
+    fn s3_bucket(&self) -> Result<String, FactoryError> {
+        match self.text(Text::S3Bucket) {
+            Some(name) if !name.is_empty() => Ok(name),
+            _ => Err(FactoryError::MissingS3BucketName),
+        }
+    }
+
+    fn gcs_bucket(&self) -> Result<String, FactoryError> {
+        match self.text(Text::GcsBucket) {
+            Some(name) if !name.is_empty() => Ok(name),
+            _ => Err(FactoryError::MissingGcsBucketName),
+        }
+    }
+
+    fn vantage_api_key(&self) -> Result<SecretString, FactoryError> {
+        match self.secret(Credential::VantageApiKey) {
+            Some(secret) if !secret.expose_secret().is_empty() => Ok(secret),
+            _ => Err(FactoryError::MissingVantageApiKey),
+        }
+    }
+
+    fn vantage_token(&self) -> Result<SecretString, FactoryError> {
+        match self.secret(Credential::VantageToken) {
+            Some(secret) if !secret.expose_secret().is_empty() => Ok(secret),
+            _ => Err(FactoryError::MissingVantageIntegrationToken),
+        }
+    }
+
+    fn vantage_base_url(&self) -> Option<String> {
+        self.text(Text::VantageBaseUrl)
+            .or_else(|| Some(DEFAULT_BASE_URL.to_owned()))
     }
 }
 
-fn secret_or_environment(
-    value: Option<&SecretString>,
-    variable: &str,
-    environment: &dyn EnvironmentLookup,
-) -> Option<SecretString> {
-    match value {
-        Some(value) => Some(value.clone()),
-        None => environment
-            .lookup(variable)
-            .filter(|found| !found.is_empty())
-            .map(SecretString::from),
-    }
+pub(super) fn s3(sources: &Sources<'_>) -> Result<S3Settings, FactoryError> {
+    Ok(S3Settings {
+        bucket_name: Some(sources.s3_bucket()?),
+        region_name: sources.text(Text::S3Region),
+        endpoint_url: sources.text(Text::S3Endpoint),
+        aws_access_key_id: sources.secret(Credential::S3AccessKey),
+        aws_secret_access_key: sources.secret(Credential::S3SecretKey),
+        aws_session_token: sources.secret(Credential::S3SessionToken),
+    })
 }
 
-fn require_secret(
-    value: Option<SecretString>,
-    missing: FactoryError,
-) -> Result<SecretString, FactoryError> {
-    match value {
-        Some(value) if !value.expose_secret().is_empty() => Ok(value),
-        _ => Err(missing),
-    }
-}
-
-pub(super) fn s3(
-    overrides: &DestinationOverrides,
-    environment: &dyn EnvironmentLookup,
-) -> Result<S3Settings, FactoryError> {
-    let settings = S3Settings {
-        bucket_name: text_or_environment(
-            overrides.bucket_name.as_deref(),
-            S3_BUCKET_NAME_VARIABLE,
-            environment,
-        ),
-        region_name: text_or_environment(
-            overrides.region_name.as_deref(),
-            S3_REGION_VARIABLE,
-            environment,
-        ),
-        endpoint_url: text_or_environment(
-            overrides.endpoint_url.as_deref(),
-            S3_ENDPOINT_VARIABLE,
-            environment,
-        ),
-        aws_access_key_id: secret_or_environment(
-            overrides.aws_access_key_id.as_ref(),
-            S3_ACCESS_KEY_VARIABLE,
-            environment,
-        ),
-        aws_secret_access_key: secret_or_environment(
-            overrides.aws_secret_access_key.as_ref(),
-            S3_SECRET_KEY_VARIABLE,
-            environment,
-        ),
-        aws_session_token: secret_or_environment(
-            overrides.aws_session_token.as_ref(),
-            S3_SESSION_TOKEN_VARIABLE,
-            environment,
-        ),
-    };
-    if settings.bucket_name.as_deref().is_none_or(str::is_empty) {
-        return Err(FactoryError::MissingS3BucketName);
-    }
-    Ok(settings)
-}
-
-pub(super) fn vantage(
-    overrides: &DestinationOverrides,
-    environment: &dyn EnvironmentLookup,
-) -> Result<VantageSettings, FactoryError> {
-    let configured_api_key = secret_or_environment(
-        overrides.api_key.as_ref(),
-        VANTAGE_API_KEY_VARIABLE,
-        environment,
-    );
-    let configured_integration_token = secret_or_environment(
-        overrides.integration_token.as_ref(),
-        VANTAGE_TOKEN_VARIABLE,
-        environment,
-    );
-    let api_key = require_secret(configured_api_key, FactoryError::MissingVantageApiKey)?;
-    let integration_token = require_secret(
-        configured_integration_token,
-        FactoryError::MissingVantageIntegrationToken,
-    )?;
-    let base_url = text_or_environment(
-        overrides.base_url.as_deref(),
-        VANTAGE_BASE_URL_VARIABLE,
-        environment,
-    )
-    .or_else(|| Some(DEFAULT_BASE_URL.to_owned()));
+pub(super) fn vantage(sources: &Sources<'_>) -> Result<VantageSettings, FactoryError> {
     Ok(VantageSettings {
-        api_key: Some(api_key),
-        integration_token: Some(integration_token),
-        base_url,
+        api_key: Some(sources.vantage_api_key()?),
+        integration_token: Some(sources.vantage_token()?),
+        base_url: sources.vantage_base_url(),
     })
 }
 
-pub(super) fn gcs(
-    overrides: &DestinationOverrides,
-    environment: &dyn EnvironmentLookup,
-) -> Result<GcsSettings, FactoryError> {
-    let bucket_name = text_or_environment(
-        overrides.bucket_name.as_deref(),
-        GCS_BUCKET_NAME_VARIABLE,
-        environment,
-    );
-    let service_account_json = secret_or_environment(
-        overrides.service_account_json.as_ref(),
-        GCS_SERVICE_ACCOUNT_VARIABLE,
-        environment,
-    );
-    if bucket_name.as_deref().is_none_or(str::is_empty) {
-        return Err(FactoryError::MissingGcsBucketName);
-    }
+pub(super) fn gcs(sources: &Sources<'_>) -> Result<GcsSettings, FactoryError> {
     Ok(GcsSettings {
-        bucket_name,
-        service_account_json,
+        bucket_name: Some(sources.gcs_bucket()?),
+        service_account_json: sources.secret(Credential::GcsServiceAccount),
     })
 }
 
-pub(super) fn mavvrik(
-    overrides: &DestinationOverrides,
-    environment: &dyn EnvironmentLookup,
-) -> MavvrikSettings {
+pub(super) fn mavvrik(sources: &Sources<'_>) -> MavvrikSettings {
     MavvrikSettings {
-        api_key: secret_or_environment(
-            overrides.api_key.as_ref(),
-            MAVVRIK_API_KEY_VARIABLE,
-            environment,
-        ),
-        api_endpoint: text_or_environment(
-            overrides.api_endpoint.as_deref(),
-            MAVVRIK_API_ENDPOINT_VARIABLE,
-            environment,
-        ),
-        connection_id: text_or_environment(
-            overrides.connection_id.as_deref(),
-            MAVVRIK_CONNECTION_ID_VARIABLE,
-            environment,
-        ),
+        api_key: sources.secret(Credential::MavvrikApiKey),
+        api_endpoint: sources.text(Text::MavvrikApiEndpoint),
+        connection_id: sources.text(Text::MavvrikConnectionId),
     }
 }

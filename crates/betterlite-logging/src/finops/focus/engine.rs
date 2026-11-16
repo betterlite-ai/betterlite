@@ -60,7 +60,7 @@ pub struct FocusExportEngine<Destination, Source, Clock> {
 
 impl<Destination, Source, Clock> FocusExportEngine<Destination, Source, Clock>
 where
-    Destination: FocusDestination,
+    Destination: FocusDestination + Sync,
     Destination::Error: Error + Send + Sync + 'static,
     Source: UsageSource,
     Source::Error: Error + Send + Sync + 'static,
@@ -82,13 +82,10 @@ where
                 &settings.destination_config,
             )
             .map_err(ExportError::Destination)?;
-        let format = match format_for(&settings.export_format) {
-            Some(format) => format,
-            None => {
-                return Err(ExportError::UnsupportedFormat {
-                    format: settings.export_format,
-                });
-            }
+        let Some(format) = format_for(&settings.export_format) else {
+            return Err(ExportError::UnsupportedFormat {
+                format: settings.export_format,
+            });
         };
         Ok(Self {
             format,

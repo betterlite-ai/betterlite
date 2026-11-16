@@ -1,6 +1,7 @@
 use std::io::Read as _;
 use std::sync::atomic::Ordering;
 
+use betterlite_config::loader::EnvironmentLookup;
 use flate2::read::GzDecoder;
 use http::Method as HttpMethod;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -26,6 +27,16 @@ use super::support::{
 
 fn configured_secret(value: &Option<SecretString>) -> Option<&str> {
     value.as_ref().map(|secret| secret.expose_secret())
+}
+
+fn sources<'a>(
+    overrides: &'a DestinationOverrides,
+    environment: &'a dyn EnvironmentLookup,
+) -> resolve::Sources<'a> {
+    resolve::Sources {
+        overrides,
+        environment,
+    }
 }
 
 #[tokio::test]
@@ -290,6 +301,24 @@ fn validation_rejects_an_empty_vantage_api_key_override() {
 }
 
 #[test]
+fn validation_rejects_an_empty_vantage_integration_token_override() {
+    // docs/compatibility.md: an explicit empty value is used as given, and an empty token names no token
+    let mut overrides = destination_overrides();
+    overrides.integration_token = Some(SecretString::from(""));
+    let error = factory(&[
+        ("VANTAGE_API_KEY", VANTAGE_KEY),
+        ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
+    ])
+    .create("vantage", PREFIX, &overrides)
+    .err()
+    .expect("the empty integration token is refused");
+    assert!(matches!(
+        error,
+        FactoryError::MissingVantageIntegrationToken
+    ));
+}
+
+#[test]
 fn validation_requires_a_vantage_integration_token() {
     let error = factory(&[("VANTAGE_API_KEY", VANTAGE_KEY)])
         .create("vantage", PREFIX, &DestinationOverrides::default())
@@ -328,6 +357,18 @@ fn validation_requires_a_gcs_bucket_name() {
 }
 
 #[test]
+fn validation_rejects_an_empty_gcs_bucket_override() {
+    // docs/compatibility.md: an explicit empty value is used as given, and an empty bucket names no bucket
+    let mut overrides = destination_overrides();
+    overrides.bucket_name = Some(String::new());
+    let error = factory(&[("FOCUS_GCS_BUCKET_NAME", BUCKET)])
+        .create("gcs", PREFIX, &overrides)
+        .err()
+        .expect("the empty bucket is refused");
+    assert!(matches!(error, FactoryError::MissingGcsBucketName));
+}
+
+#[test]
 fn validation_leaves_the_mavvrik_settings_to_the_destination() {
     let error = factory(&[])
         .create("mavvrik", PREFIX, &DestinationOverrides::default())
@@ -358,8 +399,8 @@ fn config_prefers_the_s3_overrides_over_the_environment() {
     overrides.aws_access_key_id = Some(SecretString::from("override-access-key"));
     overrides.aws_secret_access_key = Some(SecretString::from("override-secret-key"));
     overrides.aws_session_token = Some(SecretString::from("override-session-token"));
-    let settings =
-        resolve::s3(&overrides, &variables).expect("the bucket is configured by the override");
+    let settings = resolve::s3(&sources(&overrides, &variables))
+        .expect("the bucket is configured by the override");
     assert_eq!(settings.bucket_name.as_deref(), Some("override-bucket"));
     assert_eq!(settings.region_name.as_deref(), Some("eu-west-1"));
     assert_eq!(
@@ -390,7 +431,7 @@ fn config_reads_the_s3_environment() {
         ("FOCUS_S3_SECRET_KEY", SECRET_KEY),
         ("FOCUS_S3_SESSION_TOKEN", "session-token"),
     ]);
-    let settings = resolve::s3(&DestinationOverrides::default(), &variables)
+    let settings = resolve::s3(&sources(&DestinationOverrides::default(), &variables))
         .expect("the bucket is configured by the environment");
     assert_eq!(settings.bucket_name.as_deref(), Some(BUCKET));
     assert_eq!(settings.region_name.as_deref(), Some("us-east-1"));
@@ -415,7 +456,7 @@ fn config_reads_the_s3_environment() {
 #[test]
 fn config_leaves_absent_s3_values_unset() {
     let variables = environment(&[("FOCUS_S3_BUCKET_NAME", BUCKET)]);
-    let settings = resolve::s3(&DestinationOverrides::default(), &variables)
+    let settings = resolve::s3(&sources(&DestinationOverrides::default(), &variables))
         .expect("the bucket is configured by the environment");
     assert_eq!(settings.region_name, None);
     assert_eq!(settings.endpoint_url, None);
@@ -430,7 +471,7 @@ fn config_ignores_an_empty_s3_environment_value() {
         ("FOCUS_S3_BUCKET_NAME", BUCKET),
         ("FOCUS_S3_REGION_NAME", ""),
     ]);
-    let settings = resolve::s3(&DestinationOverrides::default(), &variables)
+    let settings = resolve::s3(&sources(&DestinationOverrides::default(), &variables))
         .expect("the bucket is configured by the environment");
     assert_eq!(settings.region_name, None);
 }
@@ -444,7 +485,7 @@ fn config_uses_an_empty_s3_region_override_as_given() {
     ]);
     let mut overrides = destination_overrides();
     overrides.region_name = Some(String::new());
-    let settings = resolve::s3(&overrides, &variables).expect("the bucket is configured");
+    let settings = resolve::s3(&sources(&overrides, &variables)).expect("the bucket is configured");
     assert_eq!(settings.region_name.as_deref(), Some(""));
 }
 
@@ -454,7 +495,7 @@ fn config_defaults_the_vantage_base_url() {
         ("VANTAGE_API_KEY", VANTAGE_KEY),
         ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
     ]);
-    let settings = resolve::vantage(&DestinationOverrides::default(), &variables)
+    let settings = resolve::vantage(&sources(&DestinationOverrides::default(), &variables))
         .expect("the vantage settings are configured");
     assert_eq!(settings.base_url.as_deref(), Some(DEFAULT_BASE_URL));
     assert_eq!(configured_secret(&settings.api_key), Some(VANTAGE_KEY));
@@ -471,7 +512,7 @@ fn config_defaults_the_vantage_base_url_when_the_environment_is_empty() {
         ("VANTAGE_INTEGRATION_TOKEN", VANTAGE_TOKEN),
         ("VANTAGE_BASE_URL", ""),
     ]);
-    let settings = resolve::vantage(&DestinationOverrides::default(), &variables)
+    let settings = resolve::vantage(&sources(&DestinationOverrides::default(), &variables))
         .expect("the vantage settings are configured");
     assert_eq!(settings.base_url.as_deref(), Some(DEFAULT_BASE_URL));
 }
@@ -487,8 +528,8 @@ fn config_prefers_the_vantage_overrides() {
     overrides.api_key = Some(SecretString::from("override-key"));
     overrides.integration_token = Some(SecretString::from("override-token"));
     overrides.base_url = Some(String::from("https://override.example.test"));
-    let settings =
-        resolve::vantage(&overrides, &variables).expect("the vantage settings are configured");
+    let settings = resolve::vantage(&sources(&overrides, &variables))
+        .expect("the vantage settings are configured");
     assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
     assert_eq!(
         configured_secret(&settings.integration_token),
@@ -506,7 +547,7 @@ fn config_reads_the_gcs_environment() {
         ("FOCUS_GCS_BUCKET_NAME", BUCKET),
         ("FOCUS_GCS_PATH_SERVICE_ACCOUNT", SERVICE_ACCOUNT),
     ]);
-    let settings = resolve::gcs(&DestinationOverrides::default(), &variables)
+    let settings = resolve::gcs(&sources(&DestinationOverrides::default(), &variables))
         .expect("the bucket is configured by the environment");
     assert_eq!(settings.bucket_name.as_deref(), Some(BUCKET));
     assert_eq!(
@@ -524,7 +565,8 @@ fn config_prefers_the_gcs_override() {
     let mut overrides = destination_overrides();
     overrides.bucket_name = Some(String::from("override-bucket"));
     overrides.service_account_json = Some(SecretString::from("/secrets/override.json"));
-    let settings = resolve::gcs(&overrides, &variables).expect("the gcs settings are configured");
+    let settings =
+        resolve::gcs(&sources(&overrides, &variables)).expect("the gcs settings are configured");
     assert_eq!(settings.bucket_name.as_deref(), Some("override-bucket"));
     assert_eq!(
         configured_secret(&settings.service_account_json),
@@ -539,7 +581,7 @@ fn config_reads_the_mavvrik_environment() {
         ("MAVVRIK_API_ENDPOINT", MAVVRIK_ENDPOINT),
         ("MAVVRIK_CONNECTION_ID", MAVVRIK_CONNECTION),
     ]);
-    let settings = resolve::mavvrik(&DestinationOverrides::default(), &variables);
+    let settings = resolve::mavvrik(&sources(&DestinationOverrides::default(), &variables));
     assert_eq!(configured_secret(&settings.api_key), Some(MAVVRIK_KEY));
     assert_eq!(settings.api_endpoint.as_deref(), Some(MAVVRIK_ENDPOINT));
     assert_eq!(settings.connection_id.as_deref(), Some(MAVVRIK_CONNECTION));
@@ -556,7 +598,7 @@ fn config_prefers_the_mavvrik_overrides() {
     overrides.api_key = Some(SecretString::from("override-key"));
     overrides.api_endpoint = Some(String::from("https://override.example.test"));
     overrides.connection_id = Some(String::from("override-connection"));
-    let settings = resolve::mavvrik(&overrides, &variables);
+    let settings = resolve::mavvrik(&sources(&overrides, &variables));
     assert_eq!(configured_secret(&settings.api_key), Some("override-key"));
     assert_eq!(
         settings.api_endpoint.as_deref(),
@@ -571,7 +613,7 @@ fn config_prefers_the_mavvrik_overrides() {
 #[test]
 fn config_leaves_absent_mavvrik_values_unset() {
     let variables = environment(&[]);
-    let settings = resolve::mavvrik(&DestinationOverrides::default(), &variables);
+    let settings = resolve::mavvrik(&sources(&DestinationOverrides::default(), &variables));
     assert!(settings.api_key.is_none());
     assert_eq!(settings.api_endpoint, None);
     assert_eq!(settings.connection_id, None);

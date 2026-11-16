@@ -1,4 +1,4 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::finops::focus::UsageData;
