@@ -56,7 +56,9 @@ pub(crate) struct Caller<'caller> {
     pub(crate) timeout_seconds: f64,
 }
 
-pub(crate) fn caller_defaults(request: &ContainerFileUploadRequest<'_>) -> Caller<'_> {
+pub(crate) const fn caller_defaults<'caller>(
+    request: &ContainerFileUploadRequest<'caller>,
+) -> Caller<'caller> {
     Caller {
         provider: request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
         timeout_seconds: request.timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
