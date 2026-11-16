@@ -4,8 +4,7 @@ import httpx
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-from .inputs import ReplyCase
-from .values import Object
+from .inputs import Object, ReplyCase
 
 
 class ImageDatum(TypedDict):
@@ -48,9 +47,7 @@ REPLY: Final[TypeAdapter[ImageReply]] = TypeAdapter(ImageReply)
 
 
 def raw_response(case: ReplyCase) -> httpx.Response:
-    return httpx.Response(
-        case["status"], content=case["body"].encode(), headers=case["headers"]
-    )
+    return httpx.Response(case["status"], content=case["body"].encode(), headers=case["headers"])
 
 
 def image_values(data: list[ImageDatum]) -> list[JsonValue]:
@@ -71,10 +68,7 @@ def usage_fields(usage: UsageFields) -> Object:
     details = usage["input_tokens_details"]
     return {
         "input_tokens": usage["input_tokens"],
-        "input_tokens_details": {
-            "image_tokens": details["image_tokens"],
-            "text_tokens": details["text_tokens"],
-        },
+        "input_tokens_details": {"image_tokens": details["image_tokens"], "text_tokens": details["text_tokens"]},
         "output_tokens": usage["output_tokens"],
         "total_tokens": usage["total_tokens"],
     }

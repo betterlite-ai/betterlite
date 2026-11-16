@@ -1,35 +1,27 @@
-use std::io::{Read as _, Seek as _, SeekFrom};
-
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::SecretString;
-
-use crate::api::image_contracts::records::{
-    ImageFiles, ImageHttpResponse, ImageParams, ImageResponse, ImageUsage,
-};
-use crate::openai_base_config::Headers;
-use crate::openai_video_identifiers::multipart::{MediaBody, ReadSeek, image_content_type};
-use crate::openrouter_chat::error::OpenRouterError;
-
 use super::decode::decode_openrouter_image_reply;
 use super::shared::{
     CHAT_COMPLETIONS, DEFAULT_API_BASE, ImageConfigError, ImageHiddenParams, SKIPPED_PARAMS,
     SUPPORTED_PARAMS, apply_edit_usage, authorization, map_quality_to_image_size,
     map_size_to_aspect_ratio, reply_error, resolved_base, resolved_key, transform_error,
 };
-
+use crate::api::image_contracts::records::{
+    ImageFiles, ImageHttpResponse, ImageParams, ImageResponse, ImageUsage,
+};
+use crate::openai_base_config::Headers;
+use crate::openai_video_identifiers::multipart::{MediaBody, ReadSeek, image_content_type};
+use crate::openrouter_chat::error::OpenRouterError;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::SecretString;
+use std::io::{Read as _, Seek as _, SeekFrom};
 const STAGE: &str = "image edit";
-
-// LiteLLM's use_multipart_form_data is false for OpenRouter: the edit body is one JSON request
 pub const MULTIPART_FORM_DATA: bool = false;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenRouterImageEditConfig {
     pub supported_params: [&'static str; 3],
 }
-
 #[must_use]
 // ast-grep-ignore: no-long-names
 pub const fn get_openrouter_image_edit_config(_model: &str) -> OpenRouterImageEditConfig {
@@ -37,16 +29,12 @@ pub const fn get_openrouter_image_edit_config(_model: &str) -> OpenRouterImageEd
         supported_params: SUPPORTED_PARAMS,
     }
 }
-
-// the source image LiteLLM's transform accepts: raw bytes or a seekable reader
 pub enum SourceImage<'image> {
     Bytes(&'image [u8]),
     Reader(&'image mut dyn ReadSeek),
     Unsupported,
 }
-
 impl OpenRouterImageEditConfig {
-    // LiteLLM builds a new mapping and drops every key it does not support, whatever drop_params says
     pub fn map_params(&self, supplied: &ImageParams) -> Result<ImageParams, ImageConfigError> {
         let mut mapped = ImageParams::new();
         let mut config = IndexMap::new();
@@ -89,7 +77,6 @@ impl OpenRouterImageEditConfig {
         Ok(mapped)
     }
 }
-
 #[must_use]
 pub fn complete_url(api_base: Option<&str>, environment_api_base: Option<&str>) -> String {
     let Some(base) = resolved_base([api_base, environment_api_base]) else {
@@ -101,7 +88,6 @@ pub fn complete_url(api_base: Option<&str>, environment_api_base: Option<&str>) 
     }
     format!("{trimmed}{CHAT_COMPLETIONS}")
 }
-
 pub fn validate_environment(
     mut headers: Headers,
     api_key: Option<&SecretString>,
@@ -113,7 +99,6 @@ pub fn validate_environment(
     headers.insert(String::from("Authorization"), authorization(key));
     Ok(headers)
 }
-
 pub fn request_body(
     model: &str,
     prompt: Option<&str>,
@@ -152,7 +137,6 @@ pub fn request_body(
     }
     Ok((body, ImageFiles::new()))
 }
-
 fn image_data_url(image: &mut SourceImage<'_>) -> Result<String, ImageConfigError> {
     let bytes = match image {
         SourceImage::Bytes(bytes) => *bytes,
@@ -162,8 +146,6 @@ fn image_data_url(image: &mut SourceImage<'_>) -> Result<String, ImageConfigErro
     let mime = image_content_type(&mut MediaBody::Bytes(bytes));
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(bytes)))
 }
-
-// the reader keeps the position it had, as LiteLLM restores it after probing and reading
 fn reader_data_url(reader: &mut dyn ReadSeek) -> Result<String, ImageConfigError> {
     let position = reader
         .stream_position()
@@ -181,7 +163,6 @@ fn reader_data_url(reader: &mut dyn ReadSeek) -> Result<String, ImageConfigError
     let mime = image_content_type(&mut MediaBody::Bytes(&bytes));
     Ok(format!("data:{mime};base64,{}", STANDARD.encode(&bytes)))
 }
-
 fn image_part(url: String) -> Json {
     Json::Object(IndexMap::from([
         (String::from("type"), Json::Text(String::from("image_url"))),
@@ -191,21 +172,18 @@ fn image_part(url: String) -> Json {
         ),
     ]))
 }
-
 fn prompt_part(prompt: &str) -> Json {
     Json::Object(IndexMap::from([
         (String::from("type"), Json::Text(String::from("text"))),
         (String::from("text"), Json::Text(prompt.to_owned())),
     ]))
 }
-
 fn user_message(content: Vec<Json>) -> Json {
     Json::Object(IndexMap::from([
         (String::from("role"), Json::Text(String::from("user"))),
         (String::from("content"), Json::List(content)),
     ]))
 }
-
 pub fn transform_response(
     raw: &ImageHttpResponse,
     created: i64,

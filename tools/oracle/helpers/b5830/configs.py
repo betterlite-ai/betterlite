@@ -11,7 +11,7 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse
 from pydantic import ConfigDict, TypeAdapter
 
-from .values import Headers, Object
+from .inputs import Headers, Object
 
 ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
 

@@ -349,7 +349,7 @@ fn a_body_that_is_not_json_is_a_parse_error() {
 #[case::usage_number(r#"{"usage": 5}"#)]
 fn a_wrong_shape_is_a_decode_error(#[case] body: &str) {
     let error = decode(body).expect_err("the shape is wrong");
-    assert!(matches!(error, ReplyDecodeError::Shape { .. }));
+    assert!(matches!(error, ReplyDecodeError::Shape(..)));
 }
 
 #[rstest]

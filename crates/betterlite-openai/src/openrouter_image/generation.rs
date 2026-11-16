@@ -1,29 +1,23 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::SecretString;
-
-use crate::api::image_contracts::records::{ImageHttpResponse, ImageParams, ImageResponse};
-use crate::openai_base_config::Headers;
-use crate::openrouter_chat::error::OpenRouterError;
-
 use super::decode::decode_openrouter_image_reply;
 use super::shared::{
     CHAT_COMPLETIONS, DEFAULT_API_BASE, ImageConfigError, ImageHiddenParams, SKIPPED_PARAMS,
     SUPPORTED_PARAMS, apply_generation_usage, authorization, map_quality_to_image_size,
     map_size_to_aspect_ratio, reply_error, resolved_key, transform_error,
 };
-
+use crate::api::image_contracts::records::{ImageHttpResponse, ImageParams, ImageResponse};
+use crate::openai_base_config::Headers;
+use crate::openrouter_chat::error::OpenRouterError;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::SecretString;
 // ast-grep-ignore: no-long-names
 use self::OpenRouterImageGenerationConfig as GenerationConfig;
-
 const STAGE: &str = "image generation";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // ast-grep-ignore: no-long-names
 pub struct OpenRouterImageGenerationConfig {
     pub supported_params: [&'static str; 3],
 }
-
 #[must_use]
 // ast-grep-ignore: no-long-names
 pub const fn get_openrouter_image_generation_config(_model: &str) -> GenerationConfig {
@@ -31,9 +25,7 @@ pub const fn get_openrouter_image_generation_config(_model: &str) -> GenerationC
         supported_params: SUPPORTED_PARAMS,
     }
 }
-
 impl GenerationConfig {
-    // LiteLLM writes image_config into the caller's optional_params, so the map comes back with it
     pub fn map_params(
         &self,
         non_default_params: &ImageParams,
@@ -76,8 +68,6 @@ impl GenerationConfig {
         Ok(optional_params)
     }
 }
-
-// LiteLLM only creates image_config once a size or a mapped quality asks for it
 fn image_config(
     optional_params: &mut ImageParams,
 ) -> Result<&mut IndexMap<String, Json>, ImageConfigError> {
@@ -89,8 +79,6 @@ fn image_config(
         _ => Err(ImageConfigError::ImageConfig),
     }
 }
-
-// a generation url that already names the chat endpoint is used as it stands
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     if let Some(base) = api_base
@@ -104,8 +92,6 @@ pub fn complete_url(api_base: Option<&str>) -> String {
     }
     format!("{DEFAULT_API_BASE}{CHAT_COMPLETIONS}")
 }
-
-// generation never reads OPENROUTER_API_BASE and never fails without a key
 #[must_use]
 pub fn validate_environment(
     mut headers: Headers,
@@ -117,7 +103,6 @@ pub fn validate_environment(
     headers.insert(String::from("Authorization"), authorization(key));
     headers
 }
-
 #[must_use]
 pub fn request_body(model: &str, prompt: &str, optional_params: &ImageParams) -> ImageParams {
     let mut body = ImageParams::new();
@@ -133,14 +118,12 @@ pub fn request_body(model: &str, prompt: &str, optional_params: &ImageParams) ->
     }
     body
 }
-
 fn user_message(prompt: &str) -> Json {
     Json::Object(IndexMap::from([
         (String::from("role"), Json::Text(String::from("user"))),
         (String::from("content"), Json::Text(prompt.to_owned())),
     ]))
 }
-
 pub fn transform_response(
     raw: &ImageHttpResponse,
     mut model_response: ImageResponse,

@@ -1,19 +1,14 @@
+use crate::api::image_contracts::records::ImageData;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use thiserror::Error;
-
-use crate::api::image_contracts::records::ImageData;
-
-// the reply body comes from the network, so every shape error names the field it found
 #[derive(Debug, Error)]
 pub enum ReplyDecodeError {
     #[error("{source}")]
     Json { source: serde_json::Error },
-    #[error("{message}")]
-    Shape { message: &'static str },
+    #[error("{0}")]
+    Shape(&'static str),
 }
-
-// the usage object as LiteLLM reads it, kept loose so that a wrong type can name the field
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenRouterImageUsage {
     pub prompt_tokens: Option<Json>,
@@ -23,7 +18,6 @@ pub struct OpenRouterImageUsage {
     pub cost: Option<Json>,
     pub cost_details: Option<Json>,
 }
-
 impl OpenRouterImageUsage {
     #[must_use]
     pub fn from_object(fields: &IndexMap<String, Json>) -> Self {
@@ -37,23 +31,21 @@ impl OpenRouterImageUsage {
         }
     }
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OpenRouterImageReply {
     pub images: Vec<ImageData>,
     pub usage: Option<OpenRouterImageUsage>,
     pub model: Option<Json>,
 }
-
 pub fn decode_openrouter_image_reply(
     bytes: &[u8],
 ) -> Result<OpenRouterImageReply, ReplyDecodeError> {
     let value: Json =
         serde_json::from_slice(bytes).map_err(|source| ReplyDecodeError::Json { source })?;
     let Json::Object(fields) = value else {
-        return Err(ReplyDecodeError::Shape {
-            message: "the response body must be an object",
-        });
+        return Err(ReplyDecodeError::Shape(
+            "the response body must be an object",
+        ));
     };
     Ok(OpenRouterImageReply {
         images: reply_images(&fields)?,
@@ -61,15 +53,12 @@ pub fn decode_openrouter_image_reply(
         model: fields.get("model").cloned(),
     })
 }
-
 fn reply_images(fields: &IndexMap<String, Json>) -> Result<Vec<ImageData>, ReplyDecodeError> {
     let Some(choices) = fields.get("choices") else {
         return Ok(Vec::new());
     };
     let Json::List(choices) = choices else {
-        return Err(ReplyDecodeError::Shape {
-            message: "choices must be a list",
-        });
+        return Err(ReplyDecodeError::Shape("choices must be a list"));
     };
     let mut images = Vec::new();
     for choice in choices {
@@ -77,28 +66,21 @@ fn reply_images(fields: &IndexMap<String, Json>) -> Result<Vec<ImageData>, Reply
     }
     Ok(images)
 }
-
 fn choice_images(choice: &Json) -> Result<Vec<ImageData>, ReplyDecodeError> {
     let Json::Object(choice) = choice else {
-        return Err(ReplyDecodeError::Shape {
-            message: "each choice must be an object",
-        });
+        return Err(ReplyDecodeError::Shape("each choice must be an object"));
     };
     let Some(message) = choice.get("message") else {
         return Ok(Vec::new());
     };
     let Json::Object(message) = message else {
-        return Err(ReplyDecodeError::Shape {
-            message: "message must be an object",
-        });
+        return Err(ReplyDecodeError::Shape("message must be an object"));
     };
     let Some(entries) = message.get("images") else {
         return Ok(Vec::new());
     };
     let Json::List(entries) = entries else {
-        return Err(ReplyDecodeError::Shape {
-            message: "images must be a list",
-        });
+        return Err(ReplyDecodeError::Shape("images must be a list"));
     };
     let mut images = Vec::new();
     for entry in entries {
@@ -108,31 +90,23 @@ fn choice_images(choice: &Json) -> Result<Vec<ImageData>, ReplyDecodeError> {
     }
     Ok(images)
 }
-
 fn image_from_entry(entry: &Json) -> Result<Option<ImageData>, ReplyDecodeError> {
     let Json::Object(entry) = entry else {
-        return Err(ReplyDecodeError::Shape {
-            message: "each image must be an object",
-        });
+        return Err(ReplyDecodeError::Shape("each image must be an object"));
     };
     let Some(image_url) = entry.get("image_url") else {
         return Ok(None);
     };
     let Json::Object(image_url) = image_url else {
-        return Err(ReplyDecodeError::Shape {
-            message: "image_url must be an object",
-        });
+        return Err(ReplyDecodeError::Shape("image_url must be an object"));
     };
     match image_url.get("url") {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(url)) if url.is_empty() => Ok(None),
         Some(Json::Text(url)) => Ok(Some(image_data(url))),
-        Some(_) => Err(ReplyDecodeError::Shape {
-            message: "image_url.url must be a string",
-        }),
+        Some(_) => Err(ReplyDecodeError::Shape("image_url.url must be a string")),
     }
 }
-
 fn image_data(url: &str) -> ImageData {
     match url.strip_prefix("data:") {
         Some(data) => ImageData {
@@ -147,7 +121,6 @@ fn image_data(url: &str) -> ImageData {
         },
     }
 }
-
 fn reply_usage(
     fields: &IndexMap<String, Json>,
 ) -> Result<Option<OpenRouterImageUsage>, ReplyDecodeError> {
@@ -155,8 +128,6 @@ fn reply_usage(
         None | Some(Json::Null) => Ok(None),
         Some(Json::Object(usage)) if usage.is_empty() => Ok(None),
         Some(Json::Object(usage)) => Ok(Some(OpenRouterImageUsage::from_object(usage))),
-        Some(_) => Err(ReplyDecodeError::Shape {
-            message: "usage must be an object",
-        }),
+        Some(_) => Err(ReplyDecodeError::Shape("usage must be an object")),
     }
 }

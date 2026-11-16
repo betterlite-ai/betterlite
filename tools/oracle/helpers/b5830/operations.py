@@ -11,16 +11,16 @@ from pydantic import JsonValue
 
 from .configs import EDIT, GENERATION
 from .inputs import (
-    EditParamsCase,
     EditRequestCase,
     GenerationParamsCase,
     GenerationRequestCase,
     ImageCase,
     Input,
+    JSON,
+    Object,
     ReplyCase,
 )
 from .replies import edit_fields, generation_fields, raw_response
-from .values import JSON, Object
 
 MANAGED_ENV: Final = ("OPENROUTER_API_KEY", "OPENROUTER_API_BASE")
 
@@ -77,9 +77,7 @@ def generation_request(cases: list[GenerationRequestCase]) -> JsonValue:
         request = GENERATION.transform_image_generation_request(
             case["model"], case["prompt"], dict(case["optional_params"]), {}, headers
         )
-        answers.append(
-            {"url": url, "headers": JSON.validate_python(headers), "request": request}
-        )
+        answers.append({"url": url, "headers": JSON.validate_python(headers), "request": request})
     return JSON.validate_python(answers)
 
 
@@ -94,11 +92,11 @@ def generation_reply(cases: list[ReplyCase]) -> JsonValue:
     return JSON.validate_python(answers)
 
 
-def edit_params(cases: list[EditParamsCase]) -> JsonValue:
+def edit_params(cases: list[Object]) -> JsonValue:
     answers: list[JsonValue] = []
     for case in cases:
         supported = EDIT.get_supported_openai_params("")
-        mapped = EDIT.map_openai_params(dict(case["params"]), "", drop_params=False)
+        mapped = EDIT.map_openai_params(dict(case), "", drop_params=False)
         answers.append({"supported": JSON.validate_python(supported), "params": mapped})
     return JSON.validate_python(answers)
 
@@ -113,21 +111,12 @@ def edit_request(cases: list[EditRequestCase]) -> JsonValue:
         )
         source = image_source(case["image"])
         request, files = EDIT.transform_image_edit_request(
-            case["model"],
-            case["prompt"],
-            source.value,
-            dict(case["optional_params"]),
-            GenericLiteLLMParams(),
-            headers,
+            case["model"], case["prompt"], source.value, dict(case["optional_params"]),
+            GenericLiteLLMParams(), headers,
         )
         answers.append(
-            {
-                "url": url,
-                "headers": JSON.validate_python(headers),
-                "request": JSON.validate_python(request),
-                "files": JSON.validate_python(files),
-                "position": source.position(),
-            }
+            {"url": url, "headers": JSON.validate_python(headers), "request": JSON.validate_python(request),
+             "files": JSON.validate_python(files), "position": source.position()}
         )
     return JSON.validate_python(answers)
 

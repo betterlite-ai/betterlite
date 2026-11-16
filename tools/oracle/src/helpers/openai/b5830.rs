@@ -1,6 +1,5 @@
 mod input;
 mod ops;
-
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;

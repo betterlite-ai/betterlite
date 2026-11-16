@@ -1,32 +1,24 @@
-use std::io;
-
+use super::decode::{OpenRouterImageUsage, ReplyDecodeError};
+use crate::api::image_contracts::records::{
+    ImageHttpResponse, ImageInputTokens, ImageResponse, ImageUsage,
+};
+use crate::openai_base_config::Headers;
+use crate::openrouter_chat::error::OpenRouterError;
+pub use crate::openrouter_chat::error::get_error_class;
 use betterlite_models::call_helpers::headers::AdditionalHeaders;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
+use std::io;
 use thiserror::Error;
-
-use crate::api::image_contracts::records::{
-    ImageHttpResponse, ImageInputTokens, ImageResponse, ImageUsage,
-};
-use crate::openai_base_config::Headers;
-use crate::openrouter_chat::error::OpenRouterError;
-
-// LiteLLM's get_error_class on both image configs is the same pass-through to OpenRouterException
-pub use crate::openrouter_chat::error::get_error_class;
-
-use super::decode::{OpenRouterImageUsage, ReplyDecodeError};
-
 pub const SUPPORTED_PARAMS: [&str; 3] = ["size", "quality", "n"];
 pub const SKIPPED_PARAMS: [&str; 3] = ["model", "messages", "modalities"];
 pub const DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
 pub const CHAT_COMPLETIONS: &str = "/chat/completions";
-
 const COST_HEADER: &str = "llm_provider-x-litellm-response-cost";
 const SQUARE_ASPECT_RATIO: &str = "1:1";
-
 #[derive(Debug, Error)]
 pub enum ImageConfigError {
     #[error("size must be a string")]
@@ -55,19 +47,16 @@ pub enum ImageConfigError {
     #[error("usage.prompt_tokens minus its input image tokens does not fit in a whole number")]
     TextTokens,
 }
-
-// LiteLLM's ImageResponse._hidden_params: a header map, the merged cost details and the reply's model
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ImageHiddenParams {
+    #[serde(skip_serializing_if = "IndexMap::is_empty")]
     pub additional_headers: AdditionalHeaders,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub response_cost_details: Option<IndexMap<String, Json>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<Json>,
 }
-
-// LiteLLM's two tables; a size the table misses still gets the square ratio
 #[must_use]
 pub fn map_size_to_aspect_ratio(size: &str) -> &'static str {
     match size {
@@ -78,8 +67,6 @@ pub fn map_size_to_aspect_ratio(size: &str) -> &'static str {
         _ => SQUARE_ASPECT_RATIO,
     }
 }
-
-// an unknown quality maps to no image size at all
 #[must_use]
 pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
     match quality {
@@ -89,8 +76,6 @@ pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
-// LiteLLM's "api_key or litellm.api_key or OPENROUTER_API_KEY", with an empty string counting as unset
 #[must_use]
 pub fn resolved_key(candidates: [Option<&SecretString>; 3]) -> Option<&SecretString> {
     for key in candidates.into_iter().flatten() {
@@ -100,7 +85,6 @@ pub fn resolved_key(candidates: [Option<&SecretString>; 3]) -> Option<&SecretStr
     }
     None
 }
-
 #[must_use]
 pub fn resolved_base(candidates: [Option<&str>; 2]) -> Option<&str> {
     for base in candidates.into_iter().flatten() {
@@ -110,7 +94,6 @@ pub fn resolved_base(candidates: [Option<&str>; 2]) -> Option<&str> {
     }
     None
 }
-
 #[must_use]
 pub fn authorization(key: Option<&SecretString>) -> String {
     match key {
@@ -118,8 +101,6 @@ pub fn authorization(key: Option<&SecretString>) -> String {
         None => String::from("Bearer None"),
     }
 }
-
-// a 500 with no headers, raised for every failure after the reply's JSON was parsed
 #[must_use]
 pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
     OpenRouterError {
@@ -128,7 +109,6 @@ pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
         headers: Headers::new(),
     }
 }
-
 #[must_use]
 pub fn reply_error(
     error: ReplyDecodeError,
@@ -141,10 +121,9 @@ pub fn reply_error(
             status_code: i64::from(raw.status_code),
             headers: raw.headers.clone(),
         },
-        ReplyDecodeError::Shape { message } => transform_error(stage, message),
+        ReplyDecodeError::Shape(message) => transform_error(stage, message),
     }
 }
-
 fn whole_number(value: Option<&Json>, path: &'static str) -> Result<i64, ImageConfigError> {
     match value {
         None | Some(Json::Null) => Ok(0),
@@ -152,7 +131,6 @@ fn whole_number(value: Option<&Json>, path: &'static str) -> Result<i64, ImageCo
         Some(_) => Err(ImageConfigError::UsageCount { path }),
     }
 }
-
 fn details_image_tokens(
     value: Option<&Json>,
     details_path: &'static str,
@@ -164,13 +142,11 @@ fn details_image_tokens(
         Some(_) => Err(ImageConfigError::UsageDetails { path: details_path }),
     }
 }
-
 struct Counts {
     prompt: i64,
     output: i64,
     total: i64,
 }
-
 fn usage_counts(usage: &OpenRouterImageUsage) -> Result<Counts, ImageConfigError> {
     let prompt = whole_number(usage.prompt_tokens.as_ref(), "usage.prompt_tokens")?;
     let total = whole_number(usage.total_tokens.as_ref(), "usage.total_tokens")?;
@@ -185,7 +161,6 @@ fn usage_counts(usage: &OpenRouterImageUsage) -> Result<Counts, ImageConfigError
         total,
     })
 }
-
 fn apply_cost(
     usage: &OpenRouterImageUsage,
     hidden: &mut ImageHiddenParams,
@@ -218,7 +193,6 @@ fn apply_cost(
         Some(_) => Err(ImageConfigError::CostDetails),
     }
 }
-
 pub fn apply_generation_usage(
     usage: &OpenRouterImageUsage,
     response: &mut ImageResponse,
@@ -236,7 +210,6 @@ pub fn apply_generation_usage(
     });
     apply_cost(usage, hidden)
 }
-
 pub fn apply_edit_usage(
     usage: &OpenRouterImageUsage,
     response: &mut ImageResponse,

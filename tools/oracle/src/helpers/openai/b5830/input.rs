@@ -1,20 +1,17 @@
-use std::collections::BTreeMap;
-
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::openai_base_config::Headers;
 use serde::Deserialize;
-
+use std::collections::BTreeMap;
 #[derive(Debug, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     GenerationParams { cases: Vec<GenerationParamsCase> },
     GenerationRequest { cases: Vec<GenerationRequestCase> },
     GenerationReply { cases: Vec<ReplyCase> },
-    EditParams { cases: Vec<EditParamsCase> },
+    EditParams { cases: Vec<ImageParams> },
     EditRequest { cases: Vec<EditRequestCase> },
     EditReply { cases: Vec<ReplyCase> },
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GenerationParamsCase {
@@ -26,7 +23,6 @@ pub(crate) struct GenerationParamsCase {
     #[serde(default)]
     pub(crate) drop_params: bool,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct GenerationRequestCase {
@@ -42,14 +38,6 @@ pub(crate) struct GenerationRequestCase {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) api_base: Option<String>,
 }
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct EditParamsCase {
-    #[serde(default)]
-    pub(crate) params: ImageParams,
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct EditRequestCase {
@@ -66,22 +54,12 @@ pub(crate) struct EditRequestCase {
     pub(crate) environment: BTreeMap<String, String>,
     pub(crate) api_base: Option<String>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum ImageCase {
     Bytes { data: String },
     Reader { data: String, position: u64 },
 }
-
-impl ImageCase {
-    pub(crate) fn data(&self) -> &str {
-        match self {
-            Self::Bytes { data } | Self::Reader { data, .. } => data,
-        }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReplyCase {

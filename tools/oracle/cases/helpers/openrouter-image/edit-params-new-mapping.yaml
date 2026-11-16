@@ -4,22 +4,22 @@ call:
   b5830:
     op: edit_params
     cases:
-      - params: {size: "1536x1024", quality: high, n: 2}
-      - params: {quality: auto, n: 1}
-      - params: {response_format: url, user: a-user, n: 1, background: transparent}
-      - params: {}
-      - params: {size: "999x999"}
-      - params: {quality: standard}
-      - params: {size: "1792x1024", n: 4}
-      - params: {size: "1024x1792"}
-      - params: {size: "1024x1536"}
-      - params: {size: "256x256"}
-      - params: {size: "512x512"}
-      - params: {size: "1024x1024"}
-      - params: {quality: medium}
-      - params: {quality: low}
-      - params: {quality: hd}
-      - params: {quality: ultra}
-      - params: {size: auto}
+      - {size: "1536x1024", quality: high, n: 2}
+      - {quality: auto, n: 1}
+      - {response_format: url, user: a-user, n: 1, background: transparent}
+      - {}
+      - {size: "999x999"}
+      - {quality: standard}
+      - {size: "1792x1024", n: 4}
+      - {size: "1024x1792"}
+      - {size: "1024x1536"}
+      - {size: "256x256"}
+      - {size: "512x512"}
+      - {size: "1024x1024"}
+      - {quality: medium}
+      - {quality: low}
+      - {quality: hd}
+      - {quality: ultra}
+      - {size: auto}
 env: {}
 compare: {ignore: []}

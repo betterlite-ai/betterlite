@@ -1,11 +1,15 @@
-from typing import Literal, TypeAlias, TypedDict
+from typing import Final, Literal, TypeAlias, TypedDict
 
 import litellm
-
-from .values import Headers, Object
+from pydantic import JsonValue, TypeAdapter
 
 # every adapter module imports litellm, as the oracle's helper rule asks
 _ = litellm.__name__
+
+
+Object: TypeAlias = dict[str, JsonValue]
+Headers: TypeAlias = dict[str, str]
+JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
 class ImageBytes(TypedDict):
@@ -48,10 +52,6 @@ class ReplyCase(TypedDict):
     created: int
 
 
-class EditParamsCase(TypedDict):
-    params: Object
-
-
 class EditRequestCase(TypedDict):
     model: str
     prompt: str | None
@@ -81,7 +81,7 @@ class GenerationReplyInput(TypedDict):
 
 class EditParamsInput(TypedDict):
     op: Literal["edit_params"]
-    cases: list[EditParamsCase]
+    cases: list[Object]
 
 
 class EditRequestInput(TypedDict):
@@ -95,10 +95,6 @@ class EditReplyInput(TypedDict):
 
 
 Input: TypeAlias = (
-    GenerationParamsInput
-    | GenerationRequestInput
-    | GenerationReplyInput
-    | EditParamsInput
-    | EditRequestInput
-    | EditReplyInput
+    GenerationParamsInput | GenerationRequestInput | GenerationReplyInput
+    | EditParamsInput | EditRequestInput | EditReplyInput
 )
