@@ -135,12 +135,12 @@ fn input_answer(
     let outcome = runtime.block_on(process_input_messages(
         &mut data, &guardrail, &context, None,
     ));
-    let data = serde_json::to_value(&data).or_value_error()?;
+    let data_value = serde_json::to_value(&data).or_value_error()?;
     let calls = guardrail.recorded();
     match outcome {
-        Ok(()) => Ok(json!({"data": data, "calls": calls})),
+        Ok(()) => Ok(json!({"data": data_value, "calls": calls})),
         Err(RequestRewriteError::Unappliable(_)) => {
-            Ok(json!({"data": data, "calls": calls, "error": "unappliable_request_rewrite"}))
+            Ok(json!({"data": data_value, "calls": calls, "error": "unappliable_request_rewrite"}))
         }
         Err(other) => Err(other).or_value_error(),
     }
