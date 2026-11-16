@@ -197,7 +197,7 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
         state.token.clone()
     };
     let mut response = (reply.status, reply.body).into_response();
-    response
+    let _previous = response
         .headers_mut()
         .insert(ETAG, HeaderValue::from_static("\"etag-1\""));
     response
@@ -211,7 +211,7 @@ pub(super) fn start(script: Script) -> GraphMock {
     let state = Arc::new(MockState {
         token: script.token,
         scopes: script.scopes,
-        process: Mutex::new(script.process.into()),
+        process: Mutex::new(VecDeque::from(script.process)),
         seen: Arc::clone(&seen),
     });
     let router = Router::new().fallback(serve).with_state(state);

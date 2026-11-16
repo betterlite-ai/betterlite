@@ -83,9 +83,8 @@ fn schedules_a_background_audit_without_an_event_loop() {
     let returned = logging_hook(&engine, call(AUDITED_KWARGS), &spawner);
     assert_eq!(spawner.scheduled(), 1);
     assert_eq!(mock.process_calls(), 0);
-    for job in spawner.take() {
-        job();
-    }
+    let job = spawner.take().remove(0);
+    job();
     assert_eq!(
         mock.scanned(),
         vec![
@@ -115,9 +114,9 @@ fn a_scheduled_audit_without_a_trusted_identity_makes_no_calls() {
         call(r#"{"model":"gpt","messages":[{"role":"user","content":"hello"}]}"#),
         &spawner,
     );
-    for job in spawner.take() {
-        job();
-    }
+    assert_eq!(spawner.scheduled(), 1);
+    let job = spawner.take().remove(0);
+    job();
     assert_eq!(mock.process_calls(), 0);
 }
 

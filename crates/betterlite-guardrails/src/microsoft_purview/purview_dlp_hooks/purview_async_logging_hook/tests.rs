@@ -5,7 +5,7 @@ use std::sync::Arc;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
 
-use crate::guardrail_records::record::GuardrailStatus;
+use crate::guardrail_records::record::{GuardrailSpanSink, GuardrailStatus};
 use crate::microsoft_purview::purview_dlp_hooks::Data;
 use crate::microsoft_purview::purview_dlp_hooks::purview_async_logging_hook::{
     AuditEngine, async_logging_hook,
@@ -19,8 +19,7 @@ const CHAT_RESULT: &str = r#"{"id":"c1","object":"chat.completion","choices":[{"
 const AUDITED_KWARGS: &str = r#"{"model":"gpt","messages":[{"role":"user","content":"hello"}],"litellm_params":{"metadata":{"user_api_key_user_id":"user-1"}}}"#;
 
 fn engine(base: &str, sink: &Arc<TestSink>) -> AuditEngine {
-    let sink: Arc<dyn crate::guardrail_records::record::GuardrailSpanSink + Send + Sync> =
-        Arc::clone(sink);
+    let sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::clone(sink);
     AuditEngine {
         guardrail: Arc::new(guardrail_at(base)),
         record_base: record_base(),
