@@ -1,0 +1,8 @@
+kind: helper
+name: cache-settings-update-redact-settings-keys
+call:
+  b8502:
+    function: redact_settings
+    settings: {host: "h", password: "secret", port: 6379}
+env: {}
+compare: {ignore: []}
