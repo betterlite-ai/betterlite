@@ -1,3 +1,5 @@
+use std::slice::from_ref;
+
 use chrono::DateTime;
 use rust_decimal::Decimal;
 
@@ -133,7 +135,7 @@ async fn requeues_a_retry_safe_upsert_failure_for_the_next_flush() {
     let payload = from_json(METRICS_ONLY);
     let failing = FakeSink::failing_upserts(vec![Some(RETRY_SAFE); 4]);
     process_guardrail_usage(
-        std::slice::from_ref(&payload),
+        from_ref(&payload),
         &pending,
         &failing,
         limits(1_000_000, 100),
