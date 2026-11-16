@@ -1,6 +1,6 @@
 task: B1378
 deviations:
-  - what: A setup JSON body that is not valid JSON, or that carries trailing data, fails with a typed InvalidJson error, where LiteLLM's json.loads raises an uncaught JSONDecodeError from the transform that answers HTTP 500.
+  - what: A setup JSON body that is not valid JSON, or that carries trailing data, fails with a typed InvalidJson error, and one that is valid JSON but not an object fails with a typed InvalidField error, where LiteLLM's json.loads raises an uncaught JSONDecodeError and _parse_setup calls .get on the non-object, from the transform that answers HTTP 500.
     why: The body is a client-controlled session_configuration_request string, so a 4xx that names the failure belongs there and no working setup sends a malformed one.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/realtime/transformation.py#L112-L115
   - what: A turn_detection duration written as a JSON integer beyond the signed or unsigned 64-bit range is dropped, where LiteLLM forwards it because Python ints are unbounded.
