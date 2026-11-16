@@ -101,7 +101,7 @@ async fn retrieve_row() {
         &config,
         context,
         Call::Retrieve {
-            container_id: "cntr_1",
+            id: "cntr_1",
             api_base: API_BASE,
         },
     )
@@ -123,7 +123,7 @@ async fn delete_row() {
         &config,
         context,
         Call::Delete {
-            container_id: "cntr_1",
+            id: "cntr_1",
             api_base: API_BASE,
         },
     )
@@ -205,7 +205,7 @@ async fn error_row() {
         &config,
         context,
         Call::Retrieve {
-            container_id: "..",
+            id: "..",
             api_base: API_BASE,
         },
     )

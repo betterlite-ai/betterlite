@@ -69,7 +69,7 @@ fn create_data() -> CreateEvalRequest {
     }
 }
 
-async fn eval_requests() {
+async fn create_eval_row() {
     let config = evals_config();
     let params = params();
     let headers = headers();
@@ -85,6 +85,13 @@ async fn eval_requests() {
             r#"{"name":"smoke","data_source_config":{"type":"custom","item_schema":{"type":"object"},"include_sample_schema":true},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-test"}]}"#
         )
     );
+}
+
+async fn list_evals_row() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
     let list_params = ListEvalsParams {
         limit: Some(3),
         after: Some(String::from("eval_0")),
@@ -101,6 +108,13 @@ async fn eval_requests() {
         body,
         object(r#"{"limit":3,"after":"eval_0","order":"desc","order_by":"updated_at"}"#)
     );
+}
+
+async fn get_eval_row() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
     let fetched = run(
         &config,
         context,
@@ -117,7 +131,7 @@ async fn eval_requests() {
     assert_eq!(sent, headers);
 }
 
-async fn eval_mutations() {
+async fn update_eval_row() {
     let config = evals_config();
     let params = params();
     let headers = headers();
@@ -150,6 +164,13 @@ async fn eval_mutations() {
         body,
         object(r#"{"name":"renamed","metadata":{"team":"core"}}"#)
     );
+}
+
+async fn delete_eval_row() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
     let deleted = run(
         &config,
         context,
@@ -164,6 +185,13 @@ async fn eval_mutations() {
     };
     assert_eq!(url, "https://api.evals.test/v1/evals/eval_1");
     assert_eq!(sent, headers);
+}
+
+async fn cancel_eval_row() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
     let cancelled = run(
         &config,
         context,
@@ -186,7 +214,7 @@ async fn eval_mutations() {
     assert_eq!(body, object("{}"));
 }
 
-async fn run_requests() {
+async fn create_run_row() {
     let config = evals_config();
     let params = params();
     let headers = headers();
@@ -213,17 +241,25 @@ async fn run_requests() {
         body,
         object(r#"{"data_source":{"type":"completions"},"name":"nightly"}"#)
     );
+}
+
+async fn list_runs_row() {
+    let config = evals_config();
+    let params = params();
+    let headers = headers();
+    let context = context(&params, &headers);
+    let list_params = ListRunsParams {
+        limit: Some(2),
+        after: None,
+        before: Some(String::from("run_0")),
+        order: Some(EvalOrder::Asc),
+    };
     let listed = run(
         &config,
         context,
         Call::Run(RunCall::List {
             eval_id: "eval_1",
-            params: &ListRunsParams {
-                limit: Some(2),
-                after: None,
-                before: Some(String::from("run_0")),
-                order: Some(EvalOrder::Asc),
-            },
+            params: &list_params,
         }),
     )
     .await;
@@ -316,9 +352,14 @@ async fn error_row() {
 }
 
 pub(crate) async fn check() {
-    eval_requests().await;
-    eval_mutations().await;
-    run_requests().await;
+    create_eval_row().await;
+    list_evals_row().await;
+    get_eval_row().await;
+    update_eval_row().await;
+    delete_eval_row().await;
+    cancel_eval_row().await;
+    create_run_row().await;
+    list_runs_row().await;
     run_paths().await;
     cancelled_run().await;
     error_row().await;

@@ -21,11 +21,11 @@ pub enum Call<'a> {
         query: ContainerListQuery<'a>,
     },
     Retrieve {
-        container_id: &'a str,
+        id: &'a str,
         api_base: &'a str,
     },
     Delete {
-        container_id: &'a str,
+        id: &'a str,
         api_base: &'a str,
     },
     FileList {
@@ -65,22 +65,8 @@ impl Dispatch<'_> {
                     config.transform_container_list_request(api_base, context, &query);
                 Ok(Outcome::Request { url, query })
             }
-            Call::Retrieve {
-                container_id,
-                api_base,
-            } => {
-                let (url, query) =
-                    config.transform_container_retrieve_request(container_id, api_base, context)?;
-                Ok(Outcome::Request { url, query })
-            }
-            Call::Delete {
-                container_id,
-                api_base,
-            } => {
-                let (url, query) =
-                    config.transform_container_delete_request(container_id, api_base, context)?;
-                Ok(Outcome::Request { url, query })
-            }
+            Call::Retrieve { id, api_base } => retrieve_request(config, context, id, api_base),
+            Call::Delete { id, api_base } => delete_request(config, context, id, api_base),
             Call::FileList {
                 container_id,
                 api_base,
@@ -98,6 +84,28 @@ impl Dispatch<'_> {
             )),
         }
     }
+}
+
+fn retrieve_request(
+    config: &dyn BaseContainerConfig,
+    context: ContainerRequestContext<'_>,
+    container_id: &str,
+    api_base: &str,
+) -> Result<Outcome, ContainerError> {
+    let (url, query) =
+        config.transform_container_retrieve_request(container_id, api_base, context)?;
+    Ok(Outcome::Request { url, query })
+}
+
+fn delete_request(
+    config: &dyn BaseContainerConfig,
+    context: ContainerRequestContext<'_>,
+    container_id: &str,
+    api_base: &str,
+) -> Result<Outcome, ContainerError> {
+    let (url, query) =
+        config.transform_container_delete_request(container_id, api_base, context)?;
+    Ok(Outcome::Request { url, query })
 }
 
 fn file_list_request(

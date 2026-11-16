@@ -114,17 +114,19 @@ impl Dispatch<'_> {
                 settings,
                 vector_store_id,
             )?)),
-            Call::Endpoints(EndpointKind::Store) => {
-                Ok(Outcome::Endpoints(Box::new(store_endpoints())))
-            }
-            Call::Endpoints(EndpointKind::File) => {
-                Ok(Outcome::Endpoints(Box::new(file_endpoints())))
-            }
+            Call::Endpoints(kind) => Ok(Outcome::Endpoints(Box::new(endpoints(kind)))),
             Call::Request(request) => Ok(Outcome::Request(request_outcome(request)?)),
             Call::Reply { kind, response } => {
                 Ok(Outcome::Reply(transform_response(kind, response)?))
             }
         }
+    }
+}
+
+fn endpoints(kind: EndpointKind) -> VectorStoreIndexEndpoints {
+    match kind {
+        EndpointKind::Store => store_endpoints(),
+        EndpointKind::File => file_endpoints(),
     }
 }
 
