@@ -25,13 +25,13 @@ use tempfile::NamedTempFile;
 use tokio::time::timeout;
 use tracing::subscriber::set_default;
 
-use super::{
-    BatchLifecycleRequest, execute_batch_cancel, execute_batch_list, execute_batch_retrieve,
-    prepare_batch_cancel, prepare_batch_list, prepare_batch_retrieve,
-};
+use super::BatchLifecycleRequest;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
+use crate::vertex_batch_lifecycle::cancel::{execute_batch_cancel, prepare_batch_cancel};
 use crate::vertex_batch_lifecycle::error::VertexBatchLifecycleError;
+use crate::vertex_batch_lifecycle::list::{execute_batch_list, prepare_batch_list};
+use crate::vertex_batch_lifecycle::retrieve::{execute_batch_retrieve, prepare_batch_retrieve};
 use crate::vertex_batch_records::response::BatchListObject;
 use support::{
     CANCELLING, JOB, Reply, SECOND_JOB, Scripted, Stalled, access, hanging_server, page, reply,
@@ -540,12 +540,22 @@ async fn credentials_failure_stops_before_any_request() {
         ready(Err(CredentialCacheError::MissingToken)),
     )
     .await;
-    for error in [retrieve.err(), list.err(), cancel.err()] {
-        let error = error.unwrap();
-        assert!(matches!(
-            error,
-            VertexBatchLifecycleError::Credentials { .. }
-        ));
-        assert_eq!(error.status_code(), 500);
-    }
+    let retrieve = retrieve.unwrap_err();
+    assert!(matches!(
+        retrieve,
+        VertexBatchLifecycleError::Credentials { .. }
+    ));
+    assert_eq!(retrieve.status_code(), 500);
+    let list = list.unwrap_err();
+    assert!(matches!(
+        list,
+        VertexBatchLifecycleError::Credentials { .. }
+    ));
+    assert_eq!(list.status_code(), 500);
+    let cancel = cancel.unwrap_err();
+    assert!(matches!(
+        cancel,
+        VertexBatchLifecycleError::Credentials { .. }
+    ));
+    assert_eq!(cancel.status_code(), 500);
 }

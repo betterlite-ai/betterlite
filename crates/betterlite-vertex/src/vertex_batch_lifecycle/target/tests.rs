@@ -2,8 +2,10 @@
 
 use rstest::rstest;
 
-use super::{cancel_target, list_url, retrieval_url, retrieve_url};
+use crate::vertex_batch_lifecycle::cancel::{cancel_target, retrieval_url};
 use crate::vertex_batch_lifecycle::error::VertexBatchLifecycleError;
+use crate::vertex_batch_lifecycle::list::list_url;
+use crate::vertex_batch_lifecycle::retrieve::retrieve_url;
 
 const HOST: &str =
     "https://us-central1-aiplatform.googleapis.com/v1/projects/proj/locations/us-central1";
