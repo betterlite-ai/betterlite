@@ -12,7 +12,7 @@ use betterlite_core::api::api_boundaries::ApiLimits;
 use betterlite_core::api::messages_agentic_stream::HoldBackPolicy;
 use betterlite_core::api::messages_agentic_stream::MessagesAgenticStreamInput;
 use betterlite_core::api::messages_agentic_stream::stream::MessagesAgenticStream;
-use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream;
+use betterlite_core::api::messages_sse_events::stream::MessagesProviderStream as _;
 use betterlite_core::meta_muse_realtime::request::Sleep;
 use betterlite_models::decisions::Json;
 use futures_util::future::BoxFuture;

@@ -113,13 +113,19 @@ impl AgenticInterceptor for ScriptedInterceptor {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!({"model": input.model, "response": response}));
-        let reply = self
+        let scripted = self
             .reply
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .take();
-        let outcome = match reply {
-            Some(reply) => match reply.kind {
+        let outcome = scripted.map_or_else(
+            || {
+                Err(AgenticHookError::Failed {
+                    callback: "messages_agentic_stream".to_owned(),
+                    message: "the scripted replies are used up".to_owned(),
+                })
+            },
+            |reply| match reply.kind {
                 ReplyKind::Absent => Ok(MessagesAgenticStreamResult::NoFollowUp),
                 ReplyKind::Stream => Ok(MessagesAgenticStreamResult::Stream(ScriptedFollowUp {
                     frames: reply
@@ -131,11 +137,7 @@ impl AgenticInterceptor for ScriptedInterceptor {
                     effects: Some(Arc::clone(&self.effects)),
                 })),
             },
-            None => Err(AgenticHookError::Failed {
-                callback: "messages_agentic_stream".to_owned(),
-                message: "the scripted replies are used up".to_owned(),
-            }),
-        };
+        );
         Box::pin(GatedHook {
             gate: Arc::clone(&self.gate),
             outcome: Some(outcome),
@@ -159,10 +161,7 @@ impl Future for GatedHook {
             context.waker().wake_by_ref();
             return Poll::Pending;
         }
-        match this.outcome.take() {
-            Some(outcome) => Poll::Ready(outcome),
-            None => Poll::Pending,
-        }
+        this.outcome.take().map_or(Poll::Pending, Poll::Ready)
     }
 }
 
