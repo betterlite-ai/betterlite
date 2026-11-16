@@ -9,7 +9,7 @@ use super::Section;
 use super::guardrail_identity::item::GuardrailValue;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::resolve_secret;
+use crate::resolve::{parse_float, resolve_number, resolve_secret};
 
 pub mod knobs;
 mod tests;
@@ -142,7 +142,12 @@ impl Entry {
                 parameters.unreachable_fallback,
                 &resolver,
             )?,
-            timeout: resolver.float(parameters.timeout, "timeout")?,
+            timeout: resolve_number(
+                parameters.timeout,
+                &format!("{prefix}.timeout"),
+                lookup,
+                parse_float,
+            )?,
             tuning,
         })
     }

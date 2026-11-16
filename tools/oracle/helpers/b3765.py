@@ -8,7 +8,7 @@ import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy._types import UserAPIKeyAuth
 from litellm.proxy.guardrails.guardrail_hooks.compresr.compresr import CompresrGuardrail
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import ConfigDict, JsonValue, TypeAdapter
 
 JSON: Final = TypeAdapter(JsonValue)
 
@@ -56,13 +56,10 @@ class Applier(Protocol):
     ) -> Awaitable[dict[str, JsonValue]]: ...
 
 
-class ApplierRecord(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-    applier: Applier
-
-
 def logging_for(caller: Caller) -> Logging:
-    logging_obj = Logging(
+    auth = UserAPIKeyAuth(api_key=caller["scope"])
+    kwargs: dict[str, dict[str, UserAPIKeyAuth]] = {"metadata": {"user_api_key_auth": auth}}
+    return Logging(
         model="gpt-4o",
         messages=None,
         stream=False,
@@ -70,12 +67,8 @@ def logging_for(caller: Caller) -> Logging:
         start_time=datetime(2024, 1, 1, tzinfo=UTC),
         litellm_call_id=caller["call_id"],
         function_id="b3765",
+        kwargs=kwargs,
     )
-    auth = UserAPIKeyAuth(api_key=caller["scope"])
-    logging_obj.update_environment_variables(
-        litellm_params={"metadata": {"user_api_key_auth": auth}}, optional_params={}
-    )
-    return logging_obj
 
 
 def init(call: InitCall) -> JsonValue:
@@ -144,7 +137,9 @@ def apply(call: ApplyCall) -> JsonValue:
     if headers is not None:
         request_data["proxy_server_request"] = {"headers": dict(headers)}
     # LiteLLM's apply_guardrail signatures carry Any, so validate into the protocol
-    applier = ApplierRecord.model_validate({"applier": guardrail}).applier
+    applier = TypeAdapter[Applier](
+        Applier, config=ConfigDict(arbitrary_types_allowed=True)
+    ).validate_python(guardrail)
     output = asyncio.run(apply_once(applier, call, request_data))
     return {"inputs": output, "requests": recorder.requests}
 
