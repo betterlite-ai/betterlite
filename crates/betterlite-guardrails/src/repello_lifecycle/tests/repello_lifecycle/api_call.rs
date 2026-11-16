@@ -4,8 +4,8 @@ use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::repello_lifecycle::{
-    API_KEY_HEADER, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, PROMPT_STAGE, RESPONSE_STAGE,
-    UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
+    API_KEY_HEADER, FAILED_MESSAGE, INVALID_JSON_ERROR_TYPE, INVALID_JSON_MESSAGE, PROMPT_STAGE,
+    RESPONSE_STAGE, UNREACHABLE_ERROR_TYPE, UNREACHABLE_MESSAGE,
 };
 use rstest::rstest;
 
@@ -159,6 +159,23 @@ async fn an_answer_with_a_large_policy_list_is_read_whole() {
     let mock = mock_repello(StatusCode::OK, &reply).await;
     let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
     assert!(run.result.is_ok());
+}
+
+#[tokio::test]
+async fn an_answer_over_the_response_cap_is_the_generic_failure() {
+    let filler = "x".repeat(1024 * 1024);
+    let reply = format!(r#"{{"verdict": "passed", "request_id": "{filler}"}}"#);
+    let mock = mock_repello(StatusCode::OK, &reply).await;
+    let run = run_pre_call(&guardrail(settings(&mock.base)), prompt_data()).await;
+    let Err(GuardrailFailure::HttpObject { status, detail }) = run.result else {
+        panic!("expected the generic failure");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(
+        detail.get("error"),
+        Some(&GuardrailValue::Text(String::from(FAILED_MESSAGE)))
+    );
+    assert_eq!(detail.get("error_type"), None);
 }
 
 #[tokio::test]
