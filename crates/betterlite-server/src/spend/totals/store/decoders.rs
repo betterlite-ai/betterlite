@@ -106,10 +106,11 @@ impl TryFrom<&Row> for TeamSpend {
 }
 
 fn required_amount(row: &Row, column: &'static str) -> Result<Decimal, TotalsStoreError> {
-    let Some(amount) = optional_amount(row, column)? else {
+    let stored = row.try_get::<_, Option<String>>(column).map_err(backend)?;
+    let Some(digits) = stored else {
         return Err(TotalsStoreError::InvalidAmount { column });
     };
-    Ok(amount)
+    parse_amount(&digits, column)
 }
 
 fn optional_amount(row: &Row, column: &'static str) -> Result<Option<Decimal>, TotalsStoreError> {
