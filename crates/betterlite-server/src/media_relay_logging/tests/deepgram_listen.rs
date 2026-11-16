@@ -42,7 +42,7 @@ async fn deepgram_listen_bills_the_base_and_each_priced_addon() {
     let frames = messages(TWO_CHANNEL);
     let caller = kwargs(&[
         ("custom", json("1")),
-        ("model", json("stale")),
+        ("model", json(r#""stale""#)),
         ("response_cost", json("9")),
     ]);
     let url = "https://api.deepgram.com/v1/listen?model=nova-3&redact=pci&diarize=true";
@@ -73,7 +73,7 @@ async fn deepgram_listen_bills_the_base_and_each_priced_addon() {
         )
     );
     assert_eq!(caller.entries.len(), 3);
-    assert_eq!(caller.entries.get("model"), Some(&json("stale")));
+    assert_eq!(caller.entries.get("model"), Some(&json(r#""stale""#)));
     assert_eq!(caller.entries.get("response_cost"), Some(&json("9")));
 }
 
