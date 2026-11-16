@@ -10,6 +10,7 @@ use betterlite_bedrock::responses::request::{
     async_transform_responses, transform_inlined_request, transform_responses_request,
 };
 use betterlite_bedrock::responses::url::{CompleteUrlParams, complete_url};
+use betterlite_bedrock::signing::target::RegionInputs;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::response_params::bundled::BundledReasoningModels;
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
