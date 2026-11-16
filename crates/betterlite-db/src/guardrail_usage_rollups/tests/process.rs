@@ -199,7 +199,15 @@ async fn flushes_every_merged_row_past_the_pending_cap() {
             )
         })
         .collect();
-    process(&[from_json(METRICS_ONLY)], &sink).await;
+    let pause = PauseLog::default();
+    process_guardrail_usage(
+        &[from_json(METRICS_ONLY)],
+        &pending,
+        &sink,
+        limits(1_000_000, 100),
+        &pause,
+    )
+    .await;
     assert_eq!(sink.metric_calls().len(), 10_001);
     assert!(lock(&pending).metrics.is_empty());
 }
