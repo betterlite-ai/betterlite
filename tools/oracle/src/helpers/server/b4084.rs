@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::shadow_calls::judge_prompt::{
     PAIRWISE_JUDGE_SYSTEM_PROMPT, judge_user_prompt, tool_definitions_text,
 };
@@ -5,8 +7,6 @@ use betterlite_server::shadow_calls::response_format::pairwise_judge_response_fo
 use betterlite_server::shadow_calls::unmask::unmask_preference;
 use serde::Deserialize;
 use serde_json::{Value, json};
-
-use crate::helpers::{Helper, OrHelperError as _};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,7 +43,7 @@ pub(crate) struct Op;
 impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let no_tools = Value::Null;
         let raw_tools = input.tools.as_ref().unwrap_or(&no_tools);
         match input.operation {
