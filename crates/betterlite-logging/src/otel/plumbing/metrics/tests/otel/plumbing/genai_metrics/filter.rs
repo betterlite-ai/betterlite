@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use betterlite_logging::otel::legacy_metrics::filter::CallbackSettingsView;
 use rstest::rstest;
 
 use super::support::{
@@ -54,7 +55,9 @@ fn an_empty_list_makes_no_filter(#[case] filter: &str) {
 #[test]
 fn the_filter_is_read_on_the_first_record_not_at_construction() {
     let settings = late_settings(None);
-    let (recorder, provider, exporter) = build(Arc::clone(&settings), None);
+    let cloned = Arc::clone(&settings);
+    let view: Arc<dyn CallbackSettingsView> = cloned;
+    let (recorder, provider, exporter) = build(view, None);
     settings.set(Some(r#"{"include_list": ["gen_ai.system"]}"#));
     let call_kwargs = kwargs("{}");
     recorder
@@ -70,7 +73,9 @@ fn a_bad_filter_raises_on_the_first_record_and_a_corrected_one_is_used_afterward
     let settings = late_settings(Some(
         r#"{"include_list": ["gen_ai.system"], "exclude_list": ["gen_ai.framework"]}"#,
     ));
-    let (recorder, provider, exporter) = build(Arc::clone(&settings), None);
+    let cloned = Arc::clone(&settings);
+    let view: Arc<dyn CallbackSettingsView> = cloned;
+    let (recorder, provider, exporter) = build(view, None);
     let call_kwargs = kwargs("{}");
     let call = call_of(&call_kwargs, None);
     let error = recorder.record(&call).expect_err("both lists");
