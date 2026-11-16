@@ -55,7 +55,7 @@ where
     }))
 }
 
-// A configuration error deletes the row again, any other start error only logs a warning
+// LiteLLM rolls the insert back on a configuration error, so a rejected guardrail is never left orphaned
 async fn start_created<R, S>(
     database: &MutationDatabase<R, S>,
     created: Guardrail,
