@@ -68,13 +68,11 @@ where
     Fut: Future<Output = Result<Credentials, CredentialError>>,
 {
     if resolve_bearer_token(inputs.api_key, inputs.environment_token).is_some() {
-        // Bedrock API keys are Bearer credentials, so SigV4 on top would be wrong
         return Ok(SignedHeaders {
             headers: inputs.headers.to_vec(),
             body: None,
         });
     }
-    // The lookup above found no token, so the signer gets neither key and cannot take the bearer path
     let signed = sign_service_request(
         ServiceRequest {
             service: ServiceName::Bedrock,

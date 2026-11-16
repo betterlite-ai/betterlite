@@ -44,7 +44,6 @@ where
         response_params::map_openai_params(capabilities, &options, drop_params, bundled).await?;
     let raw = serde_json::to_value(&mapped).map_err(ResponsesError::Encode)?;
     let mut mapped_params: Object = serde_json::from_value(raw).map_err(ResponsesError::Encode)?;
-    // The key goes whatever its value and whatever drop_params says, since the endpoint rejects it
     if mapped_params.shift_remove("background").is_some() {
         tracing::warn!(
             "Bedrock Runtime Responses API: dropping unsupported parameter(s) ('background',) that the endpoint rejects."

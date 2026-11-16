@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::slice::from_ref;
 
 use betterlite_openai::response_input::{ResponsesInput, ResponsesItem};
-use betterlite_prompts::arguments::json::Json;
+use betterlite_prompts::arguments::json::{Json, Object};
 use indexmap::IndexSet;
 
 use crate::responses::error::ResponsesError;
@@ -90,19 +90,6 @@ fn inline_field(
     }
 }
 
-fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
-    match item {
-        Json::Object(fields) => fields
-            .iter()
-            .map(|(key, value)| Ok((key.clone(), inline_field(key, value, inlined)?)))
-            .collect::<Result<_, _>>()
-            .map(Json::Object),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
-            Ok(item.clone())
-        }
-    }
-}
-
 pub fn inline_remote_image_urls(
     input: &ResponsesInput,
     inlined: &BTreeMap<String, String>,
@@ -115,7 +102,15 @@ pub fn inline_remote_image_urls(
     }
     let mut replaced = Vec::with_capacity(items.len());
     for item in items {
-        replaced.push(ResponsesItem(inline_item(&item.0, inlined)?));
+        let Json::Object(fields) = &item.0 else {
+            replaced.push(item.clone());
+            continue;
+        };
+        let mut inlined_fields = Object::with_capacity(fields.len());
+        for (key, value) in fields {
+            inlined_fields.insert(key.clone(), inline_field(key, value, inlined)?);
+        }
+        replaced.push(ResponsesItem(Json::Object(inlined_fields)));
     }
     Ok(ResponsesInput::Items(replaced))
 }
