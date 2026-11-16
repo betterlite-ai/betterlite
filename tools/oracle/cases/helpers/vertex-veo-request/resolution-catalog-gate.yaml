@@ -1,0 +1,12 @@
+kind: helper
+name: resolution-catalog-gate
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-fast-generate-001, prompt: a cat on a mat, api_base: 'https://mock', params: {size: 1280x720}, extra_body: null}
+      - {model: veo-2.0-generate-001, prompt: a cat on a mat, api_base: 'https://mock', params: {size: 1280x720}, extra_body: null}
+      - {model: veo-9.9-not-a-model, prompt: a cat on a mat, api_base: 'https://mock', params: {size: 1280x720}, extra_body: null}
+      - {model: vertex_ai/veo-3.0-fast-generate-001, prompt: a cat on a mat, api_base: 'https://mock', params: {size: 1920x1080}, extra_body: null}
+    edits: []
+env: {}
+compare: {ignore: []}

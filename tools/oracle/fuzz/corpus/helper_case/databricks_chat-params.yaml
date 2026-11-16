@@ -1,0 +1,24 @@
+kind: helper
+name: databricks-chat-params-seed
+call:
+  b5841:
+    function: params
+    cases:
+    - model: databricks-claude-3-5-sonnet
+      non_default_params:
+        response_format:
+          type: json_schema
+          json_schema:
+            name: out
+            schema:
+              type: object
+              properties:
+                a:
+                  type: string
+      optional_params: {}
+    - model: databricks-meta-llama-3-1-70b
+      non_default_params:
+        max_completion_tokens: 32
+      optional_params: {}
+env: {}
+compare: {ignore: []}

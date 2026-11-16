@@ -1,0 +1,5 @@
+kind: helper
+name: b3330-video-reference-to-id-dict-seed
+call: {b3330: {function: video_reference, value: {id: video_123}}}
+env: {}
+compare: {ignore: []}
