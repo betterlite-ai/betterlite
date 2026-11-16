@@ -18,12 +18,12 @@ pub struct PreparedEdit {
 }
 
 pub fn prepare(call: &mut EditCall<'_>) -> Result<PreparedEdit, EditCallError> {
-    let mut headers = HeaderMap::new();
+    let mut seeded = HeaderMap::new();
     for (name, value) in optional_extra_headers(call.optional_params)? {
-        insert_header(&mut headers, &name, &value)?;
+        insert_header(&mut seeded, &name, &value)?;
     }
     // the credential and the two JSON headers overwrite whatever the optional params seeded
-    let headers = validate_environment(headers, call.params.api_key.as_ref(), call.configured_key)?;
+    let headers = validate_environment(seeded, call.params.api_key.as_ref(), call.configured_key)?;
     let url = complete_url(
         call.params.api_base.as_deref(),
         call.model,

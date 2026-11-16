@@ -57,7 +57,7 @@ where
     C: PollClock + Sync,
     S: PollSleeper + Sync,
 {
-    // LiteLLM's sync and async edit entry points differ only in which client they keep and which transform they run
+    // LiteLLM's sync and async edit entry points differ only in which client they keep
     pub async fn image_edit<T>(
         &self,
         call: &EditCall<'_>,
