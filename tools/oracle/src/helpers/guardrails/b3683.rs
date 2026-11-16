@@ -8,10 +8,10 @@ use betterlite_guardrails::guardrail_startup::error::StartupError;
 use betterlite_guardrails::guardrail_startup::legacy::{
     LegacyCallbackStarter, start_legacy_guardrails,
 };
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
-
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 
 pub(crate) struct Op;
 
