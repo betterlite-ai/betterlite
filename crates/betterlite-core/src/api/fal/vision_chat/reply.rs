@@ -84,11 +84,8 @@ pub fn transform_response(
         refusal: None,
         provider_specific_fields: MessageProviderFields::default(),
     };
-    let finish_reason = reply
-        .finish_reason
-        .filter(|reason| !reason.is_empty())
-        .unwrap_or_else(|| "stop".to_owned());
-    choice.finish_reason = Some(map_finish_reason(&finish_reason).reason.as_str().to_owned());
+    let finish_reason = reply.finish_reason.as_deref().unwrap_or("stop");
+    choice.finish_reason = Some(map_finish_reason(finish_reason).reason.as_str().to_owned());
     response.created = created;
     model.clone_into(&mut response.model);
     response.usage = ChatUsage {
