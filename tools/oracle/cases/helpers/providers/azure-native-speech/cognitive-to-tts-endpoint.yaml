@@ -1,0 +1,22 @@
+kind: helper
+name: cognitive-to-tts-endpoint
+call:
+  azure_native_speech:
+    cognitive_to_tts_endpoint:
+      api_bases:
+        - 'https://eastus.api.cognitive.microsoft.com'
+        - 'https://api.cognitive.microsoft.com/'
+        - 'https://eastus.api.cognitive.microsoft.com/openai/deployments/x?api-version=1'
+        - 'https://eastus.tts.speech.microsoft.com'
+        - 'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1'
+        - 'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1/'
+        - 'https://custom.example/audio'
+        - 'https://custom.example/audio/'
+        - 'https://custom.example/cognitiveservices/v1'
+        - 'eastus.api.cognitive.microsoft.com'
+        - 'https://eastus.api.cognitive.microsoft.com.evil.example'
+        - 'https://TTS.Speech.Microsoft.com/cognitiveservices/v1'
+        - null
+        - ''
+env: {}
+compare: {ignore: []}

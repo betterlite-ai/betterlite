@@ -69,4 +69,6 @@ pub(crate) enum GateError {
         what: String,
         source: Box<dyn error::Error + Send + Sync>,
     },
+    #[error("{path} calls {operation}, and no helper_group! in tools/oracle/src/helpers lists it")]
+    UnknownOperation { path: PathBuf, operation: String },
 }
