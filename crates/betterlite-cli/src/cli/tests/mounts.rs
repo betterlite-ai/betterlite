@@ -30,8 +30,11 @@ use crate::cli::tests::support::FakeEnvironment;
 #[case::whoami("whoami")]
 fn every_family_command_is_mounted(#[case] command: &str) {
     let root = root_command(&FakeEnvironment::default());
-    let names: Vec<&str> = root.get_subcommands().map(Command::get_name).collect();
-    assert!(names.contains(&command), "{command} is not mounted");
+    let mounted = root
+        .get_subcommands()
+        .map(Command::get_name)
+        .any(|name| name == command);
+    assert!(mounted, "{command} is not mounted");
 }
 
 #[test]
@@ -49,6 +52,9 @@ fn every_known_agent_is_mounted() {
 #[test]
 fn statusline_is_mounted() {
     let root = root_command(&FakeEnvironment::default());
-    let names: Vec<&str> = root.get_subcommands().map(Command::get_name).collect();
-    assert!(names.contains(&"statusline"));
+    let mounted = root
+        .get_subcommands()
+        .map(Command::get_name)
+        .any(|name| name == "statusline");
+    assert!(mounted);
 }

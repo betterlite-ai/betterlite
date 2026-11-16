@@ -73,10 +73,9 @@ pub(crate) struct WorkingVault {
 
 impl SecretVault for WorkingVault {
     fn read(&self) -> SecretRead {
-        Ok(match &self.blob {
-            Some(secret) => Read::SecretFound(secret.clone()),
-            None => Read::SecretMissing,
-        })
+        Ok(self.blob.as_ref().map_or(Read::SecretMissing, |secret| {
+            Read::SecretFound(secret.clone())
+        }))
     }
 
     fn write(&mut self, blob: &SecretString) -> SecretWrite {
@@ -178,12 +177,12 @@ pub(crate) fn unused_base_url() -> String {
 }
 
 impl Write for Captured {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .map_err(|_poisoned| io::Error::other("the capture lock was poisoned"))?
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {

@@ -19,12 +19,12 @@ impl Recorder {
 }
 
 impl io::Write for Recorder {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.record(format!(
             "write:{}",
-            String::from_utf8(buffer.to_vec()).unwrap_or_default()
+            String::from_utf8(buf.to_vec()).unwrap_or_default()
         ));
-        Ok(buffer.len())
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
