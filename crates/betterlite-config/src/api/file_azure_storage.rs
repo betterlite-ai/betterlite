@@ -32,8 +32,14 @@ pub struct Settings {
 
 impl Settings {
     pub fn from_environment(environment: &dyn EnvironmentLookup) -> Result<Self, SettingsError> {
-        let account_name = required(environment, ACCOUNT_NAME_VARIABLE)?;
-        let file_system = required(environment, FILE_SYSTEM_VARIABLE)?;
+        let account_name =
+            optional(environment, ACCOUNT_NAME_VARIABLE).ok_or(SettingsError::Missing {
+                variable: ACCOUNT_NAME_VARIABLE,
+            })?;
+        let file_system =
+            optional(environment, FILE_SYSTEM_VARIABLE).ok_or(SettingsError::Missing {
+                variable: FILE_SYSTEM_VARIABLE,
+            })?;
         let endpoint_suffix = optional(environment, ENDPOINT_SUFFIX_VARIABLE)
             .unwrap_or_else(|| DEFAULT_ENDPOINT_SUFFIX.to_owned());
         let dfs_endpoint = format!("https://{account_name}.dfs.{endpoint_suffix}");
@@ -52,18 +58,10 @@ impl Settings {
     }
 }
 
-fn required(
-    environment: &dyn EnvironmentLookup,
-    variable: &'static str,
-) -> Result<String, SettingsError> {
-    optional(environment, variable).ok_or(SettingsError::Missing { variable })
-}
-
 fn optional(environment: &dyn EnvironmentLookup, variable: &str) -> Option<String> {
     environment
         .lookup(variable)
         .filter(|value| !value.is_empty())
 }
 
-#[cfg(test)]
 mod tests;

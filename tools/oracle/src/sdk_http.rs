@@ -10,6 +10,7 @@ use betterlite_provider::api::vector_store_contracts::config::Params;
 use crate::case::Compare;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use error::SdkHttpError;
+use file_azure_storage::FileAzureStorageCall;
 use messages_stream_logging::call::MessagesStreamLoggingCall;
 use messages_stream_logging::relay::call::MessagesNativeStreamCall;
 use responses_agentic_continuation::AgenticContinuationCall;
@@ -20,7 +21,7 @@ pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
-mod file_azure_storage;
+pub(crate) mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
@@ -76,30 +77,6 @@ pub enum SdkHttpCall {
     MessagesNativeStream(MessagesNativeStreamCall),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
     FileAzureStorage(FileAzureStorageCall),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "operation", rename_all = "snake_case")]
-pub enum FileAzureStorageCall {
-    Upload(FileUploadCall),
-    Download(FileDownloadCall),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FileUploadCall {
-    pub(crate) file_content: Vec<u8>,
-    pub(crate) filename: String,
-    pub(crate) content_type: String,
-    #[serde(default)]
-    pub(crate) path_prefix: Option<String>,
-    pub(crate) file_naming_strategy: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct FileDownloadCall {
-    pub(crate) storage_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -16,5 +16,7 @@ upstream:
   - {status: 202, headers: {}, body: ""}
   - {status: 200, headers: {}, body: ""}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [x-ms-version, authorization]
   ignore: []

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::support::{Harness, paths, settings_with_account_key};
 use crate::api::file_storage_contracts::storage::{
     FileNamingStrategy, FileStorageBackend, UploadOptions,
@@ -136,21 +138,22 @@ async fn account_key_upload_root_file() {
     );
 }
 
+#[rstest]
+#[case::slash("/")]
+#[case::empty("")]
 #[tokio::test]
-async fn account_key_upload_rejects_an_empty_directory() {
-    for prefix in ["/", ""] {
-        let harness = Harness::new(settings_with_account_key(), &[(404, ""), (201, "")]);
-        let error = harness
-            .backend
-            .upload_file(b"abc", "a.txt", "text/plain", options(Some(prefix)))
-            .await
-            .expect_err("an empty directory name");
-        assert!(
-            error.to_string().contains("empty directory name"),
-            "{error}"
-        );
-        assert_eq!(harness.calls().len(), 2);
-    }
+async fn account_key_upload_rejects_an_empty_directory(#[case] prefix: &str) {
+    let harness = Harness::new(settings_with_account_key(), &[(404, ""), (201, "")]);
+    let error = harness
+        .backend
+        .upload_file(b"abc", "a.txt", "text/plain", options(Some(prefix)))
+        .await
+        .expect_err("an empty directory name");
+    assert!(
+        error.to_string().contains("empty directory name"),
+        "{error}"
+    );
+    assert_eq!(harness.calls().len(), 2);
 }
 
 #[tokio::test]

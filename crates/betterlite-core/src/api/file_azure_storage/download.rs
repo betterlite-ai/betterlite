@@ -20,24 +20,22 @@ pub(super) async fn download_file(
     download_with_token(backend, file_path).await
 }
 
-// urllib.parse.urlparse's path: the caller's bytes before the query or fragment, less the last
-// segment's ;params, which urlparse splits off for https
+// urlparse's path: the bytes before the query or fragment, less the last segment's ;params
 fn raw_path(storage_url: &str) -> Option<&str> {
     let (_scheme, after_scheme) = storage_url.split_once("://")?;
     let path_start = after_scheme
         .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
-    let path_and_rest = &after_scheme[path_start..];
+    let path_and_rest = after_scheme.get(path_start..)?;
     let path_end = path_and_rest
         .find(['?', '#'])
         .unwrap_or(path_and_rest.len());
-    let path = &path_and_rest[..path_end];
-    let last_segment_start = path.rfind('/').map_or(0, |slash| slash + 1);
-    let last_segment = path.get(last_segment_start..).unwrap_or_default();
-    match last_segment.find(';') {
-        Some(params) => path.get(..last_segment_start.saturating_add(params)),
-        None => Some(path),
-    }
+    let path = path_and_rest.get(..path_end)?;
+    let last_segment = path.rsplit('/').next().unwrap_or(path);
+    let Some((_before, after)) = last_segment.split_once(';') else {
+        return Some(path);
+    };
+    path.strip_suffix(after)?.strip_suffix(';')
 }
 
 // hostname must carry .blob., and the path's first segment is the container, which is discarded

@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::api::file_azure_storage::Settings;
+use rstest::rstest;
 
 use super::support::{Harness, paths, settings};
 use crate::api::file_storage_contracts::storage::{
@@ -60,51 +61,50 @@ async fn token_upload_sequence() {
     assert_eq!(flush.header("content-type"), None);
 }
 
-// LiteLLM strips slashes off a prefix and then joins the empty result with a slash, so a
-// slash-only prefix leaves one extra before the name in both the request and the returned URL
+// a slash-only prefix strips to nothing, and LiteLLM still joins it with a slash, so one extra stays
+#[rstest]
+#[case::single_slash(Some("/"), "//a.txt")]
+#[case::triple_slash(Some("///"), "//a.txt")]
+#[case::empty(Some(""), "//a.txt")]
+#[case::absent(None, "/a.txt")]
 #[tokio::test]
-async fn token_upload_prefixes() {
-    for (prefix, expected) in [
-        (Some("/"), "//a.txt"),
-        (Some("///"), "//a.txt"),
-        (Some(""), "//a.txt"),
-        (None, "/a.txt"),
-    ] {
-        let harness = Harness::new(settings(), &[(201, ""), (202, ""), (200, "")]);
-        let url = harness
-            .backend
-            .upload_file(b"abc", "a.txt", "text/plain", original(prefix))
-            .await
-            .expect("upload");
-        assert_eq!(
-            url,
-            format!("https://acct.blob.core.windows.net/files{expected}"),
-            "{prefix:?}"
-        );
-        assert_eq!(
-            paths(&harness.calls())
-                .first()
-                .map(|(_method, url)| url.clone()),
-            Some(format!("{DFS}{expected}?resource=file")),
-            "{prefix:?}"
-        );
-    }
+async fn token_upload_prefixes(#[case] prefix: Option<&str>, #[case] expected: &str) {
+    let harness = Harness::new(settings(), &[(201, ""), (202, ""), (200, "")]);
+    let url = harness
+        .backend
+        .upload_file(b"abc", "a.txt", "text/plain", original(prefix))
+        .await
+        .expect("upload");
+    assert_eq!(
+        url,
+        format!("https://acct.blob.core.windows.net/files{expected}"),
+        "{prefix:?}"
+    );
+    assert_eq!(
+        paths(&harness.calls())
+            .first()
+            .map(|(_method, url)| url.clone()),
+        Some(format!("{DFS}{expected}?resource=file")),
+        "{prefix:?}"
+    );
 }
 
+#[rstest]
+#[case::forbidden(403)]
+#[case::rate_limited(429)]
+#[case::server_error(500)]
 #[tokio::test]
-async fn token_upload_failed_append() {
-    for status in [403, 429, 500] {
-        let harness = Harness::new(settings(), &[(201, ""), (status, "")]);
-        let error = harness
-            .backend
-            .upload_file(b"abc", "a.txt", "text/plain", original(None))
-            .await
-            .expect_err("a failed append");
-        assert!(error.to_string().contains(&status.to_string()), "{error}");
-        let calls = harness.calls();
-        assert_eq!(calls.len(), 2, "{status}");
-        assert!(calls.iter().all(|call| call.method != "DELETE"), "{status}");
-    }
+async fn token_upload_failed_append(#[case] status: u16) {
+    let harness = Harness::new(settings(), &[(201, ""), (status, "")]);
+    let error = harness
+        .backend
+        .upload_file(b"abc", "a.txt", "text/plain", original(None))
+        .await
+        .expect_err("a failed append");
+    assert!(error.to_string().contains(&status.to_string()), "{error}");
+    let calls = harness.calls();
+    assert_eq!(calls.len(), 2, "{status}");
+    assert!(calls.iter().all(|call| call.method != "DELETE"), "{status}");
 }
 
 #[tokio::test]

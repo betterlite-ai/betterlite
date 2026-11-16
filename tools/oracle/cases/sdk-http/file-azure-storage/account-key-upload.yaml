@@ -21,5 +21,7 @@ upstream:
   - {status: 202, headers: {content-type: application/xml}, body: ""}
   - {status: 200, headers: {content-type: application/xml}, body: ""}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [content-type]
   ignore: []

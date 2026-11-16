@@ -1,6 +1,5 @@
 import asyncio
 import json
-from collections.abc import Callable
 from typing import Literal
 
 import httpx
@@ -10,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from typing_extensions import override
 
 JsonObject = dict[str, JsonValue]
+BEARER = "tok-1"
 
 
 class UploadCall(BaseModel):
@@ -33,19 +33,20 @@ class DownloadCall(BaseModel):
 FileAzureStorageCall = UploadCall | DownloadCall
 
 
-def fixed_token() -> str:
-    return "tok-1"
+class FixedToken:
+    def __call__(self) -> str:
+        return BEARER
 
 
-def build_token_provider() -> Callable[[], str]:
-    return fixed_token
+class FixedChain:
+    def __call__(self) -> FixedToken:
+        return FixedToken()
 
 
 class Backend(AzureBlobStorageBackend):
     api_base: str
 
-    # the SDK rewrites ".dfs." to ".blob." inside the account URL, so the mock's path prefixes keep
-    # that marker and the SDK's blob-host calls stay distinguishable from its data lake ones
+    # the SDK rewrites ".dfs." to ".blob.", so the mock's prefixes keep both origins apart
     @property
     @override
     def azure_storage_dfs_endpoint(self) -> str:
@@ -66,41 +67,36 @@ def error_view(error: Exception, status: int | None) -> JsonObject:
 
 
 async def upload_view(backend: Backend, call: UploadCall) -> JsonObject:
-    try:
-        url = await backend.upload_file(
-            file_content=bytes(call.file_content),
-            filename=call.filename,
-            content_type=call.content_type,
-            path_prefix=call.path_prefix,
-            file_naming_strategy=call.file_naming_strategy,
-        )
-    except ValueError as error:
-        return error_view(error, None)
-    except HttpResponseError as error:
-        return error_view(error, error.status_code)
-    except httpx.HTTPStatusError as error:
-        return error_view(error, error.response.status_code)
+    url = await backend.upload_file(
+        file_content=bytes(call.file_content),
+        filename=call.filename,
+        content_type=call.content_type,
+        path_prefix=call.path_prefix,
+        file_naming_strategy=call.file_naming_strategy,
+    )
     return {"url": url.removeprefix(backend.api_base), "downloaded": None, "error": None}
 
 
 async def download_view(backend: Backend, call: DownloadCall) -> JsonObject:
+    content = await backend.download_file(call.storage_url)
+    return {"url": None, "downloaded": list(content), "error": None}
+
+
+async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
+    backend = Backend(build_credential_chain_token_provider=FixedChain())
+    backend.api_base = api_base
     try:
-        content = await backend.download_file(call.storage_url)
+        match call:
+            case UploadCall():
+                return await upload_view(backend, call)
+            case DownloadCall():
+                return await download_view(backend, call)
     except ValueError as error:
         return error_view(error, None)
     except HttpResponseError as error:
         return error_view(error, error.status_code)
     except httpx.HTTPStatusError as error:
         return error_view(error, error.response.status_code)
-    return {"url": None, "downloaded": list(content), "error": None}
-
-
-async def execute(call: FileAzureStorageCall, api_base: str) -> JsonObject:
-    backend = Backend(build_credential_chain_token_provider=build_token_provider)
-    backend.api_base = api_base
-    if isinstance(call, UploadCall):
-        return await upload_view(backend, call)
-    return await download_view(backend, call)
 
 
 def run_file_azure_storage(call: FileAzureStorageCall, api_base: str) -> str:

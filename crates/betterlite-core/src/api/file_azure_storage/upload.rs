@@ -18,20 +18,25 @@ pub(super) async fn upload_file(
     options: UploadOptions<'_>,
 ) -> Result<String, AzureFileStorageError> {
     let now = backend.logger.deps.clock.now_unix();
-    let file_name = generated_file_name(
+    let object_name = generated_file_name(
         filename,
         options.file_naming_strategy,
         now,
         backend.logger.deps.ids.as_ref(),
     );
     let full_path = options.path_prefix.map_or_else(
-        || file_name.clone(),
-        |prefix| format!("{}/{file_name}", prefix.trim_matches('/')),
+        || object_name.clone(),
+        |prefix| format!("{}/{object_name}", prefix.trim_matches('/')),
     );
     if let Some(key) = backend.settings.account_key.as_ref() {
-        return upload_with_account_key(backend, content, &full_path, key, now).await;
+        upload_with_account_key(backend, content, &full_path, key, now).await?;
+    } else {
+        upload_with_token(backend, content, &full_path, now).await?;
     }
-    upload_with_token(backend, content, &full_path, now).await
+    Ok(format!(
+        "{}/{}/{}",
+        backend.settings.blob_endpoint, backend.settings.file_system, full_path
+    ))
 }
 
 async fn upload_with_account_key(
@@ -40,58 +45,75 @@ async fn upload_with_account_key(
     full_path: &str,
     key: &SecretString,
     now: Duration,
-) -> Result<String, AzureFileStorageError> {
-    let settings = &backend.settings;
+) -> Result<(), AzureFileStorageError> {
     let auth = StorageAuthorization::SharedKey {
-        account: settings.account_name.as_str(),
+        account: backend.settings.account_name.as_str(),
         key,
     };
-    ensure_file_system(backend, &auth, now).await?;
+    ensure_target(backend, StorageTarget::FileSystem, &auth, now).await?;
     let file_url = ensure_file_url(backend, full_path, &auth, now).await?;
-    write_file(backend, &file_url, content, &auth, now).await?;
-    Ok(format!(
-        "{}/{}/{}",
-        settings.blob_endpoint, settings.file_system, full_path
-    ))
+    write_file(backend, &file_url, content, &auth, now).await
 }
 
-// the SDK's FileSystemClient.exists and create_file_system both run through its blob client
-async fn ensure_file_system(
+async fn upload_with_token(
     backend: &AzureBlobStorageBackend,
+    content: &[u8],
+    full_path: &str,
+    now: Duration,
+) -> Result<(), AzureFileStorageError> {
+    let token = backend.logger.set_valid_azure_ad_token().await?;
+    let auth = StorageAuthorization::Bearer(&token);
+    let base_url = format!(
+        "{}/{}/{full_path}",
+        backend.settings.dfs_endpoint, backend.settings.file_system
+    );
+    write_file(backend, &base_url, content, &auth, now).await
+}
+
+#[derive(Clone, Copy)]
+enum StorageTarget<'a> {
+    FileSystem,
+    Directory(&'a str),
+}
+
+// the SDK checks both targets through its blob client, creating a directory through its data lake client
+async fn ensure_target(
+    backend: &AzureBlobStorageBackend,
+    target: StorageTarget<'_>,
     auth: &StorageAuthorization<'_>,
     now: Duration,
 ) -> Result<(), AzureFileStorageError> {
     let settings = &backend.settings;
     let file_system = utf8_percent_encode(&settings.file_system, PATH_SAFE).to_string();
-    let exists_url = format!("{}/{file_system}?restype=container", settings.blob_endpoint);
-    let file_system_exists =
-        resource_exists(backend, Method::GET, exists_url.clone(), auth, now).await?;
-    if !file_system_exists {
-        let request = storage_request(Method::PUT, exists_url, auth, now, &[])?;
-        send(backend, request, "create_file_system").await?;
-    }
-    Ok(())
-}
-
-// the SDK checks a directory through its blob client and creates it through its data lake client
-async fn ensure_directory(
-    backend: &AzureBlobStorageBackend,
-    directory: &str,
-    auth: &StorageAuthorization<'_>,
-    now: Duration,
-) -> Result<(), AzureFileStorageError> {
-    let settings = &backend.settings;
-    let file_system = utf8_percent_encode(&settings.file_system, PATH_SAFE).to_string();
-    let encoded = utf8_percent_encode(directory, PATH_SAFE).to_string();
-    let exists_url = format!("{}/{file_system}/{encoded}", settings.blob_endpoint);
-    let directory_exists = resource_exists(backend, Method::HEAD, exists_url, auth, now).await?;
-    if !directory_exists {
-        let url = format!(
-            "{}/{file_system}/{encoded}?resource=directory",
-            settings.dfs_endpoint
-        );
-        let request = storage_request(Method::PUT, url, auth, now, &[])?;
-        send(backend, request, "create_directory").await?;
+    let (method, exists_url, create_url, operation) = match target {
+        StorageTarget::FileSystem => {
+            let container = format!("{}/{file_system}?restype=container", settings.blob_endpoint);
+            (
+                Method::GET,
+                container.clone(),
+                container,
+                "create_file_system",
+            )
+        }
+        StorageTarget::Directory(directory) => (
+            Method::HEAD,
+            format!(
+                "{}/{file_system}/{}",
+                settings.blob_endpoint,
+                utf8_percent_encode(directory, PATH_SAFE)
+            ),
+            format!(
+                "{}/{file_system}/{}?resource=directory",
+                settings.dfs_endpoint,
+                utf8_percent_encode(directory, PATH_SAFE)
+            ),
+            "create_directory",
+        ),
+    };
+    let exists = resource_exists(backend, method, exists_url, auth, now).await?;
+    if !exists {
+        let request = storage_request(Method::PUT, create_url, auth, now, &[])?;
+        send(backend, request, operation).await?;
     }
     Ok(())
 }
@@ -117,7 +139,7 @@ async fn ensure_file_url(
             path: full_path.to_owned(),
         });
     }
-    ensure_directory(backend, directory, auth, now).await?;
+    ensure_target(backend, StorageTarget::Directory(directory), auth, now).await?;
     Ok(format!(
         "{}/{file_system}/{}/{}",
         settings.dfs_endpoint,
@@ -157,24 +179,4 @@ async fn write_file(
     let flush_request = storage_request(Method::PATCH, flush_url, auth, now, &[])?;
     send(backend, flush_request, "flush").await?;
     Ok(())
-}
-
-async fn upload_with_token(
-    backend: &AzureBlobStorageBackend,
-    content: &[u8],
-    full_path: &str,
-    now: Duration,
-) -> Result<String, AzureFileStorageError> {
-    let settings = &backend.settings;
-    let token = backend.logger.set_valid_azure_ad_token().await?;
-    let auth = StorageAuthorization::Bearer(&token);
-    let base_url = format!(
-        "{}/{}/{full_path}",
-        settings.dfs_endpoint, settings.file_system
-    );
-    write_file(backend, &base_url, content, &auth, now).await?;
-    Ok(format!(
-        "{}/{}/{}",
-        settings.blob_endpoint, settings.file_system, full_path
-    ))
 }

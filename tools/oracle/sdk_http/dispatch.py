@@ -108,13 +108,14 @@ class Request(BaseModel):
 
 def read_request() -> bytes:
     with os.fdopen(0, "rb", closefd=False) as stream:
-        return stream.read(MAX_REQUEST_BYTES + 1)
+        raw = stream.read(MAX_REQUEST_BYTES + 1)
+    if len(raw) > MAX_REQUEST_BYTES:
+        raise RequestTooLargeError
+    return raw
 
 
 def main() -> None:
     raw = read_request()
-    if len(raw) > MAX_REQUEST_BYTES:
-        raise RequestTooLargeError
     request = Request.model_validate_json(raw)
     with contextlib.redirect_stdout(sys.stderr):
         output: str

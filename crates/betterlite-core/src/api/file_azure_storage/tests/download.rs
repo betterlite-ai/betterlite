@@ -26,32 +26,30 @@ async fn azure_download_addressing() {
     assert_eq!(request.header("content-type"), None);
 }
 
+#[rstest]
+#[case::foreign_host(
+    "https://foreign.example/other/p/a.txt",
+    "Invalid Azure Blob Storage URL: https://foreign.example/other/p/a.txt"
+)]
+#[case::container_only(
+    "https://foreign.blob.example/container",
+    "Invalid Azure Blob Storage URL format: https://foreign.blob.example/container"
+)]
+#[case::container_with_slash(
+    "https://foreign.blob.example/container/",
+    "Invalid Azure Blob Storage URL format: https://foreign.blob.example/container/"
+)]
+#[case::not_a_url("not a url", "Invalid Azure Blob Storage URL: not a url")]
 #[tokio::test]
-async fn azure_download_invalid_urls() {
-    for (supplied, expected) in [
-        (
-            "https://foreign.example/other/p/a.txt",
-            "Invalid Azure Blob Storage URL: https://foreign.example/other/p/a.txt",
-        ),
-        (
-            "https://foreign.blob.example/container",
-            "Invalid Azure Blob Storage URL format: https://foreign.blob.example/container",
-        ),
-        (
-            "https://foreign.blob.example/container/",
-            "Invalid Azure Blob Storage URL format: https://foreign.blob.example/container/",
-        ),
-        ("not a url", "Invalid Azure Blob Storage URL: not a url"),
-    ] {
-        let harness = Harness::new(settings(), &[]);
-        let error = harness
-            .backend
-            .download_file(supplied)
-            .await
-            .expect_err("an unusable URL");
-        assert_eq!(error.to_string(), expected);
-        assert!(harness.calls().is_empty(), "{supplied}");
-    }
+async fn azure_download_invalid_urls(#[case] supplied: &str, #[case] expected: &str) {
+    let harness = Harness::new(settings(), &[]);
+    let error = harness
+        .backend
+        .download_file(supplied)
+        .await
+        .expect_err("an unusable URL");
+    assert_eq!(error.to_string(), expected);
+    assert!(harness.calls().is_empty(), "{supplied}");
 }
 
 #[tokio::test]
@@ -150,8 +148,7 @@ async fn token_download_keeps_the_raw_path(#[case] supplied: &str) {
     );
 }
 
-// LiteLLM's urlparse keeps a raw space and the SDK quotes it once, so the URL parser's own
-// encoding must not be quoted a second time
+// urlparse keeps a raw space and the SDK quotes it once, so the URL parser's encoding stays raw
 #[tokio::test]
 async fn account_key_download_quotes_the_caller_path() {
     let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);

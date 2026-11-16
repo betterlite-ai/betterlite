@@ -59,7 +59,7 @@ pub(super) fn append_request(
         .iter_mut()
         .find(|(name, _value)| name.eq_ignore_ascii_case("content-type"))
     {
-        *value = OCTET_STREAM.to_owned();
+        OCTET_STREAM.clone_into(value);
         return Ok(request);
     }
     request

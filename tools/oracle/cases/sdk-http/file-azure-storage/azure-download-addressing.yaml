@@ -10,5 +10,7 @@ call:
 upstream:
   - {status: 200, headers: {content-type: application/octet-stream}, body: "abc"}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [x-ms-version, authorization]
   ignore: []

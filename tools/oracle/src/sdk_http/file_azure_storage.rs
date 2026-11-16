@@ -16,10 +16,34 @@ use betterlite_logging::azure_storage_logging::token::{
 use betterlite_logging::azure_storage_logging::transport::PooledTransport;
 use betterlite_logging::datadog_logging::clock::SystemClock;
 use secrecy::SecretString;
+use serde::{Deserialize, Serialize};
 
 use super::error::SdkHttpError;
 use super::result::{FileStorageFailure, FileStorageRun, SdkResult};
-use super::{FileAzureStorageCall, FileDownloadCall, FileUploadCall};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum FileAzureStorageCall {
+    Upload(FileUploadCall),
+    Download(FileDownloadCall),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileUploadCall {
+    pub(crate) file_content: Vec<u8>,
+    pub(crate) filename: String,
+    pub(crate) content_type: String,
+    #[serde(default)]
+    pub(crate) path_prefix: Option<String>,
+    pub(crate) file_naming_strategy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDownloadCall {
+    pub(crate) storage_url: String,
+}
 
 struct FixedToken;
 
@@ -56,8 +80,7 @@ fn backend(
 ) -> Result<Arc<AzureBlobStorageBackend>, SdkHttpError> {
     let mut settings = Settings::from_environment(env)
         .map_err(|error| SdkHttpError::Invalid(error.to_string()))?;
-    // the SDK swaps ".dfs." for ".blob." in the account URL, so the mock's path prefixes carry the
-    // marker and both SDK clients keep distinct origins
+    // the SDK swaps ".dfs." for ".blob.", so the mock's path prefixes keep both origins distinct
     settings.dfs_endpoint = format!("{api_base}/.dfs.");
     settings.blob_endpoint = format!("{api_base}/.blob.");
     let policy = Arc::new(

@@ -14,6 +14,8 @@ upstream:
   - {status: 201, headers: {}, body: ""}
   - {status: 403, headers: {}, body: ""}
 compare:
+  headers: []
+  headers_present: []
   upstream_headers: [x-ms-version, authorization]
   ignore:
     - pointer: /file_azure_storage/value/error/message

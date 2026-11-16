@@ -40,14 +40,21 @@ pub struct AzureBlobStorageBackend {
 impl AzureBlobStorageBackend {
     #[must_use]
     pub fn new(settings: Settings, deps: AzureFileStorageDeps) -> Arc<Self> {
+        let AzureFileStorageDeps {
+            transport,
+            clock,
+            environment,
+            ids,
+            chain_factory,
+        } = deps;
         let logger = AzureBlobStorageLogger::new(
             logger_settings(&settings),
             AzureStorageDeps {
-                transport: Arc::clone(&deps.transport),
-                clock: Arc::clone(&deps.clock),
-                environment: Arc::clone(&deps.environment),
-                ids: Arc::clone(&deps.ids),
-                chain_factory: Arc::clone(&deps.chain_factory),
+                transport,
+                clock,
+                environment,
+                ids,
+                chain_factory,
                 // the file backend has no flush timer and never queues a record
                 shutdown: CancellationToken::new(),
                 tasks: None,

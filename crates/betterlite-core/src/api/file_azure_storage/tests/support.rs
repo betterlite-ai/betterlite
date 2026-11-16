@@ -20,7 +20,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 
-use super::{AzureBlobStorageBackend, AzureFileStorageDeps};
+use crate::api::file_azure_storage::{AzureBlobStorageBackend, AzureFileStorageDeps};
 
 pub(crate) const NOW_MILLIS: u64 = 1_234;
 pub(crate) const FIXED_ID: &str = "00000000-0000-0000-0000-000000000001";

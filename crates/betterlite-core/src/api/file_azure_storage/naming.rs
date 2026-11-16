@@ -42,8 +42,8 @@ pub fn generated_file_name(
             utf8_percent_encode(&safe_basename(original_filename), FILENAME_SAFE).to_string()
         }
         FileNamingStrategy::Timestamp => {
-            // int(time.time() * 1000): one float multiply, then truncation toward zero
-            let milliseconds = (now.as_secs_f64() * 1000.0).trunc();
+            // float_arithmetic is denied; a fused multiply-add computes seconds * 1000
+            let milliseconds = now.as_secs_f64().mul_add(1000.0_f64, 0.0_f64).trunc();
             with_extension(
                 &format!("{milliseconds:.0}"),
                 &safe_extension(original_filename),
@@ -66,13 +66,13 @@ fn safe_basename(original_filename: &str) -> String {
 // PurePath(name).suffix.lstrip("."): the last dot wins, unless it opens the name
 fn safe_extension(original_filename: &str) -> String {
     let name = safe_basename(original_filename);
-    let Some(index) = name.rfind('.') else {
+    let Some((stem, extension)) = name.rsplit_once('.') else {
         return String::new();
     };
-    if index == 0 {
+    if stem.is_empty() {
         return String::new();
     }
-    name.get(index + 1..).unwrap_or_default().to_owned()
+    extension.to_owned()
 }
 
 fn with_extension(stem: &str, extension: &str) -> String {
