@@ -578,7 +578,7 @@ fn a_record_given_as_an_array_is_refused_as_not_an_object(#[case] body: &str) {
         panic!("expected an unexpected-response error");
     };
     assert!(
-        source.to_string().contains("expected a JSON object"),
+        source.to_string().contains("invalid type: sequence"),
         "{source}"
     );
 }

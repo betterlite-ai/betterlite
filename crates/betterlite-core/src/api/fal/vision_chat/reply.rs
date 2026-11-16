@@ -1,55 +1,34 @@
-use std::fmt;
-use std::marker::PhantomData;
-
 use betterlite_models::call_helpers::finish_reason::map_finish_reason;
 use betterlite_openai::api::image_contracts::records::ImageHeaders;
 use betterlite_openai::chat::response::{
     AssistantMessage, ChatResponse, ChatUsage, MessageProviderFields,
 };
-use serde::de::value::MapAccessDeserializer;
-use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::Deserialize;
 
 use crate::api::fal::vision_chat::error::FalAIError;
 use crate::api::fal::vision_chat::token_count::TokenCount;
 
-// a record read only from a JSON object: a derived Deserialize would also take a JSON array field by field
-#[derive(Debug)]
-struct JsonObject<T>(T);
-
-struct JsonObjectVisitor<T>(PhantomData<T>);
-
-impl<'de, T: Deserialize<'de>> Visitor<'de> for JsonObjectVisitor<T> {
-    type Value = JsonObject<T>;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("a JSON object")
-    }
-
-    fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<Self::Value, A::Error> {
-        T::deserialize(MapAccessDeserializer::new(map)).map(JsonObject)
-    }
-}
-
-impl<'de, T: Deserialize<'de>> Deserialize<'de> for JsonObject<T> {
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        deserializer.deserialize_map(JsonObjectVisitor(PhantomData))
-    }
-}
+// a flattened field makes the derive read a JSON object only, where a plain derive also takes an array field by field
+#[derive(Debug, Deserialize)]
+struct ObjectOnly {}
 
 // fields Fal sends beyond these are ignored, as LiteLLM's model does
 #[derive(Debug, Deserialize)]
 struct RawUsage {
     input_tokens: TokenCount,
     output_tokens: TokenCount,
+    #[serde(flatten)]
+    _object_only: ObjectOnly,
 }
 
 #[derive(Debug, Deserialize)]
 struct RawReply {
     output: String,
-    usage_info: JsonObject<RawUsage>,
+    usage_info: RawUsage,
     reasoning: Option<String>,
     finish_reason: Option<String>,
+    #[serde(flatten)]
+    _object_only: ObjectOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -70,15 +49,14 @@ pub struct FalChatCompletion {
 }
 
 pub fn decode_fal_chat(headers: &ImageHeaders, body: &[u8]) -> Result<FalChatReply, FalAIError> {
-    let JsonObject(raw): JsonObject<RawReply> =
+    let raw: RawReply =
         serde_json::from_slice(body).map_err(|source| FalAIError::UnexpectedResponse {
             text: replaced_text(body),
             headers: headers.clone(),
             source,
         })?;
-    let JsonObject(usage) = raw.usage_info;
-    let TokenCount(prompt_tokens) = usage.input_tokens;
-    let TokenCount(completion_tokens) = usage.output_tokens;
+    let TokenCount(prompt_tokens) = raw.usage_info.input_tokens;
+    let TokenCount(completion_tokens) = raw.usage_info.output_tokens;
     let total_tokens = prompt_tokens
         .checked_add(completion_tokens)
         .ok_or_else(|| FalAIError::UsageOverflow {
