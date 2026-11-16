@@ -13,7 +13,7 @@ const FILENAME_SAFE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
     .remove(b'~');
 // the SDK quotes a blob path with quote(path), whose default safe set keeps / a separator
-const PATH_SAFE: &AsciiSet = &NON_ALPHANUMERIC
+pub(super) const PATH_SAFE: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
     .remove(b'-')
@@ -38,22 +38,21 @@ pub fn generated_file_name(
     ids: &dyn IdSource,
 ) -> String {
     match strategy {
-        FileNamingStrategy::OriginalFilename => quoted_basename(original_filename),
+        FileNamingStrategy::OriginalFilename => {
+            utf8_percent_encode(&safe_basename(original_filename), FILENAME_SAFE).to_string()
+        }
         FileNamingStrategy::Timestamp => {
-            with_extension(&epoch_milliseconds(now), &safe_extension(original_filename))
+            // int(time.time() * 1000): one float multiply, then truncation toward zero
+            let milliseconds = (now.as_secs_f64() * 1000.0).trunc();
+            with_extension(
+                &format!("{milliseconds:.0}"),
+                &safe_extension(original_filename),
+            )
         }
         FileNamingStrategy::Uuid => {
             with_extension(&ids.next_id(), &safe_extension(original_filename))
         }
     }
-}
-
-pub(super) fn quoted_path(path: &str) -> String {
-    utf8_percent_encode(path, PATH_SAFE).to_string()
-}
-
-fn quoted_basename(original_filename: &str) -> String {
-    utf8_percent_encode(&safe_basename(original_filename), FILENAME_SAFE).to_string()
 }
 
 // LiteLLM turns every rejected basename into the literal file, and then finds no extension in it
@@ -74,12 +73,6 @@ fn safe_extension(original_filename: &str) -> String {
         return String::new();
     }
     name.get(index + 1..).unwrap_or_default().to_owned()
-}
-
-// int(time.time() * 1000): one float multiply, then truncation toward zero
-fn epoch_milliseconds(now: Duration) -> String {
-    let milliseconds = now.as_secs_f64().mul_add(1000.0, 0.0).trunc();
-    format!("{milliseconds:.0}")
 }
 
 fn with_extension(stem: &str, extension: &str) -> String {

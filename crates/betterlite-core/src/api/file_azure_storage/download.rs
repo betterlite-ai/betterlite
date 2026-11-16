@@ -1,11 +1,12 @@
 use betterlite_logging::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
 use http::Method;
+use percent_encoding::utf8_percent_encode;
 use secrecy::SecretString;
 use url::Url;
 
 use super::AzureBlobStorageBackend;
 use super::error::AzureFileStorageError;
-use super::naming::quoted_path;
+use super::naming::PATH_SAFE;
 use super::request::{resource_exists, send};
 
 pub(super) async fn download_file(
@@ -19,7 +20,27 @@ pub(super) async fn download_file(
     download_with_token(backend, file_path).await
 }
 
-// urlparse(url).hostname must carry .blob., and the path's first segment is the container, which is discarded
+// urllib.parse.urlparse's path: the caller's bytes before the query or fragment, less the last
+// segment's ;params, which urlparse splits off for https
+fn raw_path(storage_url: &str) -> Option<&str> {
+    let (_scheme, after_scheme) = storage_url.split_once("://")?;
+    let path_start = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let path_and_rest = &after_scheme[path_start..];
+    let path_end = path_and_rest
+        .find(['?', '#'])
+        .unwrap_or(path_and_rest.len());
+    let path = &path_and_rest[..path_end];
+    let last_segment_start = path.rfind('/').map_or(0, |slash| slash + 1);
+    let last_segment = path.get(last_segment_start..).unwrap_or_default();
+    match last_segment.find(';') {
+        Some(params) => path.get(..last_segment_start.saturating_add(params)),
+        None => Some(path),
+    }
+}
+
+// hostname must carry .blob., and the path's first segment is the container, which is discarded
 fn blob_file_path(storage_url: &str) -> Result<&str, AzureFileStorageError> {
     let Ok(parsed) = Url::parse(storage_url) else {
         return Err(AzureFileStorageError::InvalidUrl {
@@ -31,7 +52,12 @@ fn blob_file_path(storage_url: &str) -> Result<&str, AzureFileStorageError> {
             url: storage_url.to_owned(),
         });
     }
-    let path = parsed.path().trim_start_matches('/');
+    let Some(raw) = raw_path(storage_url) else {
+        return Err(AzureFileStorageError::InvalidUrl {
+            url: storage_url.to_owned(),
+        });
+    };
+    let path = raw.trim_start_matches('/');
     let (_container, rest) = path.split_once('/').unwrap_or((path, ""));
     if rest.is_empty() {
         return Err(AzureFileStorageError::InvalidUrlFormat {
@@ -48,23 +74,21 @@ async fn download_with_account_key(
 ) -> Result<Vec<u8>, AzureFileStorageError> {
     let settings = &backend.settings;
     let now = backend.logger.deps.clock.now_unix();
-    let file_system = quoted_path(&settings.file_system);
+    let file_system = utf8_percent_encode(&settings.file_system, PATH_SAFE).to_string();
     let auth = StorageAuthorization::SharedKey {
         account: settings.account_name.as_str(),
         key,
     };
-    let exists_url = format!("{}/{file_system}?restype=container", settings.dfs_endpoint);
-    let exists = resource_exists(backend, Method::GET, exists_url, &auth, now).await?;
-    if !exists {
+    // FileSystemClient.exists and the file download both run through the SDK's blob client
+    let exists_url = format!("{}/{file_system}?restype=container", settings.blob_endpoint);
+    let file_system_exists = resource_exists(backend, Method::GET, exists_url, &auth, now).await?;
+    if !file_system_exists {
         return Err(AzureFileStorageError::MissingFileSystem {
             file_system: settings.file_system.clone(),
         });
     }
-    let url = format!(
-        "{}/{file_system}/{}",
-        settings.dfs_endpoint,
-        quoted_path(file_path)
-    );
+    let encoded_path = utf8_percent_encode(file_path, PATH_SAFE).to_string();
+    let url = format!("{}/{file_system}/{encoded_path}", settings.blob_endpoint);
     let request = storage_request(Method::GET, url, &auth, now, &[])?;
     Ok(send(backend, request, "download").await?.body)
 }
