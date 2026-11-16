@@ -4,11 +4,9 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::RequestBody;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::openai_video_identifiers::ids::decode_video_id_with_provider;
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
-use http::Method;
 use http::header::HeaderMap;
 use rstest::rstest;
 use tokio::runtime::Builder;
@@ -21,9 +19,7 @@ use super::status::{
     StatusCall, StatusRequest, result_request, status_response, status_video_object,
 };
 use super::text::{error_text, result_error, terminal_result_error};
-use super::transport::{
-    ClientKind, SuppliedTransport, VideoClients, VideoTransport, get_request, header_map,
-};
+use super::transport::{ClientKind, SuppliedTransport, VideoClients, VideoTransport, header_map};
 use super::unsupported::{ALL, UnsupportedOperation};
 use crate::api::fal::video_prepare::VideoHeaders;
 use crate::api::fal::video_prepare::decode::{FalVideoError, decode_fal_video_reply};
@@ -35,7 +31,7 @@ type RecordedRequest = (String, BTreeMap<String, String>);
 
 enum Step {
     Answer(u16, Vec<u8>),
-    Fail,
+    Fail(TransportError),
 }
 
 struct FakeTransport {
@@ -94,7 +90,7 @@ impl VideoTransport for FakeTransport {
                 headers: HeaderMap::new(),
                 body,
             }),
-            Step::Fail => Err(TransportError::HeadersTooLarge { limit: 0 }),
+            Step::Fail(source) => Err(source),
         }
     }
 }
@@ -233,7 +229,7 @@ fn a_completed_job_probe_error_fails_the_video() {
 #[case::server_error(Step::Answer(500, b"boom".to_vec()))]
 #[case::rate_limited(Step::Answer(429, b"rate limited".to_vec()))]
 #[case::unavailable(Step::Answer(503, b"".to_vec()))]
-#[case::transport_failure(Step::Fail)]
+#[case::unsupported_scheme(Step::Fail(TransportError::RedirectScheme { scheme: "ftp".into() }))]
 fn a_transient_probe_failure_keeps_the_completed_status(#[case] step: Step) {
     let transport = FakeTransport::new(vec![step]);
     let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
@@ -245,6 +241,24 @@ fn a_transient_probe_failure_keeps_the_completed_status(#[case] step: Step) {
     let video = run_status(&transport, ClientKind::Sync, &call).expect("a status video");
     assert_eq!(video.status, "completed");
     assert!(video.error.is_none());
+    assert_eq!(transport.recorded().len(), 1);
+}
+
+#[rstest]
+#[case::redirect_loop(TransportError::TooManyRedirects { limit: 10 })]
+#[case::shutting_down(TransportError::Closed)]
+#[case::capped_answer(TransportError::BodyTooLarge { limit: 16 })]
+#[case::insecure_redirect(TransportError::InsecureRedirect)]
+fn a_non_transient_probe_failure_fails_the_video(#[case] source: TransportError) {
+    let transport = FakeTransport::new(vec![Step::Fail(source)]);
+    let reply = status_reply(r#"{"status": "COMPLETED", "request_id": "req-1"}"#);
+    let call = StatusCall {
+        request: status_request(),
+        reply: &reply,
+        provider: None,
+    };
+    let error = run_status(&transport, ClientKind::Sync, &call).expect_err("a failed probe");
+    assert!(matches!(error, VideoResultsError::ProbeTransport(_)));
     assert_eq!(transport.recorded().len(), 1);
 }
 
@@ -562,7 +576,9 @@ fn an_unsuccessful_artifact_status_is_an_error() {
 
 #[test]
 fn an_artifact_transport_failure_is_an_error() {
-    let transport = FakeTransport::new(vec![Step::Fail]);
+    let transport = FakeTransport::new(vec![Step::Fail(TransportError::RedirectScheme {
+        scheme: "ftp".into(),
+    })]);
     let reply = content_reply(
         200,
         VideoHeaders::new(),
@@ -843,28 +859,6 @@ fn a_status_reply_that_does_not_decode_is_refused_without_probing(
         not_an_object
     );
     assert!(transport.recorded().is_empty());
-}
-
-#[test]
-fn get_request_is_a_plain_get_with_the_callers_headers() {
-    let url = Url::parse("https://cdn.fal.run/out/video.mp4").expect("the artifact url parses");
-    let request = get_request(
-        url.clone(),
-        header_map(&headers(&[("X-Trace", "t-1")])).expect("the headers convert"),
-        std::time::Duration::from_secs(3),
-    );
-    assert_eq!(request.method, Method::GET);
-    assert_eq!(request.url, url);
-    assert!(request.query.is_empty());
-    assert_eq!(request.deadline, std::time::Duration::from_secs(3));
-    assert_eq!(
-        request
-            .headers
-            .get("x-trace")
-            .and_then(|value| value.to_str().ok()),
-        Some("t-1")
-    );
-    assert!(matches!(request.body, RequestBody::Empty));
 }
 
 #[test]

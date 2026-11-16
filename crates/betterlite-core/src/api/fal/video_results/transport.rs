@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::time::Duration;
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -21,23 +20,18 @@ pub trait VideoTransport {
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send;
 }
 
-// LiteLLM's HTTP handler sends a GET with no body and the headers the caller passed
-#[must_use]
-pub fn get_request(url: Url, headers: HeaderMap, deadline: Duration) -> OutboundRequest {
-    OutboundRequest {
-        method: Method::GET,
-        url,
-        query: Vec::new(),
-        headers,
-        body: RequestBody::Empty,
-        deadline,
-    }
-}
-
 impl VideoTransport for ProxiedClient {
     async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+        let request = OutboundRequest {
+            method: Method::GET,
+            url,
+            query: Vec::new(),
+            headers,
+            body: RequestBody::Empty,
+            deadline: self.limits.read_timeout,
+        };
         // LiteLLM's provider client follows redirects, so a CDN answer for the artifact is fetched the same way
-        self.send_following(get_request(url, headers, self.limits.read_timeout))
+        self.send_following(request)
             .await?
             .buffered(self.limits.body_bytes)
             .await

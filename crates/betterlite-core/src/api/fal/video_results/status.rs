@@ -1,3 +1,4 @@
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provider;
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use percent_encoding::percent_decode_str;
@@ -62,10 +63,21 @@ async fn probe_result_error<T: VideoTransport>(
     let Some((url, headers)) = result_request(reply, request) else {
         return Ok(None);
     };
-    let url = Url::parse(&url).map_err(VideoResultsError::ProbeUrl)?;
-    // LiteLLM treats every transport failure of the probe as transient, so a completed job stays completed
-    let Ok(response) = client.get(url, header_map(&headers)?).await else {
-        return Ok(None);
+    let probe_url = Url::parse(&url).map_err(VideoResultsError::ProbeUrl)?;
+    let response = match client.get(probe_url, header_map(&headers)?).await {
+        Ok(response) => response,
+        // LiteLLM's probe catches only httpx.TransportError, so these failures keep a completed job completed
+        Err(
+            TransportError::Connect(_)
+            | TransportError::ConnectTimeout(_)
+            | TransportError::Deadline(_)
+            | TransportError::Request(_)
+            | TransportError::Body(_)
+            | TransportError::RedirectScheme { .. }
+            | TransportError::Mock(_),
+        ) => return Ok(None),
+        // a redirect loop, a refused request or an answer over the transport's limit surfaces instead
+        Err(source) => return Err(VideoResultsError::ProbeTransport { source }),
     };
     Ok(terminal_result_error(response.status, &response.body))
 }
@@ -104,7 +116,7 @@ pub fn status_video_object(
     let raw_status = reply.status.as_deref().unwrap_or(DEFAULT_STATUS);
     let error = result_error.or_else(|| error_text(reply));
     let message = error.as_deref().filter(|message| !message.is_empty());
-    let provider = provider
+    let provider_name = provider
         .filter(|provider| !provider.is_empty())
         .unwrap_or(FAL_AI_PROVIDER);
     let model_path = model_path_from_request_url(&path);
@@ -116,7 +128,7 @@ pub fn status_video_object(
         .or_else(|| request_id_from_request_url(&path))
         .unwrap_or_default();
     let wire = StatusWire {
-        id: encode_video_id_with_provider(&request_id, provider, model_path.as_deref()),
+        id: encode_video_id_with_provider(&request_id, provider_name, model_path.as_deref()),
         object: VideoObjectType::Video,
         status: match message {
             Some(_) => FAILED_REPLY_STATUS,
