@@ -191,13 +191,15 @@ def precedence_entry(
 
 
 def original_key_precedence(call: OriginalKeyPrecedence) -> JsonValue:
-    entries = profile_entries(call["profiles"], call, precedence_entry)
-    return JSON.validate_python({"profiles": entries})
+    answer: dict[str, JsonValue] = {
+        "profiles": profile_entries(call["profiles"], call, precedence_entry)
+    }
+    return answer
 
 
-def mapping_outcome(config: FluxConfig, non_default: Params) -> JsonValue:
+def mapping_outcome(config: FluxConfig, non_default: Params, *, drop_params: bool) -> JsonValue:
     try:
-        mapped = config.map_openai_params(non_default, {}, MODEL, drop_params=False)
+        mapped = config.map_openai_params(non_default, {}, MODEL, drop_params)
     except ValueError:
         return {"error": {"status": None}}
     return {"params": mapped}
@@ -214,7 +216,7 @@ def size_cases(call: SizeCases | UnknownSizeFallback) -> JsonValue:
             entry: dict[str, JsonValue] = {
                 "profile": profile,
                 "size": size,
-                "outcome": mapping_outcome(config, {"size": size}),
+                "outcome": mapping_outcome(config, {"size": size}, drop_params=False),
             }
             cases.append(entry)
     answer: dict[str, JsonValue] = {"cases": cases}
@@ -257,8 +259,10 @@ def replies_entry(
 
 
 def hidden_metadata_presence(call: HiddenMetadataPresence) -> JsonValue:
-    entries = profile_entries(call["profiles"], call, replies_entry)
-    return JSON.validate_python({"profiles": entries})
+    answer: dict[str, JsonValue] = {
+        "profiles": profile_entries(call["profiles"], call, replies_entry)
+    }
+    return answer
 
 
 def endpoint_entry(
@@ -282,7 +286,8 @@ def dev_endpoint(call: DevEndpoint) -> JsonValue:
             "profiles": profiles,
         }
         environments.append(record)
-    return JSON.validate_python({"environments": environments})
+    answer: dict[str, JsonValue] = {"environments": environments}
+    return answer
 
 
 def run(input_value: Input) -> JsonValue:
