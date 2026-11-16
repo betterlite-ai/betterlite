@@ -15,7 +15,7 @@ fn queued(
         .progress
         .pending_response_events
         .iter()
-        .map(event_json)
+        .map(|event| json(&serde_json::to_string(event).expect("the event serializes")))
         .collect()
 }
 
