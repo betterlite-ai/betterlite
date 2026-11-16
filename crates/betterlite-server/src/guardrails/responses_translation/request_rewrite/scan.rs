@@ -103,9 +103,8 @@ pub(super) fn write_answer(
             context.guardrail_name,
         )?;
     }
-    tracing::debug!(
-        "OpenAI Responses API: Processed input messages: {:?}",
-        data.get("input")
-    );
+    if let Some(input) = data.get("input") {
+        tracing::debug!("OpenAI Responses API: Processed input messages: {input:?}");
+    }
     Ok(())
 }
