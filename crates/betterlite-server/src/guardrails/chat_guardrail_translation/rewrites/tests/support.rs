@@ -106,13 +106,13 @@ pub(crate) fn chunks(source: &str) -> Vec<Object> {
         .into_iter()
         .map(|chunk| match chunk {
             GuardrailValue::Object(fields) => fields,
-            other @ (GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::SignedInteger(_)
-            | GuardrailValue::UnsignedInteger(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)) => panic!("expected an object, got {other:?}"),
+            other @ GuardrailValue::Null
+            | other @ GuardrailValue::Boolean(_)
+            | other @ GuardrailValue::SignedInteger(_)
+            | other @ GuardrailValue::UnsignedInteger(_)
+            | other @ GuardrailValue::Decimal(_)
+            | other @ GuardrailValue::Text(_)
+            | other @ GuardrailValue::Array(_) => panic!("expected an object, got {other:?}"),
         })
         .collect()
 }
