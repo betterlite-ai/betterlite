@@ -70,6 +70,7 @@ run "module_owns_everything_by_default" {
       length(aws_route_table_association.private) == length(var.azs),
       alltrue([for association in aws_route_table_association.public : association.route_table_id == aws_route_table.public[0].id]),
       alltrue([for association in aws_route_table_association.private : association.route_table_id == aws_route_table.private[0].id]),
+      alltrue([for association in aws_route_table_association.public : contains(tolist(aws_subnet.public[*].id), association.subnet_id)]),
       alltrue([for association in aws_route_table_association.private : contains(tolist(aws_subnet.private[*].id), association.subnet_id)]),
     ])
     error_message = "Every public and private subnet needs one association, and each association must join its subnet to the matching route table."
@@ -176,6 +177,7 @@ run "module_owns_everything_by_default" {
       aws_rds_cluster.this[0].master_username == "postgres",
       aws_rds_cluster.this[0].iam_database_authentication_enabled == true,
       aws_rds_cluster.this[0].storage_encrypted == true,
+      aws_rds_cluster.this[0].apply_immediately == true,
       aws_rds_cluster.this[0].db_subnet_group_name == aws_db_subnet_group.this[0].name,
       contains(aws_rds_cluster.this[0].vpc_security_group_ids, aws_security_group.rds[0].id),
       aws_rds_cluster.this[0].db_cluster_parameter_group_name == aws_rds_cluster_parameter_group.this[0].name,
@@ -207,6 +209,8 @@ run "module_owns_everything_by_default" {
       aws_rds_cluster_instance.writer[0].promotion_tier == 0,
       aws_rds_cluster_instance.writer[0].publicly_accessible == false,
       aws_rds_cluster_instance.writer[0].performance_insights_enabled == true,
+      aws_rds_cluster_instance.reader[0].instance_class == "db.r6g.large",
+      aws_rds_cluster_instance.reader[0].cluster_identifier == aws_rds_cluster.this[0].id,
       aws_rds_cluster_instance.reader[0].promotion_tier == 15,
       aws_rds_cluster_instance.reader[0].publicly_accessible == false,
       aws_rds_cluster_instance.reader[0].performance_insights_enabled == true,
@@ -228,6 +232,7 @@ run "module_owns_everything_by_default" {
       aws_elasticache_replication_group.this[0].num_cache_clusters == 1 + var.redis_num_replicas,
       aws_elasticache_replication_group.this[0].automatic_failover_enabled == (var.redis_num_replicas >= 1),
       aws_elasticache_replication_group.this[0].multi_az_enabled == (var.redis_num_replicas >= 1),
+      aws_elasticache_replication_group.this[0].apply_immediately == true,
       aws_elasticache_replication_group.this[0].at_rest_encryption_enabled == true,
       aws_elasticache_replication_group.this[0].transit_encryption_enabled == true,
     ])
@@ -271,6 +276,8 @@ run "existing_vpc_creates_no_networking" {
 
   assert {
     condition = alltrue([
+      tolist(local.public_subnet_ids) == var.public_subnet_ids,
+      tolist(local.private_subnet_ids) == var.private_subnet_ids,
       aws_db_subnet_group.this[0].subnet_ids == toset(var.private_subnet_ids),
       aws_elasticache_subnet_group.this[0].subnet_ids == toset(var.private_subnet_ids),
     ])
@@ -488,4 +495,33 @@ run "one_private_subnet_is_enough_without_managed_stores" {
     condition     = !local.database_enabled && !local.redis_enabled && length(aws_security_group.tasks.name) > 0
     error_message = "With no module-created database or cache, a single private subnet must plan cleanly."
   }
+}
+
+run "no_private_subnet_fails_even_without_managed_stores" {
+  command = plan
+
+  variables {
+    vpc_id             = "vpc-00000000000000001"
+    public_subnet_ids  = ["subnet-pub-a", "subnet-pub-b"]
+    private_subnet_ids = []
+    create_database    = false
+    create_redis       = false
+  }
+
+  expect_failures = [
+    aws_security_group.tasks,
+  ]
+}
+
+run "negative_redis_replicas_fail_their_validation" {
+  command = plan
+
+  variables {
+    azs                = ["us-east-1a", "us-east-1b"]
+    redis_num_replicas = -1
+  }
+
+  expect_failures = [
+    var.redis_num_replicas,
+  ]
 }
