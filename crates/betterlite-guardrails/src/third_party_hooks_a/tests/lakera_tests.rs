@@ -129,12 +129,22 @@ async fn lakera_legacy_in_parallel_skips_only_the_pre_call_hook() {
         dynamic_params: &fake,
     };
     hooks
-        .pre_call(&data, lakera::LakeraGate::Legacy, &selection)
+        .hook(
+            lakera::LakeraHook::PreCall,
+            &data,
+            lakera::LakeraGate::Legacy,
+            &selection,
+        )
         .await
         .expect("skip");
     assert!(captured.lock().expect("captured").is_empty());
     hooks
-        .moderation(&data, lakera::LakeraGate::Legacy, &selection)
+        .hook(
+            lakera::LakeraHook::Moderation,
+            &data,
+            lakera::LakeraGate::Legacy,
+            &selection,
+        )
         .await
         .expect("run");
     assert_eq!(captured.lock().expect("captured").len(), 1);
@@ -155,12 +165,22 @@ async fn lakera_legacy_pre_call_skips_only_the_moderation_hook() {
         dynamic_params: &fake,
     };
     hooks
-        .moderation(&data, lakera::LakeraGate::Legacy, &selection)
+        .hook(
+            lakera::LakeraHook::Moderation,
+            &data,
+            lakera::LakeraGate::Legacy,
+            &selection,
+        )
         .await
         .expect("skip");
     assert!(captured.lock().expect("captured").is_empty());
     hooks
-        .pre_call(&data, lakera::LakeraGate::Legacy, &selection)
+        .hook(
+            lakera::LakeraHook::PreCall,
+            &data,
+            lakera::LakeraGate::Legacy,
+            &selection,
+        )
         .await
         .expect("run");
     assert_eq!(captured.lock().expect("captured").len(), 1);
@@ -177,11 +197,21 @@ async fn lakera_checked_false_skips_both_hooks() {
         dynamic_params: &fake,
     };
     hooks
-        .pre_call(&data, lakera::LakeraGate::Checked(false), &selection)
+        .hook(
+            lakera::LakeraHook::PreCall,
+            &data,
+            lakera::LakeraGate::Checked(false),
+            &selection,
+        )
         .await
         .expect("skip");
     hooks
-        .moderation(&data, lakera::LakeraGate::Checked(false), &selection)
+        .hook(
+            lakera::LakeraHook::Moderation,
+            &data,
+            lakera::LakeraGate::Checked(false),
+            &selection,
+        )
         .await
         .expect("skip");
     assert!(captured.lock().expect("captured").is_empty());
@@ -563,11 +593,21 @@ async fn lakera_checked_true_runs_both_hooks() {
         dynamic_params: &fake,
     };
     hooks
-        .pre_call(&data, lakera::LakeraGate::Checked(true), &selection)
+        .hook(
+            lakera::LakeraHook::PreCall,
+            &data,
+            lakera::LakeraGate::Checked(true),
+            &selection,
+        )
         .await
         .expect("run");
     hooks
-        .moderation(&data, lakera::LakeraGate::Checked(true), &selection)
+        .hook(
+            lakera::LakeraHook::Moderation,
+            &data,
+            lakera::LakeraGate::Checked(true),
+            &selection,
+        )
         .await
         .expect("run");
     assert_eq!(captured.lock().expect("captured").len(), 2);

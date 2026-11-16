@@ -10,25 +10,29 @@ use crate::aim::settings::{AimGuardrail, AimHook};
 use crate::content_inspection::NON_CONVERSATIONAL_CALL_TYPES;
 use crate::lasso_masking::wire::ModelResponseShape;
 
-// embeddings carry documents being indexed, not a conversation; Aim inspects them only when asked
-pub async fn pre_call(
-    guardrail: &AimGuardrail,
-    data: &mut BTreeMap<String, GuardrailValue>,
-    call_type: &str,
-    key_alias: Option<&str>,
-) -> Result<(), ThirdPartyHookError> {
-    if NON_CONVERSATIONAL_CALL_TYPES.contains(&call_type) && !guardrail.inspect_embeddings {
-        tracing::debug!(call_type, "Aim: skipping non-conversational call type");
-        return Ok(());
-    }
-    call_aim_guardrail(guardrail, data, AimHook::PreCall, key_alias).await?;
-    Ok(())
+// Which request-side hook runs: LiteLLM's pre_call and moderation differ only in the hook they send.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AimRequestHook {
+    PreCall,
+    Moderation,
 }
 
-// the during-call dispatch cannot rewrite the request, so an anonymized copy is inspected and dropped
-pub async fn moderation(
+impl AimRequestHook {
+    const fn aim_hook(self) -> AimHook {
+        match self {
+            Self::PreCall => AimHook::PreCall,
+            Self::Moderation => AimHook::Moderation,
+        }
+    }
+}
+
+// embeddings carry documents being indexed, not a conversation; Aim inspects them only when asked.
+// pre_call may rewrite the request in place; the during-call dispatch cannot rewrite, so moderation
+// inspects a copy and drops the anonymized result.
+pub async fn hook(
     guardrail: &AimGuardrail,
-    data: &BTreeMap<String, GuardrailValue>,
+    data: &mut BTreeMap<String, GuardrailValue>,
+    hook: AimRequestHook,
     call_type: &str,
     key_alias: Option<&str>,
 ) -> Result<(), ThirdPartyHookError> {
@@ -36,8 +40,15 @@ pub async fn moderation(
         tracing::debug!(call_type, "Aim: skipping non-conversational call type");
         return Ok(());
     }
-    let mut inspected = data.clone();
-    call_aim_guardrail(guardrail, &mut inspected, AimHook::Moderation, key_alias).await?;
+    match hook {
+        AimRequestHook::PreCall => {
+            call_aim_guardrail(guardrail, data, hook.aim_hook(), key_alias).await?;
+        }
+        AimRequestHook::Moderation => {
+            let mut inspected = data.clone();
+            call_aim_guardrail(guardrail, &mut inspected, hook.aim_hook(), key_alias).await?;
+        }
+    }
     Ok(())
 }
 

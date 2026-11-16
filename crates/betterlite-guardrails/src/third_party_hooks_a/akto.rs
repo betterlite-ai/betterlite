@@ -106,18 +106,11 @@ fn block(
         content_type: JSON_CONTENT_TYPE,
     })
     .map_err(|source| AktoError::Encode { source })?;
-    let mirror = guardrail.clone();
-    guardrail.tasks.spawn(async move {
-        fire_and_forget_request(
-            &mirror,
-            AktoCallFlags {
-                guardrails: false,
-                ingest_data: true,
-            },
-            &blocked,
-        )
-        .await;
-    });
+    let flags = AktoCallFlags {
+        guardrails: false,
+        ingest_data: true,
+    };
+    mirror_in_background(guardrail, flags, blocked);
     Ok(())
 }
 
@@ -128,19 +121,20 @@ fn send_response(
 ) -> Result<AktoInputs, ThirdPartyHookError> {
     let payload = build_akto_payload(guardrail, &inputs, request_data, REQUEST_STATUS, true)?;
     // the response side never blocks: guardrails and ingest both run in the background
+    let flags = AktoCallFlags {
+        guardrails: true,
+        ingest_data: true,
+    };
+    mirror_in_background(guardrail, flags, payload);
+    Ok(inputs)
+}
+
+// a background send never fails the request, so its task runs on the tracker the guardrail owns
+fn mirror_in_background(guardrail: &AktoMirroring, flags: AktoCallFlags, payload: AktoPayload) {
     let mirror = guardrail.clone();
     guardrail.tasks.spawn(async move {
-        fire_and_forget_request(
-            &mirror,
-            AktoCallFlags {
-                guardrails: true,
-                ingest_data: true,
-            },
-            &payload,
-        )
-        .await;
+        fire_and_forget_request(&mirror, flags, &payload).await;
     });
-    Ok(inputs)
 }
 
 async fn verdict_of(

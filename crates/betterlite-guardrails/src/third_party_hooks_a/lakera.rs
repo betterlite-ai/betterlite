@@ -37,6 +37,13 @@ pub enum LakeraGate {
     Checked(bool),
 }
 
+// Which of LiteLLM's two hooks the caller is running.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LakeraHook {
+    PreCall,
+    Moderation,
+}
+
 pub struct LegacyLakeraHooks {
     pub moderation: LegacyLakeraModeration,
     pub roles: Vec<Role>,
@@ -63,35 +70,27 @@ impl LegacyLakeraHooks {
         }
     }
 
-    pub async fn pre_call(
+    // LiteLLM's two hooks differ only in the legacy moderation_check they compare: pre_call runs
+    // unless in_parallel is set, moderation unless pre_call is set; the v2 gate skips both.
+    pub async fn hook(
         &self,
+        hook: LakeraHook,
         data: &BTreeMap<String, GuardrailValue>,
         gate: LakeraGate,
         selection: &LakeraSelection<'_>,
     ) -> Result<(), ThirdPartyHookError> {
-        if self.skips(gate, ModerationCheck::InParallel) {
-            return Ok(());
-        }
-        self.check(data, selection).await
-    }
-
-    pub async fn moderation(
-        &self,
-        data: &BTreeMap<String, GuardrailValue>,
-        gate: LakeraGate,
-        selection: &LakeraSelection<'_>,
-    ) -> Result<(), ThirdPartyHookError> {
-        if self.skips(gate, ModerationCheck::PreCall) {
-            return Ok(());
-        }
-        self.check(data, selection).await
-    }
-
-    fn skips(&self, gate: LakeraGate, legacy_check: ModerationCheck) -> bool {
-        match gate {
+        let legacy_check = match hook {
+            LakeraHook::PreCall => ModerationCheck::InParallel,
+            LakeraHook::Moderation => ModerationCheck::PreCall,
+        };
+        let skips = match gate {
             LakeraGate::Legacy => self.moderation.moderation_check == legacy_check,
             LakeraGate::Checked(should_run) => !should_run,
+        };
+        if skips {
+            return Ok(());
         }
+        self.check(data, selection).await
     }
 
     pub async fn check(

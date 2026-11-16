@@ -80,23 +80,41 @@ fn record(captured: &Captured, uri: &Uri, headers: &HeaderMap, body: &str) {
 struct MockState {
     captured: Captured,
     answers: Arc<Mutex<VecDeque<(StatusCode, String)>>>,
+    aim: Option<AimMode>,
+}
+
+async fn listen() -> (TcpListener, String, Captured) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    (listener, base, Arc::new(Mutex::new(Vec::new())))
+}
+
+fn spawn_server(listener: TcpListener, router: Router) -> Server {
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    server
+}
+
+async fn mock(
+    route: &str,
+    aim: Option<AimMode>,
+    answers: Vec<(StatusCode, String)>,
+) -> (String, Server, Captured) {
+    let (listener, base, captured) = listen().await;
+    let state = MockState {
+        captured: Arc::clone(&captured),
+        answers: Arc::new(Mutex::new(VecDeque::from(answers))),
+        aim,
+    };
+    let router = Router::new().route(route, post(handle)).with_state(state);
+    (base, spawn_server(listener, router), captured)
 }
 
 pub(super) async fn serve(
     route: &str,
     answers: Vec<(StatusCode, String)>,
 ) -> (String, Server, Captured) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let captured: Captured = Arc::new(Mutex::new(Vec::new()));
-    let state = MockState {
-        captured: Arc::clone(&captured),
-        answers: Arc::new(Mutex::new(VecDeque::from(answers))),
-    };
-    let router = Router::new().route(route, post(handle)).with_state(state);
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server, captured)
+    mock(route, None, answers).await
 }
 
 async fn handle(
@@ -106,6 +124,13 @@ async fn handle(
     body: String,
 ) -> (StatusCode, String) {
     record(&state.captured, &uri, &headers, &body);
+    if let Some(mode) = state.aim {
+        let answer = aim_answer(mode, &body);
+        return (
+            StatusCode::OK,
+            serde_json::to_string(&answer).expect("aim answer"),
+        );
+    }
     state
         .answers
         .lock()
@@ -120,12 +145,6 @@ pub(super) enum AimMode {
     Redact,
     Block,
     BlockSilently,
-}
-
-#[derive(Clone)]
-struct AimState {
-    captured: Captured,
-    mode: AimMode,
 }
 
 #[derive(Deserialize)]
@@ -160,39 +179,19 @@ struct AimAnswer {
 }
 
 pub(super) async fn serve_aim(mode: AimMode) -> (String, Server, Captured) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("addr"));
-    let captured: Captured = Arc::new(Mutex::new(Vec::new()));
-    let state = AimState {
-        captured: Arc::clone(&captured),
-        mode,
-    };
-    let router = Router::new()
-        .route("/fw/v1/analyze", post(handle_aim))
-        .with_state(state);
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, server, captured)
+    mock("/fw/v1/analyze", Some(mode), Vec::new()).await
 }
 
-async fn handle_aim(
-    State(state): State<AimState>,
-    uri: Uri,
-    headers: HeaderMap,
-    body: String,
-) -> (StatusCode, String) {
-    record(&state.captured, &uri, &headers, &body);
-    let request: AimRequest = serde_json::from_str(&body).expect("aim request body");
-    let answer = match state.mode {
+fn aim_answer(mode: AimMode, body: &str) -> AimAnswer {
+    match mode {
         AimMode::Monitor => plain_answer("monitor_action", None),
         AimMode::Block => plain_answer("block_action", Some("AIM says no")),
         AimMode::BlockSilently => plain_answer("block_action", None),
-        AimMode::Redact => redacted_answer(&request.messages),
-    };
-    (
-        StatusCode::OK,
-        serde_json::to_string(&answer).expect("aim answer"),
-    )
+        AimMode::Redact => {
+            let request: AimRequest = serde_json::from_str(body).expect("aim request body");
+            redacted_answer(&request.messages)
+        }
+    }
 }
 
 fn aim_action(action_type: &str, detection_message: Option<&str>) -> AimAction {

@@ -17,12 +17,24 @@ async fn aim_skips_embeddings_unless_inspect_embeddings_is_set() {
     let guardrail = aim_guardrail(&base, false);
     let mut data = chat_data(&[message("user", "hello")]);
     let before = data.clone();
-    aim::pre_call(&guardrail, &mut data, "embedding", None)
-        .await
-        .expect("pre_call");
-    aim::moderation(&guardrail, &data, "embedding", None)
-        .await
-        .expect("moderation");
+    aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::PreCall,
+        "embedding",
+        None,
+    )
+    .await
+    .expect("pre_call");
+    aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::Moderation,
+        "embedding",
+        None,
+    )
+    .await
+    .expect("moderation");
     assert_eq!(data, before);
     assert!(captured.lock().expect("captured").is_empty());
 }
@@ -32,9 +44,15 @@ async fn aim_inspects_embeddings_when_inspect_embeddings_is_set() {
     let (base, _server, captured) = serve_aim(AimMode::Monitor).await;
     let guardrail = aim_guardrail(&base, true);
     let mut data = chat_data(&[message("user", "hello")]);
-    aim::pre_call(&guardrail, &mut data, "aembedding", None)
-        .await
-        .expect("pre_call");
+    aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::PreCall,
+        "aembedding",
+        None,
+    )
+    .await
+    .expect("pre_call");
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].path, "/fw/v1/analyze");
@@ -56,11 +74,17 @@ async fn aim_inspects_embeddings_when_inspect_embeddings_is_set() {
 async fn aim_moderation_keeps_the_request_data_read_only() {
     let (base, _server, captured) = serve_aim(AimMode::Redact).await;
     let guardrail = aim_guardrail(&base, false);
-    let data = chat_data(&[message("system", "be precise"), message("user", "hello")]);
+    let mut data = chat_data(&[message("system", "be precise"), message("user", "hello")]);
     let before = data.clone();
-    aim::moderation(&guardrail, &data, "completion", Some("alias-1"))
-        .await
-        .expect("moderation");
+    aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::Moderation,
+        "completion",
+        Some("alias-1"),
+    )
+    .await
+    .expect("moderation");
     assert_eq!(data, before);
     let calls = captured.lock().expect("captured");
     assert_eq!(calls.len(), 1);
