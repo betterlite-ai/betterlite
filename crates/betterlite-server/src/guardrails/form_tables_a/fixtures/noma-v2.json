@@ -1,0 +1,33 @@
+{
+  "api_base": {
+    "description": "The Noma API base URL. Defaults to https://api.noma.security.",
+    "required": false,
+    "type": "string"
+  },
+  "api_key": {
+    "description": "The Noma API key. Reads from NOMA_API_KEY env var if None.",
+    "required": false,
+    "type": "string"
+  },
+  "application_id": {
+    "description": "The Noma Application ID. Reads from NOMA_APPLICATION_ID env var if None.",
+    "required": false,
+    "type": "string"
+  },
+  "block_failures": {
+    "description": "When true, fail closed on Noma API errors.",
+    "required": false,
+    "type": "boolean"
+  },
+  "gateway_name": {
+    "description": "Gateway name, used as the gateway_host label on Noma scans. Falls back to NOMA_GATEWAY_NAME.",
+    "required": false,
+    "type": "string"
+  },
+  "monitor_mode": {
+    "description": "When true, run guardrail checks in monitor mode.",
+    "required": false,
+    "type": "boolean"
+  },
+  "ui_friendly_name": "Noma Security v2"
+}

@@ -8,9 +8,10 @@ on:
     types: [checks_requested]
   push:
     branches: [main]
-  # a main push tests and lints what it affects, so once a night everything runs and refills the cargo cache (Max, 11-16)
+  # the queue already tested each merged tree, and testing only what a push affects still ran 87,708 and 88,290 of 91,578 tests (runs 43789028753, 43793982262), so a push lints, every 2 hours a run tests what changed, and at 01:00 UTC everything runs and refills the cargo cache (Max, 11-16)
   schedule:
     - cron: "0 1 * * *"
+    - cron: "0 */2 * * *"
 
 permissions: {}
 
@@ -21,7 +22,7 @@ env:
   MUTANTS_SHARDS: 6
 
 concurrency:
-  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || (github.event_name == 'schedule' && 'nightly') || github.ref }}
+  group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || (github.event_name == 'schedule' && 'scheduled') || github.ref }}
   cancel-in-progress: ${{ github.event_name != 'push' && github.event_name != 'schedule' }}
 
 defaults:
@@ -36,7 +37,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
-      actions: read # a main push looks up the last main push run that ran
+      actions: read # a main run looks up the last green main run
     outputs:
       base: ${{ steps.find.outputs.base }}
       task: ${{ steps.find.outputs.task }}
@@ -55,6 +56,7 @@ jobs:
         id: find
         env:
           EVENT: ${{ github.event_name }}
+          NIGHTLY: ${{ github.event.schedule == '0 1 * * *' }}
           PR_BRANCH: ${{ github.head_ref }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
           QUEUE_REF: ${{ github.event.merge_group.head_ref }}
@@ -66,9 +68,13 @@ jobs:
             base=$QUEUE_BASE
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
             branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
-          elif [[ $EVENT == push ]]; then
-            # a waiting push run gives way to the next push (11-15: 193 merges, 49 push runs, 21 cancelled), so a push covers everything since the last push run that ran
-            base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&event=push&status=completed&per_page=100" | jq -r '[.workflow_runs[] | select(.conclusion != "cancelled")][0].head_sha // empty')
+          elif [[ $EVENT == push || $EVENT == schedule ]]; then
+            # a waiting run gives way to the next one (11-15: 193 merges, 49 push runs, 21 cancelled), and a red run proves nothing, so a push lints everything since the last green main run and a scheduled run tests everything since the last green scheduled run
+            events='["schedule"]'
+            if [[ $EVENT == push ]]; then
+              events='["push","schedule"]'
+            fi
+            base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&status=success&per_page=100" | jq -r --argjson events "$events" '[.workflow_runs[] | select(.event | IN($events[]))][0].head_sha // empty')
             if [[ -z $base ]] || ! git merge-base --is-ancestor "$base" HEAD; then
               base=$(git rev-parse HEAD^1)
               all_tests=true
@@ -78,7 +84,7 @@ jobs:
             base=$(git rev-parse HEAD^1)
             branch=$PR_BRANCH
           fi
-          if [[ $EVENT == schedule ]]; then
+          if [[ $NIGHTLY == true ]]; then
             all_tests=true
           fi
           task=""
@@ -100,7 +106,9 @@ jobs:
           elif [[ $EVENT == merge_group && -n $task ]]; then
             # the pull request run passed the task's own checks, and edited runs every test of the crates the queued change edits (Max, 11-15)
             parts='["lint","edited"]'
-          elif [[ ($EVENT == merge_group || $EVENT == push) && -z $all_tests ]]; then
+          elif [[ $EVENT == push ]]; then
+            parts='["lint"]'
+          elif [[ ($EVENT == merge_group || $EVENT == schedule) && -z $all_tests ]]; then
             # a tests runner took 2.8 minutes to print that the change affects no package, so the paths rules.toml marks for no package decide here
             changed=$(git diff --name-only --no-renames "$base" HEAD)
             rules=$(yq -p toml -o json '.' .development/gate/src/affected/rules.toml)
@@ -110,7 +118,7 @@ jobs:
           fi
           # a tests part builds only its own packages, so one part builds every test target for the cargo cache; rust-cache keys on the manifests, and on 11-15 run 43776330827 built for 17 minutes and saved nothing
           changed=$(git diff --name-only "$base" HEAD)
-          if [[ $EVENT == schedule ]] || { [[ $EVENT == push ]] && grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain' <<<"$changed"; }; then
+          if [[ $EVENT == schedule ]] && { [[ -n $all_tests ]] || grep -qE '(^|/)Cargo\.(toml|lock)$|^rust-toolchain' <<<"$changed"; }; then
             parts=$(jq -c '. + ["cache"]' <<<"$parts")
           fi
           echo "branch $branch, base $base, task ${task:-none}, all tests ${all_tests:-no}, parts $parts"

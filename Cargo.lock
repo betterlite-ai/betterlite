@@ -1146,6 +1146,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-redis",
+ "betterlite-routes",
  "betterlite-secrets",
  "chrono",
  "clap",
@@ -1195,6 +1196,7 @@ dependencies = [
  "betterlite-context",
  "betterlite-error",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
@@ -1508,6 +1510,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-db",
  "betterlite-env",
+ "betterlite-error",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-postgres-fixture",
@@ -1634,6 +1637,7 @@ dependencies = [
  "jsonschema",
  "lopdf",
  "lru",
+ "mutants",
  "num-traits",
  "regex",
  "rstest",
@@ -1648,6 +1652,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tokio-postgres",
  "tokio-util",
  "tracing",
  "tracing-subscriber",
@@ -1709,12 +1714,14 @@ dependencies = [
  "betterlite-lens",
  "betterlite-models",
  "betterlite-openai",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "blake2",
  "bytes",
  "chrono",
  "clap",
@@ -1869,6 +1876,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "tracing-subscriber",
  "url",
 ]
 
@@ -1922,11 +1930,13 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-tokenizer",
  "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
@@ -2222,6 +2232,7 @@ dependencies = [
  "serde-saphyr",
  "serde_json",
  "serde_path_to_error",
+ "serde_repr",
  "serde_with",
  "sha2 0.11.1",
  "strum",
@@ -2676,6 +2687,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
@@ -2692,6 +2704,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -3082,6 +3095,7 @@ dependencies = [
  "betterlite-models",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
+ "betterlite-prompts",
  "betterlite-redact",
  "betterlite-server",
  "chrono",
@@ -3318,12 +3332,14 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-tokenizer",
  "betterlite-vertex",
@@ -3527,16 +3543,20 @@ dependencies = [
  "betterlite-context",
  "betterlite-core",
  "betterlite-db",
+ "betterlite-error",
  "betterlite-gateway",
  "betterlite-guardrails",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
+ "betterlite-models",
  "betterlite-ocr",
  "betterlite-oracle-helper-api",
  "betterlite-oracle-runner",
  "betterlite-redact",
  "betterlite-roi",
+ "betterlite-routes",
+ "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-server",
  "betterlite-tracing",
@@ -3545,6 +3565,7 @@ dependencies = [
  "flate2",
  "futures-util",
  "hex",
+ "indexmap 2.14.2",
  "jiff",
  "quick-xml",
  "rand 0.10.3",
@@ -3571,6 +3592,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "betterlite-context",
+ "betterlite-error",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-oracle-helper-api",
@@ -3578,6 +3600,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-streaming",
  "betterlite-tokenizer",
+ "rust_decimal",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -3679,7 +3702,7 @@ dependencies = [
 name = "betterlite-policy"
 version = "0.1.0"
 dependencies = [
- "betterlite-auth",
+ "betterlite-routes",
  "chrono",
  "fancy-regex 0.19.2",
  "indexmap 2.14.2",
@@ -4290,6 +4313,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite-a2a",
+ "betterlite-analytics",
  "betterlite-auth",
  "betterlite-azure",
  "betterlite-bedrock",
@@ -4315,6 +4339,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-roi",
  "betterlite-router",
+ "betterlite-secrets",
  "betterlite-semantic",
  "betterlite-tokenizer",
  "betterlite-tracing",
@@ -4403,6 +4428,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
@@ -4412,6 +4438,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "serde_with",
  "thiserror",
  "tokio",
  "tracing",
@@ -4682,6 +4709,15 @@ name = "bitflags"
 version = "2.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3ded4057c258ba199e2d26386d3af3780957ecaee6c4ef4041c6b4b8b97c0b06"
+
+[[package]]
+name = "blake2"
+version = "0.10.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "46502ad458c9a52b69d4d4d32775c788b7a1b85e8bc9d482d92250fc0e3f8efe"
+dependencies = [
+ "digest 0.10.7",
+]
 
 [[package]]
 name = "blake3"
