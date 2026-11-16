@@ -108,7 +108,7 @@ fn gpt_fallback_is_logged() {
         messages,
         vec![String::from("using the GPT image generation config")]
     );
-    let (selected, messages) = capture_debug(|| FoundryImageConfig::select("flux.2-pro"));
-    assert_eq!(selected, FoundryImageConfig::Flux);
-    assert!(messages.is_empty());
+    let (flux, flux_messages) = capture_debug(|| FoundryImageConfig::select("flux.2-pro"));
+    assert_eq!(flux, FoundryImageConfig::Flux);
+    assert!(flux_messages.is_empty());
 }
