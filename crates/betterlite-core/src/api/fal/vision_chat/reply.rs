@@ -10,7 +10,7 @@ use crate::api::fal::vision_chat::token_count::TokenCount;
 
 // a flattened field makes the derive read a JSON object only, where a plain derive also takes an array field by field
 #[derive(Debug, Deserialize)]
-struct ObjectOnly {}
+struct ObjectOnly;
 
 // fields Fal sends beyond these are ignored, as LiteLLM's model does
 #[derive(Debug, Deserialize)]

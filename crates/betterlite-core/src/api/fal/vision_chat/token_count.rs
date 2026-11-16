@@ -1,7 +1,7 @@
-use std::str::FromStr;
+use std::str::FromStr as _;
 
 use betterlite_models::decisions::Json;
-use num_traits::ToPrimitive;
+use num_traits::ToPrimitive as _;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use thiserror::Error;

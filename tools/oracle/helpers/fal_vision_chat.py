@@ -7,7 +7,7 @@ from litellm.types.llms.openai import AllMessageValues
 from litellm.types.utils import ModelResponse
 from pydantic import JsonValue, TypeAdapter
 
-HEADERS: TypeAdapter[dict[str, str]] = TypeAdapter(dict[str, str])
+HEADERS: TypeAdapter[dict[str, JsonValue]] = TypeAdapter(dict[str, JsonValue])
 EMPTY: dict[str, JsonValue] = {}
 NO_HEADERS: dict[str, str] = {}
 NO_MESSAGES: list[dict[str, JsonValue]] = []
@@ -74,19 +74,8 @@ class RequestCase(TypedDict):
 
 
 class RequestsCall(TypedDict):
+    operation: Literal["one_user_required", "joined_text", "empty_image_url"]
     cases: list[RequestCase]
-
-
-class OneUserRequired(RequestsCall):
-    operation: Literal["one_user_required"]
-
-
-class JoinedText(RequestsCall):
-    operation: Literal["joined_text"]
-
-
-class EmptyImageUrl(RequestsCall):
-    operation: Literal["empty_image_url"]
 
 
 class MapCase(TypedDict):
@@ -134,13 +123,7 @@ class ReasoningUsage(RepliesCall):
 
 
 Input: TypeAlias = (
-    OneUserRequired
-    | JoinedText
-    | EmptyImageUrl
-    | ReasoningOverride
-    | HeaderOverlay
-    | MalformedReply
-    | ReasoningUsage
+    RequestsCall | ReasoningOverride | HeaderOverlay | MalformedReply | ReasoningUsage
 )
 
 
@@ -198,20 +181,22 @@ def request_outcome(
     return {"ok": True, "value": body}
 
 
-def mapping_outcome(config: ChatConfig, model: str, case: MapCase) -> JsonValue:
-    try:
-        mapped = config.map_openai_params(
-            dict(case["non_default"]),
-            dict(case["optional"]),
-            model,
-            drop_params=case["drop_params"],
-        )
-    except FalAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L52
-        return {"mapped": {"error": {"status": error.status_code}}}
-    return {
-        "mapped": {"params": mapped},
-        "request": request_outcome(config, VALID_MESSAGES, mapped),
-    }
+def mapping_outcomes(config: ChatConfig, call: ReasoningOverride) -> JsonValue:
+    outcomes: list[JsonValue] = []
+    for case in call["cases"]:
+        try:
+            mapped = config.map_openai_params(
+                dict(case["non_default"]),
+                dict(case["optional"]),
+                call["model"],
+                drop_params=case["drop_params"],
+            )
+        except FalAIError as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fal_ai/chat/transformation.py#L52
+            outcomes.append({"mapped": {"error": {"status": error.status_code}}})
+            continue
+        request = request_outcome(config, VALID_MESSAGES, mapped)
+        outcomes.append({"mapped": {"params": mapped}, "request": request})
+    return {"cases": outcomes}
 
 
 def header_outcome(config: ChatConfig, case: HeaderCase) -> JsonValue:
@@ -255,7 +240,7 @@ def reply_outcome(config: FalAIChatConfig, model: str, case: ReplyCase) -> JsonV
         return {
             "ok": False,
             "status": error.status_code,
-            "headers": HEADERS.validate_python(error.headers),  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L46
+            "headers": HEADERS.validate_python(error.headers),  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L46
             "message": error.message,
         }
     dumped = RESPONSE.validate_json(result.model_dump_json())
@@ -281,26 +266,21 @@ def reply_outcome(config: FalAIChatConfig, model: str, case: ReplyCase) -> JsonV
     }
 
 
-def replies_outcome(call: MalformedReply | ReasoningUsage) -> JsonValue:
-    config = FalAIChatConfig()
+def replies_outcome(config: FalAIChatConfig, call: MalformedReply | ReasoningUsage) -> JsonValue:
     return {"cases": [reply_outcome(config, call["model"], case) for case in call["replies"]]}
 
 
 def run(input_value: Input) -> JsonValue:
-    config = FalAIChatConfig()
+    config = FalAIChatConfig()  # type: ignore[no-untyped-call]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L69
     if input_value["operation"] == "reasoning_override":
-        return {
-            "cases": [
-                mapping_outcome(config, input_value["model"], case) for case in input_value["cases"]
-            ]
-        }
+        return mapping_outcomes(config, input_value)
     if input_value["operation"] == "header_overlay":
         apply_environment(input_value["environment"])
         return {"cases": [header_outcome(config, case) for case in input_value["cases"]]}
     if input_value["operation"] == "malformed_reply":
-        return replies_outcome(input_value)
+        return replies_outcome(config, input_value)
     if input_value["operation"] == "reasoning_usage":
-        return replies_outcome(input_value)
+        return replies_outcome(config, input_value)
     return {
         "cases": [
             request_outcome(config, case["messages"], case["optional_params"])

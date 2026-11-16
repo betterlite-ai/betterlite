@@ -302,8 +302,8 @@ fn a_true_stream_is_the_streaming_error_and_other_values_are_not() {
     let invalid =
         transform_request(&messages, &params(r#"{"stream": "yes"}"#)).expect_err("invalid");
     assert!(matches!(invalid, FalAIError::StreamNotBoolean));
-    assert!(transform_request(&messages, &params(r#"{"stream": false}"#)).is_ok());
-    assert!(transform_request(&messages, &params(r#"{"stream": null}"#)).is_ok());
+    transform_request(&messages, &params(r#"{"stream": false}"#)).expect("false stream");
+    transform_request(&messages, &params(r#"{"stream": null}"#)).expect("null stream");
 }
 
 #[rstest]
@@ -516,7 +516,7 @@ fn a_count_that_pydantic_or_the_usage_record_refuses_is_a_422(#[case] raw: &str)
 
 #[rstest]
 #[case::exponent_past_the_signed_range("1e19", 10_000_000_000_000_000_000)]
-#[case::decimal_past_the_signed_range("9223372036854775807.0", 9_223_372_036_854_775_807)]
+#[case::decimal_past_the_signed_range("9223372036854775807.0", 0x7FFF_FFFF_FFFF_FFFF)]
 fn a_whole_float_count_keeps_its_exact_digits(#[case] raw: &str, #[case] expected: u64) {
     let reply = decode_fal_chat(&headers(&[]), counts(raw, "0").as_bytes()).expect("reply");
     assert_eq!(reply.prompt_tokens, expected);

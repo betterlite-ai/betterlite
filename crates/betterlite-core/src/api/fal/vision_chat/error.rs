@@ -63,18 +63,13 @@ impl FalAIError {
 
     #[must_use]
     pub const fn headers(&self) -> Option<&ImageHeaders> {
-        match self {
-            Self::UnexpectedResponse { headers, .. }
-            | Self::UsageOverflow { headers, .. }
-            | Self::Upstream { headers, .. } => Some(headers),
-            Self::OneUserMessage
-            | Self::TextRequired
-            | Self::OneImageRequired
-            | Self::StreamingUnsupported
-            | Self::StreamNotBoolean
-            | Self::UnsupportedReasoningEffort { .. }
-            | Self::MissingApiKey(_)
-            | Self::NoChoices => None,
+        if let Self::UnexpectedResponse { headers, .. }
+        | Self::UsageOverflow { headers, .. }
+        | Self::Upstream { headers, .. } = self
+        {
+            Some(headers)
+        } else {
+            None
         }
     }
 }
