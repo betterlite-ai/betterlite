@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use betterlite_config::tls::Verification;
 use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::identity::provider_id::ProviderId;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
@@ -16,6 +17,7 @@ use crate::interactions::create::CreateOutcome;
 use crate::interactions::create::asynchronous::async_create_interaction;
 use crate::interactions::streaming::AsyncStreamingConfig;
 use crate::proxy::StreamResponse;
+use crate::proxy::base_builder;
 
 // the async half of the fixture lives here, apart from the sync half in support
 impl AsyncStreamingConfig for Fixture {
@@ -258,4 +260,64 @@ async fn async_create_interaction_refuses_a_proxy_it_cannot_use_instead_of_conne
         transport_error(outcome),
         RequestFailure::UnsupportedProxyScheme { scheme } if scheme == "https"
     ));
+}
+
+#[tokio::test]
+async fn async_create_interaction_builds_for_the_provider_its_caller_names() {
+    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::new();
+    let mut clients = clients();
+    let mut call = Call::new(serving.address);
+    call.provider = ProviderId::Openai;
+
+    let outcome = async_create_interaction(
+        &fixture,
+        &mut clients,
+        &mut Logging::default(),
+        None,
+        &call.request(),
+    )
+    .await
+    .unwrap();
+
+    let CreateOutcome::Response(body) = outcome else {
+        panic!("a non-streaming request returns the response");
+    };
+    assert_eq!(body, "{}");
+    let providers: Vec<ProviderId> = clients
+        .async_clients
+        .keys()
+        .map(|key| key.provider)
+        .collect();
+    assert!(providers.contains(&ProviderId::Openai));
+    assert!(!providers.contains(&ProviderId::Gemini));
+    serving.request.join().unwrap();
+}
+
+#[tokio::test]
+async fn async_create_interaction_uses_a_supplied_client_as_is() {
+    let serving = serve_with_body(base::reply("200 OK", &[], "{}"), None);
+    let fixture = Fixture::new();
+    let mut clients = HttpClients::new(
+        base::policy(Verification::Enabled, None),
+        base::proxy_policy(&[("HTTP_PROXY", "https://127.0.0.1:1")]),
+    );
+    let supplied = base_builder().build().unwrap();
+
+    let outcome = async_create_interaction(
+        &fixture,
+        &mut clients,
+        &mut Logging::default(),
+        Some(supplied),
+        &Call::new(serving.address).request(),
+    )
+    .await
+    .unwrap();
+
+    let CreateOutcome::Response(body) = outcome else {
+        panic!("a non-streaming request returns the response");
+    };
+    assert_eq!(body, "{}");
+    assert!(clients.async_clients.is_empty());
+    serving.request.join().unwrap();
 }
