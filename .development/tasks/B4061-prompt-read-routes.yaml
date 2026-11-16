@@ -5,6 +5,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-server/src/routes/prompts/read.rs
+    - crates/betterlite-server/src/routes/prompts/read/**
     - crates/betterlite-server/src/routes/prompts/read/tests.rs
     - tools/oracle/helpers/b4061.py
     - tools/oracle/helpers/b4061/**
