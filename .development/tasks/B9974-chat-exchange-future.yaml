@@ -1,0 +1,64 @@
+id: B9974
+title: Chat route test exchange keeps a small future
+description: >-
+  Fix main's chat route tests, which sit just under clippy's large_futures limit. exchange in
+  crates/betterlite-server/src/routes/chat/tests.rs keeps the loaded Config alive until it returns, and
+  tokio::join! holds the router call and the fake provider inline, so its future is a few bytes under the
+  16384-byte default. Any task that grows the server's state tips it over: the merge queue runs for B3668 (PR 2113,
+  run https://github.com/betterlite-ai/betterlite/actions/runs/43879871569) and B8293 (PR 2097, run
+  https://github.com/betterlite-ai/betterlite/actions/runs/43880745001) fail clippy with "large future with a size
+  of 16416 bytes" at all nine exchange calls, in a file neither task touches.
+
+
+  Test change only. In exchange, load the config and build the executor in a block, so the Config is dropped before
+  the first await that follows it. Pass Box::pin(call) and Box::pin(provider(listener, reply, delay)) to
+  tokio::join!, so neither future lives inline in exchange's own state. The callers stay as they are: no Box::pin at
+  the nine call sites, and no #[expect] or allow for large_futures.
+
+
+  Test. Add exchange_future_stays_small to crates/betterlite-server/src/routes/chat/tests.rs. It builds
+  exchange("/v1/chat/completions", "{}", "", (200, ANSWER), (NO_DELAY, "30")) without awaiting it and asserts
+  size_of_val (the prelude one, unqualified) of that future is below 8192 bytes, half the lint's limit. On main the future is 16352
+  bytes, so the test fails there.
+scope:
+  paths:
+  - crates/betterlite-server/src/routes/chat/tests.rs
+  lint_tables: false
+references: []
+dod:
+- text: >-
+    The exchange future is below 8192 bytes, and the chat route tests still pass.
+  proof: [small-future, chat-tests]
+- text: >-
+    exchange boxes both futures it joins and adds no lint allowance.
+  proof: [boxed-join]
+checks:
+  optional: []
+  commands:
+  - id: small-future
+    why: The exchange future is still near clippy's large_futures limit.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::exchange_future_stays_small$/)'
+  - id: chat-tests
+    why: The change broke a chat route test.
+    run: >-
+      cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::tests::/)'
+  - id: boxed-join
+    why: exchange still joins an unboxed future, or the lint is silenced instead of fixed.
+    run: >-
+      test "$(grep -c -F 'Box::pin(' crates/betterlite-server/src/routes/chat/tests.rs)" -ge 2
+      && ! grep -q -F 'large_futures' crates/betterlite-server/src/routes/chat/tests.rs
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The size of the chat executor, the router or Config itself; this task only stops the test helper from holding them inline.
+- Other test helpers; none of them fail the lint today.
+- B3668 and B8293; they go back to the merge queue once this lands.
+pitfalls:
+- 'Do not raise future-size-threshold in clippy.toml and do not add an #[expect] for large_futures; the fix is a smaller future.'
+- 'Build the future in the size test but never await it, so the test needs no server.'
+- 'If 8192 bytes is out of reach after boxing both joined futures and scoping the Config, report blocked with the measured size instead of changing the bound.'
+review_level: standard
+budget:
+  max_changed_lines: 100
+  max_new_expects: 0
