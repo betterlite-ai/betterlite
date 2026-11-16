@@ -14,7 +14,7 @@ use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use chrono::{DateTime, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 
 use super::rows::RowStore;
@@ -135,8 +135,8 @@ fn payload_summary(payload: &OAuthCredentialPayload) -> HelperResult {
     };
     Ok(json!({
         "type": payload.credential_type,
-        "access_token": payload.access_token.as_ref().map(|token| token.expose_secret()),
-        "refresh_token": payload.refresh_token.as_ref().map(|token| token.expose_secret()),
+        "access_token": payload.access_token.as_ref().map(ExposeSecret::expose_secret),
+        "refresh_token": payload.refresh_token.as_ref().map(ExposeSecret::expose_secret),
         "scopes": payload.scopes,
         "identity_binding_proof": payload.identity_binding_proof,
         "connected_at_present": payload.connected_at.is_some(),
