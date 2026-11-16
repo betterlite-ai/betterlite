@@ -1,0 +1,7 @@
+kind: helper
+name: settings-api-key-required
+call:
+  b3765: {"function": "init", "config": {"api_base": "https://compresr.test"}, "env": {}}
+env: {}
+compare:
+  ignore: []

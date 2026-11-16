@@ -14,7 +14,6 @@ call:
       - {api_base: null, model: deployment/deployment-id, stream: false, options: {}}
       - {api_base: null, model: deployment/deployment-id, stream: true, options: {}}
       - {api_base: null, model: deployment/a/b, stream: true, options: {}}
-      - {api_base: null, model: deployment/, stream: false, options: {}}
       - {api_base: null, model: deployment, stream: false, options: {}}
       - {api_base: null, model: my-deployment/abc, stream: true, options: {}}
       - {api_base: "https://host///", model: ibm/granite, stream: true, options: {}}

@@ -1,0 +1,9 @@
+kind: helper
+name: request-input-combined-turns
+call:
+  b3857:
+    function: request_input
+    data: {system: be brief, input: hello}
+env: {}
+compare:
+  ignore: []

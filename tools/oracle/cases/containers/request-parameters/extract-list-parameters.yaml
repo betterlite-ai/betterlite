@@ -1,0 +1,14 @@
+kind: helper
+name: extract-list-parameters
+call:
+  b3361:
+    function: list_optional_params
+    passed_params:
+      after: "cursor_1"
+      limit: 20
+      order: "desc"
+      extra_headers: {X-A: "b"}
+      extra_query: {q: "1"}
+      timeout: 5
+env: {}
+compare: {ignore: []}
