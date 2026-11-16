@@ -1,0 +1,46 @@
+kind: helper
+name: stored-skill-reads-skill-to-typed-conversion
+call:
+  b3212:
+    now: "2026-02-03T04:05:06"
+    rows:
+      - skill_id: litellm_skill_plain
+        display_title: Alpha
+        description: first
+        instructions: use it
+        source: custom
+        latest_version: "2026-01-02T03:04:05"
+        file_content: aGVsbG8=
+        file_name: skill.zip
+        file_type: application/zip
+        metadata: {tier: 2, note: shared}
+        created_at: "2026-01-01T00:00:00"
+        created_by: alice
+        updated_by: bob
+      - {skill_id: litellm_skill_absent, display_title: Bare, created_by: alice}
+      - skill_id: litellm_skill_wrapped
+        file_content: "aGVs\nbG8="
+        created_by: alice
+      - {skill_id: litellm_skill_bad, file_content: abc, created_by: alice}
+      - {skill_id: litellm_skill_unpadded, file_content: aGVsbG8, created_by: alice}
+    page:
+      - skill_id: litellm_skill_plain
+        display_title: Alpha
+        instructions: use it
+        file_content: aGVsbG8=
+        metadata: {tier: 2, note: shared}
+        created_at: "2026-01-01T00:00:00"
+        created_by: alice
+      - {skill_id: litellm_skill_absent, display_title: Bare, created_by: alice}
+      - {skill_id: litellm_skill_wrapped, file_content: "aGVs\nbG8=", created_by: alice}
+    steps:
+      - {action: list, limit: 10, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_plain, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_absent, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_wrapped, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_bad, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_unpadded, principal: {user_id: alice}}
+      - {action: get, skill_id: litellm_skill_plain}
+      - {action: get, skill_id: litellm_skill_plain, principal: {user_id: bob}}
+env: {}
+compare: {ignore: []}

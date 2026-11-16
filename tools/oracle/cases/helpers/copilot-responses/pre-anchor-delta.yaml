@@ -1,0 +1,19 @@
+kind: helper
+name: pre_anchor_delta
+call:
+  copilot_responses:
+    settings: {}
+    steps:
+      - step: stream
+        events:
+          - {type: response.reasoning_summary_text.delta, item_id: early, output_index: 0, delta: x}
+          - {type: response.output_item.added, output_index: 0, item: {id: rs_1, type: reasoning}}
+          - {type: response.reasoning_summary_text.delta, item_id: late, output_index: 0, delta: x}
+      - step: stream
+        events:
+          - {type: response.reasoning_summary_text.delta, item_id: other, output_index: 1, delta: x}
+          - {type: response.output_item.added, output_index: 0, item: {id: rs_1, type: reasoning}}
+          - {type: response.reasoning_summary_text.delta, item_id: kept, output_index: 1, delta: x}
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,20 @@
+kind: helper
+name: a2a-chat-response-error-key
+call:
+  b8100:
+    op: response
+    cases:
+      - model: my-agent
+        status: 200
+        body: '{"jsonrpc":"2.0","id":"r","result":{"parts":[{"kind":"text","text":"hi"}]}}'
+      - model: my-agent
+        status: 200
+        body: '{"jsonrpc":"2.0","id":"r","result":{"message":{"kind":"message","role":"agent","parts":[{"kind":"text","text":"nested"}]}}}'
+      - model: my-agent
+        status: 200
+        body: '{"jsonrpc":"2.0","id":"r","error":{"code":-32000,"message":"boom"}}'
+      - model: my-agent
+        status: 503
+        body: '{"jsonrpc":"2.0","error":{}}'
+env: {}
+compare: {ignore: []}
