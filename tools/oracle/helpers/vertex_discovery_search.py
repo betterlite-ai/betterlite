@@ -45,17 +45,20 @@ class VertexConfig(Protocol):
         self, api_base: str | None, litellm_params: dict[str, JsonValue]
     ) -> str: ...
 
+    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/search_api/transformation.py#L394-L430
         self,
         vector_store_id: str,
         query: str | list[str],
+        # ast-grep-ignore: no-long-names
         vector_store_search_optional_params: SearchOptions,
         api_base: str,
         litellm_logging_obj: Logging,
         litellm_params: dict[str, JsonValue],
         extra_body: dict[str, JsonValue] | None = None,
-    ) -> tuple[str, dict[str, object]]: ...
+    ) -> tuple[str, dict[str, JsonValue]]: ...
 
+    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_response(
         self, response: httpx.Response, litellm_logging_obj: Logging
     ) -> SearchReply: ...
