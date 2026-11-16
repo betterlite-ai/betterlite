@@ -1,0 +1,17 @@
+kind: helper
+name: stability-edit-style-transfer-shadowed
+call:
+  stability_edit:
+    calls:
+      - function: url
+        model: stability/style-transfer
+      - function: url
+        model: stability/style
+      - function: url
+        model: stability/unknown-model
+      - function: url
+        model: style-transfer
+      - function: url
+        model: Stability/Style-Transfer
+env: {}
+compare: {ignore: []}

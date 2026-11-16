@@ -1,0 +1,15 @@
+task: B747
+deviations:
+  - what: "An allowlist pattern the PCRE2 engine rejects, or whose match runs past its step and depth limits, grants no model, so a request no other entry grants gets the ordinary 403 denial. LiteLLM hands every pattern to re.match: a malformed pattern such as `a[` raises re.error out of the auth check and the proxy answers 500, and a pattern whose match runs away has no bound. Lookarounds and backreferences work here as they do in re, so those patterns keep their answers."
+    why: "A crash on an administrator's malformed allowlist entry is a 500 where a 4xx belongs, and an unbounded match can hold the request open, so rule owned-behavior-is-built refuses both with the denial the compatibility policy assigns to a refused request. A Rust test pins the denial for two patterns Python's re rejects, and the lookaround, backreference and Unicode-class cases match Python's answers."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L6525-L6541
+  - what: "When the fallback-depth guard fires for a requested-model list, or with no requested model at all, the message names the models joined by commas and names nothing for the absent case. LiteLLM interpolates the Python value into the exception text, so a list reads as ['a', 'b'] and an absent model reads as None."
+    why: "The guard's text is the str() of a Python value, which docs/compatibility.md keeps out of parity; the request is refused in both implementations, and the ordinary request carries one model name where the texts agree."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4450-L4450
+  - what: "The access-group resource collectors keep the first-seen order of the resources and drop later duplicates. LiteLLM returns list(set(resources)), whose order changes with the process's hash seed."
+    why: "The order of a set-backed list is decided by Python's runtime and is not part of the declared return type; every caller this task owns answers membership, never position."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_checks.py#L4296-L4296
+  - what: "A request whose model check trips the fallback-depth guard is refused with the 401 auth_error the auth exception handler builds for a bare exception. LiteLLM 1.105.1 answers 500 there: its proxy package extra does not install prisma, and the handler imports prisma to classify the exception before translating it."
+    why: "The guard refuses the request, so a 4xx belongs and the handler's own translation is a 401 auth_error with param \"None\" and code 401. A Rust test pins the 401, and the input cannot be an oracle case because the LiteLLM server raises out of its own error handler."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_exception_handler.py#L73-L77
+kept_bugs: []
