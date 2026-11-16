@@ -9,7 +9,7 @@ deviations:
   - what: A request body that does not fit the Prompt or PatchPromptRequest model answers 422 with a one-item detail list whose type is always value_error and whose loc starts with body, where FastAPI names a more specific type such as missing or json_invalid.
     why: Clients branch on the 422 status and read the message; betterlite writes its own message text and does not reproduce pydantic's error catalogue.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L193-L196
-  - what: A registry that cannot initialize or reload a prompt answers 500 with the registry's own error text (for example "Unsupported prompt: unknown"), where LiteLLM answers 500 with "Failed to initialize prompt", "Failed to update prompt" or "Failed to patch prompt".
+  - what: "A registry that cannot initialize or reload a prompt answers 500 with the registry's own error text (for example \"Unsupported prompt: unknown\"), where LiteLLM answers 500 with \"Failed to initialize prompt\", \"Failed to update prompt\" or \"Failed to patch prompt\"."
     why: The registry returns a typed error instead of None, so the cause is kept and reported; the status is the same and the database write stays, as in LiteLLM.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L677-L682
 kept_bugs:
