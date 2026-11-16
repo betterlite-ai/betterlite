@@ -55,9 +55,7 @@ pub(super) async fn run_steps(
 ) -> Result<Vec<Value>, Box<HelperError>> {
     let mut results = Vec::with_capacity(steps.len());
     for step in steps {
-        if let Some(available) = step.available {
-            scripted.set_available(available);
-        }
+        scripted.set_available(step.available.unwrap_or(true));
         let caller = step.principal.as_ref().map(principal_of).transpose()?;
         let answer = match step.action.as_str() {
             "list" => list_answer(reads.list_skills(page_of(step), caller.as_ref()).await),
