@@ -483,6 +483,26 @@ async fn route_lets_an_explicit_null_url_override_the_redis_url_environment() {
     );
 }
 
+// Merge drops the marker url when the request names a host, so the stored url cannot win over the submitted host and port.
+#[tokio::test]
+async fn route_merges_before_the_url_precedence() {
+    let redis = FakeRedis::start().await;
+    let other_port = support::closed_port().await;
+    let saved = json!({
+        "type": "redis",
+        "url": format!("redis://127.0.0.1:{other_port}"),
+    });
+    let (_, repository) = support::fake_saved(SavedReply::Stored(saved));
+    let mut target = redis_target(&redis);
+    target["url"] = json!(support::REDACTED);
+    let body = support::request(target);
+    let (status, text) =
+        support::post(support::state(repository), Some(support::admin()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(text, SUCCESS_BODY);
+    assert!(redis.connections() > 0, "the submitted host was reached");
+}
+
 #[tokio::test]
 async fn route_logs_the_settings_redacted() {
     let (records, _captured) = capture_logs();
