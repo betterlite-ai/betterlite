@@ -1,0 +1,106 @@
+task: B3572
+deviations:
+  - what: >-
+      Background flush task failures log diagnostics via verbose_logger.exception but
+      do not break the relay; the original bytes, status and headers are returned to
+      the caller unchanged. Flush scheduling failure is itself logged with the chunk count
+      in the failure message.
+    why: >-
+      Spend tracking is best-effort and must never interrupt request/response relay. LiteLLM
+      uses the same approach: spend tracking exceptions are caught and logged, not propagated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L144-L149
+  - what: >-
+      Async initialization reads and closes error responses before rethrowing; the aread
+      and aclose calls in the except block suppress all exceptions (BLE001 S110), so cleanup
+      errors do not change the raised exception. The same safe-catch-all is applied to
+      aclose during iteration termination.
+    why: >-
+      Cleanup failures (e.g., socket already closed) must not mask the original error.
+      LiteLLM preserves this order: read the body, close the resource, then rethrow.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L114-L126
+  - what: >-
+      The provider stream collector is built at flush time by an owning adapter over a
+      bounded copy of the relayed chunks, instead of once in the stream constructor.
+    why: >-
+      B3570's create_stream_collector borrows the provider config, and the flush runs in a
+      background task that outlives the request borrow. The adapter keeps the same 16 MiB
+      bound as B3570 and feeds the provider collector the identical bytes in the same order
+      before build_logged_response, so what gets logged does not change; a stream that never
+      reaches a flush never constructs a collector.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L42-L47
+  - what: >-
+      The status_code and headers property guard is a typed PassthroughStreamError::NotInitialized
+      carrying the field name, not a RuntimeError; the message names AsyncPassthroughStream
+      instead of AsyncPassthroughStreamingResponse. Awaiting a send that is already consumed
+      reports AlreadyAwaited where LiteLLM's coroutine raises RuntimeError, and iterating after
+      a non-2xx response reports AlreadyAwaited where LiteLLM raises AttributeError for the
+      missing iterator.
+    why: >-
+      Rust has typed errors where LiteLLM raises at runtime. The guard, the point at which it
+      fires and the fields it carries are the same; only the exception type differs, so a caller
+      checking the message or catching RuntimeError must switch to matching the error variant.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L87-L105
+  - what: >-
+      The non-coroutine branch of _async_passthrough_request is a typed PendingSend::Immediate
+      that the relay turns into PassthroughStreamError::ExpectedCoroutine, keeping LiteLLM's
+      message, instead of the asyncio.iscoroutine runtime check.
+    why: >-
+      The client seam returns either a pending send or an immediate answer at the type level,
+      so the check cannot be skipped; the exception text a caller can observe is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L619-L633
+  - what: >-
+      raise_for_status becomes a 2xx range check that reports PassthroughStreamError::UpstreamStatus
+      with the status, headers and the read body, where LiteLLM raises httpx.HTTPStatusError
+      carrying the live response.
+    why: >-
+      The accepted status range is identical (200 up to but not including 300, so 1xx, 3xx, 4xx
+      and 5xx all fail). The typed error carries what the caller relays downstream, and the body
+      has already been read by the time the error surfaces, as much as it has in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L114-L126
+  - what: >-
+      Reading a response body is bounded by the transport's body_bytes limit (16 MiB by default):
+      a non-streaming body past the limit fails with BodyRead(TooLarge), and an error body read
+      during initialization past the limit is dropped, with the status and headers still reported.
+    why: >-
+      LiteLLM's aread reads without a cap. betterlite's outbound transport bounds every body it
+      reads, and the relay reuses that limit rather than buffering an unbounded upstream answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L117-L128
+  - what: >-
+      A flush task that fails is logged by the relay, including the collected chunk count, at the
+      moment it fails; LiteLLM never retrieves the created task's exception, so it surfaces only
+      later through asyncio's task exception reporting.
+    why: >-
+      The failure mode is the same best-effort spend drop. betterlite says so where it happens,
+      with a chunk count, instead of leaving the failure to the event loop's garbage collection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L136-L143
+  - what: >-
+      The blocking flush is submitted to an injected SyncFlushExecutor instead of the module-level
+      litellm.utils.executor thread pool, and closing a relayed response closes the one chunk source
+      where LiteLLM closes the generator wrapper and then the response.
+    why: >-
+      betterlite passes dependencies through constructors, so the blocking path's executor comes from
+      the caller. The iterator and the response are one resource here, so a close that releases it once
+      has the same effect, and a close error no longer skips the second close.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L213-L229
+  - what: >-
+      Send, stream-read and body-read failures surface as the typed PassthroughStreamError
+      variants Send, StreamRead and BodyRead, each carrying the transport error as its
+      source, where LiteLLM lets the httpx exception propagate and its caller re-wraps it
+      through the provider config's error class.
+    why: >-
+      Rust callers match an error variant instead of catching an exception type. The
+      operation that failed, the point at which it surfaces and the status guard are
+      unchanged, and the underlying failure stays reachable as the source for the caller
+      that maps it to a provider error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L157-L174
+  - what: >-
+      The streaming flag chooses the relay form in betterlite; it is not passed to the
+      outbound client as a send option. The transport always answers with a stream-backed
+      response, and the non-streaming form reads that response's body before returning.
+    why: >-
+      betterlite has one outbound send path that relays bytes, so buffering or streaming
+      is decided above it. The caller still receives the whole body with the same status
+      and headers for a non-streaming request, and the same chunk stream for a streaming
+      one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/passthrough/main.py#L616-L633
+kept_bugs: []
