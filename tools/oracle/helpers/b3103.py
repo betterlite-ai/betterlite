@@ -112,8 +112,7 @@ def run(input_value: Input) -> JsonValue:
 
 def prompt_value(call: PromptCall) -> str:
     FixedDate.iso = call["today"]
-    # LiteLLM does not export ai_usage_chat.date, so object.__setattr__ writes the module attribute
-    object.__setattr__(ai_usage_chat, "date", FixedDate)
+    ai_usage_chat.date = FixedDate  # type: ignore[attr-defined]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L8
     return ai_usage_chat._build_system_prompt(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py#L233-L236
         call["is_admin"]
     )
