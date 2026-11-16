@@ -67,6 +67,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "gemini_live_setup"
+path = "fuzz_targets/gemini_live_setup.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "gemma_reply"
 path = "fuzz_targets/gemma_reply.rs"
 test = false

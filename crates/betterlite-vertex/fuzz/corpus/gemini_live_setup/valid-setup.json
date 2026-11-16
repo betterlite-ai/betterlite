@@ -1,0 +1,1 @@
+{"setup":{"model":"models/gemini-2.5-flash","generationConfig":{"responseModalities":["AUDIO"],"maxOutputTokens":256,"speechConfig":{"voiceConfig":{"prebuiltVoiceConfig":{"voiceName":"Puck"}}}},"realtimeInputConfig":{"automaticActivityDetection":{"disabled":false,"prefixPaddingMs":20}},"inputAudioTranscription":{}}}
