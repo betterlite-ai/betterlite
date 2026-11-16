@@ -286,7 +286,11 @@ fn interval_refuses_a_negative_span() {
 async fn poll_joins_repeated_reply_headers_and_reads_text() {
     let body = Outcome::Reply {
         status: 200,
-        headers: vec![("via", "1.1 a"), ("via", "1.1 b"), ("x-note", "caf\u{e9}")],
+        headers: vec![
+            ("via", "1.1 a"),
+            ("via", "1.1 b"),
+            ("x-note", "\u{4f60}\u{597d}"),
+        ],
         body: r#"{"status":"error","error_message":"bad audio"}"#,
     };
     let (outcome, _, _) = poll_with(vec![body], options(), "job-1").await;
@@ -295,7 +299,10 @@ async fn poll_joins_repeated_reply_headers_and_reads_text() {
     };
     let headers = provider.headers.unwrap();
     assert_eq!(headers.get("via").map(String::as_str), Some("1.1 a, 1.1 b"));
-    assert_eq!(headers.get("x-note").map(String::as_str), Some("caf\u{e9}"));
+    assert_eq!(
+        headers.get("x-note").map(String::as_str),
+        Some("\u{4f60}\u{597d}")
+    );
 }
 
 #[tokio::test]

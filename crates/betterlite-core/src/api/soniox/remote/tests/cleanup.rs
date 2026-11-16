@@ -171,6 +171,17 @@ async fn cleanup_ignores_the_delete_status() {
     assert_eq!(transport.calls().len(), 2);
 }
 
+fn sent_credentials(transport: &Script) -> Vec<(String, String)> {
+    transport
+        .calls()
+        .iter()
+        .map(|call| {
+            let bearer = call.headers.get(AUTHORIZATION).unwrap().to_str().unwrap();
+            (call.url.clone(), bearer.to_owned())
+        })
+        .collect()
+}
+
 #[tokio::test]
 async fn cleanup_sends_the_request_local_credential() {
     let transport = Script::new(vec![ok(), ok(), ok(), ok()]);
@@ -189,30 +200,23 @@ async fn cleanup_sends_the_request_local_credential() {
         Some("file-1"),
     )
     .await;
-    let sent: Vec<(String, String)> = transport
-        .calls()
-        .iter()
-        .map(|call| {
+    let base = "https://api.soniox.test/v1";
+    assert_eq!(
+        sent_credentials(&transport),
+        vec![
             (
-                call.url.clone(),
-                call.headers
-                    .get(AUTHORIZATION)
-                    .unwrap()
-                    .to_str()
-                    .unwrap()
-                    .to_owned(),
-            )
-        })
-        .collect();
-    let expected = [
-        ("transcriptions/job-n", "Bearer sk-neighbour"),
-        ("files/file-n", "Bearer sk-neighbour"),
-        ("transcriptions/job-1", "Bearer sk-local"),
-        ("files/file-1", "Bearer sk-local"),
-    ];
-    assert_eq!(sent.len(), expected.len());
-    for ((url, credential), (path, bearer)) in sent.iter().zip(expected) {
-        assert_eq!(url, &format!("https://api.soniox.test/v1/{path}"));
-        assert_eq!(credential, bearer);
-    }
+                format!("{base}/transcriptions/job-n"),
+                "Bearer sk-neighbour".to_owned(),
+            ),
+            (
+                format!("{base}/files/file-n"),
+                "Bearer sk-neighbour".to_owned(),
+            ),
+            (
+                format!("{base}/transcriptions/job-1"),
+                "Bearer sk-local".to_owned(),
+            ),
+            (format!("{base}/files/file-1"), "Bearer sk-local".to_owned(),),
+        ]
+    );
 }
