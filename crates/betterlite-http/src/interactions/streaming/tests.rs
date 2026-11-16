@@ -1,5 +1,10 @@
 #![cfg(test)]
 
+use std::io::{Read as _, Write as _};
+use std::net::{SocketAddr, TcpStream};
+use std::thread;
+use std::time::{Duration, Instant};
+
 use reqwest::blocking::Client as BlockingClient;
 use reqwest::blocking::ClientBuilder as BlockingClientBuilder;
 use reqwest::blocking::Response as BlockingResponse;
@@ -34,6 +39,52 @@ async fn sent_async(status: &str, headers: &[(&str, &str)], body: &str) -> SentA
     let client = base_builder().build().unwrap();
     let response = client.get(url).send().await.unwrap();
     (serving, client, response)
+}
+
+// a 500 head whose body never completes: the fixture reads the request, writes part of the body, then closes the socket or holds it open
+fn broken_body(hold: Option<Duration>) -> SocketAddr {
+    let listener = base::listener();
+    let address = listener.local_addr().unwrap();
+    thread::Builder::new()
+        .spawn(move || {
+            let (mut stream, _peer) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            read_request(&mut stream);
+            stream
+                .write_all(
+                    b"HTTP/1.1 500 Internal Server Error\r\ncontent-length: 10\r\nconnection: close\r\n\r\nabc",
+                )
+                .unwrap();
+            if let Some(held) = hold {
+                thread::park_timeout(held);
+            }
+        })
+        .unwrap();
+    address
+}
+
+fn read_request(stream: &mut TcpStream) {
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        let mut byte = [0];
+        stream.read_exact(&mut byte).unwrap();
+        received.push(byte[0]);
+    }
+}
+
+fn sent_broken(
+    hold: Option<Duration>,
+    deadline: Option<Duration>,
+) -> (BlockingClient, BlockingResponse) {
+    let address = broken_body(hold);
+    let client = BlockingClientBuilder::new()
+        .timeout(deadline)
+        .build()
+        .unwrap();
+    let response = client.get(format!("http://{address}/")).send().unwrap();
+    (client, response)
 }
 
 #[rstest]
@@ -89,6 +140,35 @@ fn create_sync_iterator_leaves_a_config_error_as_a_provider_error() {
     assert_eq!(provider_error(error), FixtureError::Stream);
     assert!(logging.model_call_details.contains_key("streamed"));
     serving.request.join().unwrap();
+}
+
+#[test]
+fn create_sync_iterator_names_the_status_when_the_body_read_fails() {
+    let (_client, response) = sent_broken(None, None);
+    let fixture = Fixture::new();
+
+    let error = create_sync_iterator(response, None, &mut Logging::default(), &fixture);
+
+    assert_eq!(provider_error(error), FixtureError::Refused(500));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|500||-".to_owned()), "{calls:?}");
+    assert!(calls.iter().all(|call| !call.starts_with("sync_stream|")));
+}
+
+#[test]
+fn create_sync_iterator_names_the_status_when_a_stalled_body_read_ends() {
+    let (_client, response) =
+        sent_broken(Some(Duration::from_secs(5)), Some(Duration::from_secs(1)));
+    let fixture = Fixture::new();
+    let started = Instant::now();
+
+    let error = create_sync_iterator(response, None, &mut Logging::default(), &fixture);
+
+    assert_eq!(provider_error(error), FixtureError::Refused(500));
+    assert!(started.elapsed() < Duration::from_secs(4));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|500||-".to_owned()), "{calls:?}");
+    assert!(calls.iter().all(|call| !call.starts_with("sync_stream|")));
 }
 
 #[rstest]
@@ -153,4 +233,49 @@ async fn create_async_iterator_leaves_a_config_error_as_a_provider_error() {
     assert_eq!(provider_error(error.await), FixtureError::Stream);
     assert!(logging.model_call_details.contains_key("streamed"));
     serving.request.join().unwrap();
+}
+
+#[tokio::test]
+async fn create_async_iterator_names_the_status_when_the_body_read_fails() {
+    let address = broken_body(None);
+    let client = base_builder().build().unwrap();
+    let response = client
+        .get(format!("http://{address}/"))
+        .send()
+        .await
+        .unwrap();
+    let fixture = Fixture::new();
+    let mut logging = Logging::default();
+
+    let error = create_async_iterator(&client, response, None, &mut logging, &fixture);
+
+    assert_eq!(provider_error(error.await), FixtureError::Refused(500));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|500||-".to_owned()), "{calls:?}");
+    assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
+}
+
+#[tokio::test]
+async fn create_async_iterator_names_the_status_when_the_body_read_expires() {
+    let address = broken_body(Some(Duration::from_secs(20)));
+    let client = base_builder()
+        .timeout(Duration::from_secs(30))
+        .build()
+        .unwrap();
+    let response = client
+        .get(format!("http://{address}/"))
+        .send()
+        .await
+        .unwrap();
+    let fixture = Fixture::new();
+    let mut logging = Logging::default();
+    let started = Instant::now();
+
+    let error = create_async_iterator(&client, response, None, &mut logging, &fixture);
+
+    assert_eq!(provider_error(error.await), FixtureError::Refused(500));
+    assert!(started.elapsed() < Duration::from_secs(15));
+    let calls = fixture.calls();
+    assert!(calls.contains(&"error|500||-".to_owned()), "{calls:?}");
+    assert!(calls.iter().all(|call| !call.starts_with("async_stream|")));
 }

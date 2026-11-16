@@ -1,19 +1,23 @@
+use std::time::Duration;
+
 use reqwest::blocking::Response as BlockingResponse;
 use reqwest::{Client, Response};
+use tokio::time::timeout;
 use tokio_util::task::TaskTracker;
 
-use crate::interactions::base::transport::response::response_headers;
-use crate::interactions::base::{
-    ErrorClasses, Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse,
-};
+use crate::interactions::base::transport::response::{read_body, response_headers};
+use crate::interactions::base::{ErrorClasses, Logging, MAX_RESPONSE_BYTES, UpstreamResponse};
 use crate::interactions::create::{CreateInteractionError, handle_failure};
-use crate::interactions::lifecycle::check_status;
+use crate::interactions::lifecycle::status_failure;
 use crate::interactions::lifecycle::synchronous::finish_blocking;
 use crate::proxy::StreamResponse;
 use crate::proxy::limits::read_bounded;
 use crate::proxy::stream::Lease;
 
 pub(crate) mod tests;
+
+// LiteLLM's _STREAMING_ERROR_BODY_READ_TIMEOUT_SECONDS: a failing stream's body gets five seconds, then reads as empty
+const STREAM_ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 
 // the iterators live in betterlite-core, which depends on this crate, so the provider config builds them here
 pub trait SyncStreamingConfig: ErrorClasses {
@@ -48,6 +52,16 @@ pub fn create_sync_iterator<C>(
 where
     C: SyncStreamingConfig,
 {
+    let status_code = response.status().as_u16();
+    if !(200..=299).contains(&status_code) {
+        let headers = response_headers(response.headers());
+        // _safe_read_response: a body that cannot be read reads as empty, and the real status still names the error
+        let body = read_body(response, MAX_RESPONSE_BYTES).unwrap_or_default();
+        return Err(handle_failure(
+            interactions_api_config,
+            status_failure(status_code, headers, &body),
+        ));
+    }
     let buffered = finish_blocking(response)
         .map_err(|failure| handle_failure(interactions_api_config, failure))?;
     interactions_api_config
@@ -69,13 +83,20 @@ where
     let status_code = response.status().as_u16();
     if !(200..=299).contains(&status_code) {
         let headers = response_headers(response.headers());
-        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
-            .await
-            .map_err(RequestFailure::from)
-            .map_err(|failure| handle_failure(interactions_api_config, failure))?;
-        if let Err(failure) = check_status(status_code, headers, body) {
-            return Err(handle_failure(interactions_api_config, failure));
-        }
+        // _safe_aread_response: the read gets five seconds, then a failure or an expiry reads as empty
+        let read = timeout(
+            STREAM_ERROR_BODY_TIMEOUT,
+            read_bounded(&mut response, MAX_RESPONSE_BYTES),
+        )
+        .await;
+        let body = match read {
+            Ok(Ok(body)) => body,
+            Ok(Err(_failed)) | Err(_expired) => Vec::new(),
+        };
+        return Err(handle_failure(
+            interactions_api_config,
+            status_failure(status_code, headers, &body),
+        ));
     }
     // the interaction clients keep no server drain tracker, so the lease carries a token of its own to hold the body
     let source = StreamResponse {
