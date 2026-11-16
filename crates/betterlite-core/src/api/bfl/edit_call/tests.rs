@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
-use std::future::{Future, pending};
+use std::future::{Future, pending, ready};
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -23,7 +23,7 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
-use chrono::DateTime;
+use chrono::{DateTime, FixedOffset};
 use http::header::HeaderMap;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -127,12 +127,17 @@ impl Drop for Cancel {
 }
 
 impl SubmitTransport for Wire {
-    async fn post(&self, request: SubmitRequest) -> Result<UpstreamResponse, SubmitError> {
+    fn post(
+        &self,
+        request: SubmitRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, SubmitError>> + Send {
         self.posts().push(request);
-        if self.fail_post.load(Ordering::SeqCst) {
-            return Err(SubmitError::Transport(TransportError::Closed));
-        }
-        Ok(Self::upstream(self.submission))
+        let posted = if self.fail_post.load(Ordering::SeqCst) {
+            Err(SubmitError::Transport(TransportError::Closed))
+        } else {
+            Ok(Self::upstream(self.submission))
+        };
+        ready(posted)
     }
 }
 
@@ -165,6 +170,7 @@ struct Fixture {
     redactor: Redactor,
     sink: Sink,
     state: LoggingState,
+    now: DateTime<FixedOffset>,
 }
 
 impl Fixture {
@@ -174,6 +180,8 @@ impl Fixture {
         )
         .expect("the logging fixture is valid");
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the redactor builds");
+        let now =
+            DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").expect("the clock parses");
         let state = LoggingState::new(
             init,
             CorrelationSetup {
@@ -189,6 +197,7 @@ impl Fixture {
             redactor,
             sink: Sink,
             state,
+            now,
         }
     }
 
@@ -205,8 +214,7 @@ impl Fixture {
             input_callbacks: &[],
             sentry: None,
             logger_fn: None,
-            now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00")
-                .expect("the clock parses"),
+            now: self.now,
         };
         prepare_call(
             call,
@@ -293,7 +301,9 @@ fn object(value: Option<&Json>) -> &IndexMap<String, Json> {
 fn field<'json>(body: &'json Json, name: &str) -> &'json Json {
     match body {
         Json::Object(fields) => fields.get(name).expect("the body names the field"),
-        _ => panic!("the submission body is an object"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("the submission body is an object")
+        }
     }
 }
 
@@ -482,7 +492,19 @@ async fn a_caller_header_the_wire_cannot_carry_is_a_500_after_the_record(
         EditCallError::HeaderName { .. } => "name",
         EditCallError::HeaderValue { .. } => "value",
         EditCallError::HeaderNotAscii { .. } => "ascii",
-        _ => panic!("the header is refused by its own check"),
+        EditCallError::Bfl(_)
+        | EditCallError::Edit(_)
+        | EditCallError::Params(_)
+        | EditCallError::Logging(_)
+        | EditCallError::NoImageProvided
+        | EditCallError::InnerHeadersType
+        | EditCallError::InnerHeaderValue { .. }
+        | EditCallError::Submission { .. }
+        | EditCallError::SubmissionStatus { .. }
+        | EditCallError::Poll(_)
+        | EditCallError::MissingCompletedResponse => {
+            panic!("the header is refused by its own check")
+        }
     };
     assert_eq!(found, refused);
     assert_eq!(error.status(), Some(500));

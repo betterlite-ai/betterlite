@@ -111,7 +111,7 @@ async fn submit<T>(
     transport: &T,
 ) -> Result<(UpstreamResponse, HeaderMap), EditCallError>
 where
-    T: SubmitTransport,
+    T: SubmitTransport + Sync,
 {
     let mut headers = prepared.headers.clone();
     for (name, value) in call.extra_headers {

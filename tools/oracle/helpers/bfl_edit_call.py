@@ -1,7 +1,7 @@
 import base64
 import time
 from collections.abc import Awaitable
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, SupportsIndex, TypeAlias, TypedDict
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -97,16 +97,13 @@ class Wire:
         self.millis = job["clock"]["start_millis"]
         self.poll_index = 0
 
-    def record(self, effect: dict[str, JsonValue]) -> None:
-        self.effects.append(effect)
-
     def now(self) -> float:
         moment = self.millis
         self.millis += self.job["clock"]["tick_millis"]
         return moment / 1000
 
-    def sleep(self, seconds: float) -> None:
-        self.record({"effect": "sleep", "millis": round(seconds * 1000)})
+    def sleep(self, seconds: float | SupportsIndex) -> None:
+        self.effects.append({"effect": "sleep", "millis": round(float(seconds) * 1000)})
         self.millis += self.job["clock"]["sleep_advance_millis"]
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
@@ -114,7 +111,7 @@ class Wire:
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
     def post_reply(self, request: httpx.Request) -> Reply:
-        self.record(
+        self.effects.append(
             {
                 "effect": "post",
                 "url": str(request.url),
@@ -126,7 +123,7 @@ class Wire:
         return self.job["submission"]
 
     def get_reply(self, request: httpx.Request) -> Reply:
-        self.record(
+        self.effects.append(
             {
                 "effect": "get",
                 "url": str(request.url),

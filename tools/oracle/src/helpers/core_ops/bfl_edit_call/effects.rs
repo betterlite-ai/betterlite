@@ -72,7 +72,10 @@ impl<'job> Wire<'job> {
 }
 
 impl SubmitTransport for Wire<'_> {
-    async fn post(&self, request: SubmitRequest) -> Result<UpstreamResponse, SubmitError> {
+    fn post(
+        &self,
+        request: SubmitRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, SubmitError>> + Send {
         self.record(json!({
             "effect": "post",
             "url": request.url.to_string(),
@@ -82,18 +85,22 @@ impl SubmitTransport for Wire<'_> {
                 .timeout
                 .map(|timeout| u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX)),
         }));
-        Ok(answer(self.submission))
+        ready(Ok(answer(self.submission)))
     }
 }
 
 impl PollTransport for Wire<'_> {
-    async fn get(&self, url: Url, headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.record(json!({
             "effect": "get",
             "url": url.to_string(),
             "headers": shown_headers(&headers),
         }));
-        Ok(answer(&self.next_poll()))
+        ready(Ok(answer(&self.next_poll())))
     }
 }
 

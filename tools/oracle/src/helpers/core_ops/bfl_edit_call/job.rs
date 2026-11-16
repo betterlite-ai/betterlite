@@ -11,6 +11,7 @@ use betterlite_core::api::bfl::edit_call::error::EditCallError;
 use betterlite_core::api::bfl::edit_call::{EditCall, EditExecutor, prepare_call};
 use betterlite_core::api::bfl::generation::BflImageResponse;
 use betterlite_core::api::bfl::generation_call::LogContext;
+use betterlite_core::api::bfl::generation_call::params::CallParams;
 use betterlite_core::api::bfl::generation_call::submit::SuppliedTransport;
 use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::decisions::Json;
@@ -34,56 +35,59 @@ pub(super) fn run_job(job: &Job, runtime: &Runtime) -> HelperResult {
         Ok(())
     };
     let env = logging_env(&redactor, &sink, &logger)?;
-    let max_depth = max_depth()?;
     let mut image = media_from(&job.image)?;
-    let result = runtime.block_on(execute(
+    let params = job.params().map_err(|error| failure(&error))?;
+    let extra_headers = job.extra_headers();
+    let configured_key = job.configured.api_key.as_deref().map(SecretString::from);
+    let mut call = edit_call(
         job,
-        &wire,
+        params,
+        &extra_headers,
+        configured_key.as_ref(),
+        &mut image,
+    )?;
+    let prepared = prepare_call(
+        &mut call,
         &mut LogContext {
             state: &mut state,
             env: &env,
         },
-        &mut image,
-        max_depth,
-    ));
+    )
+    .map_err(|error| failure(&error))?;
+    let executor = EditExecutor {
+        provider: &wire,
+        clock: &wire,
+        sleeper: &wire,
+    };
+    let supplied: Option<SuppliedTransport<'_, Wire<'_>>> = None;
+    let result = runtime.block_on(executor.image_edit(&call, &prepared, supplied));
     let recorded = take(&mut *wire.effects.lock().unwrap_or_else(PoisonError::into_inner));
     Ok(json!({"effects": recorded, "outcome": outcome(result)}))
 }
 
-async fn execute(
-    job: &Job,
-    wire: &Wire<'_>,
-    log: &mut LogContext<'_, '_>,
-    image: &mut SuppliedMedia,
-    max_depth: i64,
-) -> Result<BflImageResponse, EditCallError> {
-    let params = job.params()?;
-    let extra_headers = job.extra_headers();
-    let configured_key = job.configured.api_key.as_deref().map(SecretString::from);
-    let mut call = EditCall {
+fn edit_call<'borrow>(
+    job: &'borrow Job,
+    params: CallParams,
+    extra_headers: &'borrow [(String, String)],
+    configured_key: Option<&'borrow SecretString>,
+    image: &'borrow mut SuppliedMedia,
+) -> Result<EditCall<'borrow>, Box<HelperError>> {
+    Ok(EditCall {
         model: &job.model,
         prompt: job.prompt.as_deref(),
         image: Some(image),
         mask: MaskInput::Absent,
         optional_params: &job.optional_params,
         params,
-        extra_headers: &extra_headers,
+        extra_headers,
         timeout: job.timeout_millis.map(Duration::from_millis),
         // the oracle compares the sync handler; the async entry point keeps the same executor and transform
         aimage_edit: false,
-        max_depth,
-        configured_key: configured_key.as_ref(),
+        max_depth: max_depth()?,
+        configured_key,
         configured_base: &job.configured.api_base,
         now_seconds: 0,
-    };
-    let prepared = prepare_call(&mut call, log)?;
-    let executor = EditExecutor {
-        provider: wire,
-        clock: wire,
-        sleeper: wire,
-    };
-    let supplied: Option<SuppliedTransport<'_, Wire<'_>>> = None;
-    executor.image_edit(&call, &prepared, supplied).await
+    })
 }
 
 fn max_depth() -> Result<i64, Box<HelperError>> {
