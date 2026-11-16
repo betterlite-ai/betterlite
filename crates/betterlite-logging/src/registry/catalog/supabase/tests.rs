@@ -440,8 +440,8 @@ async fn initiated_body(user: Option<&str>) -> Json {
         let call: PreCall =
             serde_json::from_str(r#"{"input": [{"role": "user", "content": "Hello"}]}"#)
                 .expect("the fixture call decodes");
-        pre_call(&mut pre_call_state(user), &call, &env).expect("the pre-call hook runs");
-    }
+        pre_call(&mut pre_call_state(user), &call, &env).expect("the pre-call hook runs")
+    };
     let received = served.await;
     assert_eq!(received.method, "POST");
     assert_eq!(received.path, "/rest/v1/request_logs");
