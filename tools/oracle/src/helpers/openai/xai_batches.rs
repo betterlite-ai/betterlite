@@ -10,6 +10,8 @@ use betterlite_openai::xai_batches::transformation::{
     DEFAULT_BATCH_ENDPOINT, get_xai_auth_headers, results_params, to_create_batch_body,
     to_litellm_batch, to_openai_batch_list, xai_batches_url,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use http::header::{AUTHORIZATION, HeaderMap};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -95,8 +97,8 @@ fn settings(xai_key: Option<&str>, env: &BTreeMap<String, String>) -> Settings {
     }
 }
 
-fn invalid(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("InvalidInput"),
         status: None,
         error_type: None,
@@ -164,7 +166,7 @@ fn list_result(call: &ListCall) -> Result<Value, XaiBatchesError> {
     Ok(json!({"ok": true, "page": projected}))
 }
 
-fn jsonl_result(call: &JsonlCall) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn jsonl_result(call: &JsonlCall) -> Result<Value, Box<HelperError>> {
     let jsonl =
         results_to_openai_jsonl(&call.results).map_err(|error| invalid(error.to_string()))?;
     let text = String::from_utf8(jsonl).map_err(|error| invalid(error.to_string()))?;
@@ -180,10 +182,10 @@ fn params_result(call: &ParamsCall, settings: &Settings) -> Result<Value, XaiBat
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Create {
                 env,

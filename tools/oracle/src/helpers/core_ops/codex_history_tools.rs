@@ -1,3 +1,5 @@
+use betterlite_core::api::codex_history_tools;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -25,10 +27,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Normalize { items } => normalize(items),
             Input::DropUnsupportedTools {
@@ -36,10 +38,7 @@ impl crate::helpers::Helper for Op {
                 supported_types,
             } => drop_unsupported(tools, supported_types),
             Input::HoistAdditionalTools { items, tools } => {
-                let result = betterlite_core::api::codex_history_tools::hoist_additional_tools(
-                    items,
-                    tools.as_deref(),
-                );
+                let result = codex_history_tools::hoist_additional_tools(items, tools.as_deref());
                 serde_json::json!({"input": result.input, "tools": result.tools, "hoisted": result.hoisted})
             }
         };
@@ -48,8 +47,7 @@ impl crate::helpers::Helper for Op {
 }
 
 fn normalize(value: &Value) -> Value {
-    let (normalized, rewritten_types) =
-        betterlite_core::api::codex_history_tools::normalize_codex_input_items(value);
+    let (normalized, rewritten_types) = codex_history_tools::normalize_codex_input_items(value);
     let parsed_input = parse_tool_arguments(normalized);
     serde_json::json!({"input": parsed_input, "rewritten_types": rewritten_types})
 }
@@ -77,7 +75,6 @@ fn parse_tool_argument_item(item: Value) -> Value {
 }
 
 fn drop_unsupported(tools: &[Value], supported_types: &BTreeSet<String>) -> Value {
-    let (kept, dropped_types) =
-        betterlite_core::api::codex_history_tools::drop_unsupported_tools(tools, supported_types);
+    let (kept, dropped_types) = codex_history_tools::drop_unsupported_tools(tools, supported_types);
     serde_json::json!({"tools": kept, "dropped_types": dropped_types})
 }

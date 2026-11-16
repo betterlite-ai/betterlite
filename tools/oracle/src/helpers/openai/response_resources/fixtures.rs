@@ -12,7 +12,7 @@ use betterlite_redact::secret::Redactor;
 use chrono::DateTime;
 
 use super::invalid_input;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"responses","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const NOW: &str = "2026-01-01T00:05:00+00:00";

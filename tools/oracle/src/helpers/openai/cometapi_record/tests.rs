@@ -3,13 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
-use crate::compare::helper::HelperOutput;
-use crate::helpers::invoke;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::compare::helper::HelperOutput;
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, invoke};
 
 fn seeds() -> Vec<(String, HelperCase)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let mut seeds: Vec<(String, HelperCase)> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())
@@ -67,6 +66,9 @@ fn helper_seeds_cover_chat_and_embedding_functions() {
             super::Input::EmbeddingHeaders { .. } | super::Input::EmbeddingReplies { .. }
         )
     }));
-    let outputs: Vec<HelperOutput> = seeds.iter().map(|(_, case)| invoke(&case.call)).collect();
+    let outputs: Vec<HelperOutput> = seeds
+        .iter()
+        .map(|(_, case)| invoke(&[crate::GROUP], &case.call))
+        .collect();
     assert!(outputs.iter().all(|output| output.ok), "a seed did not run");
 }

@@ -16,7 +16,8 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::input::{RuntimeStep, SignStep, Step, TransformStep};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn execute(step: &Step) -> HelperResult {
     match step {
