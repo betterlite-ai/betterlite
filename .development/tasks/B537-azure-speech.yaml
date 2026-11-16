@@ -186,7 +186,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_speech*")"
       && grep -lq 'azure_speech' tools/oracle/fuzz/corpus/helper_case/azure_speech* && cargo nextest run --locked
       -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_speech$/)' && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-azure --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-speech-supported-params
     why: AVA advertises only voice,response_format,speed; SSML kwargs style/styledegree/role are handled by B538.
       B190 speech_request_body omits extra_headers in logging but the SDK call retains them.

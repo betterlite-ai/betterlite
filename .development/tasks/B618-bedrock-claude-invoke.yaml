@@ -373,7 +373,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke*")"
       && grep -lq 'bedrock_claude_invoke' tools/oracle/fuzz/corpus/helper_case/bedrock_claude_invoke* && cargo nextest
       run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_claude_invoke$/)'
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-bedrock --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-async-media-order
     why: uses_async_transform_request returns True. Async first invokes B183 async_inline_remote_media on messages
       with the inline-everything predicate, then calls this same synchronous transform; errors from inlining occur

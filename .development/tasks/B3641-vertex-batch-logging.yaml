@@ -114,13 +114,13 @@ checks:
       why: new helper seeds are absent or do not replay through the shared helper-case parser
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_batch_logging-*')" &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: batch-oracle
       why: newly added helper cases are absent, do not use the b3641 operation or disagree with LiteLLM
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-batch-logging)" &&
         grep -rlE '^[[:space:]]+b3641:' tools/oracle/cases/helpers/vertex-batch-logging &&
-        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/vertex-batch-logging
+        cargo run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server -- tools/oracle/cases/helpers/vertex-batch-logging
 oracle_cases:
   - tools/oracle/cases/helpers/vertex-batch-logging/create-collection-route-pending.yaml
   - tools/oracle/cases/helpers/vertex-batch-logging/create-id-scoped-route-pending.yaml
