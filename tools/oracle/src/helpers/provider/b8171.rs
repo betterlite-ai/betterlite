@@ -17,7 +17,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const DASHSCOPE_EXCEPTION: &str = "DashScopeException";
 

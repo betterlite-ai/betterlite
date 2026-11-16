@@ -16,7 +16,10 @@ use betterlite_lens::sources::source_reader::SourceReader;
 use betterlite_lens::sources::source_reader_sample::SampleWindow;
 
 use self::fake_storage::FakeStorage;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 mod fake_storage;
 
@@ -108,7 +111,7 @@ fn failure(class: &str, message: String) -> HelperResult {
 
 fn source_error<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     let message = error.to_string();
     Box::new(HelperError {
@@ -125,7 +128,7 @@ fn runtime<F>(future: F) -> HelperResult
 where
     F: Future<Output = HelperResult>,
 {
-    let built = tokio::runtime::Builder::new_current_thread().build();
+    let built = Builder::new_current_thread().build();
     match built {
         Ok(rt) => rt.block_on(future),
         Err(error) => failure("RuntimeError", error.to_string()),
@@ -242,7 +245,7 @@ fn run(input: &Input) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

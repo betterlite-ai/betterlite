@@ -3,12 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> serde_json::Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> serde_json::Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/xai-batches")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -17,7 +18,7 @@ fn run_case(file: &str) -> serde_json::Value {
 
 #[test]
 fn helper_seeds_select_xai_batches() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -38,7 +39,7 @@ fn helper_seeds_select_xai_batches() {
 
 #[test]
 fn oracle_create_keeps_the_name_and_the_caller_endpoint() {
-    let result = run_case("create-name-and-missing-input.yaml");
+    let result = run_case_file("create-name-and-missing-input.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["body"],
@@ -61,7 +62,7 @@ fn oracle_create_keeps_the_name_and_the_caller_endpoint() {
 
 #[test]
 fn oracle_cancellation_wins_over_the_counters() {
-    let result = run_case("cancel-over-counters.yaml");
+    let result = run_case_file("cancel-over-counters.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0]["batch"]["status"], "failed");
     assert_eq!(
@@ -84,7 +85,7 @@ fn oracle_cancellation_wins_over_the_counters() {
 
 #[test]
 fn oracle_timestamps_are_unix_seconds() {
-    let result = run_case("date-only-and-invalid-time.yaml");
+    let result = run_case_file("date-only-and-invalid-time.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["batch"]["created_at"],
@@ -117,7 +118,7 @@ fn oracle_timestamps_are_unix_seconds() {
 
 #[test]
 fn oracle_lists_report_the_token_apart_from_the_rows() {
-    let result = run_case("empty-list-with-token.yaml");
+    let result = run_case_file("empty-list-with-token.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0]["page"]["has_more"], serde_json::json!(true));
     assert_eq!(calls[0]["page"]["next_page_token"], "next-token");
@@ -130,7 +131,7 @@ fn oracle_lists_report_the_token_apart_from_the_rows() {
 
 #[test]
 fn oracle_jsonl_unwraps_the_first_map_value() {
-    let result = run_case("first-response-map-value.yaml");
+    let result = run_case_file("first-response-map-value.yaml");
     let text = result["calls"][0]["jsonl"].as_str().unwrap();
     let lines: Vec<&str> = text.lines().collect();
     assert_eq!(lines.len(), 3);
@@ -144,7 +145,7 @@ fn oracle_jsonl_unwraps_the_first_map_value() {
 
 #[test]
 fn oracle_params_default_the_limit_and_keep_an_empty_cursor() {
-    let result = run_case("empty-cursor-zero-limit.yaml");
+    let result = run_case_file("empty-cursor-zero-limit.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["url"],

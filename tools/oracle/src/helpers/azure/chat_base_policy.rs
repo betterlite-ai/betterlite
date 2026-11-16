@@ -3,7 +3,8 @@ use betterlite_azure::azure_chat_base_policy::mapping::requires_max_completion_t
 use betterlite_azure::azure_chat_base_policy::messages::sanitized_tools_update;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::Input;
 use reports::{

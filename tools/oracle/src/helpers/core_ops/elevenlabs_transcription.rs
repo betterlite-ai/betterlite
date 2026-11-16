@@ -18,6 +18,7 @@ use betterlite_openai::api::audio_file_input::{
     AudioFile, AudioTuple, AuthorizedAudioFiles, TupleContent, process_audio_file,
 };
 use betterlite_openai::openai_base_config::Object;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -77,10 +78,10 @@ impl AuthorizedAudioFiles for NoFiles {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let answers = input.calls.iter().map(answer).collect();
         Ok(json!({ "calls": Value::Array(answers) }))
     }

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
-use std::fmt;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::{fmt, mem};
 
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::Mode;
@@ -18,7 +18,8 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -104,7 +105,7 @@ where
             .unwrap_or_else(PoisonError::into_inner)
             .clear();
         let value = render(case)?;
-        let warnings = std::mem::take(&mut *logs.0.lock().unwrap_or_else(PoisonError::into_inner));
+        let warnings = mem::take(&mut *logs.0.lock().unwrap_or_else(PoisonError::into_inner));
         outcomes.push(json!({"value": value, "warnings": warnings}));
     }
     Ok(json!({ key: outcomes }))

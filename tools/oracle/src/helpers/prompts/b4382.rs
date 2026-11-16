@@ -16,7 +16,10 @@ use betterlite_prompts::redis_semantic_cache::{
 
 use self::fakes::{ConstantEmbedder, HelperConnector, HelperIndex};
 use self::input::{HitInput, Input, Operation};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -24,7 +27,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
         runtime.block_on(dispatch(input))
@@ -273,7 +276,7 @@ where
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),
