@@ -162,5 +162,5 @@ oracle_cases:
   - tools/oracle/cases/mcp-server/delete-with-cleanup.yaml
   - tools/oracle/cases/mcp-server/env-var-encryption.yaml
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2200
   max_new_expects: 0
