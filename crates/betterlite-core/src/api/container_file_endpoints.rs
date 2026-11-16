@@ -79,20 +79,20 @@ where
                 Prepared::Answered(reply) => return Ok(reply),
                 Prepared::Ready(prepared) => prepared,
             };
-        self.handler
-            .handle(&prepared.handler_call(call, logging))
-            .map_err(|error| {
-                let route = CallRoute {
-                    method: prepared.method,
-                    asynchronous: false,
-                };
-                failure(
-                    ContainerFileOpError::Handler(error),
-                    &prepared.provider,
-                    self.redactor,
-                    Some(route),
-                )
-            })
+        let request = prepared.handler_call(call, logging);
+        let route = CallRoute {
+            method: prepared.method,
+            asynchronous: false,
+        };
+        let reply = self.handler.handle(&request);
+        reply.map_err(|error| {
+            failure(
+                ContainerFileOpError::Handler(error),
+                &prepared.provider,
+                self.redactor,
+                Some(route),
+            )
+        })
     }
 
     // the async twin: LiteLLM maps a handler error on this path with the provider the caller gave
@@ -103,27 +103,24 @@ where
         logging: &Mutex<LoggingState>,
         default_timeout_seconds: f64,
     ) -> Result<ContainerFileReply, ContainerFileFailureError> {
-        let prepared =
-            match self.prepared_call(endpoint_name, call, logging, default_timeout_seconds)? {
-                Prepared::Answered(reply) => return Ok(reply),
-                Prepared::Ready(prepared) => prepared,
-            };
-        let reply = self
-            .handler
-            .ahandle(&prepared.handler_call(call, logging))
-            .await;
-        reply.map_err(|error| {
-            let route = CallRoute {
-                method: prepared.method,
-                asynchronous: true,
-            };
-            failure(
-                ContainerFileOpError::Handler(error),
-                &call.custom_llm_provider,
-                self.redactor,
-                Some(route),
-            )
-        })
+        match self.prepared_call(endpoint_name, call, logging, default_timeout_seconds)? {
+            Prepared::Answered(reply) => Ok(reply),
+            Prepared::Ready(prepared) => self
+                .handler
+                .ahandle(&prepared.handler_call(call, logging))
+                .await
+                .map_err(|error| {
+                    failure(
+                        ContainerFileOpError::Handler(error),
+                        &call.custom_llm_provider,
+                        self.redactor,
+                        Some(CallRoute {
+                            method: prepared.method,
+                            asynchronous: true,
+                        }),
+                    )
+                }),
+        }
     }
 }
 
