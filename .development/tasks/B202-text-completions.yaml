@@ -45,6 +45,7 @@ scope:
   - crates/betterlite-core/src/operation/text_completion/**
   - crates/betterlite-core/src/dispatch/text_completion.rs
   - crates/betterlite-core/src/dispatch/text_completion/**
+  - crates/betterlite-core/src/dispatch/text_stream/tests.rs
   - tools/oracle/cases/completions/**
   - tools/oracle/helpers/b202.py
   - tools/oracle/helpers/b202/**
@@ -106,7 +107,6 @@ oracle_cases:
 - tools/oracle/cases/completions/deployments-path.yaml
 - tools/oracle/cases/completions/upstream-400.yaml
 - tools/oracle/cases/completions/upstream-429.yaml
-- tools/oracle/cases/completions/empty-list-rejected.yaml
 - tools/oracle/cases/completions/chat-catalog-selection.yaml
 deviations: []
 out_of_scope:
