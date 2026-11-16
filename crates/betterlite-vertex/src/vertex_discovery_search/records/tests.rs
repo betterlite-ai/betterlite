@@ -35,6 +35,13 @@ fn expected_json(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
+fn all_text(names: &[&str]) -> BTreeMap<String, Json> {
+    names
+        .iter()
+        .map(|name| ((*name).to_owned(), Json::Text("value".to_owned())))
+        .collect()
+}
+
 fn request<'fixture>(
     query: &'fixture SearchQuery,
     optional_params: &'fixture BTreeMap<String, Json>,
@@ -281,6 +288,65 @@ fn an_engine_rejection_allows_the_store_fields_and_names_its_mode() {
     assert_eq!(mode, "engine/app");
     assert_eq!(fields, ["zzz"]);
     assert!(supported.iter().any(|field| field == "dataStoreSpecs"));
+}
+
+// the exact allowlist LiteLLM derives from VertexSearchDataStoreExtraBody's annotations
+#[test]
+fn every_native_extra_body_field_is_accepted_in_its_mode() {
+    let datastore_fields = [
+        "query",
+        "pageSize",
+        "pageToken",
+        "offset",
+        "oneBoxPageSize",
+        "pageCategories",
+        "imageQuery",
+        "filter",
+        "canonicalFilter",
+        "orderBy",
+        "userInfo",
+        "languageCode",
+        "facetSpecs",
+        "boostSpec",
+        "params",
+        "queryExpansionSpec",
+        "spellCorrectionSpec",
+        "userPseudoId",
+        "contentSearchSpec",
+        "rankingExpression",
+        "rankingExpressionBackend",
+        "safeSearch",
+        "userLabels",
+        "naturalLanguageQueryUnderstandingSpec",
+        "searchAsYouTypeSpec",
+        "displaySpec",
+        "crowdingSpecs",
+        "relevanceThreshold",
+        "relevanceScoreSpec",
+        "customRankingParams",
+    ];
+    let engine_only = ["dataStoreSpecs", "numResultsPerDataStore"];
+    let query = SearchQuery::Text("hello".to_owned());
+    let optional = object("{}");
+    let no_params = object("{}");
+    let engine_params = object(r#"{"vertex_engine_id":"app"}"#);
+    let datastore_extra = all_text(&datastore_fields);
+    assert!(
+        transform_search_request(
+            &request(&query, &optional, Some(&datastore_extra), &no_params),
+            &mut BTreeMap::new(),
+        )
+        .is_ok()
+    );
+    let mut engine_extra = all_text(&datastore_fields);
+    engine_extra.extend(all_text(&engine_only));
+    assert!(
+        transform_search_request(
+            &request(&query, &optional, Some(&engine_extra), &engine_params),
+            &mut BTreeMap::new(),
+        )
+        .is_ok()
+    );
 }
 
 #[test]
