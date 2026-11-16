@@ -1,0 +1,18 @@
+kind: helper
+name: fetch-request
+call:
+  vertex_veo_operation:
+    default_duration_seconds: 8
+    calls:
+      - function: fetch_request
+        video_id: 'video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOnZlcnRleF9haTttb2RlbF9pZDp2ZW8tMy4wLWdlbmVyYXRlLTAwMTt2aWRlb19pZDpwcm9qZWN0cy9wL2xvY2F0aW9ucy9sL3B1Ymxpc2hlcnMvZ29vZ2xlL21vZGVscy92ZW8tMy4wLWdlbmVyYXRlLTAwMS9vcGVyYXRpb25zL29wLTE='
+        api_base: 'https://us-central1-aiplatform.googleapis.com/v1/projects/p/locations/l/publishers/google/models/veo-3.0-generate-001/'
+calls:
+  - vertex_veo_operation:
+      default_duration_seconds: 8
+      calls:
+        - function: fetch_request
+          video_id: operations/op-1
+          api_base: 'https://mock'
+env: {}
+compare: {ignore: []}
