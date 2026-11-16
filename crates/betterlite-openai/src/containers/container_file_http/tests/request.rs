@@ -400,7 +400,7 @@ fn handle_logs_the_upload_headers_before_the_content_type_is_removed() {
     let mut call = fixture.call("upload_container_file");
     call.file = Some(&file);
     handler.handle(&call).unwrap();
-    let seen = handler.logging.seen.lock().unwrap();
+    let seen = handler.logging.seen.lock().unwrap().clone();
     let headers = seen.first().unwrap().1.headers.as_ref().unwrap();
     assert!(headers.contains_key("Content-Type"));
     assert!(headers.contains_key("content-type"));

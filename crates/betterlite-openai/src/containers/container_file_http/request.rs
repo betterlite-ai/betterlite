@@ -124,6 +124,7 @@ pub fn build_url(
 }
 
 // Declared names in catalog order, absent ones skipped, then the overlay replacing or appending
+#[must_use]
 pub fn build_query(
     names: &[String],
     values: &BTreeMap<String, ParamValue>,
@@ -141,6 +142,7 @@ pub fn build_query(
     query
 }
 
+#[must_use]
 pub fn pre_call_record(
     url: &str,
     headers: &BTreeMap<String, String>,

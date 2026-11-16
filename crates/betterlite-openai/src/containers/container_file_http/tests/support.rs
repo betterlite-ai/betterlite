@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_http::proxy::pool::PoolError;
@@ -71,7 +71,7 @@ impl BaseContainerConfig for StubConfig {
     }
 
     fn validate_environment(&self, headers: &BTreeMap<String, String>, api_key: Option<&str>) -> BTreeMap<String, String> {
-        self.environment.lock().unwrap().push((headers.clone(), api_key.map(str::to_owned)));
+        self.environment.lock().unwrap_or_else(PoisonError::into_inner).push((headers.clone(), api_key.map(str::to_owned)));
         let mut merged = headers.clone();
         merged.insert("Authorization".to_owned(), format!("Bearer {}", api_key.unwrap_or("none")));
         merged.insert("Content-Type".to_owned(), "application/json".to_owned());
@@ -80,7 +80,7 @@ impl BaseContainerConfig for StubConfig {
     }
 
     fn get_complete_url(&self, api_base: Option<&str>, litellm_params: &Map<String, Value>) -> Reply<String> {
-        self.bases.lock().unwrap().push((api_base.map(str::to_owned), litellm_params.clone()));
+        self.bases.lock().unwrap_or_else(PoisonError::into_inner).push((api_base.map(str::to_owned), litellm_params.clone()));
         Ok(self.api_base.clone())
     }
 
@@ -161,7 +161,10 @@ impl FakeClient {
 
 impl BlockingClient for FakeClient {
     fn send(&self, request: &ContainerHttpRequest) -> Result<ContainerHttpReply, TransferError> {
-        self.requests.lock().unwrap().push(request.clone());
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.clone());
         Ok(self.reply.clone())
     }
 }
@@ -171,7 +174,10 @@ impl AsyncClient for FakeClient {
         &self,
         request: &ContainerHttpRequest,
     ) -> impl Future<Output = Result<ContainerHttpReply, TransferError>> + Send {
-        self.requests.lock().unwrap().push(request.clone());
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(request.clone());
         ready(Ok(self.reply.clone()))
     }
 }
@@ -198,12 +204,18 @@ impl ClientSource for FakeSource {
     type Asynchronous = FakeClient;
 
     fn blocking_client(&self, ssl_verify: Option<&SslVerify>) -> Result<FakeClient, PoolError> {
-        self.blocking_made.lock().unwrap().push(ssl_verify.cloned());
+        self.blocking_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ssl_verify.cloned());
         Ok(self.client.clone())
     }
 
     fn async_client(&self, ssl_verify: Option<&SslVerify>) -> Result<FakeClient, PoolError> {
-        self.async_made.lock().unwrap().push(ssl_verify.cloned());
+        self.async_made
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(ssl_verify.cloned());
         Ok(self.client.clone())
     }
 }
@@ -226,7 +238,7 @@ impl PreCallHook for RecordingHook {
     fn pre_call(&self, _state: &mut LoggingState, call: &PreCall) -> Result<(), PrePostError> {
         self.seen
             .lock()
-            .unwrap()
+            .unwrap_or_else(PoisonError::into_inner)
             .push((call.input.clone(), call.additional_args.clone()));
         if self.fail {
             return Err(PrePostError::RawRequestCaptured);

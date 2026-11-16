@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::support::{BASE, DELETE_BODY, FILE_BODY, LIST_BODY, StubConfig, fixture, handler};
 use crate::api::container_contracts::catalog::{ContainerEndpoint, container_endpoints};
@@ -192,7 +192,7 @@ fn transform_returns_the_json_as_it_is_for_a_response_type_without_a_model() {
     let result = transform_reply(&config, &raw, &reply(200, r#"{"a":[1,2],"b":null}"#)).unwrap();
     assert_eq!(
         result,
-        ContainerFileReply::Raw(json!({"a": [1, 2], "b": null}))
+        ContainerFileReply::Raw(serde_json::from_str(r#"{"a":[1,2],"b":null}"#).unwrap())
     );
 }
 

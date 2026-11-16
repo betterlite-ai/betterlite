@@ -97,10 +97,10 @@ impl<'client, Client> Selected<'client, Client> {
     where
         Build: FnOnce() -> Result<Client, PoolError>,
     {
-        match supplied {
-            Some(client) => Ok(Self::Supplied(client)),
-            None => build().map(Self::Created),
-        }
+        supplied.map_or_else(
+            || build().map(Self::Created),
+            |client| Ok(Self::Supplied(client)),
+        )
     }
 
     pub const fn get(&self) -> &Client {

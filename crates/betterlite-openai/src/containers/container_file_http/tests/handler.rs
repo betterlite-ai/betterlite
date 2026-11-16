@@ -255,7 +255,7 @@ fn handle_logs_the_final_url_headers_and_query_before_it_sends() {
     handler
         .handle(&fixture.call("list_container_files"))
         .unwrap();
-    let seen = handler.logging.seen.lock().unwrap();
+    let seen = handler.logging.seen.lock().unwrap().clone();
     let [(input, args)] = seen.as_slice() else {
         panic!("expected one pre_call, got {}", seen.len());
     };
@@ -283,7 +283,7 @@ fn handle_logs_an_empty_params_object_when_no_query_is_set() {
     handler
         .handle(&fixture.call("list_container_files"))
         .unwrap();
-    let seen = handler.logging.seen.lock().unwrap();
+    let seen = handler.logging.seen.lock().unwrap().clone();
     let [(_, args)] = seen.as_slice() else {
         panic!("expected one pre_call");
     };

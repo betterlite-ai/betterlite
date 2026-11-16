@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
+use std::pin::pin;
 use std::sync::{Mutex, PoisonError};
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
@@ -13,14 +15,14 @@ use indexmap::IndexMap;
 use serde_json::{Map, Value};
 use thiserror::Error;
 
+use self::channel::{AsyncKind, BlockingKind, Channel};
 use self::request::{
     CallParams, ParamValue, RequestTarget, assemble_request, build_query, build_url,
     pre_call_record, read_params, request_headers,
 };
 use self::response::transform_reply;
 use self::transport::{
-    AsyncClient as _, BlockingClient as _, ClientSource, ContainerHttpRequest, Selected,
-    SuppliedClient, TransferError,
+    ClientSource, ContainerHttpRequest, Selected, SuppliedClient, TransferError,
 };
 use crate::api::container_contracts::catalog::{
     CatalogError, ContainerEndpoint, container_endpoints,
@@ -31,6 +33,7 @@ use crate::api::container_contracts::records::{
     ContainerFileListResponse, ContainerFileObject, DeleteContainerFileResponse,
 };
 
+pub mod channel;
 pub mod proxied;
 pub mod request;
 pub mod response;
@@ -71,6 +74,8 @@ pub enum ContainerFileHttpError {
     Upload(#[from] MediaMetadataError),
     #[error(transparent)]
     Transfer(#[from] TransferError),
+    #[error("the blocking path was asked to wait for a client that never answered")]
+    Suspended,
     #[error("the container response is not valid JSON")]
     Json {
         #[source]
@@ -90,7 +95,7 @@ pub struct ContainerFileUpload {
     pub file_data: FileData,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerFileReply {
     List(ContainerFileListResponse),
     File(ContainerFileObject),
@@ -138,43 +143,37 @@ impl<Source: ClientSource, Hook: PreCallHook> GenericContainerHandler<Source, Ho
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
-        let endpoint = find_endpoint(call.endpoint_name)?;
-        let params = read_params(call.litellm_params)?;
-        // a supplied client is kept only when it is the blocking kind
-        let supplied = match &call.client {
-            Some(SuppliedClient::Blocking(client)) => Some(*client),
-            Some(SuppliedClient::Asynchronous(_)) | None => None,
-        };
-        let client = Selected::choose(supplied, || {
-            self.clients.blocking_client(params.ssl_verify.as_ref())
-        })?;
-        self.prepare(&endpoint, call, &params)
-            .and_then(|request| {
-                client
-                    .get()
-                    .send(&request)
-                    .map_err(ContainerFileHttpError::from)
-            })
-            .and_then(|reply| transform_reply(call.config, &endpoint, &reply))
+        let mut running = pin!(self.run::<BlockingKind>(call));
+        match running
+            .as_mut()
+            .poll(&mut Context::from_waker(Waker::noop()))
+        {
+            Poll::Ready(outcome) => outcome,
+            Poll::Pending => Err(ContainerFileHttpError::Suspended),
+        }
     }
 
     pub async fn ahandle(
         &self,
         call: &ContainerFileHttpCall<'_, Source>,
     ) -> Result<ContainerFileReply, ContainerFileHttpError> {
+        self.run::<AsyncKind>(call).await
+    }
+
+    // One body for both paths, in LiteLLM's order: endpoint, client, then the request
+    async fn run<Mode: Channel<Source>>(
+        &self,
+        call: &ContainerFileHttpCall<'_, Source>,
+    ) -> Result<ContainerFileReply, ContainerFileHttpError> {
         let endpoint = find_endpoint(call.endpoint_name)?;
         let params = read_params(call.litellm_params)?;
-        // a supplied client is kept only when it is the async kind
-        let supplied = match &call.client {
-            Some(SuppliedClient::Asynchronous(client)) => Some(*client),
-            Some(SuppliedClient::Blocking(_)) | None => None,
-        };
+        let supplied = call.client.as_ref().and_then(Mode::supplied);
         let client = Selected::choose(supplied, || {
-            self.clients.async_client(params.ssl_verify.as_ref())
+            Mode::build(&self.clients, params.ssl_verify.as_ref())
         })?;
         let request = self.prepare(&endpoint, call, &params)?;
-        let answer = client.get().send(&request).await;
-        transform_reply(call.config, &endpoint, &answer?)
+        let reply = Mode::send(client.get(), &request).await?;
+        transform_reply(call.config, &endpoint, &reply)
     }
 
     // The steps both paths share, in LiteLLM's order: headers, base URL, path, query, log, then the method and the file

@@ -12,6 +12,7 @@ use url::Url;
 
 use super::transport::{
     AsyncClient, ContainerHttpReply, ContainerHttpRequest, ContainerMethod, TransferError,
+    UploadedFile,
 };
 
 // B173's pooled client with the deadline it was built to enforce; no call can change it
@@ -21,16 +22,9 @@ pub struct ProxiedContainerClient {
     pub deadline: Duration,
 }
 
-pub fn outbound_request(
-    request: &ContainerHttpRequest,
-    deadline: Duration,
-) -> Result<OutboundRequest, TransferError> {
-    let url = Url::parse(&request.url).map_err(|source| TransferError::Url {
-        url: request.url.clone(),
-        source,
-    })?;
-    let mut headers = HeaderMap::new();
-    for (name, value) in &request.headers {
+fn outbound_headers(headers: &BTreeMap<String, String>) -> Result<HeaderMap, TransferError> {
+    let mut converted = HeaderMap::new();
+    for (name, value) in headers {
         let header_name =
             HeaderName::try_from(name.as_str()).map_err(|source| TransferError::HeaderName {
                 name: name.clone(),
@@ -42,21 +36,32 @@ pub fn outbound_request(
                 source,
             }
         })?;
-        headers.append(header_name, header_value);
+        converted.append(header_name, header_value);
     }
-    let body = match &request.file {
-        Some(file) => RequestBody::Multipart {
-            // the boundary is the file's own digest, so it never repeats inside the data and needs no random source
-            boundary: format!("betterlite-{}", hex::encode(Sha256::digest(&file.content))),
-            parts: vec![MultipartPart {
-                name: "file".to_owned(),
-                file_name: Some(file.filename.clone()),
-                content_type: Some(file.content_type.clone()),
-                data: file.content.clone(),
-            }],
-        },
-        None => RequestBody::Empty,
-    };
+    Ok(converted)
+}
+
+// the boundary is the file's own digest, so it never repeats inside the data and needs no random source
+fn multipart_body(file: &UploadedFile) -> RequestBody {
+    RequestBody::Multipart {
+        boundary: format!("betterlite-{}", hex::encode(Sha256::digest(&file.content))),
+        parts: vec![MultipartPart {
+            name: "file".to_owned(),
+            file_name: Some(file.filename.clone()),
+            content_type: Some(file.content_type.clone()),
+            data: file.content.clone(),
+        }],
+    }
+}
+
+pub fn outbound_request(
+    request: &ContainerHttpRequest,
+    deadline: Duration,
+) -> Result<OutboundRequest, TransferError> {
+    let url = Url::parse(&request.url).map_err(|source| TransferError::Url {
+        url: request.url.clone(),
+        source,
+    })?;
     let method = match request.method {
         ContainerMethod::Get => Method::GET,
         ContainerMethod::Delete => Method::DELETE,
@@ -66,8 +71,11 @@ pub fn outbound_request(
         method,
         url,
         query: request.query.clone(),
-        headers,
-        body,
+        headers: outbound_headers(&request.headers)?,
+        body: request
+            .file
+            .as_ref()
+            .map_or(RequestBody::Empty, multipart_body),
         deadline,
     })
 }
@@ -81,6 +89,7 @@ fn header_text(bytes: &[u8]) -> String {
 }
 
 // httpx joins repeated headers with a comma and keeps names in lower case
+#[must_use]
 pub fn reply_headers(headers: &HeaderMap) -> BTreeMap<String, String> {
     let mut joined: BTreeMap<String, String> = BTreeMap::new();
     for (name, value) in headers {

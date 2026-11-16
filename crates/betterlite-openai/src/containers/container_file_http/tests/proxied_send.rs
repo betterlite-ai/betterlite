@@ -66,8 +66,8 @@ async fn send_makes_the_request_and_returns_status_headers_and_body() {
     let mut asked = request(ContainerMethod::Delete, url);
     asked.query = vec![("limit".to_owned(), "5".to_owned())];
     let sender = client();
-    let (reply, seen) = tokio::join!(sender.send(&asked), server);
-    let reply = reply.unwrap();
+    let (outcome, seen) = tokio::join!(sender.send(&asked), server);
+    let reply = outcome.unwrap();
     assert_eq!(reply.status, 404);
     assert_eq!(reply.body, br#"{"error":{"message":"gone"}}"#);
     assert_eq!(
