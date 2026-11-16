@@ -10,8 +10,7 @@ use betterlite_db_admin::commands::{DbAdminCommand, DbAdminError, DbAdminOutcome
 
 mod tests;
 
-// migrations/run.py in native form: DATABASE_URL, the caller's USE_PRISMA_DB_PUSH and
-// USE_V2_MIGRATION_RESOLVER switches, then the same migration job the proxy runs at startup.
+// the caller's USE_PRISMA_DB_PUSH and USE_V2_MIGRATION_RESOLVER override the config's values
 pub(crate) struct DatabaseStartupService;
 
 impl DbAdminService for DatabaseStartupService {
@@ -40,7 +39,7 @@ impl DbAdminService for DatabaseStartupService {
                 &build,
             )
             .await
-            .map_err(MigrationError::Startup)?;
+            .map_err(MigrationError::Recovery)?;
             Ok(match outcome {
                 JobOutcome::Completed => DbAdminOutcome::Completed,
                 JobOutcome::SetupFailed => DbAdminOutcome::RetriesExhausted,

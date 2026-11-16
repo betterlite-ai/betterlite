@@ -4,7 +4,6 @@ use std::pin::Pin;
 use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_ledger::lock::JitterSource;
 use betterlite_db::migration_recovery::RecoveryError;
-use thiserror::Error;
 
 use super::startup::{StartupSettings, build_request_log_indexes, setup_database};
 
@@ -38,13 +37,6 @@ pub enum JobOutcome {
 pub enum SetupFailure {
     RetriesExhausted,
     Unrecoverable,
-}
-
-// the raised message reaches "Database migration cannot proceed. {e}"
-#[derive(Debug, Error)]
-#[error("{message}")]
-pub struct UnrecoverableMigration {
-    pub message: String,
 }
 
 // Only an exhausted attempt budget is the retried-False exit; every definite failure is raised
@@ -81,16 +73,14 @@ pub async fn run_migration_job<Build>(
     schema_prisma: &[u8],
     jitter: &dyn JitterSource,
     build: &Build,
-) -> Result<JobOutcome, UnrecoverableMigration>
+) -> Result<JobOutcome, RecoveryError>
 where
     Build: IndexBuild,
 {
     if let Err(error) = setup_database(settings, catalog, schema_prisma, jitter).await {
         return match classify(&error) {
             SetupFailure::RetriesExhausted => Ok(JobOutcome::SetupFailed),
-            SetupFailure::Unrecoverable => Err(UnrecoverableMigration {
-                message: error.to_string(),
-            }),
+            SetupFailure::Unrecoverable => Err(error),
         };
     }
     if build.build().await {

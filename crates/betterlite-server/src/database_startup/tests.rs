@@ -21,9 +21,8 @@ use betterlite_db::request_log_index_catalog::definitions::REQUEST_LOG_INDEXES;
 use betterlite_db::worker_heartbeat::HostnameError;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
-use tokio::sync::Notify;
 use tokio::task::JoinSet;
-use tracing::subscriber::with_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use self::postgres::{NoJitter, ledger_rows, migration, row_count, table_exists, with_schema};
 use super::fixtures::{
@@ -59,16 +58,23 @@ fn settings_from(source: &str, pairs: &[(&str, &str)]) -> StartupSettings {
     StartupSettings::from_config(&config(source, pairs))
 }
 
-fn logged<T, F>(action: F) -> (T, String)
-where
-    F: FnOnce() -> T,
-{
+fn capture_log() -> (NamedTempFile, DefaultGuard) {
     let log = NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
         .with_writer(Arc::new(log.reopen().unwrap()))
         .finish();
-    let result = with_default(subscriber, action);
+    let guard = set_default(subscriber);
+    (log, guard)
+}
+
+fn logged<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let (log, guard) = capture_log();
+    let result = action();
+    drop(guard);
     (result, fs::read_to_string(log.path()).unwrap())
 }
 
@@ -95,7 +101,9 @@ async fn start_scripted(
     settings: StartupSettings,
     startup: Arc<ScriptedStartup>,
 ) -> Result<Startup, StartupError> {
-    let state = DatabaseState::from_settings(&settings);
+    let state = DatabaseState {
+        configured: settings.database_url.is_some(),
+    };
     ServingStartup {
         database: startup,
         settings: Arc::new(settings),
@@ -285,7 +293,9 @@ async fn native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepte
     assert!(settings.direct_url.is_some());
     // the obsolete inputs change no setting and start no Node toolchain: the schema check alone runs
     let startup = NativeStartup::packaged(settings.clone()).expect("the native startup builds");
-    let state = DatabaseState::from_settings(&settings);
+    let state = DatabaseState {
+        configured: settings.database_url.is_some(),
+    };
     let started = ServingStartup {
         database: Arc::new(startup),
         settings: Arc::new(settings),
@@ -308,7 +318,9 @@ async fn disabled_updates_warn_only() {
         ..pinned()
     };
     let startup = NativeStartup::packaged(settings.clone()).expect("the native startup builds");
-    let state = DatabaseState::from_settings(&settings);
+    let state = DatabaseState {
+        configured: settings.database_url.is_some(),
+    };
     let started = ServingStartup {
         database: Arc::new(startup),
         settings: Arc::new(settings),
@@ -335,20 +347,20 @@ async fn startup_migration_failure() {
         .err()
         .expect("a failed migration stops startup");
     match &error {
-        StartupError::Unrecoverable { message } => {
+        StartupError::Unrecoverable { source } => {
             assert!(
-                message.contains("could not be verified"),
-                "the raised migration message is carried: {message}"
+                matches!(source, RecoveryError::UnverifiedCompletion { .. }),
+                "the raised migration error is carried: {source:?}"
             );
         }
         other => panic!("expected an unrecoverable migration failure, got {other:?}"),
     }
     assert_eq!(error.exit_code(), 2);
-    assert!(
-        error
-            .to_string()
-            .starts_with("Database migration cannot proceed. ")
+    assert_eq!(
+        error.to_string(),
+        "Database migration cannot proceed. the migration completion could not be verified"
     );
+    assert!(std::error::Error::source(&error).is_some());
     // a failed migration schedules no request-log index build
     assert_eq!(scripted.calls(), vec!["migrate"]);
 }
@@ -399,20 +411,7 @@ async fn db_push_is_refused_before_connecting() {
 
 #[test]
 fn state_not_configured_is_not_connected() {
-    let settings = StartupSettings {
-        database_url: None,
-        direct_url: None,
-        ..pinned()
-    };
-    let state = DatabaseState::from_settings(&settings);
-    assert!(!state.is_configured());
-    // proxy_server builds prisma_client only from DATABASE_URL, so a lone DIRECT_URL is no database
-    let direct_only = DatabaseState::from_settings(&StartupSettings {
-        database_url: None,
-        direct_url: Some(SecretString::from(UNUSABLE_URL)),
-        ..pinned()
-    });
-    assert!(!direct_only.is_configured());
+    let state = DatabaseState { configured: false };
     assert_eq!(
         state.public_status(DatabaseStatus::Connected),
         "Not connected"
@@ -425,8 +424,7 @@ fn state_not_configured_is_not_connected() {
 
 #[test]
 fn state_configured_reports_probe_status() {
-    let state = DatabaseState::from_settings(&pinned());
-    assert!(state.is_configured());
+    let state = DatabaseState { configured: true };
     assert_eq!(state.public_status(DatabaseStatus::Unknown), "unknown");
     assert_eq!(state.public_status(DatabaseStatus::Connected), "connected");
     assert_eq!(
@@ -439,6 +437,7 @@ fn state_configured_reports_probe_status() {
 async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
     let fake = Arc::new(ScriptedHeartbeat::default());
     let task = HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake)).await;
+    tokio::task::yield_now().await;
     assert_eq!(
         fake.calls(),
         vec![HeartbeatCall::Upsert, HeartbeatCall::Prune]
@@ -458,27 +457,30 @@ async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
     assert_eq!(fake.calls().last(), Some(&HeartbeatCall::Deregister));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn shutdown_drains() {
-    let release = Arc::new(Notify::new());
     let finished = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let scripted = Arc::new(ScriptedStartup {
         build: BuildAnswer::WaitForRelease,
-        release: Arc::clone(&release),
         finished: Arc::clone(&finished),
         ..ScriptedStartup::new()
     });
     let settings = pinned();
-    let state = DatabaseState::from_settings(&settings);
-    let started = start_scripted(settings, scripted)
+    let state = DatabaseState {
+        configured: settings.database_url.is_some(),
+    };
+    let started = start_scripted(settings, Arc::clone(&scripted))
         .await
         .expect("startup returns without the background build");
+    tokio::task::yield_now().await;
+    assert_eq!(scripted.calls(), vec!["migrate", "build"]);
     assert!(!finished.load(Ordering::SeqCst));
 
     let refresh = Arc::new(ScriptedRefresh::default());
     let fake_heartbeat = Arc::new(ScriptedHeartbeat::default());
     let heartbeat_task =
         HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake_heartbeat)).await;
+    tokio::task::yield_now().await;
     let running = Running {
         state,
         startup: Some(started),
@@ -486,14 +488,19 @@ async fn shutdown_drains() {
         refresh: Some(refresh.clone()),
         pool: None,
     };
-    let mut joins = JoinSet::new();
-    joins.spawn(async move { running.shutdown().await });
-    tokio::task::yield_now().await;
-    release.notify_one();
-    joins.join_next().await.expect("shutdown ends");
-    assert!(
-        finished.load(Ordering::SeqCst),
-        "shutdown drained the index build instead of aborting it"
+    let (log_file, guard) = capture_log();
+    // the build is never released, so only an abort lets shutdown end before the paused clock's deadline
+    tokio::time::timeout(Duration::from_secs(3600), running.shutdown())
+        .await
+        .expect("shutdown aborts the index build instead of waiting for it");
+    drop(guard);
+    let log = fs::read_to_string(log_file.path()).unwrap();
+    assert!(!log.contains("stopped with an error"), "{log}");
+    assert!(!finished.load(Ordering::SeqCst));
+    assert_eq!(
+        Arc::strong_count(&scripted),
+        1,
+        "the aborted build task released its database handle"
     );
     assert!(refresh.stopped.load(Ordering::SeqCst));
     assert_eq!(
@@ -504,19 +511,42 @@ async fn shutdown_drains() {
 
 #[tokio::test]
 async fn native_database_reports_no_database_without_a_url() {
-    let settings = StartupSettings {
-        database_url: None,
-        direct_url: None,
-        ..pinned()
-    };
+    // proxy_server builds prisma_client only from DATABASE_URL, so a lone DIRECT_URL is no database
+    for direct_url in [None, Some(SecretString::from(UNUSABLE_URL))] {
+        let settings = StartupSettings {
+            database_url: None,
+            direct_url,
+            ..pinned()
+        };
+        let scripted = Arc::new(ScriptedStartup::new());
+        let database =
+            NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), settings, None);
+        let running = database.start().await.expect("a database-less startup");
+        assert!(!running.state.configured);
+        assert_eq!(
+            running.startup.as_ref().map(|startup| &startup.outcome),
+            Some(&StartupOutcome::NoDatabase)
+        );
+        assert!(running.pool.is_none());
+        running.shutdown().await;
+        assert!(scripted.calls().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn native_database_with_a_url_is_configured() {
     let scripted = Arc::new(ScriptedStartup::new());
     let database =
-        NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), settings, None);
-    let running = database.start().await.expect("a database-less startup");
-    assert_eq!(running.outcome(), Some(&StartupOutcome::NoDatabase));
-    assert!(running.pool().is_none());
-    running.shutdown().await;
-    assert!(scripted.calls().is_empty());
+        NativeDatabase::<ScriptedStartup>::with_startup(Arc::clone(&scripted), pinned(), None);
+    let error = database
+        .start()
+        .await
+        .err()
+        .expect("an unusable DATABASE_URL cannot open the pool");
+    assert!(matches!(error, StartupError::Pool { .. }), "{error}");
+    assert_eq!(error.exit_code(), 1);
+    // the configured state ran the migration before the pool failed
+    assert_eq!(scripted.calls().first(), Some(&"migrate"));
 }
 
 #[tokio::test]
@@ -751,10 +781,10 @@ async fn postgres_failure_effects() {
         )
         .await
         .expect_err("the unfinished history stops the job");
+        assert_eq!(classify(&error), SetupFailure::Unrecoverable);
         assert!(
-            error.message.contains("could not be verified"),
-            "{}",
-            error.message
+            error.to_string().contains("could not be verified"),
+            "{error}"
         );
         assert_eq!(ledger_rows(&database).await.len(), 2);
     })

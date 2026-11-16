@@ -10,8 +10,7 @@ use crate::helpers::{Helper, HelperResult, OrHelperError as _};
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     function: Function,
-    // proxy_cli reads general_settings.get(...), so an absent key and an explicit null both fall back
-    // to the environment
+    // an absent key and an explicit null both fall back to the environment
     #[serde(default)]
     disable_prisma_schema_update: Option<DisableUpdate>,
     environment: BTreeMap<String, String>,

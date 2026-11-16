@@ -16,9 +16,7 @@ use betterlite_db::worker_heartbeat::{
 
 use super::heartbeat::HeartbeatTask;
 use super::refresh::CredentialRefresh;
-use super::serving::{
-    ServingStartup, Startup, StartupDatabase, StartupError, StartupFuture, StartupOutcome,
-};
+use super::serving::{ServingStartup, Startup, StartupDatabase, StartupError, StartupFuture};
 use super::state::DatabaseState;
 
 // The startup policy's database work over the packaged migrations and the native pools.
@@ -30,28 +28,13 @@ pub struct NativeStartup {
 }
 
 impl NativeStartup {
-    #[must_use]
-    pub fn new(
-        settings: StartupSettings,
-        catalog: Vec<Migration>,
-        schema_prisma: &'static [u8],
-        jitter: Box<dyn JitterSource>,
-    ) -> Self {
-        Self {
-            settings,
-            catalog,
-            schema_prisma,
-            jitter,
-        }
-    }
-
     pub fn packaged(settings: StartupSettings) -> Result<Self, LockError> {
-        Ok(Self::new(
+        Ok(Self {
             settings,
-            packaged::migrations(),
-            packaged::SCHEMA_PRISMA,
-            Box::new(SystemJitter::try_new()?),
-        ))
+            catalog: packaged::migrations(),
+            schema_prisma: packaged::SCHEMA_PRISMA,
+            jitter: Box::new(SystemJitter::try_new()?),
+        })
     }
 }
 
@@ -74,8 +57,6 @@ impl StartupDatabase for NativeStartup {
     }
 }
 
-// The serving process's database startup: one policy run, then the native pool, the worker
-// heartbeat and the injected credential-refresh duty. Shutdown drains every one of them.
 pub struct NativeDatabase<Startup = NativeStartup> {
     startup: Arc<Startup>,
     settings: Arc<StartupSettings>,
@@ -103,7 +84,10 @@ where
         settings: StartupSettings,
         refresh: Option<Arc<dyn CredentialRefresh>>,
     ) -> Self {
-        let state = DatabaseState::from_settings(&settings);
+        // proxy_server builds prisma_client only from DATABASE_URL, so DIRECT_URL alone is no database
+        let state = DatabaseState {
+            configured: settings.database_url.is_some(),
+        };
         Self {
             startup,
             settings: Arc::new(settings),
@@ -120,7 +104,13 @@ where
         };
         let startup = serving.start().await?;
         let Some(url) = self.settings.database_url.as_ref() else {
-            return Ok(Running::without_database(self.state, startup));
+            return Ok(Running {
+                state: self.state,
+                startup: Some(startup),
+                heartbeat: None,
+                refresh: None,
+                pool: None,
+            });
         };
         let pool = match NativePoolProvider.build(url, None) {
             Ok(pool) => Arc::new(pool),
@@ -162,39 +152,14 @@ where
 
 // What a finished startup owns. B4448 reads the state; shutdown deregisters, drains and closes.
 pub struct Running {
-    pub(crate) state: DatabaseState,
-    pub(crate) startup: Option<Startup>,
+    pub state: DatabaseState,
+    pub startup: Option<Startup>,
     pub(crate) heartbeat: Option<HeartbeatTask>,
     pub(crate) refresh: Option<Arc<dyn CredentialRefresh>>,
-    pub(crate) pool: Option<Arc<NativePool>>,
+    pub pool: Option<Arc<NativePool>>,
 }
 
 impl Running {
-    fn without_database(state: DatabaseState, startup: Startup) -> Self {
-        Self {
-            state,
-            startup: Some(startup),
-            heartbeat: None,
-            refresh: None,
-            pool: None,
-        }
-    }
-
-    #[must_use]
-    pub const fn state(&self) -> DatabaseState {
-        self.state
-    }
-
-    #[must_use]
-    pub fn outcome(&self) -> Option<&StartupOutcome> {
-        self.startup.as_ref().map(|startup| &startup.outcome)
-    }
-
-    #[must_use]
-    pub fn pool(&self) -> Option<&Arc<NativePool>> {
-        self.pool.as_ref()
-    }
-
     // LiteLLM's shutdown order: deregister this worker, drain owned work, then close the pool
     pub async fn shutdown(self) {
         if let Some(heartbeat) = self.heartbeat

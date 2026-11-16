@@ -21,8 +21,7 @@ use crate::types::Config;
 // repair_invalid_indexes' Python default, which setup_database never overrides
 const REPAIR_LOCK_TIMEOUT: &str = "30s";
 
-// The server and the offline db-admin command both run this assembly. It sits beside the settings it
-// reads because the admin tool may not depend on betterlite-server.
+// the assembly lives in the config crate because the db-admin tool may not depend on betterlite-server
 #[derive(Debug, Clone)]
 pub struct StartupSettings {
     pub updates_enabled: bool,
@@ -67,17 +66,8 @@ impl StartupSettings {
             bootstrap_inputs: settings.bootstrap_inputs.clone(),
         }
     }
-
-    fn check(&self) -> MigrationDriftCheck {
-        MigrationDriftCheck {
-            database_url: self.database_url.clone(),
-            direct_url: self.direct_url.clone(),
-        }
-    }
 }
 
-// Mirrors ProxyExtrasDBManager.setup_database after its Node toolchain step: migrations, the invalid
-// index repair, then the opt-in REPLICA IDENTITY FULL re-assert, each of the last two best effort.
 pub async fn setup_database(
     settings: &StartupSettings,
     catalog: &[Migration],
@@ -102,7 +92,11 @@ pub async fn setup_database(
     };
     setup_database_v2(&inputs, request).await?;
     // both best-effort steps log their own failure and never fail the setup
-    let _repaired = repair_invalid_indexes(&settings.check(), REPAIR_LOCK_TIMEOUT).await;
+    let drift = MigrationDriftCheck {
+        database_url: settings.database_url.clone(),
+        direct_url: settings.direct_url.clone(),
+    };
+    let _repaired = repair_invalid_indexes(&drift, REPAIR_LOCK_TIMEOUT).await;
     let _identity = replica_identity_if_requested(settings.set_replica_identity_full, || {
         apply_identity(settings)
     })
@@ -117,8 +111,7 @@ async fn apply_identity(settings: &StartupSettings) -> bool {
     }
 }
 
-// Mirrors ProxyExtrasDBManager.build_request_log_indexes: no DATABASE_URL succeeds without a build,
-// DIRECT_URL carries the connection and DATABASE_URL names the schema, and a failure is never raised.
+// a failed build only warns: the next boot or migration job builds the indexes again
 pub async fn build_request_log_indexes(settings: &StartupSettings) -> bool {
     let Some(database_url) = &settings.database_url else {
         return true;
@@ -134,11 +127,13 @@ pub async fn build_request_log_indexes(settings: &StartupSettings) -> bool {
     ensure_request_log_indexes(&SecretString::from(direct), &schema, &REQUEST_LOG_INDEXES).await
 }
 
-// Mirrors the disabled-updates branch of proxy startup: the comparison is warning-only, so it can never
-// fail startup. The expected contract belongs to the drift service, so an absent one warns and continues.
+// the comparison is warning-only, so a disabled-updates startup never fails on it
 pub async fn check_schema_diff(settings: &StartupSettings) -> SchemaCheck {
     check_schema(
-        &settings.check(),
+        &MigrationDriftCheck {
+            database_url: settings.database_url.clone(),
+            direct_url: settings.direct_url.clone(),
+        },
         !settings.updates_enabled,
         None,
         &settings

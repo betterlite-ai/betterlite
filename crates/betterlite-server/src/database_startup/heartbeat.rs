@@ -9,8 +9,7 @@ use tokio::sync::Notify;
 use tokio::task::{JoinError, JoinSet};
 use tokio::time::sleep;
 
-// proxy_server.py's worker heartbeat: one beat before serving, then one per interval, and a
-// deregister on shutdown so a departed pod stops counting toward the live-worker census.
+// a stopped worker deregisters so a departed pod stops counting toward the live-worker census
 pub struct HeartbeatTask {
     stop: Arc<Notify>,
     tasks: JoinSet<()>,

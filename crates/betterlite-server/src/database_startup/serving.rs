@@ -36,8 +36,10 @@ pub struct Startup {
 }
 
 impl Startup {
+    // LiteLLM's build thread is a daemon that never delays exit, and the next boot rebuilds it
     pub async fn shutdown(self) {
         let mut tasks = self.tasks;
+        tasks.abort_all();
         while let Some(outcome) = tasks.join_next().await {
             if let Err(error) = outcome
                 && !error.is_cancelled()
@@ -50,8 +52,11 @@ impl Startup {
 
 #[derive(Debug, Error)]
 pub enum StartupError {
-    #[error("Database migration cannot proceed. {message}")]
-    Unrecoverable { message: String },
+    #[error("Database migration cannot proceed. {source}")]
+    Unrecoverable {
+        #[source]
+        source: RecoveryError,
+    },
     #[error(
         "Database setup failed after multiple retries. The proxy cannot start safely. Please check your database connection and migration status."
     )]
@@ -77,18 +82,15 @@ impl StartupError {
         }
     }
 
-    fn from_recovery(error: &RecoveryError) -> Self {
-        match classify(error) {
+    fn from_recovery(error: RecoveryError) -> Self {
+        match classify(&error) {
             SetupFailure::RetriesExhausted => Self::SetupFailed,
-            SetupFailure::Unrecoverable => Self::Unrecoverable {
-                message: error.to_string(),
-            },
+            SetupFailure::Unrecoverable => Self::Unrecoverable { source: error },
         }
     }
 }
 
-// proxy_cli.py's serving half: check-only when updates are disabled, else migrate and schedule the
-// request-log index build on its own task, so a long build never delays readiness.
+// the index build runs on its own task so a long build never delays readiness
 pub(crate) struct ServingStartup {
     pub(crate) database: Arc<dyn StartupDatabase>,
     pub(crate) settings: Arc<StartupSettings>,
@@ -97,7 +99,7 @@ pub(crate) struct ServingStartup {
 
 impl ServingStartup {
     pub(crate) async fn start(&self) -> Result<Startup, StartupError> {
-        if !self.state.is_configured() {
+        if !self.state.configured {
             return Ok(Startup {
                 outcome: StartupOutcome::NoDatabase,
                 tasks: JoinSet::new(),
@@ -113,7 +115,7 @@ impl ServingStartup {
         self.database
             .migrate()
             .await
-            .map_err(|error| StartupError::from_recovery(&error))?;
+            .map_err(StartupError::from_recovery)?;
         let mut tasks = JoinSet::new();
         let database = Arc::clone(&self.database);
         tasks.spawn(async move {

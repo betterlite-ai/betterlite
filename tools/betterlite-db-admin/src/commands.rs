@@ -1,7 +1,6 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use betterlite_config::sections::database_startup::job::UnrecoverableMigration;
 use betterlite_db::database_repair::RepairError;
 use betterlite_db::migration_deploy::DeployError;
 use betterlite_db::migration_ledger::connection::ConnectionError;
@@ -282,8 +281,6 @@ pub enum MigrationError {
     Deploy(#[from] DeployError),
     #[error(transparent)]
     Recovery(#[from] RecoveryError),
-    #[error(transparent)]
-    Startup(#[from] UnrecoverableMigration),
 }
 
 impl From<MigrationError> for DbAdminError {

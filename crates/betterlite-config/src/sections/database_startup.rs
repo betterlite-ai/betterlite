@@ -23,8 +23,7 @@ const ENV_PREFIX: &str = "os.environ/";
 
 const DISABLE_SCHEMA_UPDATE_PATH: &str = "general_settings.disable_prisma_schema_update";
 
-// Prisma's own bootstrap switches. betterlite runs the migrations natively with no Node toolchain, so it
-// accepts them and warns once instead of failing a deployment that still carries them.
+// official images still set these Prisma bootstrap inputs, so they warn once instead of failing
 pub const IGNORED_BOOTSTRAP_INPUTS: [&str; 5] = [
     "PRISMA_OFFLINE_MODE",
     "PRISMA_CLI_PATH",
@@ -41,8 +40,7 @@ pub struct Raw {
 
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneralSettings {
-    // proxy_cli reads general_settings.get(...), so an absent key and an explicit null are both None
-    // and fall back to the environment, unlike a present false
+    // an absent key and an explicit null both fall back to the environment, unlike a present false
     #[serde(default, rename = "disable_prisma_schema_update")]
     disable_prisma_schema_update: Option<RawDisable>,
 }

@@ -10,8 +10,7 @@ use tokio::task::JoinError;
 pub type RefreshFuture<'service> =
     Pin<Box<dyn Future<Output = Result<(), JoinError>> + Send + 'service>>;
 
-// B854 owns the loop; the composition starts it before serving and stops it on shutdown. The
-// concrete minter's providers belong to B712, so the serving app injects the built duty.
+// the minter's providers belong to B712, so the serving app injects the built refresh loop
 pub trait CredentialRefresh: Send + Sync {
     fn start(&self);
     fn stop(&self) -> RefreshFuture<'_>;

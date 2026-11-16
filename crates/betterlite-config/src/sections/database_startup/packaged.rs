@@ -5,8 +5,7 @@ use betterlite_db::{
     schema_routing_state,
 };
 
-// The schema.prisma the packaged migrations were generated from; betterlite-db's three copies of it are
-// byte-identical and this one records the packaged schema SHA256 that baseline detection compares.
+// baseline detection compares this file's SHA256 with the one recorded for the packaged migrations
 pub const SCHEMA_PRISMA: &[u8] =
     include_bytes!("../../../../betterlite-db/src/schema_contract/fixtures/proxy/schema.prisma");
 
