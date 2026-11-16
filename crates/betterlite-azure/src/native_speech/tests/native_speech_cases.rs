@@ -57,7 +57,7 @@ const VOICE_LANGUAGE_CASES: [(Option<&str>, Option<&str>, &str); 6] = [
     ),
 ];
 
-const ENDPOINT_CASES: [(Option<&str>, &str); 13] = [
+const ENDPOINT_CASES: [(Option<&str>, &str); 14] = [
     (
         Some("https://eastus.api.cognitive.microsoft.com"),
         "https://eastus.tts.speech.microsoft.com/cognitiveservices/v1",
@@ -89,6 +89,10 @@ const ENDPOINT_CASES: [(Option<&str>, &str); 13] = [
     (
         Some("https://custom.example/audio/"),
         "https://custom.example/audio/cognitiveservices/v1",
+    ),
+    (
+        Some("https://custom.example/cognitiveservices/v1"),
+        "https://custom.example/cognitiveservices/v1/cognitiveservices/v1",
     ),
     (
         Some("eastus.api.cognitive.microsoft.com"),

@@ -12,6 +12,7 @@ call:
         - 'https://eastus.tts.speech.microsoft.com/cognitiveservices/v1/'
         - 'https://custom.example/audio'
         - 'https://custom.example/audio/'
+        - 'https://custom.example/cognitiveservices/v1'
         - 'eastus.api.cognitive.microsoft.com'
         - 'https://eastus.api.cognitive.microsoft.com.evil.example'
         - 'https://TTS.Speech.Microsoft.com/cognitiveservices/v1'
