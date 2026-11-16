@@ -134,7 +134,9 @@ pub fn get_token_counter<T>(
     })
 }
 
+// the list is empty on every input, so its replacement mutation equals the body
 #[must_use]
+#[cfg_attr(test, mutants::skip)]
 pub fn get_models(credentials: ListingCredentials<'_>) -> Vec<String> {
     tracing::debug!(
         has_api_key = credentials.api_key.is_some(),
