@@ -20,7 +20,8 @@ use super::input::{
     FailureFixture, FileObjectCase, ListCase, UploadCase, UploadItem,
 };
 use super::views::{deleted_view, file_view, headers_view, pairs_object, parts_view};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Clone, Copy)]
 enum UrlKind {

@@ -12,8 +12,12 @@ use betterlite_cache::types::ping::CachePingResponse;
 use betterlite_cache::types::pipeline::{
     RedisPipelineIncrement, RedisPipelineLpop, RedisPipelineRpush, RedisPipelineSet,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
+use std::fmt::Display;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -87,10 +91,10 @@ impl CacheBackend for BaseContract {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::BaseCacheContractGet => cases::base_get(),
             Input::BaseCacheContractSet => cases::base_set(),
@@ -124,11 +128,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-pub(crate) fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+pub(crate) fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -142,9 +146,7 @@ const MAX_SIZE_PER_ITEM_KIB: i64 = 1024;
 
 pub(crate) type Now = Arc<Mutex<f64>>;
 
-pub(crate) fn memory(
-    start: f64,
-) -> Result<(MemoryCache<LocalMemoryOps>, Now), Box<crate::helpers::HelperError>> {
+pub(crate) fn memory(start: f64) -> Result<(MemoryCache<LocalMemoryOps>, Now), Box<HelperError>> {
     let now = Arc::new(Mutex::new(start));
     let reader = Arc::clone(&now);
     let operations = LocalMemoryOps::new(
@@ -155,8 +157,8 @@ pub(crate) fn memory(
     Ok((MemoryCache { operations }, now))
 }
 
-pub(crate) fn runtime() -> Result<tokio::runtime::Runtime, Box<crate::helpers::HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(crate) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_time()
         .build()
         .map_err(failure)

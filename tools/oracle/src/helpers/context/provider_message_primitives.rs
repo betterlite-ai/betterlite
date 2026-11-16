@@ -13,7 +13,8 @@ use tracing::subscriber::with_default;
 use tracing::{Event, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -50,10 +51,10 @@ pub(crate) enum JsonModeInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let logs = Logs::default();
         let subscriber = tracing_subscriber::registry().with(logs.clone());
         let result = with_default(subscriber, || outcome(input.clone()))

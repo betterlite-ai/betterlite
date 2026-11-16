@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use super::{Arguments, ServiceInput, ServiceTag, TranscriptObservation, fixtures, limits, valid};
-use crate::helpers::{HelperCall, invoke};
+use crate::helpers::GROUPS;
 use crate::websocket_driver::HandshakeObservation;
 use crate::websocket_oracle::decode::decode_ws_case;
+use betterlite_oracle_runner::helpers::{HelperCall, invoke};
 
 #[rstest::rstest]
 #[case::text("text: setup")]
@@ -22,10 +23,13 @@ fn helper_roundtrip(#[case] payload: &str) {
     let encoded = serde_json::to_value(input.to_wire()).unwrap();
     let decoded: ServiceInput = serde_json::from_value(encoded.clone()).unwrap();
     assert_eq!(decoded.input.frames, case.frames);
-    let output = invoke(&HelperCall {
-        operation: "websocket_oracle".to_owned(),
-        input: encoded,
-    });
+    let output = invoke(
+        &GROUPS,
+        &HelperCall {
+            operation: "websocket_oracle".to_owned(),
+            input: encoded,
+        },
+    );
     assert_eq!(output.error.unwrap().class, "ServiceError");
     let observation = TranscriptObservation {
         handshake: HandshakeObservation {

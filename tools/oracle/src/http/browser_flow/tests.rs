@@ -28,13 +28,14 @@ use tokio_postgres::NoTls;
 use super::{CapturedValue, run_case_steps};
 use crate::OracleError;
 use crate::case::browser_flow::{Capture, CaptureSource, Step};
-use crate::case::{BodyKind, Case, Compare, Request};
+use crate::case::{Case, Compare, Request};
 use crate::cli::Options;
 use crate::http::client;
 use crate::paths::unique_id;
 use crate::process::{Gateway, GatewaySpec};
 use crate::runner::browser_flow_group::compare_steps;
 use crate::runner::{DatabaseEnvironment, capture_gateway, run_group_with_url};
+use betterlite_oracle_runner::case::BodyKind;
 
 #[test]
 fn replays_the_browser_form_corpus() {

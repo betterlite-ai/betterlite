@@ -23,7 +23,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::failure;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const INIT: &str = r#"{"model":"gpt-4o","call_type":"completion","start_time":"2026-01-01T00:00:00+00:00","litellm_call_id":"call-1","function_id":"fn-1","litellm_trace_id":"trace-1"}"#;
 const NOW: &str = "2026-01-01T00:00:05+00:00";

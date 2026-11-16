@@ -11,7 +11,7 @@ use super::fixtures::{
     Transport, clocked_memory, fixture_cache, native_sources, secrets, sts_kwargs,
 };
 use super::io::memory_ttl;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct Observed {
     pub(super) credentials: Credentials,

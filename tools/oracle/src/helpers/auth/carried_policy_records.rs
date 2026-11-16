@@ -7,8 +7,11 @@ use betterlite_auth::agent_policy::{
 use betterlite_auth::budget_snapshots::{
     self, KeyBudgetSnapshot, OrgBudgetSnapshot, TeamBudgetSnapshot, UserBudgetSnapshot,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
+use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -43,10 +46,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.function {
             Function::KillAuth => {
                 serde_json::from_value::<AgentKillSwitchAuth>(input.value.clone())
@@ -77,7 +80,7 @@ impl crate::helpers::Helper for Op {
             Function::OrgSnapshot => snapshot::<OrgBudgetSnapshot>(&input.value),
         }
         .map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValidationError".to_owned(),
                 status: None,
                 error_type: None,
@@ -93,8 +96,7 @@ fn snapshot<T>(value: &Value) -> Result<Value, CarriedPolicyRecordsError>
 where
     T: budget_snapshots::BudgetSnapshot,
 {
-    let metadata: BTreeMap<String, Box<serde_json::value::RawValue>> =
-        serde_json::from_value(value.clone())?;
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_value(value.clone())?;
     let Some(snapshot) = T::from_metadata(&metadata) else {
         return Ok(serde_json::json!({"snapshot": null}));
     };

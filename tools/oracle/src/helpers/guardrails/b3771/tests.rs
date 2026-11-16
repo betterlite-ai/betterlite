@@ -9,15 +9,13 @@ use reqwest::header::HeaderValue;
 
 use super::generic::result_payload;
 use super::grayswan::failure;
+use tokio::runtime::Builder;
 
 fn connection_refused() -> reqwest::Error {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
         .block_on(reqwest::Client::new().get(format!("http://{addr}")).send())
         .unwrap_err()

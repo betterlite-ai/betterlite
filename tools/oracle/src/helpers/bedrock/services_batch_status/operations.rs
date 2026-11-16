@@ -21,7 +21,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::Input;
 use super::fixtures::{CredentialInput, Object, Prediction, Retrieve, TimeInput};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {

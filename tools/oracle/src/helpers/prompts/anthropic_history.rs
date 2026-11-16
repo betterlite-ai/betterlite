@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::anthropic_history;
 use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
@@ -42,10 +44,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::SanitizeEmptyTextContent { message } => ok_value(
                 anthropic_history::text::sanitize_empty_text_content(message),
@@ -88,7 +90,7 @@ fn add_missing_tool_results(
     current_message: &Json,
     messages: &[Json],
     current_index: usize,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     ok_value(anthropic_history::tools::add_missing_tool_results(
         current_message,
         messages,
@@ -96,26 +98,23 @@ fn add_missing_tool_results(
     ))
 }
 
-fn orphaned_tool_result(
-    current_message: &Json,
-    sanitized_messages: &[Json],
-) -> crate::helpers::HelperResult {
+fn orphaned_tool_result(current_message: &Json, sanitized_messages: &[Json]) -> HelperResult {
     ok_value(anthropic_history::tools::is_orphaned_tool_result(
         current_message,
         sanitized_messages,
     ))
 }
 
-fn declared_ids(message: &Json) -> crate::helpers::HelperResult {
+fn declared_ids(message: &Json) -> HelperResult {
     let mut ids = anthropic_history::groups::declared_tool_call_ids(message);
     ids.sort();
     ok_value(ids)
 }
 
-fn sanitize_messages(messages: &[Json], modify_params: bool) -> crate::helpers::HelperResult {
+fn sanitize_messages(messages: &[Json], modify_params: bool) -> HelperResult {
     let sanitized = anthropic_history::tools::sanitize_messages(messages, modify_params).map_err(
         |failure| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "AnthropicHistory".to_owned(),
                 status: None,
                 error_type: None,
@@ -128,12 +127,12 @@ fn sanitize_messages(messages: &[Json], modify_params: bool) -> crate::helpers::
     ok_value(sanitized)
 }
 
-fn ok_value<Payload>(payload: Payload) -> crate::helpers::HelperResult
+fn ok_value<Payload>(payload: Payload) -> HelperResult
 where
     Payload: Serialize,
 {
     serde_json::to_value(payload).map_err(|failure| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: None,

@@ -1,0 +1,25 @@
+[package]
+name = "betterlite-oracle-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+betterlite-cli = { path = "../../../../../crates/betterlite-cli" }
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-secrets = { path = "../../../../../crates/betterlite-secrets" }
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+tempfile = "3.27.0"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+
+[lints]
+workspace = true

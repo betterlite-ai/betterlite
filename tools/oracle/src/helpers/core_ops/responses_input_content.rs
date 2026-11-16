@@ -5,7 +5,8 @@ use betterlite_core::api::responses_input_content::{
 use serde::Deserialize;
 use serde_json::{Map, Value};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]

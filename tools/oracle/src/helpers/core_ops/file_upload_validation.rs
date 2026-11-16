@@ -1,4 +1,3 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::sections::Section;
@@ -15,9 +14,12 @@ use betterlite_core::api::file_upload_validation::upload::{
     ExtensionRule, UploadValidationFailure, check_extension, check_unsafe_filename,
     check_upload_file_size,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 use std::io::Cursor;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -108,7 +110,7 @@ impl Helper for Op {
         Ok(Value::Array(answers))
     }
 }
-fn value_error(error: &dyn std::fmt::Display) -> Box<HelperError> {
+fn value_error(error: &dyn Display) -> Box<HelperError> {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,

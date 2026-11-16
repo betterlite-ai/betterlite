@@ -1,4 +1,3 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::threads::error::ThreadsError;
@@ -6,12 +5,15 @@ use betterlite_openai::threads::operations::{ClientSetup, ThreadCall, ThreadRepl
 use betterlite_openai::threads::records::{
     MessageContent, MessageRole, ThreadCreate, ThreadMessageData,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::{DispatchFields, OptionFields, Reply, ThreadsCall};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 use std::future::Future;
 use std::sync::{Arc, PoisonError};
 use std::time::Duration;
+use tokio::runtime::Builder;
 use wire::{MESSAGE, PAGE, THREAD, Wire, dispatch_wire, replying};
 
 const THREAD_ID: &str = "thread_1";
@@ -84,7 +86,7 @@ fn block_on<T, F>(future: F) -> Result<T, Box<HelperError>>
 where
     F: Future<Output = T>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| fault(error.to_string()))?;
     Ok(runtime.block_on(future))
@@ -222,7 +224,7 @@ fn dispatch(fields: &DispatchFields) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ThreadsCall;
 
     fn run(input: &Self::Input) -> HelperResult {

@@ -1,5 +1,7 @@
 use betterlite_backend::BACKEND_ROUTES;
 use betterlite_gateway::routes::GATEWAY_ROUTES;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::server::filter::keeps_route;
 use serde::Deserialize;
 
@@ -19,10 +21,10 @@ pub(crate) enum Component {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let routes = match input.component {
             Component::Gateway => GATEWAY_ROUTES,
             Component::Backend => BACKEND_ROUTES,
@@ -36,8 +38,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn helper_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "SerializationError".to_owned(),
         status: None,
         error_type: None,

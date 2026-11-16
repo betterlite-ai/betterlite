@@ -6,14 +6,16 @@ use betterlite_openai::fireworks_ai_chat_params::supported::supported_openai_par
 use betterlite_openai::openai_base_config::Object;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::Fixture;
 use super::input::{Input, Step};
+use tokio::runtime::Builder;
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     let mut fixture = Fixture::load(&input.catalog);
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|source| {

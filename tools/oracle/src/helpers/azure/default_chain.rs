@@ -6,8 +6,8 @@ use betterlite_config::sections::azure_default_chain::{AzureCredentialType, Sett
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::OrHelperError as _;
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fields;
 mod fixture;

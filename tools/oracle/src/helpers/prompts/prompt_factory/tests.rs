@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 use rstest::rstest;
 
 const BEDROCK_LLAMA3_RENDERED: &str = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";

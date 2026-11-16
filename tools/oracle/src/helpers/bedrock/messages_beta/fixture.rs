@@ -3,6 +3,7 @@ use std::future::{Future, ready};
 use std::sync::Arc;
 
 use betterlite_anthropic::anthropic_capability_catalog::CatalogSources;
+use betterlite_bedrock::bedrock_messages_beta::beta;
 use betterlite_bedrock::bedrock_messages_beta::beta::{BetaHeadersError, BetaHeadersRequest};
 use betterlite_bedrock::bedrock_model_capabilities::tool_search::supports_tool_search;
 use betterlite_bedrock::mantle_inputs::region::split_region_prefix;
@@ -28,6 +29,7 @@ use betterlite_models::model_metadata_resolution::names::{
 use betterlite_models::provider_defaults_a::policies::ProviderPolicies;
 use betterlite_models::provider_defaults_b::globals::GlobalCredentials;
 use betterlite_models::resolution::ResolutionContext;
+use std::io;
 use tokio::runtime::{Builder, Runtime};
 
 // The same bundled config the production loader reads, byte-identical to LiteLLM's local backup.
@@ -52,7 +54,7 @@ pub(super) enum FixtureError {
     #[error("candidate patterns: {0}")]
     Patterns(#[from] CatalogLookupError),
     #[error("runtime: {0}")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
 }
 
 pub(super) struct NoHfTransport;
@@ -179,14 +181,12 @@ impl<'fixture> Session<'fixture> {
         let mut environment =
             self.fixture
                 .capability_environment(&self.resolution, &mut self.keys, &self.dynamic);
-        self.runtime.block_on(
-            betterlite_bedrock::bedrock_messages_beta::beta::beta_headers(
-                request,
-                &mut environment,
-                &catalogs,
-                matrix,
-            ),
-        )
+        self.runtime.block_on(beta::beta_headers(
+            request,
+            &mut environment,
+            &catalogs,
+            matrix,
+        ))
     }
 
     pub(super) fn supports_tool_search(&mut self, model: &str) -> bool {

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_openapi::docs_settings::{DocsEnv, DocsUrls};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::docs_routes::{DocsPage, DocsRouteConfig, page_body, redirect_location};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -24,10 +26,10 @@ pub(crate) struct RootPathScenario {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::SwaggerPage {
                 title,
@@ -84,12 +86,12 @@ fn resolution(scenario: &BTreeMap<String, String>) -> serde_json::Value {
     })
 }
 
-fn to_json<T>(value: T) -> crate::helpers::HelperResult
+fn to_json<T>(value: T) -> HelperResult
 where
     T: serde::Serialize,
 {
     serde_json::to_value(value).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: None,

@@ -1,4 +1,6 @@
 use betterlite_anthropic::response_content::{project_response, wire::AnthropicCompletionResponse};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct Input {
@@ -8,12 +10,12 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let reply = project_response(&input.response, input.json_mode).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "AnthropicResponseContent".to_owned(),
                 status: None,
                 error_type: None,
@@ -23,7 +25,7 @@ impl crate::helpers::Helper for Op {
             })
         })?;
         serde_json::to_value(reply).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "AnthropicResponseContent".to_owned(),
                 status: None,
                 error_type: None,

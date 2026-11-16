@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_openai::embedding::{EmbeddingInput, EmbeddingResponse};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::oci_common::OciError;
 use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
@@ -200,10 +201,10 @@ fn step_output(step: &Step) -> serde_json::Value {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let results = input.steps.iter().map(step_output).collect::<Vec<_>>();
         Ok(serde_json::json!(results))
     }

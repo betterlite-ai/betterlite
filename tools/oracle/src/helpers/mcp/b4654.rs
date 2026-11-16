@@ -10,7 +10,8 @@ use betterlite_mcp::request_headers::{client_headers, path_targets};
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

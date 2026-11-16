@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 
 use super::principal::{new_skill, principal_of};
 use super::{Step, invalid_input};
+use betterlite_oracle_helper_api::error::HelperError;
 
 fn page_of(step: &Step) -> SkillPage {
     SkillPage {
@@ -27,14 +28,14 @@ const fn token(error: &StoreError) -> &'static str {
     }
 }
 
-fn row_json(row: &SkillTable) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn row_json(row: &SkillTable) -> Result<Value, Box<HelperError>> {
     match serde_json::to_value(row) {
         Ok(value) => Ok(value),
         Err(error) => Err(invalid_input(error.to_string())),
     }
 }
 
-fn rows_json(rows: &[SkillTable]) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn rows_json(rows: &[SkillTable]) -> Result<Value, Box<HelperError>> {
     rows.iter()
         .map(row_json)
         .collect::<Result<Vec<_>, _>>()
@@ -44,7 +45,7 @@ fn rows_json(rows: &[SkillTable]) -> Result<Value, Box<crate::helpers::HelperErr
 fn row_answer(
     action: &str,
     outcome: Result<SkillTable, StoreError>,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+) -> Result<Value, Box<HelperError>> {
     match outcome {
         Ok(row) => row_json(&row).map(|value| json!({"action": action, "row": value})),
         Err(error) => Ok(json!({"action": action, "error": token(&error)})),
@@ -54,7 +55,7 @@ fn row_answer(
 pub(super) async fn run_steps<R>(
     store: &HostedSkillStore<R>,
     steps: &[Step],
-) -> Result<Vec<Value>, Box<crate::helpers::HelperError>>
+) -> Result<Vec<Value>, Box<HelperError>>
 where
     R: SkillRepository,
 {
@@ -65,10 +66,7 @@ where
     Ok(results)
 }
 
-async fn run_step<R>(
-    store: &HostedSkillStore<R>,
-    step: &Step,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+async fn run_step<R>(store: &HostedSkillStore<R>, step: &Step) -> Result<Value, Box<HelperError>>
 where
     R: SkillRepository,
 {
@@ -99,7 +97,7 @@ async fn list_step<R>(
     action: &str,
     page: SkillPage,
     caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+) -> Result<Value, Box<HelperError>>
 where
     R: SkillRepository,
 {
@@ -118,7 +116,7 @@ async fn skill_step<R>(
     store: &HostedSkillStore<R>,
     step: &Step,
     caller: Option<&Principal>,
-) -> Result<Value, Box<crate::helpers::HelperError>>
+) -> Result<Value, Box<HelperError>>
 where
     R: SkillRepository,
 {

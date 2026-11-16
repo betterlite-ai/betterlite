@@ -16,9 +16,13 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use outcome::{infallible, operation_outcome, read_outcome};
 use script::{Requests, Route, Script};
+use std::mem;
+use tokio::runtime::Builder;
+use tokio::time::Instant;
 
 pub(crate) struct Op;
 
@@ -105,7 +109,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
@@ -126,7 +130,7 @@ impl Helper for Op {
 async fn execute(input: &Input) -> HelperResult {
     let requests = Requests::default();
     let script = Script::new(&input.routes, Arc::clone(&requests));
-    let clock = Arc::new(tokio::time::Instant::now);
+    let clock = Arc::new(Instant::now);
     let manager = match HashicorpSecretManager::new(&input.env, script, clock) {
         Ok(manager) => manager,
         Err(_error) => return Ok(json!({"init": {"ok": false}, "steps": []})),
@@ -134,7 +138,7 @@ async fn execute(input: &Input) -> HelperResult {
     let mut steps = Vec::new();
     for step in &input.steps {
         let result = run_step(&manager, step).await?;
-        let sent = std::mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
+        let sent = mem::take(&mut *requests.lock().unwrap_or_else(PoisonError::into_inner));
         steps.push(json!({"result": result, "requests": sent}));
     }
     Ok(json!({"init": {"ok": true}, "steps": steps}))

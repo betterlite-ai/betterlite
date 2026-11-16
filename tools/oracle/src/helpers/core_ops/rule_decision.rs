@@ -4,15 +4,17 @@ use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::rules::{RuleDecision, RuleError, RuleEvaluator, RulePhase, evaluate};
 use betterlite_openai::chat::mock_failure;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Deserialize;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = RuleCall;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let evaluator = Decisions {
             rules: &input.rules,
         };
@@ -75,7 +77,7 @@ impl RuleEvaluator for Decisions<'_> {
 }
 
 // the rules read the answer a mock call produces, so a text mock_response composes with B255's builder
-fn rule_input(input: &RuleCall) -> Result<Option<String>, Box<crate::helpers::HelperError>> {
+fn rule_input(input: &RuleCall) -> Result<Option<String>, Box<HelperError>> {
     let Some(text) = input.mock_response.as_ref() else {
         return Ok(input.input.clone());
     };
@@ -92,7 +94,7 @@ fn rule_input(input: &RuleCall) -> Result<Option<String>, Box<crate::helpers::He
     }
 }
 
-fn rule_failure(error: &RuleError) -> Box<crate::helpers::HelperError> {
+fn rule_failure(error: &RuleError) -> Box<HelperError> {
     let (class, status) = match error {
         RuleError::Rejected { .. } => (
             "APIResponseValidationError",
@@ -103,7 +105,7 @@ fn rule_failure(error: &RuleError) -> Box<crate::helpers::HelperError> {
     failure(class, status, error.to_string())
 }
 
-fn mock_answer_failure(error: MockError) -> Box<crate::helpers::HelperError> {
+fn mock_answer_failure(error: MockError) -> Box<HelperError> {
     let redactor = match Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH) {
         Ok(redactor) => redactor,
         Err(redaction) => return failure("Redaction", None, redaction.to_string()),
@@ -116,7 +118,7 @@ fn mock_answer_failure(error: MockError) -> Box<crate::helpers::HelperError> {
     )
 }
 
-fn object_answer() -> Box<crate::helpers::HelperError> {
+fn object_answer() -> Box<HelperError> {
     failure(
         "RuleInput",
         None,
@@ -124,8 +126,8 @@ fn object_answer() -> Box<crate::helpers::HelperError> {
     )
 }
 
-fn failure(class: &str, status: Option<u16>, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status,
         error_type: None,

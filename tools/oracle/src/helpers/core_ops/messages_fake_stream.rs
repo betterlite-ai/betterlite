@@ -2,7 +2,8 @@ use betterlite_core::api::messages_fake_stream::{MessagesFakeStream, MessagesFak
 use betterlite_models::decisions::Json;
 use serde_json::json;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 pub(crate) struct Input {
@@ -11,10 +12,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let stream = MessagesFakeStream::new(&input.response).map_err(fake_stream_error)?;
         let frames: Vec<String> = stream
             .map(|bytes| {

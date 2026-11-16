@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 mod inputs;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use inputs::{
     CategoryStep, ChatMapStep, ChatMessagesStep, CompletionStep, Input, RerankRequestStep,
     RerankResponseStep, ReturnDocumentsStep,
@@ -202,10 +203,10 @@ fn category_step(step: &CategoryStep) -> Value {
     ))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let config = TogetherAiChatConfig {
             base: OpenAiConfig {
                 family: ConfigFamily::Other,

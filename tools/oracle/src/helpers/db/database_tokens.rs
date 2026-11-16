@@ -3,10 +3,11 @@ use std::sync::{Arc, Mutex, PoisonError};
 use betterlite_db::database_tokens::endpoint::{IAMEndpoint, parse_iam_endpoint_from_url};
 use betterlite_db::database_tokens::expiry::{TokenAuthKind, parse_token_expiration};
 use serde::Deserialize;
-use tracing::{Event, Subscriber};
+use tracing::{Event, Subscriber, subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -100,8 +101,7 @@ fn parse_endpoint(url: &str) -> HelperResult {
 fn expiration(kind: TokenAuthKind, token: &str) -> HelperResult {
     let levels = Levels::default();
     let subscriber = tracing_subscriber::registry().with(levels.clone());
-    let parsed =
-        tracing::subscriber::with_default(subscriber, || parse_token_expiration(kind, token));
+    let parsed = subscriber::with_default(subscriber, || parse_token_expiration(kind, token));
     let log_level = levels
         .0
         .lock()

@@ -9,15 +9,13 @@ use reqwest::StatusCode;
 use reqwest::header::HeaderValue;
 
 use super::lasso_failure;
+use tokio::runtime::Builder;
 
 fn connection_refused() -> reqwest::Error {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
     drop(listener);
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     runtime
         .block_on(reqwest::Client::new().get(format!("http://{addr}")).send())
         .unwrap_err()
@@ -26,10 +24,7 @@ fn connection_refused() -> reqwest::Error {
 fn response_timeout() -> reqwest::Error {
     let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
     let addr = listener.local_addr().unwrap();
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
     let result = runtime.block_on(async {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_millis(50))

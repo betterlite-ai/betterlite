@@ -14,9 +14,11 @@ use tokio::runtime::Builder;
 use tracing::subscriber::with_default;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use hibp::{Fixture, Hibp};
 use logs::Logs;
+use std::collections::BTreeMap;
 
 mod hibp;
 mod logs;
@@ -106,7 +108,7 @@ fn verdict(error: Option<&PasswordError>) -> Value {
 fn settings(general: &Map<String, Value>) -> Result<Settings, Box<HelperError>> {
     let source = json!({ "general_settings": general }).to_string();
     let loaded = ConfigLoader {
-        lookup: std::collections::BTreeMap::new(),
+        lookup: BTreeMap::new(),
     }
     .load(&source)
     .map_err(|error| failure(&error))?;

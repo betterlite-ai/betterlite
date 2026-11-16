@@ -20,7 +20,9 @@ use serde_json::json;
 use super::MuseConfig;
 use super::idle_config;
 use super::message_document;
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct RequestInput {
@@ -147,7 +149,7 @@ pub(crate) fn pacing(fields: &PacingInput) -> HelperResult {
             .transform_realtime_request(&fields.session, &fields.model, None)
             .or_value_error()?,
     );
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;

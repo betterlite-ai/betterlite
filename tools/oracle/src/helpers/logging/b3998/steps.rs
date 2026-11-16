@@ -25,7 +25,8 @@ use super::Session;
 use super::failure;
 use super::input::{Action, Input, Step};
 use super::recording::uploads;
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use tokio::time;
 
 pub(super) async fn run_step(
     step: &Step,
@@ -183,7 +184,7 @@ async fn flush_step(session: &Session) -> Value {
 
 // the periodic case logs with a one second interval, so this outlasts the first scheduled flush
 async fn wait_step(session: &Session) -> Value {
-    tokio::time::sleep(Duration::from_millis(1500)).await;
+    time::sleep(Duration::from_millis(1500)).await;
     json!({"uploads": uploads(&session.client)})
 }
 

@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 use super::EmbeddingCase;
 use super::EncoderKind;
 use super::ops::{failure, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 struct WordsEncoder;
 

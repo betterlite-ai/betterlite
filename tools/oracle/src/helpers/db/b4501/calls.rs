@@ -9,7 +9,8 @@ use serde_json::Value;
 
 use super::store::{FakeDatabase, build, snapshot};
 use super::{Call, Input, Transform, failure};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) async fn run(input: &Input) -> HelperResult {
     let store = Arc::new(Mutex::new(build(&input.seed, input.call.conflicts())?));

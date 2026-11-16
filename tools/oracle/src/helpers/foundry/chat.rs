@@ -2,7 +2,8 @@ use betterlite_foundry::chat::fields::required_params;
 use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod input;

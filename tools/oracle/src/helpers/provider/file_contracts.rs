@@ -13,6 +13,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use minimal_config::{CompleteUrl, Config};
 
 mod minimal_config;
@@ -228,12 +230,12 @@ fn run_functions(input: &Input) -> Result<Value, String> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_functions(input).map_err(|message| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: String::from("InvalidInput"),
                 status: None,
                 error_type: None,

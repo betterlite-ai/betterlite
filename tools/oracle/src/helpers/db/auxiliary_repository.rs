@@ -1,5 +1,7 @@
 use betterlite_db::auxiliary_repository::decoder::decode_managed_batch_record;
 use betterlite_openai::batches::records::BatchObject;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -25,8 +27,8 @@ struct ObjectCall {
     object: Value,
 }
 
-fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -43,10 +45,10 @@ fn decoded(name: &str, stored: &[u8]) -> Value {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut calls: Vec<Value> = Vec::new();
         for call in &input.json_strings {
             let stored = serde_json::to_vec(&call.json)

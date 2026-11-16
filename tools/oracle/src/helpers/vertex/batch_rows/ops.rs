@@ -1,5 +1,5 @@
 use betterlite_models::decisions::Json;
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_vertex::vertex_batch_rows::{
     decode::{
         decode_vertex_batch_row, is_embeddings_output_row, is_generate_output_row,
@@ -15,7 +15,7 @@ use serde::Deserialize;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -35,7 +35,7 @@ pub(crate) enum Input {
     },
 }
 
-pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
+pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
         Input::Encode { custom_ids } => encode(custom_ids),
         Input::Rows { rows } => batch_rows(rows),
@@ -47,7 +47,7 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
     }
 }
 
-fn encode(custom_ids: &[String]) -> crate::helpers::HelperResult {
+fn encode(custom_ids: &[String]) -> HelperResult {
     let mut rows = Vec::with_capacity(custom_ids.len());
     for custom_id in custom_ids {
         let mut labels: IndexMap<String, Json> = IndexMap::new();
@@ -67,7 +67,7 @@ fn decode_rows(values: &[Json]) -> Result<Vec<VertexBatchRow>, Box<HelperError>>
     Ok(rows)
 }
 
-fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
+fn batch_rows(values: &[Json]) -> HelperResult {
     let mut found = Vec::with_capacity(values.len());
     for row in decode_rows(values)? {
         let key = split_vertex_batch_key(&row).or_value_error()?;
@@ -82,7 +82,7 @@ fn batch_rows(values: &[Json]) -> crate::helpers::HelperResult {
     Ok(json!({"rows": found}))
 }
 
-fn regroup(values: &[Json], model: Option<&str>) -> crate::helpers::HelperResult {
+fn regroup(values: &[Json], model: Option<&str>) -> HelperResult {
     let mut ids = (1..).map(Uuid::from_u128);
     let rows = decode_rows(values)?;
     let outputs = regroup_embeddings(&rows, model, &mut || ids.next().unwrap_or_default())

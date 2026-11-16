@@ -23,7 +23,9 @@ use serde_json::{Value, json};
 use super::input::{Input, ReplyInput};
 use super::invalid;
 use super::scripting::{RecordingSleeper, ScriptedClient, ScriptedError, ScriptedJitter};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 fn integrity_policy(input: &Input) -> Result<IntegrityPolicy, Box<HelperError>> {
     let min_model_count = input.min_model_count.unwrap_or(MIN_MODEL_COUNT);
@@ -193,7 +195,7 @@ pub(super) fn fetch(input: &Input) -> HelperResult {
         url: input.url.clone(),
         timeout: Duration::from_secs(input.timeout.unwrap_or(5)),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| invalid(error.to_string()))?;
     let result = runtime.block_on(fetch_with_retry(

@@ -1,14 +1,18 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_lens::analysis::{AnalysisError, ModelCall, ReadContent, ReportProgress};
 use betterlite_lens::extraction::examine_executions;
 use betterlite_lens::models::execution::{Coverage, ExecutionContent, Sample};
 use betterlite_lens::models::messages::{Claim, ModelResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
+use std::fmt::Display;
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
 use std::time::Duration;
+use tokio::runtime::Builder;
+use tokio::time;
 
 #[derive(Clone, Deserialize)]
 pub(crate) struct Input {
@@ -25,10 +29,10 @@ struct Page {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(failure)?;
@@ -38,7 +42,7 @@ impl crate::helpers::Helper for Op {
 
 fn failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     let message = error.to_string();
     Box::new(HelperError {
@@ -117,7 +121,7 @@ fn callbacks(
                 .fetch_add(1, Ordering::SeqCst)
                 .saturating_add(1);
             current.maximum.fetch_max(active, Ordering::SeqCst);
-            tokio::time::sleep(Duration::from_millis(10)).await;
+            time::sleep(Duration::from_millis(10)).await;
             current.active.fetch_sub(1, Ordering::SeqCst);
             result.ok_or_else(|| AnalysisError::Callback(String::from("unscripted model call")))
         })

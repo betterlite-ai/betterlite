@@ -18,7 +18,8 @@ use jiff::tz::TimeZoneDatabase;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -100,10 +101,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Token(fields) => run_token(fields),
             Input::RawProbe { responses } => Ok(raw_probe_value(responses)),
@@ -143,7 +144,7 @@ fn server_tool_record(input: Option<&RecordInput>) -> Option<ServerToolRecord<'_
     }
 }
 
-fn run_token(input: &TokenInput) -> crate::helpers::HelperResult {
+fn run_token(input: &TokenInput) -> HelperResult {
     let usage = usage_record(&input.usage);
     let extras = PromptExtras::default();
     let projection = ServerToolProjection {
@@ -173,7 +174,7 @@ fn run_search_cost(
     model_info: Option<&PriceRecord>,
     search_context: Option<&SearchContextPricing>,
     record: Option<&RecordInput>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let cost = web_search_cost(model_info, search_context, server_tool_record(record))
         .map_err(|error| anthropic_error(&error))?;
     Ok(json!({ "cost": cost.normalize().to_string() }))
@@ -201,8 +202,8 @@ fn accessor_value(record: Option<&RecordInput>) -> Option<Json> {
     }
 }
 
-fn anthropic_error(error: &AnthropicPricingError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn anthropic_error(error: &AnthropicPricingError) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "AnthropicPricingError".to_owned(),
         status: None,
         error_type: None,

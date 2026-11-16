@@ -1,5 +1,5 @@
-use std::str;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::{io, str};
 
 use betterlite_bedrock::image_call::error::ImageCallError;
 use betterlite_bedrock::image_call::plan::{ImageCall, ImageEnvironment};
@@ -12,7 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod calls;
 mod fixtures;
@@ -61,7 +62,7 @@ pub(super) enum Failure {
     #[error("the prepared value is not an object")]
     Shape,
     #[error("the async runtime could not start")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
 }
 
 impl Helper for Op {

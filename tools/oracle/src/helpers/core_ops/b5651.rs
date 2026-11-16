@@ -4,6 +4,7 @@ use betterlite_core::responses_bridge::{
     responses_api_bridge_check,
 };
 use betterlite_openai::openai_base_config::Object;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -130,10 +131,10 @@ impl ResponsesBridgeCapabilities for Facts {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let fields = &input.request;
         let request = BridgeRequest {
             model: &fields.model,

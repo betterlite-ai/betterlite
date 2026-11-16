@@ -17,7 +17,8 @@ use betterlite_prompts::bedrock_tool_results::invoke::CachePoints;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // LiteLLM's default MAX_IMAGE_URL_DOWNLOAD_SIZE_MB; the cases never set the variable
 const LIMIT_MB: f64 = 50.0;

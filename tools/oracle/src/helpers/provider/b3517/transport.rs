@@ -15,6 +15,8 @@ use serde_json::Value;
 
 use super::helper_error;
 use super::{Input, ScriptedResponse};
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Builder;
 
 pub(super) type Environment = BTreeMap<String, String>;
 pub(super) type Sandbox = OpenSandbox<RecordingHttp, Environment, ManualClock>;
@@ -110,11 +112,11 @@ pub(super) fn recording_sandbox(input: &Input) -> Sandbox {
     }
 }
 
-pub(super) fn block_on<Output, Work>(work: Work) -> Result<Output, Box<crate::helpers::HelperError>>
+pub(super) fn block_on<Output, Work>(work: Work) -> Result<Output, Box<HelperError>>
 where
     Work: Future<Output = Result<Output, OpenSandboxError>>,
 {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", error))?;
     runtime
@@ -122,9 +124,7 @@ where
         .map_err(|error| helper_error("OpenSandboxError", error))
 }
 
-pub(super) fn requests_output(
-    http: &RecordingHttp,
-) -> Result<Value, Box<crate::helpers::HelperError>> {
+pub(super) fn requests_output(http: &RecordingHttp) -> Result<Value, Box<HelperError>> {
     let requests = http
         .requests
         .lock()
@@ -137,9 +137,7 @@ pub(super) fn requests_output(
     serde_json::to_value(outputs).map_err(|error| helper_error("BodyEncoding", error))
 }
 
-pub(super) fn request_output(
-    request: &SandboxRequest,
-) -> Result<RequestOutput, Box<crate::helpers::HelperError>> {
+pub(super) fn request_output(request: &SandboxRequest) -> Result<RequestOutput, Box<HelperError>> {
     let mut headers = BTreeMap::new();
     for (name, value) in &request.headers {
         let text = value
@@ -164,9 +162,7 @@ pub(super) fn request_output(
     })
 }
 
-pub(super) fn single_request(
-    http: &RecordingHttp,
-) -> Result<SandboxRequest, Box<crate::helpers::HelperError>> {
+pub(super) fn single_request(http: &RecordingHttp) -> Result<SandboxRequest, Box<HelperError>> {
     let requests = http.requests.lock().unwrap_or_else(PoisonError::into_inner);
     match (requests.first(), requests.len()) {
         (Some(request), 1) => Ok(request.clone()),

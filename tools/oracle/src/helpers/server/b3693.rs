@@ -9,7 +9,10 @@ use betterlite_guardrails::pattern_matching::{
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fs;
+use std::ops::Range;
 
 pub(crate) struct Op;
 
@@ -122,7 +125,7 @@ fn custom(source: &str) -> Result<CompiledPattern, Box<HelperError>> {
     .map_err(failure)
 }
 
-fn character_spans(text: &str, ranges: &[std::ops::Range<usize>]) -> Vec<(usize, usize)> {
+fn character_spans(text: &str, ranges: &[Range<usize>]) -> Vec<(usize, usize)> {
     ranges
         .iter()
         .map(|range| {
@@ -138,7 +141,7 @@ fn words(content: Option<&str>) -> HelperResult {
     let temporary = tempfile::tempdir().map_err(failure)?;
     let path = temporary.path().join("blocked.yaml");
     if let Some(yaml) = content {
-        std::fs::write(&path, yaml).map_err(failure)?;
+        fs::write(&path, yaml).map_err(failure)?;
     }
     let loaded = blocked_words::load(&path).map_err(failure)?;
     Ok(json!(loaded))

@@ -12,7 +12,7 @@ use betterlite_models::fetch_policy::retry::{CatalogSleeper, JitterSource};
 use rust_decimal::Decimal;
 
 use super::invalid;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub(super) enum ScriptedError {

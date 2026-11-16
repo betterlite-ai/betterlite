@@ -1,4 +1,6 @@
 use betterlite_auth::auxiliary_routes;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -54,13 +56,13 @@ fn route_values(group: &Group) -> Vec<&'static str> {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let routes = route_values(&input.group);
         serde_json::to_value(routes).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

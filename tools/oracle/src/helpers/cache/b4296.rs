@@ -13,6 +13,8 @@ use betterlite_cache::cache_key::value::KeyObject;
 use betterlite_cache::types::cache_type::{CacheMode, LiteLlmCacheType};
 use betterlite_cache::types::semantic::SemanticCacheScope;
 use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use serde::Deserialize;
@@ -102,9 +104,9 @@ impl ConsoleSink for RecordingConsole {
 
 type Hooks = VerboseHooks<RecordingLogger, RecordingConsole>;
 
-fn hooks(set_verbose: bool) -> Result<Hooks, Box<crate::helpers::HelperError>> {
+fn hooks(set_verbose: bool) -> Result<Hooks, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
@@ -121,10 +123,10 @@ fn hooks(set_verbose: bool) -> Result<Hooks, Box<crate::helpers::HelperError>> {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::GetCacheKey(case) => cache_key(case),
             Input::ShouldUseCache(case) => Ok(json!({
@@ -153,7 +155,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn cache_key(case: &CacheKeyInput) -> crate::helpers::HelperResult {
+fn cache_key(case: &CacheKeyInput) -> HelperResult {
     let mut request = CacheKeyRequest {
         params: case.params.clone(),
         metadata: case.metadata.clone(),
@@ -170,7 +172,7 @@ fn cache_key(case: &CacheKeyInput) -> crate::helpers::HelperResult {
     };
     let fixture_hooks = hooks(false)?;
     let key = get_cache_key(&mut request, &key_settings, &fixture_hooks).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
@@ -185,7 +187,7 @@ fn cache_key(case: &CacheKeyInput) -> crate::helpers::HelperResult {
     Ok(json!({"cache_key": key, "preset_cache_key": preset}))
 }
 
-fn print_verbose(case: &PrintVerboseInput) -> crate::helpers::HelperResult {
+fn print_verbose(case: &PrintVerboseInput) -> HelperResult {
     let fixture_hooks = hooks(case.set_verbose)?;
     let _printed = fixture_hooks.main_print_verbose(Payload::String(case.message.clone()));
     let printed = fixture_hooks
@@ -206,7 +208,7 @@ fn print_verbose(case: &PrintVerboseInput) -> crate::helpers::HelperResult {
     Ok(json!({"console": printed}))
 }
 
-fn wire_values<Value>(values: [Value; 2]) -> Result<[String; 2], Box<crate::helpers::HelperError>>
+fn wire_values<Value>(values: [Value; 2]) -> Result<[String; 2], Box<HelperError>>
 where
     Value: serde::Serialize,
 {

@@ -11,7 +11,8 @@ use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::mem;
 
 mod tests;
 
@@ -236,7 +237,7 @@ fn run_step(mut step: Step) -> Value {
         constructed: Arc::clone(&constructed),
     };
     let connection = Connection {
-        settings: std::mem::take(&mut step.args),
+        settings: mem::take(&mut step.args),
         litellm_params: step.litellm_params.take(),
         client,
         is_async: step.is_async,
@@ -247,7 +248,7 @@ fn run_step(mut step: Step) -> Value {
     json!({ "outcome": outcome(result), "calls": calls })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

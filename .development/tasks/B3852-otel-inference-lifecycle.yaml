@@ -198,7 +198,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::plumbing::tenant_cache::headers::/)'
     - id: helper-python
       why: The independently invoked MIT helper semantics must match the production functions.
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3852::/)'
+      run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3852::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new inference lifecycle decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/inference-lifecycle)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'

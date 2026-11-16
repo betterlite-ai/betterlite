@@ -11,9 +11,9 @@ use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use betterlite_openai::realtime::url::QueryParams;
 use serde_json::{Value, json};
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::Input;
 
@@ -94,7 +94,7 @@ pub(super) fn helper_error(message: &str) -> Box<HelperError> {
     })
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
     Builder::new_current_thread()
         .enable_all()
         .build()

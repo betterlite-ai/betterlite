@@ -5,12 +5,12 @@ use std::path::Path;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 
-use super::{
-    Case, Compare, HelperCase, Request, UpstreamAnswer, mark_compare_self_check, validate_contracts,
-};
+use super::{Case, Compare, Request, mark_compare_self_check, validate_contracts};
 use crate::OracleError;
-use crate::multipart_oracle::request::answer_body;
 use crate::routing_scenarios;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::multipart_oracle::request::encode_answer_body;
 
 // A scenario case carries its own fields so plain Case literals never gain an unused step field.
 #[derive(Debug, Clone, Deserialize)]
@@ -138,7 +138,7 @@ pub(super) fn validate_common(path: &Path, fields: &CommonFields<'_>) -> Result<
                 "each upstream answer must contain exactly one of body or events",
             ));
         }
-        answer_body(answer).map_err(OracleError::Multipart)?;
+        encode_answer_body(answer).map_err(OracleError::Multipart)?;
     }
     Ok(())
 }

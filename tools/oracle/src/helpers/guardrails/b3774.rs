@@ -17,10 +17,13 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, ProviderCall};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
 
 const CALL_ID: &str = "litellm_call_id";
 const UNREACHABLE_BASE: &str = "http://127.0.0.1:1";
@@ -93,7 +96,7 @@ fn call(
     request_data: &mut BTreeMap<String, GuardrailValue>,
     target: Option<&mut GuardrailLogTarget>,
 ) -> Result<(Option<GuardrailApiInputs>, Option<Value>), Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_config_error()?;
@@ -186,7 +189,7 @@ fn start_service(
     let Some(answer) = input.answer.as_ref() else {
         return Ok((None, None, UNREACHABLE_BASE.to_owned()));
     };
-    let mock = MockScript::try_from(std::slice::from_ref(answer))
+    let mock = MockScript::try_from(slice::from_ref(answer))
         .and_then(MockProvider::start)
         .or_config_error()?;
     let base = mock.base_url.clone();

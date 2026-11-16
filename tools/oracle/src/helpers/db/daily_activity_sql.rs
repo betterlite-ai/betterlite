@@ -6,6 +6,8 @@ use betterlite_db::daily_activity_sql::metrics::{
     KEY_SPEND_SELECT, ptu_flat_cost_select, rollup_metric_select,
 };
 use betterlite_db::daily_activity_sql::rollup::{Rollup, build_rollup_sql};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -39,9 +41,9 @@ struct Outcome {
     query: Option<SqlQuery>,
     error: Option<String>,
 }
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes: BTreeMap<_, _> = input
             .cases
             .iter()
@@ -63,7 +65,7 @@ impl crate::helpers::Helper for Op {
             })
             .collect();
         serde_json::to_value(outcomes).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::fixtures::Fixtures;
 use super::{Call, invalid};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn report_each<Report>(
     calls: &[Call],

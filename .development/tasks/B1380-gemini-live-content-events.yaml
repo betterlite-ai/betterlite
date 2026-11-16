@@ -67,7 +67,7 @@ checks:
       run: test -f tools/oracle/helpers/gemini_live_content.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
       why: Helpers invoke individual pinned content transforms rather than copying the state-transition logic.
     - id: live-content-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_content*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_content::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_content*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^gemini_live_content::/)'
       why: Shared corpus assertions require the call.gemini_live_content variant on added cases.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-content/first-part-warning.yaml

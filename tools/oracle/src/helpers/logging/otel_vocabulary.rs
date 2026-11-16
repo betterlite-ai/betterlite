@@ -5,6 +5,7 @@ use betterlite_logging::otel::vocabulary::resolvers::{
 };
 use betterlite_logging::otel::vocabulary::semconv::parse_semconv_opt_in;
 use betterlite_logging::otel::vocabulary::span_names::NamedSpan;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 use serde_with::{As, DefaultOnNull, DisplayFromStr};
 
@@ -74,10 +75,10 @@ pub(crate) enum SpanInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let values = match input {
             Input::Provider { values }
             | Input::Operation { values }

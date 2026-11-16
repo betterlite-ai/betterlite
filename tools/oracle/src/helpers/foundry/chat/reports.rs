@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::fixture::Installed;
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 use super::input::{AuthCall, MapCall, ProviderCall, RequestCall, ResponseCall, UrlCall};
 

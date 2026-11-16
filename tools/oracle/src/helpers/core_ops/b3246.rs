@@ -8,10 +8,13 @@ use thiserror::Error;
 mod fakes;
 mod input;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use fakes::{Scripted, StepError, Translation};
 use input::Input;
+use std::io;
+use tokio::runtime::Builder;
 
 fn record_applied(request_data: &mut RequestData, guardrail_name: &str) {
     let applied = request_data
@@ -27,7 +30,7 @@ enum RunError {
     #[error(transparent)]
     Step(#[from] StepError),
     #[error(transparent)]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
     #[error(transparent)]
     Encode(#[from] serde_json::Error),
 }
@@ -75,7 +78,7 @@ async fn drive<const DELIVERS: bool>(input: &Input) -> Result<Output, StepError>
 }
 
 fn execute(input: &Input) -> Result<serde_json::Value, RunError> {
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let output = if input.translation.delivers {
         runtime.block_on(drive::<true>(input))?
     } else {

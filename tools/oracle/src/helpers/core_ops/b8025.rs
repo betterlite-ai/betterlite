@@ -9,7 +9,9 @@ use betterlite_openai::search::provider::{ProviderResponse, SearchProvider, Sear
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -216,7 +218,7 @@ fn error_class(provider: Provider, message: &str, status: u16, headers: &Headers
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "B8025".to_owned(),

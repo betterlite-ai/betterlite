@@ -1,5 +1,4 @@
 use super::invalid;
-use crate::helpers::HelperError;
 use betterlite_openai::chat::ChatMessage;
 use betterlite_openai::chat_content::RefuseDownloads;
 use betterlite_openai::embedding::EmbeddingInput;
@@ -11,6 +10,7 @@ use betterlite_openai::local_servers::oobabooga::{
     completion_body, completion_url, embedding_body, embeddings_url, validate_environment,
 };
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_prompts::arguments::json::Object as JsonObject;
 use secrecy::SecretString;
 use serde::Deserialize;

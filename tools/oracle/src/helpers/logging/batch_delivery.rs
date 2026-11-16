@@ -4,13 +4,16 @@ use betterlite_logging::batch::retry::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod flush;
 mod send;
 
 use flush::{FlushScenario, flush_outcome};
 use send::{SendScenario, send_outcome};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -36,9 +39,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(failure)?;
+        let runtime = Builder::new_current_thread().build().map_err(failure)?;
         let statuses = input
             .statuses
             .as_ref()
@@ -55,7 +56,7 @@ impl Helper for Op {
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "BatchDeliveryError".to_owned(),

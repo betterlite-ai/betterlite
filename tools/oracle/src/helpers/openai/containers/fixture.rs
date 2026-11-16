@@ -12,7 +12,7 @@ use rust_decimal::Decimal;
 use secrecy::SecretString;
 
 use super::input::Globals;
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 // B068 owns the arithmetic; this fixture answers the one lookup the container create response makes
 #[derive(Debug)]
