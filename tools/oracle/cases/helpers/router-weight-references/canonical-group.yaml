@@ -1,0 +1,57 @@
+kind: helper
+name: global-ignores-public-name
+call:
+  router_weight_references:
+    model_group: gpt-4o
+    deployment_id: dep-1
+    team_id: null
+    stored:
+      model_name: gpt-4o
+      model_info:
+        team_public_model_name: legacy-name
+    configured: null
+calls:
+  - router_weight_references:
+      model_group: legacy-name
+      deployment_id: dep-1
+      team_id: null
+      stored:
+        model_name: gpt-4o
+        model_info:
+          team_public_model_name: legacy-name
+      configured: null
+  - router_weight_references:
+      model_group: gpt-4o
+      deployment_id: dep-2
+      team_id: team-a
+      stored:
+        model_name: gpt-4o
+        model_info:
+          team_id: team-a
+          team_public_model_name: ''
+      configured: null
+  - router_weight_references:
+      model_group: gpt-3.5-turbo
+      deployment_id: dep-3
+      team_id: null
+      stored:
+        model_name: gpt-4o
+        model_info: {}
+      configured: null
+  - router_weight_references:
+      model_group: gpt-4o
+      deployment_id: dep-4
+      team_id: null
+      stored: null
+      configured: null
+  - router_weight_references:
+      model_group: gpt-4o
+      deployment_id: dep-5
+      team_id: null
+      stored: null
+      configured:
+        model_name: gpt-4o
+        model_info:
+          db_model: true
+env: {}
+compare: {ignore: []}

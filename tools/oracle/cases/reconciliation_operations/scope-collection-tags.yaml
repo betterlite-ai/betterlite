@@ -1,0 +1,12 @@
+kind: helper
+name: reconciliation-operations-scope-collection-tags
+call:
+  b3045:
+    function: scope_targets
+    logging:
+      user_api_key_hash: key-1
+      agent_id: agent-1
+      trace_id: trace-1
+    tags: [zeta, alpha]
+env: {}
+compare: {ignore: []}
