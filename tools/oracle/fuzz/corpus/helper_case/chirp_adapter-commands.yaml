@@ -1,0 +1,15 @@
+kind: helper
+name: chirp-adapter-commands-seed
+call:
+  chirp_adapter:
+    function: commands
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: sess_seed
+    steps:
+      - '{"type":"session.update","session":{"audio":{"input":{"transcription":{"model":"chirp_2"}}}}}'
+      - '{"type":"input_audio_buffer.append","audio":"AAAAAA=="}'
+      - '{"type":"input_audio_buffer.commit"}'
+env: {}
+compare: {ignore: []}

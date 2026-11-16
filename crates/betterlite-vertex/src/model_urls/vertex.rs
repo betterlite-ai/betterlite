@@ -1,6 +1,6 @@
+use betterlite_core::api::vertex_location::validate_vertex_location;
 use betterlite_models::catalog::ModelCatalog;
 
-use super::base_url::validate_vertex_location;
 use super::embedding::{EmbeddingUrlInput, get_embedding_url};
 use super::error::VertexUrlError;
 use super::model_name::get_model_for_vertex_ai_url;
