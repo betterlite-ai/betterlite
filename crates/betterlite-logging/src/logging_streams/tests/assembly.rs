@@ -215,6 +215,26 @@ fn test_backfills_cache_creation_from_the_write_count_first() {
     assert_eq!(field(&recorded, "cache_creation_input_tokens"), json("0"));
 }
 
+fn test_prices_the_response_with_the_backfilled_cache_usage() {
+    let mut state = state(Some(true));
+    let assembly = FakeAssembly::complete(partial_response(
+        r#"{"cached_tokens":12,"cache_write_tokens":4}"#,
+    ));
+    let seen = Mutex::new(None);
+    let _cost = partial_stream_handoff(&assembly, None, &mut state, |response| {
+        if let Json::Object(fields) = response {
+            *seen.lock().unwrap() = fields.get("usage").cloned();
+        }
+        None
+    });
+    let priced = seen
+        .into_inner()
+        .unwrap()
+        .expect("the priced response has usage");
+    assert_eq!(field(&priced, "cache_read_input_tokens"), json("12"));
+    assert_eq!(field(&priced, "cache_creation_input_tokens"), json("4"));
+}
+
 fn test_keeps_the_assembled_model_when_the_call_has_no_model() {
     let mut state = state(Some(true));
     state.model = String::new();
@@ -306,6 +326,9 @@ fn test_skips_partial_usage_when_the_assembly_is_empty() {
 )]
 #[case::partial_handoff_backfills_cache_creation_from_the_write_count(
     test_backfills_cache_creation_from_the_write_count_first
+)]
+#[case::partial_handoff_prices_the_backfilled_usage(
+    test_prices_the_response_with_the_backfilled_cache_usage
 )]
 #[case::partial_handoff_keeps_the_routed_model(
     test_keeps_the_assembled_model_when_the_call_has_no_model

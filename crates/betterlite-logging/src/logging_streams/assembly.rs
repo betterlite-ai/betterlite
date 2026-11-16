@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::fields::usage::Usage;
 use crate::fields::usage::parse::usage_from_mapping;
+use crate::fields::usage::project::usage_json;
 // ast-grep-ignore: no-long-names
 use crate::logging_failure::partial_usage::record_partial_usage_for_failure;
 use crate::logging_state::LoggingState;
@@ -82,7 +83,10 @@ where
     };
     let mut usage = response_usage(&response)?;
     backfill_cache_usage(&mut usage);
-    let response = with_call_model(response, &state.model);
+    let mut response = with_call_model(response, &state.model);
+    if let Json::Object(fields) = &mut response {
+        fields.insert("usage".to_owned(), usage_json(&usage));
+    }
     let cost = response_cost(&response).unwrap_or(Decimal::ZERO);
     // ast-grep-ignore: no-long-names
     record_partial_usage_for_failure(state, &usage, cost);

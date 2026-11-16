@@ -234,7 +234,6 @@ impl StreamCollector for FakeCollector {
 #[error("the builder failed")]
 pub(super) struct BuilderFailure;
 
-#[derive(Default)]
 pub(super) struct FakeAssembly {
     pub(super) response: Option<Json>,
     pub(super) failure: bool,
@@ -246,18 +245,27 @@ impl FakeAssembly {
     pub(super) fn complete(response: Json) -> Self {
         Self {
             response: Some(response),
-            ..Self::default()
+            failure: false,
+            usage: Usage::default(),
+            seen_counter: Mutex::new(None),
         }
     }
 
     pub(super) fn empty() -> Self {
-        Self::default()
+        Self {
+            response: None,
+            failure: false,
+            usage: Usage::default(),
+            seen_counter: Mutex::new(None),
+        }
     }
 
     pub(super) fn failing() -> Self {
         Self {
+            response: None,
             failure: true,
-            ..Self::default()
+            usage: Usage::default(),
+            seen_counter: Mutex::new(None),
         }
     }
 
@@ -284,7 +292,6 @@ impl StreamAssembly for FakeAssembly {
     }
 }
 
-#[derive(Default)]
 pub(super) struct FakeChunks {
     pub(super) pushes: Mutex<Vec<Json>>,
     pub(super) built: Option<Json>,
@@ -295,15 +302,19 @@ pub(super) struct FakeChunks {
 impl FakeChunks {
     pub(super) fn new(built: Option<Json>) -> Self {
         Self {
+            pushes: Mutex::new(Vec::new()),
             built,
-            ..Self::default()
+            failure: false,
+            build_calls: Mutex::new(0),
         }
     }
 
     pub(super) fn failing() -> Self {
         Self {
+            pushes: Mutex::new(Vec::new()),
+            built: None,
             failure: true,
-            ..Self::default()
+            build_calls: Mutex::new(0),
         }
     }
 

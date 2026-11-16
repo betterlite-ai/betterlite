@@ -33,12 +33,15 @@ where
 }
 
 // LiteLLM's async_flush_passthrough_collected_chunks.
-pub async fn async_flush_passthrough<C: StreamCollector + Sync + ?Sized>(
+pub async fn async_flush_passthrough<C>(
     handler: &SuccessHandler<'_>,
     logging: &mut LoggingState,
     context: &mut CorrelationContext,
     collector: &C,
-) -> Result<(), C::Error> {
+) -> Result<(), C::Error>
+where
+    C: StreamCollector + Sync + ?Sized,
+{
     if let Some(request) = collected_request(collector, logging)? {
         async_success_handler(handler, logging, context, &request).await;
     }
