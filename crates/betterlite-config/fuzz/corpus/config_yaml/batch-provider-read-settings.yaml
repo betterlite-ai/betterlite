@@ -1,0 +1,10 @@
+litellm_settings:
+  api_base: https://read.example/v1
+  organization: read-organization
+  api_key: os.environ/READ_API_KEY
+  openai_key: read-openai-key
+  api_version: "2024-06-01"
+  azure_key: read-azure-key
+  vertex_project: read-project
+  vertex_location: read-location
+model_list: []

@@ -1,0 +1,22 @@
+kind: helper
+name: hosted-skill-search-failed-embeddings
+call:
+  hosted_skill_search:
+    function: failures
+    query: q
+    top_k: 5
+    embedding_model: test-embedding
+    fault: value
+    skills:
+      - {skill_id: litellm_skill_a, display_title: Alpha}
+calls:
+  - hosted_skill_search:
+      function: failures
+      query: q
+      top_k: 5
+      embedding_model: test-embedding
+      fault: http
+      skills:
+        - {skill_id: litellm_skill_a, display_title: Alpha}
+env: {}
+compare: {ignore: []}
