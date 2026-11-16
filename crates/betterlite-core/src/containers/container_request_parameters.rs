@@ -85,11 +85,18 @@ pub fn decode_managed_container_id_for_request(
 pub fn get_requested_container_create_optional_param(
     passed_params: &ContainerCreateRequestParams,
 ) -> ContainerCreateOptionalParams {
+    let ContainerCreateRequestParams {
+        expires_after,
+        file_ids,
+        extra_headers,
+        extra_body,
+        ..
+    } = passed_params.clone();
     ContainerCreateOptionalParams {
-        expires_after: passed_params.expires_after.clone(),
-        file_ids: passed_params.file_ids.clone(),
-        extra_headers: passed_params.extra_headers.clone(),
-        extra_body: passed_params.extra_body.clone(),
+        expires_after,
+        file_ids,
+        extra_headers,
+        extra_body,
     }
 }
 
@@ -98,8 +105,7 @@ pub fn get_requested_container_create_optional_param(
 pub fn get_optional_params_container_create(
     optional_params: &ContainerCreateOptionalParams,
 ) -> ContainerCreateOptionalParams {
-    // Both providers' supported_params are the same list, and OpenAI's map_openai_params
-    // returns the filtered params unchanged (Azure inherits it)
+    // SUPPORTED_PARAMS is OpenAI's list, Azure inherits it, and map_openai_params returns it as is
     let supported = &SUPPORTED_PARAMS;
     ContainerCreateOptionalParams {
         expires_after: optional_params
@@ -197,29 +203,31 @@ fn model_info_id(
     }
 }
 
-// A present but empty list encodes with no model, which is why Present holds an Option
+// str.strip() also removes U+001C to U+001F, which char::is_whitespace keeps
+fn strip_space(text: &str) -> &str {
+    text.trim_matches(|character: char| {
+        character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character)
+    })
+}
+
+// A present null or empty target list encodes with no model, which is why Present holds an Option
 fn target_model_names(
     extra_body: Option<&IndexMap<String, JsonValue>>,
 ) -> Result<TargetModelNames, ContainerFieldTypeError> {
-    let Some(extra_body) = extra_body else {
+    let Some(body) = extra_body else {
         return Ok(TargetModelNames::Absent);
     };
-    match extra_body.get("target_model_names") {
-        None | Some(JsonValue::Null) => Ok(TargetModelNames::Absent),
-        Some(JsonValue::Text(names)) => {
-            let first = names
-                .split(',')
-                .next()
-                .unwrap_or_default()
-                .trim()
-                .to_owned();
-            Ok(TargetModelNames::Present(Some(first)))
-        }
+    match body.get("target_model_names") {
+        None => Ok(TargetModelNames::Absent),
+        Some(JsonValue::Null) => Ok(TargetModelNames::Present(None)),
+        Some(JsonValue::Text(names)) => Ok(TargetModelNames::Present(Some(
+            strip_space(names.split(',').next().unwrap_or_default()).to_owned(),
+        ))),
         Some(JsonValue::Array(models)) => match models.first() {
             None => Ok(TargetModelNames::Present(None)),
-            Some(JsonValue::Text(model)) => {
-                Ok(TargetModelNames::Present(Some(model.trim().to_owned())))
-            }
+            Some(JsonValue::Text(model)) => Ok(TargetModelNames::Present(Some(
+                strip_space(model).to_owned(),
+            ))),
             Some(
                 JsonValue::Null
                 | JsonValue::Bool(_)
