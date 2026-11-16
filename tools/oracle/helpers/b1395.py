@@ -3,7 +3,6 @@ from typing import Final, Literal, NotRequired, TypeAlias, TypedDict, Unpack
 
 import litellm
 import litellm.main
-from litellm.exceptions import APIError
 from litellm.main import (
     google_batch_embeddings,
     vertex_embedding,
@@ -16,7 +15,6 @@ litellm.suppress_debug_info = True
 
 Arm: TypeAlias = Literal["embed_content", "multimodal", "text"]
 
-FAIL_STATUS: Final = 429
 PROVIDER: Final = "vertex_ai"
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 OBJECT: Final[TypeAdapter[dict[str, JsonValue]]] = TypeAdapter(dict[str, JsonValue])
@@ -52,7 +50,6 @@ class Input(TypedDict):
     timeout_seconds: float
     litellm_params: dict[str, JsonValue]
     catalog: NotRequired[dict[str, JsonValue]]
-    fail: bool
 
 
 class View(TypedDict):
@@ -69,11 +66,6 @@ class View(TypedDict):
     status: None
 
 
-class Failure(TypedDict):
-    arm: Arm
-    status: int
-
-
 SETTINGS: Final[TypeAdapter[LiteLLMSettings]] = TypeAdapter(LiteLLMSettings)
 INPUT: Final[TypeAdapter[Input]] = TypeAdapter(Input)
 
@@ -83,20 +75,12 @@ class Reply:
 
 
 class Recorder:
-    def __init__(self, arm: Arm, *, fail: bool) -> None:
-        self.arm = arm
-        self.fail = fail
+    def __init__(self, arm: Arm) -> None:
+        self.arm: Arm = arm
         self.call: HandlerArguments | None = None
 
     def record(self, **kwargs: Unpack[HandlerArguments]) -> Reply:
         self.call = kwargs
-        if self.fail:
-            raise APIError(
-                status_code=FAIL_STATUS,
-                message="the provider refused the embedding request",
-                llm_provider=PROVIDER,
-                model="text-embedding-005",
-            )
         return Reply()
 
 
@@ -155,11 +139,6 @@ def recorded(recorders: tuple[Recorder, ...]) -> tuple[Arm, HandlerArguments]:
     raise ValueError("no Vertex embedding handler ran")
 
 
-def failure(recorders: tuple[Recorder, ...], status: int) -> Failure:
-    arm = recorded(recorders)[0]
-    return {"arm": arm, "status": status}
-
-
 def run(input_value: JsonValue) -> JsonValue:
     parsed = INPUT.validate_python(input_value)
     apply_config(parsed["config"])
@@ -168,9 +147,9 @@ def run(input_value: JsonValue) -> JsonValue:
     catalog = parsed.get("catalog")
     if catalog is not None:
         litellm.register_model(catalog)
-    embed_content = Recorder("embed_content", fail=False)
-    multimodal = Recorder("multimodal", fail=False)
-    text = Recorder("text", fail=parsed["fail"])
+    embed_content = Recorder("embed_content")
+    multimodal = Recorder("multimodal")
+    text = Recorder("text")
     recorders = (embed_content, multimodal, text)
     object.__setattr__(google_batch_embeddings, "batch_embeddings", embed_content.record)
     object.__setattr__(vertex_multimodal_embedding, "multimodal_embedding", multimodal.record)
@@ -180,17 +159,14 @@ def run(input_value: JsonValue) -> JsonValue:
         "get_optional_params_embeddings",
         InjectedParams(dict(parsed["optional_params"])),
     )
-    try:
-        litellm.embedding(
-            model=parsed["model"],
-            input=parsed["input"],
-            custom_llm_provider=PROVIDER,
-            api_key=parsed.get("api_key"),
-            api_base=parsed.get("api_base"),
-            timeout=parsed["timeout_seconds"],
-            extra_headers=parsed["extra_headers"],
-        )
-    except APIError as error:
-        return JSON.validate_python(failure(recorders, error.status_code))
+    litellm.embedding(
+        model=parsed["model"],
+        input=parsed["input"],
+        custom_llm_provider=PROVIDER,
+        api_key=parsed.get("api_key"),
+        api_base=parsed.get("api_base"),
+        timeout=parsed["timeout_seconds"],
+        extra_headers=parsed["extra_headers"],
+    )
     arm, call = recorded(recorders)
     return JSON.validate_python(view(arm, call))

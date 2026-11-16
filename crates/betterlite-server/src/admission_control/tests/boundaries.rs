@@ -22,8 +22,9 @@ use tower::ServiceExt as _;
 use super::harness::{Behavior, Requests, WAIT, await_queued, await_started, gates, harness};
 use crate::admission_control::AdmissionControl;
 use crate::routing::admission_control::hot_routes_first;
+use crate::server::application;
 use crate::server::chat_setup::chat_executor;
-use crate::server::{application, configure_connection_builder, serve_connection};
+use crate::server::connections::{configure_connection_builder, serve_connection};
 
 const RESERVATION_THREADS: usize = 8;
 const RESERVATION_ROUNDS: u32 = 200;

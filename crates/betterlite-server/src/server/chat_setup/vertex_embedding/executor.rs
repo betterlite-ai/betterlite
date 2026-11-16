@@ -10,7 +10,6 @@ use betterlite_config::sections::bedrock_settings::AwsSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_vertex::aws_federation::AwsCredentialsResolver;
-use betterlite_vertex::credential_sources::aws::AwsCredentialsSource;
 use betterlite_vertex::credential_sources::files::StdFiles;
 use betterlite_vertex::credential_sources::handles::{LoadDeps, load_auth};
 use betterlite_vertex::credential_sources::sdk::{CredentialClock, GoogleAuth, TokenSource};
@@ -19,6 +18,9 @@ use betterlite_vertex::token_cache::executor::{CredentialExecutor, LoadedCredent
 use betterlite_vertex::token_cache::record::CredentialSnapshot;
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
+
+type Pending<'borrow, Value> =
+    Pin<Box<dyn Future<Output = Result<Value, CredentialCacheError>> + Send + 'borrow>>;
 
 // the SDK handle keeps its own token and reports no expiry, so a short assumed lifetime only makes the cache ask the handle again
 const ASSUMED_TOKEN_LIFETIME: Duration = Duration::from_secs(600);
@@ -73,9 +75,7 @@ impl CredentialExecutor for VertexCredentialExecutor {
         &'borrow self,
         credentials: Option<&'borrow ConfiguredCredentials>,
         project: Option<&'borrow str>,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<LoadedCredential, CredentialCacheError>> + Send + 'borrow>,
-    > {
+    ) -> Pending<'borrow, LoadedCredential> {
         Box::pin(async move {
             let files = StdFiles;
             let deps = LoadDeps {
@@ -104,9 +104,7 @@ impl CredentialExecutor for VertexCredentialExecutor {
     fn refresh<'borrow>(
         &'borrow self,
         credential: &'borrow CredentialSnapshot,
-    ) -> Pin<
-        Box<dyn Future<Output = Result<CredentialSnapshot, CredentialCacheError>> + Send + 'borrow>,
-    > {
+    ) -> Pending<'borrow, CredentialSnapshot> {
         Box::pin(async move {
             let token = credential
                 .token

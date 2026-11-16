@@ -69,29 +69,7 @@ impl Section for Raw {
     {
         let mut deployments = Vec::new();
         for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let params = deployment.litellm_params;
-            let named = [
-                ("vertex_project", params.vertex_project),
-                ("vertex_ai_project", params.vertex_ai_project),
-                ("vertex_location", params.vertex_location),
-                ("vertex_ai_location", params.vertex_ai_location),
-                ("vertex_credentials", params.vertex_credentials),
-                ("vertex_ai_credentials", params.vertex_ai_credentials),
-                ("api_base", params.api_base),
-            ];
-            let mut pinned = Extra::new();
-            for (name, value) in named {
-                let Some(value) = value else {
-                    continue;
-                };
-                let path = format!("model_list.{index}.litellm_params.{name}");
-                let resolved = match value {
-                    Json::Text(text) => Json::Text(resolve_string(text, &path, lookup)?),
-                    other => other,
-                };
-                pinned.insert(name.to_owned(), resolved);
-            }
-            deployments.push(PinParams(pinned));
+            deployments.push(pin_params(index, deployment.litellm_params, lookup)?);
         }
         Ok(Settings {
             project: read(lookup, &["VERTEX_PROJECT"]),
@@ -103,6 +81,38 @@ impl Section for Raw {
             deployments,
         })
     }
+}
+
+// a text pin may name an environment variable the way every litellm_params value can
+fn pin_params(
+    index: usize,
+    params: RawParams,
+    lookup: &dyn EnvironmentLookup,
+) -> Result<PinParams, ConfigError> {
+    let named = [
+        ("vertex_project", params.vertex_project),
+        ("vertex_ai_project", params.vertex_ai_project),
+        ("vertex_location", params.vertex_location),
+        ("vertex_ai_location", params.vertex_ai_location),
+        ("vertex_credentials", params.vertex_credentials),
+        ("vertex_ai_credentials", params.vertex_ai_credentials),
+        ("api_base", params.api_base),
+    ];
+    let mut pinned = Extra::new();
+    for (name, option) in named {
+        let Some(value) = option else {
+            continue;
+        };
+        let path = format!("model_list.{index}.litellm_params.{name}");
+        let resolved = match value {
+            Json::Text(text) => Json::Text(resolve_string(text, &path, lookup)?),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                value
+            }
+        };
+        pinned.insert(name.to_owned(), resolved);
+    }
+    Ok(PinParams(pinned))
 }
 
 // an empty environment variable reads as unset everywhere LiteLLM reads one

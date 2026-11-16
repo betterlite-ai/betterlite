@@ -9,10 +9,9 @@ use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::chat::headers::failure_headers;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
-use crate::server::chat_setup::vertex_embedding::{
-    VertexEmbeddingSetupError, vertex_embedding_calls,
+use crate::server::connections::{
+    accept_connection, configure_connection_builder, drain_connections, serve_connection,
 };
-use crate::server::connections::{accept_connection, drain_connections};
 use crate::server::filter::filter_route;
 use crate::shutdown::build_shutdown_signal;
 use crate::state::ServerState;
@@ -28,20 +27,16 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::ChatError;
 use betterlite_openai::chat::execution::ChatExecutor;
-use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
-use hyper_util::server::conn::auto::Builder;
-use hyper_util::service::TowerToHyperService;
+use chat_setup::vertex_embedding::{VertexEmbeddingSetupError, vertex_embedding_calls};
 use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use thiserror::Error;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio_util::task::TaskTracker;
 const MAX_CONNECTIONS: usize = 1024;
-const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const OUTBOUND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
@@ -69,10 +64,7 @@ pub enum ServerError {
         source: io::Error,
     },
     #[error(transparent)]
-    VertexEmbedding {
-        #[from]
-        source: VertexEmbeddingSetupError,
-    },
+    VertexEmbedding(#[from] VertexEmbeddingSetupError),
 }
 pub async fn run(
     config: Config,
@@ -153,7 +145,6 @@ async fn serve(
         ));
     }
     drain_connections(&mut connections).await;
-    // a background token refresh uses the outbound client, so it finishes before that client drains
     tasks.close();
     tasks.wait().await;
     if let Err(error) = outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
@@ -203,28 +194,6 @@ pub(crate) fn application(
             None => application,
         },
     )
-}
-pub(crate) fn configure_connection_builder() -> Builder<TokioExecutor> {
-    let mut builder = Builder::new(TokioExecutor::new()).http1_only();
-    let mut http1 = builder.http1();
-    http1.timer(TokioTimer::new());
-    http1.header_read_timeout(HEADER_READ_TIMEOUT);
-    http1.keep_alive(false);
-    builder
-}
-pub(crate) async fn serve_connection(
-    builder: Builder<TokioExecutor>,
-    application: Router,
-    stream: TcpStream,
-    remote_address: SocketAddr,
-) {
-    let service = TowerToHyperService::new(application);
-    if let Err(error) = builder
-        .serve_connection(TokioIo::new(stream), service)
-        .await
-    {
-        tracing::debug!(address = ?remote_address, error = ?error, "HTTP connection stopped");
-    }
 }
 // the OpenAI-shaped error body every route renders, and the projections that fill it
 #[derive(serde::Serialize)]
@@ -308,7 +277,7 @@ pub(crate) fn failure(
 }
 
 pub mod component;
-mod connections;
+pub(crate) mod connections;
 pub mod filter;
 pub mod inputs;
 pub mod listener;

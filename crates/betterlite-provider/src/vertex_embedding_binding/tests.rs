@@ -214,6 +214,7 @@ fn resolved_settings_reach_every_arm() {
         project: None,
         credentials: None,
         api_base: Some("https://settings.example".to_owned()),
+        deployments: Vec::new(),
     };
     let defaults = Defaults {
         vertex: &vertex,

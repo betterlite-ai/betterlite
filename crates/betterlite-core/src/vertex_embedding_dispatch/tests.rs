@@ -259,6 +259,7 @@ fn environment_aliases_fall_back_in_source_order() {
         project: Some("vertex-project".to_owned()),
         credentials: Some(credentials("vertex-key")),
         api_base: Some("https://vertex.example".to_owned()),
+        deployments: Vec::new(),
     };
     let vertex = VertexSettings {
         project: Some("vertex-ai-project".to_owned()),
@@ -338,6 +339,7 @@ fn the_section_input_is_the_last_fallback() {
         project: Some("vertex-project".to_owned()),
         credentials: None,
         api_base: Some("https://vertex.example".to_owned()),
+        deployments: Vec::new(),
     };
     let vertex = VertexSettings::default();
     let resolved = resolution(MODEL, &optional_params, &vertex, &embedding, &catalog);
@@ -358,6 +360,7 @@ fn an_explicit_api_base_and_option_credentials_win() {
         project: None,
         credentials: None,
         api_base: Some("https://settings.example".to_owned()),
+        deployments: Vec::new(),
     };
     let optional_params = params(
         r#"{"vertex_credentials": "{\"type\": \"service_account\"}", "vertex_location": "option-location"}"#,

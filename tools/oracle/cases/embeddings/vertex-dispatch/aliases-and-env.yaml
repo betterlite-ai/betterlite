@@ -18,7 +18,6 @@ call:
     timeout_seconds: 600
     litellm_params:
       custom_llm_provider: vertex_ai
-    fail: false
 env: {}
 compare:
   ignore: []

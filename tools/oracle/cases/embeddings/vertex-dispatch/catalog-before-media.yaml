@@ -22,7 +22,6 @@ call:
         litellm_provider: vertex_ai
         mode: embedding
         uses_embed_content: true
-    fail: false
 env: {}
 compare:
   ignore: []
