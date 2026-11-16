@@ -11,7 +11,6 @@ use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::assistants::client::ClientOptions;
 use betterlite_openai::assistants::transport::AssistantsTransport;
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use betterlite_openai::realtime::url::QueryParams;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
@@ -116,7 +115,6 @@ impl RunStreamTransport for Recorder {
 #[derive(Debug)]
 pub(super) struct RecordedCall {
     pub(super) api_base: String,
-    pub(super) headers: Headers,
     pub(super) query_params: QueryParams,
 }
 
@@ -129,7 +127,6 @@ impl RealtimeLogger for RecordingLogger {
     fn pre_call(&mut self, record: RealtimeLogRecord<'_>) -> Result<(), PrePostError> {
         self.calls.push(RecordedCall {
             api_base: record.api_base.to_owned(),
-            headers: record.headers.clone(),
             query_params: record.query_params.clone(),
         });
         Ok(())
