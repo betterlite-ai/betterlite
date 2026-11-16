@@ -58,13 +58,13 @@ pub fn router(state: CacheSettingsUpdateState) -> Router {
 }
 
 #[derive(Serialize)]
-struct ErrorDetail<'a> {
-    error: &'a str,
+struct ErrorDetail<'message> {
+    error: &'message str,
 }
 
 #[derive(Serialize)]
-struct ObjectDetail<'a> {
-    detail: ErrorDetail<'a>,
+struct ObjectDetail<'message> {
+    detail: ErrorDetail<'message>,
 }
 
 #[derive(Serialize)]

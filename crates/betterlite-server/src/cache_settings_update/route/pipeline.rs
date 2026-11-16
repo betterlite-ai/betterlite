@@ -13,10 +13,7 @@ use betterlite_secrets::secret_codec::StoredValue;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
-use super::audit::{CacheSettingsAuditEntry, spawn_cache_settings_audit};
-use super::manager::{CacheParams, CacheReinitError, REDIS_TYPE_FIELD};
-use super::route::CacheSettingsUpdateState;
-use super::store::CacheConfigRepository;
+use super::CacheSettingsUpdateState;
 use crate::audit_events::enums::AuditAction;
 use crate::cache_settings::merge::merge_over_saved;
 use crate::cache_settings::parse::parse_stored_settings;
@@ -26,6 +23,9 @@ use crate::cache_settings::redact::redact_settings;
 use crate::cache_settings_read::stored::StoredSettingsError;
 use crate::cache_settings_read::stored::stored_from_raw;
 use crate::cache_settings_read::view::carries_value;
+use crate::cache_settings_update::audit::{CacheSettingsAuditEntry, spawn_cache_settings_audit};
+use crate::cache_settings_update::manager::{CacheParams, CacheReinitError, REDIS_TYPE_FIELD};
+use crate::cache_settings_update::store::CacheConfigRepository;
 
 const SUCCESS_MESSAGE: &str = "Cache settings updated successfully";
 
@@ -47,7 +47,7 @@ pub(super) enum UpdateError {
 #[serde(default)]
 struct KeyView {
     user_id: Option<String>,
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
 }
 
 #[derive(serde::Serialize)]
@@ -131,11 +131,11 @@ fn encrypt_settings(settings: &JsonMap, cipher: &DbCipher) -> Result<JsonMap, Up
         let JsonValue::String(text) = value else {
             continue;
         };
-        let sealed = cipher.encrypt_value(
+        let encrypted_value = cipher.encrypt_value(
             StoredValue::<()>::Text(SecretString::from(text.clone())),
             None,
         )?;
-        if let StoredValue::Text(sealed) = sealed {
+        if let StoredValue::Text(sealed) = encrypted_value {
             *value = JsonValue::String(sealed.expose_secret().to_owned());
         }
     }
@@ -154,7 +154,7 @@ fn audit_entry(
         action,
         litellm_changed_by: litellm_changed_by.map(str::to_owned),
         user_id: key.user_id,
-        api_key: key.api_key.map(SecretString::from),
+        api_key: key.api_key,
         before_value: audit_text(before),
         updated_values: audit_text(after),
     })

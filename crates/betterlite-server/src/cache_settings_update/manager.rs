@@ -167,12 +167,12 @@ fn normalized(params: &CacheParams) -> CacheParams {
 fn compared_value(value: &Json) -> Json {
     match value {
         Json::Bool(flag) => Json::Text(if *flag { "True" } else { "False" }.to_owned()),
-        Json::Number(number) => Json::Text(python_number_text(number)),
+        Json::Number(number) => Json::Text(number_text(number)),
         Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => value.clone(),
     }
 }
 
-fn python_number_text(number: &Number) -> String {
+fn number_text(number: &Number) -> String {
     if let Some(value) = number.as_i64() {
         return value.to_string();
     }

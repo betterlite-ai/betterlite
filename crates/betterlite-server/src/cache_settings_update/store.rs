@@ -26,7 +26,7 @@ impl CacheConfigRepository for DatabaseCacheConfigStore {
     async fn stored_cache_settings(&self) -> Result<Option<JsonValue>, DbError> {
         <Self as CacheConfigStore>::stored_cache_settings(self)
             .await
-            .map_err(database_fault)
+            .map_err(|error| database_fault(&error))
     }
 
     async fn upsert_cache_settings(&self, settings_json: &str) -> Result<(), DbError> {
@@ -34,19 +34,19 @@ impl CacheConfigRepository for DatabaseCacheConfigStore {
             .store
             .session()
             .await
-            .map_err(|source| database_fault(TableError::Database(source)))?;
+            .map_err(|source| database_fault(&TableError::Database(source)))?;
         client
             .execute(UPSERT_SQL, &[&CACHE_CONFIG_ROW_ID, &settings_json])
             .await
-            .map_err(|source| database_fault(TableError::Database(backend(source))))?;
+            .map_err(|source| database_fault(&TableError::Database(backend(source))))?;
         Ok(())
     }
 }
 
 // B872 retries only the fault types it is given, so a transport failure has to arrive as Connect.
-fn database_fault(error: TableError) -> DbError {
+fn database_fault(error: &TableError) -> DbError {
     let transport =
-        matches!(&error, TableError::Database(native) if is_native_transport_error(native));
+        matches!(error, TableError::Database(native) if is_native_transport_error(native));
     DbError {
         error_type: if transport {
             ErrorType::Connect
