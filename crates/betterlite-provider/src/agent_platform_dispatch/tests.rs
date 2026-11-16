@@ -503,6 +503,23 @@ fn langgraph_prefers_a_global_base_and_key_before_the_environment() {
 }
 
 #[test]
+fn langgraph_takes_the_globals_for_an_empty_base_and_key() {
+    let mut harness = Harness::new("langgraph", "agent");
+    harness.api_base = Some(String::new());
+    harness.api_key = Some(key(""));
+    harness.globals_base = Some(String::from("http://global-lg.test"));
+    harness.globals_key = Some(key("global-lg-key"));
+    let recorder = Recorder::answer("hi");
+    complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
+    let call = &recorder.calls()[0];
+    assert_eq!(call.api_base, "http://global-lg.test");
+    assert_eq!(
+        exposed(call.api_key.as_ref()),
+        Some(String::from("global-lg-key"))
+    );
+}
+
+#[test]
 fn langgraph_takes_the_global_headers_when_none_are_given() {
     let mut harness = Harness::new("langgraph", "agent");
     harness.globals_headers = Some(headers(&[("x-global", "1")]));
@@ -542,6 +559,23 @@ fn langflow_passes_the_provider_info_pair() {
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lf-key")));
     assert_eq!(call.custom_llm_provider, "langflow");
     assert!(call.provider_config.is_none());
+}
+
+#[test]
+fn langflow_takes_the_globals_for_an_empty_base_and_key() {
+    let mut harness = Harness::new("langflow", "flow-1");
+    harness.api_base = Some(String::new());
+    harness.api_key = Some(key(""));
+    harness.globals_base = Some(String::from("http://global-lf.test"));
+    harness.globals_key = Some(key("global-lf-key"));
+    let recorder = Recorder::answer("hello");
+    complete_langflow(&harness.context(), &recorder).expect("the call resolves");
+    let call = &recorder.calls()[0];
+    assert_eq!(call.api_base, "http://global-lf.test");
+    assert_eq!(
+        exposed(call.api_key.as_ref()),
+        Some(String::from("global-lf-key"))
+    );
 }
 
 #[test]
