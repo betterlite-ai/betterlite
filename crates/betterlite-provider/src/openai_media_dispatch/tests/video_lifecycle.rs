@@ -1,7 +1,9 @@
 use betterlite_openai::openai_video_identifiers::ids::{
     decode_video_id_with_provider, encode_video_id_with_provider,
 };
+use betterlite_openai::videos::VideoOptions;
 use betterlite_openai::videos::error::VideoError;
+use betterlite_openai::videos::reply::VideoObject;
 use serde_json::json;
 
 use super::fixture::{Fixture, Recorder, media_error, media_result, video_options};
@@ -12,7 +14,8 @@ use crate::openai_media_dispatch::call::{
 use crate::openai_media_dispatch::error::OpenAiMediaError;
 use crate::openai_media_dispatch::execute::dispatch;
 use crate::openai_media_dispatch::{
-    MediaMethod, MediaPayload, OpenAiMediaRequest, OpenAiMediaResult, VideoReplyKind,
+    MediaMethod, MediaPayload, OpenAiMediaPrepared, OpenAiMediaRequest, OpenAiMediaResult,
+    VideoOutcome, VideoReplyKind,
 };
 use crate::operation::{OperationRequest, OperationResult};
 
@@ -49,6 +52,22 @@ async fn run(
     .await
 }
 
+async fn video_outcome(call: VideoCall) -> VideoOutcome {
+    let fixture = Fixture::new(200, b"");
+    let result = media_result(run(operation(call), &fixture).await);
+    let OpenAiMediaResult::Video(outcome) = result else {
+        panic!("a video call stays a video outcome");
+    };
+    *outcome
+}
+
+fn single_video(outcome: &VideoOutcome) -> &VideoObject {
+    let VideoReplyKind::Video(video) = &outcome.reply else {
+        panic!("a single video reply");
+    };
+    video
+}
+
 pub(super) async fn check() {
     list().await;
     status().await;
@@ -59,7 +78,6 @@ pub(super) async fn check() {
 }
 
 async fn list() {
-    let fixture = Fixture::new(200, b"");
     let call = VideoCall::List(Box::new(VideoListCall {
         after: Some(encoded("vid-1")),
         limit: Some(2),
@@ -67,10 +85,7 @@ async fn list() {
         extra_query: video_options(r#"{"user":"u1"}"#),
         reply: LIST_REPLY.to_vec(),
     }));
-    let result = media_result(run(operation(call), &fixture).await);
-    let OpenAiMediaResult::Video(outcome) = result else {
-        panic!("the list stays a video outcome");
-    };
+    let outcome = video_outcome(call).await;
     assert_eq!(outcome.request.method, MediaMethod::Get);
     assert_eq!(outcome.request.url, "https://video.test/v1/videos");
     assert_eq!(outcome.request.body, MediaPayload::Empty);
@@ -97,55 +112,48 @@ async fn list() {
 }
 
 async fn status() {
-    let fixture = Fixture::new(200, b"");
     let call = VideoCall::Status(Box::new(VideoStatusCall {
         video_id: encoded("vid-2"),
         reply: STATUS_REPLY.to_vec(),
     }));
-    let result = media_result(run(operation(call), &fixture).await);
-    let OpenAiMediaResult::Video(outcome) = result else {
-        panic!("the status stays a video outcome");
-    };
+    let outcome = video_outcome(call).await;
     assert_eq!(outcome.request.method, MediaMethod::Get);
     assert_eq!(outcome.request.url, "https://video.test/v1/videos/vid-2");
-    let VideoReplyKind::Video(video) = &outcome.reply else {
-        panic!("the status decodes one video object");
-    };
+    let video = single_video(&outcome);
     let decoded = decode_video_id_with_provider(&video.id);
     assert_eq!(decoded.video_id, "vid-2");
     assert_eq!(decoded.model_id, None);
 }
 
 async fn delete() {
-    let fixture = Fixture::new(200, b"");
     let call = VideoCall::Delete(Box::new(VideoDeleteCall {
         video_id: encoded("vid-3"),
         reply: DELETE_REPLY.to_vec(),
     }));
-    let result = media_result(run(operation(call), &fixture).await);
-    let OpenAiMediaResult::Video(outcome) = result else {
-        panic!("the delete stays a video outcome");
-    };
-    assert_eq!(outcome.request.method, MediaMethod::Delete);
-    assert_eq!(outcome.request.url, "https://video.test/v1/videos/vid-3");
-    let VideoReplyKind::Video(video) = &outcome.reply else {
-        panic!("the delete decodes one video object");
-    };
+    let outcome = video_outcome(call).await;
+    assert_eq!(
+        outcome.request,
+        OpenAiMediaPrepared {
+            method: MediaMethod::Delete,
+            url: String::from("https://video.test/v1/videos/vid-3"),
+            query: VideoOptions::new(),
+            body: MediaPayload::Empty,
+            parts: Vec::new(),
+            multipart: false,
+        }
+    );
+    let video = single_video(&outcome);
     assert_eq!(video.id, "vid-3");
     assert_eq!(video.status, "deleted");
 }
 
 async fn content() {
-    let fixture = Fixture::new(200, b"");
     let call = VideoCall::Content(Box::new(VideoContentCall {
         video_id: encoded("vid-4"),
         variant: Some(String::from("thumb 1")),
         reply: BINARY.to_vec(),
     }));
-    let result = media_result(run(operation(call), &fixture).await);
-    let OpenAiMediaResult::Video(outcome) = result else {
-        panic!("the content stays a video outcome");
-    };
+    let outcome = video_outcome(call).await;
     assert_eq!(outcome.request.method, MediaMethod::Get);
     assert_eq!(
         outcome.request.url,
@@ -158,17 +166,13 @@ async fn content() {
 }
 
 async fn remix() {
-    let fixture = Fixture::new(200, b"");
     let call = VideoCall::Remix(Box::new(VideoRemixCall {
         video_id: encoded("vid-5"),
         prompt: String::from("make it rain"),
         extra_body: video_options(r#"{"seconds":"8"}"#),
         reply: REMIX_REPLY.to_vec(),
     }));
-    let result = media_result(run(operation(call), &fixture).await);
-    let OpenAiMediaResult::Video(outcome) = result else {
-        panic!("the remix stays a video outcome");
-    };
+    let outcome = video_outcome(call).await;
     assert_eq!(outcome.request.method, MediaMethod::Post);
     assert_eq!(
         outcome.request.url,
@@ -179,9 +183,7 @@ async fn remix() {
     };
     assert_eq!(body.get("prompt"), Some(&json!("make it rain")));
     assert_eq!(body.get("seconds"), Some(&json!("8")));
-    let VideoReplyKind::Video(video) = &outcome.reply else {
-        panic!("the remix decodes one video object");
-    };
+    let video = single_video(&outcome);
     let decoded = decode_video_id_with_provider(&video.id);
     assert_eq!(decoded.video_id, "vid-6");
     assert_eq!(decoded.model_id, None);

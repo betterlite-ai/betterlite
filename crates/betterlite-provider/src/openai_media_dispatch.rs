@@ -56,22 +56,6 @@ pub struct OpenAiMediaPrepared {
     pub multipart: bool,
 }
 
-// The bodyless request list, status, delete, content and get-character share; a leaf with parts or a payload builds its own
-pub(super) const fn empty_body_request(
-    method: MediaMethod,
-    url: String,
-    query: VideoOptions,
-) -> OpenAiMediaPrepared {
-    OpenAiMediaPrepared {
-        method,
-        url,
-        query,
-        body: MediaPayload::Empty,
-        parts: Vec::new(),
-        multipart: false,
-    }
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum MediaPayload {
     Empty,

@@ -36,18 +36,16 @@ fn request(
     }
 }
 
-fn call(
+async fn run(
     model: &str,
     images: Vec<Option<ImageEditFile>>,
     mask: Option<Vec<Option<ImageEditFile>>>,
-) -> ImageEditCall {
-    ImageEditCall {
+    fixture: &Fixture,
+) -> Result<OperationResult, OpenAiMediaError> {
+    let call = ImageEditCall {
         api_base: String::from(API_BASE),
         request: request(model, images, mask),
-    }
-}
-
-async fn run(call: ImageEditCall, fixture: &Fixture) -> Result<OperationResult, OpenAiMediaError> {
+    };
     let mut logger = Recorder;
     dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
@@ -68,11 +66,9 @@ async fn gpt_images() {
     let fixture = Fixture::new(200, b"");
     let result = media_result(
         run(
-            call(
-                "gpt-image-1",
-                vec![Some(file(None)), Some(file(Some("second.png")))],
-                Some(vec![Some(file(None))]),
-            ),
+            "gpt-image-1",
+            vec![Some(file(None)), Some(file(Some("second.png")))],
+            Some(vec![Some(file(None))]),
             &fixture,
         )
         .await,
@@ -127,11 +123,9 @@ async fn dalle_image() {
     let fixture = Fixture::new(200, b"");
     let result = media_result(
         run(
-            call(
-                "dall-e-2",
-                vec![Some(file(None))],
-                Some(vec![Some(file(None))]),
-            ),
+            "dall-e-2",
+            vec![Some(file(None))],
+            Some(vec![Some(file(None))]),
             &fixture,
         )
         .await,
@@ -152,7 +146,9 @@ async fn multiple_images() {
     let fixture = Fixture::new(200, b"");
     let error = media_error(
         run(
-            call("dall-e-2", vec![Some(file(None)), Some(file(None))], None),
+            "dall-e-2",
+            vec![Some(file(None)), Some(file(None))],
+            None,
             &fixture,
         )
         .await,

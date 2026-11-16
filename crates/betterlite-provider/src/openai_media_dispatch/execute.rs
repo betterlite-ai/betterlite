@@ -2,17 +2,16 @@ use betterlite_openai::image_edits::environment::complete_url;
 use betterlite_openai::image_edits::family::select_image_edit_family;
 use betterlite_openai::image_edits::file::multipart_parts;
 use betterlite_openai::image_edits::request::transform_image_edit_request;
-use betterlite_openai::image_generation::call::ImageGenerationCall;
 use betterlite_openai::image_generation::logging::ImageGenerationLogger;
 use betterlite_openai::image_generation::request::{
-    ImageGenerationOutcome, begin_image_generation, finish_image_generation, send_image_generation,
+    begin_image_generation, finish_image_generation, send_image_generation,
 };
 use betterlite_openai::image_generation::transport::ImageGenerationTransport;
 use betterlite_openai::image_variations::ImageVariationRequest;
 use betterlite_openai::image_variations::OpenAiImageVariationConfig;
 use betterlite_openai::image_variations::logging::ImageVariationLogger;
 use betterlite_openai::image_variations::request::{
-    ImageVariationOutcome, begin_image_variation, finish_image_variation, send_image_variation,
+    begin_image_variation, finish_image_variation, send_image_variation,
 };
 use betterlite_openai::image_variations::transport::ImageVariationTransport;
 use betterlite_openai::speech::call::{SpeechCall, audio_speech};
@@ -54,15 +53,28 @@ where
         return Err(OpenAiMediaError::UnsupportedOperation);
     };
     let result = match operation {
-        OpenAiMediaOperation::ImageGeneration(call) => OpenAiMediaResult::ImageGeneration(
-            Box::new(image_generation(*call, transport, logger).await?),
-        ),
+        OpenAiMediaOperation::ImageGeneration(call) => {
+            let prepared = begin_image_generation(*call, logger)?;
+            let sent = send_image_generation(&prepared, transport).await;
+            OpenAiMediaResult::ImageGeneration(Box::new(finish_image_generation(
+                &prepared, sent, logger,
+            )?))
+        }
         OpenAiMediaOperation::ImageEdit(call) => {
             OpenAiMediaResult::ImageEdit(Box::new(image_edit(&call)?))
         }
-        OpenAiMediaOperation::ImageVariation(variation) => OpenAiMediaResult::ImageVariation(
-            Box::new(image_variation(*variation, transport, logger).await?),
-        ),
+        OpenAiMediaOperation::ImageVariation(variation) => {
+            // the dispatcher selects the OpenAI variation config that LiteLLM's provider manager would install
+            let configured = ImageVariationRequest {
+                config: Some(OpenAiImageVariationConfig),
+                ..*variation
+            };
+            let prepared = begin_image_variation(configured, logger)?;
+            let sent = send_image_variation(&prepared, transport).await;
+            OpenAiMediaResult::ImageVariation(Box::new(finish_image_variation(
+                &prepared, sent, logger,
+            )?))
+        }
         OpenAiMediaOperation::Speech(speech_operation) => OpenAiMediaResult::Speech(Box::new(
             speech(*speech_operation, transport, logger).await?,
         )),
@@ -79,39 +91,6 @@ where
         ),
     };
     Ok(OperationResult::OpenAiMedia(result))
-}
-
-async fn image_generation<T, L>(
-    call: ImageGenerationCall,
-    transport: &T,
-    logger: &mut L,
-) -> Result<ImageGenerationOutcome, OpenAiMediaError>
-where
-    T: ImageGenerationTransport,
-    L: ImageGenerationLogger,
-{
-    let prepared = begin_image_generation(call, logger)?;
-    let sent = send_image_generation(&prepared, transport).await;
-    Ok(finish_image_generation(&prepared, sent, logger)?)
-}
-
-async fn image_variation<T, L>(
-    request: ImageVariationRequest,
-    transport: &T,
-    logger: &mut L,
-) -> Result<ImageVariationOutcome, OpenAiMediaError>
-where
-    T: ImageVariationTransport,
-    L: ImageVariationLogger,
-{
-    // the dispatcher selects the OpenAI variation config that LiteLLM's provider manager would install
-    let configured = ImageVariationRequest {
-        config: Some(OpenAiImageVariationConfig),
-        ..request
-    };
-    let prepared = begin_image_variation(configured, logger)?;
-    let sent = send_image_variation(&prepared, transport).await;
-    Ok(finish_image_variation(&prepared, sent, logger)?)
 }
 
 fn image_edit(call: &ImageEditCall) -> Result<OpenAiMediaPrepared, OpenAiMediaError> {

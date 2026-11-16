@@ -5,7 +5,7 @@ use betterlite_openai::openai_video_identifiers::multipart::MultipartPart as Med
 use super::{MediaPart, MediaPartBody};
 
 // B512's multipart_parts output, which already carries the edit's field names and repeated image parts
-pub(super) const fn http_part(part: MultipartPart) -> MediaPart {
+pub(super) fn http_part(part: MultipartPart) -> MediaPart {
     let MultipartPart {
         name,
         file_name,
