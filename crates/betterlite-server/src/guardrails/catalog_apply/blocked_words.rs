@@ -116,7 +116,7 @@ fn check_entry(index: usize, entry: &GuardrailValue, errors: &mut Vec<String>) {
         )),
     }
     match fields.get("description") {
-        None | Some(GuardrailValue::Text(_description)) => {}
+        None | Some(GuardrailValue::Text(_)) => {}
         Some(_not_text) => errors.push(format!("Entry {index}: 'description' must be a string")),
     }
 }

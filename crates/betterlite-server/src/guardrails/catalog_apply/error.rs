@@ -140,9 +140,10 @@ const fn failure_status(failure: &GuardrailFailure) -> u16 {
 
 fn hook_status(error: &ProxyHookError) -> u16 {
     match error {
-        ProxyHookError::Http { status, .. } => *status,
+        ProxyHookError::Http { status, .. } | ProxyHookError::GuardrailRaised { status, .. } => {
+            *status
+        }
         ProxyHookError::Proxy(exception) => proxy_code_status(&exception.code),
-        ProxyHookError::GuardrailRaised { status, .. } => *status,
         ProxyHookError::SensitiveDataRoute(_)
         | ProxyHookError::ModifyResponse(_)
         | ProxyHookError::RejectedRequest { .. }
@@ -159,20 +160,17 @@ fn proxy_code_status(code: &str) -> u16 {
 }
 
 fn failure_response(failure: &GuardrailFailure) -> Response {
-    let (status, message) = match failure {
-        GuardrailFailure::GuardrailRaised { status_code, .. }
-        | GuardrailFailure::BlockedPii { status_code, .. } => (*status_code, failure.to_string()),
-        GuardrailFailure::Http { status, detail } => (*status, detail.clone()),
-        GuardrailFailure::HttpObject { status, .. } => (*status, failure.to_string()),
-        GuardrailFailure::ModifyResponse(_)
-        | GuardrailFailure::SensitiveDataRoute(_)
-        | GuardrailFailure::Other(_) => (500, failure.to_string()),
+    let status = failure_status(failure);
+    let message = match failure {
+        GuardrailFailure::Http { detail, .. } => detail.clone(),
+        _ => failure.to_string(),
     };
     proxy_error(status, &message, INTERNAL_TYPE, None, &status.to_string())
 }
 
 fn hook_response(error: &ProxyHookError) -> Response {
-    let (status, message) = match error {
+    let status = hook_status(error);
+    let message = match error {
         ProxyHookError::Proxy(exception) => {
             return proxy_error(
                 proxy_code_status(&exception.code),
@@ -182,14 +180,12 @@ fn hook_response(error: &ProxyHookError) -> Response {
                 &exception.code,
             );
         }
-        ProxyHookError::Http { status, detail } => (*status, detail.clone()),
-        ProxyHookError::GuardrailRaised {
-            status, message, ..
-        } => (*status, message.clone()),
+        ProxyHookError::Http { detail, .. } => detail.clone(),
+        ProxyHookError::GuardrailRaised { message, .. } => message.clone(),
         ProxyHookError::SensitiveDataRoute(_)
         | ProxyHookError::ModifyResponse(_)
         | ProxyHookError::RejectedRequest { .. }
-        | ProxyHookError::Other(_) => (500, error.to_string()),
+        | ProxyHookError::Other(_) => error.to_string(),
     };
     proxy_error(status, &message, INTERNAL_TYPE, None, &status.to_string())
 }

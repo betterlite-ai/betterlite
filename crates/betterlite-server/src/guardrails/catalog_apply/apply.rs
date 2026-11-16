@@ -14,7 +14,6 @@ use betterlite_config::sections::guardrail_params::routes::{
     ApplyGuardrailRequest, ApplyGuardrailResponse,
 };
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::error::GuardrailRecordError;
 use betterlite_guardrails::guardrail_records::invocation::GuardrailHookName;

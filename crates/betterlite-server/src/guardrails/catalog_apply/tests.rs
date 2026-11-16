@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 mod errors;
+mod fakes;
+mod requests;
 mod support;
 
 use std::collections::BTreeMap;
@@ -15,6 +17,7 @@ use axum::response::Response;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
+use betterlite_guardrails::content_filter::competitor_intent_airline::MAJOR_AIRLINES_JSON;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_records::record::GuardrailStatus;
@@ -24,9 +27,10 @@ use serde::Deserialize;
 use super::blocked_words::validate_blocked_words;
 use super::input_type::resolve;
 use super::ports::Body;
+use requests::request;
 use support::{
     FailureHook, LogMode, RunnerMode, SuccessHook, World, async_failure, async_success, body_bytes,
-    body_value, kinds, marked_messages, post_call_failure, post_call_success, pre_call, request,
+    body_value, kinds, marked_messages, post_call_failure, post_call_success, pre_call,
     runner_call, sink_record, submit_failure, submit_success,
 };
 
@@ -245,10 +249,6 @@ struct Airline {
     tags: Vec<String>,
 }
 
-fn airline(text: &str) -> Airline {
-    serde_json::from_str(text).unwrap()
-}
-
 #[tokio::test]
 async fn airlines_returns_the_bundled_list_in_file_order() {
     let world = World::new();
@@ -257,25 +257,9 @@ async fn airlines_returns_the_bundled_list_in_file_order() {
         .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body: AirlinesBody = serde_json::from_slice(&body_bytes(response).await).unwrap();
+    let bundled: Vec<Airline> = serde_json::from_str(MAJOR_AIRLINES_JSON).unwrap();
     assert_eq!(body.airlines.len(), 351);
-    assert_eq!(
-        body.airlines.first(),
-        Some(&airline(
-            r#"{"id":"abx-air","match":"abx air|gb","tags":["airline"]}"#
-        ))
-    );
-    assert_eq!(
-        body.airlines.get(2),
-        Some(&airline(
-            r#"{"id":"aer-lingus","match":"aer lingus|ei","tags":["airline"]}"#
-        ))
-    );
-    assert_eq!(
-        body.airlines.last(),
-        Some(&airline(
-            r#"{"id":"yto-cargo-airlines","match":"yto cargo airlines|yg","tags":["airline"]}"#
-        ))
-    );
+    assert_eq!(body.airlines, bundled);
 }
 
 #[tokio::test]

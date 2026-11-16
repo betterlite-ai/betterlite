@@ -8,7 +8,6 @@ pub mod error;
 mod input_type;
 pub mod ports;
 mod success_logs;
-#[cfg(test)]
 mod tests;
 
 use std::path::PathBuf;

@@ -1,33 +1,21 @@
-use std::collections::BTreeMap;
 use std::fs;
-use std::future::{Future, ready};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize};
 use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 
-use async_trait::async_trait;
 use axum::Router;
 use axum::body::Body as HttpBody;
 use axum::http::Request;
 use axum::response::Response;
-use betterlite_auth::auth_identity::records::{
-    CredentialRef, NetworkContext, Principal, SourceKey,
-};
-use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
 use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
-use betterlite_config::sections::guardrail_params::routes::ApplyGuardrailResponse;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::guardrail_base::GuardrailBase;
-use betterlite_guardrails::guardrail_base::failure::GuardrailFailure;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_base::settings::{GuardrailSettings, GuardrailSwitches};
-use betterlite_guardrails::guardrail_records::error::GuardrailSpanError;
-use betterlite_guardrails::guardrail_records::record::{
-    GuardrailInvocationRecord, GuardrailSpanSink,
-};
+use betterlite_guardrails::guardrail_records::record::GuardrailInvocationRecord;
 use betterlite_guardrails::guardrail_registry::callback::{
     CallbackScoping, CallbackSpec, GuardrailCallback,
 };
@@ -36,17 +24,12 @@ use tempfile::TempDir;
 use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
-use crate::auth::auth_identity::AuthContext;
-use crate::guardrails::callback_caps::errors::{HttpException, ProxyHookError};
 use crate::guardrails::catalog_apply::CatalogApplyState;
-use crate::guardrails::catalog_apply::error::CatalogApplyError;
-use crate::guardrails::catalog_apply::ports::{
-    ApplyHooks, ApplyLog, ApplyLogError, ApplyPorts, Body, GuardrailRunner, PreCallOutcome,
-    SuccessPayload,
-};
+use crate::guardrails::catalog_apply::ports::{ApplyLog, ApplyPorts, Body, SuccessPayload};
 use crate::guardrails::catalog_apply::routes;
-use crate::registry_read_through::lookup::GuardrailLookup;
-use crate::registry_read_through::{RegistryReadThrough, Resync, ResyncError};
+use crate::registry_read_through::RegistryReadThrough;
+
+use super::fakes::{FakeHooks, FakeLog, FakeRegistry, FakeResync, FakeRunner, FakeSink};
 
 pub(super) struct World {
     pub(super) events: Arc<Mutex<Vec<Event>>>,
@@ -115,7 +98,7 @@ impl World {
     }
 
     fn router(&self) -> Router {
-        let log: Option<Arc<dyn ApplyLog>> = self.log.map(|mode| {
+        let log: Option<Arc<dyn ApplyLog>> = self.log.map(|mode| -> Arc<dyn ApplyLog> {
             Arc::new(FakeLog {
                 mode,
                 events: Arc::clone(&self.events),
@@ -190,12 +173,21 @@ pub(super) enum LogMode {
     FailSuccessHandlers,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Step {
+    PreCall,
+    PostCallFailure,
+    PostCallSuccess,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum Handler {
+    Async,
+    Submit,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub(super) enum Event {
-    PreCall {
-        call_type: String,
-        data: Body,
-    },
     MarkPassThrough {
         messages: Vec<OpaqueParams>,
     },
@@ -205,27 +197,17 @@ pub(super) enum Event {
         request_data: Body,
         at: SystemTime,
     },
-    PostCallFailure {
-        error: String,
+    Hook {
+        step: Step,
+        text: String,
         data: Body,
     },
-    PostCallSuccess {
-        response_text: String,
-        data: Body,
-    },
-    AsyncFailure {
+    FailureHandler {
+        handler: Handler,
         error: String,
     },
-    SubmitFailure {
-        error: String,
-    },
-    AsyncSuccess {
-        payload: SuccessPayload,
-        start_time: SystemTime,
-        end_time: SystemTime,
-        cache_hit: bool,
-    },
-    SubmitSuccess {
+    SuccessHandler {
+        handler: Handler,
         payload: SuccessPayload,
         start_time: SystemTime,
         end_time: SystemTime,
@@ -239,16 +221,110 @@ pub(super) enum Event {
 impl Event {
     pub(super) const fn kind(&self) -> &'static str {
         match self {
-            Self::PreCall { .. } => "pre_call",
             Self::MarkPassThrough { .. } => "mark_pass_through",
             Self::RunnerCall { .. } => "runner_call",
-            Self::PostCallFailure { .. } => "post_call_failure",
-            Self::PostCallSuccess { .. } => "post_call_success",
-            Self::AsyncFailure { .. } => "async_failure",
-            Self::SubmitFailure { .. } => "submit_failure",
-            Self::AsyncSuccess { .. } => "async_success",
-            Self::SubmitSuccess { .. } => "submit_success",
+            Self::Hook {
+                step: Step::PreCall,
+                ..
+            } => "pre_call",
+            Self::Hook {
+                step: Step::PostCallFailure,
+                ..
+            } => "post_call_failure",
+            Self::Hook {
+                step: Step::PostCallSuccess,
+                ..
+            } => "post_call_success",
+            Self::FailureHandler {
+                handler: Handler::Async,
+                ..
+            } => "async_failure",
+            Self::FailureHandler {
+                handler: Handler::Submit,
+                ..
+            } => "submit_failure",
+            Self::SuccessHandler {
+                handler: Handler::Async,
+                ..
+            } => "async_success",
+            Self::SuccessHandler {
+                handler: Handler::Submit,
+                ..
+            } => "submit_success",
             Self::SinkRecord { .. } => "sink_record",
+        }
+    }
+
+    fn runner_call(&self) -> Option<RunnerCall> {
+        let Self::RunnerCall {
+            input_type,
+            inputs,
+            request_data,
+            at,
+        } = self
+        else {
+            return None;
+        };
+        Some(RunnerCall {
+            input_type: *input_type,
+            inputs: inputs.clone(),
+            request_data: request_data.clone(),
+            at: *at,
+        })
+    }
+
+    fn hook(&self, step: Step) -> Option<(String, Body)> {
+        let Self::Hook {
+            step: recorded,
+            text,
+            data,
+        } = self
+        else {
+            return None;
+        };
+        (*recorded == step).then(|| (text.clone(), data.clone()))
+    }
+
+    fn failure(&self, handler: Handler) -> Option<String> {
+        let Self::FailureHandler {
+            handler: recorded,
+            error,
+        } = self
+        else {
+            return None;
+        };
+        (*recorded == handler).then(|| error.clone())
+    }
+
+    fn success(&self, handler: Handler) -> Option<SuccessCall> {
+        match self {
+            Self::SuccessHandler {
+                handler: recorded,
+                payload,
+                start_time,
+                end_time,
+                cache_hit,
+            } if *recorded == handler => Some(SuccessCall {
+                payload: payload.clone(),
+                start_time: *start_time,
+                end_time: *end_time,
+                cache_hit: *cache_hit,
+            }),
+            _ => None,
+        }
+    }
+
+    fn marked_messages(&self) -> Option<Vec<OpaqueParams>> {
+        match self {
+            Self::MarkPassThrough { messages } => Some(messages.clone()),
+            _ => None,
+        }
+    }
+
+    fn sink_record(&self) -> Option<GuardrailInvocationRecord> {
+        match self {
+            Self::SinkRecord { record } => Some(record.clone()),
+            _ => None,
         }
     }
 }
@@ -265,130 +341,6 @@ pub(super) struct RunnerCall {
     pub(super) at: SystemTime,
 }
 
-pub(super) fn runner_call(events: &[Event]) -> RunnerCall {
-    let calls: Vec<RunnerCall> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::RunnerCall {
-                input_type,
-                inputs,
-                request_data,
-                at,
-            } = event
-            {
-                Some(RunnerCall {
-                    input_type: *input_type,
-                    inputs: inputs.clone(),
-                    request_data: request_data.clone(),
-                    at: *at,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(calls.len(), 1, "one guardrail call per request");
-    calls[0].clone()
-}
-
-pub(super) fn pre_call(events: &[Event]) -> (String, Body) {
-    let found: Vec<(String, Body)> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::PreCall { call_type, data } = event {
-                Some((call_type.clone(), data.clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(found.len(), 1, "one pre-call hook call per request");
-    found[0].clone()
-}
-
-pub(super) fn post_call_failure(events: &[Event]) -> (String, Body) {
-    let found: Vec<(String, Body)> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::PostCallFailure { error, data } = event {
-                Some((error.clone(), data.clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(found.len(), 1, "one failure hook call per failed request");
-    found[0].clone()
-}
-
-pub(super) fn post_call_success(events: &[Event]) -> (String, Body) {
-    let found: Vec<(String, Body)> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::PostCallSuccess {
-                response_text,
-                data,
-            } = event
-            {
-                Some((response_text.clone(), data.clone()))
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(
-        found.len(),
-        1,
-        "one success hook call per successful request"
-    );
-    found[0].clone()
-}
-
-pub(super) fn async_failure(events: &[Event]) -> String {
-    let found: Vec<String> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::AsyncFailure { error } = event {
-                Some(error.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(found.len(), 1, "one async failure handler call");
-    found[0].clone()
-}
-
-pub(super) fn submit_failure(events: &[Event]) -> String {
-    let found: Vec<String> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::SubmitFailure { error } = event {
-                Some(error.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(found.len(), 1, "one sync failure handler submit");
-    found[0].clone()
-}
-
-pub(super) fn marked_messages(events: &[Event]) -> Vec<OpaqueParams> {
-    let found: Vec<Vec<OpaqueParams>> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::MarkPassThrough { messages } = event {
-                Some(messages.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(found.len(), 1, "one pass-through patch per logged request");
-    found[0].clone()
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub(super) struct SuccessCall {
     pub(super) payload: SuccessPayload,
@@ -397,111 +349,77 @@ pub(super) struct SuccessCall {
     pub(super) cache_hit: bool,
 }
 
-pub(super) fn sink_record(events: &[Event]) -> GuardrailInvocationRecord {
-    let records: Vec<GuardrailInvocationRecord> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::SinkRecord { record } = event {
-                Some(record.clone())
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(records.len(), 1, "one record per apply call");
-    records[0].clone()
+fn single<T, F>(events: &[Event], pick: F, what: &str) -> T
+where
+    F: Fn(&Event) -> Option<T>,
+{
+    let found: Vec<T> = events.iter().filter_map(pick).collect();
+    assert_eq!(found.len(), 1, "{what}");
+    found.swap_remove(0)
+}
+
+pub(super) fn runner_call(events: &[Event]) -> RunnerCall {
+    single(events, Event::runner_call, "one guardrail call per request")
+}
+
+pub(super) fn pre_call(events: &[Event]) -> (String, Body) {
+    hook(events, Step::PreCall)
+}
+
+pub(super) fn post_call_failure(events: &[Event]) -> (String, Body) {
+    hook(events, Step::PostCallFailure)
+}
+
+pub(super) fn post_call_success(events: &[Event]) -> (String, Body) {
+    hook(events, Step::PostCallSuccess)
+}
+
+fn hook(events: &[Event], step: Step) -> (String, Body) {
+    single(
+        events,
+        |event| event.hook(step),
+        "one hook call per request",
+    )
+}
+
+pub(super) fn async_failure(events: &[Event]) -> String {
+    failure(events, Handler::Async)
+}
+
+pub(super) fn submit_failure(events: &[Event]) -> String {
+    failure(events, Handler::Submit)
+}
+
+fn failure(events: &[Event], handler: Handler) -> String {
+    single(
+        events,
+        |event| event.failure(handler),
+        "one failure handler call",
+    )
 }
 
 pub(super) fn async_success(events: &[Event]) -> SuccessCall {
-    let calls: Vec<SuccessCall> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::AsyncSuccess {
-                payload,
-                start_time,
-                end_time,
-                cache_hit,
-            } = event
-            {
-                Some(SuccessCall {
-                    payload: payload.clone(),
-                    start_time: *start_time,
-                    end_time: *end_time,
-                    cache_hit: *cache_hit,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(calls.len(), 1, "one async success handler call");
-    calls[0].clone()
+    success(events, Handler::Async)
 }
 
 pub(super) fn submit_success(events: &[Event]) -> SuccessCall {
-    let calls: Vec<SuccessCall> = events
-        .iter()
-        .filter_map(|event| {
-            if let Event::SubmitSuccess {
-                payload,
-                start_time,
-                end_time,
-                cache_hit,
-            } = event
-            {
-                Some(SuccessCall {
-                    payload: payload.clone(),
-                    start_time: *start_time,
-                    end_time: *end_time,
-                    cache_hit: *cache_hit,
-                })
-            } else {
-                None
-            }
-        })
-        .collect();
-    assert_eq!(calls.len(), 1, "one sync success handler submit");
-    calls[0].clone()
+    success(events, Handler::Submit)
 }
 
-pub(super) fn caller() -> AuthContext {
-    AuthContext {
-        principal: Principal {
-            principal_type: PrincipalType::Human,
-            subject: "virtual-key".to_owned(),
-            issuer: None,
-            audience: Vec::new(),
-            user: None,
-            organization: None,
-            teams: Vec::new(),
-            project: None,
-            end_user: None,
-            roles: Vec::new(),
-            scopes: Vec::new(),
-            auth_method: AuthMethod::ApiKey,
-            credential_ref: CredentialRef::default(),
-            network: NetworkContext::default(),
-            source_key: SourceKey::default(),
-        },
-    }
+fn success(events: &[Event], handler: Handler) -> SuccessCall {
+    single(
+        events,
+        |event| event.success(handler),
+        "one success handler call",
+    )
 }
 
-pub(super) fn request(
-    method: &str,
-    uri: &str,
-    body: &str,
-    authenticated: bool,
-) -> Request<HttpBody> {
-    let mut request = Request::builder()
-        .method(method)
-        .uri(uri)
-        .header("content-type", "application/json")
-        .body(HttpBody::from(body.to_owned()))
-        .unwrap();
-    if authenticated {
-        request.extensions_mut().insert(caller());
-    }
-    request
+pub(super) fn marked_messages(events: &[Event]) -> Vec<OpaqueParams> {
+    single(events, Event::marked_messages, "one pass-through patch")
+}
+
+pub(super) fn sink_record(events: &[Event]) -> GuardrailInvocationRecord {
+    single(events, Event::sink_record, "one record per apply call")
 }
 
 pub(super) async fn body_bytes(response: Response) -> Vec<u8> {
@@ -542,247 +460,5 @@ fn callback(guardrail_name: &str, event_hook: Option<LitellmParamsMode>) -> Guar
         },
         spec: CallbackSpec::Compression(CompressionKind::Headroom),
         scoping: CallbackScoping::default(),
-    }
-}
-
-struct FakeRegistry {
-    callback: GuardrailCallback,
-    present: Arc<AtomicBool>,
-    lookups: Arc<AtomicUsize>,
-}
-
-impl GuardrailLookup for FakeRegistry {
-    fn initialized(&self, guardrail_name: &str) -> Option<&GuardrailCallback> {
-        self.lookups.fetch_add(1, Ordering::SeqCst);
-        if !self.present.load(Ordering::SeqCst) {
-            return None;
-        }
-        let named = self.callback.base.settings.guardrail_name.as_deref() == Some(guardrail_name);
-        named.then_some(&self.callback)
-    }
-}
-
-struct FakeResync {
-    present: Arc<AtomicBool>,
-    found: bool,
-    resyncs: Arc<AtomicUsize>,
-}
-
-impl Resync for FakeResync {
-    fn resync(&self, _key: &str) -> impl Future<Output = Result<bool, ResyncError>> + Send {
-        self.resyncs.fetch_add(1, Ordering::SeqCst);
-        if self.found {
-            self.present.store(true, Ordering::SeqCst);
-        }
-        ready(Ok(self.found))
-    }
-}
-
-struct FakeRunner {
-    mode: RunnerMode,
-    events: Arc<Mutex<Vec<Event>>>,
-}
-
-#[async_trait]
-impl GuardrailRunner for FakeRunner {
-    async fn apply_guardrail(
-        &self,
-        _callback: &GuardrailCallback,
-        inputs: GuardrailApiInputs,
-        request_data: &mut Body,
-        input_type: GuardrailInputType,
-    ) -> Result<GuardrailApiInputs, GuardrailFailure> {
-        self.events.lock().unwrap().push(Event::RunnerCall {
-            input_type,
-            inputs: inputs.clone(),
-            request_data: request_data.clone(),
-            at: SystemTime::now(),
-        });
-        match &self.mode {
-            RunnerMode::Echo => Ok(inputs),
-            RunnerMode::Texts(texts) => Ok(GuardrailApiInputs {
-                texts: Some(texts.clone()),
-                ..inputs
-            }),
-            RunnerMode::EmptyTexts => Ok(GuardrailApiInputs {
-                texts: Some(Vec::new()),
-                ..inputs
-            }),
-            RunnerMode::NoTexts => Ok(GuardrailApiInputs {
-                texts: None,
-                ..inputs
-            }),
-            RunnerMode::HttpFailure { status, detail } => Err(GuardrailFailure::Http {
-                status: *status,
-                detail: detail.clone(),
-            }),
-            RunnerMode::OtherFailure(message) => Err(GuardrailFailure::Other(message.clone())),
-        }
-    }
-}
-
-struct FakeHooks {
-    pre_call_reply: Option<Body>,
-    log: Option<Arc<dyn ApplyLog>>,
-    success: SuccessHook,
-    failure: FailureHook,
-    events: Arc<Mutex<Vec<Event>>>,
-}
-
-#[async_trait]
-impl ApplyHooks for FakeHooks {
-    async fn pre_call(
-        &self,
-        data: Body,
-        _caller: &AuthContext,
-        call_type: &str,
-    ) -> Result<PreCallOutcome, ProxyHookError> {
-        self.events.lock().unwrap().push(Event::PreCall {
-            call_type: call_type.to_owned(),
-            data: data.clone(),
-        });
-        Ok(PreCallOutcome {
-            data: self.pre_call_reply.clone().unwrap_or(data),
-            log: self.log.as_ref().map(Arc::clone),
-        })
-    }
-
-    async fn post_call_failure(
-        &self,
-        _caller: &AuthContext,
-        error: &CatalogApplyError,
-        data: &Body,
-    ) -> Result<Option<HttpException>, ProxyHookError> {
-        self.events.lock().unwrap().push(Event::PostCallFailure {
-            error: error.to_string(),
-            data: data.clone(),
-        });
-        match &self.failure {
-            FailureHook::Keep => Ok(None),
-            FailureHook::Replace { status, detail } => Ok(Some(HttpException {
-                status: *status,
-                detail: detail.clone(),
-            })),
-            FailureHook::Fail(message) => Err(ProxyHookError::Other(message.clone())),
-        }
-    }
-
-    async fn post_call_success(
-        &self,
-        data: &Body,
-        _caller: &AuthContext,
-        response: ApplyGuardrailResponse,
-    ) -> Result<Option<ApplyGuardrailResponse>, ProxyHookError> {
-        self.events.lock().unwrap().push(Event::PostCallSuccess {
-            response_text: response.response_text.clone(),
-            data: data.clone(),
-        });
-        match &self.success {
-            SuccessHook::Keep => Ok(None),
-            SuccessHook::Replace(text) => Ok(Some(ApplyGuardrailResponse {
-                response_text: text.clone(),
-            })),
-            SuccessHook::Fail(message) => Err(ProxyHookError::Other(message.clone())),
-        }
-    }
-}
-
-struct FakeLog {
-    mode: LogMode,
-    events: Arc<Mutex<Vec<Event>>>,
-}
-
-#[async_trait]
-impl ApplyLog for FakeLog {
-    fn mark_pass_through(&self, messages: Vec<OpaqueParams>) -> Result<(), ApplyLogError> {
-        self.events
-            .lock()
-            .unwrap()
-            .push(Event::MarkPassThrough { messages });
-        if self.mode == LogMode::FailMark {
-            return Err(ApplyLogError::Unavailable);
-        }
-        Ok(())
-    }
-
-    async fn async_failure_handler(
-        &self,
-        error: &CatalogApplyError,
-        _traceback: &str,
-    ) -> Result<(), ApplyLogError> {
-        self.events.lock().unwrap().push(Event::AsyncFailure {
-            error: error.to_string(),
-        });
-        if self.mode == LogMode::FailFailureHandlers {
-            return Err(ApplyLogError::Failed {
-                message: "async failure handler".to_owned(),
-            });
-        }
-        Ok(())
-    }
-
-    fn submit_failure_handler(
-        &self,
-        error: &CatalogApplyError,
-        _traceback: &str,
-    ) -> Result<(), ApplyLogError> {
-        self.events.lock().unwrap().push(Event::SubmitFailure {
-            error: error.to_string(),
-        });
-        if self.mode == LogMode::FailFailureHandlers {
-            return Err(ApplyLogError::Unavailable);
-        }
-        Ok(())
-    }
-
-    async fn async_success_handler(
-        &self,
-        payload: SuccessPayload,
-        start_time: SystemTime,
-        end_time: SystemTime,
-        cache_hit: bool,
-    ) -> Result<(), ApplyLogError> {
-        self.events.lock().unwrap().push(Event::AsyncSuccess {
-            payload,
-            start_time,
-            end_time,
-            cache_hit,
-        });
-        if self.mode == LogMode::FailSuccessHandlers {
-            return Err(ApplyLogError::Unavailable);
-        }
-        Ok(())
-    }
-
-    fn submit_success_handler(
-        &self,
-        payload: SuccessPayload,
-        start_time: SystemTime,
-        end_time: SystemTime,
-        cache_hit: bool,
-    ) -> Result<(), ApplyLogError> {
-        self.events.lock().unwrap().push(Event::SubmitSuccess {
-            payload,
-            start_time,
-            end_time,
-            cache_hit,
-        });
-        if self.mode == LogMode::FailSuccessHandlers {
-            return Err(ApplyLogError::Unavailable);
-        }
-        Ok(())
-    }
-}
-
-struct FakeSink {
-    events: Arc<Mutex<Vec<Event>>>,
-}
-
-impl GuardrailSpanSink for FakeSink {
-    fn emit(&self, record: &GuardrailInvocationRecord) -> Result<(), GuardrailSpanError> {
-        self.events.lock().unwrap().push(Event::SinkRecord {
-            record: record.clone(),
-        });
-        Ok(())
     }
 }
