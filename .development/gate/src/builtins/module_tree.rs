@@ -22,7 +22,7 @@ struct Folders<'walk> {
     children: PathBuf,
 }
 
-fn lexical(path: &Path) -> PathBuf {
+pub(super) fn lexical(path: &Path) -> PathBuf {
     let mut clean = PathBuf::new();
     for component in path.components() {
         match component {
@@ -169,7 +169,10 @@ impl Walk {
     }
 }
 
-fn owner<'packages>(file: &Path, packages: &'packages [Package]) -> Option<&'packages Package> {
+pub(super) fn owner<'packages>(
+    file: &Path,
+    packages: &'packages [Package],
+) -> Option<&'packages Package> {
     let (package, folder) = packages
         .iter()
         .filter_map(|package| Some((package, lexical(package.manifest_path.parent()?))))
