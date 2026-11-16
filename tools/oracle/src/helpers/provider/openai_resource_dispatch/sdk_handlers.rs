@@ -26,6 +26,21 @@ use uuid::Uuid;
 use super::fixtures::{Fixture, NoClient};
 use super::{BatchesCreate, FilesCreate, FineTuningCreate, OTHER_OUTCOME, failure, leaf_failure};
 
+fn file_create(case: &FilesCreate) -> FileCreate {
+    FileCreate {
+        file: FileUpload {
+            filename: Some(case.filename.clone()),
+            content_type: None,
+            data: case.content.clone().into_bytes(),
+        },
+        purpose: CreatePurpose::Batch,
+        expires_after: None,
+        extra_headers: IndexMap::new(),
+        extra_body: IndexMap::new(),
+        timeout: None,
+    }
+}
+
 pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
     let client = FilesClient {
         api_key: SecretString::from("sk-fixture"),
@@ -44,18 +59,7 @@ pub(super) async fn files_create(case: &FilesCreate) -> HelperResult {
         },
         boundaries: || Uuid::from_u128(1),
     };
-    let data = FileCreate {
-        file: FileUpload {
-            filename: Some(case.filename.clone()),
-            content_type: None,
-            data: case.content.clone().into_bytes(),
-        },
-        purpose: CreatePurpose::Batch,
-        expires_after: None,
-        extra_headers: IndexMap::new(),
-        extra_body: IndexMap::new(),
-        timeout: None,
-    };
+    let data = file_create(case);
     let call = FilesDispatch {
         api: &api,
         client: &client,
