@@ -23,13 +23,13 @@ pub fn content_done_event(
     ids: &mut dyn ContentIds,
 ) -> Result<DoneContent, ContentError> {
     let delta = joined_delta(delta_chunks)?;
-    let item_id = output_item_id.map_or_else(|| format!("item_{}", ids.next_id()), str::to_owned);
-    let response_id = response_id.map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
-    let (event, text) = done_event(&item_id, &response_id, delta, delta_type, ids);
+    let item = output_item_id.map_or_else(|| format!("item_{}", ids.next_id()), str::to_owned);
+    let response = response_id.map_or_else(|| format!("resp_{}", ids.next_id()), str::to_owned);
+    let (event, text) = done_event(&item, &response, delta, delta_type, ids);
     Ok(DoneContent {
         event,
-        item_id,
-        response_id,
+        item_id: item,
+        response_id: response,
         text,
     })
 }
@@ -110,12 +110,12 @@ pub fn additional_done_events(done: &DoneContent, ids: &mut dyn ContentIds) -> V
 }
 
 fn done_part(text: Option<&str>) -> ContentPart {
-    text.filter(|text| !text.is_empty()).map_or_else(
+    text.filter(|candidate| !candidate.is_empty()).map_or_else(
         || ContentPart::Audio {
             transcript: String::new(),
         },
-        |text| ContentPart::Text {
-            text: text.to_owned(),
+        |content| ContentPart::Text {
+            text: content.to_owned(),
         },
     )
 }

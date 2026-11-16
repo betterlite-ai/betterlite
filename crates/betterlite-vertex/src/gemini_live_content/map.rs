@@ -108,23 +108,23 @@ pub fn map_model_turn_event(model_turn: &Json) -> Result<MappedEvent, ContentErr
     let Some(parts) = fields.get("parts") else {
         return Err(ContentError::MissingParts);
     };
-    let Json::List(parts) = parts else {
+    let Json::List(part_list) = parts else {
         return Err(ContentError::PartsNotList);
     };
-    if parts.len() != 1 {
+    if part_list.len() != 1 {
         tracing::warn!(
             "Realtime: Expected 1 part, got {} for Gemini model turn event.",
-            parts.len()
+            part_list.len()
         );
     }
-    let Some(part) = parts.first() else {
+    let Some(part) = part_list.first() else {
         return Err(ContentError::EmptyParts);
     };
-    let part = part.as_object().ok_or(ContentError::PartNotObject)?;
-    if part.contains_key("text") {
+    let part_fields = part.as_object().ok_or(ContentError::PartNotObject)?;
+    if part_fields.contains_key("text") {
         return Ok(MappedEvent::TextDelta);
     }
-    if part.contains_key("inlineData") {
+    if part_fields.contains_key("inlineData") {
         return Ok(MappedEvent::AudioDelta);
     }
     Err(ContentError::UnexpectedPart)
@@ -147,13 +147,13 @@ pub fn map_openai_event(
 ) -> Result<MappedEvent, ContentError> {
     let fields = value.as_object();
     if let Some(model_turn) = fields
-        .and_then(|fields| fields.get("modelTurn"))
+        .and_then(|object| object.get("modelTurn"))
         .filter(|model_turn| model_turn.is_truthy())
     {
         return map_model_turn_event(model_turn);
     }
     if fields
-        .and_then(|fields| fields.get("generationComplete"))
+        .and_then(|object| object.get("generationComplete"))
         .is_some_and(Json::is_truthy)
     {
         return map_generation_complete_event(delta_type);

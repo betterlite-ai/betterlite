@@ -10,11 +10,11 @@ use crate::gemini_live_setup::decode::decode_gemini_live_setup;
 use crate::gemini_live_setup::error::LiveSetupError;
 use crate::gemini_live_setup::wire::GenerationConfig;
 
-pub struct StartContent<'a> {
-    pub setup_request: Option<&'a str>,
-    pub response_id: &'a str,
-    pub output_item_id: &'a str,
-    pub conversation_id: &'a str,
+pub struct StartContent<'content> {
+    pub setup_request: Option<&'content str>,
+    pub response_id: &'content str,
+    pub output_item_id: &'content str,
+    pub conversation_id: &'content str,
     pub delta_type: AllDeltaType,
 }
 
@@ -114,10 +114,10 @@ fn response_created(
 }
 
 fn generation_config(request: Option<&str>) -> Result<GenerationConfig, ContentError> {
-    let Some(request) = request else {
+    let Some(raw) = request else {
         return Ok(GenerationConfig::default());
     };
-    match decode_gemini_live_setup(request) {
+    match decode_gemini_live_setup(raw) {
         Ok(setup) => Ok(setup.generation_config),
         Err(LiveSetupError::InvalidJson(_source)) => Ok(GenerationConfig::default()),
         Err(error) => Err(ContentError::Setup(error)),

@@ -17,6 +17,7 @@ impl ChunkKind {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum ChunkSource<'event> {
     Single(&'event Json),
     List(&'event [Json]),

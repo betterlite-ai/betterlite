@@ -50,23 +50,23 @@ fn concatenated_delta(message: &Json) -> Result<String, ContentError> {
 }
 
 fn append_part_delta(delta: &mut String, part: &Json) -> Result<(), ContentError> {
-    let Some(part) = part.as_object() else {
+    let Some(fields) = part.as_object() else {
         return Err(ContentError::PartNotObject);
     };
-    if let Some(text) = part.get("text") {
-        let Json::Text(text) = text else {
+    if let Some(text) = fields.get("text") {
+        let Json::Text(text_value) = text else {
             return Err(ContentError::PartValueNotString);
         };
-        delta.push_str(text);
+        delta.push_str(text_value);
         return Ok(());
     }
-    let Some(inline_data) = part.get("inlineData") else {
+    let Some(inline_data) = fields.get("inlineData") else {
         return Ok(());
     };
-    let Some(inline_data) = inline_data.as_object() else {
+    let Some(inline_fields) = inline_data.as_object() else {
         return Err(ContentError::PartNotObject);
     };
-    match inline_data.get("data") {
+    match inline_fields.get("data") {
         None => Ok(()),
         Some(Json::Text(data)) => {
             delta.push_str(data);

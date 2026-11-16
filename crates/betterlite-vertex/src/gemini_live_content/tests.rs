@@ -41,7 +41,7 @@ impl ContentIds for FixedIds {
     }
 }
 
-fn ids() -> FixedIds {
+const fn ids() -> FixedIds {
     FixedIds { next: 0 }
 }
 
@@ -209,7 +209,7 @@ fn maps_only_the_current_key_and_value() {
         map_openai_event("toolCall", &tool_call, Some(AllDeltaType::Text)).unwrap(),
         MappedEvent::FunctionCallArgumentsDone
     );
-    let setup = value(r#"{}"#);
+    let setup = value("{}");
     assert_eq!(
         map_openai_event("setupComplete", &setup, None).unwrap(),
         MappedEvent::SessionCreated
@@ -320,33 +320,38 @@ fn starts_with_default_modalities_when_setup_is_absent_or_invalid() {
         conversation_id: "conv_1",
         delta_type: AllDeltaType::Audio,
     };
-    let events = serde_json::to_value(start_content_events(&absent, &mut ids()).unwrap()).unwrap();
-    assert_eq!(events[0]["response"]["modalities"], json!(["audio"]));
+    let absent_events =
+        serde_json::to_value(start_content_events(&absent, &mut ids()).unwrap()).unwrap();
+    assert_eq!(absent_events[0]["response"]["modalities"], json!(["audio"]));
     assert_eq!(
-        events[0]["response"]["temperature"],
+        absent_events[0]["response"]["temperature"],
         serde_json::Value::Null
     );
     assert_eq!(
-        events[0]["response"]["max_output_tokens"],
+        absent_events[0]["response"]["max_output_tokens"],
         serde_json::Value::Null
     );
     assert_eq!(
-        events[3]["part"],
+        absent_events[3]["part"],
         json!({"type": "audio", "transcript": ""})
     );
     let invalid = StartContent {
         setup_request: Some("not json"),
         ..absent
     };
-    let events = serde_json::to_value(start_content_events(&invalid, &mut ids()).unwrap()).unwrap();
-    assert_eq!(events[0]["response"]["modalities"], json!(["audio"]));
+    let invalid_events =
+        serde_json::to_value(start_content_events(&invalid, &mut ids()).unwrap()).unwrap();
+    assert_eq!(
+        invalid_events[0]["response"]["modalities"],
+        json!(["audio"])
+    );
     let empty_modalities = StartContent {
         setup_request: Some(r#"{"setup":{"generationConfig":{"responseModalities":[]}}}"#),
         ..invalid
     };
-    let events =
+    let empty_events =
         serde_json::to_value(start_content_events(&empty_modalities, &mut ids()).unwrap()).unwrap();
-    assert_eq!(events[0]["response"]["modalities"], json!([]));
+    assert_eq!(empty_events[0]["response"]["modalities"], json!([]));
 }
 
 #[test]
@@ -394,7 +399,7 @@ fn concatenates_every_model_turn_part() {
         content_delta_event(&message, "item_1", "resp_1", AllDeltaType::Audio, &mut ids).unwrap();
     assert_eq!(event(&audio)["type"], "response.output_audio.delta");
     assert_eq!(event(&audio)["delta"], "HebG8=!");
-    let empty = value(r#"{}"#);
+    let empty = value("{}");
     let none =
         content_delta_event(&empty, "item_1", "resp_1", AllDeltaType::Text, &mut ids).unwrap();
     assert_eq!(event(&none)["delta"], "");
@@ -547,13 +552,13 @@ fn empty_completed_text_yields_an_audio_part() {
     )
     .unwrap();
     assert_eq!(event(&done.event)["text"], "");
-    let additional = additional_done_events(&done, &mut ids);
+    let text_additional = additional_done_events(&done, &mut ids);
     assert_eq!(
-        serde_json::to_value(&additional).unwrap()[0]["part"],
+        serde_json::to_value(&text_additional).unwrap()[0]["part"],
         json!({"type": "audio", "transcript": ""})
     );
     assert_eq!(
-        serde_json::to_value(&additional).unwrap()[1]["item"]["content"],
+        serde_json::to_value(&text_additional).unwrap()[1]["item"]["content"],
         json!([{"type": "audio", "transcript": ""}])
     );
     let audio_done = content_done_event(
@@ -567,9 +572,9 @@ fn empty_completed_text_yields_an_audio_part() {
     let audio_done_value = event(&audio_done.event);
     assert_eq!(audio_done_value["type"], "response.output_audio.done");
     assert!(audio_done_value.get("text").is_none());
-    let additional = additional_done_events(&audio_done, &mut ids);
+    let audio_additional = additional_done_events(&audio_done, &mut ids);
     assert_eq!(
-        serde_json::to_value(&additional).unwrap()[0]["part"],
+        serde_json::to_value(&audio_additional).unwrap()[0]["part"],
         json!({"type": "audio", "transcript": ""})
     );
 }
@@ -652,14 +657,14 @@ fn delta_events_start_content_and_record_state() {
         handle_openai_modality_event(&mut state, ModalityEvent::TextDelta, &frame, None, &mut ids)
             .unwrap();
     assert_eq!(events.len(), 5);
-    let events = serde_json::to_value(&events).unwrap();
-    assert_eq!(events[0]["type"], "response.created");
-    assert_eq!(events[1]["type"], "response.output_item.added");
-    assert_eq!(events[2]["type"], "conversation.item.added");
-    assert_eq!(events[3]["type"], "response.content_part.added");
-    assert_eq!(events[4]["type"], "response.output_text.delta");
-    assert_eq!(events[4]["delta"], "hi");
-    assert_eq!(events[4]["event_id"], format!("event_{}", uuid(7)));
+    let mapped = serde_json::to_value(&events).unwrap();
+    assert_eq!(mapped[0]["type"], "response.created");
+    assert_eq!(mapped[1]["type"], "response.output_item.added");
+    assert_eq!(mapped[2]["type"], "conversation.item.added");
+    assert_eq!(mapped[3]["type"], "response.content_part.added");
+    assert_eq!(mapped[4]["type"], "response.output_text.delta");
+    assert_eq!(mapped[4]["delta"], "hi");
+    assert_eq!(mapped[4]["event_id"], format!("event_{}", uuid(7)));
     assert_eq!(state.response_id, Some(format!("resp_{}", uuid(0))));
     assert_eq!(state.output_item_id, Some(format!("item_{}", uuid(1))));
     assert_eq!(state.conversation_id, Some(format!("conv_{}", uuid(2))));
@@ -678,13 +683,13 @@ fn delta_events_reuse_present_ids_without_starting_content() {
         item_chunks: None,
         delta_type: None,
     };
-    let mut ids = ids();
+    let mut first_ids = ids();
     let events = handle_openai_modality_event(
         &mut state,
         ModalityEvent::AudioDelta,
         &frame,
         None,
-        &mut ids,
+        &mut first_ids,
     )
     .unwrap();
     assert_eq!(events.len(), 1);
@@ -692,7 +697,7 @@ fn delta_events_reuse_present_ids_without_starting_content() {
     assert_eq!(state.response_id, Some(format!("resp_{}", uuid(0))));
     assert_eq!(state.output_item_id.as_deref(), Some("item_keep"));
     assert_eq!(state.conversation_id, None);
-    let mut state = ContentState {
+    let mut kept_state = ContentState {
         output_item_id: Some("item_keep".to_owned()),
         response_id: Some("resp_keep".to_owned()),
         conversation_id: Some("conv_keep".to_owned()),
@@ -700,17 +705,17 @@ fn delta_events_reuse_present_ids_without_starting_content() {
         item_chunks: None,
         delta_type: None,
     };
-    let events = handle_openai_modality_event(
-        &mut state,
+    let kept_events = handle_openai_modality_event(
+        &mut kept_state,
         ModalityEvent::TextDelta,
         &frame,
         None,
         &mut ids(),
     )
     .unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(state.response_id.as_deref(), Some("resp_keep"));
-    assert_eq!(state.conversation_id.as_deref(), Some("conv_keep"));
+    assert_eq!(kept_events.len(), 1);
+    assert_eq!(kept_state.response_id.as_deref(), Some("resp_keep"));
+    assert_eq!(kept_state.conversation_id.as_deref(), Some("conv_keep"));
 }
 
 #[test]
@@ -729,11 +734,11 @@ fn delta_events_reuse_the_conversation_id_when_starting_new_content() {
         handle_openai_modality_event(&mut state, ModalityEvent::TextDelta, &frame, None, &mut ids)
             .unwrap();
     assert_eq!(events.len(), 5);
-    let events = serde_json::to_value(&events).unwrap();
-    assert_eq!(events[0]["response"]["id"], "resp_keep");
-    assert_eq!(events[0]["response"]["conversation_id"], "conv_keep");
-    assert_eq!(events[0]["event_id"], format!("event_{}", uuid(1)));
-    assert_eq!(events[1]["item"]["id"], format!("item_{}", uuid(0)));
+    let mapped = serde_json::to_value(&events).unwrap();
+    assert_eq!(mapped[0]["response"]["id"], "resp_keep");
+    assert_eq!(mapped[0]["response"]["conversation_id"], "conv_keep");
+    assert_eq!(mapped[0]["event_id"], format!("event_{}", uuid(1)));
+    assert_eq!(mapped[1]["item"]["id"], format!("item_{}", uuid(0)));
     assert_eq!(state.output_item_id, Some(format!("item_{}", uuid(0))));
     assert_eq!(state.response_id.as_deref(), Some("resp_keep"));
     assert_eq!(state.conversation_id.as_deref(), Some("conv_keep"));
@@ -761,13 +766,13 @@ fn delta_events_replace_empty_ids() {
     )
     .unwrap();
     assert_eq!(events.len(), 5);
-    let events = serde_json::to_value(&events).unwrap();
-    assert_eq!(events[0]["response"]["id"], format!("resp_{}", uuid(0)));
+    let mapped = serde_json::to_value(&events).unwrap();
+    assert_eq!(mapped[0]["response"]["id"], format!("resp_{}", uuid(0)));
     assert_eq!(
-        events[0]["response"]["conversation_id"],
+        mapped[0]["response"]["conversation_id"],
         format!("conv_{}", uuid(2))
     );
-    assert_eq!(events[1]["item"]["id"], format!("item_{}", uuid(1)));
+    assert_eq!(mapped[1]["item"]["id"], format!("item_{}", uuid(1)));
     assert_eq!(state.output_item_id, Some(format!("item_{}", uuid(1))));
     assert_eq!(state.response_id, Some(format!("resp_{}", uuid(0))));
     assert_eq!(state.conversation_id, Some(format!("conv_{}", uuid(2))));
