@@ -36,7 +36,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: read # a merge queue run looks up the queued PR's branch to find its task
-      actions: read # a main push looks up the last main push run that ran
+      actions: read # a main push looks up the last green main run
     outputs:
       base: ${{ steps.find.outputs.base }}
       task: ${{ steps.find.outputs.task }}
@@ -67,8 +67,8 @@ jobs:
             number=$(sed -E 's#^refs/heads/gh-readonly-queue/[^/]+/pr-([0-9]+)-.*$#\1#' <<<"$QUEUE_REF")
             branch=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/pulls/$number" | jq -r .head.ref)
           elif [[ $EVENT == push ]]; then
-            # a waiting push run gives way to the next push (11-15: 193 merges, 49 push runs, 21 cancelled), so a push covers everything since the last push run that ran
-            base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&event=push&status=completed&per_page=100" | jq -r '[.workflow_runs[] | select(.conclusion != "cancelled")][0].head_sha // empty')
+            # a waiting push run gives way to the next push (11-15: 193 merges, 49 push runs, 21 cancelled), and a red run proves nothing, so a push covers everything since the last green push or nightly run
+            base=$(curl -fsS --retry 3 -H "Authorization: Bearer $GH_TOKEN" "https://api.github.com/repos/$REPOSITORY/actions/workflows/gate.yml/runs?branch=main&status=success&per_page=100" | jq -r '[.workflow_runs[] | select(.event == "push" or .event == "schedule")][0].head_sha // empty')
             if [[ -z $base ]] || ! git merge-base --is-ancestor "$base" HEAD; then
               base=$(git rev-parse HEAD^1)
               all_tests=true
