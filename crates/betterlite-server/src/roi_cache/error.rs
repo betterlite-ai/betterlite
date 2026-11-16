@@ -1,5 +1,3 @@
-use std::error::Error as StdError;
-
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -23,7 +21,7 @@ pub enum ReportBlocked {
 }
 
 #[derive(Debug, Error)]
-pub enum CacheWriteError<Source: StdError + 'static> {
+pub enum CacheWriteError<Source> {
     #[error("the pull record could not be encoded for the cache")]
     Encode(#[source] serde_json::Error),
     #[error("the pull record could not be written to the cache")]

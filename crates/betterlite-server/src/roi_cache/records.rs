@@ -1,5 +1,6 @@
 use betterlite_roi::records::{ROIEstimate, ROIPullEvidence, ROIPullRecord};
 
+#[must_use]
 pub fn cached_record(pull: &ROIPullRecord) -> ROIPullRecord {
     ROIPullRecord {
         repo: pull.repo.clone(),
@@ -30,6 +31,7 @@ pub fn cached_record(pull: &ROIPullRecord) -> ROIPullRecord {
     }
 }
 
+#[must_use]
 pub fn report_record(
     evidence: &ROIPullEvidence,
     estimate: ROIEstimate,

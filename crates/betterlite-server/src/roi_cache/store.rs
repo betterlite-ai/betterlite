@@ -28,7 +28,7 @@ pub async fn previous_report<Repository>(
     repository: &Repository,
 ) -> Result<Option<ROIReport>, Repository::Error>
 where
-    Repository: ReportRepository,
+    Repository: ReportRepository + Sync,
 {
     let Some(parameter) = repository.get_param(REPORT_PARAM).await? else {
         return Ok(None);
@@ -45,16 +45,16 @@ pub async fn cache_estimated_pull<Repository>(
     previous: Option<&ROIPullRecord>,
 ) -> Result<(), CacheWriteError<Repository::Error>>
 where
-    Repository: ReportRepository,
+    Repository: ReportRepository + Sync,
 {
-    let Some(key) = key else {
+    let Some(name) = key else {
         return Ok(());
     };
     if record.estimate.status != ROIEstimateStatus::Estimated {
         return Ok(());
     }
-    let unchanged = previous.is_some_and(|previous| {
-        previous.profile_email == record.profile_email && previous.emails == record.emails
+    let unchanged = previous.is_some_and(|before| {
+        before.profile_email == record.profile_email && before.emails == record.emails
     });
     if unchanged {
         return Ok(());
@@ -63,7 +63,7 @@ where
         .and_then(|bytes| serde_json::from_slice::<JsonData>(&bytes))
         .map_err(CacheWriteError::Encode)?;
     repository
-        .set_param(&format!("{PULL_PARAM_PREFIX}{key}"), value)
+        .set_param(&format!("{PULL_PARAM_PREFIX}{name}"), value)
         .await
         .map_err(CacheWriteError::Store)
 }

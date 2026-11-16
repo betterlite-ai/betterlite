@@ -13,9 +13,9 @@ const TOTAL_FAILURE: &str = "GitHub could not read any selected repository. No n
 #[case::one_repository(&["a/b"])]
 #[case::two_repositories(&["a/b", "c/d"])]
 #[tokio::test]
-async fn every_unreadable_repository_blocks_the_report(#[case] repos: &[&str]) {
+async fn every_unreadable_repository_blocks_the_report(#[case] names: &[&str]) {
     let github = github(Routes::default());
-    let repos: Vec<String> = repos.iter().map(|repo| (*repo).to_owned()).collect();
+    let repos: Vec<String> = names.iter().map(|repo| (*repo).to_owned()).collect();
     let error = read_repositories(&github, &repos, day("2026-01-01"), day("2026-01-31"))
         .await
         .err()

@@ -19,6 +19,7 @@ use chrono::NaiveDate;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 use thiserror::Error;
 
@@ -30,7 +31,12 @@ use crate::roi_github::error::SourceError;
 use crate::roi_github::models::{GitHubHead, GitHubPullListItem, GitHubUser};
 use crate::roi_github::transport::Transport;
 
-pub(super) const SETTINGS_URL: &str = "https://api.github.com";
+pub(super) fn wire<Wire>(text: &str) -> Wire
+where
+    Wire: DeserializeOwned,
+{
+    serde_json::from_str(text).unwrap()
+}
 
 #[derive(Clone, Default)]
 pub(super) struct Routes {
@@ -53,7 +59,10 @@ impl Routes {
 }
 
 impl Transport for Routes {
-    async fn send(&self, request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         let path = request.url.path().to_owned();
         self.requested.lock().unwrap().push(path.clone());
         let (status, body) = self
@@ -63,17 +72,17 @@ impl Transport for Routes {
             .get(&path)
             .cloned()
             .unwrap_or((404, String::new()));
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status,
             headers: HeaderMap::new(),
             body: body.into_bytes(),
-        })
+        }))
     }
 }
 
 pub(super) fn settings() -> ROISettings {
     ROISettings {
-        github_api_url: SETTINGS_URL.to_owned(),
+        github_api_url: "https://api.github.com".to_owned(),
         github_token: SecretString::default(),
         estimator_key: SecretString::default(),
         repos: vec!["a/b".to_owned(), "c/d".to_owned()],
@@ -101,11 +110,11 @@ pub(super) fn pull_item(number: i64, login: Option<&str>, sha: Option<&str>) -> 
         updated_at: "2026-01-06T00:00:00Z".to_owned(),
         title: format!("Pull {number}"),
         body: Some("Body".to_owned()),
-        head: sha.map(|sha| GitHubHead {
-            sha: sha.to_owned(),
+        head: sha.map(|value| GitHubHead {
+            sha: value.to_owned(),
         }),
-        user: login.map(|login| GitHubUser {
-            login: Some(login.to_owned()),
+        user: login.map(|name| GitHubUser {
+            login: Some(name.to_owned()),
         }),
     }
 }
@@ -113,9 +122,9 @@ pub(super) fn pull_item(number: i64, login: Option<&str>, sha: Option<&str>) -> 
 pub(super) fn pulls_merged_on(merged: &[(i64, &str)]) -> String {
     let items: Vec<String> = merged
         .iter()
-        .map(|(number, day)| {
+        .map(|(number, merged_day)| {
             format!(
-                r#"{{"number":{number},"html_url":"https://github.com/o/r/pull/{number}","merged_at":"{day}T00:00:00Z","updated_at":"2026-12-31T00:00:00Z","title":"Pull {number}","body":"Body","head":{{"sha":"sha{number}"}},"user":{{"login":"dev"}}}}"#
+                r#"{{"number":{number},"html_url":"https://github.com/o/r/pull/{number}","merged_at":"{merged_day}T00:00:00Z","updated_at":"2026-12-31T00:00:00Z","title":"Pull {number}","body":"Body","head":{{"sha":"sha{number}"}},"user":{{"login":"dev"}}}}"#
             )
         })
         .collect();
@@ -133,10 +142,7 @@ pub(super) fn pulls_body(numbers: &[i64]) -> String {
 pub(super) fn estimate(status: ROIEstimateStatus) -> ROIEstimate {
     ROIEstimate {
         status,
-        hours: match status {
-            ROIEstimateStatus::Estimated => Some(3.5_f64),
-            ROIEstimateStatus::NeedsReview | ROIEstimateStatus::Error => None,
-        },
+        hours: Some(3.5_f64),
         reasoning: "Small change.".to_owned(),
         model: Some("gpt-5.2".to_owned()),
         evidence_source: Some("pr_metadata".to_owned()),
@@ -146,48 +152,17 @@ pub(super) fn estimate(status: ROIEstimateStatus) -> ROIEstimate {
 }
 
 pub(super) fn record(status: ROIEstimateStatus) -> ROIPullRecord {
-    ROIPullRecord {
-        repo: "o/r".to_owned(),
-        number: 12,
-        title: "Add the thing".to_owned(),
-        url: "https://github.com/o/r/pull/12".to_owned(),
-        login: "dev".to_owned(),
-        emails: vec!["dev@example.com".to_owned()],
-        profile_email: "dev@example.com".to_owned(),
-        commit_emails: Some(vec!["work@example.com".to_owned()]),
-        merged_at: "2026-01-05T00:00:00Z".to_owned(),
-        head_sha: "abc123".to_owned(),
-        additions: 10,
-        deletions: 2,
-        changed_files: 3,
-        commit_count: 4,
-        incomplete_metadata: true,
-        estimate: estimate(status),
-        cache_key: Some("key-1".to_owned()),
-    }
+    let mut pull: ROIPullRecord = wire(
+        r#"{"repo":"o/r","number":12,"title":"Add the thing","url":"https://github.com/o/r/pull/12","login":"dev","emails":["dev@example.com"],"profile_email":"dev@example.com","commit_emails":["work@example.com"],"merged_at":"2026-01-05T00:00:00Z","head_sha":"abc123","additions":10,"deletions":2,"changed_files":3,"commit_count":4,"incomplete_metadata":true,"estimate":{"status":"estimated","hours":1.0,"reasoning":"x"},"cache_key":"key-1"}"#,
+    );
+    pull.estimate = estimate(status);
+    pull
 }
 
 pub(super) fn evidence() -> ROIPullEvidence {
-    ROIPullEvidence {
-        repo: "o/r".to_owned(),
-        number: 12,
-        title: "Add the thing".to_owned(),
-        body: "Line one".to_owned(),
-        url: "https://github.com/o/r/pull/12".to_owned(),
-        login: "dev".to_owned(),
-        emails: vec!["dev@example.com".to_owned()],
-        profile_email: "dev@example.com".to_owned(),
-        commit_emails: Some(vec!["work@example.com".to_owned()]),
-        merged_at: "2026-01-05T00:00:00Z".to_owned(),
-        head_sha: "abc123".to_owned(),
-        additions: 10,
-        deletions: 2,
-        changed_files: 3,
-        files: Vec::new(),
-        commits: Vec::new(),
-        commit_count: 4,
-        incomplete_metadata: true,
-    }
+    wire(
+        r#"{"repo":"o/r","number":12,"title":"Add the thing","body":"Line one","url":"https://github.com/o/r/pull/12","login":"dev","emails":["dev@example.com"],"profile_email":"dev@example.com","commit_emails":["work@example.com"],"merged_at":"2026-01-05T00:00:00Z","head_sha":"abc123","additions":10,"deletions":2,"changed_files":3,"files":[],"commits":[],"commit_count":4,"incomplete_metadata":true}"#,
+    )
 }
 
 pub(super) fn processed(
@@ -203,22 +178,10 @@ pub(super) fn processed(
 }
 
 pub(super) fn report() -> ROIReport {
-    ROIReport {
-        mode: "github".to_owned(),
-        start: "2026-01-01".to_owned(),
-        end: "2026-01-07".to_owned(),
-        synced_at: "2026-01-07T00:00:00+00:00".to_owned(),
-        repos: vec!["o/r".to_owned()],
-        estimator_model: "gpt-5.2".to_owned(),
-        estimator_prompt: "Estimate this.".to_owned(),
-        effort_basis: "without_ai".to_owned(),
-        spend: Vec::new(),
-        pulls: vec![record(ROIEstimateStatus::Estimated)],
-        settings_fingerprint: "fingerprint".to_owned(),
-        warnings: None,
-        unavailable_repos: None,
-        id: None,
-    }
+    wire(&format!(
+        r#"{{"mode":"github","start":"2026-01-01","end":"2026-01-07","synced_at":"2026-01-07T00:00:00+00:00","repos":["o/r"],"estimator_model":"gpt-5.2","estimator_prompt":"Estimate this.","effort_basis":"without_ai","spend":[],"pulls":[{}],"settings_fingerprint":"fingerprint"}}"#,
+        serde_json::to_string(&record(ROIEstimateStatus::Estimated)).unwrap()
+    ))
 }
 
 #[derive(Debug, Error)]
@@ -238,25 +201,21 @@ pub(super) struct MemoryRepository {
 }
 
 impl MemoryRepository {
-    pub(super) fn holding<Value: Serialize>(name: &str, value: &Value) -> Self {
-        let data = serde_json::from_slice(&serde_json::to_vec(value).unwrap()).unwrap();
-        let repository = Self::default();
-        repository
-            .params
-            .lock()
-            .unwrap()
-            .insert(name.to_owned(), data);
-        repository
-    }
-
     pub(super) fn holding_text(name: &str, text: &str) -> Self {
         let repository = Self::default();
         repository
             .params
             .lock()
             .unwrap()
-            .insert(name.to_owned(), serde_json::from_str(text).unwrap());
+            .insert(name.to_owned(), wire(text));
         repository
+    }
+
+    pub(super) fn holding<Value>(name: &str, value: &Value) -> Self
+    where
+        Value: Serialize,
+    {
+        Self::holding_text(name, &serde_json::to_string(value).unwrap())
     }
 
     pub(super) fn written(&self) -> Vec<(String, JsonData)> {
@@ -282,14 +241,14 @@ impl ReportRepository for MemoryRepository {
         param_name: &str,
         param_value: JsonData,
     ) -> impl Future<Output = Result<(), MemoryError>> + Send {
-        if self.refuse_writes {
-            return ready(Err(MemoryError::Refused));
+        let name = param_name.to_owned();
+        async move {
+            if self.refuse_writes {
+                return Err(MemoryError::Refused);
+            }
+            self.writes.lock().unwrap().push((name, param_value));
+            Ok(())
         }
-        self.writes
-            .lock()
-            .unwrap()
-            .push((param_name.to_owned(), param_value));
-        ready(Ok(()))
     }
 }
 
@@ -344,10 +303,10 @@ pub(super) fn failing_caller() -> CompletionCaller {
 
 pub(super) fn answering_caller(content: &str) -> CompletionCaller {
     let quoted = serde_json::to_string(content).unwrap();
-    let wire =
+    let body =
         format!(r#"{{"choices":[{{"finish_reason":"stop","message":{{"content":{quoted}}}}}]}}"#);
     Arc::new(move |_request| {
-        let object: CompletionObject = RawValue::from_string(wire.clone()).unwrap();
+        let object: CompletionObject = RawValue::from_string(body.clone()).unwrap();
         let future: CompletionFuture = Box::pin(ready(Ok(object)));
         future
     })

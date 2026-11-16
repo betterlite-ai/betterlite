@@ -28,10 +28,10 @@ async fn roi_cache_behavior(
         routes = routes.with("/repos/c/d/pulls", 200, &pulls_body(&[2]));
     }
     let github = github(routes);
-    let settings = settings();
+    let selected = settings();
     let batch = read_repositories(
         &github,
-        &settings.repos,
+        &selected.repos,
         day("2026-01-01"),
         day("2026-01-31"),
     )
@@ -42,26 +42,33 @@ async fn roi_cache_behavior(
 
     let repository = MemoryRepository::holding("roi_calculator_report", &report());
     let previous = previous_report(&repository).await.unwrap().unwrap();
-    let mut records = Vec::new();
-    for (position, (repo, pull)) in batch.queue.iter().enumerate() {
-        let key = cache_key(&settings, "ctx", repo, pull).unwrap();
-        let built = report_record(
-            &evidence(),
-            estimate(ROIEstimateStatus::Estimated),
-            key.clone(),
-        );
-        cache_estimated_pull(&repository, key.as_deref(), &built, None)
-            .await
-            .unwrap();
-        records.push(processed(position, built.estimate.status, false));
-    }
-    assert_eq!(processed_records(records).unwrap().len(), batch.queue.len());
-    assert_eq!(repository.written().len(), batch.queue.len());
-    let (name, _) = repository.written().remove(0);
-    let key = cache_key(&settings, "ctx", "a/b", &batch.queue[0].1)
-        .unwrap()
+    let (first_repo, first_pull) = batch.queue.first().unwrap();
+    let key = cache_key(&selected, "ctx", first_repo, first_pull).unwrap();
+    let built = report_record(
+        &evidence(),
+        estimate(ROIEstimateStatus::Estimated),
+        key.clone(),
+    );
+    cache_estimated_pull(&repository, key.as_deref(), &built, None)
+        .await
         .unwrap();
-    assert_eq!(name, format!("roi_calculator_pull_{key}"));
-    let reused = cached_record(&previous.pulls[0]);
+    let written = repository.written();
+    let expected_name = format!("roi_calculator_pull_{}", key.unwrap());
+    assert_eq!(
+        written
+            .iter()
+            .map(|(name, _)| name.as_str())
+            .collect::<Vec<&str>>(),
+        vec![expected_name.as_str()]
+    );
+
+    let records: Vec<_> = batch
+        .queue
+        .iter()
+        .enumerate()
+        .map(|(position, _)| processed(position, ROIEstimateStatus::Estimated, false))
+        .collect();
+    assert_eq!(processed_records(records).unwrap().len(), batch.queue.len());
+    let reused = cached_record(previous.pulls.first().unwrap());
     assert_eq!(reused.estimate.cached, Some(true));
 }

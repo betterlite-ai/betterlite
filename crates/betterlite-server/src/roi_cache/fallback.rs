@@ -10,7 +10,7 @@ use crate::roi_github::transport::Transport;
 
 const DELETED_USER: &str = "deleted-user";
 
-fn sourceless_estimate(status: ROIEstimateStatus, reasoning: String) -> ROIEstimate {
+const fn sourceless_estimate(status: ROIEstimateStatus, reasoning: String) -> ROIEstimate {
     ROIEstimate {
         status,
         hours: None,

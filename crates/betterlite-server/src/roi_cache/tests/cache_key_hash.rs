@@ -3,6 +3,7 @@
 use rstest::rstest;
 
 use crate::roi_cache::key::cache_key;
+use crate::roi_github::models::{GitHubHead, GitHubPullListItem, GitHubUser};
 
 use super::support::{pull_item, settings};
 
@@ -15,7 +16,7 @@ fn the_key_is_the_digest_litellm_computes_for_the_same_pull() {
     let mut settings = settings();
     settings.github_api_url = "https://api.github.com/".to_owned();
     let mut pull = pull_item(7, Some("Dev"), Some("abc123"));
-    pull.title = "Fix: ünï \"q\"".to_owned();
+    pull.title = "Fix: \u{fc}n\u{ef} \"q\"".to_owned();
     pull.body = Some("Body\nline".to_owned());
     let key = cache_key(&settings, "ctx", "Octo/Repo", &pull).unwrap();
     assert_eq!(key.as_deref(), Some(LITELLM_KEY));
@@ -23,47 +24,69 @@ fn the_key_is_the_digest_litellm_computes_for_the_same_pull() {
 
 #[test]
 fn a_null_body_hashes_as_an_empty_one_and_the_login_is_casefolded() {
-    let mut pull = pull_item(7, Some("Straße"), Some("abc123"));
+    let mut pull = pull_item(7, Some("Stra\u{df}e"), Some("abc123"));
     pull.title = "Plain".to_owned();
     pull.body = None;
     let key = cache_key(&settings(), "ctx", "Octo/Repo", &pull).unwrap();
     assert_eq!(key.as_deref(), Some(LITELLM_EMPTY_BODY_KEY));
 }
 
+fn change_number(pull: &mut GitHubPullListItem) {
+    pull.number = 8;
+}
+
+fn change_head(pull: &mut GitHubPullListItem) {
+    pull.head = Some(GitHubHead {
+        sha: "def456".to_owned(),
+    });
+}
+
+fn change_title(pull: &mut GitHubPullListItem) {
+    pull.title = "Changed".to_owned();
+}
+
+fn change_body(pull: &mut GitHubPullListItem) {
+    pull.body = Some("Changed".to_owned());
+}
+
+fn change_login(pull: &mut GitHubPullListItem) {
+    pull.user = Some(GitHubUser {
+        login: Some("other".to_owned()),
+    });
+}
+
 #[rstest]
-#[case::context("other", "o/r", 7, "abc123", "Plain", "Body", "dev")]
-#[case::repo("ctx", "o/other", 7, "abc123", "Plain", "Body", "dev")]
-#[case::number("ctx", "o/r", 8, "abc123", "Plain", "Body", "dev")]
-#[case::head("ctx", "o/r", 7, "def456", "Plain", "Body", "dev")]
-#[case::title("ctx", "o/r", 7, "abc123", "Changed", "Body", "dev")]
-#[case::body("ctx", "o/r", 7, "abc123", "Plain", "Changed", "dev")]
-#[case::login("ctx", "o/r", 7, "abc123", "Plain", "Body", "other")]
-fn every_identity_field_changes_the_key(
-    #[case] context: &str,
-    #[case] repo: &str,
-    #[case] number: i64,
-    #[case] sha: &str,
-    #[case] title: &str,
-    #[case] body: &str,
-    #[case] login: &str,
-) {
-    let mut base = pull_item(7, Some("dev"), Some("abc123"));
-    base.title = "Plain".to_owned();
-    let expected = cache_key(&settings(), "ctx", "o/r", &base).unwrap();
-    let mut changed = pull_item(number, Some(login), Some(sha));
-    changed.title = title.to_owned();
-    changed.body = Some(body.to_owned());
-    let key = cache_key(&settings(), context, repo, &changed).unwrap();
-    assert_ne!(key, expected);
+#[case::number(change_number)]
+#[case::head(change_head)]
+#[case::title(change_title)]
+#[case::body(change_body)]
+#[case::login(change_login)]
+fn every_pull_field_changes_the_key(#[case] change: fn(&mut GitHubPullListItem)) {
+    let base = pull_item(7, Some("dev"), Some("abc123"));
+    let mut changed = base.clone();
+    change(&mut changed);
+    assert_ne!(
+        cache_key(&settings(), "ctx", "o/r", &changed).unwrap(),
+        cache_key(&settings(), "ctx", "o/r", &base).unwrap()
+    );
+}
+
+#[rstest]
+#[case::context("other", "o/r")]
+#[case::repo("ctx", "o/other")]
+fn the_context_and_repo_change_the_key(#[case] context: &str, #[case] repo: &str) {
+    let pull = pull_item(7, Some("dev"), Some("abc123"));
+    assert_ne!(
+        cache_key(&settings(), context, repo, &pull).unwrap(),
+        cache_key(&settings(), "ctx", "o/r", &pull).unwrap()
+    );
 }
 
 #[test]
 fn case_and_trailing_slashes_do_not_change_the_key() {
-    let mut base = pull_item(7, Some("dev"), Some("abc123"));
-    base.title = "Plain".to_owned();
+    let base = pull_item(7, Some("dev"), Some("abc123"));
     let expected = cache_key(&settings(), "ctx", "o/r", &base).unwrap();
-    let mut shouting = pull_item(7, Some("DEV"), Some("abc123"));
-    shouting.title = "Plain".to_owned();
+    let shouting = pull_item(7, Some("DEV"), Some("abc123"));
     let mut slashed = settings();
     slashed.github_api_url = "https://api.github.com///".to_owned();
     assert_eq!(

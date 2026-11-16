@@ -33,18 +33,18 @@ pub async fn read_repository<T>(
 where
     T: Transport,
 {
-    match pulls(github, repo, start, end).await {
-        Ok(found) => RepositoryPulls {
-            repo: repo.to_owned(),
-            pulls: found,
-            unavailable: false,
-        },
-        Err(_) => RepositoryPulls {
+    pulls(github, repo, start, end).await.map_or_else(
+        |_| RepositoryPulls {
             repo: repo.to_owned(),
             pulls: Vec::new(),
             unavailable: true,
         },
-    }
+        |found| RepositoryPulls {
+            repo: repo.to_owned(),
+            pulls: found,
+            unavailable: false,
+        },
+    )
 }
 
 fn ordered_queue(groups: Vec<RepositoryPulls>) -> Vec<(String, GitHubPullListItem)> {

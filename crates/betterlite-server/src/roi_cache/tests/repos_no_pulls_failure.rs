@@ -12,7 +12,7 @@ use super::support::{Routes, day, github};
 #[case::two_unreadable(&["a/b", "c/d", "e/f"], &["/repos/e/f/pulls"], "a/b, c/d", "GitHub could not read a/b, c/d, and the accessible repositories returned no pull requests. No new report was published; check repository access or try analysis again later.")]
 #[tokio::test]
 async fn unreadable_repositories_without_any_accessible_pull_block_the_report(
-    #[case] repos: &[&str],
+    #[case] names: &[&str],
     #[case] readable_paths: &[&str],
     #[case] unreadable: &str,
     #[case] message: &str,
@@ -23,12 +23,14 @@ async fn unreadable_repositories_without_any_accessible_pull_block_the_report(
             routes.with(path, 200, "[]")
         });
     let github = github(routes);
-    let repos: Vec<String> = repos.iter().map(|repo| (*repo).to_owned()).collect();
+    let repos: Vec<String> = names.iter().map(|repo| (*repo).to_owned()).collect();
     let error = read_repositories(&github, &repos, day("2026-01-01"), day("2026-01-31"))
         .await
         .err()
         .unwrap();
-    assert!(matches!(&error, ReportBlocked::NoPullRequests { repos } if repos == unreadable));
+    assert!(
+        matches!(&error, ReportBlocked::NoPullRequests { repos: blocked } if blocked == unreadable)
+    );
     assert_eq!(error.to_string(), message);
 }
 
