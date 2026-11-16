@@ -158,22 +158,22 @@ fn key_metric(
     api_key_metadata: &BTreeMap<String, KeyMetadataRow>,
     api_key: &str,
 ) -> KeyMetricWithMetadata {
-    let metadata = match api_key_metadata.get(api_key) {
-        Some(row) => KeyMetadata {
-            key_alias: row.key_alias.clone(),
-            team_id: row.team_id.clone(),
-            user_id: row.user_id.clone(),
-            user_email: row.user_email.clone(),
-            key_exists: Some(row.key_exists),
-        },
-        None => KeyMetadata {
+    let metadata = api_key_metadata.get(api_key).map_or(
+        KeyMetadata {
             key_alias: None,
             team_id: None,
             user_id: None,
             user_email: None,
             key_exists: Some(false),
         },
-    };
+        |row| KeyMetadata {
+            key_alias: row.key_alias.clone(),
+            team_id: row.team_id.clone(),
+            user_id: row.user_id.clone(),
+            user_email: row.user_email.clone(),
+            key_exists: Some(row.key_exists),
+        },
+    );
     KeyMetricWithMetadata {
         metrics: SpendMetrics::default(),
         metadata,

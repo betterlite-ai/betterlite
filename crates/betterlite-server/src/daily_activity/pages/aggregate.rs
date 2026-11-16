@@ -81,7 +81,6 @@ where
     Ok(metadata)
 }
 
-#[must_use]
 pub fn aggregate_spend_records_sync(
     records: &[DailySpendRecord],
     api_key_metadata: &BTreeMap<String, KeyMetadataRow>,
