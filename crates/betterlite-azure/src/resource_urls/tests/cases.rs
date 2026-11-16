@@ -1,0 +1,164 @@
+pub(super) type UrlCase = (Option<&'static str>, Option<&'static str>, &'static str);
+
+const ROOT: Option<&str> = Some("https://r.example");
+pub(super) const MODULE_BASE: &str =
+    "https://m.example/openai/responses?api-version=2025-04-01-preview";
+
+pub(super) const CONTAINER_QUERY_CASES: [UrlCase; 9] = [
+    (
+        Some("https://r.example/openai/responses?api-version=2025-04-01-preview"),
+        Some("2024-01-01"),
+        "https://r.example/openai/containers?api-version=2025-04-01-preview",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version="),
+        Some("2024-01-01"),
+        "https://r.example/openai/containers?api-version=2024-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=first&api-version=second"),
+        Some("2024-01-01"),
+        "https://r.example/openai/containers?api-version=first",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=&api-version=second"),
+        Some("2024-01-01"),
+        "https://r.example/openai/containers?api-version=second",
+    ),
+    (
+        Some("https://r.example/openai/responses?x=1&y=2"),
+        Some("2024-01-01"),
+        "https://r.example/openai/containers?api-version=2024-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=latest"),
+        Some("2024-01-01"),
+        "https://r.example/openai/v1/containers?api-version=latest",
+    ),
+    (
+        ROOT,
+        None,
+        "https://r.example/openai/v1/containers?api-version=v1",
+    ),
+    (
+        ROOT,
+        Some("preview"),
+        "https://r.example/openai/v1/containers?api-version=preview",
+    ),
+    (
+        ROOT,
+        Some(""),
+        "https://r.example/openai/v1/containers?api-version=v1",
+    ),
+];
+
+pub(super) const CONTAINER_BASE_CASES: [UrlCase; 9] = [
+    (
+        Some("https://r.example/openai/responses"),
+        Some("2025-01-01"),
+        "https://r.example/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses/"),
+        Some("2025-01-01"),
+        "https://r.example/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/prefix/openai/responses?x=1#frag"),
+        Some("2025-01-01"),
+        "https://r.example/prefix/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses;p=1"),
+        Some("2025-01-01"),
+        "https://r.example/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=2024-09-01&x=1#f"),
+        Some("2025-01-01"),
+        "https://r.example/openai/containers?api-version=2024-09-01",
+    ),
+    (
+        Some("https://r.example/openai/v1/responses"),
+        Some("2025-01-01"),
+        "https://r.example/openai/v1/responses/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses/extra"),
+        Some("2025-01-01"),
+        "https://r.example/openai/responses/extra/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/OPENAI/responses"),
+        Some("2025-01-01"),
+        "https://r.example/OPENAI/responses/openai/containers?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses/openai/responses"),
+        Some("2025-01-01"),
+        "https://r.example/openai/responses/openai/containers?api-version=2025-01-01",
+    ),
+];
+
+pub(super) const VIDEO_URL_CASES: [UrlCase; 7] = [
+    (ROOT, None, "https://r.example/openai/v1/videos"),
+    (
+        ROOT,
+        Some("2025-01-01"),
+        "https://r.example/openai/v1/videos?api-version=2025-01-01",
+    ),
+    (
+        ROOT,
+        Some("v1"),
+        "https://r.example/openai/v1/videos?api-version=v1",
+    ),
+    (
+        Some("https://r.example/openai/v1/videos?api-version=2024-01-01"),
+        Some("2025-01-01"),
+        "https://r.example/openai/v1/videos?api-version=2024-01-01",
+    ),
+    (
+        Some("https://r.example/openai/v1/videos"),
+        Some("preview"),
+        "https://r.example/openai/v1/videos?api-version=preview",
+    ),
+    (
+        Some("https://r.example/openai/responses"),
+        None,
+        "https://r.example/openai/responses/openai/v1/videos",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=latest"),
+        Some("2024-01-01"),
+        "https://r.example/openai/responses/openai/v1/videos?api-version=latest",
+    ),
+];
+
+pub(super) const VECTOR_CASES: [UrlCase; 6] = [
+    (ROOT, None, "https://r.example/openai/vector_stores"),
+    (
+        ROOT,
+        Some("2025-01-01"),
+        "https://r.example/openai/vector_stores?api-version=2025-01-01",
+    ),
+    (
+        ROOT,
+        Some("latest"),
+        "https://r.example/openai/v1/vector_stores?api-version=latest",
+    ),
+    (
+        Some("https://r.example/openai/vector_stores?api-version=2024-01-01"),
+        Some("2025-01-01"),
+        "https://r.example/openai/vector_stores?api-version=2024-01-01",
+    ),
+    (
+        Some("https://r.example/openai"),
+        Some("2025-01-01"),
+        "https://r.example/openai/vector_stores?api-version=2025-01-01",
+    ),
+    (
+        Some("https://r.example/openai/responses?api-version=latest"),
+        Some("2024-01-01"),
+        "https://r.example/openai/responses/openai/vector_stores?api-version=latest",
+    ),
+];
