@@ -57,8 +57,8 @@ impl ConsoleSink for SilentConsole {
 // The guardrail only needs the assembled text, so no value these services answer reaches its output.
 struct NoServices;
 
-#[cfg_attr(test, mutants::skip)]
 impl StreamCostCalculator for NoServices {
+    #[cfg_attr(test, mutants::skip)]
     fn completion_cost(
         &self,
         _input: &CostInput<'_>,
@@ -67,6 +67,7 @@ impl StreamCostCalculator for NoServices {
         Ok(None)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     fn prompt_completion_cost(
         &self,
         _model: &str,
@@ -77,16 +78,18 @@ impl StreamCostCalculator for NoServices {
 }
 
 #[async_trait]
-#[cfg_attr(test, mutants::skip)]
 impl UsageTokenCounter for NoServices {
+    #[cfg_attr(test, mutants::skip)]
     async fn count_response_text(&self, _model: &str, _text: &str) -> Result<i64, CountError> {
         Ok(0)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_text(&self, _text: &str) -> Result<i64, CountError> {
         Ok(0)
     }
 
+    #[cfg_attr(test, mutants::skip)]
     async fn count_messages(
         &self,
         _model: &str,
@@ -144,9 +147,13 @@ pub(super) async fn relay(
 }
 
 pub(super) fn parse_chunks(chunks: &[GuardrailValue]) -> Result<Vec<Chunk>, StreamScanError> {
-    serde_json::to_value(chunks)
-        .and_then(serde_json::from_value)
-        .map_err(StreamScanError::Chunk)
+    chunks
+        .iter()
+        .map(|chunk| {
+            let encoded = serde_json::to_value(chunk).map_err(StreamScanError::Chunk)?;
+            serde_json::from_value(encoded).map_err(StreamScanError::Chunk)
+        })
+        .collect()
 }
 
 pub(super) async fn assemble(
@@ -165,18 +172,24 @@ pub(super) async fn assemble(
         metadata: None,
         now: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
     };
-    let (text, kind) = match stream_chunk_builder(&request, &guardrail.hooks).await? {
+    match stream_chunk_builder(&request, &guardrail.hooks).await? {
         Some(Response::Chat(chat)) => {
-            let body: BTreeMap<String, GuardrailValue> = serde_json::to_value(&chat)
-                .and_then(serde_json::from_value)
-                .map_err(StreamScanError::Chunk)?;
-            (
-                extract_response_text(&ResponseSource::Body(&body)),
-                "ModelResponse",
-            )
+            let encoded = serde_json::to_value(&chat).map_err(StreamScanError::Chunk)?;
+            let body: BTreeMap<String, GuardrailValue> =
+                serde_json::from_value(encoded).map_err(StreamScanError::Chunk)?;
+            let text = extract_response_text(&ResponseSource::Body(&body));
+            Ok(Assembled {
+                text,
+                kind: "ModelResponse",
+            })
         }
-        Some(Response::Text(_text)) => (None, "TextResponse"),
-        None => (None, "NoneType"),
-    };
-    Ok(Assembled { text, kind })
+        Some(Response::Text(_text)) => Ok(Assembled {
+            text: None,
+            kind: "TextResponse",
+        }),
+        None => Ok(Assembled {
+            text: None,
+            kind: "NoneType",
+        }),
+    }
 }

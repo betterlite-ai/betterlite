@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Literal, Protocol, TypedDict, cast
+from typing import Final, Literal, Protocol, TypedDict, cast
 
 import httpx
 from litellm.caching.dual_cache import DualCache
@@ -12,6 +12,11 @@ from litellm.types.guardrails import GuardrailEventHooks
 from litellm.types.utils import CallTypesLiteral
 from pydantic import JsonValue, TypeAdapter
 from starlette.exceptions import HTTPException
+
+BODY_ADAPTER: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+API_KEY_HEADER: Final = "x-api-key"
+CLEARED_ENVIRONMENT = ("ARGUS_API_KEY", "REPELLOAI_API_KEY", "REPELLOAI_API_BASE")
 
 
 class Answer(TypedDict):
@@ -87,21 +92,22 @@ class Script:
         self.calls.append(
             {
                 "path": request.url.path,
-                "api_key_present": "x-api-key" in request.headers,
-                "body": TypeAdapter(JsonValue).validate_json(request.content),
+                "api_key_present": API_KEY_HEADER in request.headers,
+                "body": BODY_ADAPTER.validate_json(request.content),
             }
         )
         return httpx.Response(self.answer["status"], json=self.answer["body"], request=request)
 
 
 def build_guardrail(call: Input) -> Guardrail:
-    for name in ("ARGUS_API_KEY", "REPELLOAI_API_KEY", "REPELLOAI_API_BASE"):
+    for name in CLEARED_ENVIRONMENT:
         os.environ.pop(name, None)
     os.environ.update(call["env"])
     fallback: Literal["fail_closed", "fail_open"] = (
         "fail_open" if call["unreachable_fallback"] == "fail_open" else "fail_closed"
     )
     return cast(Guardrail, RepelloAIGuardrail(  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/repelloai/repelloai.py#L142-L182
+
         guardrail_name="repello",
         api_key=call["api_key"],
         api_base=call["api_base"],

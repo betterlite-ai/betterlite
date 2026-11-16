@@ -106,7 +106,9 @@ pub async fn streaming_iterator_hook(
     let scanned = guardrail
         .call_analyze(&text, RESPONSE_STAGE, data, context)
         .await?;
-    scanned.iter().for_each(log_flagged_verdict);
+    if let Some(analysis) = scanned.as_ref() {
+        log_flagged_verdict(analysis);
+    }
     if verdict_blocks(scanned.as_ref()) {
         return Err(GuardrailFailure::Other(BLOCKED_MESSAGE.to_owned()));
     }

@@ -41,7 +41,7 @@ pub(crate) struct Call {
     api_key: Option<String>,
     api_base: Option<String>,
     asset_id: Option<String>,
-    unreachable_fallback: Option<UnreachableFallback>,
+    unreachable_fallback: Option<String>,
     #[serde(default)]
     data: BTreeMap<String, GuardrailValue>,
     answer: Option<UpstreamAnswer>,
@@ -96,14 +96,18 @@ struct RecordedGuardrail {
 impl Helper for Op {
     type Input = Call;
 
-    fn run(call: &Self::Input) -> HelperResult {
-        let params = build_params(call);
-        let output = match call.mode {
-            Mode::Init => init_output(call, &params),
-            Mode::PreCall => hook_output(call, &params)?,
-        };
-        serde_json::to_value(output).map_err(|error| failure("ValueError", error.to_string()))
+    fn run(input: &Self::Input) -> HelperResult {
+        run_call(input)
     }
+}
+
+fn run_call(call: &Call) -> HelperResult {
+    let params = build_params(call);
+    let output = match call.mode {
+        Mode::Init => init_output(call, &params),
+        Mode::PreCall => hook_output(call, &params)?,
+    };
+    serde_json::to_value(output).map_err(|error| failure("ValueError", error.to_string()))
 }
 
 fn build_params(call: &Call) -> RepelloAIParams {
@@ -112,7 +116,10 @@ fn build_params(call: &Call) -> RepelloAIParams {
         api_key: call.api_key.clone().map(SecretString::from),
         api_base: call.api_base.clone(),
         asset_id: call.asset_id.clone(),
-        unreachable_fallback: call.unreachable_fallback.unwrap_or_default(),
+        unreachable_fallback: match call.unreachable_fallback.as_deref() {
+            Some("fail_open") => UnreachableFallback::FailOpen,
+            _ => UnreachableFallback::FailClosed,
+        },
         timeout: None,
         mode: LitellmParamsMode::One("pre_call".to_owned()),
         default_on: true,
@@ -122,10 +129,10 @@ fn build_params(call: &Call) -> RepelloAIParams {
 
 fn init_output(call: &Call, params: &RepelloAIParams) -> Output {
     let mut registry = NoRegistry;
-    initialize_guardrail(params, &call.env, base_builder(), &mut registry).map_or_else(
-        |_error| Output::default(),
-        |guardrail| base_output(call, &guardrail.settings),
-    )
+    match initialize_guardrail(params, &call.env, base_builder(), &mut registry) {
+        Ok(guardrail) => base_output(call, &guardrail.settings),
+        Err(_error) => Output::default(),
+    }
 }
 
 // The settings as the guardrail resolved them, read before the mock base replaces api_base.

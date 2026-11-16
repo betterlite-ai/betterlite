@@ -40,7 +40,11 @@ pub const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 pub const PROMPT_STAGE: &str = "prompt";
 pub const RESPONSE_STAGE: &str = "response";
 
+pub const BLOCKED_VERDICT: &str = "blocked";
+pub const FLAGGED_VERDICT: &str = "flagged";
+pub const PASSED_VERDICT: &str = "passed";
 pub const CONFIG_ERROR_STATUS_CODES: [u16; 5] = [400, 401, 403, 404, 422];
+pub const BLOCKED_STATUS: u16 = 400;
 pub const ERROR_STATUS: u16 = 500;
 
 pub const MISCONFIGURED_MESSAGE: &str = "RepelloAI Argus guardrail is misconfigured";
@@ -49,6 +53,8 @@ pub const INVALID_JSON_MESSAGE: &str = "RepelloAI Argus guardrail returned inval
 pub const FAILED_MESSAGE: &str = "RepelloAI Argus guardrail failed";
 pub const BLOCKED_MESSAGE: &str = "Blocked by RepelloAI Argus guardrail";
 pub const BLOCKED_DETAIL: &str = "Blocked by RepelloAI Argus guardrail.";
+pub const POLICIES_PREFIX: &str = "Blocked by RepelloAI Argus guardrail. Policies violated: ";
+pub const UNKNOWN_POLICY: &str = "unknown_policy";
 
 // The detail keys LiteLLM leaves implicit; betterlite names the failure so a client can distinguish them.
 pub const MISCONFIGURED_ERROR_TYPE: &str = "repelloai_guardrail_is_misconfigured";

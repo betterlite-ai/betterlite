@@ -3,7 +3,10 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::repello_content::wire::{RepelloAIAnalyzeResponse, RepelloAIViolatedPolicy};
 
-use super::BLOCKED_DETAIL;
+use super::{
+    BLOCKED_DETAIL, BLOCKED_STATUS, BLOCKED_VERDICT, FLAGGED_VERDICT, PASSED_VERDICT,
+    POLICIES_PREFIX, UNKNOWN_POLICY,
+};
 
 // LiteLLM's _verdict_blocks: no response never blocks, and a missing or unknown verdict blocks.
 #[must_use]
@@ -12,8 +15,8 @@ pub fn verdict_blocks(scanned: Option<&RepelloAIAnalyzeResponse>) -> bool {
         return false;
     };
     match response.verdict.as_deref() {
-        Some("blocked") => true,
-        Some("passed" | "flagged") => false,
+        Some(BLOCKED_VERDICT) => true,
+        Some(PASSED_VERDICT | FLAGGED_VERDICT) => false,
         other => {
             tracing::warn!(
                 "RepelloAI Argus returned an unrecognized verdict ({}) - blocking.",
@@ -32,24 +35,23 @@ pub fn format_blocked_detail(response: &RepelloAIAnalyzeResponse) -> String {
         return BLOCKED_DETAIL.to_owned();
     }
     let formatted: Vec<String> = policies.iter().map(format_policy).collect();
-    format!(
-        "{BLOCKED_DETAIL} Policies violated: {}.",
-        formatted.join("; ")
-    )
+    format!("{POLICIES_PREFIX}{}.", formatted.join("; "))
 }
 
 fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
-    let name = policy.policy_name.as_deref().unwrap_or("unknown_policy");
+    let name = policy.policy_name.as_deref().unwrap_or(UNKNOWN_POLICY);
     let action = policy
         .action_taken
         .as_deref()
         .map(|action| format!("action: {action}"));
-    let score = policy
+    let score = match policy
         .details
         .as_ref()
         .and_then(|details| details.get("score"))
-        .filter(|score| **score != GuardrailValue::Null)
-        .map(format_score);
+    {
+        None | Some(GuardrailValue::Null) => None,
+        Some(score) => Some(format_score(score)),
+    };
     let parts: Vec<String> = action.into_iter().chain(score).collect();
     if parts.is_empty() {
         return name.to_owned();
@@ -58,13 +60,21 @@ fn format_policy(policy: &RepelloAIViolatedPolicy) -> String {
 }
 
 fn format_score(score: &GuardrailValue) -> String {
-    if let GuardrailValue::Text(text) = score {
-        return format!("score: {text}");
+    match score {
+        GuardrailValue::Text(text) => format!("score: {text}"),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Array(_)
+        | GuardrailValue::Object(_) => {
+            format!(
+                "score: {}",
+                serde_json::to_string(score).unwrap_or_default()
+            )
+        }
     }
-    format!(
-        "score: {}",
-        serde_json::to_string(score).unwrap_or_default()
-    )
 }
 
 // LiteLLM's _raise_if_blocked: a block raises the 400 with the formatted detail, a flag is only logged.
@@ -76,7 +86,7 @@ pub fn raise_if_blocked(
     };
     if verdict_blocks(Some(response)) {
         return Err(GuardrailFailure::Http {
-            status: 400,
+            status: BLOCKED_STATUS,
             detail: format_blocked_detail(response),
         });
     }
@@ -85,12 +95,17 @@ pub fn raise_if_blocked(
 }
 
 pub fn log_flagged_verdict(response: &RepelloAIAnalyzeResponse) {
-    if response.verdict.as_deref() != Some("flagged") {
+    if response.verdict.as_deref() != Some(FLAGGED_VERDICT) {
         return;
     }
-    let policies = response.policies_violated.as_ref().map_or_else(
-        || "None".to_owned(),
-        |listed| serde_json::to_string(listed).unwrap_or_default(),
-    );
-    tracing::warn!("RepelloAI Argus flagged content (allowed): {policies}");
+    let Some(policies) = response.policies_violated.as_ref() else {
+        tracing::warn!("RepelloAI Argus flagged content (allowed): None");
+        return;
+    };
+    match serde_json::to_string(policies) {
+        Ok(text) => tracing::warn!("RepelloAI Argus flagged content (allowed): {text}"),
+        Err(error) => {
+            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}");
+        }
+    }
 }
