@@ -43,6 +43,71 @@ fn sse_bytes_join_text_deltas() {
     assert_eq!(extract_text_from_sse_bytes(&chunks), "Hello");
 }
 
+#[rstest::rstest]
+#[case::a_raw_line_separator_stays_in_the_text("a\u{2028}b", "a\u{2028}b")]
+#[case::a_raw_next_line_stays_in_the_text("a\u{85}b", "a\u{85}b")]
+#[case::a_raw_paragraph_separator_stays_in_the_text("a\u{2029}b", "a\u{2029}b")]
+fn sse_lines_split_on_newline_only(#[case] text: &str, #[case] expected: &str) {
+    let line = format!(
+        "data: {{\"type\":\"content_block_delta\",\"delta\":{{\"type\":\"text_delta\",\"text\":\"{text}\"}}}}\n\n"
+    );
+    assert_eq!(extract_text_from_sse_bytes(&[sse(&line)]), expected);
+}
+
+#[rstest::rstest]
+#[case::crlf_line_endings("", "\r")]
+#[case::a_leading_file_separator("\u{1c}", "")]
+#[case::a_trailing_unit_separator("", "\u{1f}")]
+#[case::a_leading_space(" ", "")]
+fn sse_lines_strip_python_whitespace(#[case] before: &str, #[case] after: &str) {
+    let line = format!(
+        "{before}data: {{\"type\":\"content_block_delta\",\"delta\":{{\"type\":\"text_delta\",\"text\":\"x\"}}}}{after}\n"
+    );
+    assert_eq!(extract_text_from_sse_bytes(&[sse(&line)]), "x");
+}
+
+#[rstest::rstest]
+#[case::a_delta_that_is_not_an_object(r#"{"type":"content_block_delta","delta":"x"}"#)]
+#[case::a_text_that_is_not_a_string(
+    r#"{"type":"content_block_delta","delta":{"type":"text_delta","text":1}}"#
+)]
+#[case::a_payload_that_is_not_an_object(r#"["content_block_delta"]"#)]
+fn a_malformed_sse_delta_is_skipped(#[case] payload: &str) {
+    let ok = "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n";
+    let chunks = vec![sse(&format!("data: {payload}\n")), sse(ok)];
+    assert_eq!(extract_text_from_sse_bytes(&chunks), "ok");
+}
+
+#[test]
+fn an_sse_data_line_without_the_space_is_skipped() {
+    let chunks = vec![sse(
+        "data:{\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"x\"}}\n\n",
+    )];
+    assert_eq!(extract_text_from_sse_bytes(&chunks), "");
+}
+
+#[test]
+fn invalid_utf8_in_an_sse_line_becomes_one_replacement_character() {
+    let mut bytes =
+        b"data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"a"
+            .to_vec();
+    bytes.push(0xff);
+    bytes.extend_from_slice(b"b\"}}\n\n");
+    assert_eq!(
+        extract_text_from_sse_bytes(&[StreamChunk::Bytes(bytes)]),
+        "a\u{FFFD}b"
+    );
+}
+
+#[test]
+fn an_sse_event_split_across_byte_chunks_is_joined_first() {
+    let chunks = vec![
+        sse("data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"te"),
+        sse("xt_delta\",\"text\":\"joined\"}}\n\n"),
+    ];
+    assert_eq!(extract_text_from_sse_bytes(&chunks), "joined");
+}
+
 #[test]
 fn event_text_reads_output_text_deltas() {
     let chunks = vec![

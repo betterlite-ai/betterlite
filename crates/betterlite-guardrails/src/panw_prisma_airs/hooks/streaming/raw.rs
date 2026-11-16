@@ -4,8 +4,6 @@ use std::time::SystemTime;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::{StreamChunk, StreamError};
-use crate::guardrail_message_scope::StreamItem;
-use crate::guardrail_message_scope::stream_chunk_events::anthropic_stream_chunk_events;
 use crate::panw_prisma_airs::audit::{Direction, GuardrailAudit};
 use crate::panw_prisma_airs::construct::PanwPrismaAirs;
 use crate::panw_prisma_airs::error_detail::{GuardrailHttpError, build_error_detail};
@@ -18,7 +16,9 @@ use crate::panw_prisma_airs::scan::call_panw_api;
 use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_masking::get_masked_text;
 
-// Mirrors LiteLLM's fn _extract_text_from_sse_bytes; the shared SSE parser also replaces invalid UTF-8.
+const SSE_DATA_PREFIX: &str = "data: ";
+
+// Mirrors LiteLLM's fn _extract_text_from_sse_bytes: lines split on \n only, invalid UTF-8 becomes U+FFFD, strip is Python's.
 #[must_use]
 pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
     let mut joined = Vec::new();
@@ -27,10 +27,24 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
             joined.extend_from_slice(bytes);
         }
     }
-    let events = anthropic_stream_chunk_events(&StreamItem::Bytes(joined));
+    let is_blank =
+        |character: char| character.is_whitespace() || ('\u{1c}'..='\u{1f}').contains(&character);
     let mut parts = Vec::new();
-    for event in &events {
-        if data::text(event, "type") != Some("content_block_delta") {
+    for raw_line in joined.split(|byte| *byte == b'\n') {
+        let mut line = String::with_capacity(raw_line.len());
+        for piece in raw_line.utf8_chunks() {
+            line.push_str(piece.valid());
+            if !piece.invalid().is_empty() {
+                line.push('\u{FFFD}');
+            }
+        }
+        let Some(payload) = line.trim_matches(is_blank).strip_prefix(SSE_DATA_PREFIX) else {
+            continue;
+        };
+        let Ok(event) = serde_json::from_str::<Data>(payload) else {
+            continue;
+        };
+        if data::text(&event, "type") != Some("content_block_delta") {
             continue;
         }
         let Some(GuardrailValue::Object(delta)) = event.get("delta") else {
@@ -39,7 +53,7 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
         if data::text(delta, "type") == Some("text_delta")
             && let Some(GuardrailValue::Text(text)) = delta.get("text")
         {
-            parts.push(text.as_str());
+            parts.push(text.clone());
         }
     }
     parts.concat()
