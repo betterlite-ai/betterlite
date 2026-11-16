@@ -69,6 +69,16 @@ deviations:
       caller gave. The class is the same, since neither error carries a status.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L94-L99
+  - what: >-
+      The default request timeout reaches this module as a float number of seconds and must convert into
+      a usable duration. A negative, infinite or NaN value is this module's Timeout error, mapped as a
+      ValueError-like connection error before the handler runs. LiteLLM's DEFAULT_REQUEST_TIMEOUT is a
+      module constant that always works, so only a call that injects a bad value can tell the two apart.
+    why: >-
+      The route passes betterlite_config's RequestTimeout.seconds, which an operator sets through
+      REQUEST_TIMEOUT, and Duration::from_secs_f64 is banned because it panics, so the value is checked
+      where it first becomes a Duration.
+    link: ""
 kept_bugs:
   - what: >-
       The mock short circuit runs before the provider is parsed or its container config looked up, so a
