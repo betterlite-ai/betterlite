@@ -122,7 +122,7 @@ async fn database() -> (PostgresFixture, Pool, Client) {
         .resolve()
         .await
         .unwrap();
-    let manager = Manager::new(fixture.options.config.clone(), NoTls);
+    let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
     let pool = Pool::builder(manager).max_size(4).build().unwrap();
     let client = pool.get().await.unwrap();
     client.batch_execute(SCHEMA).await.unwrap();

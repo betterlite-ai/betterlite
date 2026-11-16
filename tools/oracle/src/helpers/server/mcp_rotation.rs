@@ -1,14 +1,14 @@
 mod store;
 
-use std::future::Future;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::mcp_rotation::rotation::Rotation;
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tokio::runtime::Builder;
 use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
@@ -18,23 +18,14 @@ use self::store::{cipher, prepare_store};
 
 pub(crate) struct Op;
 
-fn helper_error(class: &str, message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
-}
-
 #[derive(Clone, Copy, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub(crate) enum Function {
-    RotateServers,
-    RotateUserCredentials,
-    RotateUserEnvVars,
+    #[serde(rename = "rotate_servers")]
+    Servers,
+    #[serde(rename = "rotate_user_credentials")]
+    UserCredentials,
+    #[serde(rename = "rotate_user_env_vars")]
+    UserEnvVars,
 }
 
 #[derive(Deserialize)]
@@ -82,13 +73,6 @@ impl<S: Subscriber> Layer<S> for LevelCapture {
     }
 }
 
-fn block_on<F: Future>(future: F) -> Result<F::Output, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|source| helper_error("RuntimeError", &source.to_string()))?;
-    Ok(runtime.block_on(future))
-}
-
 impl Helper for Op {
     type Input = Input;
 
@@ -107,10 +91,11 @@ impl Helper for Op {
             cipher: &cipher,
             new_key: &key,
         };
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         let result = match input.function {
-            Function::RotateServers => block_on(rotation.servers(&input.touched_by))?,
-            Function::RotateUserCredentials => block_on(rotation.user_credentials())?,
-            Function::RotateUserEnvVars => block_on(rotation.user_env_vars())?,
+            Function::Servers => runtime.block_on(rotation.servers(&input.touched_by)),
+            Function::UserCredentials => runtime.block_on(rotation.user_credentials()),
+            Function::UserEnvVars => runtime.block_on(rotation.user_env_vars()),
         };
         drop(guard);
         let writes = recorder
