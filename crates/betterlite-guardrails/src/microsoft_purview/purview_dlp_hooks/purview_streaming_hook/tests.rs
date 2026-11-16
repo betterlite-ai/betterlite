@@ -14,6 +14,7 @@ use crate::purview_dlp_evaluation::error_handling::PurviewDlpHttpError;
 use crate::purview_dlp_evaluation::user_id_blocking::UNTRUSTED_IDENTITY_ERROR;
 use betterlite_logging::verbose_hooks::{ConsoleSink as _, LoggerSink as _};
 use betterlite_redact::structured::Payload;
+use betterlite_streaming::stream_chunk_shaping::records::JsonObject;
 use betterlite_streaming::stream_usage_assembly::{UsageTokenCounter as _, wire::Usage};
 use betterlite_streaming::streamed_response_assembly::cost::{
     CostInput, StreamCostCalculator as _,
@@ -266,7 +267,7 @@ async fn seams_stay_silent_and_free() {
     let input = CostInput {
         model: "m",
         usage: &Usage::default(),
-        hidden_params: &Default::default(),
+        hidden_params: &JsonObject::default(),
     };
     assert_eq!(NoCosts.completion_cost(&input, None).unwrap(), None);
     assert_eq!(

@@ -16,7 +16,7 @@ use tokio::runtime::Builder as RuntimeBuilder;
 
 use super::super::wire::Reply;
 
-const MAX_BODY_BYTES: usize = 1_048_576;
+const MAX_BODY_BYTES: usize = 0x0010_0000;
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub(super) struct Scan {
@@ -80,7 +80,7 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
-            .unwrap_or((StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()));
+            .unwrap_or_else(|| (StatusCode::INTERNAL_SERVER_ERROR, "{}".to_owned()));
         return respond(reply.0, reply.1);
     }
     if path.ends_with("/protectionScopes/compute") {
@@ -113,10 +113,10 @@ fn serve_in_thread(
                 return;
             };
             runtime.block_on(async move {
-                let Ok(listener) = AsyncListener::from_std(listener) else {
+                let Ok(async_listener) = AsyncListener::from_std(listener) else {
                     return;
                 };
-                if let Err(error) = axum::serve(listener, router).await {
+                if let Err(error) = axum::serve(async_listener, router).await {
                     tracing::error!("purview mock server: {error}");
                 }
             });

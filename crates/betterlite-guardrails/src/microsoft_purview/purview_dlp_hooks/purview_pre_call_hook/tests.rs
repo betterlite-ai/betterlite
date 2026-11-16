@@ -92,7 +92,7 @@ async fn returns_the_request_unchanged_after_a_clean_scan() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(harness.data.get("messages"), messages.as_ref());
     assert_eq!(mock.process_calls(), 1);
 }
@@ -118,7 +118,7 @@ async fn sends_the_call_id_as_the_correlation_id() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(mock.correlation_ids(), vec![Some("call-1".to_owned())]);
 }
 
@@ -166,7 +166,7 @@ async fn scans_a_text_completion_prompt_after_normalizing_it() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         mock.scanned(),
         vec![Scan {
@@ -197,7 +197,7 @@ async fn routes_responses_calls_through_the_input_extractor() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         mock.scanned(),
         vec![Scan {
@@ -228,7 +228,7 @@ async fn scans_the_text_of_every_chat_message() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(
         mock.scanned(),
         vec![Scan {
@@ -257,7 +257,7 @@ async fn skips_the_scan_when_the_request_has_no_prompt_text() {
         &mut context,
     )
     .await;
-    assert!(result.is_ok());
+    result.unwrap();
     assert_eq!(mock.process_calls(), 0);
 }
 
@@ -323,7 +323,7 @@ async fn records_the_scan_through_a_started_invocation() {
         )
         .await
     };
-    assert!(result.is_ok());
+    result.unwrap();
     assert!(invocation.self_recorded);
     assert_eq!(harness.sink.records().len(), 1);
 }

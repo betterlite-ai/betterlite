@@ -249,8 +249,8 @@ pub(super) fn start(script: Script) -> GraphMock {
                 .build()
                 .unwrap();
             runtime.block_on(async move {
-                let listener = AsyncListener::from_std(listener).unwrap();
-                axum::serve(listener, router).await.unwrap();
+                let async_listener = AsyncListener::from_std(listener).unwrap();
+                axum::serve(async_listener, router).await.unwrap();
             });
         })
         .unwrap();

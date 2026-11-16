@@ -24,7 +24,7 @@ use betterlite_guardrails::purview_dlp_evaluation::{
     MicrosoftPurviewDLPGuardrail, PurviewDlpGuardrailParams,
 };
 use betterlite_guardrails::purview_graph_client::user_id_resolution::KeyIdentity;
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use reqwest::Client;
@@ -159,8 +159,8 @@ fn guardrail(config: &wire::GuardrailConfig, base: &str) -> MicrosoftPurviewDLPG
         timeout: config.timeout_seconds.map(Duration::from_secs),
     };
     let mut guardrail = MicrosoftPurviewDLPGuardrail::new(params, Client::default());
-    guardrail.base.graph_api_base = base.to_owned();
-    guardrail.base.login_authority = base.to_owned();
+    base.clone_into(&mut guardrail.base.graph_api_base);
+    base.clone_into(&mut guardrail.base.login_authority);
     guardrail
 }
 
@@ -223,16 +223,16 @@ impl Setup {
         ));
         let record_base =
             GuardrailBase::new(GuardrailSettings::default(), false).or_config_error()?;
-        let guardrail = Arc::new(guardrail);
+        let shared_guardrail = Arc::new(guardrail);
         let engine = AuditEngine {
-            guardrail: Arc::clone(&guardrail),
+            guardrail: Arc::clone(&shared_guardrail),
             record_base: record_base.clone(),
             cache: Arc::clone(&cache),
             sink: Arc::new(DiscardSink),
         };
         Ok(Self {
             mock,
-            guardrail,
+            guardrail: shared_guardrail,
             record_base,
             cache,
             redactor,
