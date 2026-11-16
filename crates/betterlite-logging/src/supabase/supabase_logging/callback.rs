@@ -81,11 +81,13 @@ impl<D: Delivery + 'static> InputEventSink for SupabaseCallback<D> {
 }
 
 // log_event swallows its exceptions and prints the traceback, so a failed write never reaches the caller
-async fn deliver_row<D: Delivery>(
+async fn deliver_row<D>(
     logger: &SupabaseLogger<D>,
     payload: &StandardLoggingPayload,
     outcome: Outcome,
-) {
+) where
+    D: Delivery,
+{
     let Some(call_id) = call_id(payload, outcome) else {
         tracing::warn!("the supabase failure event carries no call id");
         return;
@@ -119,13 +121,15 @@ async fn deliver_row<D: Delivery>(
     post_row(logger, payload, &call_id, response_obj, outcome).await;
 }
 
-async fn post_row<D: Delivery>(
+async fn post_row<D>(
     logger: &SupabaseLogger<D>,
     payload: &StandardLoggingPayload,
     call_id: &str,
     response_obj: &Json,
     outcome: Outcome,
-) {
+) where
+    D: Delivery,
+{
     let row = RequestRow {
         messages: payload.messages.as_ref(),
         end_user: request_user(payload, outcome),

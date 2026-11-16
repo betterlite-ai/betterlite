@@ -28,9 +28,10 @@ impl<D: Delivery> SupabaseClient<D> {
     where
         Body: Serialize + Sync,
     {
+        let encoded = serde_json::to_vec(body).map_err(DeliveryError::Encode)?;
         let sent = self
             .delivery
-            .post(self.request(table, body, on_conflict)?)
+            .post(self.request(table, encoded, on_conflict)?)
             .await
             .map_err(DeliveryError::Transport)?;
         if !(200..300).contains(&sent.status) {
@@ -41,16 +42,12 @@ impl<D: Delivery> SupabaseClient<D> {
         Ok(())
     }
 
-    fn request<Body>(
+    fn request(
         &self,
         table: &str,
-        body: &Body,
+        body: Vec<u8>,
         on_conflict: Option<&str>,
-    ) -> Result<PostRequest, DeliveryError<D::Error>>
-    where
-        Body: Serialize + Sync,
-    {
-        let encoded = serde_json::to_vec(body).map_err(DeliveryError::Encode)?;
+    ) -> Result<PostRequest, DeliveryError<D::Error>> {
         let prefer = if on_conflict.is_some() {
             MERGE_DUPLICATES
         } else {
@@ -59,7 +56,7 @@ impl<D: Delivery> SupabaseClient<D> {
         Ok(PostRequest {
             url: self.table_url(table, on_conflict),
             headers: self.headers(prefer)?,
-            body: encoded,
+            body,
             deadline: DELIVERY_DEADLINE,
         })
     }
@@ -79,7 +76,7 @@ impl<D: Delivery> SupabaseClient<D> {
         let mut headers = HeaderMap::new();
         headers.insert(
             HeaderName::from_static("apikey"),
-            HeaderValue::try_from(key.as_str()).map_err(|source| DeliveryError::Header {
+            HeaderValue::try_from(key).map_err(|source| DeliveryError::Header {
                 name: "supabase apikey",
                 source,
             })?,

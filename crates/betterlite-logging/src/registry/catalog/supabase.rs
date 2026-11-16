@@ -17,8 +17,7 @@ pub fn build(inputs: &CatalogInputs) -> Result<Arc<dyn CallbackLogger>, CatalogE
     Ok(build_callback(inputs)?)
 }
 
-// The callback is both the terminal logger and the pre-call input event sink, so a caller that
-// puts "supabase" in input_callback hands this same value to the pre-call hook as InputCallback::InputEvent
+// The same callback is the terminal logger and the pre-call InputEventSink for input_callback.
 pub fn build_callback(
     inputs: &CatalogInputs,
 ) -> Result<Arc<SupabaseCallback<PooledDelivery>>, CatalogError> {
