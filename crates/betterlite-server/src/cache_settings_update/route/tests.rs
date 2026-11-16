@@ -239,6 +239,42 @@ async fn route_answers_a_string_detail_when_the_row_cannot_be_read() {
 }
 
 #[tokio::test]
+async fn route_answers_a_string_detail_when_the_row_cannot_be_saved() {
+    let (fake, repository) = support::fake_repository();
+    fake.fail_writes(support::database_error(
+        ErrorType::Other,
+        "the row cannot be saved",
+    ));
+    let reinit = support::reinit();
+    let harness = support::harness(Some(repository), reinit.clone(), support::audit(true));
+    let body = support::request_body(support::json(r#"{"type":"local"}"#));
+    let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        text,
+        r#"{"detail":"Error updating cache settings: the row cannot be saved"}"#
+    );
+    assert!(reinit.calls().is_empty());
+    assert_eq!(harness.spawner.len(), 0);
+}
+
+#[tokio::test]
+async fn route_audits_a_keyless_admin_with_no_changed_by() {
+    let (_fake, repository) = support::fake_repository();
+    let audit = support::audit(true);
+    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let body = support::request_body(support::json(r#"{"type":"local"}"#));
+    let (status, _text) = support::post(&harness, Some(support::platform_admin()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    support::run_tasks(&harness.spawner).await;
+    let entries = audit.entries();
+    assert_eq!(entries.len(), 1);
+    assert!(entries[0].api_key.is_none());
+    assert!(entries[0].litellm_changed_by.is_none());
+    assert!(entries[0].user_id.is_none());
+}
+
+#[tokio::test]
 async fn route_audits_the_key_identity_and_the_changed_by_header() {
     let (_fake, repository) = support::fake_repository();
     let audit = support::audit(true);
