@@ -54,7 +54,6 @@ pub const BLOCKED_MESSAGE: &str = "Blocked by RepelloAI Argus guardrail";
 pub const BLOCKED_DETAIL: &str = "Blocked by RepelloAI Argus guardrail.";
 pub const POLICIES_PREFIX: &str = "Blocked by RepelloAI Argus guardrail. Policies violated: ";
 pub const UNKNOWN_POLICY: &str = "unknown_policy";
-pub const CONFIG_MODEL_NAME: &str = "RepelloAIGuardrailConfigModel";
 
 // The detail keys LiteLLM leaves implicit; betterlite names the failure so a client can distinguish them.
 pub const MISCONFIGURED_ERROR_TYPE: &str = "repelloai_guardrail_is_misconfigured";
@@ -74,7 +73,7 @@ impl GuardrailContract for RepelloAILifecycle {
         Some(GuardrailValue::Object(BTreeMap::from([
             (
                 "model".to_owned(),
-                GuardrailValue::Text(CONFIG_MODEL_NAME.to_owned()),
+                GuardrailValue::Text(String::from("RepelloAIGuardrailConfigModel")),
             ),
             (
                 "ui_friendly_name".to_owned(),

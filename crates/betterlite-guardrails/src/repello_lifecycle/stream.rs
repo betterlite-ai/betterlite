@@ -99,8 +99,6 @@ impl UsageTokenCounter for NoServices {
     }
 }
 
-static NO_SERVICES: NoServices = NoServices;
-
 // What LiteLLM's stream_chunk_builder gives back for the buffered chunks; kind is its type name.
 pub(super) struct Assembled {
     pub(super) text: Option<String>,
@@ -169,8 +167,8 @@ pub(super) async fn assemble(
         messages: None,
         count_prompt_tokens: None,
         logging: None,
-        costs: &NO_SERVICES,
-        counter: &NO_SERVICES,
+        costs: &NoServices,
+        counter: &NoServices,
         metadata: None,
         now: i64::try_from(elapsed.as_secs()).unwrap_or(i64::MAX),
     };

@@ -17,7 +17,7 @@ use betterlite_guardrails::guardrail_records::record::{
 use betterlite_guardrails::repello_lifecycle::RepelloAILifecycle;
 use betterlite_guardrails::repello_lifecycle::config::{RepelloAIParams, RepelloAISettings};
 use betterlite_guardrails::repello_lifecycle::hooks::{HookContext, pre_call_hook};
-use betterlite_guardrails::repello_lifecycle::{CallbackRegistry, initialize_guardrail};
+use betterlite_guardrails::repello_lifecycle::{CallbackRegistry, Data, initialize_guardrail};
 use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
@@ -195,14 +195,8 @@ fn hook_output(call: &Call, params: &RepelloAIParams) -> Result<Output, Box<Help
 
 async fn run_pre_call(
     guardrail: &RepelloAILifecycle,
-    mut data: BTreeMap<String, GuardrailValue>,
-) -> Result<
-    (
-        Result<(), GuardrailFailure>,
-        BTreeMap<String, GuardrailValue>,
-    ),
-    Box<HelperError>,
-> {
+    mut data: Data,
+) -> Result<(Result<(), GuardrailFailure>, Data), Box<HelperError>> {
     let mut invocation =
         GuardrailInvocation::begin(GuardrailHookName::PreCall, &data, None, SystemTime::now())
             .map_err(|error| failure("RecordError", error.to_string()))?;
