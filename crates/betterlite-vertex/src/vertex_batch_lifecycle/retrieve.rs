@@ -21,9 +21,9 @@ use super::target::{endpoint_tail, proxy_url};
 use super::wire::pre_call_args;
 
 pub struct PreparedBatchRetrieve {
-    pub(super) target: String,
-    pub(super) headers: HeaderMap,
-    pub(super) logging: AdditionalArgs,
+    pub target: String,
+    pub headers: HeaderMap,
+    pub logging: AdditionalArgs,
 }
 
 pub fn retrieve_url(
