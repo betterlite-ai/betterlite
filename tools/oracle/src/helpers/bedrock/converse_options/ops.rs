@@ -136,8 +136,8 @@ fn handle(
             handle_reasoning_effort(model, effort, &mut params, &mut capability, &sources).await
         })
         .map_err(|error| helper_error(&error, error.status_code()))?;
-    let params = serde_json::to_value(params).map_err(|error| helper_error(error, None))?;
-    Ok(json!({ "params": params }))
+    let encoded = serde_json::to_value(params).map_err(|error| helper_error(error, None))?;
+    Ok(json!({ "params": encoded }))
 }
 
 fn params(model_cost: &ParamMap, models: &[String]) -> HelperResult {
