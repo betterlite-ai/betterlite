@@ -229,11 +229,11 @@ fn listing_provider_endpoint_check_lists_nothing() {
 
 #[test]
 fn listing_has_no_deployment_rows() {
-    let state = state_for(&loaded(REDIRECT_CONFIG));
+    let config = loaded(REDIRECT_CONFIG);
+    let slot = crate::state::auth_model_lists::Slot::new(&config, &crate::state::shared::Shared);
     let groups = IndexMap::new();
     let granted_wildcard = strings(&["*"]);
-    let expanded = state
-        .auth_model_lists
+    let expanded = slot
         .authorized_models(&listing_request(
             &granted_wildcard,
             &groups,
