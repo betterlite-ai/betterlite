@@ -27,6 +27,9 @@ call:
       - index: 0
         message: {role: assistant, content: Sensitive data}
         finish_reason: stop
+      - index: 1
+        message: {role: assistant, content: More sensitive data}
+        finish_reason: stop
     chunks: []
 env: {}
 compare: {ignore: []}

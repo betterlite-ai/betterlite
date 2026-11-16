@@ -16,15 +16,16 @@ use crate::microsoft_purview::purview_dlp_hooks::test_support::{
 };
 
 const CHAT_RESULT: &str = r#"{"id":"c1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"}}]}"#;
+const TWO_PART_RESULT: &str = r#"{"id":"c1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"},{"index":1,"message":{"role":"assistant","content":"world"},"finish_reason":"stop"}]}"#;
 const AUDITED_KWARGS: &str = r#"{"model":"gpt","messages":[{"role":"user","content":"hello"}],"litellm_params":{"metadata":{"user_api_key_user_id":"user-1"}}}"#;
 
 fn engine(base: &str, sink: &Arc<TestSink>) -> AuditEngine {
-    let sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::<TestSink>::clone(sink);
+    let span_sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::<TestSink>::clone(sink);
     AuditEngine {
         guardrail: Arc::new(guardrail_at(base)),
         record_base: record_base(),
         cache: Arc::new(cache()),
-        sink,
+        sink: span_sink,
     }
 }
 
@@ -64,6 +65,34 @@ async fn audits_the_prompt_and_then_the_response() {
         ]
     );
     assert_eq!(sink.records().len(), 2);
+}
+
+#[tokio::test]
+async fn joins_every_response_text_part_with_the_separator() {
+    let mock = start(Script::new(vec![passing_actions(), passing_actions()]));
+    let sink = Arc::new(TestSink::default());
+    let engine = engine(&mock.base, &sink);
+    let mut kwargs = data(AUDITED_KWARGS);
+    audit(
+        &engine,
+        &mut kwargs,
+        &value(TWO_PART_RESULT),
+        Some(CallType::Completion),
+    )
+    .await;
+    assert_eq!(
+        mock.scanned(),
+        vec![
+            Scan {
+                activity: "uploadText".to_owned(),
+                data: "hello".to_owned(),
+            },
+            Scan {
+                activity: "downloadText".to_owned(),
+                data: "hello\n\n---\n\nworld".to_owned(),
+            },
+        ]
+    );
 }
 
 #[tokio::test]
