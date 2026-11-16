@@ -300,27 +300,25 @@ def job_report(config: FalAIVideoConfig, call: WorkflowJobPath) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     config = FalAIVideoConfig()
-    if input_value["operation"] == "h3_auto_duration":
-        return mapping_report(
-            config, input_value["models"], "seconds", input_value["seconds"]
-        )
-    if input_value["operation"] == "seedance_decimal_duration":
-        return mapping_report(
-            config, input_value["models"], "seconds", input_value["seconds"]
-        )
-    if input_value["operation"] == "resolution_short_side":
-        return mapping_report(
-            config, input_value["models"], "size", input_value["sizes"]
-        )
-    if input_value["operation"] == "reference_type":
-        return mapping_report(
-            config,
-            input_value["models"],
-            "input_reference",
-            input_value["references"],
-        )
-    if input_value["operation"] == "provider_override":
-        return provider_report(config, input_value)
-    if input_value["operation"] == "queue_base_literal":
-        return queue_report(config, input_value)
-    return job_report(config, input_value)
+    match input_value["operation"]:
+        case "h3_auto_duration" | "seedance_decimal_duration":
+            return mapping_report(
+                config, input_value["models"], "seconds", input_value["seconds"]
+            )
+        case "resolution_short_side":
+            return mapping_report(
+                config, input_value["models"], "size", input_value["sizes"]
+            )
+        case "reference_type":
+            return mapping_report(
+                config,
+                input_value["models"],
+                "input_reference",
+                input_value["references"],
+            )
+        case "provider_override":
+            return provider_report(config, input_value)
+        case "queue_base_literal":
+            return queue_report(config, input_value)
+        case _:
+            return job_report(config, input_value)
