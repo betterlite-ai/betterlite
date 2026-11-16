@@ -1,0 +1,12 @@
+kind: helper
+name: soniox-pipeline-missing-input
+call:
+  soniox_pipeline:
+    model: soniox/stt-async-v4
+    timeout_millis: 2500
+    api_key: sk-local
+    api_base: https://api.soniox.test
+    optional_params: {}
+    answers: []
+compare: {ignore: []}
+env: {}
