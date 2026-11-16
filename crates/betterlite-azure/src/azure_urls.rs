@@ -1,5 +1,5 @@
 mod tests;
-mod url_parts;
+pub mod url_parts;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

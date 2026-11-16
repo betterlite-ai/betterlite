@@ -156,7 +156,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model-deprecation-*")"
         && grep -rlq "model_deprecation" tools/oracle/fuzz/corpus/helper_case/model-deprecation-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: parser-corpus
       why: The named production decoder target, added corpus or replay is missing or fails.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/model_deprecation.rs && grep -q "model_deprecation"

@@ -4368,6 +4368,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-postgres-fixture",
+ "betterlite-prompts",
  "betterlite-provider",
  "betterlite-redact",
  "betterlite-redis",
