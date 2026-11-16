@@ -1,14 +1,14 @@
 id: B534
 milestone: M3 providers
 title: Azure embedding requests
-status: todo
+status: done
 depends_on: [B531, B006, B173, B171, B237, B529, B004, B673, B249]
 file: tasks/B534-azure-embeddings.yaml
 covers:
   - "litellm/llms/azure/azure.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2062
