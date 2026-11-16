@@ -27,12 +27,19 @@ impl RouterWeightModelInfo {
             Json::Text(text) => {
                 let parsed: Json =
                     serde_json::from_str(text).map_err(RouterWeightModelInfoError::Json)?;
+                // serde would also read this struct from a JSON array, so only objects get here
                 if !matches!(parsed, Json::Object(_)) {
                     return Err(RouterWeightModelInfoError::NotAnObject);
                 }
-                Self::from_object(&parsed)
+                let object =
+                    serde_json::to_string(&parsed).map_err(RouterWeightModelInfoError::Json)?;
+                serde_json::from_str(&object).map_err(RouterWeightModelInfoError::Json)
             }
-            Json::Object(_) => Self::from_object(value),
+            Json::Object(_) => {
+                let object =
+                    serde_json::to_string(value).map_err(RouterWeightModelInfoError::Json)?;
+                serde_json::from_str(&object).map_err(RouterWeightModelInfoError::Json)
+            }
             Json::Null | Json::Bool(false) => Ok(Self::default()),
             Json::List(items) if items.is_empty() => Ok(Self::default()),
             Json::Number(number) if number.as_f64().is_some_and(|parsed| parsed == 0.0_f64) => {
@@ -42,11 +49,5 @@ impl RouterWeightModelInfo {
                 Err(RouterWeightModelInfoError::NotAnObject)
             }
         }
-    }
-
-    // serde would also read this struct from a JSON array, so callers pass an object
-    fn from_object(object: &Json) -> Result<Self, RouterWeightModelInfoError> {
-        let text = serde_json::to_string(object).map_err(RouterWeightModelInfoError::Json)?;
-        serde_json::from_str(&text).map_err(RouterWeightModelInfoError::Json)
     }
 }

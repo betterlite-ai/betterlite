@@ -9,7 +9,7 @@ use betterlite_router::catalog_updates::catalog::DeploymentCatalog;
 use betterlite_router::deployment_identity::spec::DeploymentSpec;
 
 use super::error::RouterWeightError;
-use super::model_info::{RouterWeightModelInfo, RouterWeightModelInfoError};
+use super::model_info::RouterWeightModelInfo;
 use super::reference::{RouterWeightDeployment, validate_weight_reference};
 use super::settings::validate_settings_weights;
 use super::weights::{RouterWeightsError, decode_router_weights};
@@ -21,6 +21,8 @@ const DATABASE_UNAVAILABLE: &str = "Database unavailable while validating router
 const WEIGHT_MESSAGE: &str = "router weights must be finite nonnegative numbers";
 const IDENTIFIER_MESSAGE: &str =
     "router weight identifiers must contain a non-whitespace character";
+const NOT_AN_OBJECT: &str = "model_info must be a JSON object";
+const INVALID_MODEL_INFO: &str = "model_info is not valid";
 
 const TABLE_SCHEMA: &str = r#"
     CREATE TABLE "LiteLLM_ProxyModelTable" (
@@ -117,33 +119,10 @@ fn assert_falsey_model_info_defaults(values: &[&str]) {
     }
 }
 
-fn assert_model_info_not_an_object(values: &[&str]) {
+fn assert_model_info_error(values: &[&str], expected: &str) {
     for value in values {
         let error = RouterWeightModelInfo::decode(&json(value)).unwrap_err();
-        assert!(
-            matches!(error, RouterWeightModelInfoError::NotAnObject),
-            "{value}"
-        );
-    }
-}
-
-fn assert_model_info_invalid_json(values: &[&str]) {
-    for value in values {
-        let error = RouterWeightModelInfo::decode(&json(value)).unwrap_err();
-        assert!(
-            matches!(error, RouterWeightModelInfoError::Json(_)),
-            "{value}"
-        );
-    }
-}
-
-fn assert_model_info_field_type(values: &[&str]) {
-    for value in values {
-        let error = RouterWeightModelInfo::decode(&json(value)).unwrap_err();
-        assert!(
-            matches!(error, RouterWeightModelInfoError::Json(_)),
-            "{value}"
-        );
+        assert_eq!(error.to_string(), expected, "{value}");
     }
 }
 
@@ -523,17 +502,20 @@ fn model_info_falsey_values_default() {
 
 #[test]
 fn model_info_truthy_scalars_are_not_objects() {
-    assert_model_info_not_an_object(&["true", "1", "0.5", "[1]"]);
+    assert_model_info_error(&["true", "1", "0.5", "[1]"], NOT_AN_OBJECT);
 }
 
 #[test]
 fn model_info_json_string_scalars_are_not_objects() {
-    assert_model_info_not_an_object(&[r#""x""#, r#""[]""#, r#""1""#]);
+    assert_model_info_error(
+        &[r#""[]""#, r#""1""#, r#""null""#, r#""false""#],
+        NOT_AN_OBJECT,
+    );
 }
 
 #[test]
 fn model_info_unparsable_json_string_fails() {
-    assert_model_info_invalid_json(&[r#""{oops""#, r#""""#]);
+    assert_model_info_error(&[r#""{oops""#, r#""""#, r#""x""#], INVALID_MODEL_INFO);
 }
 
 #[test]
@@ -547,21 +529,27 @@ fn model_info_fields_default_to_none() {
 
 #[test]
 fn model_info_rejects_wrong_field_types() {
-    assert_model_info_field_type(&[
-        r#"{"team_id": 1}"#,
-        r#"{"team_id": ["team-a"]}"#,
-        r#"{"db_model": "yes"}"#,
-        r#"{"db_model": 1}"#,
-        r#"{"team_public_model_name": 5}"#,
-    ]);
+    assert_model_info_error(
+        &[
+            r#"{"team_id": 1}"#,
+            r#"{"team_id": ["team-a"]}"#,
+            r#"{"db_model": "yes"}"#,
+            r#"{"db_model": 1}"#,
+            r#"{"team_public_model_name": 5}"#,
+        ],
+        INVALID_MODEL_INFO,
+    );
 }
 
 #[tokio::test]
 async fn postgres_reference_lookup_one_deduplicated_query() {
     let case = support::Case::new(SCANNED_SCHEMA).await;
-    case.insert_scanned_row("dep-1", "gpt-4", None).await;
-    case.insert_scanned_row("dep-2", "gpt-4", None).await;
-    case.insert_scanned_row("dep-3", "gpt-4o", None).await;
+    case.insert(support::INSERT_SCANNED_ROW, "dep-1", "gpt-4", None)
+        .await;
+    case.insert(support::INSERT_SCANNED_ROW, "dep-2", "gpt-4", None)
+        .await;
+    case.insert(support::INSERT_SCANNED_ROW, "dep-3", "gpt-4o", None)
+        .await;
     let repository = case.repository();
     let settings = json(
         r#"{"weights": {"gpt-4": {"dep-1": 1, "dep-2": 1}, "gpt-4o": {"dep-3": 1, "dep-1": 1}}}"#,
@@ -592,7 +580,8 @@ async fn postgres_reference_lookup_db_required_for_configured_id() {
 #[tokio::test]
 async fn postgres_reference_lookup_stored_absent_uses_configured() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row("dep-2", "gpt-4o", None).await;
+    case.insert(support::INSERT_ROW, "dep-2", "gpt-4o", None)
+        .await;
     let repository = case.repository();
     let mut catalog = DeploymentCatalog::default();
     catalog.push(configured("gpt-4", r#"{"id": "dep-1"}"#));
@@ -620,7 +609,8 @@ async fn postgres_reference_lookup_configured_db_model_hidden() {
 #[tokio::test]
 async fn postgres_reference_lookup_stored_model_info_json() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row(
+    case.insert(
+        support::INSERT_ROW,
         "dep-1",
         "internal",
         Some(r#""{\"team_id\":\"team-a\",\"team_public_model_name\":\"public\"}""#),
@@ -647,7 +637,8 @@ async fn postgres_reference_lookup_stored_model_info_json() {
 #[tokio::test]
 async fn postgres_reference_lookup_absent_model_info() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row("dep-1", "gpt-4", None).await;
+    case.insert(support::INSERT_ROW, "dep-1", "gpt-4", None)
+        .await;
     let repository = case.repository();
     let mut catalog = DeploymentCatalog::default();
     catalog.push(configured(
@@ -669,7 +660,8 @@ async fn postgres_reference_lookup_absent_model_info() {
 #[tokio::test]
 async fn postgres_reference_lookup_bad_stored_json() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row("dep-1", "gpt-4", Some(r#""{oops""#)).await;
+    case.insert(support::INSERT_ROW, "dep-1", "gpt-4", Some(r#""{oops""#))
+        .await;
     let repository = case.repository();
     let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
     let error = validate_settings_weights(Some(&settings), None, Some(&repository), None)
@@ -685,7 +677,8 @@ async fn postgres_reference_lookup_bad_stored_json() {
 #[tokio::test]
 async fn postgres_reference_lookup_scalar_model_info_fails() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row("dep-1", "gpt-4", Some("false")).await;
+    case.insert(support::INSERT_ROW, "dep-1", "gpt-4", Some("false"))
+        .await;
     let repository = case.repository();
     let settings = json(r#"{"weights": {"gpt-4": {"dep-1": 1}}}"#);
     let error = validate_settings_weights(Some(&settings), None, Some(&repository), None)
@@ -728,8 +721,13 @@ async fn postgres_reference_lookup_unconnected_store_is_unavailable() {
 #[tokio::test]
 async fn postgres_reference_lookup_no_write_on_failure() {
     let case = support::Case::new(TABLE_SCHEMA).await;
-    case.insert_row("dep-1", "gpt-4", Some(r#"{"team_id": "team-a"}"#))
-        .await;
+    case.insert(
+        support::INSERT_ROW,
+        "dep-1",
+        "gpt-4",
+        Some(r#"{"team_id": "team-a"}"#),
+    )
+    .await;
     let before = case
         .texts(
             r#"SELECT row_to_json(t)::text FROM "LiteLLM_ProxyModelTable" AS t ORDER BY model_id"#,

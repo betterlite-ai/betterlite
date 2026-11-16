@@ -44,24 +44,23 @@ impl RouterWeightDeployment {
             Some(payload) => {
                 let text =
                     serde_json::to_string(&payload.0).map_err(RouterWeightModelInfoError::Json)?;
-                let value: Json =
-                    serde_json::from_str(&text).map_err(RouterWeightModelInfoError::Json)?;
-                RouterWeightModelInfo::decode(&value)?
+                serde_json::from_str(&text).map_err(RouterWeightModelInfoError::Json)?
             }
-            None => RouterWeightModelInfo::default(),
+            None => Json::Null,
         };
-        Ok(Self {
-            model_name: row.fields.model_name.clone(),
-            model_info,
-        })
+        Self::from_json(&row.fields.model_name, &model_info)
     }
 
     pub(crate) fn from_configured(
         spec: &DeploymentSpec,
     ) -> Result<Self, RouterWeightModelInfoError> {
+        Self::from_json(&spec.model_name, &Json::Object(spec.model_info.clone()))
+    }
+
+    fn from_json(model_name: &str, model_info: &Json) -> Result<Self, RouterWeightModelInfoError> {
         Ok(Self {
-            model_name: spec.model_name.clone(),
-            model_info: RouterWeightModelInfo::decode(&Json::Object(spec.model_info.clone()))?,
+            model_name: model_name.to_owned(),
+            model_info: RouterWeightModelInfo::decode(model_info)?,
         })
     }
 }

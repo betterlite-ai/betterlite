@@ -43,7 +43,7 @@ impl TryFrom<Number> for RouterWeight {
 
     fn try_from(number: Number) -> Result<Self, Self::Error> {
         match number.as_f64() {
-            Some(weight) if weight >= 0.0 => Ok(Self(weight)),
+            Some(weight) if weight >= 0.0_f64 => Ok(Self(weight)),
             _ => Err(RouterWeightValueError::Weight),
         }
     }
@@ -85,7 +85,7 @@ pub fn decode_router_weights(settings: &Json) -> Result<Option<RouterWeights>, R
     };
     let without_positive = weights
         .values()
-        .any(|group| !group.is_empty() && group.values().all(|weight| weight.0 <= 0.0));
+        .any(|group| !group.is_empty() && group.values().all(|weight| weight.0 <= 0.0_f64));
     if without_positive {
         return Err(RouterWeightsError::NoPositiveWeight);
     }

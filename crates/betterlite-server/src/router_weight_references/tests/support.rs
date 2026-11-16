@@ -12,10 +12,10 @@ use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
-const INSERT_ROW: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" \
+pub(crate) const INSERT_ROW: &str = "INSERT INTO \"LiteLLM_ProxyModelTable\" \
     (model_id, model_name, litellm_params, model_info) VALUES ($1, $2, '{}'::jsonb, $3::text::jsonb)";
 
-const INSERT_SCANNED_ROW: &str = "INSERT INTO \"WeightRows\" \
+pub(crate) const INSERT_SCANNED_ROW: &str = "INSERT INTO \"WeightRows\" \
     (model_id, model_name, litellm_params, model_info) VALUES ($1, $2, '{}'::jsonb, $3::text::jsonb)";
 
 #[derive(Parser)]
@@ -59,28 +59,16 @@ impl Case {
         repository_for(&self.store, &self.availability)
     }
 
-    pub(crate) async fn insert_row(
+    pub(crate) async fn insert(
         &self,
+        statement: &str,
         model_id: &str,
         model_name: &str,
         model_info: Option<&str>,
     ) {
         let client = self.pool.get().await.unwrap();
         client
-            .execute(INSERT_ROW, &[&model_id, &model_name, &model_info])
-            .await
-            .unwrap();
-    }
-
-    pub(crate) async fn insert_scanned_row(
-        &self,
-        model_id: &str,
-        model_name: &str,
-        model_info: Option<&str>,
-    ) {
-        let client = self.pool.get().await.unwrap();
-        client
-            .execute(INSERT_SCANNED_ROW, &[&model_id, &model_name, &model_info])
+            .execute(statement, &[&model_id, &model_name, &model_info])
             .await
             .unwrap();
     }
