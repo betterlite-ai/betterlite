@@ -1,0 +1,21 @@
+kind: helper
+name: vector-search-azure-base
+call:
+  azure_resource_urls:
+    vector_search_azure_base:
+      urls:
+        - {api_base: "https://r.example", module: {}, environment: {}}
+        - {api_base: "https://r.example", api_version: "2025-01-01", module: {}, environment: {}}
+        - {api_base: "https://r.example", api_version: "latest", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/vector_stores?api-version=2024-01-01", api_version: "2025-01-01", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai", api_version: "2025-01-01", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/responses?api-version=latest", api_version: "2024-01-01", module: {}, environment: {}}
+        - {api_base: "", module: {api_base: "https://m.example"}, environment: {}}
+        - {module: {}, environment: {AZURE_API_BASE: https://env.example}}
+      auth:
+        - {resource: vector_store, headers: {}, module: {api_key: module-key}, environment: {}}
+        - {resource: vector_store, headers: {OpenAI-Beta: assistants=v2}, params: {api_key: own}, module: {}, environment: {}}
+        - {resource: vector_store, headers: {api-key: keep}, params: {api_key: own}, module: {}, environment: {}}
+        - {resource: vector_store, headers: {}, params: {azure_ad_token: tok}, module: {}, environment: {}}
+env: {}
+compare: {ignore: []}

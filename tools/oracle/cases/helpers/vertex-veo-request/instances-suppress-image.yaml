@@ -1,0 +1,10 @@
+kind: helper
+name: instances-suppress-image
+call:
+  vertex_veo_request:
+    creates:
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {image: {gcsUri: 'gs://option'}}, extra_body: {instances: {prompt: an instance prompt, image: {gcsUri: 'gs://instance'}}}}
+      - {model: veo-3.0-generate-001, prompt: a prompt, api_base: 'https://mock', params: {}, extra_body: {instances: {}}}
+    edits: []
+env: {}
+compare: {ignore: []}
