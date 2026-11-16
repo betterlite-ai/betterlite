@@ -110,7 +110,11 @@ async fn the_provider_client_polls_with_a_get_carrying_the_headers() {
 async fn hold_open(listener: TcpListener) {
     let (mut stream, _) = listener.accept().await.expect("the connection");
     let mut chunk = [0_u8; 4096];
-    stream.read(&mut chunk).await.expect("the request bytes");
+    let read = stream.read(&mut chunk).await.expect("the request bytes");
+    assert_ne!(
+        read, 0,
+        "the client sends its request before the read limit"
+    );
     sleep(HOLD).await;
 }
 
@@ -120,7 +124,7 @@ async fn the_provider_client_bounds_a_poll_with_its_own_read_limit() {
     let (listener, address, client) = local_server(SHORT_READ_LIMIT).await;
     let url = Url::parse(&format!("http://{address}/v1/get_result?id=1")).expect("the URL");
 
-    let (result, _) = tokio::join!(client.get(url, key_header()), hold_open(listener));
+    let (result, ()) = tokio::join!(client.get(url, key_header()), hold_open(listener));
 
     let error = result.expect_err("the read limit ends the poll");
     assert!(matches!(error, TransportError::Deadline(_)));
