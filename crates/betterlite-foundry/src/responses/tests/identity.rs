@@ -3,8 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::SecretString;
 
+use crate::credentials::model_info::ModelInfoAccessors;
 use crate::responses::auth::{EnvironmentRequest, validate_environment};
-use crate::responses::tests::support::{FixtureSources, accessors, environment, headers, object};
+use crate::responses::tests::support::{FixtureSources, environment, headers, object};
 use crate::responses::url::complete_url;
 
 pub(super) fn credential_identity_isolation() {
@@ -21,7 +22,12 @@ fn auth_headers(key: &str, api_base: &str) -> BTreeMap<String, String> {
     let secret = SecretString::from(key.to_owned());
     validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some(api_base),
         api_key: Some(&secret),
         params: None,
@@ -59,7 +65,12 @@ fn entra_headers(
     ]);
     validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: Some(&params),
@@ -116,7 +127,12 @@ fn entra_identities() {
 }
 
 fn url_identities() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let first = complete_url(sources, Some("https://first.services.ai.azure.com")).unwrap();
     let second = complete_url(
         sources,

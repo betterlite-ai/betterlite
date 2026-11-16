@@ -5,8 +5,9 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
 
 use crate::credentials::error::CredentialsError;
+use crate::credentials::model_info::ModelInfoAccessors;
 use crate::responses::auth::{EnvironmentRequest, validate_environment};
-use crate::responses::tests::support::{FixtureSources, accessors, environment, headers, object};
+use crate::responses::tests::support::{FixtureSources, environment, headers, object};
 
 pub(super) fn responses_auth() {
     explicit_key_headers();
@@ -25,7 +26,12 @@ fn explicit_key_headers() {
     let key = SecretString::from("case-key".to_owned());
     let validated = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: Some(&key),
         params: None,
@@ -56,7 +62,12 @@ fn host_specific_header() {
     let key = SecretString::from("case-key".to_owned());
     let validated = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.openai.azure.com"),
         api_key: Some(&key),
         params: None,
@@ -73,7 +84,12 @@ fn host_specific_header() {
 
     let bearer = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://api.example.com"),
         api_key: Some(&key),
         params: None,
@@ -100,7 +116,12 @@ fn entra_fallback() {
     ]);
     let validated = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: Some(&params),
@@ -128,7 +149,12 @@ fn environment_key() {
     let env = environment(&[]);
     let sources = FixtureSources::default();
     let env_key = SecretString::from("env-key".to_owned());
-    let from_environment = accessors(None, None, None, Some(&env_key));
+    let from_environment = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: Some(&env_key),
+    };
     let resolved = validate_environment(&EnvironmentRequest {
         headers: &caller,
         accessors: from_environment,
@@ -150,7 +176,12 @@ fn layered_key() {
     let env_key = SecretString::from("env-key".to_owned());
     let global_key = SecretString::from("global-key".to_owned());
     let explicit_key = SecretString::from("explicit-key".to_owned());
-    let layered = accessors(None, Some(&global_key), None, Some(&env_key));
+    let layered = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: Some(&global_key),
+        environment_api_base: None,
+        environment_api_key: Some(&env_key),
+    };
     let from_global = validate_environment(&EnvironmentRequest {
         headers: &caller,
         accessors: layered,
@@ -188,7 +219,12 @@ fn header_follows_base() {
     let env = environment(&[]);
     let sources = FixtureSources::default();
     let key = SecretString::from("case-key".to_owned());
-    let global = accessors(Some("https://res.services.ai.azure.com"), None, None, None);
+    let global = ModelInfoAccessors {
+        global_api_base: Some("https://res.services.ai.azure.com"),
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let validated = validate_environment(&EnvironmentRequest {
         headers: &caller,
         accessors: global,
@@ -205,7 +241,12 @@ fn header_follows_base() {
         Some("case-key")
     );
 
-    let foreign_global = accessors(Some("https://api.example.com"), None, None, None);
+    let foreign_global = ModelInfoAccessors {
+        global_api_base: Some("https://api.example.com"),
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let explicit = validate_environment(&EnvironmentRequest {
         headers: &caller,
         accessors: foreign_global,
@@ -229,7 +270,12 @@ fn missing_credentials() {
     let sources = FixtureSources::default();
     let error = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: None,

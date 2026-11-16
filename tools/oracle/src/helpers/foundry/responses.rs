@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
+use serde_json::Value;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
@@ -60,6 +61,8 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        steps::run(input)
+        Ok(Value::Array(
+            input.steps.iter().map(steps::step_answer).collect(),
+        ))
     }
 }

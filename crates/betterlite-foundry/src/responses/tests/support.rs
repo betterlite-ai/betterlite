@@ -9,8 +9,6 @@ use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::credentials::model_info::ModelInfoAccessors;
-
 #[derive(Default)]
 pub(super) struct FixtureSources {
     pub(super) calls: Mutex<Vec<String>>,
@@ -132,18 +130,4 @@ pub(super) fn object<const N: usize>(entries: [(&str, Json); N]) -> Object {
         .into_iter()
         .map(|(key, value)| (key.to_owned(), value))
         .collect()
-}
-
-pub(super) const fn accessors<'data>(
-    global_api_base: Option<&'data str>,
-    global_api_key: Option<&'data SecretString>,
-    environment_api_base: Option<&'data str>,
-    environment_api_key: Option<&'data SecretString>,
-) -> ModelInfoAccessors<'data> {
-    ModelInfoAccessors {
-        global_api_base,
-        global_api_key,
-        environment_api_base,
-        environment_api_key,
-    }
 }

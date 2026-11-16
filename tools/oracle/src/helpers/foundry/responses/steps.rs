@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::foundry_credentials::Settings;
 use betterlite_foundry::credentials::model_info::ModelInfoAccessors;
 use betterlite_foundry::responses::auth::{EnvironmentRequest, validate_environment};
@@ -10,16 +8,10 @@ use betterlite_openai::decisions::transformation::provider_config::DecisionsProv
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use betterlite_oracle_helper_api::helper::HelperResult;
-
 use super::fixture::EchoSources;
-use super::{AuthStep, BaseStep, DecisionsStep, Input, Step};
+use super::{AuthStep, BaseStep, DecisionsStep, Step};
 
-pub(super) fn run(input: &Input) -> HelperResult {
-    Ok(Value::Array(input.steps.iter().map(step_answer).collect()))
-}
-
-fn step_answer(step: &Step) -> Value {
+pub(super) fn step_answer(step: &Step) -> Value {
     match step {
         Step::Auth(auth) => auth_answer(auth),
         Step::DecisionsRoute(decisions) => decisions_answer(decisions),
@@ -33,13 +25,9 @@ fn step_answer(step: &Step) -> Value {
     }
 }
 
-// the case's environment is the AZURE_AI_* layer, as B549 reads it in production
-fn foundry_settings(environment: &BTreeMap<String, String>) -> Settings {
-    Settings::resolve_environment(environment)
-}
-
 fn url_answer(kind: &str, step: &BaseStep) -> Value {
-    let settings = foundry_settings(&step.environment);
+    // the case's environment is the AZURE_AI_* layer, as B549 reads it in production
+    let settings = Settings::resolve_environment(&step.environment);
     let accessors = ModelInfoAccessors {
         global_api_base: step.global_api_base.as_deref(),
         global_api_key: None,
@@ -53,7 +41,7 @@ fn url_answer(kind: &str, step: &BaseStep) -> Value {
 }
 
 fn auth_answer(step: &AuthStep) -> Value {
-    let settings = foundry_settings(&step.environment);
+    let settings = Settings::resolve_environment(&step.environment);
     let global_api_key = step.global_api_key.clone().map(SecretString::from);
     let api_key = step.api_key.clone().map(SecretString::from);
     let accessors = ModelInfoAccessors {

@@ -2,8 +2,9 @@ use std::fmt::{Debug, Display};
 
 use betterlite_prompts::arguments::json::Json;
 
+use crate::credentials::model_info::ModelInfoAccessors;
 use crate::responses::auth::{EnvironmentRequest, validate_environment};
-use crate::responses::tests::support::{FailingSources, accessors, environment, headers, object};
+use crate::responses::tests::support::{FailingSources, environment, headers, object};
 use crate::responses::url::complete_url;
 
 const SENTINEL: &str = "sentinel-secret-value";
@@ -27,7 +28,12 @@ fn missing_credentials_hides_secret() {
     let sources = FailingSources;
     let error = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: None,
@@ -51,7 +57,12 @@ fn provider_failure_hides_secret() {
     ]);
     let error = validate_environment(&EnvironmentRequest {
         headers: &caller,
-        accessors: accessors(None, None, None, None),
+        accessors: ModelInfoAccessors {
+            global_api_base: None,
+            global_api_key: None,
+            environment_api_base: None,
+            environment_api_key: None,
+        },
         api_base: Some("https://res.services.ai.azure.com"),
         api_key: None,
         params: Some(&params),
@@ -65,7 +76,12 @@ fn provider_failure_hides_secret() {
 }
 
 fn invalid_base_hides_secret() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let bad_port = complete_url(
         sources,
         Some("https://user:sentinel-secret-value@res.services.ai.azure.com:port"),

@@ -1,5 +1,5 @@
+use crate::credentials::model_info::ModelInfoAccessors;
 use crate::responses::path::PathError;
-use crate::responses::tests::support::accessors;
 use crate::responses::url::{ResponsesUrlError, complete_url};
 
 const MISSING: &str = "api_base is required for the Azure AI Foundry Responses API. Set the api_base parameter or the AZURE_AI_API_BASE environment variable.";
@@ -15,7 +15,12 @@ pub(super) fn foundry_responses_url() {
 }
 
 fn foundry_base() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(sources, Some("https://res.services.ai.azure.com")).unwrap(),
         "https://res.services.ai.azure.com/openai/v1/responses"
@@ -27,7 +32,12 @@ fn foundry_base() {
 }
 
 fn project_path() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(
             sources,
@@ -63,7 +73,12 @@ fn project_path() {
 }
 
 fn discarded_path() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(sources, Some("https://res.services.ai.azure.com/foo/bar/")).unwrap(),
         "https://res.services.ai.azure.com/openai/v1/responses"
@@ -79,7 +94,12 @@ fn discarded_path() {
 }
 
 fn query_dropped_fragment_kept() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(
             sources,
@@ -101,17 +121,22 @@ fn query_dropped_fragment_kept() {
 }
 
 fn resolved_base() {
-    let environment = accessors(None, None, Some("https://env.services.ai.azure.com"), None);
+    let environment = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: Some("https://env.services.ai.azure.com"),
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(environment, None).unwrap(),
         "https://env.services.ai.azure.com/openai/v1/responses"
     );
-    let global = accessors(
-        Some("https://global.services.ai.azure.com"),
-        None,
-        Some("https://env.services.ai.azure.com"),
-        None,
-    );
+    let global = ModelInfoAccessors {
+        global_api_base: Some("https://global.services.ai.azure.com"),
+        global_api_key: None,
+        environment_api_base: Some("https://env.services.ai.azure.com"),
+        environment_api_key: None,
+    };
     assert_eq!(
         complete_url(global, None).unwrap(),
         "https://global.services.ai.azure.com/openai/v1/responses"
@@ -123,14 +148,24 @@ fn resolved_base() {
 }
 
 fn missing_base() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let error = complete_url(sources, None).unwrap_err();
     assert_eq!(error.to_string(), MISSING);
     assert!(matches!(&error, ResponsesUrlError::MissingApiBase));
 }
 
 fn invalid_base() {
-    let sources = accessors(None, None, None, None);
+    let sources = ModelInfoAccessors {
+        global_api_base: None,
+        global_api_key: None,
+        environment_api_base: None,
+        environment_api_key: None,
+    };
     let error = complete_url(sources, Some("https://host:port")).unwrap_err();
     assert!(matches!(error, ResponsesUrlError::InvalidUrl(_)));
     // httpx refuses to copy a path holding a reserved character, so the rewrite fails instead of guessing
