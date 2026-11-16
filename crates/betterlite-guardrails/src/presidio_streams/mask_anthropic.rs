@@ -6,9 +6,8 @@ use super::{StreamEvent, StreamRun};
 use crate::presidio_response::Mode;
 use crate::presidio_response::model::process_response_for_pii;
 
-// Masks a raw Anthropic SSE stream by assembling it, and hands back the original events when the masking changed nothing
-pub async fn mask_anthropic_sse_stream<A>(
-    run: &mut StreamRun<'_, A>,
+// Reads the rest of the stream after the first frame, inside the retention ceilings
+async fn collect_frames<A>(
     first_chunk: Vec<u8>,
     rest: &mut Coalescer<'_>,
 ) -> Result<Vec<StreamEvent>, StreamError<A>>
@@ -24,6 +23,19 @@ where
         retention.accept::<A::Error>(event_len(&event))?;
         chunks.push(event);
     }
+    Ok(chunks)
+}
+
+// Masks a raw Anthropic SSE stream by assembling it, and hands back the original events when the masking changed nothing
+pub async fn mask_anthropic_sse_stream<A>(
+    run: &mut StreamRun<'_, A>,
+    first_chunk: Vec<u8>,
+    rest: &mut Coalescer<'_>,
+) -> Result<Vec<StreamEvent>, StreamError<A>>
+where
+    A: StreamAssembly,
+{
+    let chunks = collect_frames(first_chunk, rest).await?;
     let raw_chunks: Vec<Vec<u8>> = chunks
         .iter()
         .filter_map(|chunk| match chunk {

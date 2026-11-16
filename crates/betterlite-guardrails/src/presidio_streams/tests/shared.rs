@@ -209,8 +209,8 @@ impl StreamAssembly for FakeAssembly {
             .filter_map(|choice| choice.message.as_ref())
             .filter_map(|message| message.tool_calls.as_ref())
             .flatten()
-            .filter_map(|call| {
-                let ToolCallItem::Object(call) = call else {
+            .filter_map(|item| {
+                let ToolCallItem::Object(call) = item else {
                     return None;
                 };
                 call.function.as_ref()
@@ -448,8 +448,10 @@ struct Sink(Arc<Mutex<Vec<u8>>>);
 
 impl Write for Sink {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut captured = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        captured.extend_from_slice(buf);
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
