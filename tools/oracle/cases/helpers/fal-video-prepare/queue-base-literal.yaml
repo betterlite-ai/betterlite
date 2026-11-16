@@ -1,0 +1,35 @@
+kind: helper
+name: fal-video-prepare-queue-base-literal
+call:
+  fal_video_prepare:
+    operation: queue_base_literal
+    environments:
+      - FAL_AI_API_KEY: "environment-key"
+        FAL_AI_API_BASE: "https://images.fal.run/"
+        FAL_AI_QUEUE_API_BASE: "https://queue-proxy.test/"
+      - FAL_AI_API_KEY: ""
+      - {}
+    api_bases:
+      - null
+      - ""
+      - "https://proxy.test/fal///"
+      - "https://queue.fal.run/"
+    cases:
+      - api_key: "explicit-key"
+        litellm_api_key: "params-key"
+        headers: {x-trace: "t-1", Authorization: "old"}
+      - api_key: null
+        litellm_api_key: "params-key"
+        headers: {}
+      - api_key: ""
+        litellm_api_key: ""
+        headers: {Authorization: "old"}
+      - api_key: null
+        litellm_api_key: null
+        headers: {}
+      - api_key: ""
+        litellm_api_key: null
+        headers: {content-type: "text/plain"}
+env: {}
+compare:
+  ignore: []
