@@ -123,10 +123,20 @@ fn loads_settings() {
     &[],
     false
 )]
-#[case::quoted_yes_disables_updates(
-    "general_settings:\n  disable_prisma_schema_update: \"yes\"\n",
+#[case::padded_true_disables_updates(
+    "general_settings:\n  disable_prisma_schema_update: \" true \"\n",
     &[],
     false
+)]
+#[case::quoted_yes_keeps_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"yes\"\n",
+    &[],
+    true
+)]
+#[case::quoted_one_keeps_updates(
+    "general_settings:\n  disable_prisma_schema_update: \"1\"\n",
+    &[],
+    true
 )]
 #[case::literal_on_is_not_true(
     "general_settings:\n  disable_prisma_schema_update: \"on\"\n",

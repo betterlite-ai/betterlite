@@ -5,7 +5,6 @@ use betterlite_db::migration_ledger::timeouts::{
     MIGRATION_LOCK_TIMEOUT_ENV_VAR, PRISMA_COMMAND_TIMEOUT_ENV_VAR, PRISMA_DEPLOY_TIMEOUT_ENV_VAR,
     prisma_migrate_deploy_timeout, timeout_from_env,
 };
-use betterlite_db::migration_recovery::extras_boolean;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -116,9 +115,9 @@ where
         // the pinned default is the environment's "false" when nothing sets the key
         None => disable_from(&[DISABLE_SCHEMA_UPDATE_ENV_VAR], lookup),
         Some(RawDisable::Boolean(disable)) => Ok(disable),
-        // LiteLLM's str_to_bool reads the literal value, and every word it doesn't read leaves updates enabled
+        // LiteLLM's str_to_bool trims the literal and only "true" disables, so every other word leaves updates enabled
         Some(RawDisable::Text(text)) => text.strip_prefix(ENV_PREFIX).map_or_else(
-            || Ok(extras_boolean(Some(text.as_str()))),
+            || Ok(text.trim().eq_ignore_ascii_case("true")),
             // an unset or empty reference behaves like an absent key and reads DISABLE_SCHEMA_UPDATE
             |variable| disable_from(&[variable, DISABLE_SCHEMA_UPDATE_ENV_VAR], lookup),
         ),
