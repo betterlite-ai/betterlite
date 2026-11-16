@@ -1,11 +1,12 @@
 import asyncio
 import logging
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Final, Literal, TypeAlias, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.anthropic.pass_through.messages.agentic_streaming_iterator import (
-    AgenticAnthropicStreamingIterator,
+    AgenticAnthropicStreamingIterator as AgenticIterator,
 )
 from litellm.llms.anthropic.pass_through.messages.transformation import AnthropicMessagesConfig
 from pydantic import JsonValue
@@ -58,27 +59,17 @@ class Lines(logging.Handler):
             self.lines.append({"level": record.levelname, "message": message})
 
 
-class Gate:
-    def __init__(self) -> None:
-        self._event = asyncio.Event()
-
-    def open(self) -> None:
-        self._event.set()
-
-    async def wait(self) -> None:
-        await self._event.wait()
-
-
-class ScriptedInner:
-    def __init__(self, chunks: list[bytes], gate: Gate, effects: list[JsonValue]) -> None:
+class ScriptedStream(AsyncIterator[bytes]):
+    def __init__(
+        self, chunks: list[bytes], gate: asyncio.Event, effects: list[JsonValue], close_effect: str
+    ) -> None:
         self._chunks = chunks
         self._gate = gate
         self._effects = effects
+        self._close_effect = close_effect
         self._index = 0
 
-    def __aiter__(self) -> "ScriptedInner":
-        return self
-
+    @override
     async def __anext__(self) -> bytes:
         await self._gate.wait()
         if self._index >= len(self._chunks):
@@ -88,31 +79,11 @@ class ScriptedInner:
         return chunk
 
     async def aclose(self) -> None:
-        self._effects.append("inner-close")
-
-
-class ScriptedFollowUp:
-    def __init__(self, chunks: list[bytes], effects: list[JsonValue]) -> None:
-        self._chunks = chunks
-        self._effects = effects
-        self._index = 0
-
-    def __aiter__(self) -> "ScriptedFollowUp":
-        return self
-
-    async def __anext__(self) -> bytes:
-        if self._index >= len(self._chunks):
-            raise StopAsyncIteration
-        chunk = self._chunks[self._index]
-        self._index += 1
-        return chunk
-
-    async def aclose(self) -> None:
-        self._effects.append("followup-close")
+        self._effects.append(self._close_effect)
 
 
 class ScriptedHandler:
-    def __init__(self, reply: Reply, gate: Gate, effects: list[JsonValue]) -> None:
+    def __init__(self, reply: Reply, gate: asyncio.Event, effects: list[JsonValue]) -> None:
         self._reply = reply
         self._gate = gate
         self._effects = effects
@@ -124,7 +95,7 @@ class ScriptedHandler:
         response: JsonValue,
         model: str,
         **_: JsonValue,
-    ) -> JsonValue | ScriptedFollowUp:
+    ) -> JsonValue | ScriptedStream:
         self.calls.append({"model": model, "response": response})
         try:
             await self._gate.wait()
@@ -133,7 +104,10 @@ class ScriptedHandler:
             raise
         if self._reply["kind"] == "absent":
             return None
-        return ScriptedFollowUp([chunk.encode() for chunk in self._reply["chunks"]], self._effects)
+        ready = asyncio.Event()
+        ready.set()
+        chunks = [chunk.encode() for chunk in self._reply["chunks"]]
+        return ScriptedStream(chunks, ready, self._effects, "followup-close")
 
 
 def logging_object(model: str) -> Logging:
@@ -148,7 +122,7 @@ def logging_object(model: str) -> Logging:
     )
 
 
-async def _read_one(iterator: AgenticAnthropicStreamingIterator, answer: Answer) -> bool:
+async def _read_one(iterator: AgenticIterator, answer: Answer) -> bool:
     try:
         chunk = await iterator.__anext__()
     except StopAsyncIteration:
@@ -162,20 +136,23 @@ async def _read_one(iterator: AgenticAnthropicStreamingIterator, answer: Answer)
 
 async def _drive(input_value: Input) -> Answer:
     effects: list[JsonValue] = []
-    drain_gate = Gate()
-    hook_gate = Gate()
+    drain_gate = asyncio.Event()
+    hook_gate = asyncio.Event()
     handler = ScriptedHandler(input_value["reply"], hook_gate, effects)
     chunks = [chunk.encode() for chunk in input_value["chunks"]]
-    iterator = AgenticAnthropicStreamingIterator(
-        completion_stream=ScriptedInner(chunks, drain_gate, effects),
+    no_messages: list[dict[str, str]] = []
+    no_params: dict[str, str] = {}
+    no_kwargs: dict[str, str] = {}
+    iterator = AgenticIterator(
+        completion_stream=ScriptedStream(chunks, drain_gate, effects, "inner-close"),
         http_handler=handler,
         model=input_value["model"],
-        messages=[],
+        messages=no_messages,
         anthropic_messages_provider_config=AnthropicMessagesConfig(),
-        anthropic_messages_optional_request_params={},
+        anthropic_messages_optional_request_params=no_params,
         logging_obj=logging_object(input_value["model"]),
         custom_llm_provider="anthropic",
-        kwargs={},
+        kwargs=no_kwargs,
         hold_back=input_value["hold_back"],
         server_fulfilled_tool_names=frozenset(input_value["server_fulfilled_tool_names"]),
         ping_interval_seconds=input_value["ping_interval_seconds"],
@@ -195,9 +172,9 @@ async def _drive(input_value: Input) -> Answer:
             while more:
                 more = await _read_one(iterator, answer)
         elif step == "release_drain":
-            drain_gate.open()
+            drain_gate.set()
         elif step == "release_hook":
-            hook_gate.open()
+            hook_gate.set()
         elif step == "close":
             await iterator.aclose()
     return answer

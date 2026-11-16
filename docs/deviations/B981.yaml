@@ -1,21 +1,24 @@
 task: B981
 deviations:
   - what: >-
-      Provider bytes drained while the client reads are bounded by ApiLimits, so more than 16 MiB of
-      collected SSE bytes, or a tool input partial above the same JSON boundary, fails with the
-      ApiLimitError instead of growing the buffer.
+      Provider chunks collected by the iterator are bounded by ApiLimits: more than max_json_bytes
+      (16 MiB) of collected SSE bytes, more than max_items (65536) collected chunks, or a tool input
+      partial above the JSON boundary fails with the ApiLimitError instead of growing the buffer.
     why: >-
       LiteLLM appends every drained chunk to _collected_bytes and parses the partial with no size
-      limit, so a long-held-back stream grows without bound; B1087's limits bound the same bytes and
-      the task records the deviation.
+      limit, so a long-held-back stream, or one of many empty chunks, grows without bound; B1087's
+      limits bound the same bytes and chunk count, as B979's retention budget does for its stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L250-L255
   - what: >-
-      The held-back drain advances only inside the next client read, racing the inner read against
-      one keepalive interval, so no upstream read happens between two client reads.
+      The held-back drain advances only inside a client read: each read races the drain against one
+      keepalive interval and yields the ping when the interval passes first, so no upstream read
+      happens between two client reads, and a provider read still in flight when the interval passes
+      is dropped and started again on the next client read. The follow-up read works the same way.
     why: >-
-      LiteLLM runs _drain_upstream as a background asyncio task that keeps reading while the client
-      is idle; betterlite owns no task and advances the drain on the client's own read, which keeps
-      the yielded bytes, pings and ordering the same without a detached task.
+      LiteLLM runs _drain_upstream and each follow-up read as background asyncio tasks that keep
+      reading while the client is idle and survive a ping; betterlite owns no task, so the client's
+      read drives the drain. The bytes, the ping per interval and the ordering stay the same for
+      provider streams whose next_chunk is cancel-safe, as HTTP body streams are.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/agentic_streaming_iterator.py#L264-L298
   - what: >-
       The collected bytes must be valid UTF-8; a collected chunk that is not fails with the Utf8

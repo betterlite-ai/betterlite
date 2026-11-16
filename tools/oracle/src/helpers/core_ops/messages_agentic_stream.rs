@@ -51,14 +51,14 @@ pub(crate) struct Input {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Reply {
+pub(crate) struct Reply {
     kind: ReplyKind,
     chunks: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum ReplyKind {
+pub(crate) enum ReplyKind {
     Absent,
     Stream,
 }
@@ -88,7 +88,7 @@ impl Helper for Op {
         let outcome = runtime.block_on(drive(input));
         drop(guard);
         let (results, buffered, shared) = outcome?;
-        Ok(answer(&shared, results, buffered, &lines))
+        Ok(answer(&shared, &results, &buffered, &lines))
     }
 }
 
@@ -199,7 +199,7 @@ async fn close(stream: &mut Stream) -> Result<(), Box<HelperError>> {
     closed.map_err(|error| failure("RuntimeError", error.to_string()))
 }
 
-fn answer(shared: &Shared, results: Vec<Value>, buffered: Vec<Value>, lines: &Lines) -> Value {
+fn answer(shared: &Shared, results: &[Value], buffered: &[Value], lines: &Lines) -> Value {
     let hook_calls = shared
         .hook_calls
         .lock()
