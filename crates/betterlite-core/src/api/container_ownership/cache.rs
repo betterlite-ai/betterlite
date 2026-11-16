@@ -91,7 +91,6 @@ impl ContainerCaches {
         };
         Ok(match text.as_str() {
             NEGATIVE_STORED_ID_SENTINEL => CachedStoredId::Absent,
-            "" => CachedStoredId::Miss,
             _ => CachedStoredId::Known(text),
         })
     }
