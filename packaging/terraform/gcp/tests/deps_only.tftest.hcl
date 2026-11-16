@@ -1,9 +1,14 @@
 mock_provider "google" {
   override_during = plan
+
+  mock_resource "google_compute_network" {}
+  mock_resource "google_secret_manager_secret" {}
 }
 
 mock_provider "random" {
   override_during = plan
+
+  mock_resource "random_password" {}
 }
 
 variables {
