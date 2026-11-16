@@ -1,0 +1,28 @@
+kind: helper
+name: transcript-rounding
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - {kind: audio, audio_bytes: 960}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 1920}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 2880}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 4800}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 48000}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 57600}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 172800}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 8228}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 8229}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+      - {kind: audio, audio_bytes: 24000}
+      - {kind: close, model: gemini/gemini-3.5-transcribe-live}
+env: {}
+compare: {ignore: []}

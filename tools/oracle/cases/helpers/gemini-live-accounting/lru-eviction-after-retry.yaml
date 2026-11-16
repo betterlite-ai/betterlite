@@ -1,0 +1,46 @@
+kind: helper
+name: lru-eviction-after-retry
+call:
+  gemini_live_accounting:
+    op: steps
+    steps:
+      - kind: calls
+        burst: {count: 256, id_prefix: call_, name_prefix: tool_}
+        response_id: resp
+        output_item_id: item
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_0", "output": "{}"}}'
+      - kind: calls
+        response_id: resp
+        output_item_id: item
+        tool_call:
+          functionCalls:
+            - {id: call_new, name: tool_new}
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_0", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_2", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_new", "output": "{}"}}'
+calls:
+  - gemini_live_accounting:
+      op: steps
+      steps:
+        - kind: calls
+          burst: {count: 258, id_prefix: c, name_prefix: n}
+          response_id: resp
+          output_item_id: item
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c0", "output": "{}"}}'
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c1", "output": "{}"}}'
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c2", "output": "{}"}}'
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c3", "output": "{}"}}'
+        - kind: message
+          message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "c257", "output": "{}"}}'
+env: {}
+compare: {ignore: []}
