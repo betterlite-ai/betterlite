@@ -120,11 +120,3 @@ kept_bugs:
       The helper raises a ValueError that the route turns into the internal_error
       wrapper, so a key bound to no user cannot read this route.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3818
-  - what: >-
-      /global/spend/models passes a zero or negative limit to Postgres and answers
-      500 when the database rejects it, unlike /global/spend/keys which answers 422.
-    why: >-
-      The models route has no positivity check. A dashboard that sends limit=0 to
-      models gets an error today, and keeping the two routes' answers different
-      keeps their contracts different.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4304
