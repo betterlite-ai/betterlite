@@ -83,8 +83,8 @@ impl MintAccessToken for NoMint {
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::ObjectName(call) => object_name(call),
-        Input::UploadUrl(call) => upload_target(call),
+        Input::ObjectName(call) => prepared(call, Answer::Name),
+        Input::UploadUrl(call) => prepared(call, Answer::Url),
         Input::Headers { headers, api_key } => environment_headers(headers, api_key),
         Input::UploadReply { body } => file_reply(body, MetadataShape::Upload),
         Input::RetrieveReply { body } => file_reply(body, MetadataShape::Retrieve),
@@ -93,56 +93,57 @@ pub(super) fn run(input: &Input) -> HelperResult {
     }
 }
 
-fn object_name(call: &NameCall) -> HelperResult {
-    let data = file_data(&call.file);
-    let request = FileRequest {
-        file: &data,
-        purpose: call.purpose,
-        deployment_model: call.deployment_model.as_deref(),
-        passthrough: call.passthrough,
-        custom_endpoint: false,
-    };
-    let name =
-        get_object_name(&request, Uuid::from_u128(u128::from(call.uuid))).map_err(files_error)?;
-    Ok(json!({ "name": name }))
-}
-
-fn upload_target(call: &NameCall) -> HelperResult {
-    let data = file_data(&call.file);
-    let request = FileRequest {
-        file: &data,
+fn request<'file>(call: &'file NameCall, data: &'file FileData) -> FileRequest<'file> {
+    FileRequest {
+        file: data,
         purpose: call.purpose,
         deployment_model: call.deployment_model.as_deref(),
         passthrough: call.passthrough,
         custom_endpoint: call.custom_endpoint,
-    };
-    let candidates = BucketCandidates {
-        deployment: call.bucket.clone(),
-        deployment_alias: None,
-        batch_environment: None,
-        environment: None,
-    };
-    let url = upload_url(
-        &request,
-        call.api_base.as_deref(),
-        &candidates,
-        Uuid::from_u128(u128::from(call.uuid)),
-    )
-    .map_err(files_error)?;
-    Ok(json!({ "url": url }))
+    }
+}
+
+// the two preparation calls read the same body and the same fixed id, and answer with one string
+#[derive(Clone, Copy)]
+enum Answer {
+    Name,
+    Url,
+}
+
+fn prepared(call: &NameCall, answer: Answer) -> HelperResult {
+    let data = file_data(&call.file);
+    let file_request = request(call, &data);
+    let id = Uuid::from_u128(u128::from(call.uuid));
+    match answer {
+        Answer::Name => {
+            let name = get_object_name(&file_request, id).map_err(files_error)?;
+            Ok(json!({ "name": name }))
+        }
+        Answer::Url => {
+            let candidates = BucketCandidates {
+                deployment: call.bucket.clone(),
+                deployment_alias: None,
+                batch_environment: None,
+                environment: None,
+            };
+            let url = upload_url(&file_request, call.api_base.as_deref(), &candidates, id)
+                .map_err(files_error)?;
+            Ok(json!({ "url": url }))
+        }
+    }
 }
 
 fn environment_headers(headers: &BTreeMap<String, String>, api_key: &str) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread().build()?;
     let key = SecretString::from(api_key.to_owned());
-    let request = EnvironmentRequest {
+    let environment = EnvironmentRequest {
         headers: headers.clone(),
         api_key: Some(&key),
         credentials: None,
         project: None,
     };
     let validated = runtime
-        .block_on(validate_environment(request, &NoMint))
+        .block_on(validate_environment(environment, &NoMint))
         .map_err(files_error)?;
     let exposed = validated
         .into_iter()
