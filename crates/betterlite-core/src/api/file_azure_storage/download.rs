@@ -15,7 +15,7 @@ pub(super) async fn download_file(
 ) -> Result<Vec<u8>, AzureFileStorageError> {
     let file_path = blob_file_path(storage_url)?;
     if let Some(key) = backend.settings.account_key.as_ref() {
-        return download_with_account_key(backend, file_path, key).await;
+        return download_with_account_key(backend, storage_url, file_path, key).await;
     }
     download_with_token(backend, file_path).await
 }
@@ -69,6 +69,7 @@ fn blob_file_path(storage_url: &str) -> Result<&str, AzureFileStorageError> {
 
 async fn download_with_account_key(
     backend: &AzureBlobStorageBackend,
+    storage_url: &str,
     file_path: &str,
     key: &SecretString,
 ) -> Result<Vec<u8>, AzureFileStorageError> {
@@ -87,7 +88,18 @@ async fn download_with_account_key(
             file_system: settings.file_system.clone(),
         });
     }
-    let encoded_path = utf8_percent_encode(file_path, PATH_SAFE).to_string();
+    // the SDK's get_file_client strips the path's leading and trailing /, except a lone /
+    let path = if file_path == "/" {
+        file_path
+    } else {
+        file_path.trim_matches('/')
+    };
+    if path.is_empty() {
+        return Err(AzureFileStorageError::InvalidUrlFormat {
+            url: storage_url.to_owned(),
+        });
+    }
+    let encoded_path = utf8_percent_encode(path, PATH_SAFE).to_string();
     let url = format!("{}/{file_system}/{encoded_path}", settings.blob_endpoint);
     let request = storage_request(Method::GET, url, &auth, now, &[])?;
     Ok(send(backend, request, "download").await?.body)

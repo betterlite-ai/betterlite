@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use rstest::rstest;
+
 use super::support::{Harness, paths, settings, settings_with_account_key};
 use crate::api::file_storage_contracts::storage::FileStorageBackend;
 
@@ -66,6 +68,65 @@ async fn account_key_download() {
         vec![
             ("GET".to_owned(), format!("{FILES}?restype=container")),
             ("GET".to_owned(), BLOB.to_owned()),
+        ]
+    );
+}
+
+// the SDK's get_file_client strips leading and trailing / from the path it turns into a blob name
+#[rstest]
+#[case::trailing("https://acct.blob.core.windows.net/files/p/a.txt/")]
+#[case::leading("https://acct.blob.core.windows.net/files//p/a.txt")]
+#[case::both("https://acct.blob.core.windows.net/files//p/a.txt//")]
+#[tokio::test]
+async fn account_key_download_strips_the_blob_path(#[case] supplied: &str) {
+    let harness = Harness::new(settings_with_account_key(), &[(200, ""), (200, "abc")]);
+    let content = harness
+        .backend
+        .download_file(supplied)
+        .await
+        .expect("download");
+    assert_eq!(content, b"abc");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), BLOB.to_owned()),
+        ]
+    );
+}
+
+// get_file_client raises ValueError for a path of only slashes, after the filesystem check
+#[tokio::test]
+async fn account_key_download_rejects_a_slash_only_path() {
+    let harness = Harness::new(settings_with_account_key(), &[(200, "")]);
+    let supplied = "https://acct.blob.core.windows.net/files///";
+    let error = harness
+        .backend
+        .download_file(supplied)
+        .await
+        .expect_err("a path of only slashes");
+    assert_eq!(
+        error.to_string(),
+        format!("Invalid Azure Blob Storage URL format: {supplied}")
+    );
+    assert_eq!(harness.calls().len(), 1);
+}
+
+// get_file_client keeps a lone / as the blob name instead of stripping it to nothing
+#[tokio::test]
+async fn account_key_download_keeps_a_lone_slash() {
+    let harness = Harness::new(settings_with_account_key(), &[(200, ""), (404, "")]);
+    let error = harness
+        .backend
+        .download_file("https://acct.blob.core.windows.net/files//")
+        .await
+        .expect_err("the root blob");
+    assert!(error.to_string().contains("404"), "{error}");
+    assert_eq!(
+        paths(&harness.calls()),
+        vec![
+            ("GET".to_owned(), format!("{FILES}?restype=container")),
+            ("GET".to_owned(), format!("{FILES}/")),
         ]
     );
 }
