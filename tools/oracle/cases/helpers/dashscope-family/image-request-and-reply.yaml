@@ -1,0 +1,48 @@
+kind: helper
+name: dashscope-image-request-and-reply
+call:
+  b8172:
+    function: image_request
+    model: qwen-image-2.0
+    prompt: a red fox in the snow
+    optional_params:
+      size: 1024*1024
+      n: 1
+calls:
+  - b8172:
+      function: image_request
+      model: qwen-image-3.0-pro
+      prompt: ''
+      optional_params: {}
+  - b8172:
+      function: image_reply
+      status: 200
+      body: '{"output":{"choices":[{"message":{"content":[{"image":"https://img.test/1.png"},{"image":""}]}},{"message":{"content":[{"text":"no image"},{"image":"https://img.test/2.png"}]}}]},"usage":{"output_image_count":2}}'
+  - b8172:
+      function: image_reply
+      status: 200
+      body: '{"output":{"choices":[{"message":{"content":[{"image":null},{"text":"no image here"}]}}]},"usage":{"output_image_count":0}}'
+  - b8172:
+      function: image_reply
+      status: 200
+      body: '{"output":{"choices":[{"message":{}},{}]}}'
+  - b8172:
+      function: image_reply
+      status: 200
+      body: '{"code":"InvalidParameter","message":"Size 4096x4096 is not supported.","request_id":"7f9c2b1e-0000-4000-8000-000000000000"}'
+  - b8172:
+      function: image_reply
+      status: 200
+      body: '{"code":"InvalidParameter","output":{"choices":[{"message":{"content":[{"image":"https://img.test/3.png"}]}}]}}'
+  - b8172:
+      function: image_reply
+      status: 200
+      body: not json at all
+  - b8172:
+      function: image_reply
+      status: 503
+      body: bad gateway
+      headers:
+        x-request-id: req-7
+env: {}
+compare: {ignore: []}
