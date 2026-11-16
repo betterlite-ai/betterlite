@@ -34,4 +34,13 @@ deviations:
       The counters are advisory coverage stats and the spend update job runs again on its next cycle; a
       repeated increment is worse than an undercount, the same call LiteLLM makes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/db/shadow_eval_funnel.py#L47-L65
+  - what: >-
+      The loader takes its database as an injected Option<Arc<Database>> instead of resolving the proxy's global
+      prisma_client through _default_prisma_provider. With no database it returns no active jobs and fills no
+      cache, the same empty result LiteLLM returns once its provider yields None.
+    why: >-
+      betterlite has no proxy globals, so the proxy that owns the client injects it and a test supplies a fake
+      table set, as rule dependencies-in-constructors requires. Leaving the cache unfilled keeps the next request
+      retrying, as LiteLLM's None path does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L1377-L1382
 kept_bugs: []
