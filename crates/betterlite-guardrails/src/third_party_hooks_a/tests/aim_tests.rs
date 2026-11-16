@@ -71,6 +71,23 @@ async fn aim_inspects_embeddings_when_inspect_embeddings_is_set() {
 }
 
 #[tokio::test]
+async fn aim_pre_call_writes_the_anonymized_data_back() {
+    let (base, _server, _captured) = serve_aim(AimMode::Redact).await;
+    let guardrail = aim_guardrail(&base, false);
+    let mut data = chat_data(&[message("user", "hello")]);
+    aim::hook(
+        &guardrail,
+        &mut data,
+        aim::AimRequestHook::PreCall,
+        "completion",
+        None,
+    )
+    .await
+    .expect("pre_call");
+    assert_eq!(data, chat_data(&[message("user", "redacted:hello")]));
+}
+
+#[tokio::test]
 async fn aim_moderation_keeps_the_request_data_read_only() {
     let (base, _server, captured) = serve_aim(AimMode::Redact).await;
     let guardrail = aim_guardrail(&base, false);

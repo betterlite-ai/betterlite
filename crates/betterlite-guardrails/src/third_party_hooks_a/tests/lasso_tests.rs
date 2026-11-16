@@ -487,6 +487,28 @@ async fn lasso_status_errors_use_litellm_texts() {
 }
 
 #[tokio::test]
+async fn lasso_malformed_answer_is_wrapped() {
+    let (base, _server, _captured) =
+        serve("/classify", vec![(StatusCode::OK, "not json".to_owned())]).await;
+    let guardrail = lasso_guardrail(&base, false);
+    let mut data = chat_data(&[message("user", "hello")]);
+    let error = lasso::hook(
+        &guardrail,
+        &mut data,
+        &TestCache::default(),
+        LassoRequestHook::PreCall,
+        true,
+    )
+    .await
+    .expect_err("malformed answer");
+    assert!(matches!(
+        &error,
+        ThirdPartyHookError::Failure { message }
+            if message.starts_with("Failed to verify request safety with Lasso API: ")
+    ));
+}
+
+#[tokio::test]
 async fn lasso_post_call_classifies_the_assistant_turn() {
     let (base, _server, captured) =
         serve("/classify", vec![(StatusCode::OK, allowed_answer())]).await;
