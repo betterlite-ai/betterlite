@@ -1,21 +1,19 @@
 use std::time::Duration;
 
-use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_openai::api::audio_file_input::ProcessedAudioFile;
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
-use betterlite_openai::speech::request::SpeechOptions;
 use betterlite_openai::transcription::client::TranscriptionConnection;
 use betterlite_openai::transcription::config::TranscriptionFamily;
 use betterlite_openai::transcription::error::TranscriptionError;
 use betterlite_openai::transcription::reply::StoredDuration;
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
-use betterlite_provider::openai_media_dispatch::call::{SpeechOperation, TranscriptionOperation};
+use betterlite_provider::openai_media_dispatch::OpenAiMediaResult;
+use betterlite_provider::openai_media_dispatch::call::{
+    OpenAiMediaOperation, SpeechOperation, TranscriptionOperation,
+};
 use betterlite_provider::openai_media_dispatch::error::OpenAiMediaError;
-use betterlite_provider::openai_media_dispatch::execute::dispatch;
-use betterlite_provider::openai_media_dispatch::{OpenAiMediaRequest, OpenAiMediaResult};
-use betterlite_provider::operation::{OperationRequest, OperationResult};
+use betterlite_provider::operation::OperationResult;
 use http::HeaderMap;
 use http::HeaderValue;
 use http::header::CONTENT_TYPE;
@@ -23,9 +21,10 @@ use secrecy::SecretString;
 use serde_json::Value;
 use uuid::Uuid;
 
-use super::fixtures::{self, Fixture, Recorder};
+use super::fixtures::{self, Fixture};
 use super::{
     OTHER_OUTCOME, SpeechCase, TranscriptionCase, TranscriptionFamilyCase, failure, leaf_failure,
+    run,
 };
 
 pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
@@ -39,16 +38,22 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
         );
     }
     let fixture = Fixture::with_headers(case.status, case.body.as_bytes(), headers);
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::Speech(Box::new(operation)),
-        &fixture,
-        &mut logger,
-    )
-    .await;
+    let result = run(&fixture, OpenAiMediaOperation::Speech(Box::new(operation))).await;
     let sent = fixtures::only_request(&fixture)?;
-    let request = speech_request(&sent, &case.options)?;
+    let mut extra = serde_json::Map::new();
+    for name in case.options.extra_headers.keys() {
+        if let Some(value) = fixtures::header(&sent, name) {
+            extra.insert(name.clone(), Value::String(value));
+        }
+    }
+    let request = serde_json::json!({
+        "method": sent.method.as_str(),
+        "url": sent.url.as_str(),
+        "accept": fixtures::header(&sent, "accept"),
+        "authorization": fixtures::header(&sent, "authorization"),
+        "extra_headers": Value::Object(extra),
+        "body": fixtures::json_body(&sent)?,
+    });
     speech_outcome(result, request).await
 }
 
@@ -114,16 +119,18 @@ async fn speech_outcome(
 pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
     let operation = transcription_operation(case);
     let fixture = Fixture::new(case.status, case.reply.as_bytes());
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::Transcription(Box::new(operation)),
+    let result = run(
         &fixture,
-        &mut logger,
+        OpenAiMediaOperation::Transcription(Box::new(operation)),
     )
     .await;
     let sent = fixtures::only_request(&fixture)?;
-    let request = transcription_request(&sent)?;
+    let request = serde_json::json!({
+        "url": sent.url.as_str(),
+        "authorization": fixtures::header(&sent, "authorization"),
+        "accept": fixtures::header(&sent, "accept"),
+        "parts": fixtures::multipart_view(&sent)?,
+    });
     transcription_outcome(result, request)
 }
 
@@ -155,15 +162,6 @@ fn transcription_operation(case: &TranscriptionCase) -> TranscriptionOperation {
     }
 }
 
-fn transcription_request(request: &OutboundRequest) -> Result<Value, Box<HelperError>> {
-    Ok(serde_json::json!({
-        "url": request.url.as_str(),
-        "authorization": fixtures::header(request, "authorization"),
-        "accept": fixtures::header(request, "accept"),
-        "parts": fixtures::multipart_view(request)?,
-    }))
-}
-
 fn transcription_outcome(
     result: Result<OperationResult, OpenAiMediaError>,
     request: Value,
@@ -192,24 +190,4 @@ fn transcription_outcome(
         Err(error) => return Err(leaf_failure(&error)),
     };
     Ok(serde_json::json!({"request": request, "reply": reply, "error": raised}))
-}
-
-fn speech_request(
-    request: &OutboundRequest,
-    options: &SpeechOptions,
-) -> Result<Value, Box<HelperError>> {
-    let mut extra = serde_json::Map::new();
-    for name in options.extra_headers.keys() {
-        if let Some(value) = fixtures::header(request, name) {
-            extra.insert(name.clone(), Value::String(value));
-        }
-    }
-    Ok(serde_json::json!({
-        "method": request.method.as_str(),
-        "url": request.url.as_str(),
-        "accept": fixtures::header(request, "accept"),
-        "authorization": fixtures::header(request, "authorization"),
-        "extra_headers": Value::Object(extra),
-        "body": fixtures::json_body(request)?,
-    }))
 }

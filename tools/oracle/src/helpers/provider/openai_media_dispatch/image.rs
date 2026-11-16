@@ -1,26 +1,23 @@
 use std::time::Duration;
 
-use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_openai::api::image_contracts::records::ImageFile;
 use betterlite_openai::image_edits::file::ImageEditFile;
 use betterlite_openai::image_edits::request::ImageEditRequest;
 use betterlite_openai::image_generation::call::ImageGenerationCall;
 use betterlite_openai::image_variations::{ImageVariationParams, ImageVariationRequest};
-use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_provider::openai_media_dispatch::OpenAiMediaResult;
 use betterlite_provider::openai_media_dispatch::call::{ImageEditCall, OpenAiMediaOperation};
 use betterlite_provider::openai_media_dispatch::error::OpenAiMediaError;
-use betterlite_provider::openai_media_dispatch::execute::dispatch;
-use betterlite_provider::openai_media_dispatch::{OpenAiMediaRequest, OpenAiMediaResult};
-use betterlite_provider::operation::{OperationRequest, OperationResult};
+use betterlite_provider::operation::OperationResult;
 use secrecy::SecretString;
 use serde_json::Value;
 
-use super::fixtures::{self, Fixture, Recorder};
+use super::fixtures::{self, Fixture};
 use super::views::{image_reply, parts_value, payload_value};
 use super::{
     ImageEditCase, ImageFileCase, ImageGenerationCase, ImageVariationCase, OTHER_OUTCOME, failure,
-    leaf_failure,
+    leaf_failure, run,
 };
 
 const NOW: i64 = 1_700_000_000;
@@ -42,15 +39,18 @@ pub(super) async fn image_generation(case: &ImageGenerationCase) -> HelperResult
     let reply_body =
         serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
     let fixture = Fixture::new(case.status, &reply_body);
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::ImageGeneration(Box::new(call)),
+    let result = run(
         &fixture,
-        &mut logger,
+        OpenAiMediaOperation::ImageGeneration(Box::new(call)),
     )
     .await;
-    let request = request_view(&fixtures::only_request(&fixture)?)?;
+    let sent = fixtures::only_request(&fixture)?;
+    let request = serde_json::json!({
+        "method": sent.method.as_str(),
+        "url": sent.url.as_str(),
+        "body": fixtures::json_body(&sent)?,
+        "authorization": fixtures::header(&sent, "authorization"),
+    });
     let (reply, raised) = match result {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::ImageGeneration(outcome))) => {
             (image_reply(&outcome.reply), Value::Null)
@@ -77,14 +77,7 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
         },
     };
     let fixture = Fixture::new(200, b"");
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::ImageEdit(Box::new(call)),
-        &fixture,
-        &mut logger,
-    )
-    .await;
+    let result = run(&fixture, OpenAiMediaOperation::ImageEdit(Box::new(call))).await;
     if fixture.request_count() != 0 {
         return Err(failure("Fixture", "the image edit sends no request"));
     }
@@ -106,12 +99,9 @@ pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
     let reply_body =
         serde_json::to_vec(&case.reply).map_err(|error| failure("Serialize", error))?;
     let fixture = Fixture::new(case.status, &reply_body);
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::ImageVariation(Box::new(operation)),
+    let result = run(
         &fixture,
-        &mut logger,
+        OpenAiMediaOperation::ImageVariation(Box::new(operation)),
     )
     .await;
     let sent = fixtures::only_request(&fixture)?;
@@ -167,13 +157,4 @@ fn files(case_files: &[ImageFileCase]) -> Vec<Option<ImageEditFile>> {
             })
         })
         .collect()
-}
-
-fn request_view(request: &OutboundRequest) -> Result<Value, Box<HelperError>> {
-    Ok(serde_json::json!({
-        "method": request.method.as_str(),
-        "url": request.url.as_str(),
-        "body": fixtures::json_body(request)?,
-        "authorization": fixtures::header(request, "authorization"),
-    }))
 }

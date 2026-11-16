@@ -7,7 +7,11 @@ use betterlite_openai::transcription::error::TranscriptionError;
 use betterlite_openai::videos::create::VideoCreate;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_provider::openai_media_dispatch::OpenAiMediaRequest;
+use betterlite_provider::openai_media_dispatch::call::OpenAiMediaOperation;
 use betterlite_provider::openai_media_dispatch::error::OpenAiMediaError;
+use betterlite_provider::openai_media_dispatch::execute::dispatch;
+use betterlite_provider::operation::{OperationRequest, OperationResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::Value;
@@ -213,6 +217,21 @@ fn leaf_status(error: &OpenAiMediaError) -> Option<u16> {
         | OpenAiMediaError::VideoEdit(_)
         | OpenAiMediaError::UnsupportedOperation => None,
     }
+}
+
+// Every row runs the same production dispatch entry against its own fake transport
+pub(super) async fn run(
+    fixture: &fixtures::Fixture,
+    operation: OpenAiMediaOperation,
+) -> Result<OperationResult, OpenAiMediaError> {
+    let mut logger = fixtures::Recorder;
+    dispatch(
+        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
+        operation,
+        fixture,
+        &mut logger,
+    )
+    .await
 }
 
 impl Helper for Op {

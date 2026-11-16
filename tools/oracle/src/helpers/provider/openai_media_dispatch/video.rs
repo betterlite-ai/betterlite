@@ -6,19 +6,16 @@ use betterlite_provider::openai_media_dispatch::call::{
     VideoCreateCall, VideoDeleteCall, VideoEditCall, VideoEditInput, VideoEditOperation,
     VideoExtensionInput, VideoListCall, VideoOperation, VideoRemixCall, VideoStatusCall,
 };
-use betterlite_provider::openai_media_dispatch::error::OpenAiMediaError;
-use betterlite_provider::openai_media_dispatch::execute::dispatch;
 use betterlite_provider::openai_media_dispatch::{
-    OpenAiMediaRequest, OpenAiMediaResult, VideoEditOutcome, VideoEditReplyKind, VideoOutcome,
-    VideoReplyKind,
+    OpenAiMediaResult, VideoEditOutcome, VideoEditReplyKind, VideoOutcome, VideoReplyKind,
 };
-use betterlite_provider::operation::{OperationRequest, OperationResult};
+use betterlite_provider::operation::OperationResult;
 
-use super::fixtures::{Fixture, Recorder};
+use super::fixtures::Fixture;
 use super::views::{method_name, parts_value, payload_value, query_value};
 use super::{
     OTHER_OUTCOME, VideoCreateCase, VideoExtendedCase, VideoExtendedOp, VideoLifecycleCase,
-    VideoLifecycleOp, failure, leaf_failure,
+    VideoLifecycleOp, failure, leaf_failure, run,
 };
 
 pub(super) async fn video_create(case: &VideoCreateCase) -> HelperResult {
@@ -37,7 +34,8 @@ pub(super) async fn video_create(case: &VideoCreateCase) -> HelperResult {
         provider: case.provider.clone(),
         call: VideoCall::Create(Box::new(call)),
     };
-    let outcome = match run(OpenAiMediaOperation::Video(Box::new(operation))).await {
+    let fixture = Fixture::new(200, b"");
+    let outcome = match run(&fixture, OpenAiMediaOperation::Video(Box::new(operation))).await {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Video(outcome))) => outcome,
         Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
         Err(error) => return Err(leaf_failure(&error)),
@@ -61,7 +59,8 @@ pub(super) async fn video_lifecycle(case: &VideoLifecycleCase) -> HelperResult {
         provider: case.provider.clone(),
         call: lifecycle_call(case)?,
     };
-    let outcome = match run(OpenAiMediaOperation::Video(Box::new(operation))).await {
+    let fixture = Fixture::new(200, b"");
+    let outcome = match run(&fixture, OpenAiMediaOperation::Video(Box::new(operation))).await {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Video(outcome))) => outcome,
         Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
         Err(error) => return Err(leaf_failure(&error)),
@@ -97,7 +96,13 @@ pub(super) async fn video_extended(case: &VideoExtendedCase) -> HelperResult {
         provider: case.provider.clone(),
         call: extended_call(case)?,
     };
-    let outcome = match run(OpenAiMediaOperation::VideoEdit(Box::new(operation))).await {
+    let fixture = Fixture::new(200, b"");
+    let outcome = match run(
+        &fixture,
+        OpenAiMediaOperation::VideoEdit(Box::new(operation)),
+    )
+    .await
+    {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::VideoEdit(outcome))) => outcome,
         Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
         Err(error) => return Err(leaf_failure(&error)),
@@ -118,18 +123,6 @@ pub(super) async fn video_extended(case: &VideoExtendedCase) -> HelperResult {
         "multipart": request.multipart,
         "reply": reply_value,
     }))
-}
-
-async fn run(operation: OpenAiMediaOperation) -> Result<OperationResult, OpenAiMediaError> {
-    let fixture = Fixture::new(200, b"");
-    let mut logger = Recorder;
-    dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        operation,
-        &fixture,
-        &mut logger,
-    )
-    .await
 }
 
 fn lifecycle_call(case: &VideoLifecycleCase) -> Result<VideoCall, Box<HelperError>> {
