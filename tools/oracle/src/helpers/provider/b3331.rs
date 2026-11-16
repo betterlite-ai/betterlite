@@ -24,9 +24,6 @@ const API_BASE: &str = "https://mock/videos";
 pub(crate) enum Input {
     MultipartDefault,
     PrefetchDefault,
-    CompleteUrl {
-        api_bases: Vec<Option<String>>,
-    },
     AsyncContentFallback {
         body: String,
     },
@@ -56,7 +53,6 @@ impl Helper for Op {
         match input {
             Input::MultipartDefault => Ok(json!({"value": Subject.use_multipart_form_data()})),
             Input::PrefetchDefault => Ok(prefetch_default()),
-            Input::CompleteUrl { api_bases } => Ok(complete_url(api_bases)),
             Input::AsyncContentFallback { body } => async_content_fallback(body),
             Input::AsyncStatusFallback {
                 body,
@@ -83,20 +79,6 @@ fn prefetch_default() -> serde_json::Value {
     };
     let prefetch = Subject.get_video_edit_prefetch_params("video_1", context);
     json!({"value": prefetch.map(|_| true)})
-}
-
-fn complete_url(api_bases: &[Option<String>]) -> serde_json::Value {
-    let params = Params::new();
-    let urls: Vec<serde_json::Value> = api_bases
-        .iter()
-        .map(
-            |api_base| match Subject.get_complete_url("m", api_base.as_deref(), &params) {
-                Ok(url) => json!({"url": url, "error": null}),
-                Err(error) => json!({"url": null, "error": error.to_string()}),
-            },
-        )
-        .collect();
-    json!({"urls": urls})
 }
 
 pub(super) fn response(body: &str) -> UpstreamResponse {

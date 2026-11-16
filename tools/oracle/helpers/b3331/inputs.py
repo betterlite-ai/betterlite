@@ -1,6 +1,13 @@
+from collections.abc import Callable, Mapping
 from typing import Final, Literal, Protocol, TypeAlias, TypedDict
 
+import httpx
+from httpx._types import RequestFiles
+from litellm.litellm_core_utils.litellm_logging import Logging
+from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.types.router import GenericLiteLLMParams
+from litellm.types.videos.main import VideoObject
+from pydantic import JsonValue
 
 Headers: TypeAlias = dict[str, str]
 Files: TypeAlias = list[tuple[str, bytes]]
@@ -14,11 +21,6 @@ class MultipartDefaultInput(TypedDict):
 
 class PrefetchDefaultInput(TypedDict):
     function: Literal["prefetch_default"]
-
-
-class CompleteUrlInput(TypedDict):
-    function: Literal["complete_url"]
-    api_bases: list[str | None]
 
 
 class AsyncContentFallbackInput(TypedDict):
@@ -52,7 +54,6 @@ class ErrorClassInput(TypedDict):
 Input: TypeAlias = (
     MultipartDefaultInput
     | PrefetchDefaultInput
-    | CompleteUrlInput
     | AsyncContentFallbackInput
     | AsyncStatusFallbackInput
     | UnsupportedRequestInput
@@ -63,15 +64,6 @@ Input: TypeAlias = (
 
 class ValueOutput(TypedDict):
     value: bool | None
-
-
-class UrlView(TypedDict):
-    url: str | None
-    error: str | None
-
-
-class CompleteUrlOutput(TypedDict):
-    urls: list[UrlView]
 
 
 class ContentOutput(TypedDict):
@@ -97,7 +89,6 @@ class ErrorClassOutput(TypedDict):
 
 Output: TypeAlias = (
     ValueOutput
-    | CompleteUrlOutput
     | ContentOutput
     | StatusOutput
     | UnsupportedOutput
@@ -105,7 +96,7 @@ Output: TypeAlias = (
 )
 
 
-# The inherited methods LiteLLM types with a bare dict or list, which hide their result types
+# The inherited methods LiteLLM types with a bare dict, which hide their result types
 class EditOps(Protocol):
     def get_video_edit_prefetch_params(
         self, video_id: str, api_base: str, litellm_params: GenericLiteLLMParams, headers: Headers
@@ -130,13 +121,34 @@ class EditOps(Protocol):
         headers: Headers,
     ) -> tuple[str, Headers]: ...
 
-    # ast-grep-ignore: no-long-names
-    def transform_video_extension_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L384-L400
+    def transform_video_edit_request(
         self,
         prompt: str,
         video_id: str,
-        seconds: str,
         api_base: str,
         litellm_params: GenericLiteLLMParams,
         headers: Headers,
-    ) -> tuple[str, Headers]: ...
+    ) -> tuple[
+        str,
+        Mapping[str, object],  # ast-grep-ignore: no-loose-types
+        RequestFiles | None,
+    ]: ...
+
+    def transform_video_edit_response(
+        self,
+        raw_response: httpx.Response,
+        logging_obj: Logging,
+        custom_llm_provider: str | None = None,
+    ) -> VideoObject: ...
+
+    def get_error_class(
+        self, error_message: str, status_code: int, headers: Headers
+    ) -> BaseLLMException: ...
+
+    @property
+    # ast-grep-ignore: no-long-names
+    def transform_video_extension_request(
+        self,
+    ) -> Callable[
+        [str, str, str, str, GenericLiteLLMParams, Headers], tuple[str, dict[str, JsonValue]]
+    ]: ...

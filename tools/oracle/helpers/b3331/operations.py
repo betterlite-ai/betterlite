@@ -1,17 +1,15 @@
 import asyncio
-from typing import Final, Protocol, cast
+from typing import Final
 
 import httpx
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
-from pydantic import TypeAdapter
+from pydantic import BaseModel
 
 from .inputs import (
     API_BASE,
     AsyncContentFallbackInput,
     AsyncStatusFallbackInput,
-    CompleteUrlInput,
-    CompleteUrlOutput,
     ContentOutput,
     ErrorClassInput,
     ErrorClassOutput,
@@ -20,37 +18,22 @@ from .inputs import (
     UnsupportedOutput,
     UnsupportedRequestInput,
     UnsupportedResponseInput,
-    UrlView,
     ValueOutput,
 )
 from .subject import EDIT_OPS, EMPTY_HEADERS, LOGGING, PARAMS, SUBJECT
 
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
-# LiteLLM's BaseLLMException fields this helper reads; its headers are a bare dict
-class ErrorView(Protocol):
+
+class ErrorView(BaseModel):
     message: str
     status_code: int
     headers: Headers
 
 
-HEADERS: Final[TypeAdapter[Headers]] = TypeAdapter(Headers)
-
-
 def prefetch_default() -> ValueOutput:
     prefetch = EDIT_OPS.get_video_edit_prefetch_params("video_1", API_BASE, PARAMS, EMPTY_HEADERS)
     return {"value": None if prefetch is None else True}
-
-
-def complete_url(input_value: CompleteUrlInput) -> CompleteUrlOutput:
-    urls: list[UrlView] = []
-    for api_base in input_value["api_bases"]:
-        try:
-            url = SUBJECT.get_complete_url("m", api_base, EMPTY_HEADERS)
-        except ValueError as error:
-            urls.append({"url": None, "error": str(error)})
-        else:
-            urls.append({"url": url, "error": None})
-    return {"urls": urls}
 
 
 def async_content_fallback(input_value: AsyncContentFallbackInput) -> ContentOutput:
@@ -82,7 +65,7 @@ def unsupported_request(input_value: UnsupportedRequestInput) -> UnsupportedOutp
                     "char_1", API_BASE, PARAMS, EMPTY_HEADERS
                 )
             case "edit":
-                _ = SUBJECT.transform_video_edit_request(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L353-L373
+                _ = EDIT_OPS.transform_video_edit_request(
                     "prompt", "video_1", API_BASE, PARAMS, EMPTY_HEADERS
                 )
             case "extension":
@@ -103,9 +86,7 @@ def unsupported_response(input_value: UnsupportedResponseInput) -> UnsupportedOu
             case "get_character":
                 _ = SUBJECT.transform_video_get_character_response(raw, LOGGING)
             case "edit":
-                _ = SUBJECT.transform_video_edit_response(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L375-L382
-                    raw, LOGGING
-                )
+                _ = EDIT_OPS.transform_video_edit_response(raw, LOGGING)
             case "extension":
                 _ = SUBJECT.transform_video_extension_response(raw, LOGGING)
     except NotImplementedError as error:
@@ -115,14 +96,14 @@ def unsupported_response(input_value: UnsupportedResponseInput) -> UnsupportedOu
 
 def error_class(input_value: ErrorClassInput) -> ErrorClassOutput:
     try:
-        _ = SUBJECT.get_error_class(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L410-L417
+        _ = EDIT_OPS.get_error_class(
             input_value["error_message"], input_value["status_code"], input_value["headers"]
         )
-    except BaseLLMException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
-        raised = cast(ErrorView, error)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/chat/transformation.py#L41-L65
+    except PROVIDER_ERROR as failure:
+        view = ErrorView.model_validate(failure, from_attributes=True)
         return {
-            "message": raised.message,
-            "status_code": raised.status_code,
-            "headers": HEADERS.validate_python(raised.headers),
+            "message": view.message,
+            "status_code": view.status_code,
+            "headers": view.headers,
         }
     return {"message": "", "status_code": 0, "headers": {}}

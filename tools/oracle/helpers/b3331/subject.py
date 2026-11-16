@@ -42,7 +42,8 @@ class Subject(BaseVideoConfig):
 
     @override
     def get_complete_url(self, model: str, api_base: str | None, litellm_params: Headers) -> str:
-        return super().get_complete_url(model, api_base, litellm_params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L79-L94
+        # The base default at the pin is proven by the Rust test; no helper case reaches this one
+        raise NotImplementedError("get_complete_url is not exercised by this helper")
 
     @override
     def transform_video_create_request(
