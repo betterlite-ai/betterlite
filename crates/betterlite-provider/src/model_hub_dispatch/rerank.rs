@@ -83,7 +83,7 @@ pub fn huggingface_rerank_config(
     api_key: Option<&SecretString>,
     api_base: Option<&str>,
     globals: &Globals<'_>,
-    env: &dyn EnvironmentLookup,
+    env: &(dyn EnvironmentLookup + Sync),
 ) -> Result<HuggingFaceRerankConfig, HubDispatchError> {
     let keys = Sources {
         call: api_key.map(ExposeSecret::expose_secret),

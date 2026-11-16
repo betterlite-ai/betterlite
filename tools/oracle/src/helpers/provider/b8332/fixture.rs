@@ -24,7 +24,6 @@ use betterlite_provider::model_hub_dispatch::hub::headers_from;
 use betterlite_provider::model_hub_dispatch::transport::{HubGetAsync, PostTransport, WireRequest};
 use betterlite_provider::model_hub_dispatch::{DispatchDeps, HubDispatchError, ReplicateServices};
 use betterlite_provider::oci_common::Clock;
-use betterlite_provider::operation::OperationError;
 use betterlite_provider::predibase::reply::TokenCounter as PredibaseTokenCounter;
 use betterlite_provider::replicate::poll::ReplicateSleeper;
 use betterlite_provider::replicate::poll::transport::{
@@ -80,43 +79,55 @@ impl Recorder {
     }
 }
 
+impl Reply {
+    fn hub(self) -> HubResponse {
+        HubResponse {
+            status_code: self.status,
+            headers: BTreeMap::new(),
+            body: self.body.as_bytes().to_vec(),
+        }
+    }
+
+    fn upstream(self) -> UpstreamResponse {
+        UpstreamResponse {
+            status: self.status,
+            headers: HeaderMap::new(),
+            body: self.body.into_bytes(),
+        }
+    }
+
+    fn replicate(self) -> ReplicateResponse {
+        ReplicateResponse {
+            status: self.status,
+            headers: HeaderMap::new(),
+            body: self.body.into_bytes(),
+        }
+    }
+}
+
 #[async_trait]
 impl HubGetAsync for Recorder {
     async fn get(&self, request: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
-        let reply = self
-            .keep_request(request)
-            .ok_or(HubDispatchError::BodyNotObject)?;
-        Ok(HubResponse {
-            status_code: reply.status,
-            headers: BTreeMap::new(),
-            body: reply.body.into_bytes(),
-        })
+        self.keep_request(request)
+            .map(Reply::hub)
+            .ok_or(HubDispatchError::BodyNotObject)
     }
 }
 
 #[async_trait]
 impl PostTransport for Recorder {
     async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
-        let reply = self
-            .keep_request(request)
-            .ok_or(HubDispatchError::BodyNotObject)?;
-        Ok(UpstreamResponse {
-            status: reply.status,
-            headers: HeaderMap::new(),
-            body: reply.body.into_bytes(),
-        })
+        self.keep_request(request)
+            .map(Reply::upstream)
+            .ok_or(HubDispatchError::BodyNotObject)
     }
 
     async fn post_stream(
         &self,
-        request: &WireRequest<'_>,
+        wire: &WireRequest<'_>,
     ) -> Result<StreamResponse, HubDispatchError> {
-        self.keep_request(request);
-        let unsupported = OperationError::UnsupportedOperation {
-            provider: String::from("b8332"),
-            operation: String::from("stream"),
-        };
-        Err(HubDispatchError::Operation(unsupported))
+        self.keep_request(wire);
+        Err(HubDispatchError::BodyNotObject)
     }
 }
 
@@ -124,23 +135,19 @@ impl PostTransport for Recorder {
 impl ReplicateTransport for Recorder {
     async fn send(&self, request: ReplicateRequest) -> Result<ReplicateResponse, TransportError> {
         let headers = headers_from(&request.headers);
-        self.keep(Wire {
+        let wire = Wire {
             method: request.method.to_string(),
             url: request.url,
             headers,
             body: request.body,
-        });
+        };
+        self.keep(wire);
         let next = self
             .replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front();
-        let reply = next.ok_or(TransportError::Closed)?;
-        Ok(ReplicateResponse {
-            status: reply.status,
-            headers: HeaderMap::new(),
-            body: reply.body.into_bytes(),
-        })
+        next.map(Reply::replicate).ok_or(TransportError::Closed)
     }
 }
 

@@ -1,5 +1,5 @@
 use super::HubDispatchError;
-use super::hub::headers_from;
+use super::hub::hub_response;
 use crate::operation::OperationError;
 use async_trait::async_trait;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -57,33 +57,28 @@ pub struct Pooled<'client> {
 }
 #[async_trait]
 impl HubGetAsync for Pooled<'_> {
-    async fn get(&self, request: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
-        let response = self
-            .client
-            .send_buffered(request.outbound()?)
+    async fn get(&self, wire: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
+        self.client
+            .send_buffered(wire.outbound()?)
             .await
-            .map_err(OperationError::from)?;
-        Ok(HubResponse {
-            status_code: response.status,
-            headers: headers_from(&response.headers),
-            body: response.body,
-        })
+            .map(hub_response)
+            .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
     }
 }
 #[async_trait]
 impl PostTransport for Pooled<'_> {
-    async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
+    async fn post(&self, wire: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
         self.client
-            .send_buffered(request.outbound()?)
+            .send_buffered(wire.outbound()?)
             .await
             .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
     }
     async fn post_stream(
         &self,
-        request: &WireRequest<'_>,
+        wire: &WireRequest<'_>,
     ) -> Result<StreamResponse, HubDispatchError> {
         self.client
-            .send(request.outbound()?)
+            .send(wire.outbound()?)
             .await
             .map_err(|source| HubDispatchError::Operation(OperationError::from(source)))
     }

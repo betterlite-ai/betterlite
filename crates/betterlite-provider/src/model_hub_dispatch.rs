@@ -36,6 +36,7 @@ use betterlite_prompts::factory::PromptFactory;
 use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use betterlite_tokenizer::engine::error::EngineError;
 use chrono::{DateTime, Utc};
+use futures_util::future::LocalBoxFuture;
 use secrecy::SecretString;
 use std::collections::BTreeMap;
 use std::str::Utf8Error;
@@ -137,10 +138,10 @@ pub struct ReplicateServices<'deps> {
 }
 pub struct DispatchDeps<'deps> {
     pub globals: &'deps Globals<'deps>,
-    pub environment: &'deps dyn EnvironmentLookup,
+    pub environment: &'deps (dyn EnvironmentLookup + Sync),
     pub hub: &'deps dyn transport::HubGetAsync,
     pub post: &'deps dyn transport::PostTransport,
-    pub encoder: &'deps dyn OrdinaryEncoder,
+    pub encoder: &'deps (dyn OrdinaryEncoder + Sync),
     pub replicate: ReplicateServices<'deps>,
     pub prompts: &'deps PromptFactory,
     pub replicate_counter: &'deps dyn ReplicateTokenCounter,
@@ -169,22 +170,26 @@ pub fn polling(env: &dyn EnvironmentLookup) -> Result<ReplicatePolling, HubDispa
     )
     .map_err(|source| HubDispatchError::Environment { source })
 }
-pub async fn dispatch(
+// the logging env is not Sync, so the call future stays on the caller's task as shared_embedding's does
+pub fn dispatch<'call>(
     selection: &ConfigSelection<ChatConfigTag>,
-    call: &mut ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<Option<HubCompletion>, HubDispatchError> {
-    match select(selection.tag) {
-        None => Ok(None),
-        Some(HubProvider::HuggingFace) => Ok(Some(HubCompletion::HuggingFace(Box::new(
-            huggingface::chat_request(call, deps).await?,
-        )))),
-        Some(HubProvider::Replicate) => Ok(Some(HubCompletion::Replicate(Box::new(
-            replicate::complete(call, deps, log).await?,
-        )))),
-        Some(HubProvider::Predibase) => Ok(Some(HubCompletion::Predibase(Box::new(
-            predibase::complete(call, deps, log).await?,
-        )))),
-    }
+    call: &'call mut ChatContext<'_>,
+    deps: &'call DispatchDeps<'_>,
+    log: &'call mut CallLogging<'_, '_>,
+) -> LocalBoxFuture<'call, Result<Option<HubCompletion>, HubDispatchError>> {
+    let provider = select(selection.tag);
+    Box::pin(async move {
+        match provider {
+            None => Ok(None),
+            Some(HubProvider::HuggingFace) => Ok(Some(HubCompletion::HuggingFace(Box::new(
+                huggingface::chat_request(call, deps).await?,
+            )))),
+            Some(HubProvider::Replicate) => Ok(Some(HubCompletion::Replicate(Box::new(
+                replicate::complete(call, deps, log).await?,
+            )))),
+            Some(HubProvider::Predibase) => Ok(Some(HubCompletion::Predibase(Box::new(
+                predibase::complete(call, deps, log).await?,
+            )))),
+        }
+    })
 }

@@ -123,7 +123,7 @@ async fn the_embedding_arm_fails_with_500_when_the_reply_has_an_error_key() {
 
 #[tokio::test]
 async fn the_embedding_arm_fails_with_the_reply_status_before_reading_the_body() {
-    let reply = http_reply(429, r#"[[0.5]]"#);
+    let reply = http_reply(429, "[[0.5]]");
     let services = Services::new(Vec::new(), vec![reply], Vec::new());
     let input = vec![String::from("a")];
     let options = feature_extraction();

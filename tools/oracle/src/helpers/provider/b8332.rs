@@ -27,7 +27,7 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
 
 use fixture::{Fixture, Recorder, Wire, log_env, log_state};
 use wire::{answer, error_status, helper_error};
@@ -56,7 +56,7 @@ pub(crate) struct Case {
     #[serde(default)]
     api_base: Option<String>,
     #[serde(default)]
-    api_key: Option<String>,
+    api_key: Option<SecretString>,
     #[serde(default)]
     input: Vec<String>,
     #[serde(default)]
@@ -90,23 +90,35 @@ fn keep_prepared(recorder: &Recorder, completion: Option<HubCompletion>) {
     });
 }
 
-async fn chat(
-    case: &Case,
-    tag: ChatConfigTag,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<Option<HubCompletion>, HubDispatchError> {
-    let mut messages = case.messages.clone();
+// the chat stream flag and the embedding input_type the case asks for
+fn options(case: &Case) -> Object {
     let mut options = Object::new();
     if case.stream {
         options.insert(String::from("stream"), PromptJson::Bool(true));
     }
-    let key = case.api_key.clone().map(SecretString::from);
+    if let Some(input_type) = &case.input_type {
+        options.insert(
+            String::from("input_type"),
+            PromptJson::Text(input_type.clone()),
+        );
+    }
+    options
+}
+
+fn chat(
+    case: &Case,
+    tag: ChatConfigTag,
+    deps: &DispatchDeps<'_>,
+    log: &mut CallLogging<'_, '_>,
+    runtime: &Runtime,
+) -> Result<Option<HubCompletion>, HubDispatchError> {
+    let mut messages = case.messages.clone();
+    let mut asked = options(case);
     let mut call = ChatContext {
         model: &case.model,
         messages: &mut messages,
-        optional_params: &mut options,
-        api_key: key.as_ref(),
+        optional_params: &mut asked,
+        api_key: case.api_key.as_ref(),
         api_base: case.api_base.as_deref(),
         headers: None,
         custom_prompt_dict: None,
@@ -116,32 +128,25 @@ async fn chat(
         tag,
         construction: ConfigConstruction::Shared,
     };
-    dispatch(&selection, &mut call, deps, log).await
+    runtime.block_on(dispatch(&selection, &mut call, deps, log))
 }
 
-async fn embedding(
+fn embedding(
     case: &Case,
     deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
+    runtime: &Runtime,
 ) -> Result<(), HubDispatchError> {
-    let mut options = Object::new();
-    if let Some(input_type) = &case.input_type {
-        options.insert(
-            String::from("input_type"),
-            PromptJson::Text(input_type.clone()),
-        );
-    }
-    let key = case.api_key.clone().map(SecretString::from);
+    let asked = options(case);
     let call = EmbeddingCall {
         model: &case.model,
         input: &case.input,
-        optional_params: &options,
-        api_key: key.as_ref(),
+        optional_params: &asked,
+        api_key: case.api_key.as_ref(),
         api_base: case.api_base.as_deref(),
         headers: &BTreeMap::new(),
     };
-    embed(&call, deps, log).await?;
-    Ok(())
+    runtime.block_on(embed(&call, deps, log)).map(drop)
 }
 
 // litellm.rerank hands the config query, documents and its return_documents=True default
@@ -196,27 +201,24 @@ fn rerank(case: &Case, recorder: &Recorder, globals: &Globals<'_>) -> Result<(),
     Ok(())
 }
 
-async fn call(
+fn call(
     case: &Case,
     fixture: &Fixture,
     log: &mut CallLogging<'_, '_>,
+    runtime: &Runtime,
 ) -> Result<(), HubDispatchError> {
     let globals = Globals::default();
     let deps = fixture.deps(&globals, &case.env);
     match case.op {
         Operation::HuggingfaceChat => {
-            let completion = chat(case, ChatConfigTag::HuggingFaceChat, &deps, log).await?;
+            let completion = chat(case, ChatConfigTag::HuggingFaceChat, &deps, log, runtime)?;
             keep_prepared(&fixture.recorder, completion);
             Ok(())
         }
-        Operation::HuggingfaceEmbedding => embedding(case, &deps, log).await,
+        Operation::HuggingfaceEmbedding => embedding(case, &deps, log, runtime),
         Operation::HuggingfaceRerank => rerank(case, &fixture.recorder, &globals),
-        Operation::Replicate => chat(case, ChatConfigTag::Replicate, &deps, log)
-            .await
-            .map(drop),
-        Operation::Predibase => chat(case, ChatConfigTag::Predibase, &deps, log)
-            .await
-            .map(drop),
+        Operation::Replicate => chat(case, ChatConfigTag::Replicate, &deps, log, runtime).map(drop),
+        Operation::Predibase => chat(case, ChatConfigTag::Predibase, &deps, log, runtime).map(drop),
     }
 }
 
@@ -249,12 +251,10 @@ impl Helper for Op {
             state: &mut state,
             env: &env,
         };
-        let error = runtime
-            .block_on(call(input, &fixture, &mut log))
-            .map_or_else(
-                |failure| error_status(&failure, provider(input.op), &redactor),
-                |()| Value::Null,
-            );
+        let error = call(input, &fixture, &mut log, &runtime).map_or_else(
+            |failure| error_status(&failure, provider(input.op), &redactor),
+            |()| Value::Null,
+        );
         Ok(answer(&fixture.recorder, error))
     }
 }

@@ -1,7 +1,9 @@
-use super::HubDispatchError;
+use super::{CallLogging, HubDispatchError};
 use betterlite_logging::logging_pre_post::args::{AdditionalArgs, RawBody};
+use betterlite_logging::logging_pre_post::post_call::{PostCall, post_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_prompts::builtin::Message;
 use indexmap::IndexMap;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -29,7 +31,7 @@ pub fn header_values(headers: &Headers) -> IndexMap<String, Json> {
         .collect()
 }
 #[must_use]
-pub fn additional_args(
+pub const fn additional_args(
     api_base: Option<String>,
     headers: Option<IndexMap<String, Json>>,
     body: Option<RawBody>,
@@ -43,4 +45,18 @@ pub fn additional_args(
         openai_sdk: None,
         passthrough,
     }
+}
+// LiteLLM logs the opened stream itself as the original response; the stream is not rendered here
+pub fn log_opened_stream(
+    log: &mut CallLogging<'_, '_>,
+    messages: &[Message],
+    body: Option<RawBody>,
+) -> Result<(), HubDispatchError> {
+    let opened = PostCall {
+        original_response: Json::Null,
+        input: convert(messages)?,
+        additional_args: additional_args(None, None, body, IndexMap::new()),
+    };
+    post_call(log.state, &opened, log.env);
+    Ok(())
 }

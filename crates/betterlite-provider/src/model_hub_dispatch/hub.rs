@@ -1,3 +1,4 @@
+use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::huggingface_chat::error::HuggingfaceError;
 use betterlite_openai::huggingface_chat::mapping::{HubGet, HubResponse};
@@ -21,6 +22,14 @@ pub fn headers_from(headers: &http::HeaderMap) -> Headers {
             Some((name.as_str().to_owned(), text.to_owned()))
         })
         .collect()
+}
+#[must_use]
+pub fn hub_response(response: UpstreamResponse) -> HubResponse {
+    HubResponse {
+        status_code: response.status,
+        headers: headers_from(&response.headers),
+        body: response.body,
+    }
 }
 #[must_use]
 pub fn mapping_headers(token: Option<&SecretString>) -> Headers {

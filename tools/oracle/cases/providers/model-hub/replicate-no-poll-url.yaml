@@ -11,6 +11,6 @@ call:
     replies:
       - status: 201
         body: '{"id":"oracle-1","status":"starting"}'
-    env: {}
-env: {}
+    env: {HF_HUB_OFFLINE: "1"}
+env: {HF_HUB_OFFLINE: "1"}
 compare: {ignore: []}

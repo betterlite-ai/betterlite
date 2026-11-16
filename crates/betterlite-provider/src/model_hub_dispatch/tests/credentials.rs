@@ -32,11 +32,14 @@ fn the_settings_become_the_module_globals() {
         predibase_tenant_id: Some(SecretString::from("t")),
     };
     let globals = Globals::from_settings(&settings);
-    let shown = |value: Option<&SecretString>| value.map(ExposeSecret::expose_secret);
-    assert_eq!(shown(globals.huggingface_key), Some("hf"));
-    assert_eq!(shown(globals.replicate_key), Some("r"));
-    assert_eq!(shown(globals.predibase_key), Some("p"));
-    assert_eq!(shown(globals.predibase_tenant_id), Some("t"));
+    let huggingface = globals.huggingface_key.map(ExposeSecret::expose_secret);
+    assert_eq!(huggingface, Some("hf"));
+    let replicate = globals.replicate_key.map(ExposeSecret::expose_secret);
+    assert_eq!(replicate, Some("r"));
+    let predibase = globals.predibase_key.map(ExposeSecret::expose_secret);
+    assert_eq!(predibase, Some("p"));
+    let tenant = globals.predibase_tenant_id.map(ExposeSecret::expose_secret);
+    assert_eq!(tenant, Some("t"));
     assert!(globals.api_key.is_none());
     assert!(globals.api_base.is_none());
 }

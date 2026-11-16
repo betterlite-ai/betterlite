@@ -26,6 +26,7 @@ use betterlite_prompts::factory::hub::{Hub, builtin_entries};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_tokenizer::count::error::CountError;
 use chrono::{DateTime, Utc};
+use futures_util::future::LocalBoxFuture;
 use http::HeaderMap;
 
 use super::super::credentials::Globals;
@@ -154,6 +155,19 @@ impl ScriptedHttp {
         });
     }
 
+    fn answer<T>(
+        &self,
+        request: &WireRequest<'_>,
+        replies: &Mutex<VecDeque<T>>,
+    ) -> Result<T, HubDispatchError> {
+        self.record(request);
+        replies
+            .lock()
+            .unwrap()
+            .pop_front()
+            .ok_or(HubDispatchError::BodyNotObject)
+    }
+
     pub(super) fn sent(&self, method: &str) -> Vec<Recorded> {
         self.recorded
             .lock()
@@ -168,24 +182,14 @@ impl ScriptedHttp {
 #[async_trait]
 impl HubGetAsync for ScriptedHttp {
     async fn get(&self, request: &WireRequest<'_>) -> Result<HubResponse, HubDispatchError> {
-        self.record(request);
-        self.hub_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .ok_or(HubDispatchError::BodyNotObject)
+        self.answer(request, &self.hub_replies)
     }
 }
 
 #[async_trait]
 impl PostTransport for ScriptedHttp {
     async fn post(&self, request: &WireRequest<'_>) -> Result<UpstreamResponse, HubDispatchError> {
-        self.record(request);
-        self.post_replies
-            .lock()
-            .unwrap()
-            .pop_front()
-            .ok_or(HubDispatchError::BodyNotObject)
+        self.answer(request, &self.post_replies)
     }
 
     async fn post_stream(
@@ -354,8 +358,19 @@ impl Services {
     }
 
     // raw request logging is on so the pre_call record of the request headers stays visible after post_call
-    pub(super) fn log_env(&self) -> PrePostEnv<'_> {
-        PrePostEnv {
+    pub(super) fn logging(&self) -> (LoggingState, PrePostEnv<'_>) {
+        let state = LoggingState::new(
+            serde_json::from_str::<LoggingInit>(INIT).unwrap(),
+            CorrelationSetup {
+                context: &mut CorrelationContext::default(),
+                settings: CorrelationSettings::default(),
+            },
+            &self.redactor,
+            || "trace".to_owned(),
+            Duration::default,
+        )
+        .unwrap();
+        let env = PrePostEnv {
             debug: DebugSettings::default(),
             globals: GlobalFlags {
                 log_raw_request_response: true,
@@ -371,77 +386,77 @@ impl Services {
             sentry: None,
             logger_fn: None,
             now: DateTime::parse_from_rfc3339("2026-01-01T00:00:05+00:00").unwrap(),
-        }
-    }
-
-    pub(super) fn log_state(&self) -> LoggingState {
-        LoggingState::new(
-            serde_json::from_str::<LoggingInit>(INIT).unwrap(),
-            CorrelationSetup {
-                context: &mut CorrelationContext::default(),
-                settings: CorrelationSettings::default(),
-            },
-            &self.redactor,
-            || "trace".to_owned(),
-            Duration::default,
-        )
-        .unwrap()
+        };
+        (state, env)
     }
 }
 
-// one entry point of the module under test, run with fresh logging
+// one entry point of the module under test; the logging env is not Sync, so its future stays local
 pub(super) trait Arm {
     type Output;
 
-    async fn run(
+    fn run<'call>(
         self,
-        deps: &DispatchDeps<'_>,
-        log: &mut CallLogging<'_, '_>,
-    ) -> Result<Self::Output, HubDispatchError>;
+        deps: &'call DispatchDeps<'_>,
+        log: &'call mut CallLogging<'_, '_>,
+    ) -> LocalBoxFuture<'call, Result<Self::Output, HubDispatchError>>
+    where
+        Self: 'call;
 }
 
 impl Arm for &EmbeddingCall<'_> {
     type Output = EmbeddingResponse;
 
-    async fn run(
+    fn run<'call>(
         self,
-        deps: &DispatchDeps<'_>,
-        log: &mut CallLogging<'_, '_>,
-    ) -> Result<EmbeddingResponse, HubDispatchError> {
-        embed(self, deps, log).await
+        deps: &'call DispatchDeps<'_>,
+        log: &'call mut CallLogging<'_, '_>,
+    ) -> LocalBoxFuture<'call, Result<EmbeddingResponse, HubDispatchError>>
+    where
+        Self: 'call,
+    {
+        embed(self, deps, log)
     }
 }
 
 impl Arm for (ChatConfigTag, &mut ChatContext<'_>) {
     type Output = Option<HubCompletion>;
 
-    async fn run(
+    fn run<'call>(
         self,
-        deps: &DispatchDeps<'_>,
-        log: &mut CallLogging<'_, '_>,
-    ) -> Result<Option<HubCompletion>, HubDispatchError> {
+        deps: &'call DispatchDeps<'_>,
+        log: &'call mut CallLogging<'_, '_>,
+    ) -> LocalBoxFuture<'call, Result<Option<HubCompletion>, HubDispatchError>>
+    where
+        Self: 'call,
+    {
         let (tag, call) = self;
         let selection = ConfigSelection {
             tag,
             construction: ConfigConstruction::Shared,
         };
-        dispatch(&selection, call, deps, log).await
+        dispatch(&selection, call, deps, log)
     }
 }
 
-pub(super) async fn run_with<A: Arm>(
-    services: &Services,
-    globals: &Globals<'_>,
-    env: &Env,
+pub(super) fn run_with<'run, A>(
+    services: &'run Services,
+    globals: &'run Globals<'_>,
+    env: &'run Env,
     arm: A,
-) -> Outcome<A::Output> {
-    let deps = services.deps(globals, env);
-    let mut state = services.log_state();
-    let log_env = services.log_env();
-    let mut log = CallLogging {
-        state: &mut state,
-        env: &log_env,
-    };
-    let outcome = arm.run(&deps, &mut log).await;
-    (outcome, state)
+) -> LocalBoxFuture<'run, Outcome<A::Output>>
+where
+    A: Arm + 'run,
+    A::Output: 'run,
+{
+    Box::pin(async move {
+        let deps = services.deps(globals, env);
+        let (mut state, log_env) = services.logging();
+        let mut log = CallLogging {
+            state: &mut state,
+            env: &log_env,
+        };
+        let outcome = arm.run(&deps, &mut log).await;
+        (outcome, state)
+    })
 }

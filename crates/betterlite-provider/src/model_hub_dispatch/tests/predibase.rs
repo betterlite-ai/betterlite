@@ -39,6 +39,8 @@ async fn the_predibase_arm_wraps_the_generate_reply() {
         .first()
         .and_then(|choice| choice.content.as_deref());
     assert_eq!(content, Some("hello"));
+    let event = state.model_call_details.get("log_event_type");
+    assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
     let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
         panic!("the post_call keeps its arguments");
     };

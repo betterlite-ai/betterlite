@@ -9,12 +9,13 @@ use betterlite_openai::huggingface_chat::error::HuggingfaceError;
 use betterlite_openai::huggingface_embedding::error::HuggingfaceEmbeddingError;
 use betterlite_openai::huggingface_embedding::request::Params;
 use betterlite_openai::huggingface_embedding::response::{
-    EmbeddingResponse, decode_embedding_response, process_embedding_response,
+    EmbeddingResponse, OrdinaryEncoder, decode_embedding_response, process_embedding_response,
 };
 use betterlite_openai::huggingface_embedding::task::PipelineTagSource;
 use betterlite_openai::huggingface_embedding::{PrepareRequest, PreparedRequest, prepare};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object as PromptObject};
+use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret, SecretString};
@@ -121,43 +122,57 @@ fn status_failure(response: &UpstreamResponse) -> Result<(), HubDispatchError> {
     ))
 }
 
-pub async fn embed(
+fn received(
     call: &EmbeddingCall<'_>,
-    deps: &DispatchDeps<'_>,
+    encoder: &dyn OrdinaryEncoder,
     log: &mut CallLogging<'_, '_>,
+    prepared: PreparedCall,
+    response: &UpstreamResponse,
 ) -> Result<EmbeddingResponse, HubDispatchError> {
-    let prepared = prepare_call(call, deps).await?;
-    let sent = PreCall {
-        input: prepared.input.clone(),
-        model: None,
-        additional_args: additional_args(
-            Some(prepared.request.url.clone()),
-            Some(header_values(&prepared.request.headers)),
-            Some(RawBody::Object(prepared.data.clone())),
-            IndexMap::new(),
-        ),
-    };
-    pre_call(log.state, &sent, log.env).map_err(|source| HubDispatchError::PreCall { source })?;
-    let request = WireRequest {
-        method: Method::POST,
-        url: &prepared.request.url,
-        query: &[],
-        headers: &prepared.request.headers,
-        body: Some(prepared.request.body.as_bytes()),
-        deadline: deps.timeout,
-    };
-    let response = deps.post.post(&request).await?;
-    status_failure(&response)?;
+    status_failure(response)?;
     let logged = Some(RawBody::Object(prepared.data));
-    let received = PostCall {
+    let answer = PostCall {
         original_response: json::logged_reply(&response.body),
         input: prepared.input,
         additional_args: additional_args(None, None, logged, IndexMap::new()),
     };
-    post_call(log.state, &received, log.env);
+    post_call(log.state, &answer, log.env);
     let reply = decode_embedding_response(&response.body)?;
-    let embedding = process_embedding_response(&reply, call.model, call.input, deps.encoder)?;
+    let embedding = process_embedding_response(&reply, call.model, call.input, encoder)?;
     Ok(embedding)
+}
+
+// the logging env is not Sync, so the call future stays on the caller's task
+pub fn embed<'call>(
+    call: &'call EmbeddingCall<'_>,
+    deps: &'call DispatchDeps<'_>,
+    log: &'call mut CallLogging<'_, '_>,
+) -> LocalBoxFuture<'call, Result<EmbeddingResponse, HubDispatchError>> {
+    Box::pin(async move {
+        let prepared = prepare_call(call, deps).await?;
+        let sent = PreCall {
+            input: prepared.input.clone(),
+            model: None,
+            additional_args: additional_args(
+                Some(prepared.request.url.clone()),
+                Some(header_values(&prepared.request.headers)),
+                Some(RawBody::Object(prepared.data.clone())),
+                IndexMap::new(),
+            ),
+        };
+        pre_call(log.state, &sent, log.env)
+            .map_err(|source| HubDispatchError::PreCall { source })?;
+        let request = WireRequest {
+            method: Method::POST,
+            url: &prepared.request.url,
+            query: &[],
+            headers: &prepared.request.headers,
+            body: Some(prepared.request.body.as_bytes()),
+            deadline: deps.timeout,
+        };
+        let response = deps.post.post(&request).await?;
+        received(call, deps.encoder, log, prepared, &response)
+    })
 }
 
 pub struct NoTag;

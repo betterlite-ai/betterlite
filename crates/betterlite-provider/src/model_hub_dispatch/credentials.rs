@@ -18,7 +18,7 @@ pub struct Globals<'source> {
 }
 impl<'source> Globals<'source> {
     #[must_use]
-    pub fn from_settings(settings: &'source Settings) -> Self {
+    pub const fn from_settings(settings: &'source Settings) -> Self {
         Self {
             api_key: None,
             huggingface_key: settings.huggingface_key.as_ref(),
@@ -100,7 +100,7 @@ pub const PREDIBASE_KEY: &[Step] = &[
 pub struct Sources<'source> {
     pub call: Option<&'source str>,
     pub globals: &'source Globals<'source>,
-    pub env: &'source dyn EnvironmentLookup,
+    pub env: &'source (dyn EnvironmentLookup + Sync),
 }
 fn pop_text(
     object: &mut Object,

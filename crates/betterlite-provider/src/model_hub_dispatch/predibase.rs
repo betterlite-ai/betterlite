@@ -8,13 +8,14 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
+use futures_util::future::LocalBoxFuture;
 use http::Method;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret;
 
 use super::credentials::{PREDIBASE_BASE, PREDIBASE_KEY, PREDIBASE_TENANT_ID, Sources, resolve};
 use super::hub::headers_from;
-use super::json::{self, additional_args, header_values};
+use super::json::{self, additional_args, header_values, log_opened_stream};
 use super::transport::WireRequest;
 use super::{CallLogging, ChatContext, CustomPromptTable, DispatchDeps, HubDispatchError};
 use crate::operation::OperationError;
@@ -158,88 +159,83 @@ fn log_pre_call(
     Ok(())
 }
 
-pub async fn complete(
-    call: &mut ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
-    log: &mut CallLogging<'_, '_>,
-) -> Result<Completion, HubDispatchError> {
-    let endpoint = endpoint(call, deps)?;
-    let data = request_body(call, deps, &endpoint.options).await?;
-    log_pre_call(call, log, &endpoint, &data)?;
-    let encoded = encoded_body(&data, endpoint.stream && call.acompletion)?;
-    let request = WireRequest {
-        method: Method::POST,
-        url: &endpoint.url,
-        query: &[],
-        headers: &endpoint.headers,
-        body: Some(encoded.as_bytes()),
-        deadline: deps.timeout,
-    };
-    if !endpoint.stream {
-        let response = deps.post.post(&request).await?;
-        return replied(call, deps, log, &response, &data).await;
-    }
-    let response = deps.post.post_stream(&request).await?;
-    if response.response.status() != 200 {
-        return Err(stream_error(response).await);
-    }
-    if call.acompletion {
-        let opened = PostCall {
-            original_response: Json::Null,
-            input: json::convert(call.messages.as_slice())?,
-            additional_args: additional_args(
-                None,
-                None,
-                Some(RawBody::Text(encoded)),
-                IndexMap::new(),
-            ),
+// the logging env is not Sync, so the call future stays on the caller's task
+pub fn complete<'call>(
+    call: &'call mut ChatContext<'_>,
+    deps: &'call DispatchDeps<'_>,
+    log: &'call mut CallLogging<'_, '_>,
+) -> LocalBoxFuture<'call, Result<Completion, HubDispatchError>> {
+    Box::pin(async move {
+        let endpoint = endpoint(call, deps)?;
+        let data = request_body(call, deps, &endpoint.options).await?;
+        log_pre_call(call, log, &endpoint, &data)?;
+        let encoded = encoded_body(&data, endpoint.stream && call.acompletion)?;
+        let request = WireRequest {
+            method: Method::POST,
+            url: &endpoint.url,
+            query: &[],
+            headers: &endpoint.headers,
+            body: Some(encoded.as_bytes()),
+            deadline: deps.timeout,
         };
-        post_call(log.state, &opened, log.env);
-    }
-    Ok(Completion::Stream(Box::new(response)))
+        if !endpoint.stream {
+            let response = deps.post.post(&request).await?;
+            checked_reply(call, log, &response, &data)?;
+            return transformed(call, deps, &response, &data).await;
+        }
+        let response = deps.post.post_stream(&request).await?;
+        if response.response.status() != 200 {
+            return Err(stream_error(response).await);
+        }
+        if call.acompletion {
+            log_opened_stream(log, call.messages, Some(RawBody::Text(encoded)))?;
+        }
+        Ok(Completion::Stream(Box::new(response)))
+    })
 }
 
-async fn replied(
+// call_error raises before LiteLLM logs the post_call, which carries the request body
+fn checked_reply(
     call: &ChatContext<'_>,
-    deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
     response: &UpstreamResponse,
     data: &RequestBody,
-) -> Result<Completion, HubDispatchError> {
+) -> Result<(), HubDispatchError> {
     let text =
         from_utf8(&response.body).map_err(|source| HubDispatchError::BodyNotUtf8 { source })?;
-    if let Some(error) = call_error(
-        CallFailure::Response {
-            status: response.status,
-            body: text,
-        },
-        false,
-    ) {
+    let failure = CallFailure::Response {
+        status: response.status,
+        body: text,
+    };
+    if let Some(error) = call_error(failure, false) {
         return Err(HubDispatchError::Predibase(error));
     }
     let logged = json::convert(data).map(RawBody::Object)?;
-    post_call(
-        log.state,
-        &PostCall {
-            original_response: json::logged_reply(&response.body),
-            input: json::convert(call.messages.as_slice())?,
-            additional_args: additional_args(None, None, Some(logged), IndexMap::new()),
-        },
-        log.env,
-    );
-    let reply = transform_response(
-        &ReplyInput {
-            body: &response.body,
-            status: response.status,
-            headers: &headers_from(&response.headers),
-            request_body: data,
-            options: call.optional_params,
-            messages: call.messages,
-            model: call.model,
-            created: deps.now.timestamp(),
-        },
-        deps.predibase_counter,
-    )
-    .await?;
+    let answer = PostCall {
+        original_response: json::logged_reply(&response.body),
+        input: json::convert(call.messages.as_slice())?,
+        additional_args: additional_args(None, None, Some(logged), IndexMap::new()),
+    };
+    post_call(log.state, &answer, log.env);
+    Ok(())
+}
+
+async fn transformed(
+    call: &ChatContext<'_>,
+    deps: &DispatchDeps<'_>,
+    response: &UpstreamResponse,
+    data: &RequestBody,
+) -> Result<Completion, HubDispatchError> {
+    let input = ReplyInput {
+        body: &response.body,
+        status: response.status,
+        headers: &headers_from(&response.headers),
+        request_body: data,
+        options: call.optional_params,
+        messages: call.messages,
+        model: call.model,
+        created: deps.now.timestamp(),
+    };
+    let reply = transform_response(&input, deps.predibase_counter).await?;
     Ok(Completion::Reply(Box::new(reply)))
 }
