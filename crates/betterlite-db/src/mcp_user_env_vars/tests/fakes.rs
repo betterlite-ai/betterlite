@@ -76,10 +76,6 @@ struct FakeState {
 }
 
 impl FakeState {
-    fn record(&mut self, event: &'static str) {
-        self.events.push(event.to_owned());
-    }
-
     fn fail(&self, event: &'static str) -> Result<(), UserEnvVarsError> {
         if self.fail_at == Some(event) {
             return Err(UserEnvVarsError::Database(McpTableError::from(
@@ -96,13 +92,23 @@ impl FakeState {
             .map(FakeRow::data)
     }
 
+    fn select(&self, user_id: &str, server_ids: &[String]) -> Vec<JsonData> {
+        self.rows
+            .iter()
+            .filter(|row| row.user_id == user_id && server_ids.contains(&row.server_id))
+            .map(FakeRow::data)
+            .collect()
+    }
+
     fn put_row(&mut self, user_id: &str, server_id: &str, values_b64: &str) {
-        for row in &mut self.rows {
-            if row.user_id == user_id && row.server_id == server_id {
-                row.values_b64 = values_b64.to_owned();
-                row.values_null = false;
-                return;
-            }
+        let existing = self
+            .rows
+            .iter_mut()
+            .find(|row| row.user_id == user_id && row.server_id == server_id);
+        if let Some(row) = existing {
+            row.values_b64 = values_b64.to_owned();
+            row.values_null = false;
+            return;
         }
         self.rows
             .push(FakeRow::new(user_id, server_id, values_b64.to_owned()));
@@ -134,6 +140,16 @@ impl FakeTable {
         }
     }
 
+    fn recording(
+        &self,
+        event: &'static str,
+    ) -> Result<MutexGuard<'_, FakeState>, UserEnvVarsError> {
+        let mut state = lock(&self.state);
+        state.events.push(event.to_owned());
+        state.fail(event)?;
+        Ok(state)
+    }
+
     pub(super) fn events(&self) -> Vec<String> {
         lock(&self.state).events.clone()
     }
@@ -153,9 +169,7 @@ impl UserEnvVarTable for FakeTable {
         user_id: &str,
         server_id: &str,
     ) -> Result<Option<JsonData>, UserEnvVarsError> {
-        let mut state = lock(&self.state);
-        state.record("find_unique");
-        state.fail("find_unique")?;
+        let state = self.recording("find_unique")?;
         Ok(state.find_row(user_id, server_id))
     }
 
@@ -164,83 +178,66 @@ impl UserEnvVarTable for FakeTable {
         user_id: &str,
         server_ids: &[String],
     ) -> Result<Vec<JsonData>, UserEnvVarsError> {
-        let mut state = lock(&self.state);
-        state.record("find_many");
-        state.fail("find_many")?;
-        Ok(state
-            .rows
-            .iter()
-            .filter(|row| row.user_id == user_id && server_ids.contains(&row.server_id))
-            .map(FakeRow::data)
-            .collect())
+        Ok(self.recording("find_many")?.select(user_id, server_ids))
     }
 
-    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<usize, UserEnvVarsError> {
-        let mut state = lock(&self.state);
-        state.record("delete_many");
-        state.fail("delete_many")?;
-        let before = state.rows.len();
+    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<(), UserEnvVarsError> {
+        let mut state = self.recording("delete_many")?;
         state
             .rows
             .retain(|row| row.user_id != user_id || row.server_id != server_id);
-        Ok(before.saturating_sub(state.rows.len()))
+        drop(state);
+        Ok(())
     }
 }
 
 struct FakeTransaction {
-    state: Arc<Mutex<FakeState>>,
+    table: FakeTable,
 }
 
 impl UserEnvVarsTransaction for FakeTransaction {
-    fn execute_raw<'a>(&'a self, _statement: &'a str, key: i64) -> TransactionFuture<'a, ()> {
+    fn execute_raw<'tx>(&'tx self, _statement: &'tx str, key: i64) -> TransactionFuture<'tx, ()> {
         Box::pin(async move {
-            let mut state = lock(&self.state);
-            state.record("lock");
-            state.fail("lock")?;
+            let mut state = self.table.recording("lock")?;
             state.locks.push(key);
+            drop(state);
             Ok(())
         })
     }
 
-    fn find_unique<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-    ) -> TransactionFuture<'a, Option<JsonData>> {
-        Box::pin(async move {
-            let mut state = lock(&self.state);
-            state.record("find_unique");
-            state.fail("find_unique")?;
-            Ok(state.find_row(user_id, server_id))
-        })
+    fn find_unique<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+    ) -> TransactionFuture<'tx, Option<JsonData>> {
+        Box::pin(async move { self.table.find_unique(user_id, server_id).await })
     }
 
-    fn upsert<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-        values_b64: &'a str,
-    ) -> TransactionFuture<'a, ()> {
+    fn upsert<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+        values_b64: &'tx str,
+    ) -> TransactionFuture<'tx, ()> {
         Box::pin(async move {
-            let mut state = lock(&self.state);
-            state.record("upsert");
-            state.fail("upsert")?;
+            let mut state = self.table.recording("upsert")?;
             state.put_row(user_id, server_id, values_b64);
+            drop(state);
             Ok(())
         })
     }
 }
 
 impl UserEnvVarsTransactions for FakeTable {
-    fn in_transaction<'a>(
-        &'a self,
-        step: &'a dyn UserEnvVarsMergeStep,
-    ) -> TransactionFuture<'a, UserEnvVars> {
-        lock(&self.state).record("tx");
-        let locked = FakeTransaction {
-            state: Arc::clone(&self.state),
+    fn in_transaction<'tx>(
+        &'tx self,
+        step: &'tx dyn UserEnvVarsMergeStep,
+    ) -> TransactionFuture<'tx, UserEnvVars> {
+        lock(&self.state).events.push("tx".to_owned());
+        let transaction = FakeTransaction {
+            table: self.clone(),
         };
-        Box::pin(async move { step.apply(&locked).await })
+        Box::pin(async move { step.apply(&transaction).await })
     }
 }
 

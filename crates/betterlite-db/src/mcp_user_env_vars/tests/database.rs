@@ -54,10 +54,10 @@ fn db_cipher() -> DbCipher {
     }
 }
 
-fn store_for<'a>(
-    db: &'a PostgresStore,
-    availability: &'a Availability,
-) -> PostgresUserEnvVarsStore<'a> {
+fn store_for<'db>(
+    db: &'db PostgresStore,
+    availability: &'db Availability,
+) -> PostgresUserEnvVarsStore<'db> {
     let client = PrismaClient {
         writer: db,
         reader: db,
