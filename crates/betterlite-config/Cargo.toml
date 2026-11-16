@@ -45,6 +45,7 @@ uuid.workspace = true
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-db = { path = "../betterlite-db" }
+betterlite-error = { path = "../betterlite-error" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 betterlite-prompts = { path = "../betterlite-prompts" }

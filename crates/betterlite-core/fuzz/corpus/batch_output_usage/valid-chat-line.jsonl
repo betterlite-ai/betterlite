@@ -1,0 +1,1 @@
+{"custom_id":"a","response":{"status_code":200,"body":{"model":"gpt-4o-batch","usage":{"prompt_tokens":10,"completion_tokens":5,"total_tokens":15}}}}
