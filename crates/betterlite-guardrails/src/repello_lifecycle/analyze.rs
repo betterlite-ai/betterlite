@@ -180,12 +180,10 @@ async fn decode(mut response: reqwest::Response) -> Result<RepelloAIAnalyzeRespo
     let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
         .await
         .map_err(read_error)?;
-    parse_answer(&body).map_err(|_malformed| PostError::InvalidJson { status: code })
-}
-
-// LiteLLM's TypeAdapter(RepelloAIAnalyzeResponse).validate_json: the answer the Argus API sent, typed.
-pub fn parse_answer(body: &[u8]) -> Result<RepelloAIAnalyzeResponse, serde_json::Error> {
-    serde_json::from_slice::<Answer>(body).map(RepelloAIAnalyzeResponse::from)
+    // LiteLLM's TypeAdapter(RepelloAIAnalyzeResponse).validate_json: the answer the Argus API sent, typed.
+    serde_json::from_slice::<Answer>(&body)
+        .map(RepelloAIAnalyzeResponse::from)
+        .map_err(|_malformed| PostError::InvalidJson { status: code })
 }
 
 // A failed scan records the detail object, which is what LiteLLM keeps as guardrail_json_response.

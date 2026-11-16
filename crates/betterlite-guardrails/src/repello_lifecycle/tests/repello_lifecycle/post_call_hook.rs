@@ -31,7 +31,7 @@ async fn the_response_text_is_scanned_and_the_guardrail_is_recorded() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(captured_path(&mock), "/analyze/response");
     assert_eq!(
         applied(&run.data),
@@ -66,7 +66,7 @@ async fn a_response_without_text_warns_and_skips(#[case] payload: &str) {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
     assert!(
@@ -107,7 +107,7 @@ async fn a_flagged_response_is_allowed_and_logged() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert!(
         captured
             .text()
@@ -128,7 +128,7 @@ async fn a_pre_call_only_mode_skips_the_response_scan() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
 }

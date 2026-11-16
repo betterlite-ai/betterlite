@@ -30,7 +30,7 @@ async fn every_chunk_is_buffered_until_the_scan_passes() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let chunks = chat_chunks();
     let run = run_stream(&guarding(&mock.base, "post_call"), prompt_data(), &chunks).await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(run.output, expected(&chunks));
     assert_eq!(captured_path(&mock), "/analyze/response");
     let body = captured_body(&mock);
@@ -80,7 +80,7 @@ async fn a_flagged_stream_is_allowed_and_logged() {
     let mock = mock_repello(StatusCode::OK, FLAGGED_REPLY).await;
     let chunks = chat_chunks();
     let run = run_stream(&guarding(&mock.base, "post_call"), prompt_data(), &chunks).await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert!(
         captured
             .text()
@@ -99,7 +99,7 @@ async fn a_text_completion_stream_is_not_scanned_and_is_replayed() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let chunks = text_chunks();
     let run = run_stream(&guarding(&mock.base, "post_call"), prompt_data(), &chunks).await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert_eq!(run.output, expected(&chunks));
     let log = captured.text();
@@ -116,7 +116,7 @@ async fn an_empty_stream_is_not_scanned() {
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let run = run_stream(&guarding(&mock.base, "post_call"), prompt_data(), &[]).await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(run.output.is_empty());
     assert!(
@@ -133,7 +133,7 @@ async fn a_mode_without_post_call_relays_every_chunk_without_scanning() {
     let mock = mock_repello(StatusCode::OK, PASSED_REPLY).await;
     let chunks = text_chunks();
     let run = run_stream(&guarding(&mock.base, "pre_call"), prompt_data(), &chunks).await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert_eq!(run.output, expected(&chunks));
     assert_eq!(captured.text(), "");
@@ -170,10 +170,11 @@ async fn an_unreachable_api_decides_the_stream_by_the_fallback(
     let mock = mock_repello(StatusCode::INTERNAL_SERVER_ERROR, "{}").await;
     let mut configured = params();
     configured.mode = LitellmParamsMode::One(String::from("post_call"));
-    configured.unreachable_fallback = fallback;
+    let mut scan_settings = settings(&mock.base);
+    scan_settings.unreachable_fallback = fallback;
     let chunks = chat_chunks();
     let run = run_stream(
-        &guardrail_with(&configured, settings(&mock.base)),
+        &guardrail_with(&configured, scan_settings),
         prompt_data(),
         &chunks,
     )

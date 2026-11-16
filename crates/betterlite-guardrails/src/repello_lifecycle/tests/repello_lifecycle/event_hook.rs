@@ -14,8 +14,8 @@ fn decoded(mode: &str) -> LitellmParamsMode {
 #[case::list(r#"["pre_call", "post_call"]"#)]
 #[case::tagged(r#"{"tags": {"chat": "pre_call"}, "default": "post_call"}"#)]
 #[case::tagged_list(r#"{"tags": {"chat": ["pre_call", "post_call"]}}"#)]
-fn a_valid_mode_comes_back_unchanged(#[case] mode: &str) {
-    let mode = decoded(mode);
+fn a_valid_mode_comes_back_unchanged(#[case] raw: &str) {
+    let mode = decoded(raw);
     let validated = event_hook_from_mode(&mode).unwrap();
     assert_eq!(validated, mode);
 }
@@ -25,8 +25,8 @@ fn a_valid_mode_comes_back_unchanged(#[case] mode: &str) {
 #[case::bad_tagged(r#"{"tags": {"chat": "nope"}}"#)]
 #[case::bad_tagged_list(r#"{"tags": {"chat": ["pre_call", "nope"]}}"#)]
 #[case::bad_tagged_default(r#"{"tags": {"chat": "pre_call"}, "default": "nope"}"#)]
-fn a_tagged_mode_with_an_unknown_hook_comes_back_unchanged(#[case] mode: &str) {
-    let mode = decoded(mode);
+fn a_tagged_mode_with_an_unknown_hook_comes_back_unchanged(#[case] raw: &str) {
+    let mode = decoded(raw);
     assert_eq!(event_hook_from_mode(&mode).unwrap(), mode);
 }
 

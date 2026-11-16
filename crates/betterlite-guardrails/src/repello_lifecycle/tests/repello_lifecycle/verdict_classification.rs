@@ -17,7 +17,7 @@ use crate::support::{
 #[case::flagged(r#"{"verdict": "flagged"}"#, false)]
 #[case::unknown(r#"{"verdict": "maybe"}"#, true)]
 #[case::empty(r#"{"verdict": ""}"#, true)]
-#[case::absent(r#"{}"#, true)]
+#[case::absent("{}", true)]
 #[case::null(r#"{"verdict": null}"#, true)]
 fn only_passed_and_flagged_verdicts_allow_the_request(#[case] reply: &str, #[case] blocks: bool) {
     let response = parsed(reply);
@@ -31,7 +31,7 @@ fn no_response_never_blocks() {
 
 #[rstest]
 #[case::unknown(r#"{"verdict": "maybe"}"#, "maybe")]
-#[case::absent(r#"{}"#, "None")]
+#[case::absent("{}", "None")]
 fn an_unrecognized_verdict_warns_and_names_the_value(#[case] reply: &str, #[case] shown: &str) {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));

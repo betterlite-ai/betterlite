@@ -65,7 +65,7 @@ async fn fail_open_allows_the_request_and_still_records_the_failure() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(
         applied(&run.data),
         vec![GuardrailValue::Text(String::from("repello-test"))]

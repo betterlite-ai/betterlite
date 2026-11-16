@@ -35,7 +35,7 @@ async fn a_prompt_scan_posts_the_asset_and_the_prompt_text() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(captured_path(&mock), "/analyze/prompt");
     let headers = captured_headers(&mock);
     assert_eq!(
@@ -71,7 +71,7 @@ async fn a_response_scan_posts_the_response_text() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(captured_path(&mock), "/analyze/response");
     let body = captured_body(&mock);
     assert_eq!(scan_text(&body, "response").as_deref(), Some("answer"));
@@ -88,7 +88,7 @@ async fn a_passed_scan_allows_the_request_and_records_it() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     let recorded = records(&run.data);
     assert_eq!(recorded.len(), 1);
     let info = &recorded[0];
@@ -204,7 +204,7 @@ async fn a_timed_out_scan_passes_under_fail_open() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     let recorded = records(&run.data);
     assert_eq!(
         text_field(&recorded[0], "guardrail_status").as_deref(),
@@ -280,7 +280,7 @@ async fn a_float_nested_in_policies_applied_is_recorded_as_a_number() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     let recorded = records(&run.data);
     let response = field(&recorded[0], "guardrail_response").unwrap();
     let Some(GuardrailValue::Array(applied)) = field(response, "policies_applied") else {
@@ -312,7 +312,7 @@ async fn an_answer_with_a_large_policy_list_is_read_whole() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
 }
 
 #[tokio::test]

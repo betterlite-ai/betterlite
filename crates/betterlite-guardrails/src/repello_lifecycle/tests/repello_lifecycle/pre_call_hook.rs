@@ -30,7 +30,7 @@ async fn the_configured_event_scans_the_prompt_and_records_the_guardrail() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 1);
     assert_eq!(
         applied(&run.data),
@@ -58,7 +58,7 @@ async fn another_event_hook_skips_the_scan(#[case] mode: LitellmParamsMode) {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
     assert!(applied(&run.data).is_empty());
@@ -76,7 +76,7 @@ async fn a_suppressed_guardrail_skips_the_scan() {
         &suppressed,
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
 }
@@ -98,7 +98,7 @@ async fn a_request_without_prompt_text_warns_and_skips(#[case] payload: &str) {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     assert_eq!(request_count(&mock), 0);
     assert!(records(&run.data).is_empty());
     assert!(

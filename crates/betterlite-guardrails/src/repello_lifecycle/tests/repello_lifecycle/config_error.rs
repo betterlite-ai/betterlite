@@ -28,10 +28,10 @@ fn guarding(base: &str, fallback: UnreachableFallback) -> RepelloAILifecycle {
 #[case::unprocessable(StatusCode::UNPROCESSABLE_ENTITY, 422)]
 #[tokio::test]
 async fn every_configuration_status_is_a_permanent_500_even_under_fail_open(
-    #[case] status: StatusCode,
+    #[case] answered: StatusCode,
     #[case] reported: u64,
 ) {
-    let mock = mock_repello(status, r#"{"error": "bad key"}"#).await;
+    let mock = mock_repello(answered, r#"{"error": "bad key"}"#).await;
     let run = run_hook(
         &guarding(&mock.base, UnreachableFallback::FailOpen),
         prompt_data(),
@@ -107,7 +107,7 @@ async fn a_status_outside_the_configuration_set_is_transient(#[case] status: Sta
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     let recorded = records(&run.data);
     assert_eq!(
         text_field(&recorded[0], "guardrail_status").as_deref(),

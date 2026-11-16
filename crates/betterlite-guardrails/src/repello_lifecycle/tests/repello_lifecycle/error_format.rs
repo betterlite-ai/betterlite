@@ -69,21 +69,24 @@ fn a_blocked_response_is_a_400_with_the_detail() {
         r#"{"verdict": "blocked", "policies_violated": [{"policy_name": "pii"}]}"#,
     )))
     .unwrap_err();
-    assert!(matches!(
-        error,
-        GuardrailFailure::Http { status: 400, ref detail }
-            if detail.as_str() == "Blocked by RepelloAI Argus guardrail. Policies violated: pii."
-    ));
+    let GuardrailFailure::Http { status, detail } = error else {
+        panic!("a blocked verdict must be the 400");
+    };
+    assert_eq!(status, 400);
+    assert_eq!(
+        detail,
+        "Blocked by RepelloAI Argus guardrail. Policies violated: pii."
+    );
 }
 
 #[test]
 fn no_response_is_not_blocked() {
-    assert!(raise_if_blocked(None).is_ok());
+    raise_if_blocked(None).unwrap();
 }
 
 #[rstest]
 #[case::passed(r#"{"verdict": "passed"}"#)]
 #[case::flagged(r#"{"verdict": "flagged"}"#)]
 fn a_non_blocking_response_passes_through(#[case] reply: &str) {
-    assert!(raise_if_blocked(Some(&parsed(reply))).is_ok());
+    raise_if_blocked(Some(&parsed(reply))).unwrap();
 }

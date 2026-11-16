@@ -5,7 +5,7 @@ use crate::repello_content::wire::{RepelloAIAnalyzeResponse, RepelloAIViolatedPo
 
 // The analyze answer as Argus sends it: OpaqueParams reads every number in the policy details as the number it is.
 #[derive(Deserialize)]
-pub(super) struct Answer {
+pub struct Answer {
     verdict: Option<String>,
     request_id: Option<String>,
     policies_violated: Option<Vec<ViolatedPolicy>>,
@@ -30,25 +30,19 @@ impl From<Answer> for RepelloAIAnalyzeResponse {
             policies_violated: answer.policies_violated.map(|policies| {
                 policies
                     .into_iter()
-                    .map(RepelloAIViolatedPolicy::from)
+                    .map(|policy| RepelloAIViolatedPolicy {
+                        policy_name: policy.policy_name,
+                        policy_id: policy.policy_id,
+                        action_taken: policy.action_taken,
+                        scope: policy.scope,
+                        details: policy.details.map(|details| details.0),
+                        masked_result: policy.masked_result,
+                    })
                     .collect()
             }),
             policies_applied: answer
                 .policies_applied
                 .map(|applied| applied.into_iter().map(|policy| policy.0).collect()),
-        }
-    }
-}
-
-impl From<ViolatedPolicy> for RepelloAIViolatedPolicy {
-    fn from(policy: ViolatedPolicy) -> Self {
-        Self {
-            policy_name: policy.policy_name,
-            policy_id: policy.policy_id,
-            action_taken: policy.action_taken,
-            scope: policy.scope,
-            details: policy.details.map(|details| details.0),
-            masked_result: policy.masked_result,
         }
     }
 }

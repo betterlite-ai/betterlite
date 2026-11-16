@@ -142,10 +142,7 @@ fn base_output(call: &Call, settings: &RepelloAISettings) -> Output {
         api_base: Some(settings.api_base.clone()),
         asset_id: Some(settings.asset_id.clone()),
         key_source: Some(key_source(call, settings.api_key.expose_secret())),
-        requests: Vec::new(),
-        applied: Vec::new(),
-        status: None,
-        caught: None,
+        ..Output::default()
     }
 }
 

@@ -1,5 +1,5 @@
 pub mod analyze;
-mod answer;
+pub mod answer;
 pub mod config;
 pub mod hooks;
 pub mod stream;
@@ -147,19 +147,8 @@ pub fn guardrail_settings(
         supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
         event_hook: Some(event_hook),
         default_on: params.default_on,
-        mask_request_content: false,
-        mask_response_content: false,
-        violation_message_template: None,
-        end_session_after_n_fails: None,
-        on_violation: None,
-        realtime_violation_message: None,
-        on_sensitive_data: None,
-        sensitive_data_route_to_model: None,
-        sticky_session_routing: true,
-        run_in_parallel: false,
-        scan_raw_request: false,
-        only_scan_new_messages: false,
         timeout: params.timeout,
         switches: REPELLO_SWITCHES,
+        ..GuardrailSettings::default()
     }
 }

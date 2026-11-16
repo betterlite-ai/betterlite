@@ -30,7 +30,7 @@ fn a_flagged_verdict_logs_the_policies(#[case] reply: &str, #[case] shown: &str)
 #[rstest]
 #[case::passed(r#"{"verdict": "passed"}"#)]
 #[case::blocked(r#"{"verdict": "blocked"}"#)]
-#[case::absent(r#"{}"#)]
+#[case::absent("{}")]
 fn a_verdict_other_than_flagged_logs_nothing(#[case] reply: &str) {
     let captured = CapturedLog::default();
     let _guard = set_default(captured.subscriber(tracing::Level::WARN));
@@ -50,7 +50,7 @@ async fn a_flagged_scan_allows_the_request_logs_it_and_records_success() {
         &BTreeSet::new(),
     )
     .await;
-    assert!(run.result.is_ok());
+    run.result.unwrap();
     let log = captured.text();
     assert!(
         log.contains("RepelloAI Argus flagged content (allowed):"),

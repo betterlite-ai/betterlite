@@ -25,13 +25,13 @@ fn the_default_request_timeout_is_thirty_seconds() {
 #[test]
 fn a_configured_timeout_is_the_request_timeout() {
     let mut configured = params();
-    configured.timeout = Some(2.5);
+    configured.timeout = Some(2.5_f64);
     let settings = resolved(&configured);
     assert_eq!(settings.request_timeout, Duration::from_millis(2_500));
 }
 
 #[rstest]
-#[case::negative(-1.0)]
+#[case::negative(-1.0_f64)]
 #[case::not_a_number(f64::NAN)]
 #[case::infinite(f64::INFINITY)]
 fn a_timeout_that_is_not_a_duration_is_rejected(#[case] seconds: f64) {
@@ -72,10 +72,10 @@ fn the_parent_settings_chain_every_guardrail_field() {
 #[test]
 fn the_parent_settings_carry_the_timeout_and_default_on() {
     let mut configured = params();
-    configured.timeout = Some(7.0);
+    configured.timeout = Some(7.0_f64);
     configured.default_on = false;
     let settings = guardrail_settings(&configured, configured.mode.clone());
-    assert_eq!(settings.timeout, Some(7.0));
+    assert_eq!(settings.timeout, Some(7.0_f64));
     assert!(!settings.default_on);
 }
 
@@ -83,5 +83,5 @@ fn the_parent_settings_carry_the_timeout_and_default_on() {
 fn a_non_numeric_timeout_fails_to_decode() {
     let body =
         r#"{"guardrail": "repello", "mode": "pre_call", "asset_id": "asset-1", "timeout": "fast"}"#;
-    assert!(decode_litellm_params(body.as_bytes()).is_err());
+    decode_litellm_params(body.as_bytes()).unwrap_err();
 }
