@@ -22,7 +22,7 @@ use super::support::{
     with_warnings,
 };
 
-fn assistant_first_text() {
+fn test_assistant_first_text() {
     let text = r#"{
         "data": [
             {"role": "user", "content": [{"type": "text", "text": {"value": "ignored"}}]},
@@ -69,7 +69,7 @@ fn assistant_first_text() {
     );
 }
 
-fn citation_index_relocation() {
+fn test_citation_index_relocation() {
     assert_eq!(transform_annotations(None), None);
     assert_eq!(transform_annotations(Some(&[])), None);
 
@@ -113,7 +113,7 @@ fn citation_index_relocation() {
     );
 }
 
-fn thread_id_metadata() {
+fn test_thread_id_metadata() {
     block_on(async {
         let counter = FakeCounter::counting(11, 5);
         let existing = AgentReply {
@@ -181,7 +181,7 @@ fn thread_id_metadata() {
     });
 }
 
-fn token_count_warning() {
+fn test_token_count_warning() {
     block_on(async {
         let counter = FakeCounter::counting(7, 3);
         let messages = vec![object(r#"{"role": "user", "content": "hi"}"#)];
@@ -292,7 +292,7 @@ fn token_count_warning() {
     });
 }
 
-fn message_delta_stream() {
+fn test_message_delta_stream() {
     block_on(async {
         let spaced = concat!(
             "  event: thread.message.delta  \n\n",
@@ -333,7 +333,7 @@ fn message_delta_stream() {
     });
 }
 
-fn run_terminal_stream() {
+fn test_run_terminal_stream() {
     block_on(async {
         let citation =
             r#"{"type": "url_citation", "url_citation": {"url": "https://a"}, "start_index": 1}"#;
@@ -408,7 +408,7 @@ fn run_terminal_stream() {
     });
 }
 
-fn split_sse_event() {
+fn test_split_sse_event() {
     block_on(async {
         let crlf = concat!(
             "event: thread.message.delta\r\n\r\n",
@@ -436,7 +436,7 @@ fn split_sse_event() {
     });
 }
 
-fn stream_thread_payload() {
+fn test_stream_thread_payload() {
     let headers: Headers = BTreeMap::from([
         (
             String::from("Authorization"),
@@ -546,7 +546,7 @@ fn stream_thread_payload() {
     );
 }
 
-fn stream_status_failure() {
+fn test_stream_status_failure() {
     block_on(async {
         let ok_stream = open_stream(setup(STATUS_OK), whole("data: [DONE]\n\n"))
             .await
@@ -579,15 +579,15 @@ fn stream_status_failure() {
 }
 
 #[rstest]
-#[case::assistant_first_text(assistant_first_text)]
-#[case::citation_index_relocation(citation_index_relocation)]
-#[case::thread_id_metadata(thread_id_metadata)]
-#[case::token_count_warning(token_count_warning)]
-#[case::message_delta_stream(message_delta_stream)]
-#[case::run_terminal_stream(run_terminal_stream)]
-#[case::split_sse_event(split_sse_event)]
-#[case::stream_thread_payload(stream_thread_payload)]
-#[case::stream_status_failure(stream_status_failure)]
+#[case::assistant_first_text(test_assistant_first_text)]
+#[case::citation_index_relocation(test_citation_index_relocation)]
+#[case::thread_id_metadata(test_thread_id_metadata)]
+#[case::token_count_warning(test_token_count_warning)]
+#[case::message_delta_stream(test_message_delta_stream)]
+#[case::run_terminal_stream(test_run_terminal_stream)]
+#[case::split_sse_event(test_split_sse_event)]
+#[case::stream_thread_payload(test_stream_thread_payload)]
+#[case::stream_status_failure(test_stream_status_failure)]
 fn agent_results_cases(#[case] check: fn()) {
     check();
 }

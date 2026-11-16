@@ -205,13 +205,11 @@ impl FakeCounter {
     }
 
     pub(super) fn failing_completion() -> Self {
-        Self {
-            prompt: 7,
-            completion: 0,
-            fail: false,
-            fail_completion: true,
-            calls: Mutex::new(Vec::new()),
-        }
+        let mut counter = Self::failing();
+        counter.prompt = 7;
+        counter.fail = false;
+        counter.fail_completion = true;
+        counter
     }
 
     pub(super) fn records(&self) -> Vec<Recorded> {

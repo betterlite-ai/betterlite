@@ -41,60 +41,67 @@ pub(super) fn extractions(calls: &[ExtractionCall]) -> Calls {
 }
 
 pub(super) fn annotations(calls: &[AnnotationCall]) -> Calls {
-    let mut answers = Vec::with_capacity(calls.len());
-    for call in calls {
-        let transformed = transform_annotations(Some(&call.annotations));
-        answers.push(serde_json::to_value(transformed).or_config_error()?);
-    }
-    Ok(Value::Array(answers))
+    let answers = calls
+        .iter()
+        .map(|call| transform_annotations(Some(&call.annotations)))
+        .collect::<Vec<_>>();
+    Ok(serde_json::to_value(answers).or_config_error()?)
 }
 
 pub(super) async fn replies(calls: &[ReplyCall]) -> Calls {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
-        let counter = RecordingCounter::new(call.fail);
-        let input = ReplyInput {
-            model: &call.model,
-            content: &call.content,
-            thread_id: &call.thread_id,
-            messages: &call.messages,
-            annotations: call.annotations.clone(),
-        };
-        let existing = AgentReply {
-            model: None,
-            choices: Vec::new(),
-            hidden_params: call.hidden_params.clone(),
-            usage: call.existing_usage,
-        };
-        let reply = build_model_response(existing, &input, &counter).await;
-        answers.push(json!({
-            "reply": serde_json::to_value(&reply).or_config_error()?,
-            "counts": serde_json::to_value(counter.records()).or_config_error()?,
-        }));
+        answers.push(reply_response(call).await?);
     }
-    Ok(Value::Array(answers))
+    Ok(serde_json::to_value(answers).or_config_error()?)
+}
+
+async fn reply_response(call: &ReplyCall) -> Result<ReplyAnswer, Box<HelperError>> {
+    let counter = RecordingCounter::new(call.fail);
+    let input = ReplyInput {
+        model: &call.model,
+        content: &call.content,
+        thread_id: &call.thread_id,
+        messages: &call.messages,
+        annotations: call.annotations.clone(),
+    };
+    let existing = AgentReply {
+        model: None,
+        choices: Vec::new(),
+        hidden_params: call.hidden_params.clone(),
+        usage: call.existing_usage,
+    };
+    let reply = build_model_response(existing, &input, &counter).await;
+    Ok(ReplyAnswer {
+        reply,
+        counts: counter.records(),
+    })
 }
 
 pub(super) async fn streams(calls: &[StreamCall]) -> Calls {
     let mut answers = Vec::with_capacity(calls.len());
     for call in calls {
-        let setup = StreamSetup {
-            model: &call.model,
-            status: STATUS_OK,
-            identity: StreamIdentity {
-                id: call.id.clone(),
-                created: call.created,
-            },
-        };
-        let stream = open_stream(setup, body(&call.body, call.split))
-            .await
-            .or_value_error()?;
-        let chunks = collect_chunks(stream).await?;
-        answers.push(json!({
-            "chunks": serde_json::to_value(chunks).or_config_error()?,
-        }));
+        answers.push(stream_response(call).await?);
     }
     Ok(Value::Array(answers))
+}
+
+async fn stream_response(call: &StreamCall) -> Result<Value, Box<HelperError>> {
+    let setup = StreamSetup {
+        model: &call.model,
+        status: STATUS_OK,
+        identity: StreamIdentity {
+            id: call.id.clone(),
+            created: call.created,
+        },
+    };
+    let stream = open_stream(setup, body(&call.body, call.split))
+        .await
+        .or_value_error()?;
+    let chunks = collect_chunks(stream).await?;
+    Ok(json!({
+        "chunks": serde_json::to_value(chunks).or_config_error()?,
+    }))
 }
 
 pub(super) async fn requests(calls: &[RequestCall]) -> Calls {
@@ -218,6 +225,12 @@ impl RecordingCounter {
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
     }
+}
+
+#[derive(Serialize)]
+struct ReplyAnswer {
+    reply: AgentReply,
+    counts: Vec<Recorded>,
 }
 
 #[derive(Debug, Clone, Serialize)]
