@@ -1,9 +1,8 @@
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::slice::{Iter, IterMut};
 
 use betterlite_core::api::fal::edit::image_input::EditImage;
-use betterlite_openai::openai_video_identifiers::multipart::ReadSeek;
 
 use crate::helpers::HelperError;
 
@@ -27,6 +26,8 @@ impl Sources {
     }
 }
 
+type SlotImages<'value> = Vec<Option<EditImage<'value>>>;
+
 pub(super) enum Slot {
     Absent,
     Bytes,
@@ -48,58 +49,37 @@ impl<'value> Slots<'value> {
     fn image(&mut self, slot: &Slot) -> Result<Option<EditImage<'value>>, Box<HelperError>> {
         match slot {
             Slot::Absent => Ok(None),
-            Slot::Bytes => Ok(Some(EditImage::Bytes(self.next_content()?))),
-            Slot::Text => Ok(Some(EditImage::Text(self.next_text()?))),
-            Slot::Path => Ok(Some(EditImage::Path(self.next_path()?))),
-            Slot::Reader => Ok(Some(EditImage::Reader(self.next_reader()?))),
-            Slot::Tuple => Ok(Some(EditImage::Tuple(self.next_inner()?))),
+            Slot::Bytes => Ok(Some(EditImage::Bytes(next_source(
+                &mut self.contents,
+                "images",
+            )?))),
+            Slot::Text => Ok(Some(EditImage::Text(next_source(
+                &mut self.texts,
+                "texts",
+            )?))),
+            Slot::Path => Ok(Some(EditImage::Path(next_source(
+                &mut self.paths,
+                "paths",
+            )?))),
+            Slot::Reader => Ok(Some(EditImage::Reader(next_source(
+                &mut self.readers,
+                "readers",
+            )?))),
+            Slot::Tuple => Ok(Some(EditImage::Tuple(next_source(
+                &mut self.inners,
+                "tuples",
+            )?))),
         }
     }
+}
 
-    fn next_content(&mut self) -> Result<&'value [u8], Box<HelperError>> {
-        match self.contents.next() {
-            Some(content) => Ok(content),
-            None => Err(helper_error(
-                "the prepare case lists more images than it holds".to_owned(),
-            )),
-        }
-    }
-
-    fn next_text(&mut self) -> Result<&'value str, Box<HelperError>> {
-        match self.texts.next() {
-            Some(text) => Ok(text),
-            None => Err(helper_error(
-                "the prepare case lists more texts than it holds".to_owned(),
-            )),
-        }
-    }
-
-    fn next_path(&mut self) -> Result<&'value Path, Box<HelperError>> {
-        match self.paths.next() {
-            Some(path) => Ok(path),
-            None => Err(helper_error(
-                "the prepare case lists more paths than it holds".to_owned(),
-            )),
-        }
-    }
-
-    fn next_reader(&mut self) -> Result<&'value mut dyn ReadSeek, Box<HelperError>> {
-        match self.readers.next() {
-            Some(reader) => Ok(reader),
-            None => Err(helper_error(
-                "the prepare case lists more readers than it holds".to_owned(),
-            )),
-        }
-    }
-
-    fn next_inner(&mut self) -> Result<&'value mut EditImage<'value>, Box<HelperError>> {
-        match self.inners.next() {
-            Some(inner) => Ok(inner),
-            None => Err(helper_error(
-                "the prepare case lists more tuples than it holds".to_owned(),
-            )),
-        }
-    }
+fn next_source<Source: Iterator>(
+    sources: &mut Source,
+    kind: &str,
+) -> Result<Source::Item, Box<HelperError>> {
+    sources
+        .next()
+        .ok_or_else(|| helper_error(format!("the prepare case lists more {kind} than it holds")))
 }
 
 pub(super) fn collect_slots(
@@ -109,13 +89,13 @@ pub(super) fn collect_slots(
 ) -> Result<Vec<Slot>, Box<HelperError>> {
     let mut slots = Vec::with_capacity(entries.len());
     for entry in entries {
-        slots.push(collect_slot(entry, sources, readers)?);
+        slots.push(collect_slot(entry.as_ref(), sources, readers)?);
     }
     Ok(slots)
 }
 
 fn collect_slot(
-    entry: &Option<PrepareImage>,
+    entry: Option<&PrepareImage>,
     sources: &mut Sources,
     readers: &mut Vec<Cursor<Vec<u8>>>,
 ) -> Result<Slot, Box<HelperError>> {
@@ -152,13 +132,7 @@ pub(super) fn request_arrays<'value>(
     inners: &'value mut [EditImage<'value>],
     image_slots: &[Slot],
     mask_slots: &[Slot],
-) -> Result<
-    (
-        Vec<Option<EditImage<'value>>>,
-        Vec<Option<EditImage<'value>>>,
-    ),
-    Box<HelperError>,
-> {
+) -> Result<(SlotImages<'value>, SlotImages<'value>), Box<HelperError>> {
     let mut slots = Slots {
         contents: sources.contents.iter(),
         texts: sources.texts.iter(),
@@ -174,7 +148,7 @@ pub(super) fn request_arrays<'value>(
 fn build_array<'value>(
     slots: &mut Slots<'value>,
     cases: &[Slot],
-) -> Result<Vec<Option<EditImage<'value>>>, Box<HelperError>> {
+) -> Result<SlotImages<'value>, Box<HelperError>> {
     let mut images = Vec::with_capacity(cases.len());
     for case in cases {
         images.push(slots.image(case)?);

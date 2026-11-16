@@ -718,14 +718,16 @@ fn depth_rejects_more_than_one_control_image() {
 fn depth_counts_only_non_null_images() {
     let kept = EditImage::Bytes(PNG);
     let mut one = [None, Some(kept)];
-    assert!(
-        flux_lora_depth::transform_image_edit_request(&mut request(
-            None,
-            &mut one,
-            &mut [],
-            &ImageParams::new()
-        ))
-        .is_ok()
+    let form = flux_lora_depth::transform_image_edit_request(&mut request(
+        None,
+        &mut one,
+        &mut [],
+        &ImageParams::new(),
+    ))
+    .expect("one non-null control image");
+    assert_eq!(
+        form.data.get("image_url"),
+        Some(&text("data:image/png;base64,iVBORw0KGgo="))
     );
     let first = EditImage::Bytes(PNG);
     let second = EditImage::Bytes(JPEG);
@@ -753,6 +755,12 @@ fn response_projects_images_and_the_injected_created_time() {
     assert_eq!(response.output_format, None);
     assert_eq!(response.size, None);
     assert_eq!(response.data.len(), 3);
+}
+
+#[test]
+fn response_keeps_image_dimensions_as_provider_fields() {
+    let body = br#"{"images":[{"url":"https://fal.test/1.png","width":512,"height":768,"content_type":"image/png"},"https://fal.test/2.png",true,{"b64_json":"iVBORw0KGgo="}]}"#;
+    let response = transform_image_edit_response(200, &headers(), body, 0).expect("a response");
     assert_eq!(
         response.data[0].url.as_deref(),
         Some("https://fal.test/1.png")
@@ -781,7 +789,7 @@ fn response_without_images_starts_an_empty_list() {
         transform_image_edit_response(200, &headers(), br#"{"images":[]}"#, 5).expect("a response");
     assert_eq!(empty.created, 5);
     assert!(empty.data.is_empty());
-    let absent = transform_image_edit_response(200, &headers(), br#"{}"#, 5).expect("a response");
+    let absent = transform_image_edit_response(200, &headers(), b"{}", 5).expect("a response");
     assert!(absent.data.is_empty());
     let not_a_list = transform_image_edit_response(
         200,

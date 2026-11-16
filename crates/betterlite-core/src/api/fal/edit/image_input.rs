@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 use std::fs;
-use std::io::{Read, Seek, SeekFrom};
+use std::io::SeekFrom;
 use std::path::Path;
 
 use base64::Engine as _;
@@ -16,7 +16,7 @@ pub enum EditImage<'value> {
     Bytes(&'value [u8]),
     Path(&'value Path),
     Reader(&'value mut dyn ReadSeek),
-    Tuple(&'value mut EditImage<'value>),
+    Tuple(&'value mut Self),
     Other(&'value Json),
 }
 
@@ -35,7 +35,7 @@ pub fn read_image_bytes<'image>(
                 })
         }
         EditImage::Reader(reader) => read_reader(&mut **reader).map(Cow::Owned),
-        EditImage::Tuple(inner) => read_image_bytes(&mut **inner),
+        EditImage::Tuple(inner) => read_image_bytes(inner),
         EditImage::Text(_) => Err(FalEditError::UnsupportedImage { kind: "str" }),
         EditImage::Other(value) => Err(FalEditError::UnsupportedImage {
             kind: json_kind(value),
