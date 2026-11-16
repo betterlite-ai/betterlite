@@ -26,7 +26,7 @@ pub(super) fn image_reply(reply: &ImageGenerationReply) -> Value {
     })
 }
 
-pub(super) fn method_name(method: MediaMethod) -> &'static str {
+pub(super) const fn method_name(method: MediaMethod) -> &'static str {
     match method {
         MediaMethod::Get => "GET",
         MediaMethod::Post => "POST",

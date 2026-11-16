@@ -100,31 +100,12 @@ pub(super) async fn image_edit(case: &ImageEditCase) -> HelperResult {
 }
 
 pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
-    let request = ImageVariationRequest {
-        model: Some(case.model.clone()),
-        image: ImageFile {
-            filename: case.image_filename.clone(),
-            content: case.image_content.clone().into_bytes(),
-            content_type: case.image_content_type.clone(),
-        },
-        optional_params: case.options.clone(),
-        headers: None,
-        api_key: Some(SecretString::from("sk-variation")),
-        api_base: Some(case.api_base.clone()),
-        organization: None,
-        timeout: Some(TIMEOUT),
-        params: ImageVariationParams::default(),
-        client: None,
-        shared_session: None,
-        config: None,
-        boundary: String::from("media-boundary"),
-        now_seconds: NOW,
-    };
+    let operation = variation_request(case);
     let fixture = Fixture::new(case.status, reply_bytes(&case.reply)?);
     let mut logger = Recorder;
     let result = dispatch(
         OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::ImageVariation(Box::new(request)),
+        OpenAiMediaOperation::ImageVariation(Box::new(operation)),
         &fixture,
         &mut logger,
     )
@@ -147,6 +128,29 @@ pub(super) async fn image_variation(case: &ImageVariationCase) -> HelperResult {
         Err(error) => return Err(leaf_failure(&error)),
     };
     Ok(serde_json::json!({"request": request, "reply": reply, "error": raised}))
+}
+
+fn variation_request(case: &ImageVariationCase) -> ImageVariationRequest {
+    ImageVariationRequest {
+        model: Some(case.model.clone()),
+        image: ImageFile {
+            filename: case.image_filename.clone(),
+            content: case.image_content.clone().into_bytes(),
+            content_type: case.image_content_type.clone(),
+        },
+        optional_params: case.options.clone(),
+        headers: None,
+        api_key: Some(SecretString::from("sk-variation")),
+        api_base: Some(case.api_base.clone()),
+        organization: None,
+        timeout: Some(TIMEOUT),
+        params: ImageVariationParams::default(),
+        client: None,
+        shared_session: None,
+        config: None,
+        boundary: String::from("media-boundary"),
+        now_seconds: NOW,
+    }
 }
 
 fn files(case_files: &[ImageFileCase]) -> Vec<Option<ImageEditFile>> {

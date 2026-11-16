@@ -3,7 +3,11 @@ import json
 from typing import Annotated, Final, Literal, TypeAlias, TypedDict
 
 import litellm
-from openai_image_edits import FileSpec, Probe as ImageEditProbe, transform_value
+from openai_image_edits import (
+    FileSpec,
+    Probe as ImageEditProbe,
+    transform_value as image_edit_outcome,
+)
 from openai_image_generation.probe import Answer as ImageAnswer, Probe as ImageProbe
 from openai_image_generation.request import request_value as image_generation_outcome
 from openai_image_variations.probe import Probe as VariationProbe, Reply as VariationReply

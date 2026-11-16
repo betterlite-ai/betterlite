@@ -28,25 +28,7 @@ use super::views::text;
 use super::{OTHER_OUTCOME, SpeechCase, TranscriptionCase, failure, leaf_failure};
 
 pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
-    let operation = SpeechOperation {
-        model: case.model.clone(),
-        input: case.input.clone(),
-        voice: case.voice.clone(),
-        options: case.options.clone(),
-        connection: SpeechConnection {
-            api_key: Some(SecretString::from("sk-speech")),
-            api_base: Some(case.api_base.clone()),
-            timeout: Duration::from_secs(60),
-            max_retries: 0,
-            organization: None,
-            project: None,
-            environment_organization: None,
-            environment_project: None,
-            client: None,
-            shared_session: None,
-        },
-        aspeech: false,
-    };
+    let operation = speech_operation(case);
     let mut headers = HeaderMap::new();
     if let Some(content_type) = &case.content_type {
         headers.insert(
@@ -66,7 +48,36 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
     .await;
     let sent = fixture.only_request()?;
     let request = speech_request(&sent, &case.options)?;
-    let value = match result {
+    speech_outcome(result, request).await
+}
+
+fn speech_operation(case: &SpeechCase) -> SpeechOperation {
+    SpeechOperation {
+        model: case.model.clone(),
+        input: case.input.clone(),
+        voice: case.voice.clone(),
+        options: case.options.clone(),
+        connection: SpeechConnection {
+            api_key: Some(SecretString::from("sk-speech")),
+            api_base: Some(case.api_base.clone()),
+            timeout: Duration::from_secs(60),
+            max_retries: 0,
+            organization: None,
+            project: None,
+            environment_organization: None,
+            environment_project: None,
+            client: None,
+            shared_session: None,
+        },
+        aspeech: false,
+    }
+}
+
+async fn speech_outcome(
+    result: Result<OperationResult, OpenAiMediaError>,
+    request: Value,
+) -> HelperResult {
+    match result {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Speech(response))) => {
             let status = response.status;
             let content_type = response.content_type.clone();
@@ -74,16 +85,16 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
                 .content(1_048_576)
                 .await
                 .map_err(|error| failure("SpeechBody", error))?;
-            serde_json::json!({
+            Ok(serde_json::json!({
                 "request": request,
                 "status": status,
                 "content_type": content_type,
                 "body": text(&body)?,
                 "error": Value::Null,
-            })
+            }))
         }
-        Ok(_) => return Err(failure("Variant", OTHER_OUTCOME)),
-        Err(OpenAiMediaError::Speech(SpeechError::Status(raised))) => serde_json::json!({
+        Ok(_) => Err(failure("Variant", OTHER_OUTCOME)),
+        Err(OpenAiMediaError::Speech(SpeechError::Status(raised))) => Ok(serde_json::json!({
             "request": request,
             "status": Value::Null,
             "content_type": Value::Null,
@@ -94,13 +105,30 @@ pub(super) async fn speech(case: &SpeechCase) -> HelperResult {
                 "param": raised.param.clone(),
                 "code": raised.code.clone(),
             },
-        }),
-        Err(error) => return Err(leaf_failure(&error)),
-    };
-    Ok(value)
+        })),
+        Err(error) => Err(leaf_failure(&error)),
+    }
 }
 
 pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
+    let operation = transcription_operation(case)?;
+    let fixture = Fixture::new(case.status, case.reply.clone().into_bytes());
+    let mut logger = Recorder;
+    let result = dispatch(
+        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
+        OpenAiMediaOperation::Transcription(Box::new(operation)),
+        &fixture,
+        &mut logger,
+    )
+    .await;
+    let sent = fixture.only_request()?;
+    let request = transcription_request(&sent)?;
+    transcription_outcome(result, request)
+}
+
+fn transcription_operation(
+    case: &TranscriptionCase,
+) -> Result<TranscriptionOperation, Box<HelperError>> {
     let family = match case.family.as_str() {
         "whisper" => TranscriptionFamily::Whisper,
         "gpt" => TranscriptionFamily::Gpt,
@@ -111,7 +139,7 @@ pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
             ));
         }
     };
-    let operation = TranscriptionOperation {
+    Ok(TranscriptionOperation {
         input: String::from("a.wav"),
         file: ProcessedAudioFile {
             file_content: b"abc".to_vec(),
@@ -131,23 +159,22 @@ pub(super) async fn transcription(case: &TranscriptionCase) -> HelperResult {
         family: Some(family),
         optional_params: case.options.clone(),
         atranscription: false,
-    };
-    let fixture = Fixture::new(case.status, case.reply.clone().into_bytes());
-    let mut logger = Recorder;
-    let result = dispatch(
-        OperationRequest::OpenAiMedia(OpenAiMediaRequest),
-        OpenAiMediaOperation::Transcription(Box::new(operation)),
-        &fixture,
-        &mut logger,
-    )
-    .await;
-    let sent = fixture.only_request()?;
-    let request = serde_json::json!({
-        "url": sent.url.as_str(),
-        "authorization": fixtures::header(&sent, "authorization"),
-        "accept": fixtures::header(&sent, "accept"),
-        "parts": fixtures::multipart_view(&sent)?,
-    });
+    })
+}
+
+fn transcription_request(request: &OutboundRequest) -> Result<Value, Box<HelperError>> {
+    Ok(serde_json::json!({
+        "url": request.url.as_str(),
+        "authorization": fixtures::header(request, "authorization"),
+        "accept": fixtures::header(request, "accept"),
+        "parts": fixtures::multipart_view(request)?,
+    }))
+}
+
+fn transcription_outcome(
+    result: Result<OperationResult, OpenAiMediaError>,
+    request: Value,
+) -> HelperResult {
     let (reply, raised) = match result {
         Ok(OperationResult::OpenAiMedia(OpenAiMediaResult::Transcription(reply))) => (
             serde_json::json!({
