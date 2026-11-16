@@ -10,7 +10,7 @@ use crate::straiker::delivery::fixtures::{
     Fakes, V1_ALLOW, V3_ALLOW, delivery, inputs, raw, reply, request_data, run, sent, settings,
     v3_raw,
 };
-use crate::straiker::delivery::headers::compose;
+use crate::straiker::delivery::transport::compose;
 
 fn custom(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
     entries

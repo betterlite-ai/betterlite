@@ -184,7 +184,9 @@ async fn a_session_is_derived_steadily_from_the_first_message() {
     let derived = session_at(&handler, 0).expect("a conversation session");
     assert!(derived.starts_with("litellm-"));
     assert_eq!(derived.len(), "litellm-".len() + 32);
-    let hex = &derived["litellm-".len()..];
+    let hex = derived
+        .strip_prefix("litellm-")
+        .expect("the derived session carries the prefix");
     assert!(
         hex.chars()
             .all(|letter| letter.is_ascii_hexdigit() && !letter.is_ascii_uppercase())

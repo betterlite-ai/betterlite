@@ -8,15 +8,15 @@ use crate::straiker::delivery::fixtures::{
     Fakes, V3_ALLOW, V3_BLOCK, capture_warnings, delivery, inputs, raw, reply, request_data, run,
     settings, v3_raw,
 };
-use crate::straiker::delivery::responses::{Verdict, VerdictAction, parse, parse_v1, parse_v3};
+use crate::straiker::delivery::responses::{Verdict, VerdictAction, parse};
 use crate::straiker::delivery::settings::ApiVersion;
 
 fn verdict_v1(body: &str) -> Verdict {
-    parse_v1(body).expect("a valid v1 answer")
+    parse(ApiVersion::V1, body).expect("a valid v1 answer")
 }
 
 fn verdict_v3(body: &str) -> Verdict {
-    parse_v3(body).expect("a valid v3 answer")
+    parse(ApiVersion::V3, body).expect("a valid v3 answer")
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn a_v1_verdict_reads_only_the_camel_case_turn_id() {
 #[case::float("1.5", "float")]
 #[case::boolean("true", "bool")]
 fn a_v1_answer_that_is_not_an_object_names_its_type(#[case] body: &str, #[case] kind: &str) {
-    let error = parse_v1(body).expect_err("the answer is not an object");
+    let error = parse(ApiVersion::V1, body).expect_err("the answer is not an object");
     assert_eq!(
         error.message,
         format!("invalid response schema: expected an object, got {kind}")
@@ -82,7 +82,7 @@ fn a_v1_answer_that_is_not_an_object_names_its_type(#[case] body: &str, #[case] 
 
 #[test]
 fn a_v1_answer_that_is_not_json_is_a_schema_error() {
-    let error = parse_v1("{").expect_err("the answer is not JSON");
+    let error = parse(ApiVersion::V1, "{").expect_err("the answer is not JSON");
     assert!(error.message.starts_with("invalid response schema: "));
     assert!(!error.retryable);
     assert!(!error.is_unreachable);
@@ -90,7 +90,7 @@ fn a_v1_answer_that_is_not_json_is_a_schema_error() {
 
 #[test]
 fn a_v1_answer_with_an_unknown_action_is_a_schema_error() {
-    let error = parse_v1(r#"{"action":"MAYBE"}"#).expect_err("the action is unknown");
+    let error = parse(ApiVersion::V1, r#"{"action":"MAYBE"}"#).expect_err("the action is unknown");
     assert!(error.message.starts_with("invalid response schema: "));
 }
 
@@ -103,7 +103,7 @@ fn the_api_version_picks_the_reader() {
             .action,
         VerdictAction::Blocked
     );
-    assert!(parse(ApiVersion::V1, flat_block).is_err());
+    parse(ApiVersion::V1, flat_block).expect_err("a v3 answer is not a v1 one");
     assert_eq!(
         parse(ApiVersion::V1, r#"{"action":"BLOCKED"}"#)
             .expect("a v1 answer")
@@ -172,7 +172,7 @@ fn a_blocking_control_blocks_even_beside_an_allow() {
 #[case::empty("{}")]
 #[case::asked(r#"{"straiker":{"action":"ask"}}"#)]
 fn a_v3_answer_without_a_decision_is_a_schema_error(#[case] body: &str) {
-    let error = parse_v3(body).expect_err("there is no verdict");
+    let error = parse(ApiVersion::V3, body).expect_err("there is no verdict");
     assert_eq!(
         error.message,
         "invalid response schema: no allow or block decision"
@@ -194,7 +194,7 @@ fn a_v3_turn_id_falls_back_to_the_body() {
 
 #[test]
 fn a_v3_answer_that_is_not_an_object_names_its_type() {
-    let error = parse_v3("[]").expect_err("the answer is not an object");
+    let error = parse(ApiVersion::V3, "[]").expect_err("the answer is not an object");
     assert_eq!(
         error.message,
         "invalid response schema: expected an object, got list"
@@ -267,11 +267,11 @@ async fn a_v3_reply_is_read_by_the_v3_reader() {
     assert_eq!(message, "policy");
 
     let allowed_delivery = delivery(settings(&v3_raw()), vec![reply(200, V3_ALLOW)]);
-    let mut data =
+    let mut allowed =
         request_data(r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}"#);
     run(
         &allowed_delivery,
-        &mut data,
+        &mut allowed,
         inputs(&[]),
         GuardrailInputType::Request,
         &call,

@@ -132,7 +132,7 @@ async fn a_response_block_raises_a_modify_response() {
     )
     .await
     .expect_err("the answer blocks");
-    let GuardrailFailure::ModifyResponse(failure) = failure else {
+    let GuardrailFailure::ModifyResponse(modify) = failure else {
         panic!("expected a modify-response block");
     };
     let ModifyResponseFailure {
@@ -142,7 +142,7 @@ async fn a_response_block_raises_a_modify_response() {
         guardrail_name,
         detection_info,
         original_response,
-    } = *failure;
+    } = *modify;
     assert_eq!(message, "policy");
     assert_eq!(model, "gpt-4o");
     assert_eq!(guardrail_name.as_deref(), Some("straiker"));
@@ -169,9 +169,9 @@ async fn a_response_block_without_a_usable_model_names_unknown(#[case] body: &st
     )
     .await
     .expect_err("the answer blocks");
-    let GuardrailFailure::ModifyResponse(failure) = failure else {
+    let GuardrailFailure::ModifyResponse(modify) = failure else {
         panic!("expected a modify-response block");
     };
-    assert_eq!(failure.model, "unknown");
-    assert_eq!(failure.request_data, data);
+    assert_eq!(modify.model, "unknown");
+    assert_eq!(modify.request_data, data);
 }

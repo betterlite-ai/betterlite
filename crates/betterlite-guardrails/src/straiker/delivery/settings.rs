@@ -16,6 +16,14 @@ use crate::straiker_webhook::modes::{ModeError, configured_modes};
 use crate::third_party_init_b::straiker::StraikerArgs;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 5;
+const FALLBACKS: [(&str, UnreachableFallback); 2] = [
+    ("fail_closed", UnreachableFallback::FailClosed),
+    ("fail_open", UnreachableFallback::FailOpen),
+];
+const FORMAT_HINTS: [(&str, FormatHint); 2] = [
+    ("anthropic.messages", FormatHint::AnthropicMessages),
+    ("openai.chat", FormatHint::OpenAiChat),
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ApiVersion {
@@ -91,67 +99,77 @@ impl StraikerSettings {
         if raw.api_key.expose_secret().is_empty() {
             return Err(SettingsError::EmptyApiKey);
         }
-        let unreachable_fallback = fallback_of(&raw.unreachable_fallback)?;
+        let unreachable_fallback = fallback_of(raw)?;
         let api_version = api_version_of(raw)?;
-        let format_hint = format_hint_of(raw.format_hint.as_deref())?;
+        let format_hint = format_hint_of(raw)?;
         let (initial_backoff, max_backoff) = backoffs(raw)?;
+        let timeout = timeout_of(raw.timeout)?;
+        let max_payload_bytes = max_payload_bytes_of(raw.max_payload_bytes)?;
+        let modes: Json = serde_json::from_value(serde_json::to_value(&raw.event_hook)?)?;
         Ok(Self {
-            guardrail_name: name_of(raw),
+            guardrail_name: if raw.name.is_empty() {
+                GUARDRAIL_NAME.to_owned()
+            } else {
+                raw.name.clone()
+            },
             api_key: raw.api_key.clone(),
             api_base: raw.api_base.trim_end_matches('/').to_owned(),
             api_version,
-            agent_ref: optional_text(raw.agent_ref.as_deref()),
-            client: optional_text(raw.client.as_deref()),
+            agent_ref: raw.agent_ref.clone().filter(|text| !text.is_empty()),
+            client: raw.client.clone().filter(|text| !text.is_empty()),
             format_hint,
             source: raw.source.clone(),
-            timeout: timeout_of(raw.timeout)?,
+            timeout,
             max_retries: raw.max_retries.unwrap_or(DEFAULT_MAX_RETRIES).max(0),
             initial_backoff,
             max_backoff,
             unreachable_fallback,
             fail_on_error: raw.fail_on_error,
-            max_payload_bytes: max_payload_bytes_of(raw.max_payload_bytes)?,
+            max_payload_bytes,
             custom_headers: raw.custom_headers.clone().unwrap_or_default(),
             metadata: raw.metadata.clone().unwrap_or_default(),
             verbose: raw.verbose.unwrap_or(false),
-            configured_modes: configured_modes_of(&raw.event_hook)?,
+            configured_modes: configured_modes(Some(&modes))?,
         })
     }
 
     #[must_use]
     pub fn webhook_url(&self) -> String {
-        let base = self.api_base.as_str();
-        let path = match self.api_version {
-            ApiVersion::V3 => DETECT_PATH,
-            ApiVersion::V1 => WEBHOOK_PATH,
+        let path = if self.api_version == ApiVersion::V3 {
+            DETECT_PATH
+        } else {
+            WEBHOOK_PATH
         };
-        format!("{base}{path}")
+        format!("{}{path}", self.api_base)
     }
 }
 
-fn name_of(raw: &StraikerArgs) -> String {
-    if raw.name.is_empty() {
-        GUARDRAIL_NAME.to_owned()
-    } else {
-        raw.name.clone()
-    }
+fn choice<Choice>(value: &str, table: &[(&str, Choice)]) -> Option<Choice>
+where
+    Choice: Copy,
+{
+    table
+        .iter()
+        .find(|(name, _)| *name == value)
+        .map(|(_, found)| *found)
 }
 
-fn optional_text(value: Option<&str>) -> Option<String> {
-    match value {
-        Some(text) if !text.is_empty() => Some(text.to_owned()),
-        Some(_) | None => None,
-    }
+fn fallback_of(raw: &StraikerArgs) -> Result<UnreachableFallback, SettingsError> {
+    choice(&raw.unreachable_fallback, &FALLBACKS).ok_or_else(|| {
+        SettingsError::UnreachableFallback {
+            value: raw.unreachable_fallback.clone(),
+        }
+    })
 }
 
-fn fallback_of(value: &str) -> Result<UnreachableFallback, SettingsError> {
-    match value {
-        "fail_closed" => Ok(UnreachableFallback::FailClosed),
-        "fail_open" => Ok(UnreachableFallback::FailOpen),
-        other => Err(SettingsError::UnreachableFallback {
-            value: other.to_owned(),
-        }),
-    }
+fn format_hint_of(raw: &StraikerArgs) -> Result<Option<FormatHint>, SettingsError> {
+    let Some(value) = raw.format_hint.as_deref() else {
+        return Ok(None);
+    };
+    let hint = choice(value, &FORMAT_HINTS);
+    hint.map(Some).ok_or_else(|| SettingsError::FormatHint {
+        value: value.to_owned(),
+    })
 }
 
 // An sk_agt_ key cannot drive the v1 webhook, so it routes to v3 whatever api_version says.
@@ -177,15 +195,19 @@ fn api_version_of(raw: &StraikerArgs) -> Result<ApiVersion, SettingsError> {
     Ok(configured.unwrap_or(ApiVersion::V1))
 }
 
-fn format_hint_of(value: Option<&str>) -> Result<Option<FormatHint>, SettingsError> {
-    match value {
-        None => Ok(None),
-        Some("anthropic.messages") => Ok(Some(FormatHint::AnthropicMessages)),
-        Some("openai.chat") => Ok(Some(FormatHint::OpenAiChat)),
-        Some(other) => Err(SettingsError::FormatHint {
-            value: other.to_owned(),
-        }),
-    }
+fn timeout_of(configured: Option<f64>) -> Result<Duration, SettingsError> {
+    let Some(seconds) = configured else {
+        return Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
+    };
+    Duration::try_from_secs_f64(seconds)
+        .map_err(|_invalid| SettingsError::Timeout { value: seconds })
+}
+
+fn max_payload_bytes_of(configured: Option<i64>) -> Result<usize, SettingsError> {
+    let Some(bytes) = configured else {
+        return Ok(DEFAULT_MAX_PAYLOAD_BYTES);
+    };
+    usize::try_from(bytes).map_err(|_negative| SettingsError::MaxPayloadBytes { value: bytes })
 }
 
 fn backoffs(raw: &StraikerArgs) -> Result<(f64, f64), SettingsError> {
@@ -201,27 +223,4 @@ fn backoffs(raw: &StraikerArgs) -> Result<(f64, f64), SettingsError> {
         return Err(SettingsError::MaxBackoff { value: max });
     }
     Ok((initial, max))
-}
-
-fn timeout_of(seconds: Option<f64>) -> Result<Duration, SettingsError> {
-    let Some(seconds) = seconds else {
-        return Ok(Duration::from_secs(DEFAULT_TIMEOUT_SECONDS));
-    };
-    Duration::try_from_secs_f64(seconds)
-        .map_err(|_invalid| SettingsError::Timeout { value: seconds })
-}
-
-fn max_payload_bytes_of(bytes: Option<i64>) -> Result<usize, SettingsError> {
-    let Some(bytes) = bytes else {
-        return Ok(DEFAULT_MAX_PAYLOAD_BYTES);
-    };
-    usize::try_from(bytes).map_err(|_negative| SettingsError::MaxPayloadBytes { value: bytes })
-}
-
-fn configured_modes_of(
-    event_hook: &LitellmParamsMode,
-) -> Result<Option<Vec<String>>, SettingsError> {
-    let encoded = serde_json::to_value(event_hook)?;
-    let value: Json = serde_json::from_value(encoded)?;
-    Ok(configured_modes(Some(&value))?)
 }

@@ -8,9 +8,9 @@ use crate::straiker::delivery::fixtures::{raw, settings};
 use crate::straiker::delivery::settings::{SettingsError, StraikerSettings};
 
 #[rstest]
-#[case::negative(-5, 0)]
-#[case::zero(0, 0)]
-#[case::positive(7, 7)]
+#[case::negative(-5_i64, 0_i64)]
+#[case::zero(0_i64, 0_i64)]
+#[case::positive(7_i64, 7_i64)]
 fn retries_are_clamped_to_zero_or_more(#[case] configured: i64, #[case] expected: i64) {
     let mut args = raw();
     args.max_retries = Some(configured);
@@ -18,10 +18,10 @@ fn retries_are_clamped_to_zero_or_more(#[case] configured: i64, #[case] expected
 }
 
 #[rstest]
-#[case::negative(-1.5, 0.0)]
-#[case::zero(0.0, 0.0)]
-#[case::positive(0.25, 0.25)]
-#[case::nan(f64::NAN, 0.0)]
+#[case::negative(-1.5_f64, 0.0_f64)]
+#[case::zero(0.0_f64, 0.0_f64)]
+#[case::positive(0.25_f64, 0.25_f64)]
+#[case::nan(f64::NAN, 0.0_f64)]
 fn the_initial_backoff_is_clamped_to_zero_or_more(#[case] configured: f64, #[case] expected: f64) {
     let mut args = raw();
     args.initial_backoff = Some(configured);
@@ -34,23 +34,23 @@ fn the_initial_backoff_is_clamped_to_zero_or_more(#[case] configured: f64, #[cas
 #[test]
 fn a_max_backoff_below_the_initial_is_raised_to_it() {
     let mut args = raw();
-    args.initial_backoff = Some(0.5);
-    args.max_backoff = Some(0.25);
+    args.initial_backoff = Some(0.5_f64);
+    args.max_backoff = Some(0.25_f64);
     assert_eq!(settings(&args).max_backoff.to_bits(), 0.5_f64.to_bits());
 }
 
 #[test]
 fn a_max_backoff_without_the_initial_is_raised_to_it() {
     let mut args = raw();
-    args.initial_backoff = Some(5.0);
+    args.initial_backoff = Some(5.0_f64);
     assert_eq!(settings(&args).max_backoff.to_bits(), 5.0_f64.to_bits());
 }
 
 #[test]
 fn a_max_backoff_above_the_initial_is_kept() {
     let mut args = raw();
-    args.initial_backoff = Some(0.5);
-    args.max_backoff = Some(3.0);
+    args.initial_backoff = Some(0.5_f64);
+    args.max_backoff = Some(3.0_f64);
     assert_eq!(settings(&args).max_backoff.to_bits(), 3.0_f64.to_bits());
 }
 
@@ -80,8 +80,8 @@ fn an_infinite_max_backoff_is_rejected() {
 
 #[rstest]
 #[case::unset(None, Duration::from_secs(5))]
-#[case::zero(Some(0.0), Duration::ZERO)]
-#[case::fractional(Some(2.5), Duration::from_millis(2500))]
+#[case::zero(Some(0.0_f64), Duration::ZERO)]
+#[case::fractional(Some(2.5_f64), Duration::from_millis(2500))]
 fn the_timeout_is_read_as_seconds(#[case] configured: Option<f64>, #[case] expected: Duration) {
     let mut args = raw();
     args.timeout = configured;
@@ -89,7 +89,7 @@ fn the_timeout_is_read_as_seconds(#[case] configured: Option<f64>, #[case] expec
 }
 
 #[rstest]
-#[case::negative(-1.0, "-1")]
+#[case::negative(-1.0_f64, "-1")]
 #[case::infinite(f64::INFINITY, "inf")]
 fn an_unusable_timeout_is_rejected(#[case] configured: f64, #[case] shown: &str) {
     let mut args = raw();
@@ -103,9 +103,9 @@ fn an_unusable_timeout_is_rejected(#[case] configured: f64, #[case] shown: &str)
 }
 
 #[rstest]
-#[case::unset(None, 524_288)]
-#[case::zero(Some(0), 0)]
-#[case::exact(Some(1024), 1024)]
+#[case::unset(None, 512_usize * 1024)]
+#[case::zero(Some(0_i64), 0_usize)]
+#[case::exact(Some(1024_i64), 1024_usize)]
 fn the_payload_limit_is_read_as_bytes(#[case] configured: Option<i64>, #[case] expected: usize) {
     let mut args = raw();
     args.max_payload_bytes = configured;

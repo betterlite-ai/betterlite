@@ -1,15 +1,20 @@
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 
-use crate::generic_guardrail_contracts::GuardrailResponseAction;
 use crate::straiker::delivery::settings::ApiVersion;
-use crate::straiker::v3::response_mapping::{StraikerWebhookAction, response};
+use crate::straiker::v3::response_mapping::{
+    StraikerWebhookAction, StraikerWebhookResponse, response,
+};
 use crate::straiker_webhook::failure::WebhookFailure;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq)]
 pub enum VerdictAction {
+    #[serde(rename = "NONE")]
+    #[default]
     None,
+    #[serde(rename = "BLOCKED")]
     Blocked,
+    #[serde(rename = "GUARDRAIL_INTERVENED")]
     Intervened,
 }
 
@@ -24,78 +29,48 @@ impl VerdictAction {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+// LiteLLM's StraikerWebhookResponse pydantic model: the v1 webhook's answer, and the read shape both readers return.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
 pub struct Verdict {
+    #[serde(default)]
     pub action: VerdictAction,
     pub blocked_reason: Option<String>,
+    #[serde(default)]
     pub blocked_by: Vec<String>,
     pub texts: Option<Vec<String>>,
     pub schema_version: Option<String>,
+    #[serde(rename = "turnId")]
     pub turn_id: Option<String>,
 }
 
-// LiteLLM's StraikerWebhookResponse pydantic model: the v1 webhook's answer.
-#[derive(Debug, Deserialize)]
-struct V1Response {
-    #[serde(default)]
-    action: GuardrailResponseAction,
-    #[serde(default)]
-    blocked_reason: Option<String>,
-    #[serde(default)]
-    blocked_by: Vec<String>,
-    #[serde(default)]
-    texts: Option<Vec<String>>,
-    #[serde(default)]
-    schema_version: Option<String>,
-    #[serde(default, rename = "turnId")]
-    turn_id: Option<String>,
-}
-
 pub fn parse(api_version: ApiVersion, body: &str) -> Result<Verdict, WebhookFailure> {
-    match api_version {
-        ApiVersion::V3 => parse_v3(body),
-        ApiVersion::V1 => parse_v1(body),
-    }
-}
-
-pub fn parse_v1(body: &str) -> Result<Verdict, WebhookFailure> {
-    json_object(body)?;
-    let parsed: V1Response = serde_json::from_str(body)
-        .map_err(|source| schema_failure(format!("invalid response schema: {source}")))?;
-    Ok(Verdict {
-        action: action_of(parsed.action),
-        blocked_reason: parsed.blocked_reason,
-        blocked_by: parsed.blocked_by,
-        texts: parsed.texts,
-        schema_version: parsed.schema_version,
-        turn_id: parsed.turn_id,
-    })
-}
-
-pub fn parse_v3(body: &str) -> Result<Verdict, WebhookFailure> {
     let fields = json_object(body)?;
+    if api_version == ApiVersion::V1 {
+        return serde_json::from_str(body)
+            .map_err(|source| schema_failure(format!("invalid response schema: {source}")));
+    }
     let parsed = response(&fields).ok_or_else(|| {
         schema_failure("invalid response schema: no allow or block decision".to_owned())
     })?;
-    Ok(Verdict {
-        action: match parsed.action {
-            StraikerWebhookAction::Blocked => VerdictAction::Blocked,
-            StraikerWebhookAction::NoAction => VerdictAction::None,
-            StraikerWebhookAction::GuardrailIntervened => VerdictAction::Intervened,
-        },
+    Ok(v3_verdict(parsed))
+}
+
+fn v3_verdict(parsed: StraikerWebhookResponse) -> Verdict {
+    Verdict {
+        action: action_v3(parsed.action),
         blocked_reason: parsed.blocked_reason,
         blocked_by: parsed.blocked_by,
         texts: None,
         schema_version: None,
         turn_id: parsed.turn_id,
-    })
+    }
 }
 
-fn action_of(action: GuardrailResponseAction) -> VerdictAction {
+const fn action_v3(action: StraikerWebhookAction) -> VerdictAction {
     match action {
-        GuardrailResponseAction::Blocked => VerdictAction::Blocked,
-        GuardrailResponseAction::None => VerdictAction::None,
-        GuardrailResponseAction::GuardrailIntervened => VerdictAction::Intervened,
+        StraikerWebhookAction::Blocked => VerdictAction::Blocked,
+        StraikerWebhookAction::NoAction => VerdictAction::None,
+        StraikerWebhookAction::GuardrailIntervened => VerdictAction::Intervened,
     }
 }
 
@@ -125,7 +100,7 @@ fn json_kind(value: &Json) -> &'static str {
     }
 }
 
-fn schema_failure(message: String) -> WebhookFailure {
+const fn schema_failure(message: String) -> WebhookFailure {
     WebhookFailure {
         message,
         is_unreachable: false,

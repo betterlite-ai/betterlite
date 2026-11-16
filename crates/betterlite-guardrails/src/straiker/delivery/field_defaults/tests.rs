@@ -31,7 +31,7 @@ fn an_unset_fallback_blocks_and_errors_propagate() {
 
 #[test]
 fn an_unset_payload_limit_is_half_a_mebibyte() {
-    assert_eq!(settings(&raw()).max_payload_bytes, 524_288);
+    assert_eq!(settings(&raw()).max_payload_bytes, 512 * 1024);
 }
 
 #[test]

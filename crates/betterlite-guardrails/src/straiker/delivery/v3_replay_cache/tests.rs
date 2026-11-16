@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::straiker::delivery::blocked_turns::system_clock;
@@ -9,6 +11,7 @@ use crate::straiker::delivery::fixtures::{
 };
 
 const HELLO: &str = r#"{"model":"gpt-4o","messages":[{"role":"user","content":"hello"}]}"#;
+const ITEM_LIMIT: usize = 1024 * 1024;
 
 fn blocked(failure: GuardrailFailure) -> String {
     let GuardrailFailure::GuardrailRaised { message, .. } = failure else {
@@ -40,7 +43,7 @@ async fn a_blocked_turn_is_remembered_until_its_ttl_ends() {
     assert_eq!(blocked(failure), "policy");
     clock.advance(86_400.0);
     let mut at_the_limit = request_data(HELLO);
-    let failure = run(
+    let replay = run(
         &handler,
         &mut at_the_limit,
         inputs(&[]),
@@ -49,9 +52,31 @@ async fn a_blocked_turn_is_remembered_until_its_ttl_ends() {
     )
     .await
     .expect_err("exactly one day later the block still holds");
-    assert_eq!(blocked(failure), "policy");
+    assert_eq!(blocked(replay), "policy");
     assert_eq!(sent(&handler).len(), 1);
-    clock.advance(1.0);
+}
+
+#[tokio::test]
+async fn a_blocked_turn_is_asked_again_past_its_ttl() {
+    let clock = Clock::default();
+    let fakes = Fakes::default();
+    let handler = delivery_at(
+        settings(&v3_raw()),
+        vec![reply(200, V3_BLOCK), reply(200, V3_ALLOW)],
+        &clock,
+    );
+    let call = fakes.call(Some("completion"), None);
+    let mut first = request_data(HELLO);
+    run(
+        &handler,
+        &mut first,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("the turn blocks");
+    clock.advance(86_401.0);
     let mut past_the_limit = request_data(HELLO);
     run(
         &handler,
@@ -166,7 +191,7 @@ async fn a_block_without_a_scope_is_not_remembered() {
 
 #[tokio::test]
 async fn a_message_too_large_for_the_cache_is_not_remembered() {
-    let message = "a".repeat(1_048_564);
+    let message = "a".repeat(ITEM_LIMIT.saturating_sub(1));
     let body = format!(
         r#"{{"straiker":{{"action":"block","blocked_by":["pii"],"block_message":"{message}"}}}}"#
     );
@@ -201,8 +226,132 @@ async fn a_message_too_large_for_the_cache_is_not_remembered() {
     assert_eq!(sent(&handler).len(), 2);
 }
 
+#[tokio::test]
+async fn a_message_at_the_item_limit_is_remembered() {
+    let message = "a".repeat(ITEM_LIMIT.saturating_sub(2));
+    let body = format!(
+        r#"{{"straiker":{{"action":"block","blocked_by":["pii"],"block_message":"{message}"}}}}"#
+    );
+    let fakes = Fakes::default();
+    let handler = delivery_at(
+        settings(&v3_raw()),
+        vec![reply(200, &body), reply(200, V3_ALLOW)],
+        &Clock::default(),
+    );
+    let call = fakes.call(Some("completion"), None);
+    let mut first = request_data(HELLO);
+    run(
+        &handler,
+        &mut first,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("the turn blocks");
+    let mut second = request_data(HELLO);
+    let replay = run(
+        &handler,
+        &mut second,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("the message fit the cache");
+    assert_eq!(blocked(replay), message);
+    assert_eq!(sent(&handler).len(), 1);
+}
+
+#[tokio::test]
+async fn a_message_of_json_null_is_not_replayed() {
+    let fakes = Fakes::default();
+    let handler = delivery_at(
+        settings(&v3_raw()),
+        vec![
+            reply(
+                200,
+                r#"{"straiker":{"action":"block","blocked_by":["pii"],"block_message":"null"}}"#,
+            ),
+            reply(200, V3_ALLOW),
+        ],
+        &Clock::default(),
+    );
+    let call = fakes.call(Some("completion"), None);
+    let mut first = request_data(HELLO);
+    let failure = run(
+        &handler,
+        &mut first,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("the turn blocks");
+    assert_eq!(blocked(failure), "null");
+    let mut second = request_data(HELLO);
+    run(
+        &handler,
+        &mut second,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect("the cache decoded the message as null, so nothing replays");
+    assert_eq!(sent(&handler).len(), 2);
+}
+
+#[tokio::test]
+async fn a_message_that_decodes_as_a_number_blocks_with_its_json_text() {
+    let fakes = Fakes::default();
+    let handler = delivery_at(
+        settings(&v3_raw()),
+        vec![
+            reply(
+                200,
+                r#"{"straiker":{"action":"block","blocked_by":["pii"],"block_message":"123"}}"#,
+            ),
+            reply(200, V3_ALLOW),
+        ],
+        &Clock::default(),
+    );
+    let call = fakes.call(Some("completion"), None);
+    let mut first = request_data(HELLO);
+    run(
+        &handler,
+        &mut first,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("the turn blocks");
+    let mut second = request_data(HELLO);
+    let replay = run(
+        &handler,
+        &mut second,
+        inputs(&[]),
+        GuardrailInputType::Request,
+        &call,
+    )
+    .await
+    .expect_err("a decoded number is not null, so it replays");
+    assert_eq!(blocked(replay), "123");
+    assert_eq!(sent(&handler).len(), 1);
+}
+
 #[test]
 fn the_system_clock_reads_wall_time_in_seconds() {
+    let before = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
     let now = system_clock()();
-    assert!(now > 1_700_000_000.0_f64, "got {now}");
+    let after = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64();
+    assert!(now >= before, "got {now}, read before {before}");
+    assert!(now <= after, "got {now}, read after {after}");
 }

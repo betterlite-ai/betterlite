@@ -5,7 +5,8 @@ use rstest::rstest;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::straiker::delivery::fixtures::{
-    Fakes, caps, delivery, inputs, network_error, raw, reply, request_data, run, sent, settings,
+    Fakes, Reply, caps, delivery, inputs, network_error, raw, reply, request_data, run, sent,
+    settings,
 };
 use crate::straiker::delivery::settings::StraikerSettings;
 use crate::straiker_webhook::failure::WebhookFailure;
@@ -17,12 +18,12 @@ fn fail_open() -> StraikerSettings {
 }
 
 #[rstest]
-#[case::request_timeout(408)]
-#[case::too_many_requests(429)]
-#[case::server_error(500)]
-#[case::bad_gateway(502)]
-#[case::unavailable(503)]
-#[case::gateway_timeout(504)]
+#[case::request_timeout(408_u16)]
+#[case::too_many_requests(429_u16)]
+#[case::server_error(500_u16)]
+#[case::bad_gateway(502_u16)]
+#[case::unavailable(503_u16)]
+#[case::gateway_timeout(504_u16)]
 #[tokio::test]
 async fn a_retryable_status_is_retried_until_the_last_attempt(#[case] status: u16) {
     let fakes = Fakes::default();
@@ -43,12 +44,12 @@ async fn a_retryable_status_is_retried_until_the_last_attempt(#[case] status: u1
 }
 
 #[rstest]
-#[case::bad_request(400)]
-#[case::unauthorized(401)]
-#[case::forbidden(403)]
-#[case::not_found(404)]
-#[case::unprocessable(422)]
-#[case::not_implemented(501)]
+#[case::bad_request(400_u16)]
+#[case::unauthorized(401_u16)]
+#[case::forbidden(403_u16)]
+#[case::not_found(404_u16)]
+#[case::unprocessable(422_u16)]
+#[case::not_implemented(501_u16)]
 #[tokio::test]
 async fn a_permanent_status_is_not_retried(#[case] status: u16) {
     let fakes = Fakes::default();
@@ -69,9 +70,9 @@ async fn a_permanent_status_is_not_retried(#[case] status: u16) {
 }
 
 #[rstest]
-#[case::bad_gateway(502)]
-#[case::unavailable(503)]
-#[case::gateway_timeout(504)]
+#[case::bad_gateway(502_u16)]
+#[case::unavailable(503_u16)]
+#[case::gateway_timeout(504_u16)]
 #[tokio::test]
 async fn an_unreachable_status_fails_open(#[case] status: u16) {
     let fakes = Fakes::default();
@@ -92,9 +93,9 @@ async fn an_unreachable_status_fails_open(#[case] status: u16) {
 }
 
 #[rstest]
-#[case::request_timeout(408)]
-#[case::too_many_requests(429)]
-#[case::server_error(500)]
+#[case::request_timeout(408_u16)]
+#[case::too_many_requests(429_u16)]
+#[case::server_error(500_u16)]
 #[tokio::test]
 async fn a_retryable_status_that_answered_blocks_even_when_open(#[case] status: u16) {
     let fakes = Fakes::default();
@@ -137,7 +138,7 @@ async fn a_non_retryable_network_failure_is_permanent_but_unreachable() {
     let fakes = Fakes::default();
     let handler = delivery(
         fail_open(),
-        vec![Err(WebhookFailure {
+        vec![Reply::Failure(WebhookFailure {
             message: "TLS handshake failed".to_owned(),
             is_unreachable: true,
             retryable: false,

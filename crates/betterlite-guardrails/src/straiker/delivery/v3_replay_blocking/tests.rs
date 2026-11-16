@@ -59,7 +59,7 @@ async fn a_resend_of_a_blocked_turn_is_blocked_without_a_post() {
     assert_eq!(blocked(failure), ("policy".to_owned(), true));
     assert_eq!(sent(&handler).len(), 1);
     let mut second = request_data(HELLO);
-    let failure = run(
+    let replay_failure = run(
         &handler,
         &mut second,
         inputs(&[]),
@@ -68,7 +68,7 @@ async fn a_resend_of_a_blocked_turn_is_blocked_without_a_post() {
     )
     .await
     .expect_err("the replay is blocked here");
-    assert_eq!(blocked(failure), ("policy".to_owned(), true));
+    assert_eq!(blocked(replay_failure), ("policy".to_owned(), true));
     assert_eq!(sent(&handler).len(), 1);
 }
 
@@ -254,7 +254,10 @@ async fn a_response_phase_block_is_not_remembered() {
     )
     .await
     .expect_err("the answer blocks");
-    assert_eq!(blocked(failure), ("policy".to_owned(), true));
+    let GuardrailFailure::ModifyResponse(modify) = failure else {
+        panic!("expected a modify-response block");
+    };
+    assert_eq!(modify.message, "policy");
     let mut second = request_data(body);
     run(
         &handler,
@@ -294,11 +297,11 @@ async fn the_replay_is_logged_when_verbose() {
     )
     .await
     .expect_err("the replay is blocked here");
-    let fields = fields.take();
-    assert_eq!(message_list(&fields), vec!["straiker.replay_blocked"]);
-    let prefix = value_of(&fields, "prefix");
+    let events = fields.take();
+    assert_eq!(message_list(&events), vec!["straiker.replay_blocked"]);
+    let prefix = value_of(&events, "prefix");
     assert_eq!(prefix.len(), 64);
-    assert!(value_of(&fields, "scope").contains("litellm-"));
+    assert!(value_of(&events, "scope").contains("litellm-"));
 }
 
 #[tokio::test]

@@ -210,15 +210,15 @@ async fn a_response_phase_failure_becomes_a_modify_response() {
     )
     .await
     .expect_err("the answer is rejected");
-    let GuardrailFailure::ModifyResponse(failure) = failure else {
+    let GuardrailFailure::ModifyResponse(modify) = failure else {
         panic!("expected a modify-response block");
     };
     assert_eq!(
-        failure.message,
+        modify.message,
         "Straiker detection unavailable: HTTP 400: denied"
     );
-    assert_eq!(failure.model, "gpt-4o");
-    assert_eq!(failure.original_response, data.get("response").cloned());
+    assert_eq!(modify.model, "gpt-4o");
+    assert_eq!(modify.original_response, data.get("response").cloned());
 }
 
 #[tokio::test]

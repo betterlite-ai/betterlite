@@ -173,20 +173,20 @@ async fn the_request_and_response_events_carry_their_bodies() {
     )
     .await
     .expect("an allowed call");
-    let fields = fields.take();
+    let events = fields.take();
     assert_eq!(
-        messages(&fields),
+        messages(&events),
         vec![
             "straiker.webhook_request".to_owned(),
             "straiker.webhook_response".to_owned()
         ]
     );
     let posts = sent(&handler);
-    assert_eq!(value_of(&fields, "url"), posts[0].url);
-    assert_eq!(value_of(&fields, "payload"), posts[0].body);
-    assert_eq!(value_of(&fields, "bytes"), posts[0].body.len().to_string());
-    assert_eq!(value_of(&fields, "status_code"), "200");
-    assert_eq!(value_of(&fields, "body"), V1_ALLOW);
+    assert_eq!(value_of(&events, "url"), posts[0].url);
+    assert_eq!(value_of(&events, "payload"), posts[0].body);
+    assert_eq!(value_of(&events, "bytes"), posts[0].body.len().to_string());
+    assert_eq!(value_of(&events, "status_code"), "200");
+    assert_eq!(value_of(&events, "body"), V1_ALLOW);
 }
 
 #[tokio::test]
@@ -224,15 +224,15 @@ async fn an_unreadable_answer_logs_no_response_event() {
     )
     .await
     .expect_err("the answer is not JSON");
-    let fields = fields.take();
+    let events = fields.take();
     assert_eq!(
-        messages(&fields),
+        messages(&events),
         vec![
             "straiker.webhook_request".to_owned(),
             "straiker.error".to_owned()
         ]
     );
-    assert!(value_of(&fields, "status_code").is_empty());
+    assert!(value_of(&events, "status_code").is_empty());
 }
 
 #[tokio::test]
@@ -251,9 +251,9 @@ async fn the_error_event_names_the_phase_and_the_fallthrough() {
     )
     .await
     .expect_err("the request is rejected");
-    let fields = fields.take();
-    assert_eq!(messages(&fields), vec!["straiker.error".to_owned()]);
-    assert_eq!(value_of(&fields, "input_type"), "request");
-    assert_eq!(value_of(&fields, "error"), "HTTP 400: denied");
-    assert_eq!(value_of(&fields, "fail_open"), "false");
+    let events = fields.take();
+    assert_eq!(messages(&events), vec!["straiker.error".to_owned()]);
+    assert_eq!(value_of(&events, "input_type"), "request");
+    assert_eq!(value_of(&events, "error"), "HTTP 400: denied");
+    assert_eq!(value_of(&events, "fail_open"), "false");
 }

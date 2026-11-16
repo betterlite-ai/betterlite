@@ -19,15 +19,15 @@ use tokio::time::sleep;
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::straiker::delivery::StraikerDelivery;
+use crate::straiker::delivery::attempts::{PayloadError, encode};
 use crate::straiker::delivery::blocked_turns::BlockedTurns;
 use crate::straiker::delivery::envelope::response_shape;
 use crate::straiker::delivery::fixtures::{
     Clock, FakeDelay, Fakes, V1_ALLOW, V3_ALLOW, api_inputs, caps, delivery, inputs, network_error,
     object, permanent_error, raw, reply, request_data, run, sent, settings, v3_raw,
 };
-use crate::straiker::delivery::headers::WebhookHeaders;
-use crate::straiker::delivery::payload::{PayloadError, encode};
-use crate::straiker::delivery::transport::{PooledPost, WebhookPost, WebhookRequest};
+use crate::straiker::delivery::transport::WebhookHeaders;
+use crate::straiker::delivery::transport::{PooledPost, WebhookPost as _, WebhookRequest};
 use crate::straiker::v3::answer_shape::Response;
 
 const FULL_INPUTS: &str = r#"{
@@ -224,14 +224,13 @@ async fn the_event_id_falls_back_to_litellm() {
     );
 }
 
-#[tokio::test]
-async fn a_payload_at_the_limit_is_delivered_and_one_byte_over_is_not() {
+async fn delivered_size() -> usize {
     let fakes = Fakes::default();
     let call = fakes.call(Some("completion"), Some("call-1"));
-    let baseline = delivery(settings(&raw()), vec![reply(200, V1_ALLOW)]);
+    let handler = delivery(settings(&raw()), vec![reply(200, V1_ALLOW)]);
     let mut data = request_data(SIMPLE_DATA);
     run(
-        &baseline,
+        &handler,
         &mut data,
         inputs(&["hi"]),
         GuardrailInputType::Request,
@@ -239,14 +238,20 @@ async fn a_payload_at_the_limit_is_delivered_and_one_byte_over_is_not() {
     )
     .await
     .expect("the first delivery");
-    let size = sent(&baseline).first().unwrap().body.len();
+    sent(&handler).first().unwrap().body.len()
+}
 
-    let mut exact_args = raw();
-    exact_args.max_payload_bytes = Some(i64::try_from(size).unwrap());
-    let exact = delivery(settings(&exact_args), vec![reply(200, V1_ALLOW)]);
+#[tokio::test]
+async fn a_payload_at_the_limit_is_delivered() {
+    let fakes = Fakes::default();
+    let call = fakes.call(Some("completion"), Some("call-1"));
+    let size = delivered_size().await;
+    let mut args = raw();
+    args.max_payload_bytes = Some(i64::try_from(size).unwrap());
+    let handler = delivery(settings(&args), vec![reply(200, V1_ALLOW)]);
     let mut data = request_data(SIMPLE_DATA);
     run(
-        &exact,
+        &handler,
         &mut data,
         inputs(&["hi"]),
         GuardrailInputType::Request,
@@ -254,14 +259,21 @@ async fn a_payload_at_the_limit_is_delivered_and_one_byte_over_is_not() {
     )
     .await
     .expect("a payload at the limit is sent");
+    assert_eq!(sent(&handler).len(), 1);
+}
 
+#[tokio::test]
+async fn a_payload_one_byte_over_the_limit_is_a_delivery_error() {
+    let fakes = Fakes::default();
+    let call = fakes.call(Some("completion"), Some("call-1"));
+    let size = delivered_size().await;
     let limit = size.saturating_sub(1);
-    let mut over_args = raw();
-    over_args.max_payload_bytes = Some(i64::try_from(limit).unwrap());
-    let over = delivery(settings(&over_args), vec![reply(200, V1_ALLOW)]);
+    let mut args = raw();
+    args.max_payload_bytes = Some(i64::try_from(limit).unwrap());
+    let handler = delivery(settings(&args), vec![reply(200, V1_ALLOW)]);
     let mut data = request_data(SIMPLE_DATA);
     let failure = run(
-        &over,
+        &handler,
         &mut data,
         inputs(&["hi"]),
         GuardrailInputType::Request,
@@ -269,7 +281,7 @@ async fn a_payload_at_the_limit_is_delivered_and_one_byte_over_is_not() {
     )
     .await
     .expect_err("the payload is too large");
-    assert!(sent(&over).is_empty());
+    assert!(sent(&handler).is_empty());
     let GuardrailFailure::GuardrailRaised {
         message,
         blocked_content,
@@ -289,9 +301,9 @@ async fn a_payload_at_the_limit_is_delivered_and_one_byte_over_is_not() {
 
 #[test]
 fn a_payload_that_cannot_be_serialized_is_a_delivery_error() {
-    let map = BTreeMap::from([(1_i64, true)]);
+    let map = BTreeMap::from([((1_i64, 2_i64), true)]);
     let error = encode(&map, 1024).expect_err("integer keys cannot be JSON keys");
-    assert!(matches!(error, PayloadError::Serialize { .. }));
+    assert!(matches!(error, PayloadError::Serialize(_)));
     assert_eq!(
         error.to_string(),
         "request serialization failed: key must be a string"
@@ -353,7 +365,7 @@ async fn a_transient_failure_is_retried_with_the_backoff() {
     .expect("the second attempt is allowed");
     let posts = sent(&handler);
     assert_eq!(posts.len(), 2);
-    assert_eq!(posts.first().unwrap().body, posts.get(1).unwrap().body);
+    assert_eq!(posts.first().unwrap().body, posts[1].body);
     assert_eq!(caps(&handler), vec![Duration::from_millis(100)]);
 }
 
@@ -530,6 +542,56 @@ async fn an_unusable_header_is_an_unreachable_failure(#[case] name: &str, #[case
         failure.message.contains("not valid"),
         "got {}",
         failure.message
+    );
+}
+
+#[rstest]
+#[case::name("X-Ünicode", "value")]
+#[case::value("X-Ok", "välue")]
+#[tokio::test]
+async fn a_non_ascii_header_is_a_permanent_failure(#[case] name: &str, #[case] value: &str) {
+    let post = pooled();
+    let headers = WebhookHeaders {
+        authorization: SecretString::from("Bearer test-key"),
+        values: BTreeMap::from([(name.to_owned(), value.to_owned())]),
+    };
+    let failure = post
+        .post(request(
+            "http://127.0.0.1:9/x",
+            Duration::from_secs(1),
+            &headers,
+        ))
+        .await
+        .expect_err("the header is not ASCII");
+    assert!(!failure.is_unreachable);
+    assert!(!failure.retryable);
+    assert!(
+        failure.message.contains("not ASCII"),
+        "got {}",
+        failure.message
+    );
+}
+
+#[tokio::test]
+async fn a_non_ascii_authorization_is_a_permanent_failure() {
+    let post = pooled();
+    let headers = WebhookHeaders {
+        authorization: SecretString::from("Bearer këy"),
+        values: BTreeMap::new(),
+    };
+    let failure = post
+        .post(request(
+            "http://127.0.0.1:9/x",
+            Duration::from_secs(1),
+            &headers,
+        ))
+        .await
+        .expect_err("the authorization is not ASCII");
+    assert!(!failure.is_unreachable);
+    assert!(!failure.retryable);
+    assert_eq!(
+        failure.message,
+        "the Authorization header is not ASCII".to_owned()
     );
 }
 

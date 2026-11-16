@@ -1,10 +1,16 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::response_tool_calls::structured::MappedHandler;
 use serde::Serialize;
+use serde_json::Number;
+use thiserror::Error;
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
 use crate::guardrail_base::session::session_id_from_request;
-use crate::straiker::delivery::request_json::{DeliveryError, json_value};
 use crate::straiker::delivery::settings::StraikerSettings;
 use crate::straiker::delivery::{ApplyRequest, DeliveryCall, LITELLM_VERSION, phase_name};
 use crate::straiker::v3::answer_shape::Response;
@@ -22,6 +28,40 @@ use crate::straiker_webhook::types::{
 pub const SCHEMA_VERSION: &str = "1";
 const TEXT_COMPLETION_OBJECT: &str = "text_completion";
 
+#[derive(Debug, Error)]
+pub enum DeliveryError {
+    #[error("the value {value} is not a JSON number")]
+    NotJsonNumber { value: f64 },
+    #[error("the request data could not be rendered as JSON")]
+    Serialize(#[source] serde_json::Error),
+}
+
+pub fn json_object(data: &BTreeMap<String, GuardrailValue>) -> Result<Object, DeliveryError> {
+    data.iter()
+        .map(|(key, value)| Ok((key.clone(), json_value(value)?)))
+        .collect()
+}
+
+pub fn json_value(value: &GuardrailValue) -> Result<Json, DeliveryError> {
+    match value {
+        GuardrailValue::Null => Ok(Json::Null),
+        GuardrailValue::Boolean(flag) => Ok(Json::Bool(*flag)),
+        GuardrailValue::SignedInteger(number) => Ok(Json::Number(Number::from(*number))),
+        GuardrailValue::UnsignedInteger(number) => Ok(Json::Number(Number::from(*number))),
+        GuardrailValue::Decimal(number) => Number::from_f64(*number)
+            .map(Json::Number)
+            .ok_or(DeliveryError::NotJsonNumber { value: *number }),
+        GuardrailValue::Text(text) => Ok(Json::Text(text.clone())),
+        GuardrailValue::Array(items) => items
+            .iter()
+            .map(json_value)
+            .collect::<Result<Vec<Json>, DeliveryError>>()
+            .map(Json::List),
+        GuardrailValue::Object(fields) => json_object(fields).map(Json::Object),
+    }
+}
+
+// LiteLLM's StraikerWebhookRequest model: the nine keys a webhook body carries, unset ones left out.
 #[derive(Serialize)]
 pub struct Envelope {
     pub schema_version: &'static str,
@@ -31,7 +71,7 @@ pub struct Envelope {
     pub response: Option<StraikerWebhookContent>,
     pub context: StraikerWebhookContext,
     pub identity: StraikerWebhookIdentity,
-    pub application: WebhookApplication,
+    pub application: Application,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub usage: Option<StraikerWebhookUsage>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -49,31 +89,30 @@ pub struct Event {
 #[derive(Serialize)]
 pub struct Stream {
     pub phase: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub index: Option<i64>,
 }
 
 #[derive(Serialize)]
-pub struct WebhookApplication {
+pub struct Application {
     pub source: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
 }
 
-struct Shared {
-    event_id: String,
-    content: StraikerWebhookContent,
-    context: StraikerWebhookContext,
-    identity: StraikerWebhookIdentity,
-    application: WebhookApplication,
-    metadata: Option<Object>,
-}
-
-struct ResponseFields {
-    finish_reason: Option<String>,
-    usage: Option<StraikerWebhookUsage>,
-    request_messages: Option<Vec<Object>>,
-    streamed: bool,
+fn event(request: &ApplyRequest<'_>, object: &Object) -> Event {
+    let (event_type, phase) = match request.input_type {
+        GuardrailInputType::Request => ("pre_call", "none"),
+        GuardrailInputType::Response if request_is_streamed(object) => ("post_call", "assembled"),
+        GuardrailInputType::Response => ("post_call", "none"),
+    };
+    Event {
+        event_type,
+        id: format!(
+            "{}:{}",
+            request.call.litellm_call_id.unwrap_or("litellm"),
+            phase_name(request.input_type)
+        ),
+        stream: Stream { phase },
+    }
 }
 
 pub fn build(
@@ -81,109 +120,64 @@ pub fn build(
     request: &ApplyRequest<'_>,
     object: &Object,
 ) -> Result<Envelope, DeliveryError> {
-    let shared = shared(settings, request, object);
-    match request.input_type {
-        GuardrailInputType::Request => Ok(request_envelope(shared)),
-        GuardrailInputType::Response => {
-            let fields = response_fields(request, object)?;
-            Ok(response_envelope(shared, fields))
-        }
-    }
-}
-
-fn shared(settings: &StraikerSettings, request: &ApplyRequest<'_>, object: &Object) -> Shared {
-    let call = request.call;
-    let model = model_of(&request.inputs, object);
-    let event_id = format!(
-        "{}:{}",
-        call.litellm_call_id.unwrap_or("litellm"),
-        phase_name(request.input_type)
-    );
-    Shared {
-        event_id,
-        content: content_of(&request.inputs),
-        context: context(
-            settings,
-            call,
-            object,
-            model.as_deref(),
-            session_id_from_request(request.request_data),
-        ),
+    let mut envelope = Envelope {
+        schema_version: SCHEMA_VERSION,
+        event: event(request, object),
+        request: content_of(&request.inputs),
+        response: None,
+        context: context(settings, request, object),
         identity: extract_identity(object),
         application: application(settings, object),
-        metadata: webhook_metadata(object, &settings.metadata),
-    }
-}
-
-fn request_envelope(shared: Shared) -> Envelope {
-    let Shared {
-        event_id,
-        content,
-        context,
-        identity,
-        application,
-        metadata,
-    } = shared;
-    Envelope {
-        schema_version: SCHEMA_VERSION,
-        event: Event {
-            event_type: "pre_call",
-            id: event_id,
-            stream: Stream {
-                phase: "none",
-                index: None,
-            },
-        },
-        request: content,
-        response: None,
-        context,
-        identity,
-        application,
         usage: None,
-        metadata,
+        metadata: webhook_metadata(object, &settings.metadata),
+    };
+    if request.input_type == GuardrailInputType::Request {
+        return Ok(envelope);
     }
+    let response = request
+        .request_data
+        .get("response")
+        .map(json_value)
+        .transpose()?;
+    envelope.request = StraikerWebhookContent {
+        texts: Vec::new(),
+        images: Vec::new(),
+        structured_messages: request_messages(request, object).filter(|rows| !rows.is_empty()),
+        tools: None,
+        tool_calls: None,
+        finish_reason: None,
+    };
+    let mut answer = content_of(&request.inputs);
+    answer.finish_reason = response.as_ref().and_then(response_finish_reason);
+    envelope.response = Some(answer);
+    envelope.usage = response.as_ref().and_then(response_usage);
+    Ok(envelope)
 }
 
-fn response_envelope(shared: Shared, fields: ResponseFields) -> Envelope {
-    let Shared {
-        event_id,
-        content,
-        context,
-        identity,
-        application,
-        metadata,
-    } = shared;
-    let ResponseFields {
-        finish_reason,
-        usage,
-        request_messages,
-        streamed,
-    } = fields;
-    let phase = if streamed { "assembled" } else { "none" };
-    Envelope {
-        schema_version: SCHEMA_VERSION,
-        event: Event {
-            event_type: "post_call",
-            id: event_id,
-            stream: Stream { phase, index: None },
-        },
-        request: StraikerWebhookContent {
-            texts: Vec::new(),
-            images: Vec::new(),
-            structured_messages: request_messages,
-            tools: None,
-            tool_calls: None,
-            finish_reason: None,
-        },
-        response: Some(StraikerWebhookContent {
-            finish_reason,
-            ..content
-        }),
-        context,
-        identity,
-        application,
-        usage,
-        metadata,
+// The model the hook sees: the guardrail input's, else the request's.
+#[must_use]
+pub fn context(
+    settings: &StraikerSettings,
+    request: &ApplyRequest<'_>,
+    request_data: &Object,
+) -> StraikerWebhookContext {
+    let call = request.call;
+    let model = request.inputs.model.clone().or_else(|| {
+        request_data
+            .get("model")
+            .and_then(Json::as_str)
+            .map(str::to_owned)
+    });
+    StraikerWebhookContext {
+        call_surface: call_surface(call.call_type, request_data),
+        mode: settings.configured_modes.clone(),
+        model: model.clone(),
+        model_provider: model_provider(request_data, model.as_deref(), call.provider_names),
+        destination: destination_host(request_data),
+        session_id: session_id_from_request(request.request_data),
+        litellm_call_id: call.litellm_call_id.map(str::to_owned),
+        litellm_trace_id: call.litellm_trace_id.map(str::to_owned),
+        litellm_version: Some(LITELLM_VERSION.to_owned()),
     }
 }
 
@@ -198,56 +192,17 @@ fn content_of(inputs: &GuardrailApiInputs) -> StraikerWebhookContent {
     }
 }
 
-fn response_fields(
-    request: &ApplyRequest<'_>,
-    object: &Object,
-) -> Result<ResponseFields, DeliveryError> {
-    let response = request
-        .request_data
-        .get("response")
-        .map(json_value)
-        .transpose()?;
-    Ok(ResponseFields {
-        finish_reason: response.as_ref().and_then(response_finish_reason),
-        usage: response.as_ref().and_then(response_usage),
-        request_messages: request_structured_messages(
-            object,
-            request.call.routes,
-            request.call.mappings,
-        )
-        .filter(|rows| !rows.is_empty()),
-        streamed: request_is_streamed(object),
-    })
-}
-
-pub fn model_of(inputs: &GuardrailApiInputs, request_data: &Object) -> Option<String> {
-    inputs.model.clone().or_else(|| {
-        request_data
-            .get("model")
-            .and_then(Json::as_str)
-            .map(str::to_owned)
-    })
-}
-
-#[must_use]
-pub fn context(
-    settings: &StraikerSettings,
-    call: &DeliveryCall<'_>,
-    request_data: &Object,
-    model: Option<&str>,
-    session_id: Option<String>,
-) -> StraikerWebhookContext {
-    StraikerWebhookContext {
-        call_surface: call_surface(call.call_type, request_data),
-        mode: settings.configured_modes.clone(),
-        model: model.map(str::to_owned),
-        model_provider: model_provider(request_data, model, call.provider_names),
-        destination: destination_host(request_data),
-        session_id,
-        litellm_call_id: call.litellm_call_id.map(str::to_owned),
-        litellm_trace_id: call.litellm_trace_id.map(str::to_owned),
-        litellm_version: Some(LITELLM_VERSION.to_owned()),
-    }
+fn request_messages(request: &ApplyRequest<'_>, object: &Object) -> Option<Vec<Object>> {
+    let handlers: Vec<MappedHandler<'_, CallType>> = request
+        .call
+        .mappings
+        .iter()
+        .map(|&(call_types, handler)| MappedHandler {
+            call_types,
+            handler,
+        })
+        .collect();
+    request_structured_messages(object, request.call.routes, &handlers)
 }
 
 // The proxy's answer as the shape the client spoke; a v3 detect turns a Messages answer back from the chat completion the proxy rebuilt.
@@ -268,7 +223,7 @@ pub fn response_shape(request_data: &Object) -> Result<Response, DeliveryError> 
     Ok(Response::Chat(fields.clone()))
 }
 
-fn application(settings: &StraikerSettings, request_data: &Object) -> WebhookApplication {
+fn application(settings: &StraikerSettings, request_data: &Object) -> Application {
     let metadata = merged_metadata(request_data);
     let text = |key: &str| {
         metadata
@@ -277,7 +232,7 @@ fn application(settings: &StraikerSettings, request_data: &Object) -> WebhookApp
             .filter(|value| !value.is_empty())
             .map(str::to_owned)
     };
-    WebhookApplication {
+    Application {
         source: text("agent_id").unwrap_or_else(|| settings.source.clone()),
         name: text("app_name"),
     }

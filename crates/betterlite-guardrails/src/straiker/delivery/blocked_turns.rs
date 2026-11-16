@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -8,8 +7,6 @@ use thiserror::Error;
 
 use crate::straiker::delivery::{BLOCKED_TURN_ITEM_KIB, BLOCKED_TURN_TTL_SECONDS};
 use crate::straiker::v3::BLOCKED_TURN_MEMORY;
-
-const MESSAGE_FIELD: &str = "message";
 
 #[derive(Debug, Error)]
 pub enum BlockedTurnError {
@@ -41,14 +38,10 @@ impl BlockedTurns {
 
     pub fn remember(&self, scope: &str, prefix: &str, message: &str) -> Result<(), CacheError> {
         let key = format!("{scope}\0{prefix}");
-        let value = CacheValue::Object(BTreeMap::from([(
-            MESSAGE_FIELD.to_owned(),
-            CacheValue::Text(message.to_owned()),
-        )]));
         self.cache
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .set(&key, value, None)
+            .set(&key, CacheValue::Text(message.to_owned()), None)
     }
 
     pub fn replayed(
@@ -56,18 +49,30 @@ impl BlockedTurns {
         scope: &str,
         prefixes: &[String],
     ) -> Result<Option<(String, String)>, CacheError> {
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
         for prefix in prefixes {
             let key = format!("{scope}\0{prefix}");
-            let Some(CacheValue::Object(fields)) = cache.get(&key)? else {
+            let value = self
+                .cache
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&key)?;
+            let Some(value) = value else {
                 continue;
             };
-            let Some(CacheValue::Text(message)) = fields.get(MESSAGE_FIELD) else {
-                continue;
-            };
-            return Ok(Some((prefix.clone(), message.clone())));
+            if let Some(message) = replay_message(&value) {
+                return Ok(Some((prefix.clone(), message)));
+            }
         }
         Ok(None)
+    }
+}
+
+// The cache decodes the stored str as JSON, so a literal null is no block and any other decoded value blocks with its JSON text.
+fn replay_message(value: &CacheValue) -> Option<String> {
+    match value {
+        CacheValue::Null => None,
+        CacheValue::Text(message) => Some(message.clone()),
+        other => serde_json::to_string(other).ok(),
     }
 }
 

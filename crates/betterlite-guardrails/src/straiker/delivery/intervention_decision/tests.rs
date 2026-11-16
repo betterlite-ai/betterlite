@@ -9,6 +9,13 @@ use crate::straiker::delivery::fixtures::{
 
 const RESPONSE_DATA: &str = r#"{"model":"gpt-4o","response":{"id":"r1"}}"#;
 
+fn modified(failure: GuardrailFailure) -> String {
+    let GuardrailFailure::ModifyResponse(modify) = failure else {
+        panic!("expected a modify-response block");
+    };
+    modify.message
+}
+
 fn raised(failure: GuardrailFailure) -> (String, bool) {
     let GuardrailFailure::GuardrailRaised {
         message,
@@ -126,10 +133,7 @@ async fn a_streamed_response_intervention_blocks_the_turn() {
     )
     .await
     .expect_err("a sent stream cannot be rewritten");
-    assert_eq!(
-        raised(failure),
-        ("Content violates policy".to_owned(), true)
-    );
+    assert_eq!(modified(failure), "Content violates policy".to_owned());
 }
 
 #[tokio::test]
@@ -149,10 +153,7 @@ async fn a_streamed_proxy_body_intervention_blocks_the_turn() {
     )
     .await
     .expect_err("the proxied request streams");
-    assert_eq!(
-        raised(failure),
-        ("Content violates policy".to_owned(), true)
-    );
+    assert_eq!(modified(failure), "Content violates policy".to_owned());
 }
 
 #[tokio::test]

@@ -22,8 +22,8 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::failure::GuardrailFailure;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
+use crate::straiker::delivery::attempts::RetryDelay;
 use crate::straiker::delivery::blocked_turns::BlockedTurns;
-use crate::straiker::delivery::retry::RetryDelay;
 use crate::straiker::delivery::settings::StraikerSettings;
 use crate::straiker::delivery::transport::{WebhookPost, WebhookReply, WebhookRequest};
 use crate::straiker::delivery::{ApplyRequest, DeliveryCall, StraikerDelivery};
@@ -111,23 +111,39 @@ pub(super) fn inputs(texts: &[&str]) -> GuardrailApiInputs {
     }
 }
 
-pub(super) fn reply(status: u16, body: &str) -> Result<WebhookReply, WebhookFailure> {
-    Ok(WebhookReply {
+// One scripted transport answer: the post replies with it, and a test can clone it for several attempts.
+#[derive(Clone, Debug)]
+pub(super) enum Reply {
+    Answer(WebhookReply),
+    Failure(WebhookFailure),
+}
+
+impl Reply {
+    fn into_result(self) -> Result<WebhookReply, WebhookFailure> {
+        match self {
+            Self::Answer(reply) => Ok(reply),
+            Self::Failure(failure) => Err(failure),
+        }
+    }
+}
+
+pub(super) fn reply(status: u16, body: &str) -> Reply {
+    Reply::Answer(WebhookReply {
         status,
         body: body.to_owned(),
     })
 }
 
-pub(super) fn network_error() -> Result<WebhookReply, WebhookFailure> {
-    Err(WebhookFailure {
+pub(super) fn network_error() -> Reply {
+    Reply::Failure(WebhookFailure {
         message: "ConnectError: refused".to_owned(),
         is_unreachable: true,
         retryable: true,
     })
 }
 
-pub(super) fn permanent_error() -> Result<WebhookReply, WebhookFailure> {
-    Err(WebhookFailure {
+pub(super) fn permanent_error() -> Reply {
+    Reply::Failure(WebhookFailure {
         message: "decode error".to_owned(),
         is_unreachable: false,
         retryable: false,
@@ -144,7 +160,7 @@ pub(super) struct Sent {
 }
 
 pub(super) struct FakePost {
-    pub(super) replies: Mutex<VecDeque<Result<WebhookReply, WebhookFailure>>>,
+    pub(super) replies: Mutex<VecDeque<Reply>>,
     pub(super) sent: Mutex<Vec<Sent>>,
 }
 
@@ -162,13 +178,13 @@ impl WebhookPost for FakePost {
         };
         self.sent.lock().unwrap().push(record);
         let scheduled = self.replies.lock().unwrap().pop_front().unwrap_or_else(|| {
-            Err(WebhookFailure {
+            Reply::Failure(WebhookFailure {
                 message: "no scripted reply".to_owned(),
                 is_unreachable: true,
                 retryable: false,
             })
         });
-        ready(scheduled)
+        ready(scheduled.into_result())
     }
 }
 
@@ -203,14 +219,14 @@ impl Clock {
 
 pub(super) fn delivery(
     settings: StraikerSettings,
-    replies: Vec<Result<WebhookReply, WebhookFailure>>,
+    replies: Vec<Reply>,
 ) -> StraikerDelivery<FakePost, FakeDelay> {
     delivery_at(settings, replies, &Clock::default())
 }
 
 pub(super) fn delivery_at(
     settings: StraikerSettings,
-    replies: Vec<Result<WebhookReply, WebhookFailure>>,
+    replies: Vec<Reply>,
     clock: &Clock,
 ) -> StraikerDelivery<FakePost, FakeDelay> {
     StraikerDelivery {

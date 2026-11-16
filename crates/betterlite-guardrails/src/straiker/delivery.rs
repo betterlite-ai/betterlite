@@ -1,14 +1,9 @@
 pub mod apply;
 pub mod attempts;
-pub mod block;
 pub mod blocked_turns;
 pub mod envelope;
 pub mod failure_policy;
-pub mod headers;
-pub mod payload;
-pub mod request_json;
 pub mod responses;
-pub mod retry;
 pub mod settings;
 pub mod transport;
 pub mod v3_prepare;
@@ -61,7 +56,9 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::routes::CallType;
-use betterlite_prompts::response_tool_calls::structured::{MappedHandler, RouteCallTypes};
+use betterlite_prompts::response_tool_calls::structured::{
+    RouteCallTypes, StructuredMessageHandler,
+};
 
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use crate::guardrail_base::inputs::GuardrailApiInputs;
@@ -74,14 +71,13 @@ pub const DEFAULT_BLOCK_MESSAGE: &str = "Content violates policy";
 pub const DEFAULT_MAX_RETRIES: i64 = 2;
 pub const DEFAULT_INITIAL_BACKOFF: f64 = 0.1;
 pub const DEFAULT_MAX_BACKOFF: f64 = 2.0;
-pub const DEFAULT_MAX_PAYLOAD_BYTES: usize = 524_288;
+pub const DEFAULT_MAX_PAYLOAD_BYTES: usize = 512 * 1024;
 pub const WEBHOOK_PATH: &str = "/api/v1/detect/webhook";
 pub const LITELLM_VERSION: &str = "1.105.1";
 // LiteLLM's InMemoryCache(V3_BLOCKED_TURN_MEMORY, V3_BLOCKED_TURN_TTL_SECONDS) with its default item size
 pub const BLOCKED_TURN_TTL_SECONDS: f64 = 86_400.0;
 pub const BLOCKED_TURN_ITEM_KIB: i64 = 1024;
 
-// One delivery attempt of a Straiker deployment: the resolved settings, the pooled post, the jitter draw and the memory of blocked conversations.
 pub struct StraikerDelivery<Post, Delay> {
     pub settings: settings::StraikerSettings,
     pub transport: Post,
@@ -89,7 +85,6 @@ pub struct StraikerDelivery<Post, Delay> {
     pub blocked_turns: blocked_turns::BlockedTurns,
 }
 
-// What LiteLLM's apply_guardrail receives: the texts and tool calls to score, the request dict, the phase and the proxy state beside it.
 pub struct ApplyRequest<'request> {
     pub inputs: GuardrailApiInputs,
     pub request_data: &'request mut BTreeMap<String, GuardrailValue>,
@@ -97,16 +92,18 @@ pub struct ApplyRequest<'request> {
     pub call: &'request DeliveryCall<'request>,
 }
 
-// The proxy state a hook reads from its logging object and the dispatcher's tables.
 pub struct DeliveryCall<'call> {
     pub call_type: Option<&'call str>,
     pub litellm_call_id: Option<&'call str>,
     pub litellm_trace_id: Option<&'call str>,
-    pub provider_names: &'call dyn ProviderNames,
-    pub routes: &'call dyn RouteCallTypes<CallType>,
-    pub mappings: &'call [MappedHandler<'call, CallType>],
-    pub decoder: &'call dyn PromptTokenDecoder,
-    pub translator: &'call dyn AnthropicTranslator,
+    pub provider_names: &'call (dyn ProviderNames + Sync),
+    pub routes: &'call (dyn RouteCallTypes<CallType> + Sync),
+    pub mappings: &'call [(
+        &'call [CallType],
+        &'call (dyn StructuredMessageHandler + Sync),
+    )],
+    pub decoder: &'call (dyn PromptTokenDecoder + Sync),
+    pub translator: &'call (dyn AnthropicTranslator + Sync),
 }
 
 #[must_use]

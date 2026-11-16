@@ -18,4 +18,7 @@ deviations:
   - what: The verbose verdict record is written into the request data's response object under _hidden_params.straiker. LiteLLM reads that field with getattr on the response object, so for the dict a proxy call carries it records nothing.
     why: The request data here is JSON, where an attribute lookup cannot reach a key. The task requires the verbose record, and writing it where the dict holds it keeps it beside the response it describes instead of dropping it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1131-L1145
+  - what: A 200 answer whose body is not UTF-8 is read as an empty body, so it fails as "invalid response schema" and follows fail_on_error and unreachable_fallback. LiteLLM's resp.json() raises UnicodeDecodeError, which its except clauses do not catch, so the hook call ends in an unhandled 500.
+    why: An unhandled exception is a bug no working setup can rely on; a delivery failure names the condition and lets the configured fallback decide, as the hook does for every other malformed answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/straiker/straiker.py#L1110
 kept_bugs: []
