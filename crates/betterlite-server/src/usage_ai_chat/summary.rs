@@ -119,7 +119,7 @@ pub fn summarise_entity_data(
         String::new(),
     ];
     let mut ranked: Vec<(&String, &EntityTotals)> = totals.iter().collect();
-    ranked.sort_by(|left, right| right.1.spend.cmp(&left.1.spend));
+    ranked.sort_by(|left, right| right.1.totals.spend.cmp(&left.1.totals.spend));
     for (id, totals) in ranked {
         lines.push(format!(
             "- {} (ID: {id}): ${:.4} | {} reqs | {} tokens",
