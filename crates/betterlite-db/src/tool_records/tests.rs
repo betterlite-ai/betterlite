@@ -43,15 +43,13 @@ fn user(text: &str) -> LiteLLMUserTable {
 #[case::dual_llm(ToolCallPolicy::DualLlm, "dual_llm")]
 #[case::blocked(ToolCallPolicy::Blocked, "blocked")]
 fn call_policies_use_the_litellm_literals(#[case] policy: ToolCallPolicy, #[case] text: &str) {
+    let quoted = format!("\"{text}\"");
+    assert_eq!(serde_json::to_string(&policy).unwrap(), quoted);
     assert_eq!(
-        serde_json::to_value(policy).unwrap(),
-        serde_json::json!(text)
-    );
-    assert_eq!(
-        serde_json::from_value::<ToolCallPolicy>(serde_json::json!(text)).unwrap(),
+        serde_json::from_str::<ToolCallPolicy>(&quoted).unwrap(),
         policy
     );
-    drop(serde_json::from_value::<ToolCallPolicy>(serde_json::json!("guardrail")).unwrap_err());
+    drop(serde_json::from_str::<ToolCallPolicy>(r#""guardrail""#).unwrap_err());
 }
 
 #[rstest]
@@ -138,10 +136,7 @@ fn discovery_columns_timestamps_and_assignments_survive_the_conversion() {
     assert_eq!(row.team_id.as_deref(), Some("tm"));
     assert_eq!(row.key_alias.as_deref(), Some("alias"));
     assert_eq!(row.user_agent.as_deref(), Some("agent/1"));
-    let assignments: BTreeMap<String, JsonData> =
-        [("scope".to_owned(), JsonData::String("read".to_owned()))]
-            .into_iter()
-            .collect();
+    let assignments = BTreeMap::from([("scope".to_owned(), JsonData::String("read".to_owned()))]);
     assert_eq!(row.assignments, Some(assignments));
     let created =
         NaiveDateTime::parse_from_str("2026-01-02T03:04:05", "%Y-%m-%dT%H:%M:%S").unwrap();
@@ -182,7 +177,7 @@ fn spend_records_keep_decimal_amounts() {
 }
 
 #[test]
-fn declared_records_take_the_fields_litellm_declares() {
+fn policy_update_records_leave_optional_fields_null() {
     let update: ToolPolicyUpdateRequest = serde_json::from_str(r#"{"tool_name":"echo"}"#).unwrap();
     assert_eq!(update.tool_name, "echo");
     assert_eq!(update.input_policy, None);
@@ -194,6 +189,10 @@ fn declared_records_take_the_fields_litellm_declares() {
         serde_json::from_str(r#"{"tool_name":"echo","updated":true}"#).unwrap();
     assert!(answer.updated);
     assert_eq!(answer.input_policy, None);
+}
+
+#[test]
+fn declared_records_take_the_fields_litellm_declares() {
     let detail: ToolDetailResponse =
         serde_json::from_str(r#"{"tool":{"tool_id":"t","tool_name":"n"}}"#).unwrap();
     assert_eq!(detail.tool.tool_id, "t");
@@ -207,6 +206,10 @@ fn declared_records_take_the_fields_litellm_declares() {
         serde_json::from_str(r#"{"value":"trusted","label":"Trusted","description":"allows"}"#)
             .unwrap();
     assert_eq!(option.label, "Trusted");
+}
+
+#[test]
+fn spend_and_override_records_take_their_declared_defaults() {
     let spend: ToolSpendResponse = serde_json::from_str("{}").unwrap();
     assert!(spend.by_tool.is_empty());
     assert!(spend.daily.is_empty());
@@ -232,17 +235,8 @@ fn override_records_serialize_every_field_like_litellm() {
         updated_at: None,
     };
     assert_eq!(
-        serde_json::to_value(row).unwrap(),
-        serde_json::json!({
-            "override_id": "perm-1",
-            "tool_name": "echo",
-            "team_id": null,
-            "key_hash": "key-1",
-            "input_policy": "blocked",
-            "key_alias": null,
-            "created_at": null,
-            "updated_at": null,
-        })
+        serde_json::to_string(&row).unwrap(),
+        r#"{"override_id":"perm-1","tool_name":"echo","team_id":null,"key_hash":"key-1","input_policy":"blocked","key_alias":null,"created_at":null,"updated_at":null}"#
     );
 }
 
@@ -320,16 +314,14 @@ fn owners_map_each_key_to_the_user_that_exists() {
     let owners = owners_from_rows(&tokens, &users);
     assert_eq!(
         owners,
-        [(
+        BTreeMap::from([(
             "k1".to_owned(),
             ToolDiscoveryUser {
                 user_id: "u1".to_owned(),
                 user_email: Some("u1@example.com".to_owned()),
                 user_alias: Some("one".to_owned()),
             }
-        )]
-        .into_iter()
-        .collect()
+        )])
     );
 }
 

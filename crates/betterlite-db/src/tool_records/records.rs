@@ -36,7 +36,7 @@ impl ToolInputPolicy {
 }
 
 // LiteLLM's ToolPolicyOverrideRow declares input_policy = "blocked", not the tool row's untrusted default
-const fn blocked_input_policy() -> ToolInputPolicy {
+const fn default_input_policy() -> ToolInputPolicy {
     ToolInputPolicy::Blocked
 }
 
@@ -138,7 +138,7 @@ pub struct ToolPolicyOverrideRow {
     pub team_id: Option<String>,
     #[serde(default)]
     pub key_hash: Option<String>,
-    #[serde(default = "blocked_input_policy")]
+    #[serde(default = "default_input_policy")]
     pub input_policy: ToolInputPolicy,
     #[serde(default)]
     pub key_alias: Option<String>,

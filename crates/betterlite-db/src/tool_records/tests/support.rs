@@ -9,7 +9,6 @@ use deadpool_postgres::{Client, Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::task::yield_now;
 use tokio_postgres::NoTls;
-use tokio_postgres::types::ToSql;
 use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
@@ -77,11 +76,6 @@ impl Db {
     pub(crate) async fn batch(&self, sql: &str) {
         let client = self.client().await;
         client.batch_execute(sql).await.unwrap();
-    }
-
-    pub(crate) async fn execute(&self, sql: &str, params: &[&(dyn ToSql + Sync)]) {
-        let client = self.client().await;
-        client.execute(sql, params).await.unwrap();
     }
 
     pub(crate) async fn close(self) {
