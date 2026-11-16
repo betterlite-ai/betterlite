@@ -420,9 +420,14 @@ fn the_reply_ignores_a_code_key_when_an_output_exists() {
 #[test]
 fn a_code_without_an_output_is_an_error_carrying_its_message() {
     let body = br#"{"code":"InvalidParameter","message":"Size not supported","request_id":"r-1"}"#;
-    let error = reply_failure(decode_dashscope_image_reply(body, 200, &Headers::new()));
+    let headers = headers(&[("x-request-id", "req-10")]);
+    let error = reply_failure(decode_dashscope_image_reply(body, 200, &headers));
     assert_eq!(error.status_code, 200);
     assert_eq!(error.message, "Size not supported");
+    assert_eq!(
+        error.headers.get("x-request-id").map(String::as_str),
+        Some("req-10")
+    );
 }
 
 #[test]
