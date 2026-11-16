@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncIterator, Iterator
-from typing import Final, Literal, Protocol
+from typing import Final, Literal, Protocol, TypedDict
 
 import httpx
 from litellm.llms.anthropic.pass_through.adapters.streaming_iterator import (
@@ -19,39 +19,22 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic import JsonValue as Json
 from typing_extensions import override
 
-from messages_sync_stream_outcome import (
-    Diagnostic,
-    Outcome,
-    RunOutcome,
-    State,
-    StepOutcome,
-    SyncOutcome,
-    SyncValue,
-)
-
 ADAPTER_PREFIX = "Anthropic Adapter - "
 NORMALIZED_ID = "msg_00000000-0000-0000-0000-000000000000"
-PAYLOAD = TypeAdapter(dict[str, Json])
 CHUNK: Final[TypeAdapter[ModelResponseStream]] = TypeAdapter(ModelResponseStream)
 
 
-class Message(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class Message(TypedDict):
     role: str
     content: str
 
 
-class TextDelta(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class TextDelta(TypedDict):
     type: Literal["text_delta"]
     text: str
 
 
-class HeldDelta(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
+class HeldDelta(TypedDict):
     type: Literal["content_block_delta"]
     index: int
     delta: TextDelta
@@ -92,6 +75,49 @@ class MessagesSyncStreamCall(BaseModel):
     compaction_block: CompactionBlock | None = None
     iterations_usage: list[UsageIteration] | None = None
     runs: list[RunSpec]
+
+
+class State(TypedDict):
+    pulls: int
+    index: int
+    block_type: str
+    sent_first_chunk: bool
+    sent_content_block_start: bool
+    sent_content_block_finish: bool
+    sent_last_message: bool
+    queued_usage_chunk: bool
+    holding_stop_reason: bool
+    sent_compaction_block: bool
+    sent_compaction_block_start: bool
+    sent_compaction_block_delta: bool
+
+
+class Diagnostic(TypedDict):
+    level: str
+    prefix: str
+
+
+class StepOutcome(TypedDict):
+    events: list[dict[str, Json]]
+    end: bool
+    state: State
+    diagnostics: list[Diagnostic]
+
+
+class RunOutcome(TypedDict):
+    steps: list[StepOutcome]
+
+
+class SyncValue(TypedDict):
+    runs: list[RunOutcome]
+
+
+class SyncOutcome(TypedDict):
+    value: SyncValue
+
+
+class Outcome(TypedDict):
+    messages_sync_stream: SyncOutcome
 
 
 class EventStream(Protocol):
@@ -145,24 +171,18 @@ class Wrapper(AnthropicStreamWrapper):
         if held is not None:
             held_value: dict[str, Json] = {
                 "type": "content_block_delta",
-                "index": held.index,
-                "delta": {"type": held.delta.type, "text": held.delta.text},
+                "index": held["index"],
+                "delta": {"type": held["delta"]["type"], "text": held["delta"]["text"]},
             }
             object.__setattr__(self, "holding_chunk", held_value)
         stopped = initial.holding_stop_reason_chunk
-        if stopped is None:
-            return
-        if stopped.usage is None:
-            self.holding_stop_reason_chunk = MessageBlockDelta(
-                type="message_delta",
-                delta=stopped.delta,
-            )
-            return
-        self.holding_stop_reason_chunk = MessageBlockDelta(
-            type="message_delta",
-            delta=stopped.delta,
-            usage=stopped.usage,
-        )
+        if stopped is not None:
+            stop = MessageBlockDelta(type="message_delta", delta=stopped.delta)
+            if stopped.usage is not None:
+                stop = MessageBlockDelta(
+                    type="message_delta", delta=stopped.delta, usage=stopped.usage
+                )
+            self.holding_stop_reason_chunk = stop
 
 
 class AdapterErrors(logging.Handler):
@@ -172,14 +192,8 @@ class AdapterErrors(logging.Handler):
 
     @override
     def emit(self, record: logging.LogRecord) -> None:
-        message = record.getMessage()
-        if not message.startswith(ADAPTER_PREFIX):
-            return
-        self.entries.append(Diagnostic(level=record.levelname.lower(), prefix=ADAPTER_PREFIX))
-
-    def taken(self) -> list[Diagnostic]:
-        entries, self.entries = self.entries, []
-        return entries
+        if record.getMessage().startswith(ADAPTER_PREFIX):
+            self.entries.append(Diagnostic(level=record.levelname.lower(), prefix=ADAPTER_PREFIX))
 
 
 def next_event(stream: EventStream) -> dict[str, Json] | None:
@@ -216,29 +230,21 @@ def run_steps(
     steps: list[StepOutcome] = []
     for step in spec.steps:
         events: list[dict[str, Json]] = []
-        if step == "next":
-            event = next_event(wrapper)
-            if event is not None:
-                events.append(event)
-            steps.append(
-                StepOutcome(
-                    events=events,
-                    end=event is None,
-                    state=observe(wrapper, source),
-                    diagnostics=errors.taken(),
-                )
-            )
-            continue
         event = next_event(wrapper)
-        while event is not None:
+        if step != "next":
+            while event is not None:
+                events.append(event)
+                event = next_event(wrapper)
+        elif event is not None:
             events.append(event)
-            event = next_event(wrapper)
+        diagnostics = errors.entries
+        errors.entries = []
         steps.append(
             StepOutcome(
                 events=events,
-                end=True,
+                end=event is None,
                 state=observe(wrapper, source),
-                diagnostics=errors.taken(),
+                diagnostics=diagnostics,
             )
         )
     return steps
@@ -246,7 +252,7 @@ def run_steps(
 
 def body(call: MessagesSyncStreamCall) -> dict[str, Json]:
     messages: list[Json] = [
-        {"role": message.role, "content": message.content} for message in call.messages
+        {"role": message["role"], "content": message["content"]} for message in call.messages
     ]
     return {
         "model": call.model,
@@ -287,5 +293,5 @@ def run_one(call: MessagesSyncStreamCall, spec: RunSpec, api_base: str) -> RunOu
 
 def run_messages_sync_stream(call: MessagesSyncStreamCall, api_base: str) -> str:
     runs = [run_one(call, spec, api_base) for spec in call.runs]
-    outcome = Outcome(messages_sync_stream=SyncOutcome(value=SyncValue(runs=runs)))
-    return outcome.model_dump_json(by_alias=True, exclude_unset=True)
+    outcome: Outcome = {"messages_sync_stream": {"value": {"runs": runs}}}
+    return TypeAdapter(Outcome).dump_json(outcome).decode()
