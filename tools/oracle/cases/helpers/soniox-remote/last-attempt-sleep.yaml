@@ -1,0 +1,17 @@
+kind: helper
+name: soniox-remote-last-attempt-sleep
+call:
+  soniox_remote:
+    calls:
+    - function: poll
+      auth_headers: {Authorization: "Bearer sk-local"}
+      api_base: "https://api.soniox.test"
+      transcription_id: job-7
+      poll_interval: 1.0
+      max_attempts: 2
+      timeout_ms: 2500
+      answers:
+      - {status: 200, headers: {}, body: '{"status": "queued"}'}
+      - {status: 200, headers: {}, body: '{"status": "processing"}'}
+compare: {ignore: []}
+env: {}
