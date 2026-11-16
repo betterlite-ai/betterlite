@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-typesafe
+call:
+  b6561:
+    provider: typesafe
+env: {}
+compare:
+  ignore: []
