@@ -103,8 +103,8 @@ fn replays_the_spend_totals_query_corpus(
     let query = decode_spend_totals_query(&bytes);
     if let Some(api_key) = query.api_key.as_deref() {
         let encoded = form_urlencoded::byte_serialize(api_key.as_bytes()).collect::<String>();
-        let again = decode_spend_totals_query(format!("api_key={encoded}").as_bytes());
-        assert_eq!(again.api_key.as_deref(), Some(api_key));
+        let key_again = decode_spend_totals_query(format!("api_key={encoded}").as_bytes());
+        assert_eq!(key_again.api_key.as_deref(), Some(api_key));
     }
     match query.limit {
         LimitQuery::Value(limit) => {

@@ -26,6 +26,17 @@ pub struct UserKeyDailySpend {
     pub user: String,
 }
 
+impl From<(KeyDailySpend, String)> for UserKeyDailySpend {
+    fn from((daily, user): (KeyDailySpend, String)) -> Self {
+        Self {
+            date: daily.date,
+            spend: daily.spend,
+            api_key: daily.api_key,
+            user,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct TotalSpendRow {
     pub total_spend: Option<Decimal>,

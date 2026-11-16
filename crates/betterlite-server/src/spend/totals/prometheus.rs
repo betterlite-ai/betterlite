@@ -1,3 +1,5 @@
+use std::error::Error;
+
 use async_trait::async_trait;
 use betterlite_logging::prometheus_query::PrometheusQuery;
 use betterlite_logging::prometheus_query::clock::Clock;
@@ -18,7 +20,7 @@ pub enum DailySpendFailure<Failure> {
 
 #[async_trait]
 pub trait DailySpendSource: Send + Sync {
-    type Failure: std::error::Error + Send + Sync + 'static;
+    type Failure: Error + Send + Sync + 'static;
 
     async fn daily_spend(
         &self,

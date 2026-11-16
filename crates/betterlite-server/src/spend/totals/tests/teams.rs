@@ -168,7 +168,7 @@ fn serializes_the_daily_amounts_as_json_numbers() {
     let rows = [row(
         Some("a"),
         Some("2026-01-01"),
-        Some(retained(0.30000000000000004)),
+        Some(retained(0.300_000_000_000_000_04)),
     )];
     let body = team_totals(&rows).unwrap();
     let encoded = serde_json::to_string(&body).unwrap();

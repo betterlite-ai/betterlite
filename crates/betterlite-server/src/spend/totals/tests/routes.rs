@@ -165,9 +165,9 @@ async fn logs_wrap_a_missing_internal_user_id() {
 
 #[tokio::test]
 async fn logs_require_a_database_even_when_prometheus_is_connected() {
-    let mut source = prometheus();
-    source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9")];
-    let source = source_with(source);
+    let mut fake_source = prometheus();
+    fake_source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9")];
+    let source = source_with(fake_source);
     let reply = call(
         "/global/spend/logs",
         Some(&admin()),
@@ -188,9 +188,9 @@ async fn logs_use_prometheus_for_a_global_caller() {
     let mut fake = spend_store();
     fake.global_daily = vec![daily("2026-01-01", "1")];
     let store = store_with(fake);
-    let mut source = prometheus();
-    source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9.5")];
-    let source = source_with(source);
+    let mut fake_source = prometheus();
+    fake_source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9.5")];
+    let source = source_with(fake_source);
     let reply = call(
         "/global/spend/logs?api_key=sk-one",
         Some(&admin()),
@@ -211,9 +211,9 @@ async fn logs_keep_an_internal_viewer_on_the_database_with_prometheus_connected(
     let mut fake = spend_store();
     fake.user_daily = vec![user_daily("2026-01-01", "1.25", "sk-one", "u1")];
     let store = store_with(fake);
-    let mut source = prometheus();
-    source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9.5")];
-    let source = source_with(source);
+    let mut fake_source = prometheus();
+    fake_source.rows = vec![prometheus_row("2026-01-01T00:00:00+00:00", "9.5")];
+    let source = source_with(fake_source);
     let reply = call(
         "/global/spend/logs",
         Some(&internal("u1")),
@@ -287,9 +287,9 @@ async fn logs_scope_the_monthly_view_to_the_requested_key() {
 #[tokio::test]
 async fn logs_wrap_a_prometheus_failure_without_falling_back() {
     let store = store_with(spend_store());
-    let mut source = prometheus();
-    source.fails = true;
-    let source = source_with(source);
+    let mut fake_source = prometheus();
+    fake_source.fails = true;
+    let source = source_with(fake_source);
     let reply = call(
         "/global/spend/logs",
         Some(&admin()),
@@ -591,8 +591,8 @@ async fn keys_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: DetailMessageEnvelope = decode(&per_user);
-    assert_eq!(body.detail.error, "No db connected");
+    let body_2: DetailMessageEnvelope = decode(&per_user);
+    assert_eq!(body_2.detail.error, "No db connected");
 }
 
 #[tokio::test]
@@ -625,15 +625,15 @@ async fn keys_report_a_store_failure() {
     assert_eq!(body.error.kind, "internal_server_error");
     let mut missing = spend_store();
     missing.failure = Some(FakeFailure::NoDatabase);
-    let store = store_with(missing);
-    let reply = call(
+    let store_2 = store_with(missing);
+    let reply_2 = call(
         "/global/spend/keys",
         Some(&admin()),
-        state(Some(&store), None, Decimal::ZERO),
+        state(Some(&store_2), None, Decimal::ZERO),
     )
     .await;
-    let body: DetailMessageEnvelope = decode(&reply);
-    assert_eq!(body.detail.error, "No db connected");
+    let body_2: DetailMessageEnvelope = decode(&reply_2);
+    assert_eq!(body_2.detail.error, "No db connected");
 }
 
 #[tokio::test]
@@ -732,8 +732,8 @@ async fn models_use_the_user_aggregation_for_an_internal_viewer() {
         state(Some(&store), None, Decimal::ZERO),
     )
     .await;
-    let body: Vec<UserModelBody> = decode(&default);
-    assert_eq!(body.len(), 1);
+    let body_2: Vec<UserModelBody> = decode(&default);
+    assert_eq!(body_2.len(), 1);
     assert_eq!(
         store.calls(),
         vec![
@@ -776,8 +776,8 @@ async fn models_report_no_database_as_a_detail_error() {
     )
     .await;
     assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: DetailMessageEnvelope = decode(&per_user);
-    assert_eq!(body.detail.error, "No db connected");
+    let body_2: DetailMessageEnvelope = decode(&per_user);
+    assert_eq!(body_2.detail.error, "No db connected");
 }
 
 #[tokio::test]

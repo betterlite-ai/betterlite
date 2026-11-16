@@ -1,3 +1,5 @@
+use std::error::Error as _;
+
 use chrono::NaiveDate;
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
@@ -231,7 +233,7 @@ async fn groups_team_spend_by_alias_and_day() {
         .find(|row| row.team_alias.as_deref() == Some("alpha"))
         .unwrap();
     let unassigned = rows.iter().find(|row| row.team_alias.is_none()).unwrap();
-    assert_eq!(alpha.total_spend, Some(retained(0.30000000000000004)));
+    assert_eq!(alpha.total_spend, Some(retained(0.300_000_000_000_000_04)));
     assert_eq!(unassigned.total_spend, Some(decimal("3")));
     pool.close();
     fixture.close_async().await.unwrap();
@@ -250,21 +252,29 @@ async fn keeps_the_parse_error_of_an_unreadable_amount() {
     .await;
     let store = postgres_store(&pool);
     let total = store.global_total_spend().await.unwrap_err();
-    assert!(std::error::Error::source(&total).is_some());
-    match total {
-        TotalsStoreError::UnreadableAmount { column, .. } => assert_eq!(column, "spend_text"),
-        other => panic!("the unreadable total decoded as {other:?}"),
-    }
+    assert!(total.source().is_some());
+    assert!(matches!(
+        total,
+        TotalsStoreError::UnreadableAmount {
+            column: "spend_text",
+            ..
+        }
+    ));
     let daily = store.global_daily_spend().await.unwrap_err();
-    match daily {
-        TotalsStoreError::UnreadableAmount { column, .. } => assert_eq!(column, "spend"),
-        other => panic!("the unreadable daily spend decoded as {other:?}"),
-    }
+    assert!(matches!(
+        daily,
+        TotalsStoreError::UnreadableAmount {
+            column: "spend",
+            ..
+        }
+    ));
     let teams = store.team_daily_spend().await.unwrap_err();
-    match teams {
-        TotalsStoreError::InvalidAmount { column } => assert_eq!(column, "total_spend"),
-        other => panic!("the non-finite team spend decoded as {other:?}"),
-    }
+    assert!(matches!(
+        teams,
+        TotalsStoreError::InvalidAmount {
+            column: "total_spend"
+        }
+    ));
     pool.close();
     fixture.close_async().await.unwrap();
 }

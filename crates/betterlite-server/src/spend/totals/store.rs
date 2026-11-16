@@ -15,6 +15,10 @@ use super::rows::{
 
 mod decoders;
 
+const USER_KEYS_SQL: &str = "WITH top_api_keys AS (SELECT api_key, SUM(spend) AS total_spend FROM \"LiteLLM_SpendLogs\" WHERE \"user\" = $1 GROUP BY api_key ORDER BY total_spend DESC LIMIT $2) SELECT t.api_key, t.total_spend::text AS spend_text, v.key_alias, v.key_name FROM top_api_keys t LEFT JOIN \"LiteLLM_VerificationToken\" v ON t.api_key = v.token ORDER BY t.total_spend DESC";
+const USER_MODELS_SQL: &str = "SELECT model, SUM(spend)::text AS spend_text, SUM(total_tokens)::bigint AS total_tokens FROM \"LiteLLM_SpendLogs\" WHERE \"user\" = $1 GROUP BY model ORDER BY SUM(spend) DESC LIMIT $2";
+const TEAM_DAILY_SQL: &str = "SELECT t.team_alias AS team_alias, DATE(s.\"startTime\") AS spend_date, SUM(s.spend) AS total_spend FROM \"LiteLLM_SpendLogs\" s LEFT JOIN \"LiteLLM_TeamTable\" t ON s.team_id = t.team_id WHERE s.\"startTime\" >= CURRENT_DATE - INTERVAL '30 days' GROUP BY t.team_alias, DATE(s.\"startTime\") ORDER BY spend_date";
+
 #[derive(Debug, thiserror::Error)]
 pub enum TotalsStoreError {
     #[error(transparent)]
@@ -59,16 +63,20 @@ pub struct PostgresTotalsStore {
 }
 
 impl PostgresTotalsStore {
-    async fn read(
+    async fn read<Spend>(
         &self,
         sql: &str,
         params: &[&(dyn ToSql + Sync)],
-    ) -> Result<Vec<Row>, TotalsStoreError> {
+    ) -> Result<Vec<Spend>, TotalsStoreError>
+    where
+        Spend: for<'row> TryFrom<&'row Row, Error = TotalsStoreError>,
+    {
         let client = self.store.session().await?;
-        client
+        let rows = client
             .query(sql, params)
             .await
-            .map_err(|source| TotalsStoreError::Database(backend(source)))
+            .map_err(|source| TotalsStoreError::Database(backend(source)))?;
+        rows.iter().map(Spend::try_from).collect()
     }
 }
 
@@ -76,20 +84,16 @@ impl PostgresTotalsStore {
 impl TotalsStore for PostgresTotalsStore {
     async fn global_daily_spend(&self) -> Result<Vec<DailySpend>, TotalsStoreError> {
         let sql = format!(
-            "SELECT date, spend::text AS spend FROM \"{}\" ORDER BY date",
-            MONTHLY_GLOBAL_SPEND
+            "SELECT date, spend::text AS spend FROM \"{MONTHLY_GLOBAL_SPEND}\" ORDER BY date"
         );
-        let rows = self.read(&sql, &[]).await?;
-        rows.iter().map(decoders::daily_spend).collect()
+        self.read(&sql, &[]).await
     }
 
     async fn key_daily_spend(&self, api_key: &str) -> Result<Vec<KeyDailySpend>, TotalsStoreError> {
         let sql = format!(
-            "SELECT date, spend::text AS spend, api_key FROM \"{}\" WHERE api_key = $1 ORDER BY date",
-            MONTHLY_GLOBAL_SPEND_PER_KEY
+            "SELECT date, spend::text AS spend, api_key FROM \"{MONTHLY_GLOBAL_SPEND_PER_KEY}\" WHERE api_key = $1 ORDER BY date"
         );
-        let rows = self.read(&sql, &[&api_key]).await?;
-        rows.iter().map(decoders::key_daily_spend).collect()
+        self.read(&sql, &[&api_key]).await
     }
 
     async fn user_daily_spend(
@@ -97,42 +101,22 @@ impl TotalsStore for PostgresTotalsStore {
         user_id: &str,
         api_key: Option<&str>,
     ) -> Result<Vec<UserKeyDailySpend>, TotalsStoreError> {
-        let sql = match api_key {
-            Some(_) => format!(
-                "SELECT date, spend::text AS spend, api_key, \"user\" FROM \"{}\" WHERE \"user\" = $1 AND api_key = $2 ORDER BY date",
-                MONTHLY_USER_KEY_SPEND
-            ),
-            None => format!(
-                "SELECT date, spend::text AS spend, api_key, \"user\" FROM \"{}\" WHERE \"user\" = $1 ORDER BY date",
-                MONTHLY_USER_KEY_SPEND
-            ),
-        };
-        let rows = match api_key {
-            Some(api_key) => self.read(&sql, &[&user_id, &api_key]).await?,
-            None => self.read(&sql, &[&user_id]).await?,
-        };
-        rows.iter().map(decoders::user_daily_spend).collect()
+        let sql = format!(
+            "SELECT date, spend::text AS spend, api_key, \"user\" FROM \"{MONTHLY_USER_KEY_SPEND}\" WHERE \"user\" = $1 AND ($2::text IS NULL OR api_key = $2) ORDER BY date"
+        );
+        self.read(&sql, &[&user_id, &api_key]).await
     }
 
     async fn global_total_spend(&self) -> Result<Vec<TotalSpendRow>, TotalsStoreError> {
-        let sql = format!(
-            "SELECT SUM(spend)::text AS spend_text FROM \"{}\"",
-            MONTHLY_GLOBAL_SPEND
-        );
-        let rows = self.read(&sql, &[]).await?;
-        rows.iter().map(decoders::total_spend).collect()
+        let sql = format!("SELECT SUM(spend)::text AS spend_text FROM \"{MONTHLY_GLOBAL_SPEND}\"");
+        self.read(&sql, &[]).await
     }
 
     async fn keys_by_spend(&self, limit: Option<i64>) -> Result<Vec<KeySpend>, TotalsStoreError> {
-        let base = format!(
-            "SELECT api_key, key_alias, key_name, total_spend::text AS spend_text FROM \"{}\" ORDER BY total_spend DESC",
-            LAST_30D_KEYS_BY_SPEND
+        let sql = format!(
+            "SELECT api_key, key_alias, key_name, total_spend::text AS spend_text FROM \"{LAST_30D_KEYS_BY_SPEND}\" ORDER BY total_spend DESC LIMIT $1"
         );
-        let rows = match limit {
-            Some(limit) => self.read(&format!("{base} LIMIT $1"), &[&limit]).await?,
-            None => self.read(&base, &[]).await?,
-        };
-        rows.iter().map(decoders::key_spend).collect()
+        self.read(&sql, &[&limit]).await
     }
 
     async fn user_keys_by_spend(
@@ -140,18 +124,14 @@ impl TotalsStore for PostgresTotalsStore {
         user_id: &str,
         limit: i64,
     ) -> Result<Vec<KeySpend>, TotalsStoreError> {
-        let sql = "WITH top_api_keys AS (SELECT api_key, SUM(spend) AS total_spend FROM \"LiteLLM_SpendLogs\" WHERE \"user\" = $1 GROUP BY api_key ORDER BY total_spend DESC LIMIT $2) SELECT t.api_key, t.total_spend::text AS spend_text, v.key_alias, v.key_name FROM top_api_keys t LEFT JOIN \"LiteLLM_VerificationToken\" v ON t.api_key = v.token ORDER BY t.total_spend DESC";
-        let rows = self.read(sql, &[&user_id, &limit]).await?;
-        rows.iter().map(decoders::key_spend).collect()
+        self.read(USER_KEYS_SQL, &[&user_id, &limit]).await
     }
 
     async fn models_by_spend(&self, limit: i64) -> Result<Vec<ModelSpend>, TotalsStoreError> {
         let sql = format!(
-            "SELECT model, total_spend::text AS spend_text FROM \"{}\" ORDER BY total_spend DESC LIMIT $1",
-            LAST_30D_MODELS_BY_SPEND
+            "SELECT model, total_spend::text AS spend_text FROM \"{LAST_30D_MODELS_BY_SPEND}\" ORDER BY total_spend DESC LIMIT $1"
         );
-        let rows = self.read(&sql, &[&limit]).await?;
-        rows.iter().map(decoders::model_spend).collect()
+        self.read(&sql, &[&limit]).await
     }
 
     async fn user_models_by_spend(
@@ -159,14 +139,10 @@ impl TotalsStore for PostgresTotalsStore {
         user_id: &str,
         limit: i64,
     ) -> Result<Vec<UserModelSpend>, TotalsStoreError> {
-        let sql = "SELECT model, SUM(spend)::text AS spend_text, SUM(total_tokens)::bigint AS total_tokens FROM \"LiteLLM_SpendLogs\" WHERE \"user\" = $1 GROUP BY model ORDER BY SUM(spend) DESC LIMIT $2";
-        let rows = self.read(sql, &[&user_id, &limit]).await?;
-        rows.iter().map(decoders::user_model_spend).collect()
+        self.read(USER_MODELS_SQL, &[&user_id, &limit]).await
     }
 
     async fn team_daily_spend(&self) -> Result<Vec<TeamSpend>, TotalsStoreError> {
-        let sql = "SELECT t.team_alias AS team_alias, DATE(s.\"startTime\") AS spend_date, SUM(s.spend) AS total_spend FROM \"LiteLLM_SpendLogs\" s LEFT JOIN \"LiteLLM_TeamTable\" t ON s.team_id = t.team_id WHERE s.\"startTime\" >= CURRENT_DATE - INTERVAL '30 days' GROUP BY t.team_alias, DATE(s.\"startTime\") ORDER BY spend_date";
-        let rows = self.read(sql, &[]).await?;
-        rows.iter().map(decoders::team_spend).collect()
+        self.read(TEAM_DAILY_SQL, &[]).await
     }
 }

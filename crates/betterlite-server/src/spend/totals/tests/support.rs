@@ -26,6 +26,8 @@ use crate::spend::totals::rows::{
 use crate::spend::totals::state::TotalsState;
 use crate::spend::totals::store::{TotalsStore, TotalsStoreError};
 
+type Fetched<Row> = Result<Vec<Row>, TotalsStoreError>;
+
 #[derive(Clone, Copy)]
 pub(super) enum FakeFailure {
     NoDatabase,
@@ -75,11 +77,11 @@ impl FakeStore {
         self.calls.lock().unwrap().clone()
     }
 
-    fn record(&self, call: String) {
+    fn answer<Row>(&self, call: String, rows: &[Row]) -> Fetched<Row>
+    where
+        Row: Clone,
+    {
         self.calls.lock().unwrap().push(call);
-    }
-
-    fn answer<T: Clone>(&self, rows: &[T]) -> Result<Vec<T>, TotalsStoreError> {
         match self.failure {
             Some(FakeFailure::NoDatabase) => {
                 Err(TotalsStoreError::Database(DbError::NoDbConnected))
@@ -94,61 +96,53 @@ impl FakeStore {
 
 #[async_trait]
 impl TotalsStore for FakeStore {
-    async fn global_daily_spend(&self) -> Result<Vec<DailySpend>, TotalsStoreError> {
-        self.record("global_daily_spend".to_owned());
-        self.answer(&self.global_daily)
+    async fn global_daily_spend(&self) -> Fetched<DailySpend> {
+        self.answer("global_daily_spend".to_owned(), &self.global_daily)
     }
 
-    async fn key_daily_spend(&self, api_key: &str) -> Result<Vec<KeyDailySpend>, TotalsStoreError> {
-        self.record(format!("key_daily_spend({api_key})"));
-        self.answer(&self.key_daily)
+    async fn key_daily_spend(&self, api_key: &str) -> Fetched<KeyDailySpend> {
+        self.answer(format!("key_daily_spend({api_key})"), &self.key_daily)
     }
 
     async fn user_daily_spend(
         &self,
         user_id: &str,
         api_key: Option<&str>,
-    ) -> Result<Vec<UserKeyDailySpend>, TotalsStoreError> {
-        self.record(format!("user_daily_spend({user_id},{api_key:?})"));
-        self.answer(&self.user_daily)
+    ) -> Fetched<UserKeyDailySpend> {
+        self.answer(
+            format!("user_daily_spend({user_id},{api_key:?})"),
+            &self.user_daily,
+        )
     }
 
-    async fn global_total_spend(&self) -> Result<Vec<TotalSpendRow>, TotalsStoreError> {
-        self.record("global_total_spend".to_owned());
-        self.answer(&self.total)
+    async fn global_total_spend(&self) -> Fetched<TotalSpendRow> {
+        self.answer("global_total_spend".to_owned(), &self.total)
     }
 
-    async fn keys_by_spend(&self, limit: Option<i64>) -> Result<Vec<KeySpend>, TotalsStoreError> {
-        self.record(format!("keys_by_spend({limit:?})"));
-        self.answer(&self.keys)
+    async fn keys_by_spend(&self, limit: Option<i64>) -> Fetched<KeySpend> {
+        self.answer(format!("keys_by_spend({limit:?})"), &self.keys)
     }
 
-    async fn user_keys_by_spend(
-        &self,
-        user_id: &str,
-        limit: i64,
-    ) -> Result<Vec<KeySpend>, TotalsStoreError> {
-        self.record(format!("user_keys_by_spend({user_id},{limit})"));
-        self.answer(&self.user_keys)
+    async fn user_keys_by_spend(&self, user_id: &str, limit: i64) -> Fetched<KeySpend> {
+        self.answer(
+            format!("user_keys_by_spend({user_id},{limit})"),
+            &self.user_keys,
+        )
     }
 
-    async fn models_by_spend(&self, limit: i64) -> Result<Vec<ModelSpend>, TotalsStoreError> {
-        self.record(format!("models_by_spend({limit})"));
-        self.answer(&self.models)
+    async fn models_by_spend(&self, limit: i64) -> Fetched<ModelSpend> {
+        self.answer(format!("models_by_spend({limit})"), &self.models)
     }
 
-    async fn user_models_by_spend(
-        &self,
-        user_id: &str,
-        limit: i64,
-    ) -> Result<Vec<UserModelSpend>, TotalsStoreError> {
-        self.record(format!("user_models_by_spend({user_id},{limit})"));
-        self.answer(&self.user_models)
+    async fn user_models_by_spend(&self, user_id: &str, limit: i64) -> Fetched<UserModelSpend> {
+        self.answer(
+            format!("user_models_by_spend({user_id},{limit})"),
+            &self.user_models,
+        )
     }
 
-    async fn team_daily_spend(&self) -> Result<Vec<TeamSpend>, TotalsStoreError> {
-        self.record("team_daily_spend".to_owned());
-        self.answer(&self.teams)
+    async fn team_daily_spend(&self) -> Fetched<TeamSpend> {
+        self.answer("team_daily_spend".to_owned(), &self.teams)
     }
 }
 
@@ -192,12 +186,12 @@ pub(super) fn state(
     prometheus: Option<&Arc<FakePrometheus>>,
     max_budget: Decimal,
 ) -> TotalsState<FakePrometheus> {
-    let store: Option<Arc<dyn TotalsStore>> = store.map(|store| {
-        let cloned: Arc<dyn TotalsStore> = Arc::<FakeStore>::clone(store);
+    let shared: Option<Arc<dyn TotalsStore>> = store.map(|fake| {
+        let cloned: Arc<dyn TotalsStore> = Arc::<FakeStore>::clone(fake);
         cloned
     });
     TotalsState {
-        store,
+        store: shared,
         prometheus: prometheus.map(Arc::clone),
         max_budget,
     }
@@ -264,9 +258,9 @@ pub(super) async fn call(
         .uri(uri)
         .body(Body::empty())
         .unwrap();
-    if let Some(identity) = identity {
+    if let Some(holder) = identity {
         request.extensions_mut().insert(AuthContext {
-            principal: identity.clone(),
+            principal: holder.clone(),
         });
     }
     reply(super::super::routes(state), request).await

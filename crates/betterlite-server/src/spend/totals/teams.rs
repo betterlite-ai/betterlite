@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
@@ -95,7 +96,7 @@ impl TeamTotals {
 
     fn into_body(self) -> TeamTotalsBody {
         let mut ranked: Vec<(String, Decimal)> = self.total_by_team.into_iter().collect();
-        ranked.sort_by(|left, right| right.1.cmp(&left.1));
+        ranked.sort_by_key(|entry| Reverse(entry.1));
         let total_spend_per_team = ranked
             .into_iter()
             .take(TOP_TEAMS)
