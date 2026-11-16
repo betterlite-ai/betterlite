@@ -277,6 +277,21 @@ fn urls_follow_the_model_shape(
 }
 
 #[test]
+fn complete_url_refuses_a_deployment_id_that_leaves_its_path() {
+    let environment = environment(&[("WATSONX_API_BASE", "https://env-host")]);
+    let mut options = WatsonxParams::new();
+    let error = complete_url(
+        &environment,
+        None,
+        "deployment/x/../other",
+        &mut options,
+        false,
+    )
+    .unwrap_err();
+    assert_eq!(error.status(), Some(400));
+}
+
+#[test]
 fn api_version_is_popped_from_the_options() {
     let environment = environment(&[("WATSONX_API_BASE", "https://env-host")]);
     let mut options = params(r#"{"api_version":"2024-01-01"}"#);
