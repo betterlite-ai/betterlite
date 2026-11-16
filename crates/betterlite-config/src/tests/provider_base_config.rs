@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use crate::loader::{ConfigError, ConfigLoader};
+use crate::loader::{ConfigError, ConfigLoader, EnvironmentLookup};
 
 fn environment_lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
     environment
@@ -232,4 +232,22 @@ fn load_thread_error_names_the_start_failure() {
         error.to_string(),
         "could not start the config load thread: thread limit reached"
     );
+}
+
+struct PanickingLookup;
+
+impl EnvironmentLookup for PanickingLookup {
+    fn lookup(&self, _name: &str) -> Option<String> {
+        panic!("the config load cannot read the environment")
+    }
+}
+
+#[test]
+#[should_panic(expected = "the config load cannot read the environment")]
+fn a_panic_in_the_load_thread_stays_a_panic() {
+    ConfigLoader {
+        lookup: PanickingLookup,
+    }
+    .load("{}")
+    .unwrap();
 }
