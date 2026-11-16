@@ -39,11 +39,7 @@ where
         let Some(row) = self.table.find_unique(user_id, server_id).await? else {
             return Ok(UserEnvVars::new());
         };
-        // values_b64 is a non-null text column, so a row without one is an error and not an unset value
-        Ok(decode_user_env_vars(
-            text_field(&row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
-            &self.cipher,
-        ))
+        decoded_row(&row, &self.cipher)
     }
 
     // an empty id list returns before any query, as LiteLLM skips the pointless round trip
@@ -59,11 +55,7 @@ where
         let mut found = BTreeMap::new();
         for row in &rows {
             let server_id = text_field(row, "server_id").ok_or(McpTableError::MissingServerId)?;
-            let values = decode_user_env_vars(
-                text_field(row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
-                &self.cipher,
-            );
-            found.insert(server_id.to_owned(), values);
+            found.insert(server_id.to_owned(), decoded_row(row, &self.cipher)?);
         }
         Ok(found)
     }
@@ -85,22 +77,36 @@ where
         self.transactions.in_transaction(&step).await
     }
 
+    // ast-grep-ignore: no-one-line-functions - LiteLLM's delete_many call with a missing row kept a no-op
     pub async fn delete_user_env_vars(
         &self,
         user_id: &str,
         server_id: &str,
     ) -> Result<(), UserEnvVarsError> {
-        let _rows_removed = self.table.delete_many(user_id, server_id).await?;
-        Ok(())
+        self.table.delete_many(user_id, server_id).await
     }
 }
 
-struct Merge<'a, N, D> {
-    cipher: &'a StoredCipher<N, D>,
-    user_id: &'a str,
-    server_id: &'a str,
-    updates: &'a UserEnvVars,
-    allowed_names: &'a BTreeSet<String>,
+// values_b64 is a non-null text column, so a row without one is an error and not an unset value
+fn decoded_row<N, D>(
+    row: &JsonData,
+    cipher: &StoredCipher<N, D>,
+) -> Result<UserEnvVars, UserEnvVarsError>
+where
+    D: SecretDiagnostics,
+{
+    match text_field(row, "values_b64") {
+        Some(stored) => Ok(decode_user_env_vars(stored, cipher)),
+        None => Err(UserEnvVarsError::MissingValues),
+    }
+}
+
+struct Merge<'tx, N, D> {
+    cipher: &'tx StoredCipher<N, D>,
+    user_id: &'tx str,
+    server_id: &'tx str,
+    updates: &'tx UserEnvVars,
+    allowed_names: &'tx BTreeSet<String>,
 }
 
 impl<N, D> UserEnvVarsMergeStep for Merge<'_, N, D>
@@ -121,10 +127,7 @@ where
                 .await?;
             let mut merged = UserEnvVars::new();
             if let Some(row) = row {
-                merged = decode_user_env_vars(
-                    text_field(&row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
-                    self.cipher,
-                );
+                merged = decoded_row(&row, self.cipher)?;
             }
             for (name, value) in self.updates {
                 merged.insert(name.clone(), value.clone());

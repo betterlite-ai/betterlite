@@ -4,7 +4,7 @@ use betterlite_redis::config_sync::publish::PublishChange;
 use betterlite_redis::config_sync::table_actions::TableActions as _;
 use betterlite_secrets::secret_codec::OsNonces;
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
-use deadpool_postgres::GenericClient as _;
+use deadpool_postgres::GenericClient;
 use uuid::Uuid;
 
 use crate::auxiliary_repository::repository::{PrismaClient, TableError};
@@ -14,7 +14,6 @@ use crate::mcp::table_access::rows::{ENV_VAR_TABLE, KeyValues, RowFields};
 use crate::mcp::table_access::sql::{self, Select};
 use crate::mcp::table_access::store::{LockedTable, McpTableStore, db_transaction_manager};
 use crate::mcp::table_access::types::McpTableError;
-use crate::mcp::table_access::user_tables::db_find_user_env_var_rows;
 use crate::postgres_store::errors::backend;
 use crate::stored_cipher::DbCipher;
 
@@ -33,14 +32,43 @@ pub(crate) fn composite_key(user_id: &str, server_id: &str) -> KeyValues {
     ])
 }
 
+async fn statement_rows<Client>(
+    client: &Client,
+    statement: &sql::Statement,
+) -> Result<Vec<JsonData>, McpTableError>
+where
+    Client: GenericClient,
+{
+    sql::rows(client, statement)
+        .await
+        .map_err(McpTableError::Table)
+}
+
+async fn locked_row<Client>(
+    client: &Client,
+    filter: &KeyValues,
+) -> Result<Option<JsonData>, McpTableError>
+where
+    Client: GenericClient,
+{
+    let select = Select {
+        predicate: sql::key_predicate(filter, 1),
+        descending: false,
+        take: None,
+    };
+    let mut rows = statement_rows(client, &sql::select_sql(&ENV_VAR_TABLE, &select)).await?;
+    Ok(rows.pop())
+}
+
 impl UserEnvVarTable for McpTableStore<'_> {
     async fn find_unique(
         &self,
         user_id: &str,
         server_id: &str,
     ) -> Result<Option<JsonData>, UserEnvVarsError> {
-        let key = composite_key(user_id, server_id);
-        Ok(db_find_user_env_var_rows(self, Some(&key)).await?.pop())
+        let filter = composite_key(user_id, server_id);
+        let rows = sql::select_keyed(self.reader(), &ENV_VAR_TABLE, Some(&filter)).await?;
+        Ok(rows.into_iter().next())
     }
 
     async fn find_many(
@@ -65,17 +93,18 @@ impl UserEnvVarTable for McpTableStore<'_> {
         Ok(rows)
     }
 
-    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<usize, UserEnvVarsError> {
+    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<(), UserEnvVarsError> {
         let table = user_env_var_actions(Some(self.client), Arc::clone(&self.publish))?;
-        Ok(table
+        let _deleted = table
             .delete_many(composite_key(user_id, server_id))
             .await
-            .map_err(McpTableError::Table)?)
+            .map_err(McpTableError::Table)?;
+        Ok(())
     }
 }
 
 impl UserEnvVarsTransaction for LockedTable<'_> {
-    fn execute_raw<'a>(&'a self, statement: &'a str, key: i64) -> TransactionFuture<'a, ()> {
+    fn execute_raw<'tx>(&'tx self, statement: &'tx str, key: i64) -> TransactionFuture<'tx, ()> {
         Box::pin(async move {
             self.transaction
                 .execute(statement, &[&key])
@@ -85,54 +114,46 @@ impl UserEnvVarsTransaction for LockedTable<'_> {
         })
     }
 
-    fn find_unique<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-    ) -> TransactionFuture<'a, Option<JsonData>> {
+    fn find_unique<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+    ) -> TransactionFuture<'tx, Option<JsonData>> {
         Box::pin(async move {
-            let select = Select {
-                predicate: sql::key_predicate(&composite_key(user_id, server_id), 1),
-                descending: false,
-                take: None,
-            };
-            let statement = sql::select_sql(&ENV_VAR_TABLE, &select);
-            Ok(sql::rows(self.transaction, &statement).await?.pop())
+            locked_row(self.transaction, &composite_key(user_id, server_id))
+                .await
+                .map_err(UserEnvVarsError::from)
         })
     }
 
-    fn upsert<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-        values_b64: &'a str,
-    ) -> TransactionFuture<'a, ()> {
+    fn upsert<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+        values_b64: &'tx str,
+    ) -> TransactionFuture<'tx, ()> {
+        // the table has no default for id, so the create arm supplies one like Prisma does
+        let id = Uuid::new_v4().to_string();
+        let data = RowFields::texts(&[
+            ("id", id.as_str()),
+            ("user_id", user_id),
+            ("server_id", server_id),
+            ("values_b64", values_b64),
+        ]);
         Box::pin(async move {
-            // the table has no default for id, so the create arm supplies one like Prisma does
-            let id = Uuid::new_v4().to_string();
-            let data = RowFields::texts(&[
-                ("id", id.as_str()),
-                ("user_id", user_id),
-                ("server_id", server_id),
-                ("values_b64", values_b64),
-            ]);
             let statement =
                 sql::insert_sql(&ENV_VAR_TABLE, &data, true).map_err(McpTableError::Table)?;
-            drop(
-                sql::rows(self.transaction, &statement)
-                    .await
-                    .map_err(McpTableError::Table)?,
-            );
+            drop(statement_rows(self.transaction, &statement).await?);
             Ok(())
         })
     }
 }
 
 impl UserEnvVarsTransactions for McpTableStore<'_> {
-    fn in_transaction<'a>(
-        &'a self,
-        step: &'a dyn UserEnvVarsMergeStep,
-    ) -> TransactionFuture<'a, UserEnvVars> {
+    fn in_transaction<'tx>(
+        &'tx self,
+        step: &'tx dyn UserEnvVarsMergeStep,
+    ) -> TransactionFuture<'tx, UserEnvVars> {
         Box::pin(async move {
             let mut manager = db_transaction_manager(self.client.writer).await?;
             let transaction = manager.begin().await?;
