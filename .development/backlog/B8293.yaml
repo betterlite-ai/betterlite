@@ -1,7 +1,7 @@
 id: B8293
 milestone: M7 observability
 title: Startup prompt initialization
-status: todo
+status: done
 depends_on: [B4050, B4060]
 file: tasks/B8293-prompt-startup-init.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/prompts/init_prompts.py"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2097
