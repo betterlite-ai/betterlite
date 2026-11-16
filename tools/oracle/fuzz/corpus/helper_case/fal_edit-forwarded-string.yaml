@@ -1,0 +1,15 @@
+kind: helper
+name: fal-edit-forwarded-string
+call:
+  fal_edit:
+    operation: to_data_url
+    sources:
+      - kind: value
+        value: "https://example.test/in.png"
+      - kind: value
+        value: ""
+      - kind: bytes
+        content: [137, 80, 78, 71, 13, 10, 26, 10]
+env: {}
+compare:
+  ignore: []

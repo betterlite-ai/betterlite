@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-noma-v2
+call:
+  b6561:
+    provider: noma_v2
+env: {}
+compare:
+  ignore: []
