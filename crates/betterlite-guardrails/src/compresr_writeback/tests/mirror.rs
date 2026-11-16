@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::support::{TOOL_CONVERSATION, conversation, guardrail, reply, serve};
+use super::support::{TOOL_CONVERSATION, TWO_IDENTICAL, conversation, guardrail, reply, serve};
 use crate::compresr_writeback::apply_compression;
 use crate::compresr_writeback::mirror::mirror_texts_channel;
 use crate::compresr_writeback::results::Replacements;
@@ -46,7 +46,6 @@ fn needs_texts_and_replacements_mirror() {
     assert_eq!(mirror_texts_channel(Some(input.as_slice()), &nothing), None);
 }
 
-const TWO_IDENTICAL: &str = r#"[{"role":"user","content":"find the answer"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"x\"}"}},{"id":"c2","type":"function","function":{"name":"fetch","arguments":"{\"u\":\"y\"}"}}]},{"role":"tool","tool_call_id":"c1","content":"long tool output one"},{"role":"tool","tool_call_id":"c2","content":"long tool output one"}]"#;
 const TEXTS: &str = r#","texts":["long tool output one","long tool output one"]"#;
 
 #[rstest]

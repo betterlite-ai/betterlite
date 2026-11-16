@@ -54,9 +54,9 @@ async fn record(
         .headers
         .get("x-api-key")
         .and_then(|key| key.to_str().ok());
-    let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+    let sent = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
     let entry =
-        json!({"path": parts.uri.path(), "api_key": api_key.unwrap_or_default(), "body": body});
+        json!({"path": parts.uri.path(), "api_key": api_key.unwrap_or_default(), "body": sent});
     seen.lock()
         .unwrap_or_else(PoisonError::into_inner)
         .push(entry);

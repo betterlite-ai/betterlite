@@ -2,7 +2,7 @@ import asyncio
 import os
 from collections.abc import Awaitable
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict, runtime_checkable
+from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -18,6 +18,8 @@ class Config(TypedDict, total=False):
     api_key: str
     min_chars_to_compress: int
     enable_retrieval: bool
+    compress_history: bool
+    compress_last_user: bool
     allow_bypass_header: bool
 
 
@@ -46,14 +48,6 @@ class ApplyCall(TypedDict):
     caller: Caller | None
 
 
-# LiteLLM keeps live objects in these details, so they carry more than JsonValue allows
-Details: TypeAlias = dict[str, object]
-
-
-class LoggingDetails(Protocol):
-    model_call_details: Details
-
-
 @runtime_checkable
 class Applier(Protocol):
     def apply_guardrail(
@@ -77,10 +71,10 @@ def logging_for(caller: Caller) -> Logging:
         litellm_call_id=caller["call_id"],
         function_id="b3765",
     )
-    details: LoggingDetails = logging_obj
     auth = UserAPIKeyAuth(api_key=caller["scope"])
-    params: Details = {"metadata": {"user_api_key_auth": auth}}
-    details.model_call_details.update({"litellm_params": params})
+    logging_obj.update_environment_variables(
+        litellm_params={"metadata": {"user_api_key_auth": auth}}, optional_params={}
+    )
     return logging_obj
 
 

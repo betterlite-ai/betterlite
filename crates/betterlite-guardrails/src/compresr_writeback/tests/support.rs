@@ -25,6 +25,9 @@ pub(super) const NOW: Duration = Duration::from_secs(100);
 // One user turn, one tool call and its output, the shape the query comes from
 pub(super) const TOOL_CONVERSATION: &str = r#"[{"role":"user","content":"find the answer"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"x\"}"}}]},{"role":"tool","tool_call_id":"c1","content":"long tool output one"}]"#;
 
+// Two tool outputs with the same text, each answering its own call
+pub(super) const TWO_IDENTICAL: &str = r#"[{"role":"user","content":"find the answer"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"x\"}"}},{"id":"c2","type":"function","function":{"name":"fetch","arguments":"{\"u\":\"y\"}"}}]},{"role":"tool","tool_call_id":"c1","content":"long tool output one"},{"role":"tool","tool_call_id":"c2","content":"long tool output one"}]"#;
+
 pub(super) type Requests = Arc<Mutex<Vec<Seen>>>;
 
 #[derive(Debug, Clone)]

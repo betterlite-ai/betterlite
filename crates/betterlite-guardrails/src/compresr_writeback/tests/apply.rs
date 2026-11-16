@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use rstest::rstest;
 
 use super::support::{
     TOOL_CONVERSATION, content_of, conversation, field, guardrail, reply, sent, serve,
@@ -13,6 +14,7 @@ const NO_RECOVERY: &str = "      enable_retrieval: false\n";
 const TWO_TOOLS: &str = r#"[{"role":"user","content":"find the answer"},{"role":"assistant","content":null,"tool_calls":[{"id":"c1","type":"function","function":{"name":"search","arguments":"{\"q\":\"x\"}"}},{"id":"c2","type":"function","function":{"name":"fetch","arguments":"{\"u\":\"y\"}"}}]},{"role":"tool","tool_call_id":"c1","content":"long tool output one"},{"role":"tool","tool_call_id":"c2","content":"long tool output two"}]"#;
 const SHORT_TOOL: &str =
     r#"[{"role":"user","content":"find the answer"},{"role":"tool","content":"tiny"}]"#;
+const TWO_USERS: &str = r#"[{"role":"user","content":"the first long question"},{"role":"user","content":"the second long question"}]"#;
 const BARE_TOOL: &str = r#"[{"role":"tool","content":"long tool output one"}]"#;
 
 fn text(value: &str) -> GuardrailValue {
@@ -312,5 +314,45 @@ fn the_config_model_names_the_form_apply_guardrail() {
     assert_eq!(
         field(&model, "ui_friendly_name"),
         text("Compresr (context compression)")
+    );
+}
+
+// The last user message is the query, so only compress_last_user lets it be compressed
+#[rstest]
+#[case::history_keeps_the_last_user("      compress_history: true\n", 0, 1)]
+#[case::last_user_alone("      compress_last_user: true\n", 1, 0)]
+#[tokio::test]
+async fn the_last_user_message_follows_its_flag_apply_guardrail(
+    #[case] params: &str,
+    #[case] compressed: usize,
+    #[case] verbatim: usize,
+) {
+    let questions = ["the first long question", "the second long question"];
+    let server = serve(200, &reply(&[("short", 10, 4)])).await;
+    let guardrail = guardrail(&server.base, &format!("{NO_RECOVERY}{params}"));
+    let output = apply_compression(
+        &guardrail,
+        conversation(TWO_USERS, ""),
+        &mut BTreeMap::new(),
+        GuardrailInputType::Request,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(content_of(&output, compressed), text("short"));
+    assert_eq!(
+        content_of(&output, verbatim),
+        text(questions.get(verbatim).unwrap())
+    );
+    let requests = sent(&server);
+    assert_eq!(requests.len(), 1);
+    let request = requests.first().unwrap();
+    assert_eq!(
+        field(&request.body, "context"),
+        text(questions.get(compressed).unwrap())
+    );
+    assert_eq!(
+        field(&request.body, "query"),
+        text(questions.get(1).unwrap())
     );
 }

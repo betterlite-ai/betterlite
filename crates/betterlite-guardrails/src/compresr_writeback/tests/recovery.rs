@@ -5,8 +5,8 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use rstest::rstest;
 
 use super::support::{
-    CALL_ID, NOW, ORIGINAL, SCOPE, TOOL_CONVERSATION, apply_as_caller, content_of, conversation,
-    guardrail, log_target, reply, serve,
+    CALL_ID, NOW, ORIGINAL, SCOPE, TOOL_CONVERSATION, TWO_IDENTICAL, apply_as_caller, content_of,
+    conversation, guardrail, log_target, reply, serve,
 };
 use crate::compresr_recovery::hash::{content_hash, recovery_marker};
 use crate::compresr_recovery::store::{Originals, StoreKey};
@@ -216,6 +216,22 @@ async fn earlier_turns_count_against_the_cap_recovery(
             text("short")
         }
     );
+}
+
+// The second copy of a text stored earlier in the same call costs no new bytes
+#[tokio::test]
+async fn a_repeat_within_the_call_costs_nothing_recovery() {
+    let server = serve(200, &reply(&[("short", 10, 4), ("short", 10, 4)])).await;
+    let guardrail = guardrail(&server.base, "      max_bytes_per_call: 20\n");
+    let output = apply_as_caller(&guardrail, conversation(TWO_IDENTICAL, "")).await;
+    assert_eq!(content_of(&output, 2), marked("short"));
+    assert_eq!(content_of(&output, 3), marked("short"));
+    let stored = guardrail.recovery.as_ref().unwrap().retrieve(
+        Some(&key(SCOPE)),
+        &content_hash(ORIGINAL),
+        NOW,
+    );
+    assert_eq!(stored, Some(ORIGINAL.to_owned()));
 }
 
 #[tokio::test]
