@@ -22,7 +22,7 @@ use super::super::forwarding::forwarding_params;
 use super::super::list::allowed_container_ids;
 use super::super::record::record_container_owner;
 use super::super::repository::{
-    ContainerObjectTable, ContainerOwnerUpdate, PrismaContainerObjects,
+    ContainerObjectTable as _, ContainerOwnerUpdate, PrismaContainerObjects,
 };
 use super::super::response::synthetic_container;
 use super::super::{

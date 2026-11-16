@@ -33,17 +33,20 @@ struct Slot(Mutex<LocalTtlCache>);
 
 impl Slot {
     fn new(capacity: i64, clock: Clock) -> Result<Self, CacheError> {
-        let cache = LocalTtlCache::with_clock(
+        LocalTtlCache::with_clock(
             Some(capacity),
             Some(CACHE_TTL_SECONDS),
             Some(ITEM_KIB),
             ITEM_KIB,
             clock,
-        )?;
-        Ok(Self(Mutex::new(cache)))
+        )
+        .map(|cache| Self(Mutex::new(cache)))
     }
 
-    fn with<Out>(&self, action: impl FnOnce(&mut LocalTtlCache) -> Out) -> Out {
+    fn with<Out, Action>(&self, action: Action) -> Out
+    where
+        Action: FnOnce(&mut LocalTtlCache) -> Out,
+    {
         let mut guard = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         let out = action(&mut guard);
         drop(guard);

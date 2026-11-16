@@ -343,11 +343,11 @@ async fn list_filters_by_the_decoded_provider() {
     objects.owned_scopes(&["container:openai:container-raw".to_owned()]);
     let other = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
     let other_pages = ScriptedPages::new(vec![page(&[managed.as_str()], false)]);
-    let result = list_owned_containers(&other, &other_pages, None, None, caller)
+    let other_result = list_owned_containers(&other, &other_pages, None, None, caller)
         .await
         .unwrap();
-    assert!(result.data.is_empty());
-    assert!(!result.has_more);
+    assert!(other_result.data.is_empty());
+    assert!(!other_result.has_more);
 }
 
 #[tokio::test]
@@ -415,7 +415,7 @@ async fn list_propagates_an_upstream_failure() {
 #[tokio::test]
 async fn list_surfaces_repository_failures() {
     let objects = ScriptedObjects::default();
-    objects.update(|state| state.failure = Some("storage is down"));
+    objects.with_state(|state| state.failure = Some("storage is down"));
     let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
     let pages = ScriptedPages::new(Vec::new());
     let alice = principal("alice");

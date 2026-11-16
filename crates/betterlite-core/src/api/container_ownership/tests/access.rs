@@ -191,7 +191,7 @@ async fn owner_cache_expires_after_the_ttl() {
     assert_container_access(&ownership, "container-1", caller)
         .await
         .unwrap();
-    objects.update(|state| {
+    objects.with_state(|state| {
         state.rows.remove("container:openai:container-1");
     });
     advance(&now, 1_060.0);

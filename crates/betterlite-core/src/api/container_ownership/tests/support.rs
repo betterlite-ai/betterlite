@@ -10,9 +10,9 @@ use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::errors::DbError;
 use indexmap::IndexMap;
 use tracing::field::{Field, Visit};
-use tracing::subscriber::set_default;
+use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Level};
-use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
+use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use tracing_subscriber::registry;
 
 use super::super::repository::{
@@ -102,11 +102,11 @@ pub(crate) struct ScriptedObjects {
 impl ScriptedObjects {
     pub(crate) fn unavailable() -> Self {
         let objects = Self::default();
-        objects.update(|state| state.available = false);
+        objects.with_state(|state| state.available = false);
         objects
     }
 
-    pub(crate) fn update<Change, Out>(&self, change: Change) -> Out
+    pub(crate) fn with_state<Change, Out>(&self, change: Change) -> Out
     where
         Change: FnOnce(&mut State) -> Out,
     {
@@ -127,7 +127,7 @@ impl ScriptedObjects {
         file_purpose: &str,
         created_by: Option<&str>,
     ) {
-        self.update(|state| {
+        self.with_state(|state| {
             state.rows.insert(
                 model_object_id.to_owned(),
                 ContainerOwnerRow {
@@ -141,7 +141,7 @@ impl ScriptedObjects {
     }
 
     pub(crate) fn set_stored_id(&self, model_object_id: &str, unified_object_id: Option<&str>) {
-        self.update(|state| {
+        self.with_state(|state| {
             if let Some(row) = state.rows.get_mut(model_object_id) {
                 row.unified_object_id = unified_object_id.map(str::to_owned);
             }
@@ -149,7 +149,7 @@ impl ScriptedObjects {
     }
 
     pub(crate) fn owned_scopes(&self, model_object_ids: &[String]) {
-        self.update(|state| state.owned = model_object_ids.to_vec());
+        self.with_state(|state| state.owned = model_object_ids.to_vec());
     }
 
     fn found(
@@ -261,12 +261,14 @@ impl ContainerObjectTable for ScriptedObjects {
 }
 
 fn outcome<Value>(failure: Option<&'static str>, value: Value) -> Result<Value, TableError> {
-    match failure {
-        Some(message) => Err(TableError::Publish {
-            message: message.to_owned(),
-        }),
-        None => Ok(value),
-    }
+    failure.map_or_else(
+        || Ok(value),
+        |message| {
+            Err(TableError::Publish {
+                message: message.to_owned(),
+            })
+        },
+    )
 }
 
 fn row_of(write: &ContainerOwnerWrite) -> ContainerOwnerRow {
@@ -413,7 +415,7 @@ impl<Inner: tracing::Subscriber> Layer<Inner> for Logs {
     }
 }
 
-pub(crate) fn capture_logs() -> (Logs, tracing::subscriber::DefaultGuard) {
+pub(crate) fn capture_logs() -> (Logs, DefaultGuard) {
     let logs = Logs::default();
     let guard = set_default(registry().with(logs.clone()));
     (logs, guard)
