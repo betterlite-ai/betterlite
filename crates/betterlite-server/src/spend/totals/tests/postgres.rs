@@ -238,6 +238,33 @@ async fn groups_team_spend_by_alias_and_day() {
 }
 
 #[tokio::test]
+async fn keeps_the_parse_error_of_an_unreadable_amount() {
+    let (fixture, pool) = database().await;
+    execute(
+        &pool,
+        r#"
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user") VALUES
+            ('r1', 'completion', 'sk-one', 'NaN', CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1');
+        "#,
+    )
+    .await;
+    let store = postgres_store(&pool);
+    let total = store.global_total_spend().await.unwrap_err();
+    assert!(std::error::Error::source(&total).is_some());
+    match total {
+        TotalsStoreError::UnreadableAmount { column, .. } => assert_eq!(column, "spend_text"),
+        other => panic!("the unreadable total decoded as {other:?}"),
+    }
+    let daily = store.global_daily_spend().await.unwrap_err();
+    match daily {
+        TotalsStoreError::UnreadableAmount { column, .. } => assert_eq!(column, "spend"),
+        other => panic!("the unreadable daily spend decoded as {other:?}"),
+    }
+    pool.close();
+    fixture.close_async().await.unwrap();
+}
+
+#[tokio::test]
 async fn reports_no_database_without_a_pool() {
     let store = PostgresTotalsStore {
         store: PostgresStore { pool: None },

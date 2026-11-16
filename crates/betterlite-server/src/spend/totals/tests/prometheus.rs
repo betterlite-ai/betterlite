@@ -2,6 +2,7 @@ use std::future::ready;
 
 use betterlite_logging::prometheus_query::clock::Clock;
 use betterlite_logging::prometheus_query::daily_spend::PrometheusDailySpend;
+use betterlite_logging::prometheus_query::error::QueryError;
 use betterlite_logging::prometheus_query::transport::{QueryRequest, Transport};
 use betterlite_logging::prometheus_query::{PrometheusQuery, PrometheusSettings};
 use chrono::{DateTime, Utc};
@@ -90,5 +91,9 @@ async fn reports_a_prometheus_failure_as_a_query_failure() {
         },
     };
     let failure = source.daily_spend(Some("hashed")).await.unwrap_err();
-    assert!(matches!(failure, DailySpendFailure::Query));
+    match failure {
+        DailySpendFailure::Query { source } => {
+            assert!(matches!(source, QueryError::Transport(Refused)));
+        }
+    }
 }

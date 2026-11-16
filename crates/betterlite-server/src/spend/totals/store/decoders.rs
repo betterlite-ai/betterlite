@@ -142,7 +142,7 @@ fn parse_amount(
         Ok(value) => Ok(Some(value)),
         Err(_source) => Decimal::from_scientific(&text)
             .map(Some)
-            .map_err(|_source| TotalsStoreError::InvalidAmount { column }),
+            .map_err(|source| TotalsStoreError::UnreadableAmount { column, source }),
     }
 }
 

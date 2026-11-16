@@ -21,6 +21,12 @@ pub enum TotalsStoreError {
     Database(#[from] DbError),
     #[error("the database returned an unreadable value for the {column} column")]
     InvalidAmount { column: &'static str },
+    #[error("the database returned an unreadable value for the {column} column")]
+    UnreadableAmount {
+        column: &'static str,
+        #[source]
+        source: rust_decimal::Error,
+    },
 }
 
 #[async_trait]

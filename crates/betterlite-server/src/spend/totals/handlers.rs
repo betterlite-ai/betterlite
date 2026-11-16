@@ -12,6 +12,7 @@ use super::internal::{
     InternalFailure, global_spend_for_internal_user, global_spend_key_internal_user,
     global_spend_models_internal,
 };
+use super::prometheus::DailySpendSource;
 use super::query::{LimitQuery, decode_spend_totals_query};
 use super::responses;
 use super::rows::TeamSpend;
@@ -35,11 +36,14 @@ struct GlobalSpendBody {
     max_budget: Decimal,
 }
 
-pub(super) async fn global_spend_logs(
-    State(state): State<TotalsState>,
+pub(super) async fn global_spend_logs<S>(
+    State(state): State<TotalsState<S>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource + 'static,
+{
     let Some(Extension(context)) = caller else {
         return responses::unauthenticated();
     };
@@ -60,21 +64,28 @@ async fn internal_logs(
     user_id: Option<&str>,
     api_key: Option<&str>,
 ) -> Response {
-    match global_spend_for_internal_user(Some(store), user_id, api_key).await {
+    match global_spend_for_internal_user(store, user_id, api_key).await {
         Ok(rows) => Json(rows).into_response(),
-        Err(failure) => logs_internal_failure(&failure),
+        Err(InternalFailure::MissingUserId) => responses::wrapped_error(MISSING_USER.to_owned()),
+        Err(InternalFailure::Store(error)) => wrapped_failure(LOGS_FAILED, &error),
     }
 }
 
-async fn global_logs(
-    state: &TotalsState,
+async fn global_logs<S>(
+    state: &TotalsState<S>,
     store: &dyn TotalsStore,
     api_key: Option<&str>,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource,
+{
     if let Some(source) = state.prometheus.as_deref() {
         return match source.daily_spend(api_key).await {
             Ok(rows) => Json(rows).into_response(),
-            Err(_) => responses::wrapped_error(LOGS_FAILED.to_owned()),
+            Err(failure) => {
+                tracing::warn!(error = ?failure, "the Prometheus daily spend query failed");
+                responses::wrapped_error(LOGS_FAILED.to_owned())
+            }
         };
     }
     let rows = match api_key {
@@ -87,10 +98,13 @@ async fn global_logs(
     }
 }
 
-pub(super) async fn global_spend(
-    State(state): State<TotalsState>,
+pub(super) async fn global_spend<S>(
+    State(state): State<TotalsState<S>>,
     caller: Option<Extension<AuthContext>>,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource + 'static,
+{
     if caller.is_none() {
         return responses::unauthenticated();
     }
@@ -113,11 +127,14 @@ pub(super) async fn global_spend(
     }
 }
 
-pub(super) async fn global_spend_keys(
-    State(state): State<TotalsState>,
+pub(super) async fn global_spend_keys<S>(
+    State(state): State<TotalsState<S>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource + 'static,
+{
     let Some(Extension(context)) = caller else {
         return responses::unauthenticated();
     };
@@ -127,7 +144,10 @@ pub(super) async fn global_spend_keys(
     }
     match classify(&context.principal) {
         Caller::Internal { user_id } => {
-            match global_spend_key_internal_user(state.store.as_deref(), user_id.as_deref()).await {
+            let Some(store) = state.store.as_deref() else {
+                return responses::detail_error(NO_DATABASE);
+            };
+            match global_spend_key_internal_user(store, user_id.as_deref()).await {
                 Ok(rows) => Json(rows).into_response(),
                 Err(failure) => detail_internal_failure(&failure),
             }
@@ -152,11 +172,14 @@ async fn global_keys(store: Option<&dyn TotalsStore>, limit: LimitQuery) -> Resp
     }
 }
 
-pub(super) async fn global_spend_models(
-    State(state): State<TotalsState>,
+pub(super) async fn global_spend_models<S>(
+    State(state): State<TotalsState<S>>,
     caller: Option<Extension<AuthContext>>,
     RawQuery(raw_query): RawQuery,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource + 'static,
+{
     let Some(Extension(context)) = caller else {
         return responses::unauthenticated();
     };
@@ -168,9 +191,10 @@ pub(super) async fn global_spend_models(
     };
     match classify(&context.principal) {
         Caller::Internal { user_id } => {
-            match global_spend_models_internal(state.store.as_deref(), user_id.as_deref(), limit)
-                .await
-            {
+            let Some(store) = state.store.as_deref() else {
+                return responses::detail_error(NO_DATABASE);
+            };
+            match global_spend_models_internal(store, user_id.as_deref(), limit).await {
                 Ok(rows) => Json(rows).into_response(),
                 Err(failure) => detail_internal_failure(&failure),
             }
@@ -189,10 +213,13 @@ async fn global_models(store: Option<&dyn TotalsStore>, limit: i64) -> Response 
     }
 }
 
-pub(super) async fn global_spend_teams(
-    State(state): State<TotalsState>,
+pub(super) async fn global_spend_teams<S>(
+    State(state): State<TotalsState<S>>,
     caller: Option<Extension<AuthContext>>,
-) -> Response {
+) -> Response
+where
+    S: DailySpendSource + 'static,
+{
     if caller.is_none() {
         return responses::unauthenticated();
     }
@@ -222,7 +249,6 @@ fn wrapped_failure(prefix: &str, error: &TotalsStoreError) -> Response {
 
 fn detail_internal_failure(failure: &InternalFailure) -> Response {
     match failure {
-        InternalFailure::NoDatabase => responses::detail_error(NO_DATABASE),
         InternalFailure::MissingUserId => responses::detail_error(NO_USER_ID),
         InternalFailure::Store(error) => detail_store_failure(error),
     }
@@ -231,17 +257,11 @@ fn detail_internal_failure(failure: &InternalFailure) -> Response {
 fn detail_store_failure(error: &TotalsStoreError) -> Response {
     match error {
         TotalsStoreError::Database(DbError::NoDbConnected) => responses::detail_error(NO_DATABASE),
-        TotalsStoreError::InvalidAmount { .. } | TotalsStoreError::Database(_) => {
+        TotalsStoreError::Database(_)
+        | TotalsStoreError::InvalidAmount { .. }
+        | TotalsStoreError::UnreadableAmount { .. } => {
             tracing::warn!(error = %error, "the spend totals query failed");
             responses::internal_error()
         }
-    }
-}
-
-fn logs_internal_failure(failure: &InternalFailure) -> Response {
-    match failure {
-        InternalFailure::NoDatabase => responses::wrapped_error(PRISMA_MISSING.to_owned()),
-        InternalFailure::MissingUserId => responses::wrapped_error(MISSING_USER.to_owned()),
-        InternalFailure::Store(error) => wrapped_failure(LOGS_FAILED, error),
     }
 }

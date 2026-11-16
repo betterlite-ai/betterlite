@@ -5,6 +5,7 @@ use axum::http::StatusCode;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
+use betterlite_auth::auth_identity::roles::Role;
 use betterlite_config::spend_storage::load_spend_storage_policy;
 use betterlite_logging::prometheus_query::daily_spend::PrometheusDailySpend;
 
@@ -16,7 +17,7 @@ use super::support::{
     DailyBody, DetailMessageEnvelope, ErrorEnvelope, FakeFailure, FakePrometheus, FakeStore,
     InternalEnvelope, KeyBody, KeyDailyBody, ModelBody, TeamsBody, TotalBody, UserKeyDailyBody,
     UserModelBody, ValidationEnvelope, admin, body_text, call, date, decimal, decode, internal,
-    internal_without_user, master_key, prometheus, spend_store, state,
+    internal_without_user, master_key, prometheus, role_holder, spend_store, state,
 };
 
 fn daily(day: &str, spend: &str) -> DailySpend {
@@ -221,6 +222,26 @@ async fn logs_read_the_monthly_view_without_prometheus() {
     assert_eq!(body.len(), 2);
     assert_eq!(body[1].spend, decimal("2.5"));
     assert_eq!(store.calls(), vec!["global_daily_spend".to_owned()]);
+}
+
+#[rstest]
+#[case::platform_admin(Role::PlatformAdmin, "global_daily_spend")]
+#[case::platform_viewer(Role::PlatformViewer, "global_daily_spend")]
+#[case::org_admin(Role::OrgAdmin, "global_daily_spend")]
+#[case::org_viewer(Role::OrgViewer, "user_daily_spend(u1,None)")]
+#[case::team_admin(Role::TeamAdmin, "user_daily_spend(u1,None)")]
+#[case::team_member(Role::TeamMember, "user_daily_spend(u1,None)")]
+#[tokio::test]
+async fn logs_route_each_role_to_its_scope(#[case] role: Role, #[case] expected: &str) {
+    let store = store_with(spend_store());
+    let reply = call(
+        "/global/spend/logs",
+        Some(&role_holder(role, "u1")),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert_eq!(store.calls(), vec![expected.to_owned()]);
 }
 
 #[tokio::test]
@@ -682,14 +703,23 @@ async fn models_report_a_missing_internal_user_id() {
 
 #[tokio::test]
 async fn models_report_no_database_as_a_detail_error() {
-    let reply = call(
+    let global = call(
         "/global/spend/models",
         Some(&admin()),
         state(None, None, Decimal::ZERO),
     )
     .await;
-    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
-    let body: DetailMessageEnvelope = decode(&reply);
+    assert_eq!(global.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: DetailMessageEnvelope = decode(&global);
+    assert_eq!(body.detail.error, "No db connected");
+    let per_user = call(
+        "/global/spend/models",
+        Some(&internal("u1")),
+        state(None, None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(per_user.status, StatusCode::INTERNAL_SERVER_ERROR);
+    let body: DetailMessageEnvelope = decode(&per_user);
     assert_eq!(body.detail.error, "No db connected");
 }
 

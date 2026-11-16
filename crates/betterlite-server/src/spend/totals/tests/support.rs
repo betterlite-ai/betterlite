@@ -18,7 +18,7 @@ use serde::Deserialize;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
-use crate::spend::totals::prometheus::{DailySpendFailure, DailySpendSource};
+use crate::spend::totals::prometheus::DailySpendSource;
 use crate::spend::totals::rows::{
     DailySpend, KeyDailySpend, KeySpend, ModelSpend, TeamSpend, TotalSpendRow, UserKeyDailySpend,
     UserModelSpend,
@@ -164,18 +164,24 @@ impl FakePrometheus {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+#[error("the fake Prometheus source failed")]
+pub(super) struct FakePrometheusFailure;
+
 #[async_trait]
 impl DailySpendSource for FakePrometheus {
+    type Failure = FakePrometheusFailure;
+
     async fn daily_spend(
         &self,
         api_key: Option<&str>,
-    ) -> Result<Vec<PrometheusDailySpend>, DailySpendFailure> {
+    ) -> Result<Vec<PrometheusDailySpend>, Self::Failure> {
         self.calls
             .lock()
             .unwrap()
             .push(format!("daily_spend({})", api_key.unwrap_or("<all>")));
         if self.fails {
-            return Err(DailySpendFailure::Query);
+            return Err(FakePrometheusFailure);
         }
         Ok(self.rows.clone())
     }
@@ -185,18 +191,14 @@ pub(super) fn state(
     store: Option<&Arc<FakeStore>>,
     prometheus: Option<&Arc<FakePrometheus>>,
     max_budget: Decimal,
-) -> TotalsState {
+) -> TotalsState<FakePrometheus> {
     let store: Option<Arc<dyn TotalsStore>> = store.map(|store| {
         let cloned: Arc<dyn TotalsStore> = Arc::<FakeStore>::clone(store);
         cloned
     });
-    let prometheus: Option<Arc<dyn DailySpendSource>> = prometheus.map(|source| {
-        let cloned: Arc<dyn DailySpendSource> = Arc::<FakePrometheus>::clone(source);
-        cloned
-    });
     TotalsState {
         store,
-        prometheus,
+        prometheus: prometheus.map(Arc::clone),
         max_budget,
     }
 }
@@ -239,6 +241,10 @@ pub(super) fn internal_without_user() -> Principal {
     principal("virtual-key", Vec::new(), None)
 }
 
+pub(super) fn role_holder(role: Role, user_id: &str) -> Principal {
+    principal("virtual-key", vec![role], Some(user_id))
+}
+
 pub(super) fn master_key() -> Principal {
     principal("master_key", Vec::new(), None)
 }
@@ -248,7 +254,11 @@ pub(super) struct Reply {
     pub(super) body: Vec<u8>,
 }
 
-pub(super) async fn call(uri: &str, identity: Option<&Principal>, state: TotalsState) -> Reply {
+pub(super) async fn call(
+    uri: &str,
+    identity: Option<&Principal>,
+    state: TotalsState<FakePrometheus>,
+) -> Reply {
     let mut request = Request::builder()
         .method(Method::GET)
         .uri(uri)
