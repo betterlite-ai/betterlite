@@ -56,7 +56,7 @@ pub struct VideoClients<'clients, T> {
 
 impl<T> VideoClients<'_, T> {
     #[must_use]
-    pub fn for_kind(&self, kind: ClientKind) -> &T {
+    pub const fn for_kind(&self, kind: ClientKind) -> &T {
         match kind {
             ClientKind::Sync => self.sync,
             ClientKind::Asynchronous => self.asynchronous,

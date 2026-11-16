@@ -40,26 +40,31 @@ pub struct StatusCall<'call> {
     pub provider: Option<&'call str>,
 }
 
-pub async fn status_response<T: VideoTransport + Sync>(
+pub async fn status_response<T>(
     clients: &VideoClients<'_, T>,
     kind: ClientKind,
     supplied: Option<&SuppliedTransport<'_, T>>,
     call: &StatusCall<'_>,
-) -> Result<VideoObject, VideoResultsError> {
+) -> Result<VideoObject, VideoResultsError>
+where
+    T: VideoTransport + Sync,
+{
     let reply = decode_fal_video_reply(call.reply.status, &call.reply.headers, &call.reply.body)?;
-    let client = match supplied.filter(|client| client.kind == kind) {
-        Some(client) => client.transport,
-        None => clients.for_kind(kind),
-    };
+    let client = supplied
+        .filter(|client| client.kind == kind)
+        .map_or_else(|| clients.for_kind(kind), |client| client.transport);
     let result_error = probe_result_error(client, &call.request, &reply).await?;
     status_video_object(&reply, &call.request.url, call.provider, result_error)
 }
 
-async fn probe_result_error<T: VideoTransport>(
+async fn probe_result_error<T>(
     client: &T,
     request: &StatusRequest,
     reply: &FalVideoReply,
-) -> Result<Option<String>, VideoResultsError> {
+) -> Result<Option<String>, VideoResultsError>
+where
+    T: VideoTransport + Sync,
+{
     let Some((url, headers)) = result_request(reply, request) else {
         return Ok(None);
     };
@@ -117,7 +122,7 @@ pub fn status_video_object(
     let error = result_error.or_else(|| error_text(reply));
     let message = error.as_deref().filter(|message| !message.is_empty());
     let provider_name = provider
-        .filter(|provider| !provider.is_empty())
+        .filter(|candidate| !candidate.is_empty())
         .unwrap_or(FAL_AI_PROVIDER);
     let model_path = model_path_from_request_url(&path);
     let request_id = reply
@@ -136,9 +141,9 @@ pub fn status_video_object(
         },
         created_at: 0,
         model: model_path.as_deref(),
-        error: message.map(|message| FalErrorWire {
+        error: message.map(|text| FalErrorWire {
             code: FAL_ERROR_CODE,
-            message,
+            message: text,
         }),
     };
     let value = serde_json::to_value(wire).map_err(FalVideoError::VideoObjectEncode)?;
