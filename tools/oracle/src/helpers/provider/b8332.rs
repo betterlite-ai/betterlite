@@ -110,13 +110,13 @@ fn options(case: &Case) -> Object {
 // None runs the embedding arm; a tag runs that chat arm through dispatch
 fn run_arm(
     case: &Case,
-    tag: Option<ChatConfigTag>,
+    chat: Option<ChatConfigTag>,
     deps: &DispatchDeps<'_>,
     log: &mut CallLogging<'_, '_>,
     runtime: &Runtime,
 ) -> Result<Option<HubCompletion>, HubDispatchError> {
     let mut asked = options(case);
-    let Some(tag) = tag else {
+    let Some(tag) = chat else {
         let embedding = EmbeddingCall {
             model: &case.model,
             input: &case.input,
@@ -258,6 +258,6 @@ impl Helper for Op {
             |failure| error_status(&failure, provider(input.op), &redactor),
             |()| Value::Null,
         );
-        Ok(answer(&fixture.recorder, error))
+        Ok(answer(&fixture.recorder, &error))
     }
 }

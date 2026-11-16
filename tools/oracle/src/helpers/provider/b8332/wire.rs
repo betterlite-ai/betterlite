@@ -40,7 +40,7 @@ fn wire_value(wire: &Wire) -> Value {
     json!({"method": wire.method, "url": wire.url, "headers": headers, "body": body})
 }
 
-pub(super) fn answer(recorder: &Recorder, error: Value) -> Value {
+pub(super) fn answer(recorder: &Recorder, error: &Value) -> Value {
     let requests: Vec<Value> = recorder
         .sent
         .lock()

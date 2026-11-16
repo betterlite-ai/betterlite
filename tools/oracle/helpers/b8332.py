@@ -3,11 +3,11 @@ from typing import Literal, NotRequired, Protocol, TypedDict
 
 import httpx
 import litellm
+import openai
 from litellm.caching.llm_caching_handler import LLMClientCache
-from litellm.exceptions import APIConnectionError, APIError, BadRequestError, RateLimitError
 from litellm.llms.custom_httpx.http_handler import HTTPHandler
 from litellm.llms.huggingface.rerank.transformation import HuggingFaceRerankConfig
-from pydantic import JsonValue, TypeAdapter
+from pydantic import BaseModel, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
@@ -52,6 +52,14 @@ class RerankConfig(Protocol):
 
     @property
     def transform_rerank_request(self) -> TransformRequest: ...
+
+
+class ClientCache(Protocol):
+    def set_cache(self, key: str, value: HTTPHandler) -> None: ...
+
+
+class Raised(BaseModel):
+    status_code: int
 
 
 class Reply(TypedDict):
@@ -105,8 +113,7 @@ class Recorder:
         return httpx.Response(reply["status"], content=reply["body"].encode())
 
 
-def rerank_request(case: Case) -> JsonValue:
-    view: RerankConfig = HuggingFaceRerankConfig()
+def rerank_request(case: Case, view: RerankConfig) -> JsonValue:
     query = case["query"]
     documents: list[str | dict[str, JsonValue]] = [*case["input"]]
     asked: dict[str, JsonValue] = {"query": query, "documents": [*case["input"]]}
@@ -160,18 +167,23 @@ def provider_call(case: Case, client: HTTPHandler) -> None:
             pass
 
 
-def run(input_value: dict[str, JsonValue]) -> JsonValue:
-    case = TypeAdapter(Case).validate_python(input_value)
-    if case["op"] == "huggingface_rerank":
-        return {"requests": [rerank_request(case)], "error": None}
+def recorded_call(case: Case, cache: ClientCache) -> JsonValue:
     recorder = Recorder(case["replies"])
     client = HTTPHandler(client=httpx.Client(transport=httpx.MockTransport(recorder.handle)))
     litellm.module_level_client = client
-    litellm.in_memory_llm_clients_cache = LLMClientCache()
-    litellm.in_memory_llm_clients_cache.set_cache(REPLICATE_CLIENT_KEY, client)
+    cache.set_cache(key=REPLICATE_CLIENT_KEY, value=client)
     error: JsonValue = None
     try:
         provider_call(case, client)
-    except (APIError, APIConnectionError, BadRequestError, RateLimitError) as raised:
-        error = {"status": raised.status_code}
+    except openai.APIError as raised:
+        error = {"status": Raised.model_validate(raised, from_attributes=True).status_code}
     return {"requests": recorder.requests, "error": error}
+
+
+def run(input_value: dict[str, JsonValue]) -> JsonValue:
+    case = TypeAdapter(Case).validate_python(input_value)
+    if case["op"] == "huggingface_rerank":
+        return {"requests": [rerank_request(case, HuggingFaceRerankConfig())], "error": None}
+    cache = LLMClientCache()
+    litellm.in_memory_llm_clients_cache = cache
+    return recorded_call(case, cache)
