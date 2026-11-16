@@ -1,11 +1,11 @@
-use crate::helpers::OrHelperError as _;
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::types::Config;
 use betterlite_openai::credentials::{
     ExplicitCredentials, LiteLlmGlobals, get_openai_credentials, infer_openai_data_residency,
     is_openai_backed_api_base, resolve_openai_api_base,
 };
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -125,7 +125,7 @@ fn residency(fields: &ResidencyFields) -> HelperResult {
     serde_json::to_value(region).map_err(|error| invalid_input(error.to_string()))
 }
 
-fn invoke(input: &CredentialsCall) -> HelperResult {
+fn invoke_credentials_call(input: &CredentialsCall) -> HelperResult {
     match input {
         CredentialsCall::KeyAndOrganizationPrecedence(fields)
         | CredentialsCall::EmptyOrganization(fields) => credentials(fields),
@@ -137,11 +137,11 @@ fn invoke(input: &CredentialsCall) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = CredentialsCall;
 
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_credentials_call(input)
     }
 }
 

@@ -83,7 +83,8 @@
         "file-size",
         "crates",
         "module-tree",
-        "case-ignores"
+        "case-ignores",
+        "shared-names"
       ]
     },
     "Command": {

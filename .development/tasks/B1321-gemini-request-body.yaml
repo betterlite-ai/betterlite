@@ -81,7 +81,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/gemini-request/studio-omits-labels.yaml
 deviations:
   - what: Async chat requests whose media policy requires inlining return 400 invalid_request_error with code unsupported_remote_media and param identifying that media input; the gateway performs no URL retrieval.
-    why: The async_inline_remote_media call reaches the unresolved download choice and must remain disabled pending Max's decision.
+    why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1373-L1396
 out_of_scope:
   - B1311 owns media predicates including L1313-L1328; B1312 owns role conversion; B1317 owns the two final system helpers and cache-prefix transformation.

@@ -11,7 +11,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
@@ -58,10 +59,10 @@ pub(crate) struct ExtraBodyInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         match input {
             Input::Parse(fields) => Ok(parse(fields)),
             Input::TrustedCredentials(fields) => Ok(trusted_credentials(fields)),
@@ -132,7 +133,7 @@ fn carried_keys(params: &CallParams) -> Vec<&'static str> {
     keys
 }
 
-fn extra_body(fields: &ExtraBodyInput) -> crate::helpers::HelperResult {
+fn extra_body(fields: &ExtraBodyInput) -> HelperResult {
     if let Some(body) = fields.body.as_ref() {
         check_extra_body(body).or_value_error()?;
     }

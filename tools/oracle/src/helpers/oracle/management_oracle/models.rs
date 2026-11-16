@@ -1,4 +1,6 @@
 use betterlite_http::url_path::{encode_segment, encode_segments};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -21,7 +23,7 @@ pub(super) enum Function {
     Segments,
 }
 
-pub(super) fn run(operation: &Operation) -> crate::helpers::HelperResult {
+pub(super) fn run(operation: &Operation) -> HelperResult {
     match operation {
         Operation::PathEncoding(input) => {
             let result = match input.function {
@@ -29,7 +31,7 @@ pub(super) fn run(operation: &Operation) -> crate::helpers::HelperResult {
                 Function::Segments => encode_segments(&input.value, &input.field_name),
             };
             result.map(serde_json::Value::String).map_err(|error| {
-                Box::new(crate::helpers::HelperError {
+                Box::new(HelperError {
                     class: "ValueError".to_owned(),
                     status: None,
                     error_type: None,

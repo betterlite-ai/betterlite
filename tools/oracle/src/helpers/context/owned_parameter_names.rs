@@ -1,8 +1,9 @@
-use crate::helpers::HelperError;
 use betterlite_context::owned_parameter_names::{
     AGENTIC_LOOP_KWARG_NAMES, BEDROCK_BATCH_KWARG_NAMES, OwnedParameterNamesError, Owner,
     WireMetadata, is_litellm_owned_kwarg, owned_names, owned_wire_names, wire_names,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 mod tests;
@@ -45,7 +46,7 @@ enum Output<'input> {
     },
 }
 
-fn run(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
+fn resolve(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
     match input {
         Input::WireNameProjection { name, owner, root } => Ok(Output::Projection {
             wire: WireMetadata { wire_name: name },
@@ -76,11 +77,11 @@ fn run(input: &Input) -> Result<Output<'_>, OwnedParameterNamesError> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let output = run(input).map_err(|error| {
+    fn run(input: &Self::Input) -> HelperResult {
+        let output = resolve(input).map_err(|error| {
             Box::new(HelperError {
                 class: "TypeError".to_owned(),
                 status: None,

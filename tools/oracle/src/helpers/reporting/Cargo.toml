@@ -1,0 +1,16 @@
+[package]
+name = "betterlite-oracle-reporting"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+
+[lints]
+workspace = true

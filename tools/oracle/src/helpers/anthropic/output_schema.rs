@@ -1,4 +1,6 @@
 use betterlite_anthropic::output_schema::{SchemaError, filter_anthropic_output_schema, mapping};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
 
@@ -24,10 +26,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::Filter { schema } => filter_anthropic_output_schema(schema.clone())
                 .and_then(|result| serde_json::to_value(result).map_err(SchemaError::Encode)),
@@ -50,7 +52,7 @@ impl crate::helpers::Helper for Op {
                 .and_then(|result| serde_json::to_value(result).map_err(SchemaError::Encode)),
         };
         result.map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: match source {
                     SchemaError::MissingType => "KeyError",
                     SchemaError::Invalid(_) => "TypeError",

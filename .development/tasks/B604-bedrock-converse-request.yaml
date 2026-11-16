@@ -315,7 +315,7 @@ oracle_cases:
 deviations:
 - what: Request image/document URLs needing byte conversion are not downloaded; return ImageFetchError status400
     before upstream IO. Supplied bytes/data remain supported.
-  why: Request URL downloads remain an open Max decision; retain B183 no-fetch behavior meanwhile.
+  why: B5083's downloader is not wired into this path yet. Request media URLs are fetched as LiteLLM fetches them (decision 2026-10-31), and an R2 fix task wires it in.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L1998-L2003
 out_of_scope:
 - B028 owns final executable provider registration; public endpoint routes, persistence and Python SDK wrappers

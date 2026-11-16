@@ -98,7 +98,7 @@ base:
     - id: diff-budget
       why: the change must fit the task's changed-line budget
     - id: expect-budget
-      why: "new #[expect(...)] attributes and new Python lines with a cast, type: ignore, pyright: ignore or noqa must fit the task's budget together"
+      why: "new #[expect(...)] attributes and new Python lines with a cast, type: ignore, pyright: ignore or noqa must fit the task's budget together; a line in tools/oracle/helpers that links LiteLLM at the commit litellm.yaml pins is free"
     - id: file-size
       why: no Rust source file may grow past the line limits in settings.file_size; a `mod name;` line does not count, so a parent can declare every child module where cargo-mutants finds it
     - id: crates
@@ -107,6 +107,8 @@ base:
       why: "every Rust file the change adds or edits is part of its crate, reached from a Cargo target through a mod line, #[path] or include!, so its code and its tests compile"
     - id: case-ignores
       why: every compare.ignore pointer in a helper case the change adds or edits starts with a field of the helper answer, so it ignores something
+    - id: shared-names
+      why: no oracle crate defines a free function with the name of a public function in the runner or helper-api crates, so renaming a shared function can never reach a local one by accident
   commands:
     - id: committed
       why: every change must be committed, so the branch is exactly what gets merged

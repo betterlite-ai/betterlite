@@ -7,6 +7,8 @@ use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::batches::records::BatchObject;
 use betterlite_openai::files::records::FileObject;
 use betterlite_openai::fine_tuning::job::FineTuneJob;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secrets::secret_codec::diagnostics::TracingDiagnostics;
 use betterlite_secrets::secret_codec::{Algorithm, CipherSettings, OsNonces, StoredCipher};
 use secrecy::SecretString;
@@ -41,8 +43,8 @@ struct RowResult<'name> {
     baseline_model: Option<String>,
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -66,7 +68,7 @@ fn cipher(salt_key: Option<&String>) -> DbCipher {
 fn row_result(
     call: &RowCall,
     result: Result<Rows, ManagedRowsDecodeError>,
-) -> Result<RowResult<'_>, Box<crate::helpers::HelperError>> {
+) -> Result<RowResult<'_>, Box<HelperError>> {
     let Ok(decoded) = result else {
         return Ok(RowResult {
             name: &call.name,
@@ -99,7 +101,7 @@ fn row_result(
     })
 }
 
-fn inner_row(decoded: &Rows) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn inner_row(decoded: &Rows) -> Result<Value, Box<HelperError>> {
     let serialized = match decoded {
         ManagedResourceRow::ManagedFile(row) => serde_json::to_value(row),
         ManagedResourceRow::ManagedObject(row) => serde_json::to_value(row),
@@ -116,10 +118,10 @@ fn inner_row(decoded: &Rows) -> Result<Value, Box<crate::helpers::HelperError>> 
     serialized.map_err(|source| helper_error("InvalidOutput", &source.to_string()))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let cipher = cipher(input.salt_key.as_ref());
         let dependencies = ManagedRowDependencies {
             cipher: &cipher,

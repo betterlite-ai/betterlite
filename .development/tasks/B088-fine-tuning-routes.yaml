@@ -120,7 +120,7 @@ deviations:
   why: README Decisions removes paid-tier gates. Compare the remaining HTTP behavior with only the reference premium flag enabled and a separate default-license deviation case; never install enterprise code.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L117-L119
 - what: Managed files/jobs retain MIT default raw-id handling and the explicit 400/500 require_managed_files errors in these cases.
-  why: Max's managed-files/batches decision is still open; no ownership hook is fabricated.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/fine_tuning_endpoints/endpoints.py#L143-L178
 out_of_scope:
 - B1141 owns provider config helpers at 32-59; B1054 owns complete cancellation handler at 495-638.
