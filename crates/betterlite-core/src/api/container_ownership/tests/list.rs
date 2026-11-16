@@ -254,6 +254,28 @@ async fn list_stops_on_an_empty_upstream_page() {
 }
 
 #[tokio::test]
+async fn list_skips_an_item_without_an_id() {
+    let objects = ScriptedObjects::default();
+    objects.owned_scopes(&["container:openai:item0".to_owned()]);
+    let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
+    let upstream: ContainerListPage = serde_json::from_str(
+        r#"{"data":[{"object":"container"},{"id":"item0","object":"container"}],"has_more":false}"#,
+    )
+    .unwrap();
+    let pages = ScriptedPages::new(vec![upstream]);
+    let alice = principal("alice");
+    let caller = ContainerCaller {
+        principal: Some(&alice),
+        custom_llm_provider: "openai",
+    };
+    let result = list_owned_containers(&ownership, &pages, None, None, caller)
+        .await
+        .unwrap();
+    assert_eq!(result.data.len(), 1);
+    assert_eq!(result.first_id.as_deref(), Some("item0"));
+}
+
+#[tokio::test]
 async fn list_passes_the_after_cursor() {
     let objects = ScriptedObjects::default();
     let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();

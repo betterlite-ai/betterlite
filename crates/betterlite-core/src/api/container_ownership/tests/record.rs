@@ -5,10 +5,13 @@ use crate::api::response_id_traversal::record::Record;
 
 use super::super::access::assert_container_access;
 use super::super::errors::ContainerOwnershipError;
+use super::super::forwarding::stored_container_id;
 use super::super::list::allowed_container_ids;
 use super::super::record::{record_container_owner, record_response_containers};
 use super::super::response::synthetic_container;
-use super::super::{CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerOwnership};
+use super::super::{
+    CONTAINER_OBJECT_PURPOSE, ContainerCaller, ContainerIdentity, ContainerOwnership,
+};
 use super::support::{
     Effect, ScriptedObjects, anonymous, anonymous_admin, capture_logs, fixed_clock, principal,
 };
@@ -213,6 +216,28 @@ async fn record_warms_the_owner_cache_for_the_recorded_container() {
         .await
         .unwrap_err();
     assert!(matches!(&error, ContainerOwnershipError::Forbidden));
+    assert_eq!(objects.effects().len(), effects);
+}
+
+#[tokio::test]
+async fn record_warms_the_stored_id_cache_for_the_recorded_container() {
+    let objects = ScriptedObjects::default();
+    let ownership = ContainerOwnership::new(objects.clone(), fixed_clock()).unwrap();
+    let alice = principal("alice");
+    let caller = ContainerCaller {
+        principal: Some(&alice),
+        custom_llm_provider: "azure",
+    };
+    record_container_owner(&ownership, &synthetic_container("container-1"), caller)
+        .await
+        .unwrap();
+    let effects = objects.effects().len();
+    let identity = ContainerIdentity {
+        original_container_id: "container-1".to_owned(),
+        custom_llm_provider: "azure".to_owned(),
+    };
+    let stored = stored_container_id(&ownership, &identity).await.unwrap();
+    assert_eq!(stored.as_deref(), Some("container-1"));
     assert_eq!(objects.effects().len(), effects);
 }
 
