@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::xai_identity::Settings;
 use betterlite_openai::xai_identity::{KeyOrder, get_api_base, get_api_key, validate_environment};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -28,10 +29,10 @@ struct Call {
     headers: BTreeMap<String, String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let calls = input.calls.iter().map(resolve).collect::<Vec<_>>();
         Ok(json!({ "calls": calls }))
     }

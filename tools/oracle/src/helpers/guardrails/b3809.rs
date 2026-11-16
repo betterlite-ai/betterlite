@@ -17,7 +17,9 @@ use betterlite_guardrails::judge::record::JudgeGuardrailRecord;
 use betterlite_guardrails::judge::verdict::EvalInformation;
 use serde::Deserialize;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -93,7 +95,7 @@ struct Output {
     guardrail_records: Option<Vec<JudgeGuardrailRecord>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ApplyInput;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -118,7 +120,7 @@ fn execute(input: &ApplyInput) -> Result<Output, Box<HelperError>> {
     let guardrail =
         initialize_guardrail(&JudgeParams::default(), &entry, completion, &mut registry)
             .map_err(|error| failure("ValueError", error.to_string()))?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))?;

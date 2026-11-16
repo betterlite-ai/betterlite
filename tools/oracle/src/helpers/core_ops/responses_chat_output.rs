@@ -5,7 +5,8 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -17,10 +18,10 @@ pub(crate) struct ChatOutputInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = ChatOutputInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut ids = 0_u32;
         let assembled = assemble_response(
             &input.request_input,

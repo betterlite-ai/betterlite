@@ -23,7 +23,8 @@ use super::input::{
     Case, Parts, beta_version, credential_settings, deployment, failure, json_value,
 };
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn answers<F>(key: &str, cases: &[Case], answer: F) -> HelperResult
 where

@@ -12,7 +12,7 @@ use betterlite_logging::otel::legacy_policy::config::{Exporter, OpenTelemetryCon
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::support::{invalid, plan_json, resource_json, span_plan_json, tracer_cache_sequence};
 
@@ -157,7 +157,7 @@ fn metric_reader_reply(input: &Input) -> HelperResult {
     Ok(plan_json(&plan))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

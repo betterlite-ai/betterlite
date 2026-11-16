@@ -10,6 +10,7 @@ use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, Span as 
 use serde_json::{Map, Value};
 
 use super::input::Input;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn config(input: &Input) -> OpenTelemetryConfig {
     let mut config = OpenTelemetryConfig::from_env(&BTreeMap::new());
@@ -48,9 +49,7 @@ pub(super) fn capture_mode(name: Option<&str>) -> CaptureMode {
     }
 }
 
-pub(super) fn record<F, R>(
-    write: F,
-) -> Result<(Map<String, Value>, R), Box<crate::helpers::HelperError>>
+pub(super) fn record<F, R>(write: F) -> Result<(Map<String, Value>, R), Box<HelperError>>
 where
     F: FnOnce(&mut SdkSpan) -> R,
 {
@@ -114,8 +113,8 @@ fn array_json(array: &Array) -> Vec<Value> {
     }
 }
 
-pub(super) fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

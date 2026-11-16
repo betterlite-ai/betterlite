@@ -13,6 +13,8 @@ use betterlite_models::savings_evidence::snapshot::{
 use betterlite_models::savings_evidence::usage::baseline::baseline_usage;
 use betterlite_models::savings_evidence::usage::{RawUsageObject, usage_from_spend_log};
 use betterlite_models::token_rates::ModelInfo;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -56,7 +58,7 @@ pub(crate) enum Validated<T> {
 }
 
 impl<T> Validated<T> {
-    fn get(&self) -> Result<&T, Box<crate::helpers::HelperError>> {
+    fn get(&self) -> Result<&T, Box<HelperError>> {
         match self {
             Self::Valid(value) => Ok(value),
             Self::Invalid(value) => Err(helper_error(
@@ -67,8 +69,8 @@ impl<T> Validated<T> {
     }
 }
 
-fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> {
-    let error = crate::helpers::HelperError {
+fn helper_error(class: &str, message: &str) -> Box<HelperError> {
+    let error = HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
@@ -79,14 +81,14 @@ fn helper_error(class: &str, message: &str) -> Box<crate::helpers::HelperError> 
     Box::new(error)
 }
 
-fn saved_tokens_value(result: Result<i64, SavingsEvidenceError>) -> crate::helpers::HelperResult {
+fn saved_tokens_value(result: Result<i64, SavingsEvidenceError>) -> HelperResult {
     match result {
         Ok(count) => Ok(serde_json::json!({ "tokens_saved": count })),
         Err(error) => Err(helper_error("SavingsEvidenceError", &error.to_string())),
     }
 }
 
-fn cache_extraction_value(usage_object: Option<&UsageObject>) -> crate::helpers::HelperResult {
+fn cache_extraction_value(usage_object: Option<&UsageObject>) -> HelperResult {
     let read = extract_cache_read_tokens(usage_object)
         .map_err(|error| helper_error("SavingsEvidenceError", &error.to_string()))?;
     let creation = extract_cache_creation_tokens(usage_object)
@@ -123,7 +125,7 @@ fn baseline_usage_value(
     })
 }
 
-fn snapshot_value(snapshot: &Validated<BaselineCostSnapshot>) -> crate::helpers::HelperResult {
+fn snapshot_value(snapshot: &Validated<BaselineCostSnapshot>) -> HelperResult {
     let valid = snapshot.get()?;
     Ok(serde_json::json!({
         "ok": true,
@@ -141,10 +143,10 @@ fn snapshot_value(snapshot: &Validated<BaselineCostSnapshot>) -> crate::helpers:
     }))
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Autorouter { metadata } => Ok(serde_json::json!({
                 "autorouter_savings": recorded_autorouter_savings(metadata).map(|value| serde_json::Value::String(value.normalize().to_string())),

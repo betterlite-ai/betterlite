@@ -261,7 +261,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call*")"
       && grep -lq 'bedrock_other_image_call' tools/oracle/fuzz/corpus/helper_case/bedrock_other_image_call* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_call$/)'
+      nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_image_call$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-image-transport-selection
     why: Only aimg_generation literally True selects async. Sync accepts only an HTTPHandler or creates B173 default

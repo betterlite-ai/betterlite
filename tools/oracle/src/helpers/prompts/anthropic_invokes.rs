@@ -13,11 +13,12 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod failures;
 
 use self::failures::{file_failure, helper_failure};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -144,7 +145,7 @@ fn process_file_messages(call: &FileMessageCall) -> HelperResult {
     let source = MapSource {
         data_urls: &call.data_urls,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| helper_failure(None, error.to_string()))?;
     let mut blocks = Vec::with_capacity(call.messages.len());

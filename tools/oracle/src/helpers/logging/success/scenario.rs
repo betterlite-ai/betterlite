@@ -16,7 +16,7 @@ use chrono::{DateTime, FixedOffset};
 use indexmap::IndexMap;
 use serde_json::Value;
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 

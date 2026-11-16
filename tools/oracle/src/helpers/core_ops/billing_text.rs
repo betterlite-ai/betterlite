@@ -4,10 +4,12 @@ use betterlite_models::billing_text::{
     get_formatted_prompt, get_response_string,
 };
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-type Failure = Box<crate::helpers::HelperError>;
+type Failure = Box<HelperError>;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -78,10 +80,10 @@ enum ChoiceInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(Value::Array(input.calls.iter().map(run_call).collect()))
     }
 }
@@ -182,7 +184,7 @@ impl CallTypeInput {
 }
 
 fn failure(message: &str) -> Failure {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

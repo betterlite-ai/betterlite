@@ -12,7 +12,9 @@ use serde_json::Value;
 
 use super::Probe;
 use super::calls::invalid_input;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 #[derive(Debug, thiserror::Error)]
 #[error("the fixture catalog lookup failed")]
@@ -39,7 +41,7 @@ impl NativeStreamingSupport for NativeFixture {
 }
 
 pub(super) fn streams(probes: &[Probe]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| invalid_input(error.to_string()))?;
     let mut results = Vec::with_capacity(probes.len());

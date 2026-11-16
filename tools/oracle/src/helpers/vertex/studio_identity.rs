@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_vertex::studio_identity::{
     AuthValue, NativeParams, native_headers, process_model_names,
 };
@@ -34,10 +35,10 @@ struct Call {
     models: Vec<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let calls = input.calls.iter().map(resolve).collect::<Vec<_>>();
         Ok(json!({ "calls": calls }))
     }

@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::pre_call::failure::PreCallFailure;
 use betterlite_server::pre_call::rewrites::{
     RequestModel, file_search_store_ids, request_model, stream_usage_updates,

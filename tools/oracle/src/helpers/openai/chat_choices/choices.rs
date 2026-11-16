@@ -4,7 +4,7 @@ use serde_json::{Value, to_value};
 use uuid::Uuid;
 
 use super::{ChoiceSteps, failure};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Serialize)]
 struct Envelope<'step> {

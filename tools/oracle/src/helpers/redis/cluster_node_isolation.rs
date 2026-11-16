@@ -1,6 +1,7 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redis::redis_cluster_node_isolation::{
-    CommandOutcome, IsolationBranch, IsolationConfig, IsolationError, IsolationState,
-    execute_command, select_branch, version_warning,
+    CommandOutcome, IsolationBranch, IsolationConfig, IsolationError, IsolationEvent,
+    IsolationState, execute_command, select_branch, version_warning,
 };
 
 #[derive(serde::Deserialize)]
@@ -22,10 +23,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let branch = select_branch(input.reconnect_method.0);
         let mut state = IsolationState::new(
             IsolationConfig {
@@ -75,19 +76,17 @@ const fn error_name(error: &IsolationError) -> &'static str {
     }
 }
 
-fn event_name(event: &betterlite_redis::redis_cluster_node_isolation::IsolationEvent) -> String {
+fn event_name(event: &IsolationEvent) -> String {
     match event {
-        betterlite_redis::redis_cluster_node_isolation::IsolationEvent::Disconnected(node) => {
+        IsolationEvent::Disconnected(node) => {
             format!("disconnected:{node}")
         }
-        betterlite_redis::redis_cluster_node_isolation::IsolationEvent::Moved => "moved".to_owned(),
-        betterlite_redis::redis_cluster_node_isolation::IsolationEvent::Asked(node) => {
+        IsolationEvent::Moved => "moved".to_owned(),
+        IsolationEvent::Asked(node) => {
             format!("asked:{node}")
         }
-        betterlite_redis::redis_cluster_node_isolation::IsolationEvent::FullReinitialize => {
-            "full_reinitialize".to_owned()
-        }
-        betterlite_redis::redis_cluster_node_isolation::IsolationEvent::Slept(seconds) => {
+        IsolationEvent::FullReinitialize => "full_reinitialize".to_owned(),
+        IsolationEvent::Slept(seconds) => {
             format!("slept:{seconds}")
         }
     }

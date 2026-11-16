@@ -2,7 +2,7 @@ use betterlite_server::stream_keepalive::interval::is_explicit_keepalive_disable
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

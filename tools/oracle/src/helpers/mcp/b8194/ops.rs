@@ -13,7 +13,8 @@ use betterlite_server::mcp::debug::preview::text::safe_upstream_url;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{BodyScenario, DebugScenario, DiagnosticScenario, Input, Operation, Pair};
 

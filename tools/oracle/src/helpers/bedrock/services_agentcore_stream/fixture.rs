@@ -20,7 +20,7 @@ use uuid::Uuid;
 
 use super::Scenario;
 use super::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct FixedIds {
     values: Mutex<VecDeque<Uuid>>,

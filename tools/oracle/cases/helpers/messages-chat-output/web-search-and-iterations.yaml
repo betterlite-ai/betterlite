@@ -1,0 +1,41 @@
+kind: helper
+name: messages-chat-output-web-search-and-iterations
+call:
+  messages_chat_output:
+    operation: response
+    response:
+      id: msg_web_search
+      model: claude-sonnet-4-5
+      choices:
+      - finish_reason: stop
+        message:
+          content: after
+          tool_calls: []
+          reasoning_content: null
+          thinking_blocks: null
+          refusal: null
+          provider_specific_fields: null
+      usage:
+        prompt_tokens: 100
+        completion_tokens: 7
+        prompt_tokens_details:
+          web_search_requests: 9
+        server_tool_use:
+          web_search_requests: 2
+        cache_read_input_tokens: null
+        cache_creation_input_tokens: null
+        _cache_read_input_tokens: null
+        _cache_creation_input_tokens: null
+    tool_name_mapping: null
+    polyfill_result:
+      applied_edits:
+      - type: clear_tool_uses_20250919
+        cleared_tool_uses: 1
+      compaction_block:
+        type: compaction
+        content: sum
+        signature: s
+      iterations_usage: []
+env: {}
+compare:
+  ignore: []

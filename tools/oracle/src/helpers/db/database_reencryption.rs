@@ -9,7 +9,8 @@ use betterlite_db::database_reencryption::traversal::{as_sql_parameter, replace_
 use betterlite_db::encryption_scan::decode_migration_json;
 use serde_json::Value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

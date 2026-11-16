@@ -2,7 +2,8 @@ use betterlite_config::sections::detailed_timing::DetailedTiming;
 use betterlite_server::custom_headers::custom_headers;
 use betterlite_server::custom_headers::input::CustomHeadersInput;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

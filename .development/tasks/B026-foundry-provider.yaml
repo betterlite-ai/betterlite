@@ -271,7 +271,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_provider*")"
       && grep -lq 'foundry_provider' tools/oracle/fuzz/corpus/helper_case/foundry_provider* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_provider$/)' && cargo
+      --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_foundry_provider$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-foundry-post-call
     why: Claude post_call runs for truthy stream or acompletion is True and carries no additional_args.headers.

@@ -4,6 +4,7 @@ use betterlite_openai::api::audio_subtitles::render::{
     render_subtitle_tokens_as_srt, render_subtitle_tokens_as_vtt,
 };
 use betterlite_openai::api::audio_subtitles::timing::synthesize_subtitle_document;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -34,10 +35,10 @@ enum Call {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let outcomes: Vec<Value> = input.calls.iter().map(outcome_of).collect();
         Ok(serde_json::to_value(outcomes)?)
     }

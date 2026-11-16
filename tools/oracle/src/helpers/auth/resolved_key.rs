@@ -11,7 +11,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest as _, Sha256};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,7 +37,7 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

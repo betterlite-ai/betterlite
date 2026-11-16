@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use axum::Router;
-use axum::body::to_bytes;
+use axum::body::{Body, to_bytes};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
@@ -11,7 +11,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 
 use super::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
@@ -85,7 +85,7 @@ async fn answer_request(State(mock): State<Mock>, request: Request) -> Response 
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "application/json")
-        .body(axum::body::Body::from(mock.answer.clone()))
+        .body(Body::from(mock.answer.clone()))
         .unwrap_or_else(|_error| StatusCode::INTERNAL_SERVER_ERROR.into_response())
 }
 

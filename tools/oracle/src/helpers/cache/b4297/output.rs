@@ -3,6 +3,7 @@ use betterlite_cache::envelope::lookup::CacheLookup;
 use serde_json::{Map, Value};
 
 use super::{RecordedWrite, failure};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) fn object_json(object: &KeyObject) -> Value {
     let mut fields = Map::new();
@@ -37,7 +38,7 @@ pub(crate) fn lookup_json(lookup: &CacheLookup) -> Value {
     Value::Object(fields)
 }
 
-pub(crate) fn write_json(record: Option<&RecordedWrite>) -> crate::helpers::HelperResult {
+pub(crate) fn write_json(record: Option<&RecordedWrite>) -> HelperResult {
     let Some(found) = record else {
         return Ok(Value::Null);
     };

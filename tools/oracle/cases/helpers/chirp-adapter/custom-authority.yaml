@@ -1,0 +1,32 @@
+kind: helper
+name: chirp-adapter-custom-authority
+call:
+  chirp_adapter:
+    function: urls
+    project: oracle-project
+    location: null
+    cases:
+      - {model: chirp_2, api_base: null}
+      - {model: vertex_ai/chirp_3, api_base: null}
+      - {model: chirp_2, api_base: 'https://proxy.example:8443/vertex/v1'}
+      - {model: chirp_2, api_base: 'https://proxy.example/ignored/path'}
+      - {model: chirp_2, api_base: 'proxy.example:9443'}
+      - {model: chirp, api_base: null}
+      - {model: gpt-4o-transcribe, api_base: 'https://proxy.example'}
+calls:
+  - chirp_adapter:
+      function: urls
+      project: oracle-project
+      location: europe-west4
+      cases:
+        - {model: chirp_2, api_base: null}
+        - {model: chirp_3, api_base: 'https://proxy.example/v1'}
+  - chirp_adapter:
+      function: urls
+      project: oracle-project
+      location: global
+      cases:
+        - {model: chirp_2, api_base: null}
+        - {model: chirp_2, api_base: 'https://global-proxy.example'}
+env: {}
+compare: {ignore: []}

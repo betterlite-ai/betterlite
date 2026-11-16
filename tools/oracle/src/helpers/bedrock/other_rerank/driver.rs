@@ -15,12 +15,14 @@ use betterlite_redact::error::RedactionError;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::{Map, Value, json, value::RawValue};
 use thiserror::Error;
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::fixtures::{Client, DiscardingSink, Source, logging_state, prepost_env};
 use super::input::{Function, Probe, Supplied};
+use std::str::Utf8Error;
+use std::{io, str};
 
 const SIGNING_SECONDS: u64 = 1_700_000_000;
 const GENERATED_ID: &str = "00000000-0000-4000-8000-000000000000";
@@ -36,13 +38,13 @@ pub(super) enum Failure {
     #[error(transparent)]
     Redact(#[from] RedactionError),
     #[error("the probe body is not UTF-8")]
-    Body(#[from] std::str::Utf8Error),
+    Body(#[from] Utf8Error),
     #[error("the probe needs credentials")]
     MissingCredentials,
     #[error("the probe prepared no request")]
     Shape,
     #[error("the async runtime could not start")]
-    Runtime(#[from] std::io::Error),
+    Runtime(#[from] io::Error),
 }
 
 impl Failure {
@@ -191,7 +193,7 @@ fn run(probe: &Probe) -> Result<(Run, Result<RerankResponse, Failure>), Failure>
     let harness = Harness::new(probe)?;
     let mut state = logging_state()?;
     let captured = Mutex::new(None);
-    let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+    let runtime = Builder::new_current_thread().build()?;
     let request = request(probe);
     let mut call = harness.call(&request);
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(Failure::from)?;
@@ -257,7 +259,7 @@ fn prepare_json(run: &Run, outcome: Result<RerankResponse, Failure>) -> Result<V
     let request = run.posted().ok_or(Failure::Shape)?;
     Ok(json!({
         "posted_url": &request.url,
-        "posted_text": std::str::from_utf8(&request.body)?,
+        "posted_text": str::from_utf8(&request.body)?,
         "posted_body": serde_json::from_slice::<Value>(&request.body)?,
         "content_type": header(&request.headers, "Content-Type"),
         "signed_headers": {

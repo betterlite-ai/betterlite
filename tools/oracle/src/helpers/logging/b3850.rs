@@ -15,6 +15,8 @@ use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 
 use self::base::BaseInput;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod base;
 mod tests;
@@ -76,10 +78,10 @@ enum ConfigValue<'source> {
     Weave(&'source WeaveOtelConfig),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ArizeConfig { environment } => Ok(config_json(ConfigValue::Arize(
                 &ArizeConfig::from_env(environment),
@@ -127,7 +129,7 @@ fn preset_value(
     environment: &BTreeMap<String, String>,
     base: &BaseInput,
     allow_missing_credentials: bool,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let settings = preset
         .build(environment, base.settings()?, allow_missing_credentials)
         .map_err(|error| invalid(&error.to_string()))?;
@@ -164,8 +166,8 @@ fn config_json(config: ConfigValue<'_>) -> Value {
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

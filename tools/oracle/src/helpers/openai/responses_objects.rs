@@ -2,6 +2,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::responses_objects::{
     ResponseApiUsage, ResponsesApiResponse, ResponsesToolUsage,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -19,10 +21,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::UsageCost { usage } => serde_json::to_value(usage)
                 .and_then(serde_json::from_value::<ResponseApiUsage>)
@@ -40,7 +42,7 @@ impl crate::helpers::Helper for Op {
                 .and_then(serde_json::to_value),
         };
         output.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "InvalidInput".to_owned(),
                 status: None,
                 error_type: None,

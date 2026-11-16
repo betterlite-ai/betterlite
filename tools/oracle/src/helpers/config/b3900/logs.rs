@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex, PoisonError};
 
+use std::mem;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer};
@@ -46,11 +47,11 @@ impl Logs {
     pub(super) fn take(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
         let warnings = {
             let mut guard = self.warnings.lock().unwrap_or_else(PoisonError::into_inner);
-            std::mem::take(&mut *guard)
+            mem::take(&mut *guard)
         };
         let infos = {
             let mut guard = self.infos.lock().unwrap_or_else(PoisonError::into_inner);
-            std::mem::take(&mut *guard)
+            mem::take(&mut *guard)
         };
         let mut fixed = Vec::with_capacity(warnings.len());
         let mut details = Vec::with_capacity(warnings.len());

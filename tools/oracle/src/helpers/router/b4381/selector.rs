@@ -23,7 +23,7 @@ use betterlite_tokenizer::engine::limits::{
 use betterlite_tokenizer::engine::selection::Selector;
 use tokio::time::Instant;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 struct InlineCounter;
 

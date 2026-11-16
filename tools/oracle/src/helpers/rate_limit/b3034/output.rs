@@ -2,7 +2,7 @@ use betterlite_rate_limit::limiter_records::{RateLimitResponse, ReservationWindo
 use betterlite_rate_limit::settlement_and_rollback::SettlementError;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn settlement_error(error: &SettlementError) -> Box<HelperError> {
     let status = match error {

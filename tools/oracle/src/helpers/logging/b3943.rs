@@ -6,7 +6,10 @@ use betterlite_logging::newrelic_metrics::records::{
     NewRelicMetricRecord, metric_record_from_payload,
 };
 use betterlite_logging::newrelic_metrics::region::resolve_metric_endpoint;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -32,10 +35,10 @@ struct RegionOutput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Region { region } => serde_json::to_value(RegionOutput {
                 endpoint: resolve_metric_endpoint(region.as_deref()),
@@ -58,7 +61,7 @@ fn payload_output(
     records: &[StandardLoggingPayload],
     window_start_ms: u64,
     now_ms: u64,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let extracted = records
         .iter()
         .map(metric_record_from_payload)
@@ -73,11 +76,11 @@ fn payload_output(
     serde_json::to_value(vec![envelope]).map_err(value_error)
 }
 
-fn value_error<E>(error: E) -> Box<crate::helpers::HelperError>
+fn value_error<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

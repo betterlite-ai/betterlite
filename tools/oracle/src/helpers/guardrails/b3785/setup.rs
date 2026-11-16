@@ -10,10 +10,14 @@ use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperError;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply, Wait};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, Outcome, ScriptSpec, ScriptedReply, Wait,
+};
+use std::slice;
+use tokio::runtime::{Builder, Runtime};
 
 const HANGING_RESPONSE_MILLIS: u64 = 5_000;
 const HANGING_SCRIPT_DEADLINE_MILLIS: u64 = 30_000;
@@ -36,8 +40,8 @@ pub(super) fn fail(class: &str, message: String, status: Option<u16>) -> Box<Hel
     })
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| fail("OSError", error.to_string(), None))
@@ -102,7 +106,7 @@ fn start_mock(
     } else {
         let reply =
             answer.ok_or_else(|| fail("MockError", "the case has no answer".to_owned(), None))?;
-        MockScript::try_from(std::slice::from_ref(reply))
+        MockScript::try_from(slice::from_ref(reply))
     }
     .map_err(|error| fail("MockError", error.to_string(), None))?;
     let mock =

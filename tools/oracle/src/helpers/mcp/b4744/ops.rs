@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::client::SessionSettings;
@@ -13,7 +13,8 @@ use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 mod client;
 use client::{make_client, tls_policy};
@@ -98,7 +99,7 @@ fn recorded_transport(script: &Script, http_client: bool) -> Option<Value> {
     let stdio = script
         .stdio
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .clone();
     if let Some(parameters) = stdio {
         return Some(record_json(&Recorded::Stdio(parameters), http_client));
@@ -106,7 +107,7 @@ fn recorded_transport(script: &Script, http_client: bool) -> Option<Value> {
     let sse = script
         .sse
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .clone();
     if let Some(request) = sse {
         return Some(record_json(&Recorded::Sse(request), http_client));
@@ -114,7 +115,7 @@ fn recorded_transport(script: &Script, http_client: bool) -> Option<Value> {
     let http = script
         .http
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .first()
         .cloned();
     http.map(|config| record_json(&Recorded::Http(config), http_client))
@@ -206,7 +207,7 @@ pub(crate) fn initialize(input: &InitializeInput) -> HelperResult {
     let requests = script
         .requests
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(PoisonError::into_inner)
         .clone();
     Ok(json!({
         "calls": script.calls(),

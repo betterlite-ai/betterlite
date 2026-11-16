@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use serde_json::json;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 // the fixed clock stands in for time.time(), and the Python side reports only whether created is a recent Unix time
 pub(super) struct Fixture {

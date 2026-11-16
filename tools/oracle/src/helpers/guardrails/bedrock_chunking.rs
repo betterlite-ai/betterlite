@@ -1,9 +1,10 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_guardrails::bedrock_chunking::{
     ChunkResult, ChunkingError, TOO_LARGE, bin_pack, merge, nearest_whitespace, split,
     uses_grounding,
 };
 use betterlite_guardrails::bedrock_records::ContentItem;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::to_value;
 

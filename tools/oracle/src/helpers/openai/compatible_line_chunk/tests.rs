@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use super::{Op, canonical_arguments};
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{ORACLE_DIR, invoke};
 use rstest::rstest;
 use serde_json::json;
 use std::fs;
@@ -62,7 +63,7 @@ fn helper_exhaustion_is_not_a_blank_chunk(#[case] mode: &str) {
 
 #[test]
 fn helper_seeds_select_compatible_line_chunk() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<_> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -80,6 +81,6 @@ fn helper_seeds_select_compatible_line_chunk() {
         let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
         validate_helper(path, &case).unwrap();
         assert_eq!(case.call.operation, "compatible_line_chunk");
-        crate::helpers::invoke(&case.call).ok
+        invoke(&[crate::GROUP], &case.call).ok
     }));
 }

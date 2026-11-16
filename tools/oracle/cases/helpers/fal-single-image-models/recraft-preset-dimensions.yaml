@@ -1,0 +1,29 @@
+kind: helper
+name: fal-single-image-models-recraft-preset-dimensions
+call:
+  fal_single_image_models:
+    operation: recraft_preset_dimensions
+    sizes:
+      - "1024x1024"
+      - "512x512"
+      - "768x1024"
+      - "576x1024"
+      - "1024x768"
+      - "1024x576"
+      - "1792x1024"
+      - "1280x960"
+      - "960x1280"
+      - "1000x1000"
+      - "0x0"
+      - "-10x20"
+      - "10x-20"
+      - " 1024x 768"
+      - "1_0x20"
+      - "1024X1024"
+      - "1.5x2"
+      - "1x2x3"
+      - "auto"
+      - ""
+env: {}
+compare:
+  ignore: []

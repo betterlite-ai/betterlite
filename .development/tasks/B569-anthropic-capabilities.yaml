@@ -188,7 +188,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/anthropic_capabilities*")"
       && grep -lq 'anthropic_capabilities' tools/oracle/fuzz/corpus/helper_case/anthropic_capabilities* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_capabilities$/)'
+      nextest run --locked -p betterlite-oracle-anthropic --no-tests=fail -E 'test(/::helper_seeds_select_anthropic_capabilities$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-supported-parameter-list
     why: 'Base ordered list: stream,stop,temperature,top_p,max_tokens,max_completion_tokens,tools,tool_choice,extra_headers,parallel_tool_calls,response_format,user,web_search_options,speed,context_management,cache_control.

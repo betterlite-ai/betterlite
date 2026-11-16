@@ -3,7 +3,6 @@ use super::input::{
     Call, CredentialInput, DataInput, JsonPost as JsonPostInput,
     RequestHeaders as RequestHeadersInput,
 };
-use crate::helpers::{HelperError, OrHelperError as _};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_bedrock::aws_settings::sources::Credentials;
@@ -12,6 +11,7 @@ use betterlite_bedrock::signing::endpoint::{RequestHeaders as EndpointRequest, r
 use betterlite_bedrock::signing::error::SigningError;
 use betterlite_bedrock::signing::json_post::{JsonPost, sign_aws_json_post};
 use betterlite_bedrock::signing::request::AwsSignedRequest;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use secrecy::ExposeSecret;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;

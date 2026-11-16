@@ -7,7 +7,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 
 use super::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

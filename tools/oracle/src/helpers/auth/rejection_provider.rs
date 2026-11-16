@@ -7,6 +7,7 @@ use betterlite_auth::rejection_provider::{DeploymentSnapshot, ProviderResolution
 use betterlite_auth::rejection_provider::resolve_llm_provider_for_rate_limit as attribute_rejection;
 use betterlite_models::decisions::Json;
 use betterlite_models::resolution::{ProviderIdentity, ResolutionError, ResolvedModel};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use tracing::Subscriber;
 use tracing::subscriber::with_default;
@@ -140,10 +141,10 @@ fn scripted(steps: &[ResolutionStep]) -> ScriptedLookup {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let lookup = scripted(&input.resolutions);
         let snapshot = FixtureSnapshot {
             router: input.router,

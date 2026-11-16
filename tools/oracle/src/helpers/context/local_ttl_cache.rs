@@ -1,4 +1,4 @@
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use std::sync::{
     Arc,
     atomic::{AtomicU64, Ordering},
@@ -7,6 +7,7 @@ use std::sync::{
 mod dual;
 
 use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -28,10 +29,10 @@ type CacheResult = Result<serde_json::Value, CacheError>;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::CacheDefaults => defaults(),
             Input::ExpiryAndOverwrite => expiry(),

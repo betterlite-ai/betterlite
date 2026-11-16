@@ -24,6 +24,7 @@ use betterlite_models::resolution::ResolutionContext;
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::value::RawValue;
+use std::io;
 
 const NORMALIZERS: NameNormalizers = NameNormalizers {
     bedrock_base_model: get_bedrock_base_model,
@@ -58,7 +59,7 @@ pub(super) enum FixtureError {
     #[error("oracle runtime: {source}")]
     Runtime {
         #[source]
-        source: std::io::Error,
+        source: io::Error,
     },
 }
 

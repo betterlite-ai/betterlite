@@ -1,4 +1,3 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::credentials::LiteLlmGlobals;
 use betterlite_openai::vector_stores::files::{
@@ -10,10 +9,13 @@ use betterlite_openai::vector_stores::{
     Headers, Request, complete_url, file_endpoints, get_auth_credentials, store_endpoints,
     validate_environment,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 mod tests;
 
@@ -208,7 +210,7 @@ fn reply(input: &ReplyInput) -> HelperResult {
 
 fn requested<E>(request: Result<Request, E>) -> HelperResult
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     request
         .map(|sent| json!(sent))
@@ -222,7 +224,7 @@ fn endpoints(surface: &Surface) -> Value {
     }
 }
 
-fn invoke(input: &Call) -> HelperResult {
+fn invoke_vector_store_call(input: &Call) -> HelperResult {
     match input {
         Call::AuthCredentials { api_key } => {
             get_auth_credentials(api_key.as_deref().map(SecretString::from).as_ref())
@@ -264,10 +266,10 @@ fn invoke(input: &Call) -> HelperResult {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Call;
 
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_vector_store_call(input)
     }
 }

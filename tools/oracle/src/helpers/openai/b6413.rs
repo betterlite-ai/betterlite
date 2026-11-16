@@ -9,7 +9,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -92,10 +93,10 @@ struct ErrorCall {
     headers: Headers,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let replies = input
             .embedding_replies
             .iter()
@@ -162,7 +163,7 @@ fn request(call: &RequestCall) -> Value {
     })
 }
 
-fn reply(call: &ReplyCall) -> crate::helpers::HelperResult {
+fn reply(call: &ReplyCall) -> HelperResult {
     match decode_sambanova_embedding(call.body.as_bytes(), call.status, &call.headers) {
         Ok(reply) => Ok(decoded(&reply)),
         Err(SambaNovaEmbeddingError::Reply(error)) => Err(failure(

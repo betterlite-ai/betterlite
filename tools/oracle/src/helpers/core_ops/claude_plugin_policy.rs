@@ -6,6 +6,7 @@ use betterlite_core::api::claude_plugin_policy::source::{PluginSource, validate_
 use betterlite_core::api::claude_plugin_policy::{
     PluginCaller, PluginObjectPermission, PluginRecord, require_proxy_admin, skill_visibility,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -43,10 +44,10 @@ struct CallerFields {
     team_skills: Option<Vec<String>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut answers = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             answers.push(answer(call));

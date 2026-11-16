@@ -1,7 +1,8 @@
 use betterlite_error::error::ErrorClass;
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 

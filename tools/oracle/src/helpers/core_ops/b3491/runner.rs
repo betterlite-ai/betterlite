@@ -25,6 +25,9 @@ use super::fixtures::{
     RecordingLogging, api_resolver,
 };
 use super::{Input, Mode};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 type Setup<'setup> = InteractionsStreamSetup<'setup, FixtureConfig, RecordingLogging>;
 type AsyncStream<'base> =
@@ -37,7 +40,7 @@ enum Streams<'base> {
     Sync(SyncStream<'base>),
 }
 
-pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
+pub(crate) fn run(input: &Input) -> HelperResult {
     let catalog = ModelCatalog::default();
     let known = BTreeSet::new();
     let custom = BTreeSet::new();
@@ -72,7 +75,7 @@ pub(crate) fn run(input: &Input) -> crate::helpers::HelperResult {
 fn open_stream<'setup>(
     input: &Input,
     setup: Setup<'setup>,
-) -> Result<Streams<'setup>, Box<crate::helpers::HelperError>> {
+) -> Result<Streams<'setup>, Box<HelperError>> {
     match input.mode {
         Mode::Async => {
             let response = FakeAsyncResponse::new(&input.lines);
@@ -89,10 +92,10 @@ fn open_stream<'setup>(
     }
 }
 
-fn drive(streams: Streams<'_>) -> crate::helpers::HelperResult {
+fn drive(streams: Streams<'_>) -> HelperResult {
     match streams {
         Streams::Async(mut iterator) => {
-            let runtime = tokio::runtime::Builder::new_current_thread()
+            let runtime = Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(|error| runtime_failure(&error))?;
@@ -107,7 +110,7 @@ fn drive(streams: Streams<'_>) -> crate::helpers::HelperResult {
     }
 }
 
-async fn collect_async(iterator: &mut AsyncStream<'_>) -> crate::helpers::HelperResult {
+async fn collect_async(iterator: &mut AsyncStream<'_>) -> HelperResult {
     let mut events = Vec::new();
     while let Some(item) = iterator.next_chunk().await {
         events.push(item.map_err(|error| failure(&error))?);
@@ -154,12 +157,12 @@ fn call_details(input: &Input) -> Params {
 
 fn failure<SourceError, ConfigError>(
     error: &InteractionStreamError<SourceError, ConfigError>,
-) -> Box<crate::helpers::HelperError>
+) -> Box<HelperError>
 where
     SourceError: Error + 'static,
     ConfigError: Error + 'static,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: String::from("ValueError"),
         status: None,
         error_type: None,
@@ -169,8 +172,8 @@ where
     })
 }
 
-fn runtime_failure(source: &io::Error) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn runtime_failure(source: &io::Error) -> Box<HelperError> {
+    Box::new(HelperError {
         class: String::from("RuntimeError"),
         status: None,
         error_type: None,

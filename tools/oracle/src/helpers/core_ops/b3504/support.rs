@@ -26,9 +26,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::gemini::{AgentError, GeminiConfig};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use server::Server;
+use std::fmt::Display;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Reply {
@@ -127,7 +128,7 @@ fn proxy_policy() -> Result<Arc<ProxyPolicy>, Box<HelperError>> {
 
 pub(crate) fn helper_failure<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
     Box::new(HelperError {
         class: "AgentCollectionError".to_owned(),

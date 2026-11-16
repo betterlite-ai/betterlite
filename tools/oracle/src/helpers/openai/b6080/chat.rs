@@ -12,7 +12,8 @@ use betterlite_openai::openrouter_chat::stream::chunk_parser;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{ChatParamsCase, ChunkCase};
 

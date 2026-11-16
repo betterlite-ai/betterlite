@@ -1,6 +1,7 @@
 use betterlite_openai::cohere_chat_v2::reply::citations::annotations;
 use betterlite_openai::cohere_chat_v2::reply::{AssistantReply, ReplyInput, decode_cohere_chat_v2};
 use betterlite_openai::cohere_chat_v2::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -49,10 +50,10 @@ pub(crate) struct Request {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(match input {
             Input::Options { mappings, .. } => json!({
                 "supported": SUPPORTED_OPENAI_PARAMS,

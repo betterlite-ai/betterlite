@@ -4,11 +4,12 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use betterlite_oracle::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use serde_json::{Value, json};
 
 use super::{Input, Op};
-use crate::helpers::{Helper, HelperError};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::Helper;
 
 #[derive(serde::Deserialize)]
 struct SeedCall {

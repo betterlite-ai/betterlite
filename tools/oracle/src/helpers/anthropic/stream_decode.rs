@@ -16,9 +16,11 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use deps::{FixedIds, TokenCountFailure, TokenizerCounter};
+use tokio::runtime::Builder;
 
 mod deps;
 mod tests;
@@ -63,7 +65,7 @@ type Conversion = Result<ConvertedChunk, ConvertError<TokenCountFailure>>;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -148,9 +150,7 @@ where
 }
 
 fn async_outcomes(input: &Input) -> Result<Vec<Value>, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_value_error()?;
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
     let mut items = sources(input);
     let mut pending = false;
     // A poll that waits before every item drives the stream through its wait path, as a real transport does.

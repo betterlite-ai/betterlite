@@ -1,22 +1,23 @@
 use std::collections::BTreeMap;
 
-use crate::helpers::HelperError;
 use betterlite_models::usage_sum::{
     CompletionTokensDetails, PromptTokensDetails, Usage, UsageNumber, usage_sum,
 };
+use betterlite_oracle_helper_api::error::HelperError;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::{Value, json};
 pub(crate) mod input;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use input::Input;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let usages = input
             .usages
             .iter()

@@ -4,8 +4,10 @@ use std::str::{self, Utf8Error};
 use std::time::Duration;
 
 use crate::OracleError;
-use crate::case::{Request, RequestBody};
-use crate::multipart_oracle::request::request_body;
+use crate::case::Request;
+use betterlite_oracle_runner::case::RequestBody;
+use betterlite_oracle_runner::mock::MAX_BODY;
+use betterlite_oracle_runner::multipart_oracle::request::decode_request_body;
 use reqwest::blocking::{Client, ClientBuilder, RequestBuilder};
 use reqwest::redirect::Policy;
 use serde_json::Value;
@@ -14,8 +16,6 @@ pub mod browser_flow;
 #[path = "http/native_feature_eligibility/native_feature_eligibility.rs"]
 pub mod native_feature_eligibility;
 pub mod postgres;
-
-pub(crate) const MAX_BODY: usize = 16 * 1024 * 1024;
 
 // Steps reuse this as the deadline for a whole transcript, not only a single request.
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
@@ -46,7 +46,8 @@ pub(crate) fn send(
     base: &str,
     request: &Request,
 ) -> Result<Response, OracleError> {
-    let body = request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
+    let body =
+        decode_request_body(&request.body, request.body_kind).map_err(OracleError::Multipart)?;
     let (response, _raw_headers) = send_with_raw_headers(client, base, request, body)?;
     Ok(response)
 }

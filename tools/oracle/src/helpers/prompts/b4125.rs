@@ -12,7 +12,8 @@ use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const BREAKPOINT_FLAG: &str = "supports_prompt_cache_breakpoint";
 const PROMPT_CACHING_FLAG: &str = "supports_prompt_caching";
@@ -123,7 +124,7 @@ pub(crate) struct ProjectionProbe {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

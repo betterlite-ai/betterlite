@@ -19,7 +19,8 @@ use tokio::io::{
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use std::error::Error;
 
 const DEFAULT_TTL: i64 = 60;
 
@@ -169,7 +170,7 @@ async fn read_args(reader: &mut BufReader<ReadHalf<TcpStream>>) -> Option<Vec<St
     Some(args)
 }
 
-type Cause<'error> = dyn std::error::Error + Send + Sync + 'error;
+type Cause<'error> = dyn Error + Send + Sync + 'error;
 
 struct Allow;
 

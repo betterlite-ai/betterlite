@@ -1,0 +1,26 @@
+[package]
+name = "betterlite-oracle-websearch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
+betterlite-error = { path = "../../../../../crates/betterlite-error" }
+betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
+betterlite-websearch = { path = "../../../../../crates/betterlite-websearch" }
+indexmap = { version = "2.14.2", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+
+[lints]
+workspace = true

@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 
 use betterlite_anthropic::cache_plan::{parse_cache_plan, parse_prompt};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use sha2::{Digest as _, Sha256};
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -23,10 +25,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let value = match input {
             Input::CachePlan { body } => match parse_cache_plan(body) {
                 Ok(plan) => serde_json::to_value(plan),
@@ -51,7 +53,7 @@ impl crate::helpers::Helper for Op {
             .map(|text| serde_json::Value::String(hex::encode(Sha256::digest(text)))),
         };
         value.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "CachePlanJson".to_owned(),
                 status: None,
                 error_type: None,

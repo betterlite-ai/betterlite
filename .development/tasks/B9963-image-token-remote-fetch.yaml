@@ -1,0 +1,274 @@
+id: B9963
+title: Image token counting fetches remote images
+description: >-
+  Fix the no-fetch deviation B258 and B197 recorded. media::image_count::image_tokens in
+  crates/betterlite-tokenizer/src/media/image_count.rs answers Err(MediaError::RemoteNeedsDefaultCount) for a
+  remote image URL when counting is exact and the detail is high, and every remote count avoids the network.
+  LiteLLM fetches on exactly that path: get_image_dimensions (token_counter.py L219-294) sees a string that
+  starts with http:// or https://, downloads it through safe_get with the SSRF checks, ignores a body whose
+  Content-Length or size passes int(MAX_IMAGE_URL_DOWNLOAD_SIZE_MB * 1024 * 1024) (50 MB by default,
+  constants.py L138-139), and reads the width and height from the bytes. Nothing else fetches:
+  calculate_img_tokens returns DEFAULT_IMAGE_TOKEN_COUNT for use_default_image_token_count and base_tokens for
+  low and auto without a request (L297-329), an OpenAI image_url string counts with auto, and an Anthropic
+  image block, a document source and a file file_data all count with auto (L693-817). Max decided on
+  2026-10-31 that media URLs are fetched the way LiteLLM fetches them, through B5082's checked fetch, so this
+  path uses B5083's Fetcher through B183's betterlite_prompts::media::inline::RemoteMediaFetcher seam. No new
+  downloader and no new module.
+
+
+  Rust changes. media/image_count.rs: image_tokens becomes
+  `pub(crate) async fn image_tokens<Source>(data: &str, mode: Mode, settings: &Settings, warnings: &mut
+  Vec<Warning>, fetcher: &Source) -> Result<u64, MediaError> where Source: RemoteMediaFetcher + Sync`. Keep the
+  remote warning when settings.image_counting is ImageCounting::DefaultCount. Delete the
+  RemoteNeedsDefaultCount return. When data starts with http:// or https://, the counting is Exact and mode is
+  Mode::High, replace data with fetcher.convert_url(data).await? and hand the returned data URL to
+  calculate_img_tokens; every other call hands the original data over unchanged. image_source_tokens takes the
+  fetcher and becomes async. media/blocks.rs: image_url_tokens and image_source_tokens callers, count_document
+  and count_file take the fetcher (the last two are already async), and count_block, count_items and
+  count_nested pass it along; the recursion in count_nested stays Box::pin. media/count.rs:
+  `pub async fn count_token_media<Source>(texter: &Texter<'_>, media: &TokenMedia, settings: &Settings,
+  fetcher: &Source) -> Result<Counted, MediaError>` with the same Source bound. media/error.rs: replace
+  RemoteNeedsDefaultCount with `#[error(transparent)] Fetch(#[from] ImageFetchError)`, importing
+  betterlite_prompts::media_fetch::error::ImageFetchError. Transparent keeps LiteLLM's error text, so the
+  B577-style mapping to an ImageFetchError 400 still sees it.
+
+
+  Callers. crates/betterlite-tokenizer/fuzz/fuzz_targets/token_media.rs and
+  tools/oracle/src/helpers/tokenizer/media_tokens.rs pass a refusing fetcher: a local type whose convert_url
+  answers ImageFetchError::Disabled { url }. No fuzz run or oracle helper may touch the network.
+  media_tokens.rs makes that type pub(crate) and makes its fixture, Fixture::texter and failure pub(crate) so
+  the new adapter reuses them instead of copying them. media/tests/support.rs gains RefusingFetcher (the
+  Disabled answer, with a call counter) and MappingFetcher (a BTreeMap from URL to data URL, an
+  ImageFetchError::Attempts answer for a URL it lacks, and a call counter), and support::count takes
+  fetcher: &Source. The existing image_url_remote_high_exact case in
+  media/tests/media_tokens_media_token_tests_behavior.rs becomes image_url_remote_high_exact_refused and
+  expects `Error: Image URL download is disabled (MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0).
+  url=https://example.com/image.png`, the text ImageFetchError::Disabled gives; the rstest body builds a
+  RefusingFetcher. media/tests/corpus.rs passes a RefusingFetcher to both replays.
+
+
+  New behavior tests in media/tests/remote_image_fetch.rs, declared by `mod remote_image_fetch;` in
+  media/tests.rs. remote_never_fetches_without_high_exact is an rstest table: a string image_url, a detail low
+  URL and a detail auto URL in exact mode count 85, and a detail high URL in default-count mode counts 250
+  (123 with image_default_count 123) with one remote warning; every row asserts zero fetcher calls.
+  remote_high_exact_fetches_the_url counts 255 from the mapped 64x64 PNG and asserts one call.
+  remote_high_exact_fetches_default_dimensions_for_unknown_bytes maps the URL to
+  data:application/octet-stream;base64,AAAA and counts 255, one call. remote_high_exact_refusal_is_the_fetch_error
+  asserts the Disabled text. remote_high_exact_refusal_uses_the_fallback_count asserts 777 with one fallback
+  warning. remote_high_exact_fetches_inside_nested_content covers a tool_result content list and a document
+  content list, 255 each and one call. remote_other_sources_never_fetch covers an image block source url, a
+  document source url and a file file_data URL, 85 each and zero calls.
+
+
+  Oracle helper. The skeleton registers this task's helper operation b9963 in the tokenizer group and adds
+  tools/oracle/src/helpers/tokenizer/b9963.rs and tools/oracle/helpers/b9963.py to the scope. Its input is
+  settings (an ImageSettings object, ImageSettings::default() when absent), urls (an object from URL to data
+  URL, default {}) and calls, a list of {function: count_content, content: [JSON],
+  use_default_image_token_count: bool (default false), default_token_count: int or null}. Its output is one
+  token count per call, in order. The Rust adapter builds the fixture with
+  media_tokens::fixture(Encoding::Cl100kBase), the gpt-3.5-turbo encoding, defines its own MappingFetcher over
+  urls (the mapped data URL, or ImageFetchError::Attempts for a URL the map lacks), gives count_token_media
+  that fetcher, and answers json!(counted.tokens) per call; a MediaError goes through media_tokens::failure.
+  The Python adapter casts _count_content_list and _get_count_function out of
+  token_counter_module.__dict__ the way media_tokens.py does, patches the seven image constants and
+  calculate_tiles_needed.__defaults__ the same way, patches token_counter.safe_get with a stub that decodes
+  the data URL in urls into httpx.Response(200, content=bytes) and raises httpx.ConnectError for a URL it
+  lacks, and patches token_counter._get_httpx_client to return None. It returns _count_content_list(...) per
+  call, and dispatch.py turns a raised exception into the ok false answer. Error cases need no compare.ignore:
+  the harness drops /error/class and /error/message from both sides. Cases: remote-high-fetched,
+  remote-high-fetched-unknown-bytes, remote-high-fetch-fails, remote-high-fetch-fails-fallback,
+  remote-low-no-fetch, remote-auto-no-fetch, remote-high-default-count-no-fetch, nested-tool-result-fetch and
+  remote-url-sources-no-fetch, under tools/oracle/cases/helpers/remote-image-counting. The failing-fetch call
+  uses a URL with no comma, because get_image_dimensions splits the URL text on the first comma and counts the
+  default 300x300 dimensions when that tail decodes. Add the seed
+  tools/oracle/fuzz/corpus/helper_case/b9963-remote-high-fetched.yaml.
+
+
+  Deviations. Delete the first two rows, the no-fetch row and the Open, waiting for Max row, from
+  docs/deviations/B258.yaml and from docs/deviations/B197.yaml; leave every other row as it is. Write
+  docs/deviations/B9963.yaml with the rows in deviations: below. Size: about 90 changed production lines in
+  betterlite-tokenizer, about 180 lines across the two Rust adapters and the Python adapter, and 40 lines in
+  the deviation files; the tests and oracle cases sit outside the changed-line budget.
+scope:
+  paths:
+  - crates/betterlite-tokenizer/src/media/blocks.rs
+  - crates/betterlite-tokenizer/src/media/count.rs
+  - crates/betterlite-tokenizer/src/media/error.rs
+  - crates/betterlite-tokenizer/src/media/image_count.rs
+  - crates/betterlite-tokenizer/src/media/tests.rs
+  - crates/betterlite-tokenizer/src/media/tests/**
+  - crates/betterlite-tokenizer/fuzz/fuzz_targets/token_media.rs
+  - docs/deviations/B258.yaml
+  - docs/deviations/B197.yaml
+  - tools/oracle/src/helpers/tokenizer/media_tokens.rs
+  - tools/oracle/src/helpers/tokenizer/b9963.rs
+  - tools/oracle/src/helpers/tokenizer/b9963/**
+  - tools/oracle/helpers/b9963.py
+  - tools/oracle/helpers/b9963/**
+  - tools/oracle/cases/helpers/remote-image-counting/**
+  - "tools/oracle/fuzz/corpus/helper_case/b9963-*"
+  lint_tables: false
+references:
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L294
+  why: get_image_dimensions, the URL test, the download and the size cap, the base64 fallback and the header parse.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L297-L329
+  why: calculate_img_tokens, where the default count and the low and auto modes return before any fetch.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L693-L817
+  why: _count_image_tokens detail handling, and the image, document and file branches that count with auto.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L884-L951
+  why: _count_content_list, which answers default_token_count when the count raises and otherwise raises a ValueError.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L138-L139
+  why: MAX_IMAGE_URL_DOWNLOAD_SIZE_MB, 50 MB by default, and the note that 0 disables image URL handling.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L421-L461
+  why: safe_get, the SSRF check and the redirect validation every fetch of a request URL goes through.
+- url: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L14046-L14058
+  why: The /utils/token_counter local path calls litellm.token_counter without use_default_image_token_count, so detail high fetches there; the route itself is B8598.
+dod:
+- text: >-
+    A remote image_url with detail high fetches through the injected fetcher once and counts the fetched
+    dimensions, while a string image_url, detail low, detail auto and default-count mode answer 85 or the
+    default count with no fetcher call.
+  proof:
+  - remote-image-tests
+  - helper-cases
+  - helper-python
+  - oracle
+- text: >-
+    A refused fetch ends the count with the ImageFetchError text, and a caller-set fallback_token_count
+    answers that count with one fallback warning.
+  proof:
+  - remote-image-tests
+- text: >-
+    A high-detail remote image inside a tool_result content list and inside a document content list fetches
+    through the same fetcher.
+  proof:
+  - remote-image-tests
+  - helper-cases
+  - helper-python
+  - oracle
+- text: >-
+    The oracle compares fetched bytes, unknown fetched bytes, a failed fetch, a failed fetch with a fallback
+    count and every no-fetch mode against LiteLLM's get_image_dimensions under the same URL answers.
+  proof:
+  - oracle
+  - helper-python
+  - helper-cases
+- text: >-
+    The token_media fuzz target and the media_tokens oracle adapter pass a refusing fetcher, and the updated
+    media behavior tests pass.
+  proof:
+  - media-token-tests
+  - fuzz-callers
+- text: >-
+    docs/deviations/B258.yaml and docs/deviations/B197.yaml no longer say token counting never fetches, and
+    docs/deviations/B9963.yaml lists the failed fetch and the cache with their pinned links.
+  proof:
+  - deviation-row
+checks:
+  optional: []
+  commands:
+  - id: remote-image-tests
+    why: The new fetch behavior tests are missing, or a fetch happens on a path that must not fetch.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-tokenizer/src/media/tests/remote_image_fetch.rs)"
+      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/^media::tests::remote_image_fetch::/)'
+  - id: media-token-tests
+    why: The updated media behavior cases or their fetcher harness fail.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-tokenizer/src/media/tests/media_tokens_media_token_tests_behavior.rs)"
+      && cargo nextest run --locked -p betterlite-tokenizer --no-tests=fail -E 'test(/::media_tokens_media_token_tests_behavior($|::)/) - test(/replays_the_/)'
+  - id: fuzz-callers
+    why: The token_media fuzz target still calls the old counting signature.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-tokenizer/fuzz/fuzz_targets/token_media.rs)"
+      && cargo check --locked -p betterlite-tokenizer-fuzz --bins
+  - id: helper-cases
+    why: No new helper case exists on this branch.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/remote-image-counting)"
+  - id: helper-python
+    why: The oracle adapters fail strict Python checks.
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The b9963 seed is missing or the shared helper corpus does not replay.
+    run: >-
+      test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b9963-*")"
+      && grep -lq 'b9963' tools/oracle/fuzz/corpus/helper_case/b9963-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && test -n "$(ls -A tools/oracle/fuzz/corpus/helper_case)" && cargo nextest run --locked -p betterlite-oracle
+      --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+  - id: deviation-row
+    why: The new deviation is missing or an old no-fetch row remains.
+    run: >-
+      grep -q -F 'token_counter.py#L219-L294' docs/deviations/B9963.yaml && ! grep -q -F 'Open, waiting for Max'
+      docs/deviations/B258.yaml && ! grep -q -F 'never fetch an http or https URL' docs/deviations/B258.yaml && !
+      grep -q -F 'Open, waiting for Max' docs/deviations/B197.yaml && ! grep -q -F 'never fetches a
+      request-supplied URL' docs/deviations/B197.yaml
+oracle_cases:
+- tools/oracle/cases/helpers/remote-image-counting/remote-high-fetched.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-high-fetched-unknown-bytes.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-high-fetch-fails.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-high-fetch-fails-fallback.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-low-no-fetch.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-auto-no-fetch.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-high-default-count-no-fetch.yaml
+- tools/oracle/cases/helpers/remote-image-counting/nested-tool-result-fetch.yaml
+- tools/oracle/cases/helpers/remote-image-counting/remote-url-sources-no-fetch.yaml
+deviations:
+- what: >-
+    A remote image URL that needs exact counting is fetched through the shared media downloader, so a URL the
+    policy refuses, a non-200 answer, a body over MAX_IMAGE_URL_DOWNLOAD_SIZE_MB, a deadline or the disabled
+    switch ends the count with the downloader's typed ImageFetchError, whose text names the URL; a caller that
+    set default_token_count still gets that count, the way LiteLLM's content-list catch gives it. LiteLLM's
+    get_image_dimensions swallows every fetch exception and base64-decodes the URL string itself, so a URL
+    without a comma raises a ValueError that _count_content_list turns into default_token_count or a
+    ValueError, and a URL whose tail decodes counts the default 300x300 dimensions.
+  why: >-
+    The 2026-10-31 decision sends every request-supplied media URL through the SSRF-checked fetch, and a count
+    built from bytes that came out of the URL text is not the image the client named. B5083's rows cover the
+    downloader's caps, retries and deadline.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L219-L294
+- what: >-
+    Counting uses the downloader's cache: a second exact count of the same URL within the cache's 600-second
+    TTL counts the remembered data URL without a request, where get_image_dimensions fetches on every call.
+  why: >-
+    B5083's Fetcher is the one media downloader, and a separate uncached fetch for counting would send a
+    second request for a URL the same request already fetched.
+  link: >-
+    https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L232-L245
+out_of_scope:
+- B5083's Fetcher itself; the cache, the three attempts, the size cap, the deadline and the SSRF rejection are unchanged.
+- B5082's URL validation and redirect policy.
+- >-
+  Request-path composition. No route on main calls count_token_media, so this task has no HTTP oracle case;
+  B8598 and B996 own the routes, neither task file mentions count_token_media or a Fetcher, and the notes give
+  the sentence to add if the architect wants either route to count media.
+- >-
+  B258's remaining deviations: strict data-URL decoding, integer resize arithmetic, injected image constants
+  and the negative base_tokens refusal.
+- Any fetch for image blocks, document sources and file data, which LiteLLM counts with mode auto.
+- The oracle registry files (tools/oracle/src/helpers/tokenizer/lib.rs and tools/oracle/helpers/dispatch.py); the skeleton writes them.
+pitfalls:
+- The oracle helper for this task is pre-registered as b9963 in the tokenizer group. Replace the stub Op in tools/oracle/src/helpers/tokenizer/b9963.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/b9963.py. The registry files (tools/oracle/src/helpers/tokenizer/lib.rs and tools/oracle/helpers/dispatch.py) are not this task's to edit.
+- LiteLLM fetches only a string that starts with http:// or https://; a data URL or a bare base64 payload goes to decode_data_url and never to the fetcher.
+- 'detail low, detail auto and ImageCounting::DefaultCount must not call convert_url: the /utils/token_counter and rate-limit callers depend on the default count and its warning, and a refused fetch there would fail a request that should count 85 or 250.'
+- An image block, a document source and a file file_data count with Mode::Auto even when the value is an http URL, so they never fetch and their counts stay 85.
+- The fetcher answers a data URL with a ;base64, marker; decode_data_url rejects anything else, so pass its answer through unchanged.
+- A fetch failure is an ordinary MediaError, so apply_fallback answers the caller's fallback_token_count; do not catch ImageFetchError inside image_tokens.
+- The oracle Python side must patch token_counter.safe_get and token_counter._get_httpx_client; MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0 does not stop get_image_dimensions from calling safe_get.
+- 'The failing-fetch case URL has no comma: get_image_dimensions splits the URL text on the first comma, and a tail that decodes as base64 counts the default 300x300 dimensions instead of raising.'
+- Keep the RemoteImageDefaultCount warning; it is the signal that a remote image in default-count mode was not fetched.
+- The fuzz target, the oracle adapters and the tokenizer tests each need their own fetcher value; the tokenizer's test-only support module is not visible to the other two crates.
+- '#[error(transparent)] on MediaError::Fetch keeps LiteLLM''s text; a wrapper sentence changes the message the B577-style 400 body carries.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

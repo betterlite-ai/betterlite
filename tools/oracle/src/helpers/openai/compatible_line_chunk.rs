@@ -1,5 +1,7 @@
 use betterlite_openai::compatible_line_stream::lines::{ChunkItem, LineItem, Lines};
 use betterlite_openai::compatible_line_stream::{Mode, Outcome, ReceiveError};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use futures_util::{FutureExt as _, StreamExt as _, stream};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -29,12 +31,12 @@ enum Recorded {
     Error { kind: &'static str, value: String },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = StreamInput;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         serde_json::to_value(run_stream(input)).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,

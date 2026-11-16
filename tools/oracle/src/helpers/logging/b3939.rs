@@ -26,7 +26,10 @@ use tracing_subscriber::layer::SubscriberExt as _;
 
 use self::capture::WarningCounter;
 use self::scripted::{FixedClock, ScriptedTransport};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 const DEFAULT_CLOCK: i64 = 1_700_000_000;
 const NANOS_PER_SECOND: i64 = 1_000_000_000;
@@ -73,6 +76,10 @@ pub(super) struct ReplyInput {
     pub(super) status: u16,
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the conversion error only says the value is out of range, and the message names the cause"
+)]
 fn duration_of(seconds: Decimal) -> Result<Duration, Box<HelperError>> {
     let signed = seconds
         .checked_mul(Decimal::from(NANOS_PER_SECOND))
@@ -85,7 +92,7 @@ fn duration_of(seconds: Decimal) -> Result<Duration, Box<HelperError>> {
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "DatadogMetricsError".to_owned(),
@@ -239,7 +246,7 @@ fn fixture(input: &Input) -> Result<Fixture, Box<HelperError>> {
 
 fn run_scenario(input: &Input) -> HelperResult {
     let fixture = fixture(input)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(failure)?;

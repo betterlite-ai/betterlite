@@ -7,6 +7,8 @@ use betterlite_logging::otel::model::metadata::request_identity::parse::from_pay
 use betterlite_logging::otel::model::metadata::wire::{
     MetadataMap, callback::Callback, payload::Payload,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
@@ -39,10 +41,10 @@ pub(crate) enum Input {
     },
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Identity { payload } => Ok(json!(
                 from_payload(payload).map_err(|error| invalid(&error.to_string()))?
@@ -72,7 +74,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn normalize_baggage(fields: BTreeMap<String, String>) -> crate::helpers::HelperResult {
+fn normalize_baggage(fields: BTreeMap<String, String>) -> HelperResult {
     let normalized: Result<serde_json::Map<String, Value>, _> = fields
         .into_iter()
         .map(|(key, value)| {
@@ -89,8 +91,8 @@ fn normalize_baggage(fields: BTreeMap<String, String>) -> crate::helpers::Helper
         .map_err(|error: serde_json::Error| invalid(&error.to_string()))
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,

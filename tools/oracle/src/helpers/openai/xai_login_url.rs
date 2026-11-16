@@ -3,7 +3,7 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

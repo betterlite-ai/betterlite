@@ -23,17 +23,20 @@ use http::HeaderMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod support;
 mod tests;
 
+use betterlite_logging::logging_pre_post::error::PrePostError;
+use betterlite_oracle_helper_api::error::HelperError;
+use http::header::{HeaderName, HeaderValue};
 use input::{Function, Input, Probe};
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -102,12 +105,12 @@ pub(super) struct FakeTransport<'probe> {
 }
 
 impl<'probe> FakeTransport<'probe> {
-    pub(super) fn new(probe: &'probe Probe) -> Result<Self, Box<crate::helpers::HelperError>> {
+    pub(super) fn new(probe: &'probe Probe) -> Result<Self, Box<HelperError>> {
         let mut headers = HeaderMap::new();
         for (name, value) in &probe.reply.headers {
-            let header_name = http::header::HeaderName::from_bytes(name.as_bytes())
+            let header_name = HeaderName::from_bytes(name.as_bytes())
                 .map_err(|error| support::invalid(error.to_string()))?;
-            let header_value = http::header::HeaderValue::from_str(value)
+            let header_value = HeaderValue::from_str(value)
                 .map_err(|error| support::invalid(error.to_string()))?;
             headers.insert(header_name, header_value);
         }
@@ -194,10 +197,7 @@ impl ImageVariationTransport for FakeTransport<'_> {
 pub(super) struct Recorder;
 
 impl ImageVariationLogger for Recorder {
-    fn pre_call(
-        &mut self,
-        _record: PreCallRecord,
-    ) -> Result<(), betterlite_logging::logging_pre_post::error::PrePostError> {
+    fn pre_call(&mut self, _record: PreCallRecord) -> Result<(), PrePostError> {
         Ok(())
     }
 

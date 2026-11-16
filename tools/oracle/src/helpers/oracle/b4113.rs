@@ -1,5 +1,7 @@
 use betterlite_error::error::ErrorClass;
 use betterlite_openai::search::records::SearchResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_websearch::call_transformation::outcome::{
     SearchFailure, SearchResult, search_outcome,
 };
@@ -9,6 +11,7 @@ use betterlite_websearch::native_blocks::{self, ResponseJson};
 use betterlite_websearch::records::{SearchOutcome, WebSearchToolResultErrorCode};
 use serde::Deserialize;
 use serde_json::value::RawValue;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -52,10 +55,10 @@ fn default_format() -> String {
     "anthropic".to_owned()
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::SearchErrorCode => serde_json::to_value(native::search_error_code(
                 required_field(input.error.as_ref(), "error")?,
@@ -75,7 +78,7 @@ impl crate::helpers::Helper for Op {
 fn required_field<'input, Value>(
     value: Option<&'input Value>,
     field: &'static str,
-) -> Result<&'input Value, Box<crate::helpers::HelperError>>
+) -> Result<&'input Value, Box<HelperError>>
 where
     Value: ?Sized,
 {
@@ -85,33 +88,33 @@ where
     Ok(found)
 }
 
-fn format_search_response_value(input: &Input) -> crate::helpers::HelperResult {
+fn format_search_response_value(input: &Input) -> HelperResult {
     let search_response = required_field(input.search_response.as_ref(), "search_response")?;
     let text = native::format_search_response(search_response).map_err(failure)?;
     serde_json::to_value(text).map_err(failure)
 }
 
-fn result_block_value(input: &Input) -> crate::helpers::HelperResult {
+fn result_block_value(input: &Input) -> HelperResult {
     let tool_use_id = required_field(input.tool_use_id.as_deref(), "tool_use_id")?;
     let block = native::result_block(tool_use_id, input.search_response.as_ref());
     serde_json::to_value(block).map_err(failure)
 }
 
-fn result_error_block_value(input: &Input) -> crate::helpers::HelperResult {
+fn result_error_block_value(input: &Input) -> HelperResult {
     let tool_use_id = required_field(input.tool_use_id.as_deref(), "tool_use_id")?;
     let error_code = *required_field(input.error_code.as_ref(), "error_code")?;
     let block = native::result_error_block(tool_use_id, error_code);
     serde_json::to_value(block).map_err(failure)
 }
 
-fn inject_native_blocks_value(input: &Input) -> crate::helpers::HelperResult {
+fn inject_native_blocks_value(input: &Input) -> HelperResult {
     let raw_response = required_field(input.response.as_deref(), "response")?;
     let response: ResponseJson = serde_json::from_str(raw_response.get()).map_err(failure)?;
     let patched = native_blocks::inject_native_blocks(response, &input.native_blocks);
     Ok(patched)
 }
 
-fn search_outcome_value(input: &Input) -> crate::helpers::HelperResult {
+fn search_outcome_value(input: &Input) -> HelperResult {
     let text = input.text.clone().unwrap_or_default();
     let message = input.message.clone().unwrap_or_default();
     let result = input.error.as_ref().map_or_else(
@@ -129,7 +132,7 @@ fn search_outcome_value(input: &Input) -> crate::helpers::HelperResult {
     serde_json::to_value(search_outcome(result)).map_err(failure)
 }
 
-fn transform_response_value(input: &Input) -> crate::helpers::HelperResult {
+fn transform_response_value(input: &Input) -> HelperResult {
     let raw_response = required_field(input.response.as_deref(), "response")?;
     let response: Response = serde_json::from_str(raw_response.get()).map_err(failure)?;
     let (_, calls) = WebSearchTransformation::transform_request(&response, false, &input.format)
@@ -141,7 +144,7 @@ fn transform_response_value(input: &Input) -> crate::helpers::HelperResult {
     serde_json::to_value((assistant, messages)).map_err(failure)
 }
 
-fn native_result_pairs_value(input: &Input) -> crate::helpers::HelperResult {
+fn native_result_pairs_value(input: &Input) -> HelperResult {
     let raw_response = required_field(input.response.as_deref(), "response")?;
     let format = &input.format;
     let outcomes = &input.outcomes;
@@ -165,12 +168,12 @@ fn native_result_pairs_value(input: &Input) -> crate::helpers::HelperResult {
     Ok(serde_json::Value::Array(blocks))
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "TransformationError".to_owned(),
         message,
         status: None,

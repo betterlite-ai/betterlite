@@ -5,6 +5,8 @@ use betterlite_core::api::response_chat_content::annotations::{
 use betterlite_core::api::response_chat_content::content::{content_passthrough, text_by_role};
 use betterlite_core::api::response_chat_content::image_file::image_and_file_fields;
 use betterlite_core::api::response_chat_content::tool_choice::flat_tool_choice;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 
@@ -42,9 +44,9 @@ pub(crate) enum AnnotationInput {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::TextByRole { content, role } => text_by_role(content, role)
                 .map_err(|error| image_projection_error(&error)),
@@ -66,8 +68,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn image_projection_error(error: &ContentError) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn image_projection_error(error: &ContentError) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
