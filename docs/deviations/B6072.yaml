@@ -1,6 +1,6 @@
 task: B6072
 deviations:
-  - what: The model list is built as a request and a decoder, and the caller sends it; a non-200 status is a typed error carrying the status and the body, not a bare ValueError.
+  - what: The model list is built as a request and a decoder, and the caller sends it; a non-200 status is a typed error carrying the status and the body, and a 200 body that is not the models envelope is a typed decode error. LiteLLM raises a bare ValueError with the decoded body, or the JSONDecodeError, KeyError or TypeError its body walk hits.
     why: A provider leaf makes no HTTP call, and the compatibility rules ask for typed errors; the status mapping follows B2454.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L790-L818
   - what: A malformed JSON reply is a FireworksError that keeps the raw text, the status and the headers.
@@ -15,3 +15,12 @@ deviations:
   - what: A reply body with no usage block, or a null one, answers zeroed token counts. LiteLLM leaves usage unset, which reaches the client as null.
     why: The shared chat response type B504 built carries usage as a required struct that defaults to zero, and docs/compatibility.md takes an absent optional value as its default.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2227-L2253
+  - what: A tools value that is not a list, or a tool entry that is not an object with a function object, answers 400 BadRequestError. LiteLLM walks it with .get and subscripts and raises an unhandled AttributeError, KeyError or TypeError, which reaches the client as a 500.
+    why: Rule owned-behavior-is-built turns that unhandled 500 on a request LiteLLM rejects into the 4xx it belongs to; the request never reaches the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L464-L473
+  - what: A tool schema whose legacy definitions expansion exceeds LiteLLM's 10 MB budget answers 400 BadRequestError. LiteLLM's unpack_legacy_defs raises a bare ValueError, which reaches the client as a 500.
+    why: Rule owned-behavior-is-built turns that unhandled 500 on a schema bomb into the 4xx it belongs to; both refuse the schema before the provider call.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L1021-L1029
+  - what: A stream_options value that is not an object answers 400 BadRequestError when stream is true. LiteLLM calls .get on it and raises an unhandled AttributeError, which reaches the client as a 500.
+    why: Rule owned-behavior-is-built turns that unhandled 500 on a request LiteLLM rejects into the 4xx it belongs to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L668-L676

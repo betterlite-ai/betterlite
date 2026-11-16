@@ -201,6 +201,39 @@ fn reply_reads_a_null_usage_as_none() {
 }
 
 #[test]
+fn reply_that_is_not_a_chat_completion_answers_500() {
+    let Err(error) = reply_body(b"[]", None) else {
+        panic!("a JSON array is not a chat completion");
+    };
+    assert_eq!(error.status_code(), Some(500));
+    assert!(matches!(error, FireworksChatError::Reply { .. }));
+}
+
+#[test]
+fn reply_fills_absent_usage_counts_with_zero() {
+    let reply = reply_body(
+        br#"{"id":"chatcmpl-1","created":1700000000,"model":"llama-v3","usage":{"completion_tokens":4},"choices":[]}"#,
+        None,
+    )
+    .expect("reply");
+    assert_eq!(reply.response.usage.prompt_tokens, 0);
+    assert_eq!(reply.response.usage.completion_tokens, 4);
+    assert_eq!(reply.response.usage.total_tokens, 0);
+}
+
+#[test]
+fn reply_fills_null_usage_counts_with_zero() {
+    let reply = reply_body(
+        br#"{"id":"chatcmpl-1","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":null,"completion_tokens":4,"total_tokens":7},"choices":[]}"#,
+        None,
+    )
+    .expect("reply");
+    assert_eq!(reply.response.usage.prompt_tokens, 0);
+    assert_eq!(reply.response.usage.completion_tokens, 4);
+    assert_eq!(reply.response.usage.total_tokens, 7);
+}
+
+#[test]
 fn content_tool_call_becomes_a_tool_call_for_a_declared_name() {
     assert_eq!(
         repaired_arguments(r#"{"name":"lookup","arguments":"{\"city\":\"Paris\"}"}"#),

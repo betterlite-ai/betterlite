@@ -7,6 +7,8 @@ use uuid::Uuid;
 
 use crate::chat::response::ChatResponse;
 use crate::chat::{FunctionCall, ToolCall, choice_finish_reason};
+use crate::compatible_wire::error::CompatibleWireError;
+use crate::compatible_wire::{ReplyOptions, decode_compatible_chat_reply};
 use crate::fireworks_ai_chat::error::FireworksChatError;
 use crate::fireworks_ai_chat::hidden::extract_hidden_params;
 use crate::fireworks_ai_chat::tools::{FUNCTION, function_names};
@@ -18,11 +20,6 @@ const ARGUMENTS: &str = "arguments";
 const PARAMETERS: &str = "parameters";
 const NAME: &str = "name";
 const MODEL: &str = "model";
-const ID: &str = "id";
-const CREATED: &str = "created";
-const OBJECT: &str = "object";
-const USAGE: &str = "usage";
-const COMPLETION_OBJECT: &str = "chat.completion";
 
 pub struct ReplyInput<'request> {
     pub status: u16,
@@ -40,19 +37,24 @@ pub struct Reply {
 
 // transform_response: ModelResponse(**completion_response), the model prefix and the content tool call repair
 pub fn transform_response(input: &ReplyInput<'_>) -> Result<Reply, FireworksChatError> {
-    let mut payload: Value =
+    let payload: Value =
         serde_json::from_slice(input.body).map_err(|source| not_json(input, &source))?;
     let fireworks = extract_hidden_params(&payload);
-    // ModelResponse reads usage only from a non-null block, so a null counts as none
-    if let Some(fields) = payload.as_object_mut()
-        && fields.get(USAGE).is_some_and(Value::is_null)
-    {
-        fields.remove(USAGE);
+    // the shared decoder fills usage counts and an absent id, created and object the way ModelResponse does
+    let options = ReplyOptions {
+        json_mode: false,
+        provider: None,
+        base_model: None,
+        identifier: input.identifier,
+        clock: input.clock,
+    };
+    let mut response = decode_compatible_chat_reply(input.body, &options)
+        .map_err(|source| reply_error(input, source))?
+        .response;
+    // LiteLLM prefixes a model the body names, and the empty string counts as named
+    if payload.get(MODEL).is_some_and(Value::is_string) {
+        response.model = format!("{MODEL_PREFIX}{}", response.model);
     }
-    prefix_model(&mut payload);
-    fill_defaults(&mut payload, input.identifier, input.clock);
-    let mut response: ChatResponse =
-        serde_json::from_value(payload).map_err(|source| FireworksChatError::Reply { source })?;
     for choice in &mut response.choices {
         let (mapped, native) = choice_finish_reason(choice.finish_reason.as_deref());
         choice.finish_reason = Some(mapped);
@@ -91,41 +93,12 @@ fn not_json(input: &ReplyInput<'_>, source: &serde_json::Error) -> FireworksChat
     })
 }
 
-// ModelResponse fills an absent id, created and object, and B004's response carries plain values
-fn fill_defaults(payload: &mut Value, identifier: fn() -> Uuid, clock: fn() -> i64) {
-    let Some(fields) = payload.as_object_mut() else {
-        return;
-    };
-    if fields.get(MODEL).is_none_or(Value::is_null) {
-        fields.insert(MODEL.to_owned(), Value::String(String::new()));
+// the same bytes already parsed as JSON, so a second JSON error only repeats the not-JSON one
+fn reply_error(input: &ReplyInput<'_>, source: CompatibleWireError) -> FireworksChatError {
+    match source {
+        CompatibleWireError::Json(source) => not_json(input, &source),
+        CompatibleWireError::Reply(source) => FireworksChatError::Reply { source },
     }
-    if fields.get(ID).is_none_or(Value::is_null) {
-        fields.insert(
-            ID.to_owned(),
-            Value::String(format!("chatcmpl-{}", identifier())),
-        );
-    }
-    if fields.get(CREATED).is_none_or(Value::is_null) {
-        fields.insert(CREATED.to_owned(), Value::from(clock()));
-    }
-    fields.insert(
-        OBJECT.to_owned(),
-        Value::String(COMPLETION_OBJECT.to_owned()),
-    );
-}
-
-// ModelResponse.model gains the prefix only when the body names a model
-fn prefix_model(payload: &mut Value) {
-    let Some(fields) = payload.as_object_mut() else {
-        return;
-    };
-    let Some(Value::String(model)) = fields.get(MODEL).cloned() else {
-        return;
-    };
-    fields.insert(
-        MODEL.to_owned(),
-        Value::String(format!("{MODEL_PREFIX}{model}")),
-    );
 }
 
 fn hidden_params(headers: &IndexMap<String, String>, fireworks: HiddenParams) -> HiddenParams {

@@ -31,6 +31,14 @@ call:
         headers: {x-litellm-request-id: internal}
         body: '{"id":"chatcmpl-6","object":"chat.completion","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3},"choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"a"}}]}'
         optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-7","created":1700000000,"model":"llama-v3","usage":{"completion_tokens":4},"choices":[]}'
+        optional_params: {}
+      - status: 200
+        headers: {}
+        body: '{"id":"chatcmpl-8","created":1700000000,"model":"llama-v3","usage":{"prompt_tokens":null,"completion_tokens":4,"total_tokens":7},"choices":[]}'
+        optional_params: {}
     chunks: []
     models: []
 calls:
