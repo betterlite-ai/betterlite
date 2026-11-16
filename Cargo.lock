@@ -3688,6 +3688,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-tokenizer",
  "betterlite-vertex",
+ "chrono",
  "futures-util",
  "google-cloud-speech-v2",
  "google-cloud-wkt",
