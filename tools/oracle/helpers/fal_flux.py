@@ -1,30 +1,28 @@
 import os
 from collections.abc import Callable, Sequence
 from datetime import UTC, datetime
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, TypeVar
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.llms.base_llm.chat.transformation import BaseLLMException
 from litellm.llms.fal_ai.image_generation.flux_dev_transformation import FalAIFluxDevConfig
-from litellm.llms.fal_ai.image_generation.flux_pro_v11_transformation import (
-    FalAIFluxProV11Config,
-)
+from litellm.llms.fal_ai.image_generation.flux_pro_v11_transformation import FalAIFluxProV11Config
 from litellm.llms.fal_ai.image_generation.flux_pro_v11_ultra_transformation import (
     FalAIFluxProV11UltraConfig,
 )
-from litellm.llms.fal_ai.image_generation.flux_schnell_transformation import (
-    FalAIFluxSchnellConfig,
-)
+from litellm.llms.fal_ai.image_generation.flux_schnell_transformation import FalAIFluxSchnellConfig
 from litellm.types.utils import ImageObject, ImageResponse
-from openai.types.images_response import Image
+from openai.types.image import Image
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 JSON: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 MODEL = "fal-ai/model"
-DROP_PARAMS: Final[bool] = False
 Profile: TypeAlias = Literal["ultra", "pro_v11", "schnell", "dev"]
 Params: TypeAlias = dict[str, JsonValue]
+Payload = TypeVar("Payload")
+# LiteLLM's class carries Any in its constructor, so the catch names it through a typed alias
+PROVIDER_ERROR: Final[type[Exception]] = BaseLLMException
 
 
 GenerationRequest: TypeAlias = Callable[[str, str, Params, Params, dict[str, str]], Params]
@@ -132,16 +130,12 @@ Input: TypeAlias = (
 
 EXISTING: TypeAdapter[list[ExistingImage]] = TypeAdapter(list[ExistingImage])
 IMAGE_FIELDS: TypeAdapter[ImageFields] = TypeAdapter(ImageFields)
-
-
-def config_for(profile: Profile) -> FluxConfig:
-    if profile == "pro_v11":
-        return FalAIFluxProV11Config()
-    if profile == "schnell":
-        return FalAIFluxSchnellConfig()
-    if profile == "dev":
-        return FalAIFluxDevConfig()
-    return FalAIFluxProV11UltraConfig()
+CONFIGS: Final[dict[Profile, FluxConfig]] = {
+    "ultra": FalAIFluxProV11UltraConfig(),
+    "pro_v11": FalAIFluxProV11Config(),
+    "schnell": FalAIFluxSchnellConfig(),
+    "dev": FalAIFluxDevConfig(),
+}
 
 
 def apply_environment(environment: dict[str, str]) -> None:
@@ -163,6 +157,17 @@ def make_logging() -> Logging:
     )
 
 
+def profile_entries(
+    profiles: list[Profile],
+    call: Payload,
+    entries_for: Callable[[Profile, FluxConfig, Payload], dict[str, JsonValue]],
+) -> list[JsonValue]:
+    entries: list[JsonValue] = [
+        entries_for(profile, CONFIGS[profile], call) for profile in profiles
+    ]
+    return entries
+
+
 def precedence_outcome(config: FluxConfig, prompt: str, case: MappingCase) -> JsonValue:
     try:
         mapped = config.map_openai_params(
@@ -174,27 +179,26 @@ def precedence_outcome(config: FluxConfig, prompt: str, case: MappingCase) -> Js
     return {"request": body}
 
 
+def precedence_entry(
+    profile: Profile, config: FluxConfig, call: OriginalKeyPrecedence
+) -> dict[str, JsonValue]:
+    supported = config.get_supported_openai_params(MODEL)
+    outcomes = [precedence_outcome(config, call["prompt"], case) for case in call["cases"]]
+    return {
+        "profile": profile,
+        "supported": JSON.validate_python(supported),
+        "cases": outcomes,
+    }
+
+
 def original_key_precedence(call: OriginalKeyPrecedence) -> JsonValue:
-    entries: list[JsonValue] = []
-    for profile in call["profiles"]:
-        config = config_for(profile)
-        outcomes: list[JsonValue] = [
-            precedence_outcome(config, call["prompt"], case) for case in call["cases"]
-        ]
-        supported = config.get_supported_openai_params(MODEL)
-        entry: dict[str, JsonValue] = {
-            "profile": profile,
-            "supported": JSON.validate_python(supported),
-            "cases": outcomes,
-        }
-        entries.append(entry)
-    answer: dict[str, JsonValue] = {"profiles": entries}
-    return JSON.validate_python(answer)
+    entries = profile_entries(call["profiles"], call, precedence_entry)
+    return JSON.validate_python({"profiles": entries})
 
 
 def mapping_outcome(config: FluxConfig, non_default: Params) -> JsonValue:
     try:
-        mapped = config.map_openai_params(non_default, {}, MODEL, DROP_PARAMS)
+        mapped = config.map_openai_params(non_default, {}, MODEL, False)
     except ValueError:
         return {"error": {"status": None}}
     return {"params": mapped}
@@ -203,7 +207,7 @@ def mapping_outcome(config: FluxConfig, non_default: Params) -> JsonValue:
 def size_cases(call: SizeCases | UnknownSizeFallback) -> JsonValue:
     cases: list[JsonValue] = []
     for profile in call["profiles"]:
-        config = config_for(profile)
+        config = CONFIGS[profile]
         sizes: list[JsonValue] = list(call["sizes"])
         if call["operation"] == "unknown_size_fallback" and profile != "ultra":
             sizes.extend(call["image_sizes"])
@@ -215,47 +219,6 @@ def size_cases(call: SizeCases | UnknownSizeFallback) -> JsonValue:
             }
             cases.append(entry)
     answer: dict[str, JsonValue] = {"cases": cases}
-    return JSON.validate_python(answer)
-
-
-def dev_endpoint(call: DevEndpoint) -> JsonValue:
-    entries: list[JsonValue] = []
-    for environment in call["environments"]:
-        apply_environment(environment)
-        outcomes: list[JsonValue] = []
-        for profile in call["profiles"]:
-            config = config_for(profile)
-            urls = [
-                config.get_complete_url(api_base, None, MODEL, {}, {})
-                for api_base in call["api_bases"]
-            ]
-            entry: dict[str, JsonValue] = {
-                "profile": profile,
-                "endpoint": config.IMAGE_GENERATION_ENDPOINT,
-                "urls": JSON.validate_python(urls),
-            }
-            outcomes.append(entry)
-        record: dict[str, JsonValue] = {
-            "environment": JSON.validate_python(environment),
-            "profiles": outcomes,
-        }
-        entries.append(record)
-    answer: dict[str, JsonValue] = {"environments": entries}
-    return JSON.validate_python(answer)
-
-
-def image_record(image: Image) -> JsonValue:
-    fields = IMAGE_FIELDS.validate_json(image.model_dump_json())
-    return JSON.validate_python(fields)
-
-
-def response_record(response: ImageResponse) -> JsonValue:
-    data = response.data
-    images: list[JsonValue] = []
-    if data is not None:
-        images = [image_record(image) for image in data]
-    hidden = HiddenRecord.model_validate(response, from_attributes=True)
-    answer: dict[str, JsonValue] = {"data": images, "hidden_params": hidden.hidden_params}
     return JSON.validate_python(answer)
 
 
@@ -272,23 +235,55 @@ def hidden_outcome(config: FluxConfig, reply: ReplyCase) -> JsonValue:
         result = config.transform_image_generation_response(
             MODEL, raw, model_response, logging_obj, {}, {}, {}, None
         )
-    except BaseLLMException as error:
+    except PROVIDER_ERROR as error:
         raised = ErrorRecord.model_validate(error, from_attributes=True)
         return {"error": {"status": raised.status_code}}
-    return response_record(result)
+    data = result.data
+    images: list[JsonValue] = []
+    if data is not None:
+        images = [
+            JSON.validate_python(IMAGE_FIELDS.validate_json(image.model_dump_json()))
+            for image in data
+        ]
+    hidden = HiddenRecord.model_validate(result, from_attributes=True)
+    answer: dict[str, JsonValue] = {"data": images, "hidden_params": hidden.hidden_params}
+    return JSON.validate_python(answer)
+
+
+def replies_entry(
+    profile: Profile, config: FluxConfig, call: HiddenMetadataPresence
+) -> dict[str, JsonValue]:
+    outcomes = [hidden_outcome(config, reply) for reply in call["replies"]]
+    return {"profile": profile, "replies": outcomes}
 
 
 def hidden_metadata_presence(call: HiddenMetadataPresence) -> JsonValue:
-    entries: list[JsonValue] = []
-    for profile in call["profiles"]:
-        config = config_for(profile)
-        outcomes: list[JsonValue] = [
-            hidden_outcome(config, reply) for reply in call["replies"]
-        ]
-        entry: dict[str, JsonValue] = {"profile": profile, "replies": outcomes}
-        entries.append(entry)
-    answer: dict[str, JsonValue] = {"profiles": entries}
-    return JSON.validate_python(answer)
+    entries = profile_entries(call["profiles"], call, replies_entry)
+    return JSON.validate_python({"profiles": entries})
+
+
+def endpoint_entry(
+    profile: Profile, config: FluxConfig, call: DevEndpoint
+) -> dict[str, JsonValue]:
+    urls = [config.get_complete_url(base, None, MODEL, {}, {}) for base in call["api_bases"]]
+    return {
+        "profile": profile,
+        "endpoint": config.IMAGE_GENERATION_ENDPOINT,
+        "urls": JSON.validate_python(urls),
+    }
+
+
+def dev_endpoint(call: DevEndpoint) -> JsonValue:
+    environments: list[JsonValue] = []
+    for environment in call["environments"]:
+        apply_environment(environment)
+        profiles = profile_entries(call["profiles"], call, endpoint_entry)
+        record: dict[str, JsonValue] = {
+            "environment": JSON.validate_python(environment),
+            "profiles": profiles,
+        }
+        environments.append(record)
+    return JSON.validate_python({"environments": environments})
 
 
 def run(input_value: Input) -> JsonValue:
