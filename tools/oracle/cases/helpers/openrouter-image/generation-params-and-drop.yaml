@@ -1,0 +1,72 @@
+kind: helper
+name: openrouter-image-generation-params-and-drop
+call:
+  b5830:
+    op: generation_params
+    cases:
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: 1536x1024, quality: high, n: 2, seed: 7}
+        optional_params: {}
+        drop_params: false
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "999x999", quality: ultra, n: 1}
+        optional_params: {image_config: {aspect_ratio: "16:9"}, temperature: 0.5}
+        drop_params: false
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {seed: 7, size: auto, quality: low, user: a-user}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: medium, n: 3}
+        optional_params: {}
+        drop_params: false
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "256x256"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "512x512"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "1024x1024"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "1792x1024"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "1024x1792"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {size: "1024x1536"}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: standard}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: hd}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: auto}
+        optional_params: {}
+        drop_params: true
+      - model: google/gemini-2.5-flash-image
+        non_default_params: {quality: unknown-quality}
+        optional_params: {}
+        drop_params: false
+calls:
+  - b5830:
+      op: generation_params
+      cases:
+        - model: google/gemini-2.5-flash-image
+          non_default_params: {size: "1024x1024"}
+          optional_params: {image_config: not-an-object}
+          drop_params: false
+env: {}
+compare: {ignore: []}
