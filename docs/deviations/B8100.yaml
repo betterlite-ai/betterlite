@@ -59,13 +59,6 @@ deviations:
       ends the stream; an empty chunk keeps one malformed line from killing the rest of the stream.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/streaming_iterator.py#L59
   - what: >-
-      chunk_parser takes the chunk's JSON bytes, and bytes that are not valid JSON yield an empty unfinished chunk.
-    why: >-
-      LiteLLM parses each SSE line to a dict before chunk_parser runs and a bad line raises in that parser; betterlite
-      reads the envelope and the text from the same bytes, so a parse failure is one more unreadable chunk and the
-      rest of the stream goes on.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/streaming_iterator.py#L59
-  - what: >-
       The text after "Failed to parse A2A response: " is serde_json's error message, not Python's exception text.
     why: >-
       docs/compatibility.md keeps output standard JSON and never ports Python's str or repr text; the prefix and the
