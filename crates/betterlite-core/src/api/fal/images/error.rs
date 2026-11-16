@@ -25,4 +25,11 @@ pub enum FalImageError {
     },
     #[error("the Fal reply at HTTP {status} is not a JSON object")]
     ReplyNotAnObject { status: u16, headers: ImageHeaders },
+    #[error("the size field must be a string")]
+    SizeNotText,
+    #[error("the {field} field of a {model} image must be a string")]
+    FieldNotText {
+        field: &'static str,
+        model: &'static str,
+    },
 }

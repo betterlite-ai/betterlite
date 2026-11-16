@@ -15,12 +15,14 @@ betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
 betterlite-config = { path = "../../../../../crates/betterlite-config" }
 betterlite-core = { path = "../../../../../crates/betterlite-core" }
 betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
 betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-secret-managers = { path = "../../../../../crates/betterlite-secret-managers" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-vertex = { path = "../../../../../crates/betterlite-vertex" }

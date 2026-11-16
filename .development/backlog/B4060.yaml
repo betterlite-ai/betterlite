@@ -1,14 +1,14 @@
 id: B4060
 milestone: M7 observability
 title: Prompt backend registration and registry mutation
-status: todo
+status: done
 depends_on: [B4050, B4052, B4054, B4056, B4057, B4059, B189]
 file: tasks/B4060-prompt-registry-mutation.yaml
 covers:
   - "litellm/proxy/prompts/prompt_registry.py"
 parent: B117
 split_from: B117
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2011

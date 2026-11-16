@@ -1,0 +1,64 @@
+kind: helper
+name: video-auth-chain
+call:
+  openai_videos:
+    calls:
+      - op: validate_environment
+        headers:
+          Authorization: Bearer old
+          X-Trace: trace-1
+        api_key: explicit
+        params_api_key: params
+        global_api_key: global
+        openai_key: openai
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: null
+        params_api_key: params
+        global_api_key: global
+        openai_key: openai
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: ''
+        params_api_key: params
+        global_api_key: global
+        openai_key: openai
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: null
+        params_api_key: null
+        global_api_key: global
+        openai_key: openai
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: null
+        params_api_key: null
+        global_api_key: null
+        openai_key: openai
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: null
+        params_api_key: null
+        global_api_key: null
+        openai_key: null
+        environment_api_key: environment
+      - op: validate_environment
+        headers: {}
+        api_key: ''
+        params_api_key: ''
+        global_api_key: ''
+        openai_key: ''
+        environment_api_key: null
+      - op: complete_url
+        api_base: null
+      - op: complete_url
+        api_base: https://mock.example/v1///
+      - op: complete_url
+        api_base: ''
+env: {}
+compare: {ignore: []}

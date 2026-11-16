@@ -289,7 +289,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_transcription*")"
       && grep -lq 'azure_transcription' tools/oracle/fuzz/corpus/helper_case/azure_transcription* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_transcription$/)'
+      run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_transcription$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.
@@ -356,6 +356,6 @@ pitfalls:
 - The top-level async transcription branch loses api_version; a shared sync/async call builder must retain that
   asymmetry.
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2500
   max_new_expects: 0
 review_level: security

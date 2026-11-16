@@ -1,0 +1,25 @@
+kind: helper
+name: openai-videos-create-seed
+call:
+  openai_videos:
+    calls:
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options:
+          seconds: '4'
+          size: 1280x720
+        reference:
+          kind: text
+          text: https://example.invalid/a.png
+      - op: create
+        model: sora-2
+        prompt: make a video
+        api_base: https://mock.example/v1/videos
+        options: {}
+        reference:
+          kind: bytes
+          data_base64: iVBORw0KGgoAAAANSUhEUg==
+env: {}
+compare: {ignore: []}

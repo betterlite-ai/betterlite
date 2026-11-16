@@ -1,0 +1,14 @@
+kind: helper
+name: stored_skill_reads-seed
+call:
+  b3212:
+    now: "2026-02-03T04:05:06"
+    rows:
+      - {skill_id: litellm_skill_a, display_title: Alpha, file_content: aGVsbG8=, created_by: alice}
+    page:
+      - {skill_id: litellm_skill_a, display_title: Alpha, created_by: alice}
+    steps:
+      - {action: get, skill_id: litellm_skill_a, principal: {user_id: alice}}
+      - {action: list, limit: 1, offset: 0, principal: {user_id: alice}}
+env: {}
+compare: {ignore: []}

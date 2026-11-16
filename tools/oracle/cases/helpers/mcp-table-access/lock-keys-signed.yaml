@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-table-access-lock-keys-signed
+call:
+  b4711:
+    function: create_if_free
+    server_name: alpha
+    alias: null
+    rows: []
+env:
+  LITELLM_SALT_KEY: b4711-salt
+compare: {ignore: []}

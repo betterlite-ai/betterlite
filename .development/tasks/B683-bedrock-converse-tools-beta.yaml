@@ -167,7 +167,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools_beta*")"
       && grep -lq 'bedrock_converse_tools_beta' tools/oracle/fuzz/corpus/helper_case/bedrock_converse_tools_beta*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_tools_beta$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_converse_tools_beta$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-computer-use-beta-versions
     why: B601 detector/partition decides hosted computer tools. Regular tools go B231; computer tools go B601 and
