@@ -1,19 +1,10 @@
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 
 use super::error::VideoLifecycleError;
-use super::{LifecycleRequest, task_request};
 use crate::api::runway::tasks::record::decode_runway_task;
 use crate::api::runway::video_create::reply::parse_timestamp;
 
 const CANCELLED: &str = "cancelled";
-
-// transform_video_delete_request: RunwayML cancels a task instead of deleting a video
-pub fn cancel_request(
-    video_id: &str,
-    api_base: Option<&str>,
-) -> Result<LifecycleRequest, VideoLifecycleError> {
-    task_request(video_id, api_base, "/cancel")
-}
 
 // transform_video_delete_response: the reply is always cancelled, keeps the provider id raw, and adds no usage
 pub fn cancel_response(body: &[u8]) -> Result<VideoObject, VideoLifecycleError> {

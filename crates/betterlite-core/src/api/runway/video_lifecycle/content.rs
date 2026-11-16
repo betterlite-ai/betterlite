@@ -10,7 +10,6 @@ use url::Url;
 
 use super::artifact::ArtifactTransport;
 use super::error::VideoLifecycleError;
-use super::{LifecycleRequest, task_request};
 use crate::api::api_boundaries::ApiLimits;
 use crate::api::runway::tasks::record::{RunwayTask, TaskOutput, TaskOutputs, decode_runway_task};
 use crate::api::runway::video_create::error::get_error_class;
@@ -18,15 +17,6 @@ use crate::api::runway::video_create::error::get_error_class;
 const STILL_PROCESSING: [&str; 3] = ["PENDING", "RUNNING", "THROTTLED"];
 const FAILED_STATUS: &str = "FAILED";
 const UNKNOWN_FAILURE: &str = "Unknown error";
-
-// transform_video_content_request: the task lookup ignores the requested variant, since RunwayML has one asset
-pub fn content_request(
-    video_id: &str,
-    api_base: Option<&str>,
-    _variant: Option<&str>,
-) -> Result<LifecycleRequest, VideoLifecycleError> {
-    task_request(video_id, api_base, "")
-}
 
 // the extraction reads the output before the status, and only the first array element counts
 fn output_url(output: Option<&TaskOutputs>) -> Result<Option<&str>, VideoLifecycleError> {
@@ -102,12 +92,15 @@ fn artifact_failure(response: &UpstreamResponse) -> VideoLifecycleError {
 }
 
 // transform_video_content_response: extract the URL, fetch it without the provider headers, and raise on failure
-pub async fn content_response<T: ArtifactTransport>(
+pub async fn content_response<T>(
     body: &[u8],
     transport: &T,
     limits: ApiLimits,
     deadline: Duration,
-) -> Result<Vec<u8>, VideoLifecycleError> {
+) -> Result<Vec<u8>, VideoLifecycleError>
+where
+    T: ArtifactTransport,
+{
     let task = decode_runway_task(body)?;
     let url = selected_url(&task)?;
     let parsed = Url::parse(&url).map_err(VideoLifecycleError::ArtifactUrl)?;

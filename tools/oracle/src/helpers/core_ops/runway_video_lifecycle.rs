@@ -1,18 +1,16 @@
 use std::fmt::Display;
 
-use betterlite_core::api::runway::video_lifecycle::cancel::{cancel_request, cancel_response};
-use betterlite_core::api::runway::video_lifecycle::content::content_request;
+use betterlite_core::api::runway::video_lifecycle::cancel::cancel_response;
 use betterlite_core::api::runway::video_lifecycle::error::VideoLifecycleError;
-use betterlite_core::api::runway::video_lifecycle::retrieve::{
-    retrieve_request, retrieve_response,
-};
+use betterlite_core::api::runway::video_lifecycle::retrieve::retrieve_response;
 use betterlite_core::api::runway::video_lifecycle::unsupported::{
     UnsupportedOperation, unsupported_request,
 };
+use betterlite_core::api::runway::video_lifecycle::{LifecycleOperation, lifecycle_request};
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
-use serde_json::json;
+use serde_json::{Value, json};
 
 mod content;
 
@@ -117,32 +115,33 @@ where
 fn request(calls: &[RequestCall]) -> HelperResult {
     let mut urls = Vec::with_capacity(calls.len());
     for call in calls {
-        let api_base = call.api_base.as_deref();
-        let request = match call.kind {
-            RequestKind::Content => {
-                content_request(&call.video_id, api_base, call.variant.as_deref())
-            }
-            RequestKind::Status => retrieve_request(&call.video_id, api_base),
-            RequestKind::Delete => cancel_request(&call.video_id, api_base),
-        }
-        .map_err(failure)?;
+        let operation = match call.kind {
+            RequestKind::Content => LifecycleOperation::Content {
+                variant: call.variant.as_deref(),
+            },
+            RequestKind::Status => LifecycleOperation::Status,
+            RequestKind::Delete => LifecycleOperation::Cancel,
+        };
+        let request = lifecycle_request(operation, &call.video_id, call.api_base.as_deref())
+            .map_err(failure)?;
         urls.push(json!({"url": request.url, "data": request.data}));
     }
     Ok(json!({"urls": urls}))
 }
 
 fn response(calls: &[ResponseCall]) -> HelperResult {
-    let mut videos = Vec::with_capacity(calls.len());
-    for call in calls {
-        let video = match call.kind {
-            ResponseKind::Retrieve => {
-                retrieve_response(call.body.as_bytes(), call.provider.as_deref())
+    let videos = calls
+        .iter()
+        .map(|call| {
+            match call.kind {
+                ResponseKind::Retrieve => {
+                    retrieve_response(call.body.as_bytes(), call.provider.as_deref())
+                }
+                ResponseKind::Delete => cancel_response(call.body.as_bytes()),
             }
-            ResponseKind::Delete => cancel_response(call.body.as_bytes()),
-        }
-        .map_err(failure)?;
-        videos.push(json!(video));
-    }
+            .map_err(failure)
+        })
+        .collect::<Result<Vec<_>, Box<HelperError>>>()?;
     Ok(json!({"videos": videos}))
 }
 

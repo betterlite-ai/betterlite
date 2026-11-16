@@ -21,15 +21,15 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 API_BASE: Final[str] = "https://api.runwayml.test/v1"
 ARBITRARY: Final = ConfigDict(arbitrary_types_allowed=True)
 
+TaskRequest = Callable[[str, str, GenericLiteLLMParams, JsonObject], tuple[str, JsonObject]]
 ContentRequest = Callable[
     [str, str, GenericLiteLLMParams, JsonObject, str | None], tuple[str, JsonObject]
 ]
-StatusRequest = Callable[[str, str, GenericLiteLLMParams, JsonObject], tuple[str, JsonObject]]
-DeleteRequest = Callable[[str, str, GenericLiteLLMParams, JsonObject], tuple[str, JsonObject]]
 VideoReply = Callable[[httpx.Response, Logging, str | None], VideoObject]
-VideoDelete = Callable[[httpx.Response, Logging], VideoObject]
-VideoBytes = Callable[[httpx.Response, Logging], bytes]
-UnsupportedTransform = Callable[..., JsonValue]
+
+
+class UnsupportedTransform(Protocol):
+    def __call__(self, *args: str | GenericLiteLLMParams | JsonObject) -> JsonValue: ...
 
 
 @runtime_checkable
@@ -38,34 +38,27 @@ class VideoConfig(Protocol):
         self, model: str, api_base: str | None, litellm_params: JsonObject
     ) -> str: ...
 
-    # ruff counts a def's parameters (PLR0913), so each five-argument call type is a property value
     @property
-    def transform_video_content_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> ContentRequest: ...
+    def transform_video_content_request(self) -> ContentRequest: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def transform_video_status_retrieve_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> StatusRequest: ...
+    def transform_video_status_retrieve_request(self) -> TaskRequest: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def transform_video_delete_request(self) -> DeleteRequest: ...
+    def transform_video_delete_request(self) -> TaskRequest: ...
 
     @property
-    def transform_video_status_retrieve_response(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> VideoReply: ...
+    def transform_video_status_retrieve_response(self) -> VideoReply: ...  # ast-grep-ignore: no-long-names
 
     @property
     def transform_video_delete_response(  # ast-grep-ignore: no-long-names
         self,
-    ) -> VideoDelete: ...
+    ) -> Callable[[httpx.Response, Logging], VideoObject]: ...
 
     @property
     def transform_video_content_response(  # ast-grep-ignore: no-long-names
         self,
-    ) -> VideoBytes: ...
+    ) -> Callable[[httpx.Response, Logging], bytes]: ...
 
     @property
     def transform_video_remix_request(self) -> UnsupportedTransform: ...
@@ -74,22 +67,16 @@ class VideoConfig(Protocol):
     def transform_video_list_request(self) -> UnsupportedTransform: ...
 
     @property
-    def transform_video_create_character_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> UnsupportedTransform: ...
+    def transform_video_create_character_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
 
     @property
-    def transform_video_get_character_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> UnsupportedTransform: ...
+    def transform_video_get_character_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
 
     @property
     def transform_video_edit_request(self) -> UnsupportedTransform: ...
 
     @property
-    def transform_video_extension_request(  # ast-grep-ignore: no-long-names
-        self,
-    ) -> UnsupportedTransform: ...
+    def transform_video_extension_request(self) -> UnsupportedTransform: ...  # ast-grep-ignore: no-long-names
 
 
 @runtime_checkable
@@ -156,9 +143,6 @@ class UnsupportedInput(TypedDict):
     params: list[UnsupportedName]
 
 
-Input = RequestInput | ResponseInput | ContentInput | UnsupportedInput
-
-
 class Scripted:
     def __init__(self, reply: Reply) -> None:
         self.reply = reply
@@ -195,8 +179,8 @@ def artifact_value(requests: list[httpx.Request]) -> JsonValue:
     answer: JsonObject = {
         "method": request.method,
         "url": str(request.url),
-        "authorization": request.headers.get("authorization"),
-        "runway_version": request.headers.get("x-runway-version"),
+        "authorization": next(iter(request.headers.get_list("authorization")), None),
+        "runway_version": next(iter(request.headers.get_list("x-runway-version")), None),
     }
     return JSON.validate_python(answer)
 
@@ -214,7 +198,8 @@ def request_value(call: RequestCall) -> JsonValue:
         )
     else:
         url, data = CONFIG.transform_video_delete_request(call["video_id"], complete, params, EMPTY)
-    return JSON.validate_python({"url": url, "data": data})
+    answer: JsonObject = {"url": url, "data": data}
+    return JSON.validate_python(answer)
 
 
 def response_value(call: ResponseCall) -> JsonValue:
@@ -240,7 +225,8 @@ def content_value(call: ContentCall) -> JsonValue:
         }
         return JSON.validate_python(failure)
     except ValueError as error:
-        return JSON.validate_python({"error": str(error)})
+        rejection: JsonObject = {"error": str(error)}
+        return JSON.validate_python(rejection)
     answer: JsonObject = {"content": content.hex(), "artifact": artifact_value(scripted.requests)}
     return JSON.validate_python(answer)
 
@@ -271,17 +257,20 @@ def unsupported_value(name: UnsupportedName) -> JsonValue:
 
 def request_results(input_value: RequestInput) -> JsonValue:
     urls = [request_value(call) for call in input_value["params"]]
-    return JSON.validate_python({"urls": urls})
+    answer: JsonObject = {"urls": urls}
+    return JSON.validate_python(answer)
 
 
 def response_results(input_value: ResponseInput) -> JsonValue:
     videos = [response_value(call) for call in input_value["params"]]
-    return JSON.validate_python({"videos": videos})
+    answer: JsonObject = {"videos": videos}
+    return JSON.validate_python(answer)
 
 
 def content_results(input_value: ContentInput) -> JsonValue:
     results = [content_value(call) for call in input_value["params"]]
-    return JSON.validate_python({"results": results})
+    answer: JsonObject = {"results": results}
+    return JSON.validate_python(answer)
 
 
 def unsupported_results(input_value: UnsupportedInput) -> JsonValue:
@@ -290,7 +279,9 @@ def unsupported_results(input_value: UnsupportedInput) -> JsonValue:
     return JSON.validate_python(answer)
 
 
-def run(input_value: Input) -> JsonValue:
+def run(
+    input_value: RequestInput | ResponseInput | ContentInput | UnsupportedInput,
+) -> JsonValue:
     if input_value["operation"] == "request":
         return request_results(input_value)
     if input_value["operation"] == "response":
