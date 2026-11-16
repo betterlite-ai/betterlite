@@ -106,19 +106,19 @@ fn a_mask_takes_the_reference_count_and_may_repeat_an_id() {
             {"kind": "bytes", "data_base64": RAW_TWO},
         ],
         "mask": {"kind": "bytes", "data_base64": MASK},
-        "optional_params": {"n": 2},
+        "optional_params": {"n": 2_i32},
         "target": null,
         "response": null,
     })))
     .expect("the edit request builds");
-    assert_eq!(parsed["mapped"], json!({"sampleCount": 2}));
-    assert_eq!(parsed["files"], json!(0));
-    assert_eq!(reference(&parsed, 0)["referenceId"], json!(1));
+    assert_eq!(parsed["mapped"], json!({"sampleCount": 2_i32}));
+    assert_eq!(parsed["files"], json!(0_i32));
+    assert_eq!(reference(&parsed, 0)["referenceId"], json!(1_i32));
     assert_eq!(
         reference(&parsed, 0)["referenceImage"]["bytesBase64Encoded"],
         json!(RAW_ONE)
     );
-    assert_eq!(reference(&parsed, 1)["referenceId"], json!(3));
+    assert_eq!(reference(&parsed, 1)["referenceId"], json!(3_i32));
     assert_eq!(
         reference(&parsed, 1)["referenceImage"]["bytesBase64Encoded"],
         json!(RAW_TWO)
@@ -127,12 +127,12 @@ fn a_mask_takes_the_reference_count_and_may_repeat_an_id() {
         reference(&parsed, 2)["referenceType"],
         json!("REFERENCE_TYPE_MASK")
     );
-    assert_eq!(reference(&parsed, 2)["referenceId"], json!(3));
+    assert_eq!(reference(&parsed, 2)["referenceId"], json!(3_i32));
     assert_eq!(
         reference(&parsed, 2)["maskImageConfig"],
-        json!({"maskMode": "MASK_MODE_USER_PROVIDED", "dilation": 0.03})
+        json!({"maskMode": "MASK_MODE_USER_PROVIDED", "dilation": 0.03_f64})
     );
-    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(2));
+    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(2_i32));
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn an_empty_image_list_sends_the_mask_alone() {
         reference(&parsed, 0)["referenceType"],
         json!("REFERENCE_TYPE_MASK")
     );
-    assert_eq!(reference(&parsed, 0)["referenceId"], json!(1));
+    assert_eq!(reference(&parsed, 0)["referenceId"], json!(1_i32));
     let absent = Op::run(&input(json!({
         "model": "imagen-3.0-capability-001",
         "prompt": "fill the sky",
@@ -202,7 +202,7 @@ fn an_empty_prompt_reaches_the_body() {
     })))
     .expect("the edit request builds");
     assert_eq!(parsed["payload"]["instances"][0]["prompt"], json!(""));
-    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(1));
+    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(1_i32));
 }
 
 #[test]
@@ -212,17 +212,17 @@ fn a_mapped_aspect_ratio_stays_out_of_the_body() {
         "prompt": "paint",
         "image": [{"kind": "bytes", "data_base64": PNG}],
         "mask": null,
-        "optional_params": {"size": "1792x1024", "n": 3},
+        "optional_params": {"size": "1792x1024", "n": 3_i32},
         "target": null,
         "response": null,
     })))
     .expect("the edit request builds");
     assert_eq!(
         parsed["mapped"],
-        json!({"sampleCount": 3, "aspectRatio": "16:9"})
+        json!({"sampleCount": 3_i32, "aspectRatio": "16:9"})
     );
     assert!(parsed["payload"]["parameters"]["aspectRatio"].is_null());
-    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(3));
+    assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(3_i32));
 }
 
 #[test]
@@ -317,7 +317,7 @@ fn a_record_past_the_depth_limit_is_refused() {
         "optional_params": {},
         "target": null,
         "response": null,
-        "max_recurse_depth": 2,
+        "max_recurse_depth": 2_i32,
     })))
     .expect_err("the reader stops past the limit");
     assert_eq!(error.class, "ValueError");
@@ -339,7 +339,7 @@ fn a_record_at_the_depth_limit_is_read() {
         "optional_params": {},
         "target": null,
         "response": null,
-        "max_recurse_depth": 2,
+        "max_recurse_depth": 2_i32,
     })))
     .expect("two nested lists are read");
     assert_eq!(
@@ -368,13 +368,13 @@ fn a_prediction_with_the_bytes_key_becomes_an_image() {
     assert_eq!(
         parsed["response"],
         json!({
-            "created": 0,
+            "created": 0_i32,
             "data": [{"b64_json": "AAA"}],
             "usage": {
-                "input_tokens": 0,
-                "input_tokens_details": {"image_tokens": 0, "text_tokens": 0},
-                "output_tokens": 0,
-                "total_tokens": 0,
+                "input_tokens": 0_i32,
+                "input_tokens_details": {"image_tokens": 0_i32, "text_tokens": 0_i32},
+                "output_tokens": 0_i32,
+                "total_tokens": 0_i32,
             },
         })
     );

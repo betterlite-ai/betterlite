@@ -67,7 +67,7 @@ pub(super) enum ImageSpec {
     },
     // a nested list counts one level toward the reader's depth limit, so the case can hand it more
     Sequence {
-        items: Vec<Option<ImageSpec>>,
+        items: Vec<Option<Self>>,
     },
     Mapping {
         data: Option<String>,

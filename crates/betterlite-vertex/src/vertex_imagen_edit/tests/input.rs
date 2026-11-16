@@ -95,7 +95,7 @@ impl Seek for FaultyStream {
                 self.cursor.set_position(offset);
                 Ok(offset)
             }
-            (_, pos) => self.cursor.seek(pos),
+            (_, seek_to) => self.cursor.seek(seek_to),
         }
     }
 }
