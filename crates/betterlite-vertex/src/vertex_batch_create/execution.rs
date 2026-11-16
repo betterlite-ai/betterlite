@@ -33,7 +33,7 @@ mod tests;
 pub const DEFAULT_CLIENT_DEADLINE: Duration = Duration::from_secs(600);
 
 // the first 1000 characters of a failed create body are logged
-const LOGGED_BODY_CHARS: usize = 1000;
+pub(crate) const LOGGED_BODY_CHARS: usize = 1000;
 
 pub struct BatchCreateRequest<'request> {
     pub create: &'request CreateBatchRequest,
@@ -174,7 +174,7 @@ where
 }
 
 // httpx decodes response.text leniently, so a body that is not UTF-8 keeps the text before its first invalid byte
-fn body_text(body: &[u8]) -> String {
+pub(crate) fn body_text(body: &[u8]) -> String {
     match from_utf8(body) {
         Ok(text) => text.to_owned(),
         Err(invalid) => from_utf8(body.get(..invalid.valid_up_to()).unwrap_or_default())

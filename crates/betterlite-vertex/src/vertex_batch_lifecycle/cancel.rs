@@ -12,7 +12,9 @@ use crate::cache_lookup::transport::CacheTransport;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 use crate::token_cache::error::CredentialCacheError;
 use crate::token_cache::probe::AccessToken;
-use crate::vertex_batch_create::execution::DEFAULT_CLIENT_DEADLINE;
+use crate::vertex_batch_create::execution::{
+    DEFAULT_CLIENT_DEADLINE, LOGGED_BODY_CHARS, body_text,
+};
 use crate::vertex_batch_create::payload::decode_vertex_batch_payload;
 use crate::vertex_batch_create::target::collection_url;
 use crate::vertex_batch_records::response::to_batch_object;
@@ -20,14 +22,10 @@ use crate::vertex_batch_records::types::VertexBatchPredictionResponse;
 
 use super::error::VertexBatchLifecycleError;
 use super::execution::{BatchLifecycleRequest, resolve, send_get};
-use super::page::body_text;
 use super::target::proxy_url;
 
 // LiteLLM posts json.dumps({}) to the cancel endpoint
 const CANCEL_BODY: &[u8] = b"{}";
-
-// a failed cancel logs the first 1000 characters of the provider body
-const LOGGED_BODY_CHARS: usize = 1000;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CancelTarget {
