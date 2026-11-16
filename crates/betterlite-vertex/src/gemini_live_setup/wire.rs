@@ -2,7 +2,6 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
 use serde_json::Number;
 
-use super::error::LiveSetupError;
 use super::session::MaxResponseTokens;
 use crate::gemini_tools::records::{Tool, ToolConfig};
 
@@ -96,10 +95,6 @@ pub struct AutomaticActivityDetection {
 }
 
 #[derive(Serialize)]
-struct Envelope<'setup> {
-    setup: &'setup LiveSetup,
-}
-
-pub(crate) fn encode_envelope(setup: &LiveSetup) -> Result<String, LiveSetupError> {
-    serde_json::to_string(&Envelope { setup }).map_err(LiveSetupError::Encode)
+pub(crate) struct Envelope<'setup> {
+    pub(crate) setup: &'setup LiveSetup,
 }

@@ -9,8 +9,8 @@ use super::settings::LiveSetupSettings;
 use super::turn_detection::map_automatic_turn_detection;
 use super::voice::{SpeechSelection, speech_config};
 use super::wire::{
-    GenerationConfig, Instruction, InstructionPart, LiveSetup, RealtimeInputConfig,
-    SystemInstruction, encode_envelope,
+    Envelope, GenerationConfig, Instruction, InstructionPart, LiveSetup, RealtimeInputConfig,
+    SystemInstruction,
 };
 use crate::gemini_tools::assembly::map_tools;
 
@@ -18,22 +18,22 @@ pub fn map_session(
     session: &SessionUpdate,
     schema: &SchemaSettings,
 ) -> Result<LiveSetup, LiveSetupError> {
-    let session = normalize_session(session);
-    let mut setup = setup_from_session(&session);
-    if let Some(tools) = &session.tools {
+    let normalized_session = normalize_session(session);
+    let mut setup = setup_from_session(&normalized_session);
+    if let Some(tools) = &normalized_session.tools {
         // LiteLLM puts tools at the top level of the setup, outside generationConfig
         let mapped = map_tools(tools, false, None, schema)?;
         setup.tools = Some(mapped.tools);
         setup.tool_config = mapped.tool_config;
     }
-    if let Some(turn_detection) = &session.turn_detection
+    if let Some(turn_detection) = &normalized_session.turn_detection
         && let Some(detection) = map_automatic_turn_detection(turn_detection)
     {
         setup.realtime_input_config = Some(RealtimeInputConfig {
             automatic_activity_detection: Some(detection),
         });
     }
-    if let Some(voice) = session.voice.as_deref()
+    if let Some(voice) = normalized_session.voice.as_deref()
         && let SpeechSelection::Voice(config) = speech_config(voice)?
     {
         setup.generation_config.speech_config = Some(config);
@@ -54,7 +54,9 @@ pub fn transform_session_update(
     }
     fill_first_setup_defaults(&mut setup, model, settings.catalog);
     setup.model = Some(format!("models/{model}"));
-    Ok(vec![encode_envelope(&setup)?])
+    Ok(vec![
+        serde_json::to_string(&Envelope { setup: &setup }).map_err(LiveSetupError::Encode)?,
+    ])
 }
 
 fn setup_from_session(session: &SessionUpdate) -> LiveSetup {

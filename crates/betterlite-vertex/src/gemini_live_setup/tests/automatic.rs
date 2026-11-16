@@ -1,15 +1,17 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
+
 use crate::gemini_live_setup::decode::decode_gemini_live_setup;
 
-use super::support::{as_json, automatic, json};
+use super::support::{as_json, automatic, parse};
 
 #[test]
 fn the_automatic_setup_uses_the_default_modality_and_input_transcription() {
     let request = automatic("gemini-2.5-flash", false).expect("the request builds");
     assert_eq!(
         as_json(&decode_gemini_live_setup(&request).expect("the setup decodes")),
-        json(
+        parse::<Json>(
             r#"{
                 "model": "models/gemini-2.5-flash",
                 "generationConfig": {"responseModalities": ["AUDIO"]},
@@ -25,7 +27,7 @@ fn a_text_only_model_gets_text_automatically() {
     let setup = decode_gemini_live_setup(&request).expect("the setup decodes");
     assert_eq!(
         as_json(&setup.generation_config.response_modalities),
-        json(r#"["TEXT"]"#)
+        parse::<Json>(r#"["TEXT"]"#)
     );
 }
 

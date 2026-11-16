@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
+
 use rstest::rstest;
 
 use crate::gemini_live_setup::created::CreatedEvent;
 
-use super::support::{as_json, created, json};
+use super::support::{as_json, created, parse};
 
 const EVENT_ID: &str = "00000000-0000-4000-8000-000000000001";
 
@@ -24,7 +26,7 @@ fn a_string_instruction_is_copied_and_the_model_is_stripped() {
             Some(request),
             EVENT_ID
         )),
-        json(
+        parse::<Json>(
             r#"{
                 "type": "session.created",
                 "session": {

@@ -3,7 +3,7 @@ use betterlite_prompts::arguments::json::Object;
 use super::catalog::default_response_modality;
 use super::error::LiveSetupError;
 use super::settings::LiveSetupSettings;
-use super::wire::{GenerationConfig, LiveSetup, encode_envelope};
+use super::wire::{Envelope, GenerationConfig, LiveSetup};
 
 #[must_use]
 pub fn automatic_setup(model: &str, settings: &LiveSetupSettings<'_>) -> LiveSetup {
@@ -36,5 +36,8 @@ pub fn session_configuration_request(
     if settings.defer_setup {
         return Ok(None);
     }
-    Ok(Some(encode_envelope(&automatic_setup(model, settings))?))
+    let setup = automatic_setup(model, settings);
+    Ok(Some(
+        serde_json::to_string(&Envelope { setup: &setup }).map_err(LiveSetupError::Encode)?,
+    ))
 }

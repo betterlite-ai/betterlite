@@ -16,7 +16,6 @@ use crate::gemini_live_setup::created::{SessionCreatedEvent, session_created};
 use crate::gemini_live_setup::session::SessionUpdate;
 use crate::gemini_live_setup::settings::LiveSetupSettings;
 use crate::gemini_live_setup::setup::{map_session, transform_session_update};
-use crate::gemini_live_setup::turn_detection::TurnDetection;
 use crate::gemini_live_setup::wire::LiveSetup;
 
 const CATALOG: &str = r#"{
@@ -37,10 +36,6 @@ where
     serde_json::from_str(source).expect("the fixture decodes")
 }
 
-pub(crate) fn json(source: &str) -> Json {
-    parse(source)
-}
-
 pub(crate) fn as_json<T>(value: &T) -> Json
 where
     T: Serialize + ?Sized,
@@ -53,16 +48,9 @@ pub(crate) fn catalog() -> ModelCatalog {
     ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).expect("the test catalog parses")
 }
 
-pub(crate) fn session(source: &str) -> SessionUpdate {
-    parse(source)
-}
-
-pub(crate) fn turn_detection(source: &str) -> TurnDetection {
-    parse(source)
-}
-
 pub(crate) fn mapped(source: &str) -> LiveSetup {
-    map_session(&session(source), &SchemaSettings::default()).expect("the session maps")
+    map_session(&parse::<SessionUpdate>(source), &SchemaSettings::default())
+        .expect("the session maps")
 }
 
 pub(crate) fn transform(source: &str, model: &str, request: Option<&str>) -> Vec<String> {
@@ -73,7 +61,7 @@ pub(crate) fn transform(source: &str, model: &str, request: Option<&str>) -> Vec
         schema: &schema,
         defer_setup: false,
     };
-    transform_session_update(&session(source), model, request, &settings)
+    transform_session_update(&parse::<SessionUpdate>(source), model, request, &settings)
         .expect("the update transforms")
 }
 

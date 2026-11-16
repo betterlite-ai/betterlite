@@ -1,11 +1,15 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
+
 use betterlite_config::sections::vertex_schema_shaping::Settings as SchemaSettings;
 
 use crate::gemini_live_setup::setup::map_session;
 use crate::gemini_tools::assembly::map_tools;
 
-use super::support::{as_json, json, mapped, session};
+use crate::gemini_live_setup::session::SessionUpdate;
+
+use super::support::{as_json, mapped, parse};
 
 const TOOLS: &str = r#"[{"type": "function", "function": {"name": "lookup", "description": "Find a city", "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}}]"#;
 
@@ -23,7 +27,7 @@ fn every_supported_option_maps_to_its_wire_field() {
                 "voice": "Puck"
             }"#
         )),
-        json(
+        parse::<Json>(
             r#"{
                 "generationConfig": {
                     "temperature": 0.4,
@@ -41,7 +45,7 @@ fn every_supported_option_maps_to_its_wire_field() {
 
 #[test]
 fn an_empty_session_maps_to_an_empty_setup() {
-    assert_eq!(as_json(&mapped("{}")), json("{}"));
+    assert_eq!(as_json(&mapped("{}")), parse::<Json>("{}"));
 }
 
 #[test]
@@ -50,7 +54,7 @@ fn unknown_session_keys_and_null_options_are_ignored() {
         as_json(&mapped(
             r#"{"modalities": null, "voice": null, "unexpected": {"deep": true}}"#
         )),
-        json("{}")
+        parse::<Json>("{}")
     );
 }
 
@@ -69,7 +73,7 @@ fn ga_audio_slots_fill_the_absent_flat_keys() {
                 }
             }"#
         )),
-        json(
+        parse::<Json>(
             r#"{
                 "generationConfig": {
                     "responseModalities": ["TEXT", "AUDIO"],
@@ -99,7 +103,7 @@ fn flat_keys_win_over_the_ga_slots() {
                 "turn_detection": {"type": "server_vad"}
             }"#
         )),
-        json(
+        parse::<Json>(
             r#"{
                 "generationConfig": {"responseModalities": ["AUDIO"]},
                 "realtimeInputConfig": {"automaticActivityDetection": {"disabled": false}},
@@ -113,17 +117,17 @@ fn flat_keys_win_over_the_ga_slots() {
 fn max_response_output_tokens_accepts_counts_and_inf() {
     assert_eq!(
         as_json(&mapped(r#"{"max_response_output_tokens": -1}"#)),
-        json(r#"{"generationConfig": {"maxOutputTokens": -1}}"#)
+        parse::<Json>(r#"{"generationConfig": {"maxOutputTokens": -1}}"#)
     );
     assert_eq!(
         as_json(&mapped(r#"{"max_response_output_tokens": "inf"}"#)),
-        json(r#"{"generationConfig": {"maxOutputTokens": "inf"}}"#)
+        parse::<Json>(r#"{"generationConfig": {"maxOutputTokens": "inf"}}"#)
     );
 }
 
 #[test]
 fn tools_map_to_the_top_level_of_the_setup() {
-    let update = session(&format!(r#"{{"tools": {TOOLS}}}"#));
+    let update = parse::<SessionUpdate>(&format!(r#"{{"tools": {TOOLS}}}"#));
     let setup = map_session(&update, &SchemaSettings::default()).expect("the session maps");
     let expected = map_tools(
         update.tools.as_deref().expect("the session has tools"),
@@ -135,12 +139,13 @@ fn tools_map_to_the_top_level_of_the_setup() {
     assert_eq!(setup.tools, Some(expected.tools));
     assert_eq!(setup.tool_config, expected.tool_config);
     assert!(setup.tools.as_ref().is_some_and(|tools| !tools.is_empty()));
-    assert_eq!(as_json(&setup.generation_config), json("{}"));
+    assert_eq!(as_json(&setup.generation_config), parse::<Json>("{}"));
 }
 
 #[test]
 fn maps_coordinates_become_the_top_level_tool_config() {
-    let update = session(r#"{"tools": [{"googleMaps": {"latitude": 1, "longitude": 2}}]}"#);
+    let update =
+        parse::<SessionUpdate>(r#"{"tools": [{"googleMaps": {"latitude": 1, "longitude": 2}}]}"#);
     let setup = map_session(&update, &SchemaSettings::default()).expect("the session maps");
     let expected = map_tools(
         update.tools.as_deref().expect("the session has tools"),
@@ -152,6 +157,6 @@ fn maps_coordinates_become_the_top_level_tool_config() {
     assert_eq!(setup.tool_config, expected.tool_config);
     assert_eq!(
         as_json(&setup.tool_config),
-        json(r#"{"retrievalConfig": {"latLng": {"latitude": 1, "longitude": 2}}}"#)
+        parse::<Json>(r#"{"retrievalConfig": {"latLng": {"latitude": 1, "longitude": 2}}}"#)
     );
 }

@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
 use crate::gemini_live_setup::voice::{SpeechSelection, speech_config};
 
-use super::support::{as_json, json, mapped, with_warnings};
+use super::support::{as_json, mapped, parse, with_warnings};
 
 #[rstest]
 #[case::alloy("alloy")]
@@ -33,12 +34,15 @@ fn custom_voices_are_forwarded_verbatim(#[case] voice: &str, #[case] expected: &
     let SpeechSelection::Voice(config) = selection else {
         panic!("{voice} is not a stock voice");
     };
-    assert_eq!(as_json(&config), json(expected));
+    assert_eq!(as_json(&config), parse::<Json>(expected));
 }
 
 #[test]
 fn a_stock_voice_leaves_the_setup_without_a_speech_config() {
-    assert_eq!(as_json(&mapped(r#"{"voice": "Alloy"}"#)), json("{}"));
+    assert_eq!(
+        as_json(&mapped(r#"{"voice": "Alloy"}"#)),
+        parse::<Json>("{}")
+    );
 }
 
 #[test]

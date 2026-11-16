@@ -1,18 +1,22 @@
 #![cfg(test)]
 
-use crate::gemini_live_setup::session::normalize_session;
+use betterlite_prompts::arguments::json::Json;
 
-use super::support::{as_json, json, session};
+use crate::gemini_live_setup::session::{SessionUpdate, normalize_session};
+
+use super::support::{as_json, parse};
 
 #[test]
 fn output_modalities_fill_an_absent_flat_key() {
-    let normalized = normalize_session(&session(r#"{"output_modalities": ["text"]}"#));
+    let normalized = normalize_session(&parse::<SessionUpdate>(
+        r#"{"output_modalities": ["text"]}"#,
+    ));
     assert_eq!(normalized.modalities, Some(vec!["text".to_owned()]));
 }
 
 #[test]
 fn present_flat_modalities_keep_their_value() {
-    let normalized = normalize_session(&session(
+    let normalized = normalize_session(&parse::<SessionUpdate>(
         r#"{"modalities": ["audio"], "output_modalities": ["text"]}"#,
     ));
     assert_eq!(normalized.modalities, Some(vec!["audio".to_owned()]));
@@ -20,25 +24,25 @@ fn present_flat_modalities_keep_their_value() {
 
 #[test]
 fn the_nested_transcription_fills_only_an_absent_flat_key() {
-    let nested = normalize_session(&session(
+    let nested = normalize_session(&parse::<SessionUpdate>(
         r#"{"audio": {"input": {"transcription": {"model": "nested"}}}}"#,
     ));
     assert_eq!(
         as_json(&nested.input_audio_transcription),
-        json(r#"{"model": "nested"}"#)
+        parse::<Json>(r#"{"model": "nested"}"#)
     );
-    let flat = normalize_session(&session(
+    let flat = normalize_session(&parse::<SessionUpdate>(
         r#"{"input_audio_transcription": {"model": "flat"}, "audio": {"input": {"transcription": {"model": "nested"}}}}"#,
     ));
     assert_eq!(
         as_json(&flat.input_audio_transcription),
-        json(r#"{"model": "flat"}"#)
+        parse::<Json>(r#"{"model": "flat"}"#)
     );
 }
 
 #[test]
 fn the_nested_turn_detection_fills_only_an_absent_flat_key() {
-    let nested = normalize_session(&session(
+    let nested = normalize_session(&parse::<SessionUpdate>(
         r#"{"audio": {"input": {"turn_detection": {"type": "server_vad", "create_response": false}}}}"#,
     ));
     assert_eq!(
@@ -48,7 +52,7 @@ fn the_nested_turn_detection_fills_only_an_absent_flat_key() {
             .and_then(|detection| detection.create_response),
         Some(false)
     );
-    let flat = normalize_session(&session(
+    let flat = normalize_session(&parse::<SessionUpdate>(
         r#"{"turn_detection": {"type": "server_vad"}, "audio": {"input": {"turn_detection": {"type": "server_vad", "create_response": false}}}}"#,
     ));
     assert_eq!(
@@ -61,7 +65,7 @@ fn the_nested_turn_detection_fills_only_an_absent_flat_key() {
 
 #[test]
 fn a_truthy_nested_voice_replaces_the_flat_voice() {
-    let normalized = normalize_session(&session(
+    let normalized = normalize_session(&parse::<SessionUpdate>(
         r#"{"voice": "Puck", "audio": {"output": {"voice": "Charon"}}}"#,
     ));
     assert_eq!(normalized.voice.as_deref(), Some("Charon"));
@@ -69,7 +73,7 @@ fn a_truthy_nested_voice_replaces_the_flat_voice() {
 
 #[test]
 fn an_empty_nested_voice_keeps_the_flat_voice() {
-    let normalized = normalize_session(&session(
+    let normalized = normalize_session(&parse::<SessionUpdate>(
         r#"{"voice": "Puck", "audio": {"output": {"voice": ""}}}"#,
     ));
     assert_eq!(normalized.voice.as_deref(), Some("Puck"));
@@ -77,6 +81,8 @@ fn an_empty_nested_voice_keeps_the_flat_voice() {
 
 #[test]
 fn a_nested_voice_without_a_flat_voice_is_used() {
-    let normalized = normalize_session(&session(r#"{"audio": {"output": {"voice": "Charon"}}}"#));
+    let normalized = normalize_session(&parse::<SessionUpdate>(
+        r#"{"audio": {"output": {"voice": "Charon"}}}"#,
+    ));
     assert_eq!(normalized.voice.as_deref(), Some("Charon"));
 }

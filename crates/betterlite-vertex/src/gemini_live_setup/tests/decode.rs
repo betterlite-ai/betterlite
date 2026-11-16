@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
+
 use crate::gemini_live_setup::decode::decode_gemini_live_setup;
 use crate::gemini_live_setup::error::LiveSetupError;
 
-use super::support::{as_json, json};
+use super::support::{as_json, parse};
 
 #[test]
 fn a_setup_envelope_decodes_to_the_setup() {
@@ -19,7 +21,7 @@ fn a_setup_envelope_decodes_to_the_setup() {
     .expect("the setup decodes");
     assert_eq!(
         as_json(&setup),
-        json(
+        parse::<Json>(
             r#"{
                 "model": "models/x",
                 "generationConfig": {"responseModalities": ["AUDIO"], "maxOutputTokens": 12},
@@ -33,11 +35,11 @@ fn a_setup_envelope_decodes_to_the_setup() {
 fn a_missing_or_null_setup_is_an_empty_setup() {
     assert_eq!(
         as_json(&decode_gemini_live_setup("{}").expect("the envelope decodes")),
-        json("{}")
+        parse::<Json>("{}")
     );
     assert_eq!(
         as_json(&decode_gemini_live_setup(r#"{"setup": null}"#).expect("the envelope decodes")),
-        json("{}")
+        parse::<Json>("{}")
     );
 }
 

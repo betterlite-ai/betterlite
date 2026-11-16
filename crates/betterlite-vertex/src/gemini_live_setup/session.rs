@@ -54,22 +54,24 @@ pub fn normalize_session(session: &SessionUpdate) -> SessionUpdate {
     if normalized.modalities.is_none() {
         normalized.modalities = normalized.output_modalities.clone();
     }
-    if let Some(audio) = normalized.audio.clone() {
-        let SessionAudio { input, output } = audio;
+    if let Some(audio) = session.audio.as_ref() {
         if normalized.input_audio_transcription.is_none()
-            && let Some(input) = &input
+            && let Some(audio_input) = audio.input.as_ref()
         {
-            normalized.input_audio_transcription = input.transcription.clone();
+            normalized.input_audio_transcription = audio_input.transcription.clone();
         }
         if normalized.turn_detection.is_none()
-            && let Some(input) = &input
+            && let Some(audio_input) = audio.input.as_ref()
         {
-            normalized.turn_detection = input.turn_detection.clone();
+            normalized.turn_detection = audio_input.turn_detection.clone();
         }
-        if let Some(voice) = output.and_then(|output| output.voice)
+        if let Some(voice) = audio
+            .output
+            .as_ref()
+            .and_then(|output| output.voice.as_ref())
             && !voice.is_empty()
         {
-            normalized.voice = Some(voice);
+            normalized.voice = Some(voice.clone());
         }
     }
     normalized

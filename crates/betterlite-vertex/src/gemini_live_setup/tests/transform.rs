@@ -1,8 +1,10 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
+
 use crate::gemini_live_setup::decode::decode_gemini_live_setup;
 
-use super::support::{as_json, json, transform, with_warnings};
+use super::support::{as_json, parse, transform, with_warnings};
 
 #[test]
 fn the_first_update_sends_one_setup() {
@@ -14,7 +16,7 @@ fn the_first_update_sends_one_setup() {
     assert_eq!(messages.len(), 1);
     assert_eq!(
         as_json(&decode_gemini_live_setup(&messages[0]).expect("the setup decodes")),
-        json(
+        parse::<Json>(
             r#"{
                 "model": "models/gemini-2.5-flash",
                 "generationConfig": {
@@ -34,7 +36,7 @@ fn the_first_update_defaults_the_modality_and_transcription() {
     assert_eq!(messages.len(), 1);
     assert_eq!(
         as_json(&decode_gemini_live_setup(&messages[0]).expect("the setup decodes")),
-        json(
+        parse::<Json>(
             r#"{
                 "model": "models/gemini-2.5-flash",
                 "generationConfig": {"responseModalities": ["AUDIO"]},
@@ -50,7 +52,7 @@ fn an_explicit_empty_modality_list_is_kept() {
     let setup = decode_gemini_live_setup(&messages[0]).expect("the setup decodes");
     assert_eq!(
         as_json(&setup.generation_config.response_modalities),
-        json("[]")
+        parse::<Json>("[]")
     );
 }
 
@@ -64,7 +66,7 @@ fn the_first_update_coerces_the_modalities_for_the_model() {
     let setup = decode_gemini_live_setup(&messages[0]).expect("the setup decodes");
     assert_eq!(
         as_json(&setup.generation_config.response_modalities),
-        json(r#"["AUDIO"]"#)
+        parse::<Json>(r#"["AUDIO"]"#)
     );
 }
 

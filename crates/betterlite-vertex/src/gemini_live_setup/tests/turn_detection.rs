@@ -1,12 +1,11 @@
 #![cfg(test)]
 
+use betterlite_prompts::arguments::json::Json;
 use rstest::rstest;
 
-use betterlite_prompts::arguments::json::Json;
+use crate::gemini_live_setup::turn_detection::{TurnDetection, map_automatic_turn_detection};
 
-use crate::gemini_live_setup::turn_detection::map_automatic_turn_detection;
-
-use super::support::{as_json, json, turn_detection};
+use super::support::{as_json, parse};
 
 #[rstest]
 #[case::semantic_without_override(r#"{"type": "semantic_vad"}"#, None)]
@@ -50,7 +49,7 @@ fn automatic_detection_follows_the_override_rules(
     #[case] source: &str,
     #[case] expected: Option<&str>,
 ) {
-    let detection = map_automatic_turn_detection(&turn_detection(source));
+    let detection = map_automatic_turn_detection(&parse::<TurnDetection>(source));
     let expected = expected.map_or(Json::Null, json);
     assert_eq!(as_json(&detection), expected);
 }

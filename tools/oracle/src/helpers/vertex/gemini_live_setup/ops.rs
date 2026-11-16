@@ -91,10 +91,10 @@ fn session_update(
     call: &Call,
     settings: &LiveSetupSettings<'_>,
 ) -> Result<Value, Box<HelperError>> {
-    let session = serde_json::to_value(&call.session).or_value_error()?;
-    let session = serde_json::from_value::<SessionUpdate>(session).or_value_error()?;
+    let session_value = serde_json::to_value(&call.session).or_value_error()?;
+    let update = serde_json::from_value::<SessionUpdate>(session_value).or_value_error()?;
     let messages = transform_session_update(
-        &session,
+        &update,
         &call.model,
         call.session_configuration_request.as_deref(),
         settings,
