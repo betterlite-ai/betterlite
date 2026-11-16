@@ -505,6 +505,18 @@ macro_rules! stub_section {
 }
 pub(crate) use stub_section;
 
+// a section's Raw is parsed in a frame of its own and held on the heap, so the frames of RawSections::parse and
+// ConfigLoader::load stay small however many sections there are, and deep YAML keeps its stack
+#[inline(never)]
+fn parse_section<Raw: DeserializeOwned>(
+    source: &str,
+    ignored: &mut Vec<BTreeSet<String>>,
+) -> Result<Box<Raw>, ConfigError> {
+    let (raw, paths) = parse_view(source)?;
+    ignored.push(paths);
+    Ok(Box::new(raw))
+}
+
 macro_rules! sections {
     ($($name:ident),* $(,)?) => {
         #[derive(Clone, Default)]
@@ -520,7 +532,7 @@ macro_rules! sections {
         }
 
         pub(crate) struct RawSections {
-            $($name: $name::Raw,)*
+            $($name: Box<$name::Raw>,)*
         }
 
         impl RawSections {
@@ -529,11 +541,7 @@ macro_rules! sections {
                 ignored: &mut Vec<BTreeSet<String>>,
             ) -> Result<Self, ConfigError> {
                 Ok(Self {
-                    $($name: {
-                        let (raw, paths) = parse_view(source)?;
-                        ignored.push(paths);
-                        raw
-                    },)*
+                    $($name: parse_section(source, ignored)?,)*
                 })
             }
 
@@ -542,7 +550,7 @@ macro_rules! sections {
                 L: EnvironmentLookup,
             {
                 Ok(Sections {
-                    $($name: Section::convert(self.$name, lookup)?,)*
+                    $($name: Section::convert(*self.$name, lookup)?,)*
                 })
             }
         }
