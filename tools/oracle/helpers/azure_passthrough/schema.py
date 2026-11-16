@@ -1,7 +1,8 @@
 from typing import Final, Literal, Required, TypedDict
 
 from litellm.types.llms.openai import ResponsesTerminalEvent
-from pydantic import JsonValue as Json, TypeAdapter
+from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 
 PASSTHROUGH_CALL_TYPE: Final = "allm_passthrough_route"
 NONSTREAM_URL: Final = "https://b548.test/openai/deployments/d/chat/completions"

@@ -56,7 +56,7 @@ fn inference_report(steps: &[InferenceStep]) -> Value {
     let steps: Vec<Value> = steps
         .iter()
         .map(|step| {
-            let config = AzurePassthroughConfig::default();
+            let config = base_config(None);
             json!({
                 "inference": body_model_inference_endpoint(&step.endpoint),
                 "streaming": config.is_streaming_request(&step.endpoint, &step.request_data),

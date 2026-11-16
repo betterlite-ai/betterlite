@@ -29,7 +29,7 @@ pub(super) fn nonstream_usage_case() {
 }
 
 fn default_seams_log_nothing() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
         &target("gpt-4.1-mini", CHAT_ENDPOINT),
@@ -51,7 +51,7 @@ fn default_seams_log_nothing() {
 }
 
 fn trait_logging_keeps_the_relay_branch() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let response = RelayedResponse {
         status_code: 200,
         body: EMBEDDINGS_BODY.as_bytes(),
@@ -146,7 +146,7 @@ fn chat_log_keeps_the_relayed_request_body() {
 }
 
 fn relay_branch_builds_embedding_log() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let response = RelayedResponse {
         status_code: 200,
         body: EMBEDDINGS_BODY.as_bytes(),
@@ -171,7 +171,7 @@ fn relay_branch_builds_embedding_log() {
 }
 
 fn relay_branch_parses_images() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let images = br#"{"created": 1700000000, "data": [{"url": "https://x.test/img.png"}]}"#;
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
@@ -192,7 +192,7 @@ fn relay_branch_parses_images() {
 }
 
 fn relay_branch_parses_responses() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
         &target("gpt-4.1-mini", RESPONSES_ENDPOINT),
@@ -215,7 +215,7 @@ fn relay_branch_parses_responses() {
 }
 
 fn relay_branch_rejects_other_shapes() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let table: [(&str, &str); 5] = [
         (EMBEDDINGS_ENDPOINT, r#"{"object": "not-list", "data": []}"#),
         (EMBEDDINGS_ENDPOINT, r#"{"object": "list", "data": {}}"#),
@@ -241,7 +241,7 @@ fn relay_branch_rejects_other_shapes() {
 }
 
 fn failed_relay_status_logs_nothing() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let rate_limited = br#"{"error": {"code": "429", "message": "rate limited"}}"#;
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
@@ -259,7 +259,7 @@ fn failed_relay_status_logs_nothing() {
 }
 
 fn unknown_relay_endpoint_logs_nothing() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let speech_endpoint = "openai/deployments/gpt-4o-mini-tts/audio/speech";
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
@@ -277,7 +277,7 @@ fn unknown_relay_endpoint_logs_nothing() {
 }
 
 fn undecodable_relay_logs_nothing() {
-    let config = AzurePassthroughConfig::default();
+    let config: AzurePassthroughConfig = AzurePassthroughConfig::default();
     let mut logging = RecordingLogging::default();
     let logged = config.logging_non_streaming_response(
         &target("text-embedding-3-small", EMBEDDINGS_ENDPOINT),
