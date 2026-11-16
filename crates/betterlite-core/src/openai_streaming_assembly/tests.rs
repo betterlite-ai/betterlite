@@ -305,7 +305,7 @@ fn usage_chunk(prompt_tokens: i64, completion_tokens: i64) -> String {
     body["usage"] = json!({
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens + completion_tokens,
+        "total_tokens": prompt_tokens.checked_add(completion_tokens).expect("the fixture fits"),
     });
     body.to_string()
 }
