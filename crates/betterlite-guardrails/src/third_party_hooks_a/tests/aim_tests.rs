@@ -20,6 +20,9 @@ async fn aim_skips_embeddings_unless_inspect_embeddings_is_set() {
     aim::pre_call(&guardrail, &mut data, "embedding", None)
         .await
         .expect("pre_call");
+    aim::moderation(&guardrail, &data, "embedding", None)
+        .await
+        .expect("moderation");
     assert_eq!(data, before);
     assert!(captured.lock().expect("captured").is_empty());
 }

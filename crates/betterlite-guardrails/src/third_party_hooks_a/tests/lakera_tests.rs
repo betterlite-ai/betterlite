@@ -461,3 +461,98 @@ async fn lakera_fails_with_the_upstream_error_body() {
     assert_eq!(error.to_string(), "upstream exploded");
     assert!(matches!(error, ThirdPartyHookError::Failure { .. }));
 }
+
+#[tokio::test]
+async fn lakera_keeps_the_last_message_of_each_role() {
+    let (base, _server, captured) = serve(
+        "/v1/prompt_injection",
+        vec![(StatusCode::OK, LAKERA_OK.to_owned())],
+    )
+    .await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = chat_data(&[
+        message("user", "old"),
+        message("assistant", "a"),
+        message("user", "new"),
+    ]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    hooks.check(&data, &selection).await.expect("checked");
+    let calls = captured.lock().expect("captured");
+    assert_eq!(
+        captured_body(&calls, 0),
+        object(&[(
+            "input",
+            list(&[message("user", "new"), message("assistant", "a")])
+        )])
+    );
+}
+
+#[tokio::test]
+async fn lakera_posts_an_empty_body_when_there_is_nothing_to_inspect() {
+    let (base, _server, captured) = serve(
+        "/v1/prompt_injection",
+        vec![(StatusCode::OK, LAKERA_OK.to_owned())],
+    )
+    .await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = BTreeMap::from([("model".to_owned(), text("gpt-4o"))]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    hooks.check(&data, &selection).await.expect("empty body");
+    let calls = captured.lock().expect("captured");
+    assert_eq!(calls.len(), 1);
+    assert!(calls[0].body.is_empty());
+}
+
+#[tokio::test]
+async fn lakera_accepts_another_2xx_status_unchecked() {
+    let (base, _server, captured) = serve(
+        "/v1/prompt_injection",
+        vec![(StatusCode::NO_CONTENT, String::new())],
+    )
+    .await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = chat_data(&[message("user", "u")]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    hooks.check(&data, &selection).await.expect("accepted");
+    assert_eq!(captured.lock().expect("captured").len(), 1);
+}
+
+#[tokio::test]
+async fn lakera_checked_true_runs_both_hooks() {
+    let (base, _server, captured) = serve(
+        "/v1/prompt_injection",
+        vec![
+            (StatusCode::OK, LAKERA_OK.to_owned()),
+            (StatusCode::OK, LAKERA_OK.to_owned()),
+        ],
+    )
+    .await;
+    let hooks = lakera_hooks(&base, ModerationCheck::InParallel, None, false);
+    let data = chat_data(&[message("user", "u")]);
+    let fake = fake_gate(true);
+    let selection = lakera::LakeraSelection {
+        should_proceed: fake.proceed,
+        dynamic_params: &fake,
+    };
+    hooks
+        .pre_call(&data, lakera::LakeraGate::Checked(true), &selection)
+        .await
+        .expect("run");
+    hooks
+        .moderation(&data, lakera::LakeraGate::Checked(true), &selection)
+        .await
+        .expect("run");
+    assert_eq!(captured.lock().expect("captured").len(), 2);
+}
