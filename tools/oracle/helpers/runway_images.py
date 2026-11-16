@@ -26,28 +26,23 @@ class ClientCache(Protocol):
     def set_cache(self, key: str, value: HTTPHandler, *, ttl: int) -> None: ...
 
 
-CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(ClientCache, config=ConfigDict(arbitrary_types_allowed=True))
+CLIENT_CACHE: TypeAdapter[ClientCache] = TypeAdapter(
+    ClientCache, config=ConfigDict(arbitrary_types_allowed=True)
+)
 
 
 class ImageConfig(Protocol):
     def get_supported_openai_params(self, model: str) -> Sequence[str]: ...
 
     def map_openai_params(
-        self,
-        non_default_params: dict[str, JsonValue],
-        optional_params: dict[str, JsonValue],
-        model: str,
-        *,
+        self, non_default_params: dict[str, JsonValue],
+        optional_params: dict[str, JsonValue], model: str, *,
         drop_params: bool,
     ) -> dict[str, JsonValue]: ...
 
     def transform_image_generation_request(  # ast-grep-ignore: no-long-names
-        self,
-        model: str,
-        prompt: str,
-        optional_params: dict[str, JsonValue],
-        litellm_params: dict[str, JsonValue],
-        headers: dict[str, JsonValue],
+        self, model: str, prompt: str, optional_params: dict[str, JsonValue],
+        litellm_params: dict[str, JsonValue], headers: dict[str, JsonValue],
     ) -> dict[str, JsonValue]: ...
 
     def transform_image_generation_response(  # ast-grep-ignore: no-long-names
@@ -148,7 +143,8 @@ class Clock:
         return current / 1000.0
 
     def sleep(self, seconds: float) -> None:
-        self.sleeps.append(int(seconds))
+        pause = int(seconds)
+        self.sleeps.append(pause)
 
 
 class Scripted:
@@ -287,7 +283,13 @@ def cost_value(input_value: CostInput) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     if input_value["operation"] == "mapping":
-        return mapping_value(get_runwayml_image_generation_config(input_value["params"]["model"]), input_value)
+        return mapping_value(
+            get_runwayml_image_generation_config(input_value["params"]["model"]),
+            input_value,
+        )
     if input_value["operation"] == "response":
-        return transform_value(get_runwayml_image_generation_config(input_value["params"]["model"]), input_value)
+        return transform_value(
+            get_runwayml_image_generation_config(input_value["params"]["model"]),
+            input_value,
+        )
     return cost_value(input_value)
