@@ -17,7 +17,7 @@ use super::prompt::build_system_prompt;
 use super::source::UsageDataSource;
 use super::sse::{SseEvent, ToolCallStatus, sse_frame};
 use super::summary::{EntityLabel, summarise_entity_data, summarise_usage_data};
-use super::tools::{ToolDefinition, UsageTool, tools_for_role};
+use super::tools::{UsageTool, tools_for_role};
 
 const THINKING: &str = "Thinking...";
 const ANALYZING: &str = "Analyzing results...";
@@ -101,7 +101,12 @@ where
     };
     sink.send(sse_frame(&thinking)).await?;
     let tools = tools_for_role(is_admin);
-    let request = model_request(name, messages, Some(tools.as_slice()));
+    let request = ModelRequest {
+        model: name,
+        messages,
+        tools: Some(tools.as_slice()),
+        temperature: USAGE_AI_TEMPERATURE,
+    };
     model
         .complete(&request)
         .await
@@ -202,7 +207,12 @@ async fn stream_final_response<Model>(
 where
     Model: UsageChatModel,
 {
-    let request = model_request(name, messages, None);
+    let request = ModelRequest {
+        model: name,
+        messages,
+        tools: None,
+        temperature: USAGE_AI_TEMPERATURE,
+    };
     let analyzing = SseEvent::Status {
         message: ANALYZING.to_owned(),
     };
@@ -219,19 +229,6 @@ where
         }
     }
     Ok(())
-}
-
-fn model_request<'text>(
-    name: &'text str,
-    messages: &'text [ChatMessage],
-    tools: Option<&'text [ToolDefinition]>,
-) -> ModelRequest<'text> {
-    ModelRequest {
-        model: name,
-        messages,
-        tools,
-        temperature: USAGE_AI_TEMPERATURE,
-    }
 }
 
 fn tool_event(
