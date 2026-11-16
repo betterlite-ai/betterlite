@@ -219,7 +219,7 @@ fn observe(call: &ContainerFileUploadCall<'_>) -> Seen {
     }
 }
 
-#[derive(Debug, Error)]
+#[derive(Clone, Debug, Error)]
 pub(crate) enum FixtureFailure {
     #[error("the provider answered {status}")]
     Provider { status: u16 },
@@ -246,21 +246,21 @@ enum Reply {
 }
 
 pub(crate) struct StubExecutor {
-    reply: Mutex<Option<Reply>>,
+    reply: Mutex<Reply>,
     seen: Mutex<Option<Seen>>,
 }
 
 impl StubExecutor {
     pub(crate) fn replying(object: ContainerFileObject) -> Self {
         Self {
-            reply: Mutex::new(Some(Reply::Object(object))),
+            reply: Mutex::new(Reply::Object(object)),
             seen: Mutex::new(None),
         }
     }
 
     pub(crate) fn failing(failure: FixtureFailure) -> Self {
         Self {
-            reply: Mutex::new(Some(Reply::Failure(failure))),
+            reply: Mutex::new(Reply::Failure(failure)),
             seen: Mutex::new(None),
         }
     }
@@ -281,15 +281,10 @@ impl StubExecutor {
         call: &ContainerFileUploadCall<'_>,
     ) -> Result<ContainerFileObject, FixtureFailure> {
         *self.seen.lock().unwrap_or_else(PoisonError::into_inner) = Some(observe(call));
-        let reply = self
-            .reply
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .take();
-        match reply {
-            Some(Reply::Object(object)) => Ok(object),
-            Some(Reply::Failure(failure)) => Err(failure),
-            None => panic!("the stub executor was called more than once"),
+        let reply = self.reply.lock().unwrap_or_else(PoisonError::into_inner);
+        match &*reply {
+            Reply::Object(object) => Ok(object.clone()),
+            Reply::Failure(failure) => Err(failure.clone()),
         }
     }
 }
