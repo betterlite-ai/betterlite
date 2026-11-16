@@ -34,5 +34,27 @@ call:
                 - text: partial
         output_item_id: item-keep
         response_id: resp-keep
+      - op: modality
+        event: response.text.delta
+        delta_type: text
+        frame:
+          serverContent:
+            modelTurn:
+              parts:
+                - text: kept
+        conversation_id: conv-keep
+        response_id: resp-keep
+      - op: modality
+        event: response.audio.delta
+        delta_type: audio
+        frame:
+          serverContent:
+            modelTurn:
+              parts:
+                - inlineData:
+                    data: QQ==
+        output_item_id: ""
+        response_id: ""
+        conversation_id: ""
 env: {}
 compare: {ignore: []}

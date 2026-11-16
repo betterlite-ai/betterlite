@@ -146,9 +146,11 @@ def start(call: StartCall, config: ContentConfig) -> JsonValue:
 
 
 def delta(call: DeltaCall, config: ContentConfig) -> JsonValue:
-    return config.transform_content_delta_events(
-        call["server_content"], call["output_item_id"], call["response_id"], call["delta_type"]
-    )
+    return {
+        "event": config.transform_content_delta_events(
+            call["server_content"], call["output_item_id"], call["response_id"], call["delta_type"]
+        )
+    }
 
 
 def modality(call: ModalityCall, config: ContentConfig) -> JsonValue:
