@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from typing import Final
 
 import httpx
+import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
 from litellm.llms.anthropic.chat.handler import ModelResponseIterator
@@ -27,6 +28,9 @@ from .wire import (
     Upstream,
     WrapperView,
 )
+
+# an unmapped model prints a provider banner on stdout, which carries the oracle's JSON line
+litellm.suppress_debug_info = True
 
 TIMEOUT: Final[float] = 1.5
 OPENED_STATUS: Final[int] = 200
