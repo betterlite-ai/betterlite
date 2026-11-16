@@ -136,15 +136,7 @@ impl RepelloAILifecycle {
         text: &str,
         stage: &'static str,
     ) -> Result<RepelloAIAnalyzeResponse, PostError> {
-        let endpoint = format!("{}/analyze/{stage}", self.settings.api_base);
-        let scan_data = RepelloAIScanData {
-            prompt: (stage == PROMPT_STAGE).then(|| text.to_owned()),
-            response: (stage == RESPONSE_STAGE).then(|| text.to_owned()),
-        };
-        let request = RepelloAIAnalyzeRequest {
-            asset_id: self.settings.asset_id.clone(),
-            scan_data,
-        };
+        let request = self.scan_request(text, stage);
         let mut key =
             HeaderValue::from_str(self.settings.api_key.expose_secret()).map_err(|source| {
                 PostError::Unexpected {
@@ -154,7 +146,7 @@ impl RepelloAILifecycle {
         key.set_sensitive(true);
         let mut response = self
             .client
-            .post(endpoint)
+            .post(format!("{}/analyze/{stage}", self.settings.api_base))
             .header(API_KEY_HEADER, key)
             .json(&request)
             .timeout(self.settings.request_timeout)
@@ -177,6 +169,16 @@ impl RepelloAILifecycle {
             .await
             .map_err(read_error)?;
         serde_json::from_slice(&body).map_err(|_decode| PostError::InvalidJson { status: code })
+    }
+
+    fn scan_request(&self, text: &str, stage: &'static str) -> RepelloAIAnalyzeRequest {
+        RepelloAIAnalyzeRequest {
+            asset_id: self.settings.asset_id.clone(),
+            scan_data: RepelloAIScanData {
+                prompt: (stage == PROMPT_STAGE).then(|| text.to_owned()),
+                response: (stage == RESPONSE_STAGE).then(|| text.to_owned()),
+            },
+        }
     }
 }
 
