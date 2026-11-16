@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use rstest::rstest;
 
@@ -53,7 +54,7 @@ fn an_empty_list_makes_no_filter(#[case] filter: &str) {
 #[test]
 fn the_filter_is_read_on_the_first_record_not_at_construction() {
     let settings = late_settings(None);
-    let (recorder, provider, exporter) = build(settings.clone(), None);
+    let (recorder, provider, exporter) = build(Arc::clone(&settings), None);
     settings.set(Some(r#"{"include_list": ["gen_ai.system"]}"#));
     let call_kwargs = kwargs("{}");
     recorder
@@ -69,7 +70,7 @@ fn a_bad_filter_raises_on_the_first_record_and_a_corrected_one_is_used_afterward
     let settings = late_settings(Some(
         r#"{"include_list": ["gen_ai.system"], "exclude_list": ["gen_ai.framework"]}"#,
     ));
-    let (recorder, provider, exporter) = build(settings.clone(), None);
+    let (recorder, provider, exporter) = build(Arc::clone(&settings), None);
     let call_kwargs = kwargs("{}");
     let call = call_of(&call_kwargs, None);
     let error = recorder.record(&call).expect_err("both lists");
