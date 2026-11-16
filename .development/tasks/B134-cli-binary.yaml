@@ -189,5 +189,5 @@ pitfalls:
   - interface.py's show_commands is a hand-maintained subset (login, logout, whoami, models, credentials, chat, http, keys, teams, users, the agent commands, version/help/quit) that leaves out auth, encryption, debug, up, down, model-groups, autoroute, config and configure/reconfigure/unconfigure; shell.rs must reproduce that real (incomplete) list through B4585's module, not the full command tree.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0
