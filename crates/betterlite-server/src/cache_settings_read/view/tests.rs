@@ -90,7 +90,7 @@ fn a_type_that_is_not_redis_gets_no_redis_type(#[case] stored: &str) {
 #[test]
 fn an_environment_only_connection_is_named_a_redis_node() {
     let current_values = view(
-        r#"{}"#,
+        "{}",
         &[("REDIS_HOST", "environment-host"), ("REDIS_PORT", "6379")],
     );
     assert_eq!(

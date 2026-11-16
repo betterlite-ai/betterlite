@@ -84,7 +84,7 @@ def fake_proxy(settings: JsonValue) -> Generator[None]:
         yield
     finally:
         if saved is None:
-            _ = sys.modules.pop(PROXY_MODULE, None)
+            del sys.modules[PROXY_MODULE]
         else:
             sys.modules[PROXY_MODULE] = saved
 

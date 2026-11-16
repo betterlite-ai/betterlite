@@ -107,16 +107,14 @@ pub async fn stored_settings(
 }
 
 fn decrypt_value(cipher: &DbCipher, field: &str, value: Value) -> Value {
-    match value {
-        Value::String(text) => {
-            let stored = StoredValue::Text(SecretString::from(text));
-            match cipher.decrypt_value(stored, field, KEEP_ORIGINAL) {
-                Some(StoredValue::Text(plain)) => Value::String(plain.expose_secret().to_owned()),
-                Some(StoredValue::Other(other)) => other,
-                None => Value::Null,
-            }
-        }
-        other => other,
+    let Value::String(text) = value else {
+        return value;
+    };
+    let stored = StoredValue::Text(SecretString::from(text));
+    match cipher.decrypt_value(stored, field, KEEP_ORIGINAL) {
+        Some(StoredValue::Text(plain)) => Value::String(plain.expose_secret().to_owned()),
+        Some(StoredValue::Other(other)) => other,
+        None => Value::Null,
     }
 }
 
