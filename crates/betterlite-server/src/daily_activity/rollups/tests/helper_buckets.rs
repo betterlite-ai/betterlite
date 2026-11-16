@@ -7,39 +7,80 @@ use indexmap::IndexMap;
 
 use super::dispatch::{
     aggregate_grouping_rows_sync, assign_api_key_breakdown, assign_metric_with_metadata,
-    ensure_date,
 };
-use super::levels::{GROUP_DATE, GROUP_DATE_MODEL, GROUP_GRAND_TOTAL};
+use super::levels::{GROUP_DATE, GROUP_DATE_MODEL, GROUP_DATE_MODEL_GROUP, GROUP_GRAND_TOTAL};
 use super::support::{
     DAY_ONE, DAY_TWO, KEY_ONE, KEY_TWO, RowParts, amount, key_map, key_metadata_for, key_row,
     missing_key_metadata, row, zero_metrics,
 };
 
 #[test]
-fn ensure_date_creates_a_missing_bucket() {
-    let mut grouped = BTreeMap::new();
-    let bucket = ensure_date(&mut grouped, DAY_ONE);
-    assert_eq!(bucket.metrics, zero_metrics());
-    assert_eq!(bucket.breakdown, BreakdownMetrics::default());
-    assert!(grouped.contains_key(DAY_ONE));
+fn a_date_row_bucket_starts_zeroed() {
+    let records = [row(RowParts::new(GROUP_DATE, Some(DAY_ONE)))];
+    let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
+    assert_eq!(aggregated.results.len(), 1);
+    assert_eq!(aggregated.results[0].metrics, zero_metrics());
+    assert_eq!(aggregated.results[0].breakdown, BreakdownMetrics::default());
 }
 
 #[test]
-fn ensure_date_returns_the_existing_bucket() {
-    let mut grouped = BTreeMap::new();
-    ensure_date(&mut grouped, DAY_ONE).metrics.spend = amount(5);
-    let bucket = ensure_date(&mut grouped, DAY_ONE);
-    assert_eq!(bucket.metrics.spend, amount(5));
-    assert_eq!(grouped.len(), 1);
+fn rows_for_one_date_share_a_single_bucket() {
+    let records = [
+        row(RowParts {
+            model: Some("gpt-4"),
+            spend: Some(5),
+            ..RowParts::new(GROUP_DATE_MODEL, Some(DAY_ONE))
+        }),
+        row(RowParts {
+            model_group: Some("chat"),
+            spend: Some(7),
+            ..RowParts::new(GROUP_DATE_MODEL_GROUP, Some(DAY_ONE))
+        }),
+    ];
+    let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
+    assert_eq!(aggregated.results.len(), 1);
+    assert_eq!(
+        aggregated.results[0]
+            .breakdown
+            .models
+            .get("gpt-4")
+            .unwrap()
+            .metrics
+            .spend,
+        amount(5)
+    );
+    assert_eq!(
+        aggregated.results[0]
+            .breakdown
+            .model_groups
+            .get("chat")
+            .unwrap()
+            .metrics
+            .spend,
+        amount(7)
+    );
 }
 
 #[test]
-fn ensure_date_keeps_distinct_dates_apart() {
-    let mut grouped = BTreeMap::new();
-    ensure_date(&mut grouped, DAY_ONE).metrics.spend = amount(1);
-    ensure_date(&mut grouped, DAY_TWO).metrics.spend = amount(2);
-    assert_eq!(grouped.len(), 2);
-    assert_eq!(ensure_date(&mut grouped, DAY_ONE).metrics.spend, amount(1));
+fn distinct_dates_get_distinct_buckets() {
+    let records = [
+        row(RowParts {
+            spend: Some(1),
+            ..RowParts::new(GROUP_DATE, Some(DAY_ONE))
+        }),
+        row(RowParts {
+            spend: Some(2),
+            ..RowParts::new(GROUP_DATE, Some(DAY_TWO))
+        }),
+    ];
+    let aggregated = aggregate_grouping_rows_sync(&records, &BTreeMap::new()).unwrap();
+    assert_eq!(aggregated.results.len(), 2);
+    assert_eq!(
+        aggregated.results[0].date.format("%Y-%m-%d").to_string(),
+        DAY_TWO
+    );
+    assert_eq!(aggregated.results[0].metrics.spend, amount(2));
+    assert_eq!(aggregated.results[1].metrics.spend, amount(1));
 }
 
 #[test]

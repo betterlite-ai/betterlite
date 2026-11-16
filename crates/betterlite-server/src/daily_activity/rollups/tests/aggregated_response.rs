@@ -7,8 +7,9 @@ use indexmap::IndexMap;
 use super::get_daily_activity_aggregated;
 use super::levels::{GROUP_DATE, GROUP_DATE_API_KEY, GROUP_GRAND_TOTAL};
 use super::support::{
-    DAY_ONE, DAY_TWO, EntityParts, KEY_ONE, RepositoryCall, RowParts, amount, empty_aggregated,
-    entity, fake, fake_failing_aggregate, fake_failing_metadata, recorded_calls, row, scope,
+    DAY_ONE, DAY_TWO, EntityParts, KEY_ONE, RepositoryCall, RowParts, amount, distinct_column_row,
+    empty_aggregated, entity, fake, fake_failing_aggregate, fake_failing_metadata, recorded_calls,
+    row, scope,
 };
 
 fn entity_total_rows() -> Vec<EntityRollupRow> {
@@ -30,6 +31,7 @@ fn entity_total_rows() -> Vec<EntityRollupRow> {
         }),
         entity(EntityParts {
             rolled: true,
+            distinct_api_keys: Some(4),
             ..EntityParts::new(Some(DAY_ONE), None)
         }),
     ]
@@ -108,6 +110,35 @@ async fn metadata_carries_the_grand_total_metrics() {
 }
 
 #[tokio::test]
+async fn metadata_copies_every_grand_total_column() {
+    let repository = fake(AggregatedRows {
+        grouping_rows: vec![distinct_column_row(GROUP_GRAND_TOTAL, None)],
+        entity_rows: None,
+        distinct_api_keys: 0,
+    });
+    let page = get_daily_activity_aggregated(&repository, &scope(), None, false, 5)
+        .await
+        .unwrap();
+    assert_eq!(page.metadata.total_spend, amount(1));
+    assert_eq!(page.metadata.total_flat_cost, amount(2));
+    assert_eq!(page.metadata.total_prompt_tokens, 3);
+    assert_eq!(page.metadata.total_completion_tokens, 4);
+    assert_eq!(page.metadata.total_tokens, 7);
+    assert_eq!(page.metadata.total_api_requests, 12);
+    assert_eq!(page.metadata.total_successful_requests, 13);
+    assert_eq!(page.metadata.total_failed_requests, 14);
+    assert_eq!(page.metadata.total_cache_read_input_tokens, 5);
+    assert_eq!(page.metadata.total_cache_creation_tokens, 6);
+    assert_eq!(page.metadata.total_compression_saved_tokens, 7);
+    assert_eq!(page.metadata.total_compression_savings, amount(8));
+    assert_eq!(page.metadata.total_prompt_caching_savings, amount(9));
+    assert_eq!(page.metadata.total_gateway_caching_savings, amount(10));
+    assert_eq!(page.metadata.total_autorouter_savings_spend, amount(11));
+    assert_eq!(page.metadata.total_response_time_ms, 15);
+    assert_eq!(page.metadata.total_timed_requests, 16);
+}
+
+#[tokio::test]
 async fn metadata_has_entity_api_key_totals_when_the_breakdown_is_on() {
     let repository = fake(AggregatedRows {
         grouping_rows: vec![row(RowParts {
@@ -123,6 +154,7 @@ async fn metadata_has_entity_api_key_totals_when_the_breakdown_is_on() {
     let mut expected = IndexMap::new();
     expected.insert("team-alpha".to_owned(), 2);
     expected.insert("team-beta".to_owned(), 3);
+    expected.insert("Unassigned".to_owned(), 4);
     assert_eq!(page.metadata.entity_total_api_keys, Some(expected));
 }
 

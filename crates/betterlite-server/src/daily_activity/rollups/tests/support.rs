@@ -59,8 +59,20 @@ pub(crate) struct RowParts<'row> {
     pub(crate) endpoint: Option<&'row str>,
     pub(crate) spend: Option<i64>,
     pub(crate) flat_cost: Option<i64>,
+    pub(crate) compression_savings_spend: Option<i64>,
+    pub(crate) prompt_caching_savings_spend: Option<i64>,
+    pub(crate) gateway_cache_savings_spend: Option<i64>,
+    pub(crate) autorouter_savings_spend: Option<i64>,
     pub(crate) prompt_tokens: Option<i64>,
     pub(crate) completion_tokens: Option<i64>,
+    pub(crate) cache_read_input_tokens: Option<i64>,
+    pub(crate) cache_creation_input_tokens: Option<i64>,
+    pub(crate) compression_saved_tokens: Option<i64>,
+    pub(crate) api_requests: Option<i64>,
+    pub(crate) successful_requests: Option<i64>,
+    pub(crate) failed_requests: Option<i64>,
+    pub(crate) total_response_time_ms: Option<i64>,
+    pub(crate) timed_requests: Option<i64>,
 }
 
 impl<'row> RowParts<'row> {
@@ -76,8 +88,20 @@ impl<'row> RowParts<'row> {
             endpoint: None,
             spend: None,
             flat_cost: None,
+            compression_savings_spend: None,
+            prompt_caching_savings_spend: None,
+            gateway_cache_savings_spend: None,
+            autorouter_savings_spend: None,
             prompt_tokens: None,
             completion_tokens: None,
+            cache_read_input_tokens: None,
+            cache_creation_input_tokens: None,
+            compression_saved_tokens: None,
+            api_requests: None,
+            successful_requests: None,
+            failed_requests: None,
+            total_response_time_ms: None,
+            timed_requests: None,
         }
     }
 }
@@ -89,9 +113,20 @@ pub(crate) fn row(parts: RowParts<'_>) -> GroupingSetsRow {
             api_key: parts.api_key.map(str::to_owned),
             spend: parts.spend.map(amount),
             ptu_flat_cost: parts.flat_cost.map(amount),
+            compression_savings_spend: parts.compression_savings_spend.map(amount),
+            prompt_caching_savings_spend: parts.prompt_caching_savings_spend.map(amount),
+            gateway_cache_savings_spend: parts.gateway_cache_savings_spend.map(amount),
+            autorouter_savings_spend: parts.autorouter_savings_spend.map(amount),
             prompt_tokens: parts.prompt_tokens,
             completion_tokens: parts.completion_tokens,
-            ..blank_metrics()
+            cache_read_input_tokens: parts.cache_read_input_tokens,
+            cache_creation_input_tokens: parts.cache_creation_input_tokens,
+            compression_saved_tokens: parts.compression_saved_tokens,
+            api_requests: parts.api_requests,
+            successful_requests: parts.successful_requests,
+            failed_requests: parts.failed_requests,
+            total_response_time_ms: parts.total_response_time_ms,
+            timed_requests: parts.timed_requests,
         },
         model: parts.model.map(str::to_owned),
         model_group: parts.model_group.map(str::to_owned),
@@ -101,6 +136,28 @@ pub(crate) fn row(parts: RowParts<'_>) -> GroupingSetsRow {
         group_level: parts.level,
         distinct_api_keys: None,
     }
+}
+
+pub(crate) fn distinct_column_row(level: i64, date: Option<&str>) -> GroupingSetsRow {
+    row(RowParts {
+        spend: Some(1),
+        flat_cost: Some(2),
+        compression_savings_spend: Some(8),
+        prompt_caching_savings_spend: Some(9),
+        gateway_cache_savings_spend: Some(10),
+        autorouter_savings_spend: Some(11),
+        prompt_tokens: Some(3),
+        completion_tokens: Some(4),
+        cache_read_input_tokens: Some(5),
+        cache_creation_input_tokens: Some(6),
+        compression_saved_tokens: Some(7),
+        api_requests: Some(12),
+        successful_requests: Some(13),
+        failed_requests: Some(14),
+        total_response_time_ms: Some(15),
+        timed_requests: Some(16),
+        ..RowParts::new(level, date)
+    })
 }
 
 pub(crate) struct EntityParts<'row> {

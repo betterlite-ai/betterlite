@@ -1,6 +1,5 @@
 use std::cmp::Reverse;
 use std::collections::BTreeMap;
-use std::collections::btree_map::Entry as BTreeEntry;
 
 use betterlite_analytics::canonical_date::parse_canonical_date;
 use betterlite_analytics::daily_metrics::{
@@ -39,7 +38,7 @@ pub(super) fn aggregate_grouping_rows_sync(
         let Some(raw_date) = record.metrics.date.as_deref() else {
             return Err(DailyActivityAggregateError::MissingDate);
         };
-        let day = ensure_date(&mut grouped, raw_date);
+        let day = grouped.entry(raw_date.to_owned()).or_default();
         if matches!(level, RollupLevel::Daily) {
             day.metrics = metrics;
             continue;
@@ -76,16 +75,6 @@ where
         repository.read_key_metadata(&api_keys, window).await?
     };
     run_worker(move || aggregate_grouping_rows_sync(&records, &api_key_metadata)).await?
-}
-
-pub(super) fn ensure_date<'days>(
-    grouped: &'days mut BTreeMap<String, GroupedDay>,
-    date: &str,
-) -> &'days mut GroupedDay {
-    match grouped.entry(date.to_owned()) {
-        BTreeEntry::Occupied(entry) => entry.into_mut(),
-        BTreeEntry::Vacant(entry) => entry.insert(GroupedDay::default()),
-    }
 }
 
 fn assign_level(
