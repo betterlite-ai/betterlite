@@ -7,7 +7,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // LiteLLM's LakeraCategoryThresholds is total=False, so a threshold the case leaves out stays unset
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
