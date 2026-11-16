@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
 
 use super::{SseAssembler, assemble_anthropic_sse_stream};
-use crate::guardrails::anthropic_sse::tests::support::{
+use crate::anthropic_sse::tests::support::{
     MESSAGE_START, PING, bytes_chunk, object_chunk, record, text_chunk,
 };
 

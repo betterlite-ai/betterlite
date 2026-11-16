@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::model_response_text;
-use crate::guardrails::anthropic_sse::tests::support::record;
+use crate::anthropic_sse::tests::support::record;
 
 #[test]
 fn model_response_text_joins_the_text_of_every_choice() {
