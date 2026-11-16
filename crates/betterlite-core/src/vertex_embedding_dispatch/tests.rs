@@ -6,10 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::credential_source::{
+    ConfiguredCredentials, CredentialSource,
+};
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use betterlite_models::decisions::{Extra, Json};
+use rstest::rstest;
 use secrecy::SecretString;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -17,6 +20,7 @@ use super::{Defaults, MULTIMODAL_EMBEDDING_MODELS, Native, SelectionRequest, sel
 
 const MODEL: &str = "text-embedding-005";
 const EMBED_CONTENT_MODEL: &str = "gemini-embedding-2";
+const ACCOUNT: &str = r#"{"type": "service_account", "client_email": "sa@example.iam", "private_key": "key", "project_id": "object-project"}"#;
 
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
@@ -364,5 +368,68 @@ fn a_wrong_typed_alias_names_its_field() {
     assert_eq!(
         error.to_string(),
         "the vertex_project option must be a string"
+    );
+}
+
+fn rejected_credentials(optional_params: &Extra) -> String {
+    let vertex = VertexSettings::default();
+    let embedding = EmbeddingSettings::default();
+    select(
+        SelectionRequest {
+            model: MODEL,
+            api_base: None,
+            optional_params,
+        },
+        Defaults {
+            vertex: &vertex,
+            embedding: &embedding,
+        },
+        &ModelCatalog::default(),
+    )
+    .err()
+    .expect("a rejected credential")
+    .to_string()
+}
+
+#[rstest]
+#[case::vertex_credentials("vertex_credentials")]
+#[case::vertex_ai_credentials("vertex_ai_credentials")]
+fn an_object_credential_decodes_to_a_source(#[case] alias: &str) {
+    let optional_params = params(&format!(r#"{{"{alias}": {ACCOUNT}}}"#));
+    let resolved = resolution(
+        MODEL,
+        &optional_params,
+        &VertexSettings::default(),
+        &EmbeddingSettings::default(),
+        &ModelCatalog::default(),
+    );
+    let Some(ConfiguredCredentials::Source(CredentialSource::ServiceAccount(account))) =
+        resolved.credentials
+    else {
+        panic!("an inline service-account object decodes to a credential source");
+    };
+    assert_eq!(account.client_email, "sa@example.iam");
+    assert_eq!(account.project_id.as_deref(), Some("object-project"));
+    assert!(resolved.optional_params.is_empty());
+}
+
+#[rstest]
+#[case::boolean("true")]
+#[case::number("5")]
+#[case::list(r#"["a"]"#)]
+fn a_credential_of_another_type_names_its_field(#[case] value: &str) {
+    let optional_params = params(&format!(r#"{{"vertex_credentials": {value}}}"#));
+    assert_eq!(
+        rejected_credentials(&optional_params),
+        "the vertex_credentials option must be a string or an object"
+    );
+}
+
+#[test]
+fn an_unreadable_credential_object_names_its_field() {
+    let optional_params = params(r#"{"vertex_ai_credentials": {"type": "service_account"}}"#);
+    assert_eq!(
+        rejected_credentials(&optional_params),
+        "the vertex_ai_credentials option is not a readable credential"
     );
 }

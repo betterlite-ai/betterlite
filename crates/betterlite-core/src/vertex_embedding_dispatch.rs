@@ -1,6 +1,6 @@
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
 use betterlite_config::sections::vertex_credential_sources::credential_source::{
-    ConfiguredCredentials, CredentialDecodeError,
+    ConfiguredCredentials, CredentialDecodeError, decode_vertex_credentials,
 };
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_models::catalog::ModelCatalog;
@@ -52,6 +52,8 @@ pub struct Resolution {
 pub enum VertexEmbeddingDispatchError {
     #[error("the {field} option must be a string")]
     TextOption { field: String },
+    #[error("the {field} option must be a string or an object")]
+    CredentialType { field: String },
     #[error("the {field} option is not a readable credential")]
     Credentials {
         field: String,
@@ -158,6 +160,7 @@ fn take_text(
     }
 }
 
+// LiteLLM declares VERTEX_CREDENTIALS_TYPES as a string or an inline service-account object
 fn take_credentials(
     params: &mut Extra,
     names: &[&'static str],
@@ -165,17 +168,22 @@ fn take_credentials(
     let Some((field, value)) = take_alias(params, names) else {
         return Ok(None);
     };
-    match value {
-        Json::Text(text) => ConfiguredCredentials::from_text(text)
-            .map(Some)
-            .map_err(|source| VertexEmbeddingDispatchError::Credentials {
+    let decoded = match value {
+        Json::Text(text) => ConfiguredCredentials::from_text(text),
+        Json::Object(account) => serde_json::to_vec(&account)
+            .map_err(CredentialDecodeError::Json)
+            .and_then(|document| decode_vertex_credentials(&document))
+            .map(ConfiguredCredentials::Source),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
+            return Err(VertexEmbeddingDispatchError::CredentialType {
                 field: field.to_owned(),
-                source,
-            }),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            Err(VertexEmbeddingDispatchError::TextOption {
-                field: field.to_owned(),
-            })
+            });
         }
-    }
+    };
+    decoded
+        .map(Some)
+        .map_err(|source| VertexEmbeddingDispatchError::Credentials {
+            field: field.to_owned(),
+            source,
+        })
 }
