@@ -4451,6 +4451,7 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
+ "betterlite-guardrails",
  "betterlite-server",
  "libfuzzer-sys",
  "serde_json",
