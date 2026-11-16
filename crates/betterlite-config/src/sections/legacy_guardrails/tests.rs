@@ -4,15 +4,15 @@ use std::collections::BTreeMap;
 
 use rstest::rstest;
 
-use super::{Raw, Settings};
+use super::{GuardrailTable, Raw};
 use crate::loader::ConfigLoader;
 use crate::sections::Section as _;
 use crate::sections::guardrail_identity::enums::Role;
 use crate::sections::guardrail_identity::item::{GuardrailItem, GuardrailValue};
 
-fn settings(yaml: &str) -> Settings {
+fn settings(yaml: &str) -> GuardrailTable {
     let raw: Raw = serde_saphyr::from_str(yaml).unwrap();
-    raw.convert(&BTreeMap::<String, String>::new()).unwrap()
+    *raw.convert(&BTreeMap::<String, String>::new()).unwrap()
 }
 
 fn only_item(yaml: &str) -> GuardrailItem {
