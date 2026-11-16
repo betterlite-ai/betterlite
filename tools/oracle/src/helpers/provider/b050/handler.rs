@@ -3,6 +3,7 @@ use std::sync::{Mutex, PoisonError};
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
 use betterlite_prompts::arguments::json::Json;
+use betterlite_provider::a2a_chat::records::A2aReply;
 use betterlite_provider::a2a_chat::reply as a2a_reply;
 use betterlite_provider::a2a_chat::request as a2a_request;
 use betterlite_provider::agent_platform_dispatch::call::CompletionCall;
@@ -53,82 +54,87 @@ impl Handler {
             .clone()
     }
 
-    fn answer_a2a(
-        &self,
-        call: &CompletionCall,
-        status: u16,
-        body: &[u8],
-    ) -> Result<Value, HandlerError> {
-        let headers = BTreeMap::new();
-        let reply = self.runtime.block_on(a2a_reply::transform_response(
-            &a2a_reply::ReplyInput {
-                model: &call.model,
-                status,
-                headers: &headers,
-                body,
-                messages: &call.messages,
-            },
-            &RandomIds,
-            &Meter,
-        ))?;
-        let Some(choice) = reply.choices.first() else {
-            return Err(HandlerError::EmptyReply);
-        };
-        Ok(json!({
-            "model": reply.model,
-            "content": choice.message.content,
-            "role": choice.message.role,
-            "finish_reason": choice.finish_reason,
-        }))
+    fn answer(&self, call: &CompletionCall, status: u16) -> Result<Answer, HandlerError> {
+        let body = self.upstream.body.as_bytes();
+        match self.platform {
+            Platform::A2a => Ok(Answer::A2a(self.runtime.block_on(
+                a2a_reply::transform_response(
+                    &a2a_reply::ReplyInput {
+                        model: &call.model,
+                        status,
+                        headers: &BTreeMap::new(),
+                        body,
+                        messages: &call.messages,
+                    },
+                    &RandomIds,
+                    &Meter,
+                ),
+            )?)),
+            Platform::Langgraph => Ok(Answer::Langgraph(self.runtime.block_on(
+                langgraph_reply::transform_response(
+                    &langgraph_reply::ReplyInput {
+                        model: &call.model,
+                        status,
+                        body,
+                        messages: &call.messages,
+                    },
+                    &Meter,
+                ),
+            )?)),
+            Platform::Langflow => Ok(Answer::Langflow(self.runtime.block_on(
+                langflow_reply::transform_response(
+                    &langflow_reply::ReplyInput {
+                        model: &call.model,
+                        status,
+                        body,
+                        messages: &call.messages,
+                    },
+                    &Meter,
+                ),
+            )?)),
+        }
     }
+}
 
-    fn answer_langgraph(
-        &self,
-        call: &CompletionCall,
-        status: u16,
-        body: &[u8],
-    ) -> Result<Value, HandlerError> {
-        let reply = self.runtime.block_on(langgraph_reply::transform_response(
-            &langgraph_reply::ReplyInput {
-                model: &call.model,
-                status,
-                body,
-                messages: &call.messages,
-            },
-            &Meter,
-        ))?;
-        let Some(choice) = reply.choices.first() else {
-            return Err(HandlerError::EmptyReply);
-        };
-        Ok(json!({
-            "model": reply.model,
-            "content": choice.content,
-            "role": role_text(choice.role),
-            "finish_reason": choice.finish_reason,
-        }))
-    }
+// the three replies hold their fields in different places, so the compared projection matches on the platform
+enum Answer {
+    A2a(A2aReply),
+    Langgraph(langgraph_reply::LangGraphReply),
+    Langflow(langflow_reply::LangFlowChatResponse),
+}
 
-    fn answer_langflow(
-        &self,
-        call: &CompletionCall,
-        status: u16,
-        body: &[u8],
-    ) -> Result<Value, HandlerError> {
-        let reply = self.runtime.block_on(langflow_reply::transform_response(
-            &langflow_reply::ReplyInput {
-                model: &call.model,
-                status,
-                body,
-                messages: &call.messages,
-            },
-            &Meter,
-        ))?;
-        Ok(json!({
-            "model": reply.model,
-            "content": reply.choice.message.content,
-            "role": reply.choice.message.role,
-            "finish_reason": reply.choice.finish_reason,
-        }))
+impl Answer {
+    fn into_value(self) -> Result<Value, HandlerError> {
+        match self {
+            Self::A2a(reply) => {
+                let Some(choice) = reply.choices.into_iter().next() else {
+                    return Err(HandlerError::EmptyReply);
+                };
+                Ok(json!({
+                    "model": reply.model,
+                    "content": choice.message.content,
+                    "role": choice.message.role,
+                    "finish_reason": choice.finish_reason,
+                }))
+            }
+            Self::Langgraph(reply) => {
+                let Some(choice) = reply.choices.into_iter().next() else {
+                    return Err(HandlerError::EmptyReply);
+                };
+                Ok(json!({
+                    "model": reply.model,
+                    "content": choice.content,
+                    "role": role_text(choice.role),
+                    "finish_reason": choice.finish_reason,
+                }))
+            }
+            Self::Langflow(reply) => Ok(json!({
+                "model": reply.model,
+                "content": reply.choice.message.content,
+                "role": reply.choice.message.role,
+                "finish_reason": reply.choice.finish_reason,
+            })),
+        }
     }
 }
 
@@ -156,12 +162,7 @@ impl ChatCompletionHandler for Handler {
             // a streaming call hands back a stream rather than a reply, and this harness carries no chunks
             return Ok(Value::Null);
         }
-        let body = self.upstream.body.as_bytes();
-        match self.platform {
-            Platform::A2a => self.answer_a2a(call, status, body),
-            Platform::Langgraph => self.answer_langgraph(call, status, body),
-            Platform::Langflow => self.answer_langflow(call, status, body),
-        }
+        self.answer(call, status)?.into_value()
     }
 }
 
