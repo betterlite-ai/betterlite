@@ -37,7 +37,7 @@ pub fn update_breakdown_metrics(
     let is_ptu_sentinel = record.api_key == PTU_SENTINEL_API_KEY;
     let keys = (!is_ptu_sentinel).then_some(context.api_key_metadata);
     update_model_buckets(breakdown, record, context, is_ptu_sentinel)?;
-    update_mcp_and_endpoints(breakdown, record, context)?;
+    update_tool_and_entity_buckets(breakdown, record, context, keys)?;
     if !is_ptu_sentinel {
         let provider = record.custom_llm_provider.as_deref().unwrap_or("unknown");
         update_dimension(
@@ -49,7 +49,6 @@ pub fn update_breakdown_metrics(
         )?;
         update_key_breakdown(&mut breakdown.api_keys, context.api_key_metadata, record)?;
     }
-    update_entities(breakdown, record, context, keys)?;
     Ok(())
 }
 
@@ -82,47 +81,39 @@ fn update_model_buckets(
     )
 }
 
-fn update_mcp_and_endpoints(
+fn update_tool_and_entity_buckets(
     breakdown: &mut BreakdownMetrics,
     record: &DailySpendRecord,
     context: &BreakdownContext<'_>,
+    entity_keys: Option<&BTreeMap<String, KeyMetadataRow>>,
 ) -> Result<(), PagesError> {
     let no_metadata = BTreeMap::new();
     // sentinels keep their key row on these two dimensions, unlike the model, provider and key buckets
-    let keys = Some(context.api_key_metadata);
+    let tool_keys = Some(context.api_key_metadata);
     update_dimension(
         &mut breakdown.mcp_servers,
         record.mcp_namespaced_tool_name.as_deref(),
         &no_metadata,
         record,
-        keys,
+        tool_keys,
     )?;
     update_dimension(
         &mut breakdown.endpoints,
         record.endpoint.as_deref(),
         &no_metadata,
         record,
-        keys,
-    )
-}
-
-fn update_entities(
-    breakdown: &mut BreakdownMetrics,
-    record: &DailySpendRecord,
-    context: &BreakdownContext<'_>,
-    keys: Option<&BTreeMap<String, KeyMetadataRow>>,
-) -> Result<(), PagesError> {
+        tool_keys,
+    )?;
     if context.entity_id_field.is_none() {
         return Ok(());
     }
-    let no_metadata = BTreeMap::new();
     let entity = record.entity_id.as_deref().unwrap_or("Unassigned");
     update_dimension(
         &mut breakdown.entities,
         Some(entity),
         context.entity_metadata.unwrap_or(&no_metadata),
         record,
-        keys,
+        entity_keys,
     )
 }
 

@@ -1,7 +1,7 @@
 use betterlite_db::daily_activity_contracts::DailyActivityRow;
 use rust_decimal::Decimal;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct DailySpendRecord {
     pub date: String,
     pub api_key: String,

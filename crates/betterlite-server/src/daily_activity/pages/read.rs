@@ -121,11 +121,18 @@ async fn resolved_entity_metadata(
 }
 
 fn page_position(page: i64, page_size: NonZeroI64, total_count: i64) -> PagePosition {
+    let size = page_size.get();
+    let whole = total_count.div_euclid(size);
+    let remainder = total_count.rem_euclid(size);
     PagePosition {
         page,
-        total_pages: total_count.div_ceil(page_size.get()),
+        total_pages: if remainder == 0 {
+            whole
+        } else {
+            whole.saturating_add(1)
+        },
         has_more: page
-            .checked_mul(page_size.get())
+            .checked_mul(size)
             .is_some_and(|seen| seen < total_count),
     }
 }

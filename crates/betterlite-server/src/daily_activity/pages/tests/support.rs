@@ -95,45 +95,29 @@ pub(crate) fn entity_metadata(entries: &[(&str, MetadataFields)]) -> EntityMetad
         .collect()
 }
 
-pub(crate) fn key_row(api_key: &str, alias: &str) -> KeyMetadataRow {
+fn owner_key_row() -> KeyMetadataRow {
     KeyMetadataRow {
-        api_key: text(api_key),
-        key_alias: Some(text(alias)),
+        api_key: String::new(),
+        key_alias: None,
         team_id: Some(text("team-1")),
         user_id: Some(text("user-1")),
         user_email: Some(text("user@example.com")),
-        key_exists: true,
+        key_exists: false,
         tags: Vec::new(),
     }
 }
 
-pub(crate) fn spend_record(date: &str, api_key: &str) -> DailySpendRecord {
-    DailySpendRecord {
-        date: text(date),
+pub(crate) fn key_row(api_key: &str, alias: &str) -> KeyMetadataRow {
+    KeyMetadataRow {
         api_key: text(api_key),
-        model: None,
-        model_group: None,
-        custom_llm_provider: None,
-        mcp_namespaced_tool_name: None,
-        endpoint: None,
-        prompt_tokens: 0,
-        completion_tokens: 0,
-        spend: Decimal::ZERO,
-        flat_cost: Decimal::ZERO,
-        cache_read_input_tokens: 0,
-        cache_creation_input_tokens: 0,
-        compression_saved_tokens: 0,
-        compression_savings_spend: Decimal::ZERO,
-        prompt_caching_savings_spend: Decimal::ZERO,
-        gateway_caching_savings: Decimal::ZERO,
-        autorouter_savings_spend: Decimal::ZERO,
-        api_requests: 0,
-        successful_requests: 0,
-        failed_requests: 0,
-        total_response_time_ms: 0,
-        timed_requests: 0,
-        entity_id: None,
+        key_alias: Some(text(alias)),
+        key_exists: true,
+        ..owner_key_row()
     }
+}
+
+pub(crate) fn spend_record(date: &str, api_key: &str) -> DailySpendRecord {
+    DailySpendRecord::from(row("", date, api_key))
 }
 
 pub(crate) fn row(id: &str, date: &str, api_key: &str) -> DailyActivityRow {
@@ -277,6 +261,14 @@ pub(crate) fn failing() -> FakeDatabase {
 }
 
 impl FakeDatabase {
+    fn reply<T>(&self, value: T) -> Result<T, DbError<RowError>> {
+        if self.fail {
+            Err(DbError::NoDbConnected)
+        } else {
+            Ok(value)
+        }
+    }
+
     pub(crate) fn find_calls(&self) -> Vec<FindCall> {
         self.find_calls.lock().unwrap().clone()
     }
@@ -303,12 +295,7 @@ impl DailyActivityDatabase for FakeDatabase {
         tokens: &'database [String],
     ) -> DatabaseFuture<'database, Vec<VerificationTokenRow>> {
         self.token_calls.lock().unwrap().push(tokens.to_vec());
-        let reply: Result<Vec<VerificationTokenRow>, DbError<RowError>> = if self.fail {
-            Err(DbError::NoDbConnected)
-        } else {
-            Ok(Vec::new())
-        };
-        Box::pin(ready(reply))
+        Box::pin(ready(self.reply(Vec::<VerificationTokenRow>::new())))
     }
 
     fn deleted_tokens<'database>(
@@ -324,12 +311,7 @@ impl DailyActivityDatabase for FakeDatabase {
         _predicate: &'database SqlQuery,
     ) -> DatabaseFuture<'database, i64> {
         self.count_calls.lock().unwrap().push(table);
-        let reply: Result<i64, DbError<RowError>> = if self.fail {
-            Err(DbError::NoDbConnected)
-        } else {
-            Ok(self.total_count)
-        };
-        Box::pin(ready(reply))
+        Box::pin(ready(self.reply(self.total_count)))
     }
 
     fn find_daily<'database>(
@@ -339,17 +321,14 @@ impl DailyActivityDatabase for FakeDatabase {
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<DailyActivityRow>> {
-        self.find_calls.lock().unwrap().push(FindCall {
+        let call = FindCall {
             table,
             predicate: predicate.clone(),
             skip,
             take,
-        });
-        let reply: Result<Vec<DailyActivityRow>, DbError<RowError>> = if self.fail {
-            Err(DbError::NoDbConnected)
-        } else {
-            Ok(self.rows.clone())
         };
+        self.find_calls.lock().unwrap().push(call);
+        let reply = self.reply(self.rows.clone());
         Box::pin(ready(reply))
     }
 }
