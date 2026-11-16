@@ -53,30 +53,27 @@ pub fn validate_environment(request: EnvironmentRequest<'_>) -> Result<Headers, 
     let argument = request
         .argument_key
         .filter(|key| !key.expose_secret().is_empty());
-    match argument {
-        Some(key) => {
-            if api_key_header_for_base(request.api_base) == ApiKeyHeader::ApiKey {
-                headers.insert(String::from(API_KEY_HEADER), key.expose_secret().to_owned());
-            } else {
-                let bearer = format!("{BEARER_PREFIX}{}", key.expose_secret());
-                headers.insert(String::from(AUTHORIZATION_HEADER), bearer);
-            }
+    if let Some(key) = argument {
+        if api_key_header_for_base(request.api_base) == ApiKeyHeader::ApiKey {
+            headers.insert(String::from(API_KEY_HEADER), key.expose_secret().to_owned());
+        } else {
+            let bearer = format!("{BEARER_PREFIX}{}", key.expose_secret());
+            headers.insert(String::from(AUTHORIZATION_HEADER), bearer);
         }
-        None => {
-            // the shared validator skips an empty key itself, so only the request key needs the filter here
-            let resolved = request
-                .params_key
-                .filter(|key| !key.expose_secret().is_empty())
-                .or(request.configured_key);
-            headers = validate_azure_environment(EnvironmentHeadersRequest {
-                headers,
-                api_key: resolved,
-                credentials: request.token.credentials,
-                refresh_enabled: request.token.refresh_enabled,
-                provider: request.token.provider,
-                sources: request.token.sources,
-            })?;
-        }
+    } else {
+        // the shared validator skips an empty key itself, so only the request key needs the filter here
+        let resolved = request
+            .params_key
+            .filter(|key| !key.expose_secret().is_empty())
+            .or(request.configured_key);
+        headers = validate_azure_environment(EnvironmentHeadersRequest {
+            headers,
+            api_key: resolved,
+            credentials: request.token.credentials,
+            refresh_enabled: request.token.refresh_enabled,
+            provider: request.token.provider,
+            sources: request.token.sources,
+        })?;
     }
     // LiteLLM assigns the header, so an earlier Content-Type of another case is overwritten
     headers.insert(

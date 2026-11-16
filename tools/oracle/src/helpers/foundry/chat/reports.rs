@@ -6,7 +6,7 @@ use betterlite_foundry::chat::environment::{
     EnvironmentRequest, TokenSource, validate_environment,
 };
 use betterlite_foundry::chat::provider::{
-    OpenAiModelLists, ProviderEnvironment, ProviderRequest, get_openai_compatible_provider_info,
+    OpenAiModelLists, ProviderEnvironment, ProviderRequest, provider_info,
 };
 use betterlite_foundry::chat::request::transform_request;
 use betterlite_foundry::chat::response::transform_response;
@@ -108,26 +108,32 @@ fn project_choice(choice: &ChatChoice) -> Value {
     })
 }
 
-pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Value {
-    // an empty variable counts as unset
-    let environment_base = call
+// an empty variable counts as unset
+fn environment_defaults(call: &ProviderCall) -> (Option<&str>, Option<SecretString>) {
+    let base = call
         .environment
         .get("AZURE_AI_API_BASE")
-        .filter(|value| !value.is_empty());
-    let environment_key = call
+        .filter(|value| !value.is_empty())
+        .map(String::as_str);
+    let key = call
         .environment
         .get("AZURE_AI_API_KEY")
         .filter(|value| !value.is_empty())
         .map(|value| SecretString::from(value.as_str()));
+    (base, key)
+}
+
+pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Value {
+    let (environment_base, environment_key) = environment_defaults(call);
     let key = call.api_key.as_deref().map(SecretString::from);
     // get_llm_provider strips the provider prefix before the config tests the model, one prefix in all
-    let info = get_openai_compatible_provider_info(ProviderRequest {
+    let info = provider_info(&ProviderRequest {
         model: &call.model,
         api_base: call.api_base.as_deref(),
         api_key: key.as_ref(),
         custom_llm_provider: ProviderId::AzureAi,
         environment: ProviderEnvironment {
-            api_base: environment_base.map(String::as_str),
+            api_base: environment_base,
             api_key: environment_key.as_ref(),
         },
         lists: OpenAiModelLists {
@@ -136,10 +142,14 @@ pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Val
             embedding: &installed.embedding,
         },
     });
+    let exposed = info
+        .api_key
+        .as_ref()
+        .map(|value| value.expose_secret().to_owned());
     json!({
         "provider": info.custom_llm_provider.to_string(),
         "api_base": info.api_base,
-        "api_key": info.api_key.as_ref().map(|value| value.expose_secret().to_owned()),
+        "api_key": exposed,
     })
 }
 

@@ -54,7 +54,7 @@ pub fn is_azure_openai_model(
 }
 
 #[must_use]
-pub fn get_openai_compatible_provider_info(request: ProviderRequest<'_>) -> ProviderInfo {
+pub fn provider_info(request: &ProviderRequest<'_>) -> ProviderInfo {
     let resolved_base = request
         .api_base
         .or(request.environment.api_base)

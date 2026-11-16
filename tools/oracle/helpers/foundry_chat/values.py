@@ -131,7 +131,3 @@ def auth_value(call: AuthCall) -> JsonValue:
         call["api_base"],
     )
     return JSON.validate_python(headers)
-
-
-def fields_value() -> JsonValue:
-    return JSON.validate_python(CONFIG.get_required_params())

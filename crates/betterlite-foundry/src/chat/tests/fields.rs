@@ -1,3 +1,5 @@
+use betterlite_prompts::arguments::json::Json;
+
 use crate::chat::fields::required_params;
 
 use super::support::body;
@@ -18,7 +20,7 @@ pub(super) fn foundry_required_fields() {
     assert_eq!(fields[1].field_value, "https://Mistral-serverless.");
     let encoded = serde_json::to_value(fields[0]).expect("the field encodes");
     assert_eq!(
-        serde_json::from_value(encoded).expect("the field reads as JSON"),
+        serde_json::from_value::<Json>(encoded).expect("the field reads as JSON"),
         body(
             r#"{"field_name":"api_key","field_type":"string",
                 "field_description":"Your Azure AI Studio API Key.","field_value":"zEJ..."}"#

@@ -30,7 +30,7 @@ pub struct FoundryChatOptions<'data> {
     pub environment: EnvironmentRequest<'data>,
 }
 
-impl<'data> FoundryChatOptions<'data> {
+impl FoundryChatOptions<'_> {
     pub fn prepare(&self) -> Result<PreparedChat, ChatError> {
         let api_base = self.environment.api_base;
         let headers = environment::validate_environment(self.environment.clone())?;

@@ -168,6 +168,7 @@ class ConfigBoundary(BaseModel):
     config: ChatConfig
 
 
-CONFIG: Final[ChatConfig] = ConfigBoundary.model_validate({"config": AzureAIStudioConfig()}).config
+CONFIG_VALUES: Final = {"config": AzureAIStudioConfig()}
+CONFIG: Final[ChatConfig] = ConfigBoundary.model_validate(CONFIG_VALUES).config
 RESPONSE: Final[TypeAdapter[ResponseRecord]] = TypeAdapter(ResponseRecord)
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)

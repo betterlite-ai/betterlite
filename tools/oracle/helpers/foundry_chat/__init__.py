@@ -7,7 +7,6 @@ from pydantic import JsonValue
 from .contracts import CONFIG, JSON, Input, JsonObject
 from .values import (
     auth_value,
-    fields_value,
     map_value,
     provider_value,
     request_value,
@@ -42,5 +41,5 @@ def run(values: Input) -> JsonValue:
         if "auths" in values:
             answer["auths"] = [auth_value(call) for call in values["auths"]]
         if values.get("fields") is True:
-            answer["fields"] = fields_value()
+            answer["fields"] = JSON.validate_python(CONFIG.get_required_params())
     return answer

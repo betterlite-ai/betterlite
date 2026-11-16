@@ -24,45 +24,34 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         let runtime = Builder::new_current_thread().build().or_value_error()?;
         let mut installed = Installed::new(input);
-        let mut answer = Map::new();
-        insert_section(
-            &mut answer,
-            "urls",
-            input.urls.as_deref(),
-            reports::url_report,
-        );
-        insert_section(
-            &mut answer,
-            "supported",
-            input.supported.as_deref(),
-            |model| reports::supported_report(&runtime, &mut installed, model),
-        );
-        insert_section(&mut answer, "maps", input.maps.as_deref(), |call| {
+        let mut out = Map::new();
+        insert_section(&mut out, "urls", input.urls.as_deref(), reports::url_report);
+        insert_section(&mut out, "supported", input.supported.as_deref(), |model| {
+            reports::supported_report(&runtime, &mut installed, model)
+        });
+        insert_section(&mut out, "maps", input.maps.as_deref(), |call| {
             reports::map_report(&runtime, &mut installed, call)
         });
         insert_section(
-            &mut answer,
+            &mut out,
             "requests",
             input.requests.as_deref(),
             reports::request_report,
         );
         insert_section(
-            &mut answer,
+            &mut out,
             "responses",
             input.responses.as_deref(),
             reports::response_report,
         );
-        insert_section(
-            &mut answer,
-            "providers",
-            input.providers.as_deref(),
-            |call| reports::provider_report(&installed, call),
-        );
-        insert_auths(input, &mut answer)?;
+        insert_section(&mut out, "providers", input.providers.as_deref(), |call| {
+            reports::provider_report(&installed, call)
+        });
+        insert_auths(input, &mut out)?;
         if input.fields == Some(true) {
-            answer.insert(String::from("fields"), json!(required_params()));
+            out.insert(String::from("fields"), json!(required_params()));
         }
-        Ok(Value::Object(answer))
+        Ok(Value::Object(out))
     }
 }
 

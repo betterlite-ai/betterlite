@@ -159,26 +159,6 @@ impl CapabilityFixture {
             None => None,
         }
     }
-
-    fn bool_field(&self, model: &str, key: &str) -> Option<bool> {
-        match self.field(model, key) {
-            Some(Json::Bool(value)) => Some(*value),
-            Some(
-                Json::Null | Json::Number(_) | Json::Text(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        }
-    }
-
-    fn text_field(&self, model: &str, key: &str) -> Option<String> {
-        match self.field(model, key) {
-            Some(Json::Text(value)) => Some(value.clone()),
-            Some(
-                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_),
-            )
-            | None => None,
-        }
-    }
 }
 
 impl ReasoningCapabilities for CapabilityFixture {
@@ -187,7 +167,10 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.bool_field(request.model, key) == Some(true))
+        ready(matches!(
+            self.field(request.model, key),
+            Some(Json::Bool(true))
+        ))
     }
 
     fn declared_value_factory(
@@ -195,7 +178,15 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = Option<String>> + Send {
-        ready(self.text_field(request.model, key))
+        let declared = self
+            .field(request.model, key)
+            .and_then(|value| match value {
+                Json::Text(text) => Some(text.clone()),
+                Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                    None
+                }
+            });
+        ready(declared)
     }
 
     fn is_explicitly_disabled_factory(
@@ -203,14 +194,20 @@ impl ReasoningCapabilities for CapabilityFixture {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.bool_field(request.model, key) == Some(false))
+        ready(matches!(
+            self.field(request.model, key),
+            Some(Json::Bool(false))
+        ))
     }
 
     fn supports_response_schema(
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        ready(self.bool_field(request.model, "supports_response_schema") == Some(true))
+        ready(matches!(
+            self.field(request.model, "supports_response_schema"),
+            Some(Json::Bool(true))
+        ))
     }
 
     fn catalogue_declares_default(&mut self) -> bool {

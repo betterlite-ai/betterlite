@@ -4,8 +4,7 @@ use betterlite_models::identity::provider_id::ProviderId;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::chat::provider::{
-    OpenAiModelLists, ProviderEnvironment, ProviderRequest, get_openai_compatible_provider_info,
-    is_azure_openai_model,
+    OpenAiModelLists, ProviderEnvironment, ProviderRequest, is_azure_openai_model, provider_info,
 };
 
 use super::support::model_set;
@@ -105,7 +104,7 @@ fn info<'data>(
     environment: ProviderEnvironment<'data>,
     lists: OpenAiModelLists<'data>,
 ) -> (Option<String>, Option<String>, ProviderId) {
-    let resolved = get_openai_compatible_provider_info(ProviderRequest {
+    let resolved = provider_info(&ProviderRequest {
         model,
         api_base,
         api_key,

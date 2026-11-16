@@ -10,12 +10,9 @@ const MESSAGES: &str =
 
 fn request(params: &str) -> Json {
     let optional = object(params);
-    let encoded = serde_json::to_value(transform_request(
-        "fixture-model",
-        &messages(MESSAGES),
-        &optional,
-    ))
-    .expect("the request body encodes");
+    let transformed = transform_request("fixture-model", &messages(MESSAGES), &optional)
+        .expect("the request transforms");
+    let encoded = serde_json::to_value(transformed).expect("the request body encodes");
     serde_json::from_value(encoded).expect("the request body reads as JSON")
 }
 
@@ -41,7 +38,7 @@ pub(super) fn extra_body_precedence() {
         body(r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}],"n":2}"#)
     );
     assert_eq!(
-        request(r#"{}"#),
+        request("{}"),
         body(r#"{"model":"fixture-model","messages":[{"role":"assistant","content":"a"}]}"#)
     );
 }

@@ -110,7 +110,7 @@ fn url_reencodes_query_like_httpx() {
 }
 
 #[test]
-fn url_refuses_an_unparseable_base() {
+fn url_refuses_an_unparsable_base() {
     let refused = get_complete_url(Some("https://studio.example.test:port"), None)
         .expect_err("the base is not a URL");
     assert!(matches!(refused, UrlError::InvalidUrl(_)));

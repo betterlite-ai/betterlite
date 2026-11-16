@@ -219,9 +219,9 @@ fn ordinary_model_filtering() {
     assert!(params.contains(&"stop"));
     assert!(params.contains(&"user"));
     assert!(!params.contains(&"reasoning_effort"));
-    // an uncatalogued model gains reasoning_effort only under the OpenAI family, never Azure AI Studio
-    let uncatalogued = plain_model.supported("gpt-4o", &catalog(&[], &[]));
-    assert!(!uncatalogued.contains(&"reasoning_effort"));
+    // an uncataloged model gains reasoning_effort only under the OpenAI family, never Azure AI Studio
+    let uncataloged = plain_model.supported("gpt-4o", &catalog(&[], &[]));
+    assert!(!uncataloged.contains(&"reasoning_effort"));
     // the superclass map reads the plain GPT allowlist, so tool_choice survives the filtered query
     let optional = plain_model
         .mapped(
