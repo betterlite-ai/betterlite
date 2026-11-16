@@ -1,0 +1,38 @@
+kind: helper
+name: fallback-done-ids
+call:
+  gemini_live_content:
+    calls:
+      - op: modality
+        event: response.audio.done
+        frame: {}
+        delta_type: audio
+      - op: modality
+        event: response.text.done
+        frame: {}
+        delta_type: text
+        response_id: resp-keep
+        delta_chunks:
+          - type: response.output_text.delta
+            delta: Hi
+      - op: modality
+        event: response.audio.delta
+        delta_type: audio
+        frame:
+          serverContent:
+            modelTurn:
+              parts:
+                - inlineData:
+                    data: AAA=
+      - op: modality
+        event: response.text.delta
+        delta_type: text
+        frame:
+          serverContent:
+            modelTurn:
+              parts:
+                - text: partial
+        output_item_id: item-keep
+        response_id: resp-keep
+env: {}
+compare: {ignore: []}
