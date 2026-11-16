@@ -1,0 +1,20 @@
+kind: helper
+name: native-voice-map
+call:
+  azure_native_speech:
+    native_voice_map:
+      voices:
+        - null
+        - alloy
+        - echo
+        - fable
+        - onyx
+        - nova
+        - shimmer
+        - en-GB-SoniaNeural
+        - 3
+        - true
+        - ''
+        - {name: alloy}
+env: {}
+compare: {ignore: []}

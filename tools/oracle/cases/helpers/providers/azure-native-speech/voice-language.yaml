@@ -1,0 +1,15 @@
+kind: helper
+name: voice-language
+call:
+  azure_native_speech:
+    voice_language:
+      cases:
+        - {}
+        - {voice: alloy}
+        - {voice: fr-FR}
+        - {voice: en-US-AriaNeural, lang: es-ES}
+        - {voice: alloy, lang: ''}
+        - {lang: fr-FR}
+        - {voice: '', lang: en-GB}
+env: {}
+compare: {ignore: []}

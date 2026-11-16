@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-style_role_element-seed
+call: {azure_native_speech: {style_role_element: {cases: [{style: cheerful, role: Girl}, {}]}}}
+env: {}
+compare: {ignore: []}

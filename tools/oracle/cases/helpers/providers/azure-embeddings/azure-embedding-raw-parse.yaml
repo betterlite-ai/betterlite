@@ -1,0 +1,66 @@
+# A non-JSON text body crashes the OpenAI SDK's embeddings post-parser with AttributeError before
+# LiteLLM reaches its own "Unexpected string response" check, so that branch has no oracle partner;
+# the azure_embedding_raw_parse test proves betterlite's error for it, listed in docs/deviations/B534.yaml.
+kind: helper
+name: azure-embedding-raw-parse
+call:
+  azure_embeddings:
+    steps:
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "application/json; charset=utf-8"}, body: "{not json"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: async_azure
+        answer: {reply: {status: 206, headers: {content-type: "application/json"}, body: "{not json"}}
+        aembedding: true
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: azure
+        answer: {reply: {status: 200, headers: {content-type: "text/plain"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+      - input: ["a"]
+        client: v1
+        answer: {reply: {status: 200, headers: {content-type: "application/json"}, body: "{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":[0.5,0.25],\"index\":0}],\"model\":\"text-embedding-3-small\",\"usage\":{\"prompt_tokens\":3,\"total_tokens\":3}}"}}
+        model: my-deployment
+        api_base: "https://example.openai.azure.com"
+        api_version: "2024-02-01"
+        timeout: 30.0
+        api_key: azure-key
+        aembedding: false
+        azure_ad_token: null
+        max_retries: null
+        optional_params: {}
+        headers: {}
+        litellm_params: {}
+env: {}
+compare: {ignore: []}
