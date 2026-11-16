@@ -1,0 +1,8 @@
+kind: helper
+name: guardrail-form-tables-a-zscaler-ai-guard
+call:
+  b6561:
+    provider: zscaler_ai_guard
+env: {}
+compare:
+  ignore: []
