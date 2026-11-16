@@ -126,12 +126,6 @@ fn response_object(
     }
 }
 
-fn typed_auth(spec: Option<&AuthSpec>) -> Option<TypedAuth> {
-    spec.map(|auth| TypedAuth {
-        budget_reservation: auth.budget_reservation.clone(),
-    })
-}
-
 // The kwargs the Python side sees: params with both buckets set (null when absent)
 fn raw_kwargs(spec: &BuildSpec) -> Mapping {
     let mut params = spec.litellm_params.clone();
@@ -153,9 +147,12 @@ fn raw_kwargs(spec: &BuildSpec) -> Mapping {
 fn build(spec: &BuildSpec) -> crate::helpers::HelperResult {
     let kwargs = raw_kwargs(spec);
     let response = response_object(&spec.response)?;
+    let typed_auth = |auth: &AuthSpec| TypedAuth {
+        budget_reservation: auth.budget_reservation.clone(),
+    };
     let typed = TypedAuths {
-        metadata: typed_auth(spec.typed_auth.metadata.as_ref()),
-        litellm_metadata: typed_auth(spec.typed_auth.litellm_metadata.as_ref()),
+        metadata: spec.typed_auth.metadata.as_ref().map(typed_auth),
+        litellm_metadata: spec.typed_auth.litellm_metadata.as_ref().map(typed_auth),
     };
     let built = build_spend_event(&BuildInput {
         kwargs: &kwargs,
@@ -199,8 +196,8 @@ fn replay(line: &str, restore: bool) -> crate::helpers::HelperResult {
     if !restore {
         return tagged("event", &event);
     }
-    match callback_args(event) {
-        Err(_) => Ok(json!({ "restore_error": true })),
-        Ok(args) => tagged("args", &args),
-    }
+    callback_args(event).map_or_else(
+        |_| Ok(json!({ "restore_error": true })),
+        |args| tagged("args", &args),
+    )
 }

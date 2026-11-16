@@ -1,19 +1,20 @@
-use serde_json::Value;
+use betterlite_models::decisions::Json;
 
 use crate::spend_event::build::build_spend_event;
+use crate::spend_event::decode::decode_spend_event;
 use crate::spend_event::error::SpendEventBuildError;
-use crate::spend_event::event::Mapping;
+use crate::spend_event::event::{Mapping, SpendEvent};
 use crate::spend_event::input::{BuildInput, CachePresence, ResponseObject, TypedAuths};
 use crate::spend_event::time::EventTime;
 
-pub struct Options {
-    pub response: ResponseObject,
-    pub typed_auth: TypedAuths,
-    pub store_bodies: bool,
-    pub cache: CachePresence,
+pub(super) struct Options {
+    pub(super) response: ResponseObject,
+    pub(super) typed_auth: TypedAuths,
+    pub(super) store_bodies: bool,
+    pub(super) cache: CachePresence,
 }
 
-pub fn options(store_bodies: bool, cache: CachePresence) -> Options {
+pub(super) fn options(store_bodies: bool, cache: CachePresence) -> Options {
     Options {
         response: ResponseObject::Absent,
         typed_auth: TypedAuths {
@@ -25,15 +26,19 @@ pub fn options(store_bodies: bool, cache: CachePresence) -> Options {
     }
 }
 
-pub fn mapping(text: &str) -> Mapping {
+pub(super) fn json(text: &str) -> Json {
     serde_json::from_str(text).unwrap()
 }
 
-pub fn stamp(text: &str) -> EventTime {
-    serde_json::from_value(Value::String(text.to_owned())).unwrap()
+pub(super) fn mapping(text: &str) -> Mapping {
+    serde_json::from_str(text).unwrap()
 }
 
-pub fn build_line(kwargs: &str, call: &Options) -> Result<Vec<u8>, SpendEventBuildError> {
+pub(super) fn stamp(text: &str) -> EventTime {
+    serde_json::from_str(&format!("\"{text}\"")).unwrap()
+}
+
+pub(super) fn build_line(kwargs: &str, call: &Options) -> Result<Vec<u8>, SpendEventBuildError> {
     let raw = mapping(kwargs);
     build_spend_event(&BuildInput {
         kwargs: &raw,
@@ -46,6 +51,6 @@ pub fn build_line(kwargs: &str, call: &Options) -> Result<Vec<u8>, SpendEventBui
     })
 }
 
-pub fn built(kwargs: &str, call: &Options) -> Value {
-    serde_json::from_slice(&build_line(kwargs, call).unwrap()).unwrap()
+pub(super) fn built(kwargs: &str, call: &Options) -> SpendEvent {
+    decode_spend_event(&build_line(kwargs, call).unwrap()).unwrap()
 }
