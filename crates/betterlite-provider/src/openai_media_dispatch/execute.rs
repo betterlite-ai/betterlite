@@ -63,18 +63,20 @@ where
         OpenAiMediaOperation::ImageVariation(variation) => OpenAiMediaResult::ImageVariation(
             Box::new(image_variation(*variation, transport, logger).await?),
         ),
-        OpenAiMediaOperation::Speech(operation) => {
-            OpenAiMediaResult::Speech(Box::new(speech(*operation, transport, logger).await?))
+        OpenAiMediaOperation::Speech(speech_operation) => OpenAiMediaResult::Speech(Box::new(
+            speech(*speech_operation, transport, logger).await?,
+        )),
+        OpenAiMediaOperation::Transcription(transcription_operation) => {
+            OpenAiMediaResult::Transcription(Box::new(
+                transcription(*transcription_operation, transport, logger).await?,
+            ))
         }
-        OpenAiMediaOperation::Transcription(operation) => OpenAiMediaResult::Transcription(
-            Box::new(transcription(*operation, transport, logger).await?),
+        OpenAiMediaOperation::Video(video_operation) => {
+            OpenAiMediaResult::Video(Box::new(super::video::video(*video_operation)?))
+        }
+        OpenAiMediaOperation::VideoEdit(video_edit_operation) => OpenAiMediaResult::VideoEdit(
+            Box::new(super::video_edit::video_edit(*video_edit_operation)?),
         ),
-        OpenAiMediaOperation::Video(operation) => {
-            OpenAiMediaResult::Video(Box::new(super::video::video(*operation)?))
-        }
-        OpenAiMediaOperation::VideoEdit(operation) => {
-            OpenAiMediaResult::VideoEdit(Box::new(super::video_edit::video_edit(*operation)?))
-        }
     };
     Ok(OperationResult::OpenAiMedia(result))
 }

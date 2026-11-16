@@ -1,13 +1,20 @@
 use betterlite_openai::openai_video_identifiers::multipart::MediaBody;
 use betterlite_openai::video_edits::character::{
-    CharacterPart, CreateCharacter, transform_video_create_character_request,
-    transform_video_get_character_request,
+    CharacterPart,
+    CreateCharacter,
+    // ast-grep-ignore: no-long-names
+    transform_video_create_character_request as character_request,
+    // ast-grep-ignore: no-long-names
+    transform_video_get_character_request as character_get_request,
 };
 use betterlite_openai::video_edits::edit::{
-    VideoEdit, VideoEditRequest, transform_video_edit_request,
+    VideoEdit, VideoEditRequest, transform_video_edit_request as edit_request,
 };
 use betterlite_openai::video_edits::extension::{
-    VideoExtension, VideoExtensionRequest, transform_video_extension_request,
+    VideoExtension,
+    VideoExtensionRequest,
+    // ast-grep-ignore: no-long-names
+    transform_video_extension_request as extension_request,
 };
 use betterlite_openai::video_edits::response::{
     VideoReply, decode_character_reply, transform_video_response,
@@ -21,7 +28,6 @@ use super::call::{
 };
 use super::error::OpenAiMediaError;
 use super::parts::media_part;
-use super::video::video_request;
 use super::{
     MediaMethod, MediaPart, MediaPartBody, MediaPayload, OpenAiMediaPrepared, VideoEditOutcome,
     VideoEditReplyKind,
@@ -36,27 +42,29 @@ pub(super) fn video_edit(
         call,
     } = operation;
     let base = complete_url(api_base.as_deref());
-    let provider = provider.as_deref();
+    let provider_name = provider.as_deref();
     match *call {
-        VideoEditCall::Edit(call) => edit(&base, provider, &call),
-        VideoEditCall::Extension(call) => extension(&base, provider, &call),
-        VideoEditCall::CreateCharacter(call) => create_character(&base, &call),
-        VideoEditCall::GetCharacter(call) => get_character(&base, &call),
+        VideoEditCall::Edit(edit_call) => edit(&base, provider_name, *edit_call),
+        VideoEditCall::Extension(extension_call) => {
+            extension(&base, provider_name, *extension_call)
+        }
+        VideoEditCall::CreateCharacter(character_call) => create_character(&base, *character_call),
+        VideoEditCall::GetCharacter(character_call) => get_character(&base, *character_call),
     }
 }
 
 fn edit(
     base: &str,
     provider: Option<&str>,
-    call: &VideoEditInput,
+    call: VideoEditInput,
 ) -> Result<VideoEditOutcome, OpenAiMediaError> {
     let video_file = call.video_file.as_deref().map(MediaBody::Bytes);
-    let edit = transform_video_edit_request(VideoEditRequest {
-        prompt: call.prompt.clone(),
-        video_id: call.video_id.clone(),
+    let request = edit_request(VideoEditRequest {
+        prompt: call.prompt,
+        video_id: call.video_id,
         api_base: base.to_owned(),
         video_file,
-        extra_body: call.extra_body.clone(),
+        extra_body: call.extra_body,
         prefetched_source_data: None,
     });
     let reply = transform_video_response(&VideoReply {
@@ -64,7 +72,7 @@ fn edit(
         custom_llm_provider: provider,
         request_data: None,
     })?;
-    let VideoEdit { url, body, files } = edit;
+    let VideoEdit { url, body, files } = request;
     let multipart = files.is_some();
     Ok(VideoEditOutcome {
         request: OpenAiMediaPrepared {
@@ -82,21 +90,21 @@ fn edit(
 fn extension(
     base: &str,
     provider: Option<&str>,
-    call: &VideoExtensionInput,
+    call: VideoExtensionInput,
 ) -> Result<VideoEditOutcome, OpenAiMediaError> {
-    let extension = transform_video_extension_request(VideoExtensionRequest {
-        prompt: call.prompt.clone(),
-        video_id: call.video_id.clone(),
-        seconds: call.seconds.clone(),
+    let request = extension_request(VideoExtensionRequest {
+        prompt: call.prompt,
+        video_id: call.video_id,
+        seconds: call.seconds,
         api_base: base.to_owned(),
-        extra_body: call.extra_body.clone(),
+        extra_body: call.extra_body,
     });
     let reply = transform_video_response(&VideoReply {
         body: &call.reply,
         custom_llm_provider: provider,
         request_data: None,
     })?;
-    let VideoExtension { url, body } = extension;
+    let VideoExtension { url, body } = request;
     Ok(VideoEditOutcome {
         request: OpenAiMediaPrepared {
             method: MediaMethod::Post,
@@ -112,11 +120,11 @@ fn extension(
 
 fn create_character(
     base: &str,
-    call: &CharacterCreateInput,
+    call: CharacterCreateInput,
 ) -> Result<VideoEditOutcome, OpenAiMediaError> {
-    let created =
-        transform_video_create_character_request(&call.name, MediaBody::Bytes(&call.video), base);
-    let character = decode_character_reply(&call.reply)?;
+    let CharacterCreateInput { name, video, reply } = call;
+    let created = character_request(&name, MediaBody::Bytes(&video), base);
+    let character = decode_character_reply(&reply)?;
     let CreateCharacter { url, files } = created;
     Ok(VideoEditOutcome {
         request: OpenAiMediaPrepared {
@@ -133,12 +141,23 @@ fn create_character(
 
 fn get_character(
     base: &str,
-    call: &CharacterGetInput,
+    call: CharacterGetInput,
 ) -> Result<VideoEditOutcome, OpenAiMediaError> {
-    let url = transform_video_get_character_request(&call.character_id, base)?;
-    let character = decode_character_reply(&call.reply)?;
+    let CharacterGetInput {
+        character_id,
+        reply,
+    } = call;
+    let url = character_get_request(&character_id, base)?;
+    let character = decode_character_reply(&reply)?;
     Ok(VideoEditOutcome {
-        request: video_request(MediaMethod::Get, url),
+        request: OpenAiMediaPrepared {
+            method: MediaMethod::Get,
+            url,
+            query: VideoOptions::new(),
+            body: MediaPayload::Empty,
+            parts: Vec::new(),
+            multipart: false,
+        },
         reply: VideoEditReplyKind::Character(Box::new(character)),
     })
 }
@@ -152,6 +171,6 @@ fn character_part(part: CharacterPart<'_>) -> MediaPart {
             content_type: None,
             body: MediaPartBody::Text(text.to_owned()),
         },
-        CharacterPart::File(part) => media_part(part),
+        CharacterPart::File(file_part) => media_part(file_part),
     }
 }

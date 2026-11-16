@@ -25,25 +25,32 @@ pub(super) fn video(operation: VideoOperation) -> Result<VideoOutcome, OpenAiMed
         call,
     } = operation;
     let base = complete_url(api_base.as_deref());
-    let provider = provider.as_deref();
+    let provider_name = provider.as_deref();
     match *call {
-        VideoCall::Create(call) => create(&base, provider, &call),
-        VideoCall::List(call) => list(&base, provider, &call),
-        VideoCall::Status(call) => status(&base, provider, &call),
-        VideoCall::Delete(call) => delete(&base, &call),
-        VideoCall::Content(call) => content(&base, &call),
-        VideoCall::Remix(call) => remix(&base, provider, &call),
+        VideoCall::Create(create_call) => create(&base, provider_name, *create_call),
+        VideoCall::List(list_call) => list(&base, provider_name, *list_call),
+        VideoCall::Status(status_call) => status(&base, provider_name, *status_call),
+        VideoCall::Delete(delete_call) => delete(&base, *delete_call),
+        VideoCall::Content(content_call) => content(&base, *content_call),
+        VideoCall::Remix(remix_call) => remix(&base, provider_name, *remix_call),
     }
 }
 
 fn create(
     base: &str,
     provider: Option<&str>,
-    call: &VideoCreateCall,
+    call: VideoCreateCall,
 ) -> Result<VideoOutcome, OpenAiMediaError> {
-    let media = call.input_reference.as_deref().map(MediaBody::Bytes);
-    let form = create_request(&call.model, &call.prompt, base, &call.options, media);
-    let video = create_response(&call.model, &call.reply, provider)?;
+    let VideoCreateCall {
+        model,
+        prompt,
+        options,
+        input_reference,
+        reply,
+    } = call;
+    let media = input_reference.as_deref().map(MediaBody::Bytes);
+    let form = create_request(&model, &prompt, base, &options, media);
+    let video = create_response(&model, &reply, provider)?;
     let CreateVideoForm {
         fields,
         files,
@@ -65,16 +72,23 @@ fn create(
 fn list(
     base: &str,
     provider: Option<&str>,
-    call: &VideoListCall,
+    call: VideoListCall,
 ) -> Result<VideoOutcome, OpenAiMediaError> {
+    let VideoListCall {
+        after,
+        limit,
+        order,
+        extra_query,
+        reply,
+    } = call;
     let (url, query) = list_request(
         base,
-        call.after.as_deref(),
-        call.limit,
-        call.order.as_deref(),
-        &call.extra_query,
+        after.as_deref(),
+        limit,
+        order.as_deref(),
+        &extra_query,
     );
-    let list = list_response(&call.reply, provider)?;
+    let list = list_response(&reply, provider)?;
     Ok(VideoOutcome {
         request: OpenAiMediaPrepared {
             method: MediaMethod::Get,
@@ -91,27 +105,48 @@ fn list(
 fn status(
     base: &str,
     provider: Option<&str>,
-    call: &VideoStatusCall,
+    call: VideoStatusCall,
 ) -> Result<VideoOutcome, OpenAiMediaError> {
-    let url = path_url(&call.video_id, base, "")?;
-    let video = status_response(&call.reply, provider)?;
+    let VideoStatusCall { video_id, reply } = call;
+    let url = path_url(&video_id, base, "")?;
+    let video = status_response(&reply, provider)?;
     Ok(VideoOutcome {
-        request: video_request(MediaMethod::Get, url),
+        request: OpenAiMediaPrepared {
+            method: MediaMethod::Get,
+            url,
+            query: VideoOptions::new(),
+            body: MediaPayload::Empty,
+            parts: Vec::new(),
+            multipart: false,
+        },
         reply: VideoReplyKind::Video(Box::new(video)),
     })
 }
 
-fn delete(base: &str, call: &VideoDeleteCall) -> Result<VideoOutcome, OpenAiMediaError> {
-    let url = path_url(&call.video_id, base, "")?;
-    let video = decode_video(&call.reply)?;
+fn delete(base: &str, call: VideoDeleteCall) -> Result<VideoOutcome, OpenAiMediaError> {
+    let VideoDeleteCall { video_id, reply } = call;
+    let url = path_url(&video_id, base, "")?;
+    let video = decode_video(&reply)?;
     Ok(VideoOutcome {
-        request: video_request(MediaMethod::Delete, url),
+        request: OpenAiMediaPrepared {
+            method: MediaMethod::Delete,
+            url,
+            query: VideoOptions::new(),
+            body: MediaPayload::Empty,
+            parts: Vec::new(),
+            multipart: false,
+        },
         reply: VideoReplyKind::Video(Box::new(video)),
     })
 }
 
-fn content(base: &str, call: &VideoContentCall) -> Result<VideoOutcome, OpenAiMediaError> {
-    let (url, query) = content_request(&call.video_id, base, call.variant.as_deref())?;
+fn content(base: &str, call: VideoContentCall) -> Result<VideoOutcome, OpenAiMediaError> {
+    let VideoContentCall {
+        video_id,
+        variant,
+        reply,
+    } = call;
+    let (url, query) = content_request(&video_id, base, variant.as_deref())?;
     Ok(VideoOutcome {
         request: OpenAiMediaPrepared {
             method: MediaMethod::Get,
@@ -121,17 +156,23 @@ fn content(base: &str, call: &VideoContentCall) -> Result<VideoOutcome, OpenAiMe
             parts: Vec::new(),
             multipart: false,
         },
-        reply: VideoReplyKind::Bytes(call.reply.clone()),
+        reply: VideoReplyKind::Bytes(reply),
     })
 }
 
 fn remix(
     base: &str,
     provider: Option<&str>,
-    call: &VideoRemixCall,
+    call: VideoRemixCall,
 ) -> Result<VideoOutcome, OpenAiMediaError> {
-    let (url, body) = remix_request(&call.video_id, &call.prompt, base, &call.extra_body)?;
-    let video = remix_response(&call.reply, provider)?;
+    let VideoRemixCall {
+        video_id,
+        prompt,
+        extra_body,
+        reply,
+    } = call;
+    let (url, body) = remix_request(&video_id, &prompt, base, &extra_body)?;
+    let video = remix_response(&reply, provider)?;
     Ok(VideoOutcome {
         request: OpenAiMediaPrepared {
             method: MediaMethod::Post,
@@ -143,16 +184,4 @@ fn remix(
         },
         reply: VideoReplyKind::Video(Box::new(video)),
     })
-}
-
-// The body-less video requests carry no query, no parts and no multipart policy.
-pub(super) fn video_request(method: MediaMethod, url: String) -> OpenAiMediaPrepared {
-    OpenAiMediaPrepared {
-        method,
-        url,
-        query: VideoOptions::new(),
-        body: MediaPayload::Empty,
-        parts: Vec::new(),
-        multipart: false,
-    }
 }
