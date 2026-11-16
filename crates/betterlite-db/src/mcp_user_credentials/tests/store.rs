@@ -136,6 +136,13 @@ fn delete_user_credential_removes_only_the_given_pair() {
 }
 
 #[test]
+fn get_user_oauth_credential_returns_none_without_a_row() {
+    let table = FakeTable::new(Vec::new());
+    let read = block_on(get_user_oauth_credential(&table, &cipher(), "u1", "s1"));
+    assert!(read.expect("the read runs").is_none());
+}
+
+#[test]
 fn get_user_oauth_credential_reads_an_oauth_payload() {
     let table = FakeTable::new(vec![credential_row("u1", "s1", ENCRYPTED_OAUTH)]);
     let payload = stored_payload(&table);
