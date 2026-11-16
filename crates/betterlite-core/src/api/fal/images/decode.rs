@@ -27,13 +27,6 @@ pub struct FalImage {
     pub provider_specific_fields: Option<FalImageProviderSpecificFields>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct FalImageReply {
-    pub images: Vec<FalImage>,
-    // a projection reads seed, timings and has_nsfw_concepts from the remaining root fields
-    pub metadata: IndexMap<String, Json>,
-}
-
 #[must_use]
 pub fn fal_images_to_image_objects(images: &Json) -> Vec<FalImage> {
     let Json::List(entries) = images else {
@@ -83,11 +76,12 @@ fn provider_fields(fields: &IndexMap<String, Json>) -> Option<FalImageProviderSp
     (provider != FalImageProviderSpecificFields::default()).then_some(provider)
 }
 
-pub fn decode_fal_image_reply(
+// the permissive record view: the size and JSON checks and the object root, with every field left as sent
+pub fn decode_fal_image_record(
     status: u16,
     headers: &ImageHeaders,
     body: &[u8],
-) -> Result<FalImageReply, FalImageError> {
+) -> Result<IndexMap<String, Json>, FalImageError> {
     if body.len() > MAX_FAL_REPLY_BYTES {
         return Err(FalImageError::ReplyTooLarge {
             status,
@@ -107,16 +101,18 @@ pub fn decode_fal_image_reply(
             headers: headers.clone(),
         });
     };
-    let mut images = Vec::new();
-    let mut metadata = IndexMap::new();
-    for (name, field) in fields {
-        if name == "images" {
-            images = fal_images_to_image_objects(&field);
-        } else {
-            metadata.insert(name, field);
-        }
-    }
-    Ok(FalImageReply { images, metadata })
+    Ok(fields)
+}
+
+pub fn decode_fal_image_reply(
+    status: u16,
+    headers: &ImageHeaders,
+    body: &[u8],
+) -> Result<Vec<FalImage>, FalImageError> {
+    let fields = decode_fal_image_record(status, headers, body)?;
+    Ok(fields
+        .get("images")
+        .map_or_else(Vec::new, fal_images_to_image_objects))
 }
 
 pub fn append_generation_images(
@@ -125,7 +121,7 @@ pub fn append_generation_images(
     headers: &ImageHeaders,
     body: &[u8],
 ) -> Result<(), FalImageError> {
-    let reply = decode_fal_image_reply(status, headers, body)?;
-    data.get_or_insert_with(Vec::new).extend(reply.images);
+    let images = decode_fal_image_reply(status, headers, body)?;
+    data.get_or_insert_with(Vec::new).extend(images);
     Ok(())
 }

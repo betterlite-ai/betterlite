@@ -1,0 +1,34 @@
+kind: helper
+name: fal-single-image-models-ignored-count
+call:
+  fal_single_image_models:
+    operation: ignored_count
+    environment: {FAL_AI_API_BASE: "https://environment.test/fal/"}
+    api_bases: [null, "", "https://proxy.test/fal///"]
+    cases:
+      - non_default: {n: 3, response_format: "url"}
+        optional: {}
+        drop_params: false
+      - non_default: {n: 2, size: "1024x768"}
+        optional: {n: 4}
+        drop_params: false
+      - non_default: {response_format: "b64_json", size: "1792x1024"}
+        optional: {aspect_ratio: "3:2"}
+        drop_params: false
+      - non_default: {seed: 5}
+        optional: {}
+        drop_params: false
+      - non_default: {seed: 5}
+        optional: {}
+        drop_params: true
+      - non_default: {seed: 5, n: 2}
+        optional: {seed: 9}
+        drop_params: false
+    bodies:
+      - prompt: "a cat"
+        provider_options: {prompt: "a dog", n: 2}
+      - prompt: "a cat"
+        provider_options: {}
+env: {}
+compare:
+  ignore: []
