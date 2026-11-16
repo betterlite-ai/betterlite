@@ -14,11 +14,9 @@ use crate::openrouter_image::generation::{
     request_body as generation_request_body, transform_response as generation_response,
     validate_environment as generation_headers,
 };
-use crate::openrouter_image::shared::{
-    ImageConfigError, ImageHiddenParams, apply_generation_usage,
-};
+use crate::openrouter_image::shared::{ImageConfigError, ImageHiddenParams, apply_usage};
 
-use super::{COST_HEADER, CREATED, b64, headers, json, ok, params, raw, text, url_image};
+use super::{COST_HEADER, CREATED, b64, decimal, headers, json, ok, params, raw, text, url_image};
 
 #[test]
 fn generation_params_map_size_and_quality_into_image_config() {
@@ -428,18 +426,53 @@ fn generation_responses_reject_a_usage_field_of_the_wrong_type() {
 }
 
 #[test]
-fn generation_usage_rejects_a_cost_that_is_not_finite() {
+fn generation_usage_writes_a_decimal_cost_as_a_number() {
     let usage = OpenRouterImageUsage {
-        cost: Some(f64::NAN),
-        ..OpenRouterImageUsage::default()
+        prompt_tokens: 3,
+        total_tokens: 4,
+        output_image_tokens: 0,
+        input_image_tokens: 0,
+        cost: Some(decimal("0.0000001")),
+        cost_details: IndexMap::new(),
     };
-    let error = apply_generation_usage(
-        &usage,
-        &mut ImageResponse::default(),
-        &mut ImageHiddenParams::default(),
-    )
-    .expect_err("the cost is not finite");
-    assert!(matches!(error, ImageConfigError::Cost));
+    let mut response = ImageResponse::default();
+    let mut hidden = ImageHiddenParams::default();
+    apply_usage(&usage, &mut response, &mut hidden, 0).expect("the usage applies");
+    assert_eq!(
+        response.usage,
+        Some(ImageUsage {
+            input_tokens: 3,
+            input_tokens_details: ImageInputTokens {
+                image_tokens: 0,
+                text_tokens: 3,
+            },
+            output_tokens: 0,
+            total_tokens: 4,
+        })
+    );
+    assert_eq!(
+        hidden.additional_headers.get(COST_HEADER),
+        Some(&json("0.0000001"))
+    );
+    assert!(hidden.response_cost_details.is_none());
+}
+
+#[test]
+fn an_integral_cost_is_written_as_a_float() {
+    let usage = OpenRouterImageUsage {
+        prompt_tokens: 1,
+        total_tokens: 2,
+        output_image_tokens: 1,
+        input_image_tokens: 0,
+        cost: Some(decimal("2")),
+        cost_details: IndexMap::new(),
+    };
+    let mut hidden = ImageHiddenParams::default();
+    apply_usage(&usage, &mut ImageResponse::default(), &mut hidden, 0).expect("the usage applies");
+    assert_eq!(
+        hidden.additional_headers.get(COST_HEADER),
+        Some(&json("2.0"))
+    );
 }
 
 #[test]

@@ -4,25 +4,26 @@ use std::fs;
 use std::io;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
+use std::str::FromStr as _;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use crate::api::image_contracts::records::{ImageData, ImageHttpResponse, ImageParams};
 use crate::openai_base_config::Headers;
-use crate::openrouter_chat::error::OpenRouterError;
+use crate::openrouter_chat::error::{OpenRouterError, get_error_class};
 
 use super::decode::{
     OpenRouterImageReply, OpenRouterImageUsage, ReplyDecodeError, decode_openrouter_image_reply,
 };
 use super::shared::{
-    authorization, get_error_class, map_quality_to_image_size, map_size_to_aspect_ratio,
-    resolved_base, resolved_key,
+    authorization, map_quality_to_image_size, map_size_to_aspect_ratio, resolved_base, resolved_key,
 };
 
 mod edit;
@@ -38,6 +39,14 @@ const HEIC: &[u8] = b"\x00\x00\x00\x18ftypheic";
 
 fn text(value: &str) -> Json {
     Json::Text(String::from(value))
+}
+
+fn secret_text(key: &SecretString) -> &str {
+    key.expose_secret()
+}
+
+fn decimal(value: &str) -> Decimal {
+    Decimal::from_str(value).expect("the value must be a decimal")
 }
 
 fn number(value: i64) -> Json {
@@ -174,20 +183,11 @@ fn the_key_chain_skips_an_absent_or_empty_key() {
     let all_empty = resolved_key([Some(&empty), Some(&empty), Some(&empty)]);
     assert!(all_empty.is_none());
     let chosen = resolved_key([Some(&empty), Some(&second), Some(&environment)]);
-    assert_eq!(
-        chosen.map(|key| key.expose_secret().as_str()),
-        Some("second")
-    );
+    assert_eq!(chosen.map(secret_text), Some("second"));
     let chosen = resolved_key([None, Some(&empty), Some(&environment)]);
-    assert_eq!(
-        chosen.map(|key| key.expose_secret().as_str()),
-        Some("environment")
-    );
+    assert_eq!(chosen.map(secret_text), Some("environment"));
     let chosen = resolved_key([Some(&first), Some(&second), Some(&environment)]);
-    assert_eq!(
-        chosen.map(|key| key.expose_secret().as_str()),
-        Some("first")
-    );
+    assert_eq!(chosen.map(secret_text), Some("first"));
 }
 
 #[test]
@@ -292,7 +292,7 @@ fn usage_is_read_when_it_is_a_non_empty_object() {
             total_tokens: 9,
             output_image_tokens: 2,
             input_image_tokens: 1,
-            cost: Some(0.25),
+            cost: Some(decimal("0.25")),
             cost_details: IndexMap::from([(String::from("upstream"), json("0.2"))]),
         })
     );
@@ -342,10 +342,21 @@ fn a_body_that_is_not_json_is_a_parse_error() {
 #[rstest]
 #[case::nan(r#"{"usage": {"cost": NaN}}"#)]
 #[case::infinity(r#"{"usage": {"cost": Infinity}}"#)]
-#[case::overflowing_exponent(r#"{"usage": {"cost": 1e400}}"#)]
 fn non_standard_json_is_a_parse_error(#[case] body: &str) {
     let error = decode_openrouter_image_reply(body.as_bytes()).expect_err("the body is not JSON");
     assert!(matches!(error, ReplyDecodeError::Json { .. }));
+}
+
+#[test]
+fn a_cost_beyond_the_decimal_range_names_the_field() {
+    let error = decode(r#"{"usage": {"cost": 1e400}}"#).expect_err("the cost has no decimal value");
+    assert!(matches!(error, ReplyDecodeError::Shape { .. }));
+    let message = error.to_string();
+    assert!(message.starts_with("usage.cost: "), "{message}");
+    assert!(
+        message.ends_with("does not fit a decimal cost"),
+        "{message}"
+    );
 }
 
 #[rstest]
