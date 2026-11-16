@@ -6,15 +6,16 @@ use secrecy::ExposeSecret;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
-fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Settings, ConfigError> {
+fn load(source: &str, environment: &[(&str, &str)]) -> Result<super::Inner, ConfigError> {
     let lookup = environment
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect::<BTreeMap<_, _>>();
-    Ok(ConfigLoader { lookup }
+    Ok(*ConfigLoader { lookup }
         .load(source)?
         .sections
-        .model_hub_credentials)
+        .model_hub_credentials
+        .inner)
 }
 
 #[test]

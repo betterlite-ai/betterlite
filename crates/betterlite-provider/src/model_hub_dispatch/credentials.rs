@@ -1,6 +1,6 @@
 use super::{CustomPromptTable, HubDispatchError};
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_config::sections::model_hub_credentials::Settings;
+use betterlite_config::sections::model_hub_credentials::Inner;
 use betterlite_openai::huggingface_chat::HuggingfaceEnv;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json, Object};
@@ -18,7 +18,7 @@ pub struct Globals<'source> {
 }
 impl<'source> Globals<'source> {
     #[must_use]
-    pub const fn from_settings(settings: &'source Settings) -> Self {
+    pub const fn from_settings(settings: &'source Inner) -> Self {
         Self {
             api_key: None,
             huggingface_key: settings.huggingface_key.as_ref(),

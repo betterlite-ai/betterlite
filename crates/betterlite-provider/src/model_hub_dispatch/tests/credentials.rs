@@ -1,4 +1,4 @@
-use betterlite_config::sections::model_hub_credentials::Settings;
+use betterlite_config::sections::model_hub_credentials::{Inner, Settings};
 use betterlite_openai::huggingface_chat::HuggingfaceEnv;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
 use secrecy::{ExposeSecret, SecretString};
@@ -25,13 +25,16 @@ fn resolved(
 
 #[test]
 fn the_settings_become_the_module_globals() {
-    let settings = Settings {
+    let inner = Inner {
         huggingface_key: Some(SecretString::from("hf")),
         replicate_key: Some(SecretString::from("r")),
         predibase_key: Some(SecretString::from("p")),
         predibase_tenant_id: Some(SecretString::from("t")),
     };
-    let globals = Globals::from_settings(&settings);
+    let settings = Settings {
+        inner: Box::new(inner),
+    };
+    let globals = Globals::from_settings(&settings.inner);
     let huggingface = globals.huggingface_key.map(ExposeSecret::expose_secret);
     assert_eq!(huggingface, Some("hf"));
     let replicate = globals.replicate_key.map(ExposeSecret::expose_secret);

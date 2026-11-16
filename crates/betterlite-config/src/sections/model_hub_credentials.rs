@@ -23,8 +23,14 @@ struct RawLitellmSettings {
     predibase_tenant_id: Option<SecretString>,
 }
 
+// Boxed: Sections holds each Settings by value, and config snapshots live inside futures
 #[derive(Debug, Clone, Default)]
 pub struct Settings {
+    pub inner: Box<Inner>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct Inner {
     pub huggingface_key: Option<SecretString>,
     pub replicate_key: Option<SecretString>,
     pub predibase_key: Option<SecretString>,
@@ -40,26 +46,28 @@ impl Section for Raw {
     {
         let raw = self.litellm_settings;
         Ok(Settings {
-            huggingface_key: resolve_secret(
-                raw.huggingface_key,
-                "litellm_settings.huggingface_key",
-                lookup,
-            )?,
-            replicate_key: resolve_secret(
-                raw.replicate_key,
-                "litellm_settings.replicate_key",
-                lookup,
-            )?,
-            predibase_key: resolve_secret(
-                raw.predibase_key,
-                "litellm_settings.predibase_key",
-                lookup,
-            )?,
-            predibase_tenant_id: resolve_secret(
-                raw.predibase_tenant_id,
-                "litellm_settings.predibase_tenant_id",
-                lookup,
-            )?,
+            inner: Box::new(Inner {
+                huggingface_key: resolve_secret(
+                    raw.huggingface_key,
+                    "litellm_settings.huggingface_key",
+                    lookup,
+                )?,
+                replicate_key: resolve_secret(
+                    raw.replicate_key,
+                    "litellm_settings.replicate_key",
+                    lookup,
+                )?,
+                predibase_key: resolve_secret(
+                    raw.predibase_key,
+                    "litellm_settings.predibase_key",
+                    lookup,
+                )?,
+                predibase_tenant_id: resolve_secret(
+                    raw.predibase_tenant_id,
+                    "litellm_settings.predibase_tenant_id",
+                    lookup,
+                )?,
+            }),
         })
     }
 }
