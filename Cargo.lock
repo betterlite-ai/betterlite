@@ -1646,7 +1646,6 @@ dependencies = [
  "mutants",
  "num-traits",
  "regex",
- "reqwest",
  "rstest",
  "rust_decimal",
  "secrecy",

@@ -5,8 +5,8 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::containers::container_file_http::ContainerFileReply;
 
 use super::support::{
-    HandlerForm, LIST_JSON, StubReply, TIMEOUT_SECONDS, decoding_to, file_list, file_object,
-    fixture, list_call, logging, retrieve_call, upload_call,
+    HandlerForm, LIST_JSON, StubReply, TIMEOUT_SECONDS, connect_timeout_failure, deadline_failure,
+    decoding_to, file_list, file_object, fixture, list_call, logging, retrieve_call, upload_call,
 };
 
 #[tokio::test]
@@ -98,7 +98,7 @@ async fn async_prepare_error_uses_the_resolved_provider() {
 #[tokio::test]
 async fn error_async_upload_timeout_maps_to_the_timeout_class() {
     let mut fixture = fixture();
-    fixture.handler.reply = StubReply::Timeout { connect: false };
+    fixture.handler.fail_with(deadline_failure().await);
     let endpoints = fixture.endpoints();
     let failure = endpoints
         .acontainer_file_call(
@@ -119,7 +119,7 @@ async fn error_async_upload_timeout_maps_to_the_timeout_class() {
 #[tokio::test]
 async fn error_async_delete_timeout_stays_a_connection_error() {
     let mut fixture = fixture();
-    fixture.handler.reply = StubReply::Timeout { connect: true };
+    fixture.handler.fail_with(connect_timeout_failure().await);
     let endpoints = fixture.endpoints();
     let failure = endpoints
         .acontainer_file_call(

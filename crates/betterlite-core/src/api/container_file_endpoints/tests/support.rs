@@ -2,10 +2,15 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::net::{SocketAddr, TcpStream};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -28,8 +33,13 @@ use betterlite_openai::containers::container_file_http::{
 use betterlite_openai::openai_base_config::Object;
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use http::header::HeaderMap;
 use indexmap::IndexMap;
 use secrecy::SecretString;
+use tokio::io::AsyncReadExt as _;
+use tokio::net::{TcpListener, TcpSocket};
+use tokio::time::sleep;
+use url::Url;
 
 use super::super::ContainerFileEndpoints;
 use super::super::call::ContainerFileCall;
@@ -176,7 +186,6 @@ pub(super) enum StubReply {
     Bytes(Vec<u8>),
     Status { status_code: u16, message: String },
     ConfigStatus { status_code: u16, message: String },
-    Timeout { connect: bool },
     Suspended,
 }
 
@@ -205,28 +214,70 @@ impl StubReply {
                     headers: BTreeMap::new(),
                 },
             ))),
-            Self::Timeout { connect } => Err(ContainerFileHttpError::Transfer(
-                TransferError::Transport(timeout_source(*connect)),
-            )),
             Self::Suspended => Err(ContainerFileHttpError::Suspended),
         }
     }
 }
 
-// reqwest has no public error constructor, so a proxy URL it refuses gives the source of a timeout
-fn timeout_source(connect: bool) -> TransportError {
-    let error = reqwest::Proxy::all("::")
-        .err()
-        .expect("a proxy URL without a host is rejected");
-    if connect {
-        TransportError::ConnectTimeout(error)
-    } else {
-        TransportError::Deadline(error)
-    }
+const LOCAL_TIMEOUT: Duration = Duration::from_millis(100);
+const LOCAL_HOLD: Duration = Duration::from_millis(300);
+
+fn local_client(limits: TransportLimits) -> ProxiedClient {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    ProxiedClient::build(base_builder(), &policy, limits).expect("the client")
+}
+
+// the client's own read timeout is the only source of a Deadline, so a local listener keeps the answer back
+pub(super) async fn deadline_failure() -> ContainerFileHttpError {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let client = local_client(TransportLimits {
+        read_timeout: LOCAL_TIMEOUT,
+        ..TransportLimits::DEFAULT
+    });
+    let url = Url::parse(&format!("http://{address}/v1/files")).expect("the URL");
+    let held = async {
+        let (mut stream, _) = listener.accept().await.expect("the connection");
+        let mut chunk = [0_u8; 64];
+        let read = stream.read(&mut chunk).await.expect("the request bytes");
+        assert_ne!(read, 0, "the client sends its request");
+        sleep(LOCAL_HOLD).await;
+    };
+    let (result, ()) = tokio::join!(client.get(url, HeaderMap::new()), held);
+    let error = result.expect_err("the read timeout ends the request");
+    ContainerFileHttpError::Transfer(TransferError::Transport(error))
+}
+
+// a listener whose accept queue is full, so a connect waits until the client's own connect timeout
+pub(super) async fn connect_timeout_failure() -> ContainerFileHttpError {
+    let socket = TcpSocket::new_v4().expect("the socket");
+    socket
+        .bind("127.0.0.1:0".parse::<SocketAddr>().expect("the address"))
+        .expect("the bind");
+    let listener = socket.listen(1).expect("the listen");
+    let address = listener.local_addr().expect("the address");
+    let _fillers: Vec<TcpStream> = (0_u8..4)
+        .filter_map(|_| TcpStream::connect_timeout(&address, LOCAL_TIMEOUT).ok())
+        .collect();
+    let client = local_client(TransportLimits {
+        connect_timeout: LOCAL_TIMEOUT,
+        ..TransportLimits::DEFAULT
+    });
+    let url = Url::parse(&format!("http://{address}/v1/files")).expect("the URL");
+    let error = client
+        .get(url, HeaderMap::new())
+        .await
+        .expect_err("the connect times out");
+    ContainerFileHttpError::Transfer(TransferError::Transport(error))
 }
 
 pub(super) struct StubHandler {
     pub(super) reply: StubReply,
+    failure: Mutex<Option<ContainerFileHttpError>>,
     seen: Mutex<Vec<Recorded>>,
 }
 
@@ -234,13 +285,30 @@ impl StubHandler {
     pub(super) fn answering(reply: StubReply) -> Self {
         Self {
             reply,
+            failure: Mutex::default(),
             seen: Mutex::default(),
         }
+    }
+
+    pub(super) fn fail_with(&mut self, error: ContainerFileHttpError) {
+        self.failure = Mutex::new(Some(error));
     }
 
     pub(super) fn seen(&self) -> Vec<Recorded> {
         let seen = self.seen.lock().unwrap_or_else(PoisonError::into_inner);
         seen.clone()
+    }
+
+    fn answer(&self) -> ReplyResult {
+        let failure = self
+            .failure
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        match failure {
+            Some(error) => Err(error),
+            None => self.reply.build(),
+        }
     }
 
     fn record(&self, call: &ContainerFileHandlerCall<'_>, form: HandlerForm) {
@@ -272,7 +340,7 @@ impl StubHandler {
 impl ContainerFileHandler for StubHandler {
     fn handle(&self, call: &ContainerFileHandlerCall<'_>) -> ReplyResult {
         self.record(call, HandlerForm::Blocking);
-        self.reply.build()
+        self.answer()
     }
 
     fn ahandle(
@@ -280,7 +348,7 @@ impl ContainerFileHandler for StubHandler {
         call: &ContainerFileHandlerCall<'_>,
     ) -> impl Future<Output = ReplyResult> + Send {
         self.record(call, HandlerForm::Async);
-        ready(self.reply.build())
+        ready(self.answer())
     }
 }
 

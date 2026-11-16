@@ -4,8 +4,8 @@ use betterlite_error::error::ErrorClass;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    StubDecode, StubReply, TIMEOUT_SECONDS, decoding_to, fixture, list_call, logging,
-    retrieve_call, upload_call,
+    StubDecode, StubReply, TIMEOUT_SECONDS, connect_timeout_failure, deadline_failure, decoding_to,
+    fixture, list_call, logging, retrieve_call, upload_call,
 };
 
 #[test]
@@ -180,10 +180,10 @@ fn error_decode_failure_uses_the_callers_provider() {
     assert!(fixture.handler.seen().is_empty());
 }
 
-#[test]
-fn error_upload_timeout_maps_to_the_timeout_class() {
+#[tokio::test]
+async fn error_upload_timeout_maps_to_the_timeout_class() {
     let mut fixture = fixture();
-    fixture.handler.reply = StubReply::Timeout { connect: false };
+    fixture.handler.fail_with(deadline_failure().await);
     let endpoints = fixture.endpoints();
     let failure = endpoints
         .container_file_call(
@@ -201,10 +201,10 @@ fn error_upload_timeout_maps_to_the_timeout_class() {
     assert!(details.context.message.contains("read timeout"));
 }
 
-#[test]
-fn error_delete_timeout_maps_to_the_timeout_class() {
+#[tokio::test]
+async fn error_delete_timeout_maps_to_the_timeout_class() {
     let mut fixture = fixture();
-    fixture.handler.reply = StubReply::Timeout { connect: true };
+    fixture.handler.fail_with(connect_timeout_failure().await);
     let endpoints = fixture.endpoints();
     let failure = endpoints
         .container_file_call(
@@ -221,10 +221,10 @@ fn error_delete_timeout_maps_to_the_timeout_class() {
     );
 }
 
-#[test]
-fn error_get_timeout_stays_a_connection_error() {
+#[tokio::test]
+async fn error_get_timeout_stays_a_connection_error() {
     let mut fixture = fixture();
-    fixture.handler.reply = StubReply::Timeout { connect: false };
+    fixture.handler.fail_with(deadline_failure().await);
     let endpoints = fixture.endpoints();
     let failure = endpoints
         .container_file_call(
