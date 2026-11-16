@@ -177,6 +177,15 @@ const fn ratio_interval(horizontal: i128, vertical: i128) -> Option<&'static str
     if horizontal.saturating_mul(10) >= vertical.saturating_mul(13) {
         return Some("4:3");
     }
+    // the 9:21, 9:16 and 3:4 intervals are disjoint, so their order changes no result
+    if horizontal.saturating_mul(2) < vertical {
+        return Some("9:21");
+    }
+    if horizontal.saturating_mul(2) >= vertical
+        && horizontal.saturating_mul(10) < vertical.saturating_mul(6)
+    {
+        return Some("9:16");
+    }
     if horizontal.saturating_mul(5) >= vertical.saturating_mul(3)
         && horizontal.saturating_mul(10) < vertical.saturating_mul(7)
     {
@@ -186,14 +195,6 @@ const fn ratio_interval(horizontal: i128, vertical: i128) -> Option<&'static str
         && horizontal.saturating_mul(4) < vertical.saturating_mul(3)
     {
         return Some("2:3");
-    }
-    if horizontal.saturating_mul(2) >= vertical
-        && horizontal.saturating_mul(10) < vertical.saturating_mul(6)
-    {
-        return Some("9:16");
-    }
-    if horizontal.saturating_mul(2) < vertical {
-        return Some("9:21");
     }
     None
 }
