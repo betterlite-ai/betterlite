@@ -13,11 +13,11 @@ use super::request::Retries;
 
 // completions.with_raw_response.create(**data, timeout=timeout) before .parse()
 pub trait CompletionsTransport: Send + Sync {
-    fn create<'a>(
-        &'a self,
-        data: &'a Extra,
+    fn create<'call>(
+        &'call self,
+        data: &'call Extra,
         timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'a>>;
+    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'call>>;
 }
 
 // what the handler reads off the client LiteLLM built: isinstance, api_key and _base_url._uri_reference
@@ -30,32 +30,32 @@ pub struct ClientHandle<Client> {
 }
 
 // get_azure_openai_client's arguments at the owned call sites
-pub struct GetClient<'a> {
-    pub api_key: Option<&'a SecretString>,
-    pub api_base: Option<&'a str>,
-    pub api_version: Option<&'a str>,
-    pub model: Option<&'a str>,
-    pub litellm_params: &'a LiteLlmParams,
+pub struct GetClient<'get> {
+    pub api_key: Option<&'get SecretString>,
+    pub api_base: Option<&'get str>,
+    pub api_version: Option<&'get str>,
+    pub model: Option<&'get str>,
+    pub litellm_params: &'get LiteLlmParams,
     pub is_async: bool,
 }
 
 // _init_azure_client_for_cloudflare_ai_gateway's arguments
-pub struct GatewayClient<'a> {
-    pub api_base: &'a str,
-    pub model: &'a str,
-    pub api_version: Option<&'a str>,
+pub struct GatewayClient<'gateway> {
+    pub api_base: &'gateway str,
+    pub model: &'gateway str,
+    pub api_version: Option<&'gateway str>,
     pub max_retries: Retries,
     pub timeout: Option<f64>,
-    pub litellm_params: &'a LiteLlmParams,
-    pub cloudflare_params: &'a CloudflareParams,
-    pub api_key: Option<&'a SecretString>,
-    pub azure_ad_token: Option<&'a SecretString>,
-    pub azure_ad_token_provider: Option<&'a CallableProvider>,
+    pub litellm_params: &'gateway LiteLlmParams,
+    pub cloudflare_params: &'gateway CloudflareParams,
+    pub api_key: Option<&'gateway SecretString>,
+    pub azure_ad_token: Option<&'gateway SecretString>,
+    pub azure_ad_token_provider: Option<&'gateway CallableProvider>,
     pub acompletion: bool,
 }
 
 // B531 derives the client parameters and B173 builds the SDK client; this seam names the two entry points
-pub trait ClientSource {
+pub trait ClientSource: Send + Sync {
     type Client: CompletionsTransport + Clone;
 
     fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError>;

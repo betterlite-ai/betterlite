@@ -6,8 +6,6 @@ use serde_json::Number;
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::error::AzureTextError;
-
 #[derive(Debug, Error)]
 pub enum ProjectionError {
     #[error("the completion reply cannot be read as JSON")]
@@ -16,13 +14,6 @@ pub enum ProjectionError {
     NotAnObject,
     #[error(transparent)]
     Reply(#[from] ReplyError),
-}
-
-impl ProjectionError {
-    #[must_use]
-    pub fn into_azure(self) -> AzureTextError {
-        AzureTextError::internal(self.to_string())
-    }
 }
 
 // the ModelResponse the conversion mutates, as its own model_dump reads it
@@ -60,42 +51,33 @@ fn fresh_target(identifier: &dyn Fn() -> Uuid, clock: &dyn Fn() -> i64) -> Extra
     target
 }
 
-fn convert(
-    reply: &CompletionReply,
-    identifier: &dyn Fn() -> Uuid,
-    clock: &dyn Fn() -> i64,
-) -> Result<ChatReply, ProjectionError> {
-    let response = serde_json::to_value(reply)?;
-    let target = serde_json::to_value(fresh_target(identifier, clock))?;
-    let target = target
-        .as_object()
-        .cloned()
-        .ok_or(ProjectionError::NotAnObject)?;
-    let converted = to_chat_model_response(Some(response), Some(target), identifier, clock)?;
-    let converted = serde_json::to_value(converted)?;
-    Ok(serde_json::from_value(converted)?)
-}
-
-// the sync path builds TextCompletionResponse first, which normalizes the response before the conversion
+// the async path keeps the SDK model_dump's raw usage and original response; the sync path normalizes first
 pub fn project(
     reply: &CompletionReply,
     identifier: &dyn Fn() -> Uuid,
     clock: &dyn Fn() -> i64,
+    keep_original: bool,
 ) -> Result<ChatReply, ProjectionError> {
-    convert(reply, identifier, clock)
-}
-
-// the async path passes the SDK model_dump straight in, so the raw usage and original response survive
-pub fn project_async(
-    reply: &CompletionReply,
-    identifier: &dyn Fn() -> Uuid,
-    clock: &dyn Fn() -> i64,
-) -> Result<ChatReply, ProjectionError> {
-    let raw: Extra = serde_json::from_value(serde_json::to_value(reply)?)?;
-    let mut projected = convert(reply, identifier, clock)?;
-    projected.usage = raw.get("usage").cloned();
-    projected
-        .hidden_params
-        .insert("original_response".to_owned(), Json::Object(raw));
+    let response = serde_json::to_value(reply)?;
+    let target_json = serde_json::to_value(fresh_target(identifier, clock))?;
+    let object_target = target_json
+        .as_object()
+        .cloned()
+        .ok_or(ProjectionError::NotAnObject)?;
+    let converted = to_chat_model_response(
+        Some(response.clone()),
+        Some(object_target),
+        identifier,
+        clock,
+    )?;
+    let converted_json = serde_json::to_value(converted)?;
+    let mut projected: ChatReply = serde_json::from_value(converted_json)?;
+    if keep_original {
+        let raw: Extra = serde_json::from_value(response)?;
+        projected.usage = raw.get("usage").cloned();
+        projected
+            .hidden_params
+            .insert("original_response".to_owned(), Json::Object(raw));
+    }
     Ok(projected)
 }

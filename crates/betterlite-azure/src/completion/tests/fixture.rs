@@ -26,17 +26,20 @@ use crate::completion::logging::CompletionHooks;
 use crate::endpoints::initialize::EndpointError;
 use crate::endpoints::projection::ClientKind;
 
-pub const CLOCK: i64 = 1_700_000_000;
+pub(super) const CLOCK: i64 = 1_700_000_000;
+const STREAM_TIMESTAMP: f64 = 1_700_000_000.0;
 
-pub fn object(source: &str) -> Extra {
+pub(super) fn object(source: &str) -> Extra {
     match serde_json::from_str::<Json>(source).unwrap() {
         Json::Object(fields) => fields,
-        _ => panic!("not an object: {source}"),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            panic!("not an object: {source}")
+        }
     }
 }
 
 #[derive(Clone)]
-pub enum Answer {
+pub(super) enum Answer {
     Buffered(String),
     Stream(Vec<String>),
     Status {
@@ -48,17 +51,17 @@ pub enum Answer {
 }
 
 #[derive(Clone)]
-pub struct ScriptedTransport {
-    pub answer: Arc<Mutex<Answer>>,
-    pub creates: Arc<Mutex<Vec<Json>>>,
+pub(super) struct ScriptedTransport {
+    pub(super) answer: Arc<Mutex<Answer>>,
+    pub(super) creates: Arc<Mutex<Vec<Json>>>,
 }
 
 fn status_error(status: u16, message: &str, headers: &[(String, String)]) -> SdkError {
     let mut map = HeaderMap::new();
-    for (name, value) in headers {
+    for (raw_name, raw_value) in headers {
         if let (Ok(name), Ok(value)) = (
-            name.parse::<http::header::HeaderName>(),
-            value.parse::<http::header::HeaderValue>(),
+            raw_name.parse::<http::header::HeaderName>(),
+            raw_value.parse::<http::header::HeaderValue>(),
         ) {
             map.insert(name, value);
         }
@@ -74,11 +77,11 @@ fn status_error(status: u16, message: &str, headers: &[(String, String)]) -> Sdk
 }
 
 impl CompletionsTransport for ScriptedTransport {
-    fn create<'a>(
-        &'a self,
-        data: &'a Extra,
+    fn create<'call>(
+        &'call self,
+        data: &'call Extra,
         timeout: Option<f64>,
-    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'a>> {
+    ) -> Pin<Box<dyn Future<Output = Result<RawCompletion, SdkError>> + Send + 'call>> {
         let mut record = Extra::new();
         record.insert("data".to_owned(), Json::Object(data.clone()));
         record.insert(
@@ -119,19 +122,19 @@ impl CompletionsTransport for ScriptedTransport {
 }
 
 #[derive(Clone)]
-pub struct ScriptedSource {
-    pub kind: ClientKind,
-    pub api_key: Option<SecretString>,
-    pub base_url: String,
-    pub fail_get: bool,
-    pub answer: Arc<Mutex<Answer>>,
-    pub gets: Arc<Mutex<Vec<Json>>>,
-    pub gateways: Arc<Mutex<Vec<Json>>>,
-    pub creates: Arc<Mutex<Vec<Json>>>,
+pub(super) struct ScriptedSource {
+    pub(super) kind: ClientKind,
+    pub(super) api_key: Option<SecretString>,
+    pub(super) base_url: String,
+    pub(super) fail_get: bool,
+    pub(super) answer: Arc<Mutex<Answer>>,
+    pub(super) gets: Arc<Mutex<Vec<Json>>>,
+    pub(super) gateways: Arc<Mutex<Vec<Json>>>,
+    pub(super) creates: Arc<Mutex<Vec<Json>>>,
 }
 
 impl ScriptedSource {
-    pub fn new(kind: ClientKind, answer: Answer) -> Self {
+    pub(super) fn new(kind: ClientKind, answer: Answer) -> Self {
         Self {
             kind,
             api_key: Some(SecretString::from("sk-unit")),
@@ -144,35 +147,37 @@ impl ScriptedSource {
         }
     }
 
-    pub fn handle(&self) -> ClientHandle<ScriptedTransport> {
+    pub(super) fn handle(&self) -> ClientHandle<ScriptedTransport> {
         ClientHandle {
             kind: self.kind,
             api_key: self.api_key.clone(),
             base_url: self.base_url.clone(),
             transport: ScriptedTransport {
-                answer: self.answer.clone(),
-                creates: self.creates.clone(),
+                answer: Arc::clone(&self.answer),
+                creates: Arc::clone(&self.creates),
             },
         }
     }
 
-    pub fn creates(&self) -> Vec<Json> {
+    pub(super) fn creates(&self) -> Vec<Json> {
         self.creates.lock().unwrap().clone()
     }
 
-    pub fn gets(&self) -> Vec<Json> {
+    pub(super) fn gets(&self) -> Vec<Json> {
         self.gets.lock().unwrap().clone()
     }
 
-    pub fn gateways(&self) -> Vec<Json> {
+    pub(super) fn gateways(&self) -> Vec<Json> {
         self.gateways.lock().unwrap().clone()
     }
-}
 
-fn text_or_null(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
+    fn client_for(
+        &self,
+        fields: Extra,
+        store: &Mutex<Vec<Json>>,
+    ) -> ClientHandle<ScriptedTransport> {
+        store.lock().unwrap().push(Json::Object(fields));
+        self.handle()
     }
 }
 
@@ -180,46 +185,49 @@ impl ClientSource for ScriptedSource {
     type Client = ScriptedTransport;
 
     fn get(&self, call: GetClient<'_>) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        let mut record = Extra::new();
-        record.insert("model".to_owned(), text_or_null(call.model));
-        record.insert("api_base".to_owned(), text_or_null(call.api_base));
-        record.insert("is_async".to_owned(), Json::Bool(call.is_async));
-        record.insert(
-            "max_retries".to_owned(),
-            call.litellm_params
-                .max_retries
-                .map_or(Json::Null, |value| Json::Number(value.into())),
+        let mut fields = Extra::new();
+        fields.insert(
+            "model".to_owned(),
+            call.model
+                .map_or(Json::Null, |model| Json::Text(model.to_owned())),
         );
-        self.gets.lock().unwrap().push(Json::Object(record));
+        fields.insert("is_async".to_owned(), Json::Bool(call.is_async));
+        fields.insert(
+            "max_retries".to_owned(),
+            call.litellm_params.max_retries.map_or(Json::Null, |count| {
+                Json::Number(serde_json::Number::from(count))
+            }),
+        );
+        let handle = self.client_for(fields, &self.gets);
         if self.fail_get {
             return Err(EndpointError::MissingApiVersion);
         }
-        Ok(self.handle())
+        Ok(handle)
     }
 
     fn gateway(
         &self,
         call: GatewayClient<'_>,
     ) -> Result<ClientHandle<Self::Client>, EndpointError> {
-        let mut record = Extra::new();
-        record.insert("api_base".to_owned(), Json::Text(call.api_base.to_owned()));
-        record.insert("model".to_owned(), Json::Text(call.model.to_owned()));
-        record.insert("max_retries".to_owned(), call.max_retries.value().clone());
-        record.insert("acompletion".to_owned(), Json::Bool(call.acompletion));
-        self.gateways.lock().unwrap().push(Json::Object(record));
-        Ok(self.handle())
+        let fields = Extra::from_iter([
+            ("api_base".to_owned(), Json::Text(call.api_base.to_owned())),
+            ("model".to_owned(), Json::Text(call.model.to_owned())),
+            ("max_retries".to_owned(), call.max_retries.0),
+            ("acompletion".to_owned(), Json::Bool(call.acompletion)),
+        ]);
+        Ok(self.client_for(fields, &self.gateways))
     }
 }
 
 #[derive(Default)]
-pub struct Recorder {
-    pub pre: Vec<Json>,
-    pub post: Vec<Json>,
-    pub fail_pre: bool,
-    pub hidden: JsonObject,
+pub(super) struct Recorder {
+    pub(super) pre: Vec<Json>,
+    pub(super) post: Vec<Json>,
+    pub(super) fail_pre: bool,
+    pub(super) hidden: JsonObject,
 }
 
-fn version_args(args: &AdditionalArgs) -> Extra {
+fn version_args(args: &AdditionalArgs) -> Json {
     let mut fields = Extra::new();
     fields.insert(
         "api_base".to_owned(),
@@ -284,13 +292,13 @@ impl CompletionHooks for Recorder {
     }
 }
 
-pub struct Fixed {
-    pub factory: PromptFactory,
-    pub now: DateTime<Utc>,
+pub(super) struct Fixed {
+    pub(super) factory: PromptFactory,
+    pub(super) now: DateTime<Utc>,
 }
 
-impl Fixed {
-    pub fn new() -> Self {
+impl Default for Fixed {
+    fn default() -> Self {
         Self {
             factory: PromptFactory {
                 cache: Mutex::new(builtin_entries()),
@@ -301,13 +309,10 @@ impl Fixed {
     }
 }
 
-impl Default for Fixed {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-pub fn run<Fut: Future>(future: Fut) -> Fut::Output {
+pub(super) fn run<Fut>(future: Fut) -> Fut::Output
+where
+    Fut: Future,
+{
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -315,21 +320,21 @@ pub fn run<Fut: Future>(future: Fut) -> Fut::Output {
         .block_on(future)
 }
 
-pub fn identifier() -> Uuid {
+pub(super) const fn identifier() -> Uuid {
     Uuid::from_u128(1)
 }
 
-pub fn clock() -> i64 {
+pub(super) const fn clock() -> i64 {
     CLOCK
 }
 
-pub fn stream_now() -> StreamInstant {
+pub(super) const fn stream_now() -> StreamInstant {
     StreamInstant {
         seconds: CLOCK,
-        timestamp: CLOCK as f64,
+        timestamp: STREAM_TIMESTAMP,
     }
 }
 
-pub fn stream_id() -> Uuid {
+pub(super) const fn stream_id() -> Uuid {
     Uuid::from_u128(2)
 }

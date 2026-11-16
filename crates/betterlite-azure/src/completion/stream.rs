@@ -12,9 +12,9 @@ pub const AZURE_TEXT_PROVIDER: &str = "azure_text";
 // LiteLLM's REPEATED_STREAMING_CHUNK_LIMIT default
 pub const REPEATED_STREAMING_CHUNK_LIMIT: usize = 100;
 
-pub struct StreamInput<'a> {
-    pub model: &'a str,
-    pub data: &'a Extra,
+pub struct StreamInput<'stream> {
+    pub model: &'stream str,
+    pub data: &'stream Extra,
     pub defaults: StreamDefaults,
     pub now: fn() -> StreamInstant,
     pub next_id: fn() -> Uuid,
@@ -29,10 +29,14 @@ pub(super) fn requested_stream_options(
         Some(Json::Object(fields)) => Some(StreamOptions {
             include_usage: matches!(fields.get("include_usage"), Some(Json::Bool(true))),
         }),
-        _ => defaults,
+        None
+        | Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_)) => {
+            defaults
+        }
     }
 }
 
+#[must_use]
 pub fn wrap(bytes: ByteStream, input: StreamInput<'_>) -> CompletionStream {
     let mut base_hidden_params = input.defaults.base_hidden_params;
     base_hidden_params.insert(

@@ -55,7 +55,9 @@ pub(super) fn direct_stream(case: &CallCase) -> Result<Json, Box<HelperError>> {
     };
     let fixed = Fixed::new();
     let mut recorder = Recorder::default();
-    let handler = AzureTextCompletion::new(source.clone());
+    let handler = AzureTextCompletion {
+        source: source.clone(),
+    };
     let stream = if case.acompletion {
         match block_on(handler.async_streaming(&sent, &call, &runtime(&fixed), &mut recorder))? {
             Ok(stream) => stream,

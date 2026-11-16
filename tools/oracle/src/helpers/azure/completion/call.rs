@@ -5,6 +5,7 @@ use betterlite_azure::completion::arguments::{CompletionCall, Runtime};
 use betterlite_azure::completion::config::AzureOpenAITextConfig;
 use betterlite_azure::completion::error::AzureTextError;
 use betterlite_azure::completion::handler::{AzureTextCompletion, TextCompletionOutcome};
+use betterlite_azure::completion::request::validate_environment;
 use betterlite_azure::endpoints::cloudflare::CloudflareParams;
 use betterlite_azure::endpoints::projection::ClientKind;
 use betterlite_models::decisions::{Extra, Json};
@@ -170,7 +171,9 @@ pub(super) fn completion(case: &CallCase) -> Result<Json, Box<HelperError>> {
     };
     let fixed = Fixed::new();
     let mut recorder = Recorder::default();
-    let handler = AzureTextCompletion::new(source.clone());
+    let handler = AzureTextCompletion {
+        source: source.clone(),
+    };
     let outcome = match block_on(handler.completion(call, &runtime(&fixed), &mut recorder))? {
         Ok(outcome) => outcome,
         Err(error) => return Ok(error_report(&source, &recorder, &error)),
@@ -212,8 +215,7 @@ pub(super) fn auth(case: &CallCase) -> Json {
         .azure_ad_token
         .as_ref()
         .map(|value| SecretString::from(value.clone()));
-    let headers =
-        AzureTextCompletion::<ScriptedSource>::validate_environment(key.as_ref(), token.as_ref());
+    let headers = validate_environment(key.as_ref(), token.as_ref());
     let fields: Extra = headers
         .0
         .iter()
@@ -226,8 +228,8 @@ pub(super) fn auth(case: &CallCase) -> Json {
 
 pub(super) fn config(constructor: Option<&Extra>) -> Result<Json, Box<HelperError>> {
     let raw = Json::Object(constructor.cloned().unwrap_or_default());
-    let value = serde_json::to_value(raw).or_value_error()?;
-    let config: AzureOpenAITextConfig = serde_json::from_value(value).or_value_error()?;
+    let raw_value = serde_json::to_value(raw).or_value_error()?;
+    let config: AzureOpenAITextConfig = serde_json::from_value(raw_value).or_value_error()?;
     let entries = [
         ("frequency_penalty", config.frequency_penalty),
         ("logit_bias", config.logit_bias),
@@ -239,8 +241,8 @@ pub(super) fn config(constructor: Option<&Extra>) -> Result<Json, Box<HelperErro
         ("top_p", config.top_p),
     ];
     let mut fields = Extra::new();
-    for (name, value) in entries {
-        fields.insert(name.to_owned(), value.unwrap_or(Json::Null));
+    for (name, setting) in entries {
+        fields.insert(name.to_owned(), setting.unwrap_or(Json::Null));
     }
     let mut result = Extra::new();
     result.insert("fields".to_owned(), Json::Object(fields));

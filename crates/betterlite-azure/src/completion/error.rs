@@ -1,4 +1,3 @@
-use betterlite_logging::logging_pre_post::error::PrePostError;
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use betterlite_openai::text_completion_transport::sdk::SdkError;
 use thiserror::Error;
@@ -23,17 +22,12 @@ pub struct AzureTextError {
 
 impl AzureTextError {
     #[must_use]
-    pub fn raised(status: u16, message: impl Into<String>) -> Self {
+    pub const fn raised(status: u16, message: String) -> Self {
         Self {
             status: Some(status),
-            message: message.into(),
+            message,
             headers: None,
         }
-    }
-
-    #[must_use]
-    pub fn internal(message: impl Into<String>) -> Self {
-        Self::raised(500, message)
     }
 
     // getattr(error, "status_code", 500), getattr(error, "headers", None) or response.headers
@@ -46,7 +40,7 @@ impl AzureTextError {
                 headers: Some(SecretHeaders::from_response(&status.headers)),
             },
             SdkError::Decode(_) | SdkError::Sse(_) | SdkError::Other { .. } => {
-                Self::internal(source.to_string())
+                Self::raised(500, source.to_string())
             }
         }
     }
@@ -57,36 +51,6 @@ impl AzureTextError {
             status: Some(error.status().unwrap_or(500)),
             message: error.to_string(),
             headers: None,
-        }
-    }
-
-    #[must_use]
-    pub fn from_logging(error: &PrePostError) -> Self {
-        Self::internal(error.to_string())
-    }
-}
-
-// The sync streaming call has no try/except, so its SDK, client and logging errors reach the caller unwrapped
-#[derive(Debug, Error)]
-pub enum AzureTextFailure {
-    #[error(transparent)]
-    Azure(#[from] AzureTextError),
-    #[error(transparent)]
-    Raw(#[from] SdkError),
-    #[error(transparent)]
-    Endpoint(#[from] EndpointError),
-    #[error(transparent)]
-    Logging(#[from] PrePostError),
-}
-
-impl AzureTextFailure {
-    #[must_use]
-    pub fn into_azure(self) -> AzureTextError {
-        match self {
-            Self::Azure(error) => error,
-            Self::Raw(source) => AzureTextError::wrapped(&source),
-            Self::Endpoint(source) => AzureTextError::from_endpoint(&source),
-            Self::Logging(source) => AzureTextError::from_logging(&source),
         }
     }
 }

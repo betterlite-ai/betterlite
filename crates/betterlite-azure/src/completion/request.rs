@@ -11,15 +11,15 @@ pub const STREAM_KEY: &str = "stream";
 
 // optional_params.pop("max_retries", 2) keeps the raw value: only the sync guard inspects its type
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Retries(Json);
+pub struct Retries(pub Json);
 
 impl Retries {
     #[must_use]
     pub fn pop(data: &mut Extra) -> Self {
-        match data.shift_remove(MAX_RETRIES_KEY) {
-            Some(value) => Self(value),
-            None => Self(Json::Number(serde_json::Number::from(DEFAULT_MAX_RETRIES))),
-        }
+        Self(
+            data.shift_remove(MAX_RETRIES_KEY)
+                .unwrap_or_else(|| Json::Number(serde_json::Number::from(DEFAULT_MAX_RETRIES))),
+        )
     }
 
     // isinstance(value, int) accepts a bool, which Python's JSON decoder builds for true and false
@@ -31,39 +31,10 @@ impl Retries {
             Json::Null | Json::Text(_) | Json::List(_) | Json::Object(_) => false,
         }
     }
-
-    #[must_use]
-    pub fn value(&self) -> &Json {
-        &self.0
-    }
-}
-
-pub fn truthy(value: &Json) -> bool {
-    match value {
-        Json::Null => false,
-        Json::Bool(flag) => *flag,
-        Json::Number(number) => number.as_f64().is_some_and(|value| value != 0.0_f64),
-        Json::Text(text) => !text.is_empty(),
-        Json::List(items) => !items.is_empty(),
-        Json::Object(fields) => !fields.is_empty(),
-    }
-}
-
-// optional_params.get("stream", False)
-pub fn optional_stream(optional_params: &Extra) -> bool {
-    optional_params.get(STREAM_KEY).is_some_and(truthy)
-}
-
-// optional_params["stream"] is True: the sync selector demands the literal boolean
-pub fn literal_true_stream(optional_params: &Extra) -> bool {
-    matches!(optional_params.get(STREAM_KEY), Some(Json::Bool(true)))
-}
-
-pub fn is_cloudflare(api_base: Option<&str>) -> bool {
-    api_base.is_some_and(|base| base.contains(CLOUDFLARE_MARKER))
 }
 
 // {"model": model, "prompt": prompt, **optional_params}: the overlay replaces model and prompt too
+#[must_use]
 pub fn build_data(
     model: Option<&str>,
     prompt: &str,
@@ -71,11 +42,11 @@ pub fn build_data(
     cloudflare: bool,
 ) -> Extra {
     let mut data = Extra::new();
-    let model = match (cloudflare, model) {
+    let wire_model = match (cloudflare, model) {
         (false, Some(name)) => Json::Text(name.to_owned()),
         (false, None) | (true, _) => Json::Null,
     };
-    data.insert("model".to_owned(), model);
+    data.insert("model".to_owned(), wire_model);
     data.insert("prompt".to_owned(), Json::Text(prompt.to_owned()));
     for (key, value) in optional_params {
         data.insert(key.clone(), value.clone());

@@ -4,24 +4,10 @@ use betterlite_logging::logging_pre_post::pre_call::PreCall;
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_openai::text_completion_transport::logging::SecretHeaders;
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
 use crate::completion::arguments::CompletionCall;
-use crate::completion::client::{ClientHandle, CompletionsTransport};
-
-fn secret_json(value: Option<&SecretString>) -> Json {
-    match value {
-        Some(secret) => Json::Text(secret.expose_secret().to_owned()),
-        None => Json::Null,
-    }
-}
-
-fn text_or_null(value: Option<&str>) -> Json {
-    match value {
-        Some(text) => Json::Text(text.to_owned()),
-        None => Json::Null,
-    }
-}
+use crate::completion::client::ClientHandle;
 
 fn headers_json(headers: &SecretHeaders) -> IndexMap<String, Json> {
     headers
@@ -38,13 +24,24 @@ pub(super) fn sync_pre_call<Client>(
     data: &Extra,
 ) -> PreCall {
     let mut headers = IndexMap::new();
-    headers.insert("api_key".to_owned(), secret_json(call.api_key));
+    headers.insert(
+        "api_key".to_owned(),
+        call.api_key.map_or(Json::Null, |secret| {
+            Json::Text(secret.expose_secret().to_owned())
+        }),
+    );
     headers.insert(
         "azure_ad_token".to_owned(),
-        secret_json(call.azure_ad_token),
+        call.azure_ad_token.map_or(Json::Null, |secret| {
+            Json::Text(secret.expose_secret().to_owned())
+        }),
     );
     let mut passthrough = IndexMap::new();
-    passthrough.insert("api_version".to_owned(), text_or_null(call.api_version));
+    passthrough.insert(
+        "api_version".to_owned(),
+        call.api_version
+            .map_or(Json::Null, |version| Json::Text(version.to_owned())),
+    );
     PreCall {
         input: Json::Text(input.to_owned()),
         model: None,
@@ -66,7 +63,11 @@ pub(super) fn sync_post_call<Client>(
     original: Json,
 ) -> PostCall {
     let mut passthrough = IndexMap::new();
-    passthrough.insert("api_version".to_owned(), text_or_null(call.api_version));
+    passthrough.insert(
+        "api_version".to_owned(),
+        call.api_version
+            .map_or(Json::Null, |version| Json::Text(version.to_owned())),
+    );
     PostCall {
         original_response: original,
         input: Json::Text(input.to_owned()),
@@ -82,14 +83,11 @@ pub(super) fn sync_post_call<Client>(
 }
 
 // the async and streaming calls log the client's own key, base url and the acompletion flag
-pub(super) fn async_pre_call<Client: CompletionsTransport>(
-    client: &ClientHandle<Client>,
-    data: &Extra,
-) -> PreCall {
-    let authorization = match client.api_key.as_ref() {
-        Some(secret) => format!("Bearer {}", secret.expose_secret()),
-        None => "Bearer None".to_owned(),
-    };
+pub(super) fn async_pre_call<Client>(client: &ClientHandle<Client>, data: &Extra) -> PreCall {
+    let authorization = client.api_key.as_ref().map_or_else(
+        || "Bearer None".to_owned(),
+        |secret| format!("Bearer {}", secret.expose_secret()),
+    );
     let mut headers = IndexMap::new();
     headers.insert("Authorization".to_owned(), Json::Text(authorization));
     let mut passthrough = IndexMap::new();

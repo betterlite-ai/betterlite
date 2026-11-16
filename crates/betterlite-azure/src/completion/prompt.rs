@@ -18,13 +18,13 @@ pub async fn resolve_prompt(
 ) -> Result<String, AzureTextError> {
     match prompt_factory(factory, model, messages, Some("azure_text"), now).await {
         Ok(Output::Text(prompt)) => Ok(prompt),
-        Ok(Output::Ollama(_prompt) | Output::None) => {
-            Err(AzureTextError::internal(PROMPT_NOT_TEXT))
+        Ok(Output::Ollama(_) | Output::None) => {
+            Err(AzureTextError::raised(500, PROMPT_NOT_TEXT.to_owned()))
         }
         Err(FactoryError::Unsupported {
             operation: "azure_text",
         }) => azure_prompt(messages),
-        Err(error) => Err(AzureTextError::internal(error.to_string())),
+        Err(error) => Err(AzureTextError::raised(500, error.to_string())),
     }
 }
 
@@ -32,6 +32,6 @@ pub async fn resolve_prompt(
 fn azure_prompt(messages: &[Message]) -> Result<String, AzureTextError> {
     let parsed = serde_json::to_value(messages)
         .and_then(serde_json::from_value::<Vec<ContentMessage>>)
-        .map_err(|source| AzureTextError::internal(source.to_string()))?;
-    azure_text_pt(&parsed).map_err(|error| AzureTextError::internal(error.to_string()))
+        .map_err(|source| AzureTextError::raised(500, source.to_string()))?;
+    azure_text_pt(&parsed).map_err(|error| AzureTextError::raised(500, error.to_string()))
 }

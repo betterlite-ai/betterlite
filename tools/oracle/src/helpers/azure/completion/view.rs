@@ -126,7 +126,7 @@ pub(super) fn post_value(call: &PostCall) -> Json {
 pub(super) fn error_value(error: &AzureTextError) -> Json {
     let status = error
         .status
-        .map_or(Json::Null, |value| Json::Number(value.into()));
+        .map_or(Json::Null, |value| Json::Number(serde_json::Number::from(value)));
     let retry_after = error
         .headers
         .as_ref()
@@ -164,7 +164,7 @@ fn choice_value(choice: &Json) -> Json {
         out.insert(
             name.to_owned(),
             message
-                .and_then(|message| message.get(name))
+                .and_then(|body| body.get(name))
                 .cloned()
                 .unwrap_or(Json::Null),
         );
@@ -184,7 +184,7 @@ fn usage_value(usage: &Json) -> Json {
     let reasoning = match fields.get("reasoning_tokens") {
         Some(Json::Null) | None => details
             .and_then(object)
-            .and_then(|details| details.get("reasoning_tokens"))
+            .and_then(|fields_of_details| fields_of_details.get("reasoning_tokens"))
             .cloned()
             .unwrap_or(Json::Null),
         Some(value) => value.clone(),
@@ -193,7 +193,7 @@ fn usage_value(usage: &Json) -> Json {
     for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
         out.insert(
             name.to_owned(),
-            fields.get(name).cloned().unwrap_or(Json::Number(0.into())),
+            fields.get(name).cloned().unwrap_or(Json::Number(serde_json::Number::from(0_u8))),
         );
     }
     out.insert("reasoning_tokens".to_owned(), reasoning);
@@ -227,15 +227,15 @@ pub(super) fn reply_value(reply: &ChatReply) -> Json {
 pub(super) fn chunk_value(chunk: &StreamChunk) -> Json {
     let choice = chunk.choices.first();
     let content = choice
-        .and_then(|choice| choice.delta.content.clone())
+        .and_then(|entry| entry.delta.content.clone())
         .map_or(Json::Null, Json::Text);
     let role = choice
-        .and_then(|choice| choice.delta.role.clone())
+        .and_then(|entry| entry.delta.role.clone())
         .map_or(Json::Null, Json::Text);
     let finish_reason = choice
-        .and_then(|choice| choice.finish_reason.clone())
+        .and_then(|entry| entry.finish_reason.clone())
         .map_or(Json::Null, Json::Text);
-    let index = choice.map_or(Json::Null, |choice| Json::Number(choice.index.into()));
+    let index = choice.map_or(Json::Null, |entry| Json::Number(serde_json::Number::from(entry.index)));
     let mut fields = Extra::new();
     fields.insert("content".to_owned(), content);
     fields.insert("role".to_owned(), role);

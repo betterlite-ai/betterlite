@@ -38,7 +38,10 @@ impl AzureOpenAITextConfig {
         let inherited: OpenAiSettings = serde_json::from_value(converted)?;
         Ok(TextCompletionSettings {
             inherited,
-            ..TextCompletionSettings::default()
+            best_of: None,
+            echo: None,
+            logprobs: None,
+            suffix: None,
         })
     }
 }
