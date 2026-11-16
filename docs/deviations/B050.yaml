@@ -1,0 +1,30 @@
+task: B050
+deviations:
+  - what: >-
+      The agent-platform oracle cases drive agent_platform_dispatch through a helper call instead of posting to
+      /v1/chat/completions, so the dispatch is compared at its boundary: the context and the caller's parameters go in,
+      and the resolved call, the handler's reply and the handler's error come out.
+    why: >-
+      Provider resolution has no a2a, langgraph or langflow arm yet, so the chat route answers UnsupportedProvider
+      before any of the three functions runs, and the arms in main.py are reached only per provider name. The helper's
+      handler stand-in rebuilds the outgoing request with the provider's own production request builders
+      (get_complete_url, validate_environment, transform_request), transforms the upstream body with the production
+      reply modules and turns a 4xx or 5xx into the provider error with the raw upstream body text and status, so the
+      compared values are the ones LiteLLM's shared handler produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5907-L5910
+  - what: >-
+      The langgraph-stream oracle case compares the streaming request (endpoint, headers, body, and that the dispatch
+      handed the handler a streaming call) and not the streamed chunks; the handler reports no reply for a streaming
+      call on either side, because a stream is not a reply.
+    why: >-
+      LiteLLM's shared HTTP handler turns a streaming call into a CustomStreamWrapper and assembles its chunks. That
+      handler has no betterlite counterpart yet, and this task's handler boundary carries a reply, not a stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6065-L6071
+  - what: >-
+      The oracle reply projection compares model, content, role and finish_reason only; LiteLLM's reply id and token
+      usage are left out, and the a2a-send case ignores the two random uuids LiteLLM puts in the JSON-RPC request (the
+      id and the message id). Every other field of the request and of the reply is compared.
+    why: >-
+      The ids are random and the usage comes from each side's tokenizer (B196), so neither can be equal across the two.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/transformation.py#L354
+kept_bugs: []
