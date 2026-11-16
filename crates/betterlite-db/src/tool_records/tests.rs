@@ -194,6 +194,11 @@ fn declared_records_take_the_fields_litellm_declares() {
     assert!(spend.daily.is_empty());
     assert_eq!(spend.start_date, None);
     assert_eq!(spend.end_date, None);
+    let override_row: ToolPolicyOverrideRow =
+        serde_json::from_str(r#"{"override_id":"perm-1","tool_name":"echo"}"#).unwrap();
+    assert_eq!(override_row.input_policy, ToolInputPolicy::Blocked);
+    assert_eq!(override_row.key_alias, None);
+    assert_eq!(override_row.created_at, None);
 }
 
 #[test]
