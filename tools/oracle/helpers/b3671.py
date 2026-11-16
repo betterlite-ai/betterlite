@@ -17,11 +17,6 @@ GUARDRAIL_BASE: Final = type(CustomGuardrail(guardrail_name=None))
 Result_co = TypeVar("Result_co", covariant=True, default=object)
 
 
-class CoveringGuardrail(CustomGuardrail):
-    def covers(self) -> bool:
-        return True
-
-
 class HandlerView(Protocol[Result_co]):
     def get_structured_messages(self, data: dict[str, JsonValue]) -> Result_co: ...
 
@@ -33,6 +28,7 @@ class HandlerView(Protocol[Result_co]):
         self,
         response: ResponseOutputEnvelope,
         guardrail_to_apply: CustomGuardrail,
+        *,
         request_data: dict[str, JsonValue] | None = None,
     ) -> Result_co: ...
 
@@ -88,7 +84,7 @@ async def recording_apply(
         JSON.validate_python(
             {
                 "input_type": input_type,
-                "inputs": dict(inputs),
+                "inputs": inputs,
                 "request_keys": sorted(request_data),
             }
         )
@@ -105,14 +101,10 @@ def recording_guardrail(
     skip_system: bool,
     covers_full: bool,
 ) -> CustomGuardrail:
-    cover = (
-        CoveringGuardrail.covers
-        if covers_full
-        else GUARDRAIL_BASE.structured_messages_cover_full_request
-    )
     members = {
         "apply_guardrail": recording_apply,
-        "structured_messages_cover_full_request": cover,
+        # a bound bool.__bool__ is a no-argument method that answers the flag
+        "structured_messages_cover_full_request": covers_full.__bool__,
         "calls": calls,
         "reply": reply,
         "skip_system_message_in_guardrail": skip_system,

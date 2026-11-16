@@ -1,6 +1,6 @@
 kind: helper
 name: responses-extract-inputs-skips-system-role
 call:
-  b3671: {"function": "input", "scenarios": [{"data": {"model": "m", "instructions": "sys text", "input": [{"role": "system", "content": "rules"}, {"role": "user", "content": "hello"}]}, "skip_system": true, "covers_full": false, "reply": null}, {"data": {"instructions": "sys text", "input": [{"role": "SYSTEM", "content": "rules"}, {"role": "user", "content": "hello"}]}, "skip_system": false, "covers_full": false, "reply": null}]}
+  b3671: {"function": "input", "scenarios": [{"data": {"model": "m", "instructions": "sys text", "input": [{"role": "system", "content": "rules"}, {"role": "user", "content": "hello"}]}, "skip_system": true, "covers_full": false, "reply": null}, {"data": {"instructions": "sys text", "input": [{"role": "SYSTEM", "content": "rules"}, {"role": "user", "content": "hello"}]}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"input": [{"role": "SYSTEM", "content": "rules"}, {"role": "user", "content": "hi"}]}, "skip_system": true, "covers_full": false, "reply": null}]}
 env: {}
 compare: {ignore: []}

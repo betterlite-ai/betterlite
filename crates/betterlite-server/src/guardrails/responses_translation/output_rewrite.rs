@@ -37,7 +37,7 @@ pub struct OutputContext<'ctx> {
     pub user_api_key_dict: Option<&'ctx Object>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ExtractedOutput {
     pub texts: Vec<String>,
     pub task_mappings: Vec<(usize, usize)>,

@@ -63,8 +63,8 @@ fn object(value: Value) -> Object {
     serde_json::from_value(value).unwrap()
 }
 
-fn strings(items: &[&str]) -> Option<Vec<String>> {
-    Some(items.iter().map(|item| (*item).to_owned()).collect())
+fn strings(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_owned()).collect()
 }
 
 fn messages(data: &Value) -> Vec<Value> {
@@ -162,9 +162,12 @@ fn extract_inputs_collects_texts_mappings_and_image_urls() {
     );
     assert_eq!(
         extracted.inputs.texts,
-        strings(&["sys text", "hello", "rules", "a", "b"])
+        Some(strings(&["sys text", "hello", "rules", "a", "b"]))
     );
-    assert_eq!(extracted.inputs.images, strings(&["https://x.test/i.png"]));
+    assert_eq!(
+        extracted.inputs.images,
+        Some(strings(&["https://x.test/i.png"]))
+    );
     assert_eq!(
         extracted.task_mappings,
         [(0, None), (1, None), (3, Some(0)), (3, Some(2))]
@@ -181,7 +184,7 @@ fn extract_inputs_skips_system_items_and_instructions_when_asked() {
         ]}),
         true,
     );
-    assert_eq!(extracted.inputs.texts, strings(&["hello"]));
+    assert_eq!(extracted.inputs.texts, Some(strings(&["hello"])));
     assert_eq!(extracted.task_mappings, [(1, None)]);
     assert_eq!(extracted.instructions, None);
 }
@@ -189,7 +192,7 @@ fn extract_inputs_skips_system_items_and_instructions_when_asked() {
 #[test]
 fn extract_inputs_reads_a_string_input_as_one_text_without_mappings() {
     let extracted = extract(json!({"input": "hi"}), false);
-    assert_eq!(extracted.inputs.texts, strings(&["hi"]));
+    assert_eq!(extracted.inputs.texts, Some(strings(&["hi"])));
     assert!(extracted.task_mappings.is_empty());
 }
 
@@ -660,7 +663,7 @@ async fn process_input_sends_the_texts_the_scoped_messages_and_the_request_data(
     let calls = guardrail.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].input_type, GuardrailInputType::Request);
-    assert_eq!(calls[0].inputs.texts, strings(&["hi"]));
+    assert_eq!(calls[0].inputs.texts, Some(strings(&["hi"])));
     assert_eq!(calls[0].inputs.model.as_deref(), Some("m"));
     let sent = serde_json::to_value(&calls[0].inputs.structured_messages).unwrap();
     assert_eq!(sent, json!([{"role": "user", "content": "hi"}]));
@@ -675,7 +678,7 @@ async fn process_input_scans_the_instructions_when_system_messages_are_not_skipp
     let (result, _after) = process(data, &guardrail, false).await;
     result.unwrap();
     let calls = guardrail.calls();
-    assert_eq!(calls[0].inputs.texts, strings(&["sys", "hi"]));
+    assert_eq!(calls[0].inputs.texts, Some(strings(&["sys", "hi"])));
     assert_eq!(
         calls[0].inputs.structured_messages.as_ref().map(Vec::len),
         Some(2)
@@ -737,4 +740,57 @@ async fn process_input_passes_a_guardrail_failure_through() {
         Err(RequestRewriteError::Guardrail { source }) if *source == failure
     ));
     assert_eq!(after, data);
+}
+
+#[tokio::test]
+async fn write_back_merges_a_shorter_list_from_a_covering_guardrail() {
+    let reply = json!({"structured_messages": [{"role": "user", "content": "A"}]});
+    let data = json!({"instructions": "sys", "input": [{"role": "user", "content": "a"}]});
+    let guardrail = FakeGuardrail::replying(reply).covering_full_requests();
+    let (result, after) = process(data, &guardrail, true).await;
+    result.unwrap();
+    assert_eq!(
+        after,
+        json!({"instructions": "sys", "input": [{"role": "user", "content": "A"}]})
+    );
+}
+
+#[tokio::test]
+async fn process_input_sends_empty_text_entries_like_any_other_text() {
+    let input = json!([{"role": "user", "content": [
+        {"type": "input_text", "text": ""}, {"type": "input_text", "text": "a"}
+    ]}]);
+    let guardrail = FakeGuardrail::replying(json!({"texts": ["X", "A"]}));
+    let (result, after) = process(json!({"input": input}), &guardrail, false).await;
+    result.unwrap();
+    assert_eq!(guardrail.calls()[0].inputs.texts, Some(strings(&["", "a"])));
+    assert_eq!(
+        after["input"],
+        json!([{"role": "user", "content": [
+            {"type": "input_text", "text": "X"}, {"type": "input_text", "text": "A"}
+        ]}])
+    );
+}
+
+#[tokio::test]
+async fn process_input_sends_an_empty_string_input_as_a_text() {
+    let guardrail = FakeGuardrail::replying(json!({"texts": ["X"]}));
+    let (result, after) = process(json!({"input": ""}), &guardrail, false).await;
+    result.unwrap();
+    assert_eq!(guardrail.calls()[0].inputs.texts, Some(strings(&[""])));
+    assert_eq!(after, json!({"input": "X"}));
+}
+
+#[tokio::test]
+async fn process_input_scopes_an_uppercase_system_role_out_when_system_is_skipped() {
+    let data = json!({"input": [
+        {"role": "SYSTEM", "content": "rules"}, {"role": "user", "content": "hi"}
+    ]});
+    let guardrail = FakeGuardrail::echoing();
+    let (result, _after) = process(data, &guardrail, true).await;
+    result.unwrap();
+    let calls = guardrail.calls();
+    assert_eq!(calls[0].inputs.texts, Some(strings(&["hi"])));
+    let sent = serde_json::to_value(&calls[0].inputs.structured_messages).unwrap();
+    assert_eq!(sent, json!([{"role": "user", "content": "hi"}]));
 }

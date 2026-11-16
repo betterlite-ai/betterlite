@@ -9,6 +9,8 @@ use crate::guardrails::responses_translation::input_provenance::{
     InputProvenance, input_item_provenance, rewritten_input_item,
 };
 
+type Replacements = BTreeMap<usize, Map<String, Value>>;
+
 fn instructions_after(
     changed: &[(usize, &Value)],
     offset: usize,
@@ -35,7 +37,7 @@ fn item_replacements(
     changed: &[(usize, &Value)],
     offset: usize,
     provenance: &InputProvenance,
-) -> Result<Option<BTreeMap<usize, Map<String, Value>>>, RequestRewriteError> {
+) -> Result<Option<Replacements>, RequestRewriteError> {
     let mut targets = Vec::new();
     for (index, row) in changed.iter().filter(|(index, _)| *index >= offset) {
         let body_index = index.saturating_sub(offset);
@@ -62,6 +64,31 @@ fn item_replacements(
         .collect())
 }
 
+fn changed_rows<'rows>(
+    original: &'rows [Value],
+    merged: &'rows [Value],
+) -> Vec<(usize, &'rows Value)> {
+    original
+        .iter()
+        .zip(merged)
+        .enumerate()
+        .filter(|(_, (before, after))| before != after)
+        .map(|(index, (_, after))| (index, after))
+        .collect()
+}
+
+fn patched_items(raw_items: &[Value], replacements: &Replacements) -> Vec<Value> {
+    raw_items
+        .iter()
+        .enumerate()
+        .map(|(index, item)| {
+            replacements
+                .get(&index)
+                .map_or_else(|| item.clone(), |patched| Value::Object(patched.clone()))
+        })
+        .collect()
+}
+
 // Only the raw items whose message changed are rewritten, so the rest keep fields the chat form cannot hold
 pub fn patched_request_fields(
     raw_input: Option<&Value>,
@@ -84,13 +111,7 @@ pub fn patched_request_fields(
     else {
         return Ok(None);
     };
-    let changed: Vec<(usize, &Value)> = original_messages
-        .iter()
-        .zip(merged_messages)
-        .enumerate()
-        .filter(|(_, (before, after))| before != after)
-        .map(|(index, (_, after))| (index, after))
-        .collect();
+    let changed = changed_rows(original_messages, merged_messages);
     let ControlFlow::Continue(instructions) =
         instructions_after(&changed, offset, raw_instructions)
     else {
@@ -99,15 +120,7 @@ pub fn patched_request_fields(
     let Some(replacements) = item_replacements(raw_items, &changed, offset, &provenance)? else {
         return Ok(None);
     };
-    let input = raw_items
-        .iter()
-        .enumerate()
-        .map(|(index, item)| {
-            replacements
-                .get(&index)
-                .map_or_else(|| item.clone(), |patched| Value::Object(patched.clone()))
-        })
-        .collect();
+    let input = patched_items(raw_items, &replacements);
     Ok(Some(RequestFields {
         input,
         instructions,

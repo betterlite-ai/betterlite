@@ -3,9 +3,8 @@ use betterlite_core::api::responses_tool_namespaces::values::Fields;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_message_scope::scoped_indices::{
-    ScanScope, ScopeFlags, role_out_of_guardrail_scope,
+    ScanScope, ScopeFlags, scoped_message_indices,
 };
-use serde_json::Value;
 
 use super::error::RequestRewriteError;
 use super::{
@@ -31,28 +30,15 @@ fn scoped_request(
         skip_tool_message: false,
         scan: ScanScope::AllMessages,
     };
-    let scoped_indices: Vec<usize> = structured_messages
-        .iter()
-        .enumerate()
-        .filter(|(_, message)| {
-            let role = message
-                .get("role")
-                .and_then(Value::as_str)
-                .map_or_else(String::new, str::to_lowercase);
-            !role_out_of_guardrail_scope(&role, &flags)
-        })
-        .map(|(index, _)| index)
-        .collect();
+    let rows: Vec<GuardrailValue> = serde_convert(&structured_messages, "chat messages")?;
+    let scoped_indices = scoped_message_indices(&rows, &flags);
     // A scope with nothing in it is sent as no list at all
     let scoped_messages = if scoped_indices.is_empty() {
         None
     } else {
         let mut scoped = Vec::with_capacity(scoped_indices.len());
-        for message in scoped_indices
-            .iter()
-            .filter_map(|index| structured_messages.get(*index))
-        {
-            scoped.push(serde_convert(message, "chat message")?);
+        for row in scoped_indices.iter().filter_map(|index| rows.get(*index)) {
+            scoped.push(serde_convert(row, "chat message")?);
         }
         Some(scoped)
     };

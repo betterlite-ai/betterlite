@@ -55,7 +55,7 @@ pub struct ExtractedInputs {
     pub instructions: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RequestFields {
     pub input: Vec<Value>,
     pub instructions: Option<String>,
@@ -124,6 +124,21 @@ pub fn scannable_instructions(data: &Object, skip_system: bool) -> Option<&str> 
 }
 
 impl Collected {
+    fn collect_entry(&mut self, fields: &Object, message_index: usize, content_index: usize) {
+        if let Some(GuardrailValue::Text(text)) = fields.get("text") {
+            self.texts.push(text.clone());
+            self.task_mappings
+                .push((message_index, Some(content_index)));
+        }
+        if matches!(fields.get("type"), Some(GuardrailValue::Text(kind)) if kind == "image_url")
+            && let Some(GuardrailValue::Object(image)) = fields.get("image_url")
+            && let Some(GuardrailValue::Text(url)) = image.get("url")
+            && !url.is_empty()
+        {
+            self.images.push(url.clone());
+        }
+    }
+
     fn collect_message(&mut self, message: &Object, message_index: usize) {
         match message.get("content") {
             Some(GuardrailValue::Text(text)) => {
@@ -132,24 +147,38 @@ impl Collected {
             }
             Some(GuardrailValue::Array(entries)) => {
                 for (content_index, entry) in entries.iter().enumerate() {
-                    let GuardrailValue::Object(fields) = entry else {
-                        continue;
-                    };
-                    if let Some(GuardrailValue::Text(text)) = fields.get("text") {
-                        self.texts.push(text.clone());
-                        self.task_mappings
-                            .push((message_index, Some(content_index)));
-                    }
-                    if matches!(fields.get("type"), Some(GuardrailValue::Text(kind)) if kind == "image_url")
-                        && let Some(GuardrailValue::Object(image)) = fields.get("image_url")
-                        && let Some(GuardrailValue::Text(url)) = image.get("url")
-                        && !url.is_empty()
-                    {
-                        self.images.push(url.clone());
+                    if let GuardrailValue::Object(fields) = entry {
+                        self.collect_entry(fields, message_index, content_index);
                     }
                 }
             }
             Some(_) | None => {}
+        }
+    }
+
+    fn collect_input(&mut self, input_data: &GuardrailValue, skip_system: bool) {
+        let flags = ScopeFlags {
+            skip_system_message: skip_system,
+            skip_tool_message: false,
+            scan: ScanScope::AllMessages,
+        };
+        match input_data {
+            GuardrailValue::Text(text) => self.texts.push(text.clone()),
+            GuardrailValue::Array(items) => {
+                for (index, item) in items.iter().enumerate() {
+                    if let GuardrailValue::Object(message) = item
+                        && !role_out_of_guardrail_scope(&message_role(item), &flags)
+                    {
+                        self.collect_message(message, index);
+                    }
+                }
+            }
+            GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Object(_) => {}
         }
     }
 }
@@ -166,29 +195,7 @@ pub fn extract_guardrail_inputs(
         images: Vec::new(),
         task_mappings: Vec::new(),
     };
-    let flags = ScopeFlags {
-        skip_system_message: skip_system,
-        skip_tool_message: false,
-        scan: ScanScope::AllMessages,
-    };
-    match input_data {
-        GuardrailValue::Text(text) => collected.texts.push(text.clone()),
-        GuardrailValue::Array(items) => {
-            for (index, item) in items.iter().enumerate() {
-                if let GuardrailValue::Object(message) = item
-                    && !role_out_of_guardrail_scope(&message_role(item), &flags)
-                {
-                    collected.collect_message(message, index);
-                }
-            }
-        }
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_) => {}
-    }
+    collected.collect_input(input_data, skip_system);
     let tools = flattened_tool_groups
         .iter()
         .flatten()
