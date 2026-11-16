@@ -22,7 +22,7 @@ use betterlite_tokenizer::count::request::{Message, MessageContent, Part};
 use betterlite_tokenizer::image::error::ImageError;
 use rstest::rstest;
 use rust_decimal::Decimal;
-use serde_json::{Number, Value, json};
+use serde_json::Number;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Level, Subscriber};
@@ -32,8 +32,7 @@ use uuid::Uuid;
 
 use super::{
     RelayAssemblyRequest, RelayTokenCounter, RelayedCountError, RelayedCounter,
-    complete_streaming_response, count_relayed_prompt_tokens, is_remote_high_detail_image,
-    parse_chunks,
+    complete_streaming_response, count_relayed_prompt_tokens, parse_chunks,
 };
 
 const MODEL: &str = "relay-test-model";
@@ -41,8 +40,8 @@ const CHUNK_ID: &str = "chatcmpl-1";
 const CREATED: i64 = 1_700_000_000;
 const REMOTE_BOUND: i64 = 1445;
 
-fn messages(raw: Value) -> Vec<Message> {
-    serde_json::from_value(raw).unwrap()
+fn messages(raw: &str) -> Vec<Message> {
+    serde_json::from_str(raw).unwrap()
 }
 
 fn summarize(messages: &[Message]) -> String {
@@ -67,9 +66,6 @@ fn describe_message(message: &Message) -> String {
 }
 
 fn describe_part(part: &Part) -> String {
-    if is_remote_high_detail_image(part) {
-        return String::from("remote");
-    }
     match part {
         Part::Text(text) => format!("text({text})"),
         Part::Block(block) => block.kind.clone(),
@@ -285,38 +281,33 @@ fn chat(response: &Response) -> &ChatResponse {
     }
 }
 
-fn chunk(choices: Value) -> Value {
-    json!({
-        "id": CHUNK_ID,
-        "object": "chat.completion.chunk",
-        "created": CREATED,
-        "model": MODEL,
-        "choices": choices,
-    })
+fn chunk(choices: &str, extra: &str) -> String {
+    format!(
+        r#"{{"id":"{CHUNK_ID}","object":"chat.completion.chunk","created":{CREATED},"model":"{MODEL}","choices":{choices}{extra}}}"#
+    )
 }
 
-fn delta_chunk(delta: Value, finish_reason: Option<&str>) -> String {
-    let mut choice = json!({ "index": 0, "delta": delta });
-    if let Some(reason) = finish_reason {
-        choice["finish_reason"] = json!(reason);
-    }
-    chunk(json!([choice])).to_string()
+fn delta_chunk(delta: &str, finish_reason: Option<&str>) -> String {
+    let reason = finish_reason.map_or_else(String::new, |reason| {
+        format!(r#","finish_reason":"{reason}""#)
+    });
+    chunk(&format!(r#"[{{"index":0,"delta":{delta}{reason}}}]"#), "")
 }
 
 fn usage_chunk(prompt_tokens: i64, completion_tokens: i64) -> String {
-    let mut body = chunk(json!([{ "index": 0, "delta": {}, "finish_reason": "stop" }]));
-    body["usage"] = json!({
-        "prompt_tokens": prompt_tokens,
-        "completion_tokens": completion_tokens,
-        "total_tokens": prompt_tokens.checked_add(completion_tokens).expect("the fixture fits"),
-    });
-    body.to_string()
+    let total = prompt_tokens
+        .checked_add(completion_tokens)
+        .expect("the fixture fits");
+    let usage = format!(
+        r#","usage":{{"prompt_tokens":{prompt_tokens},"completion_tokens":{completion_tokens},"total_tokens":{total}}}"#
+    );
+    chunk(r#"[{"index":0,"delta":{},"finish_reason":"stop"}]"#, &usage)
 }
 
 fn content_chunks() -> Vec<String> {
     vec![
-        delta_chunk(json!({ "role": "assistant", "content": "Hello" }), None),
-        delta_chunk(json!({ "content": " world" }), Some("stop")),
+        delta_chunk(r#"{"role":"assistant","content":"Hello"}"#, None),
+        delta_chunk(r#"{"content":" world"}"#, Some("stop")),
     ]
 }
 
@@ -348,18 +339,17 @@ fn request<'request>(
 #[test]
 fn count_relayed_prompt_tokens_is_zero_without_messages() {
     let counter = FixtureCounter::new(9, 0);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, None);
-    assert_eq!(counted.ok(), Some(0));
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, None);
+    assert_eq!(tokens.ok(), Some(0));
     assert!(counter.calls().is_empty());
 }
 
 #[test]
 fn count_relayed_prompt_tokens_leaves_a_text_content_message_alone() {
     let counter = FixtureCounter::new(9, 0);
-    let raw = json!([{ "role": "user", "content": "hello world" }]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
-    assert_eq!(counted.ok(), Some(9));
+    let typed = messages(r#"[{"role":"user","content":"hello world"}]"#);
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    assert_eq!(tokens.ok(), Some(9));
     assert_eq!(
         counter.calls(),
         vec![String::from("messages:user:hello world")]
@@ -369,41 +359,34 @@ fn count_relayed_prompt_tokens_leaves_a_text_content_message_alone() {
 #[test]
 fn count_relayed_prompt_tokens_drops_a_remote_image_and_adds_its_bound() {
     let counter = FixtureCounter::new(8, 0);
-    let raw = json!([{
-        "role": "user",
-        "content": [
-            { "type": "text", "text": "describe" },
-            { "type": "image_url", "image_url": { "url": "https://example.com/a.png", "detail": "high" } },
-        ],
-    }]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
-    assert_eq!(counted.ok(), Some(8 + REMOTE_BOUND));
+    let typed = messages(
+        r#"[{"role":"user","content":[
+            {"type":"text","text":"describe"},
+            {"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"high"}}
+        ]}]"#,
+    );
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    assert_eq!(tokens.ok(), Some(8 + REMOTE_BOUND));
     assert_eq!(counter.calls(), vec![String::from("messages:user:text")]);
 }
 
 #[test]
 fn count_relayed_prompt_tokens_adds_the_bound_for_each_remote_image() {
     let counter = FixtureCounter::new(4, 0);
-    let raw = json!([
-        {
-            "role": "system",
-            "content": [
-                { "type": "image_url", "image_url": { "url": "http://example.com/a.png", "detail": "high" } },
-            ],
-        },
-        {
-            "role": "user",
-            "content": [
-                { "type": "image_url", "image_url": { "url": "HTTPS://EXAMPLE.COM/b.png", "detail": "high" } },
-                { "type": "image_url", "image_url": { "url": "https://example.com/c.png", "detail": "low" } },
-                { "type": "image_url", "image_url": { "url": "https://example.com/d.png" } },
-            ],
-        },
-    ]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
-    assert_eq!(counted.ok(), Some(4 + 2 * REMOTE_BOUND));
+    let typed = messages(
+        r#"[
+            {"role":"system","content":[
+                {"type":"image_url","image_url":{"url":"http://example.com/a.png","detail":"high"}}
+            ]},
+            {"role":"user","content":[
+                {"type":"image_url","image_url":{"url":"HTTPS://EXAMPLE.COM/b.png","detail":"high"}},
+                {"type":"image_url","image_url":{"url":"https://example.com/c.png","detail":"low"}},
+                {"type":"image_url","image_url":{"url":"https://example.com/d.png"}}
+            ]}
+        ]"#,
+    );
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    assert_eq!(tokens.ok(), Some(4 + 2 * REMOTE_BOUND));
     assert_eq!(
         counter.calls(),
         vec![String::from("messages:system:|user:image_url,image_url")]
@@ -412,41 +395,49 @@ fn count_relayed_prompt_tokens_adds_the_bound_for_each_remote_image() {
 
 #[rstest]
 #[case::low_detail(
-    r#"{"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"low"}}"#
+    r#"{"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"low"}}"#,
+    "image_url"
 )]
-#[case::missing_detail(r#"{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}"#)]
-#[case::string_image_url(r#"{"type":"image_url","image_url":"https://example.com/a.png"}"#)]
+#[case::missing_detail(
+    r#"{"type":"image_url","image_url":{"url":"https://example.com/a.png"}}"#,
+    "image_url"
+)]
+#[case::string_image_url(
+    r#"{"type":"image_url","image_url":"https://example.com/a.png"}"#,
+    "image_url"
+)]
 #[case::ftp_url(
-    r#"{"type":"image_url","image_url":{"url":"ftp://example.com/a.png","detail":"high"}}"#
+    r#"{"type":"image_url","image_url":{"url":"ftp://example.com/a.png","detail":"high"}}"#,
+    "image_url"
 )]
 #[case::other_part_type(
-    r#"{"type":"image","image_url":{"url":"https://example.com/a.png","detail":"high"}}"#
+    r#"{"type":"image","image_url":{"url":"https://example.com/a.png","detail":"high"}}"#,
+    "image"
 )]
 #[case::data_url(
-    r#"{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA","detail":"high"}}"#
+    r#"{"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA","detail":"high"}}"#,
+    "image_url"
 )]
-#[case::bare_string_part(r#""https://example.com/a.png""#)]
+#[case::bare_string_part(r#""https://example.com/a.png""#, "text(https://example.com/a.png)")]
 fn count_relayed_prompt_tokens_keeps_a_part_that_is_not_a_remote_high_detail_image(
     #[case] part: &str,
+    #[case] expected: &str,
 ) {
     let counter = FixtureCounter::new(5, 0);
-    let part: Value = serde_json::from_str(part).unwrap();
-    let raw = json!([{ "role": "user", "content": [part] }]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
-    assert_eq!(counted.ok(), Some(5));
-    assert_eq!(counter.calls().len(), 1);
-    assert!(!counter.calls()[0].contains("remote"));
+    let raw = format!(r#"[{{"role":"user","content":[{part}]}}]"#);
+    let typed = messages(&raw);
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    assert_eq!(tokens.ok(), Some(5));
+    assert_eq!(counter.calls(), vec![format!("messages:user:{expected}")]);
 }
 
 #[test]
 fn count_relayed_prompt_tokens_reports_a_counter_failure() {
     let counter = FixtureCounter::failing(9);
-    let raw = json!([{ "role": "user", "content": "hello" }]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    let typed = messages(r#"[{"role":"user","content":"hello"}]"#);
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
     assert_eq!(
-        counted.err().map(|error| error.to_string()),
+        tokens.err().map(|error| error.to_string()),
         Some(String::from("either text or messages must be provided"))
     );
 }
@@ -454,16 +445,14 @@ fn count_relayed_prompt_tokens_reports_a_counter_failure() {
 #[test]
 fn count_relayed_prompt_tokens_reports_an_overflowing_sum() {
     let counter = FixtureCounter::new(i64::MAX, 0);
-    let raw = json!([{
-        "role": "user",
-        "content": [
-            { "type": "image_url", "image_url": { "url": "https://example.com/a.png", "detail": "high" } },
-        ],
-    }]);
-    let typed = messages(raw);
-    let counted = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
+    let typed = messages(
+        r#"[{"role":"user","content":[
+            {"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"high"}}
+        ]}]"#,
+    );
+    let tokens = count_relayed_prompt_tokens(&counter, MODEL, Some(&typed));
     assert_eq!(
-        counted.err().map(|error| error.to_string()),
+        tokens.err().map(|error| error.to_string()),
         Some(String::from(
             "the token count does not fit in a machine word"
         ))
@@ -475,9 +464,9 @@ async fn assembly_builds_one_response_from_prefixed_and_bare_chunks() {
     let content = content_chunks();
     let chunks = vec![format!("data: {}", content[0]), content[1].clone()];
     let counter = FixtureCounter::new(0, 2);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.id, CHUNK_ID);
     assert_eq!(response.object, "chat.completion");
     assert_eq!(response.created, CREATED);
@@ -507,12 +496,12 @@ async fn assembly_builds_one_response_from_prefixed_and_bare_chunks() {
 #[case::prefix_with_broken_json("data:{broken")]
 #[tokio::test]
 async fn assembly_skips_a_malformed_chunk_and_keeps_the_valid_one(#[case] malformed: &str) {
-    let valid = delta_chunk(json!({ "content": "Hi" }), Some("stop"));
+    let valid = delta_chunk(r#"{"content":"Hi"}"#, Some("stop"));
     let chunks = vec![String::from(malformed), valid];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let (response, logs) = capture(complete_streaming_response(&assembly, &hooks())).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let (assembled, logs) = capture(complete_streaming_response(&relay, &hooks())).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.choices[0].message.content.as_deref(), Some("Hi"));
     assert_eq!(response.usage.completion_tokens, 1);
     assert!(logs.is_empty(), "a malformed chunk logs nothing: {logs:?}");
@@ -526,9 +515,9 @@ async fn assembly_returns_none_and_warns_when_no_chunk_parses() {
         String::from("{}"),
     ];
     let counter = FixtureCounter::new(0, 0);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let (response, logs) = capture(complete_streaming_response(&assembly, &hooks())).await;
-    assert!(response.is_none());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let (assembled, logs) = capture(complete_streaming_response(&relay, &hooks())).await;
+    assert!(assembled.is_none());
     assert_eq!(
         logs,
         vec![String::from(
@@ -542,20 +531,20 @@ async fn assembly_returns_none_and_warns_when_no_chunk_parses() {
 async fn assembly_returns_none_and_warns_for_an_empty_chunk_list() {
     let chunks: Vec<String> = Vec::new();
     let counter = FixtureCounter::new(0, 0);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let (response, logs) = capture(complete_streaming_response(&assembly, &hooks())).await;
-    assert!(response.is_none());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let (assembled, logs) = capture(complete_streaming_response(&relay, &hooks())).await;
+    assert!(assembled.is_none());
     assert_eq!(logs.len(), 1);
     assert!(logs[0].contains("No valid chunks found in streaming response"));
 }
 
 #[tokio::test]
 async fn assembly_skips_a_provider_error_chunk() {
-    let chunks = vec![json!({ "error": { "message": "boom", "code": 500 } }).to_string()];
+    let chunks = vec![String::from(r#"{"error":{"message":"boom","code":500}}"#)];
     let counter = FixtureCounter::new(0, 0);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let (response, logs) = capture(complete_streaming_response(&assembly, &hooks())).await;
-    assert!(response.is_none());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let (assembled, logs) = capture(complete_streaming_response(&relay, &hooks())).await;
+    assert!(assembled.is_none());
     assert!(
         logs.iter()
             .any(|line| line.contains("No valid chunks found"))
@@ -564,16 +553,13 @@ async fn assembly_skips_a_provider_error_chunk() {
 
 #[tokio::test]
 async fn assembly_logs_an_error_and_returns_none_when_the_builder_fails() {
-    let chunks = vec![
-        json!({
-            "choices": [{ "index": 0, "delta": { "content": "Hi" }, "finish_reason": "stop" }],
-        })
-        .to_string(),
-    ];
+    let chunks = vec![String::from(
+        r#"{"choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}"#,
+    )];
     let counter = FixtureCounter::new(0, 0);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let (response, logs) = capture(complete_streaming_response(&assembly, &hooks())).await;
-    assert!(response.is_none());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let (assembled, logs) = capture(complete_streaming_response(&relay, &hooks())).await;
+    assert!(assembled.is_none());
     assert_eq!(logs.len(), 1);
     assert!(
         logs[0].starts_with("ERROR Error building complete streaming response: "),
@@ -585,18 +571,16 @@ async fn assembly_logs_an_error_and_returns_none_when_the_builder_fails() {
 #[tokio::test]
 async fn assembly_counts_the_prompt_through_the_relayed_counter() {
     let chunks = content_chunks();
-    let raw = json!([{
-        "role": "user",
-        "content": [
-            { "type": "text", "text": "describe" },
-            { "type": "image_url", "image_url": { "url": "https://example.com/a.png", "detail": "high" } },
-        ],
-    }]);
-    let typed = messages(raw);
+    let typed = messages(
+        r#"[{"role":"user","content":[
+            {"type":"text","text":"describe"},
+            {"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"high"}}
+        ]}]"#,
+    );
     let counter = FixtureCounter::new(8, 2);
-    let assembly = request(&chunks, Some(&typed), &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, Some(&typed), &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.usage.prompt_tokens, 8 + REMOTE_BOUND);
     assert_eq!(response.usage.completion_tokens, 2);
     assert_eq!(response.usage.total_tokens, 10 + REMOTE_BOUND);
@@ -612,14 +596,12 @@ async fn assembly_counts_the_prompt_through_the_relayed_counter() {
 #[tokio::test]
 async fn assembly_falls_back_to_zero_when_the_counter_refuses_an_image_block() {
     let chunks = content_chunks();
-    let raw = json!([{
-        "role": "user",
-        "content": [
-            { "type": "text", "text": "describe" },
-            { "type": "image_url", "image_url": { "url": "data:image/png;base64,AAAA" } },
-        ],
-    }]);
-    let typed = messages(raw);
+    let typed = messages(
+        r#"[{"role":"user","content":[
+            {"type":"text","text":"describe"},
+            {"type":"image_url","image_url":{"url":"data:image/png;base64,AAAA"}}
+        ]}]"#,
+    );
     let counter = FixtureCounter {
         messages: 0,
         text: 0,
@@ -627,9 +609,9 @@ async fn assembly_falls_back_to_zero_when_the_counter_refuses_an_image_block() {
         fail_messages: true,
         calls: Mutex::new(Vec::new()),
     };
-    let assembly = request(&chunks, Some(&typed), &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, Some(&typed), &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.usage.prompt_tokens, 0);
     assert_eq!(response.usage.completion_tokens, 2);
     assert_eq!(
@@ -644,12 +626,11 @@ async fn assembly_falls_back_to_zero_when_the_counter_refuses_an_image_block() {
 #[tokio::test]
 async fn assembly_skips_the_prompt_count_when_a_chunk_reports_usage() {
     let chunks = vec![usage_chunk(7, 2)];
-    let raw = json!([{ "role": "user", "content": "hello world" }]);
-    let typed = messages(raw);
+    let typed = messages(r#"[{"role":"user","content":"hello world"}]"#);
     let counter = FixtureCounter::new(9, 2);
-    let assembly = request(&chunks, Some(&typed), &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, Some(&typed), &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.usage.prompt_tokens, 7);
     assert_eq!(response.usage.completion_tokens, 2);
     assert_eq!(response.usage.total_tokens, 9);
@@ -658,46 +639,41 @@ async fn assembly_skips_the_prompt_count_when_a_chunk_reports_usage() {
 
 #[tokio::test]
 async fn assembly_treats_a_null_usage_chunk_as_absent() {
-    let mut body =
-        chunk(json!([{ "index": 0, "delta": { "content": "Hi" }, "finish_reason": "stop" }]));
-    body["usage"] = Value::Null;
-    let chunks = vec![body.to_string()];
-    let raw = json!([{ "role": "user", "content": "hello world" }]);
-    let typed = messages(raw);
+    let chunks = vec![chunk(
+        r#"[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]"#,
+        r#","usage":null"#,
+    )];
+    let typed = messages(r#"[{"role":"user","content":"hello world"}]"#);
     let counter = FixtureCounter::new(9, 1);
-    let assembly = request(&chunks, Some(&typed), &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, Some(&typed), &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.usage.prompt_tokens, 9);
     assert_eq!(response.usage.completion_tokens, 1);
 }
 
 #[tokio::test]
 async fn assembly_keeps_the_system_fingerprint_from_the_chunk() {
-    let mut body =
-        chunk(json!([{ "index": 0, "delta": { "content": "Hi" }, "finish_reason": "stop" }]));
-    body["system_fingerprint"] = json!("fp_abc");
-    let chunks = vec![body.to_string()];
+    let chunks = vec![chunk(
+        r#"[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]"#,
+        r#","system_fingerprint":"fp_abc""#,
+    )];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.system_fingerprint.as_deref(), Some("fp_abc"));
 }
 
 #[tokio::test]
 async fn assembly_fills_a_missing_chunk_id_and_created_from_the_caller() {
-    let chunks = vec![
-        json!({
-            "model": MODEL,
-            "choices": [{ "index": 0, "delta": { "content": "Hi" }, "finish_reason": "stop" }],
-        })
-        .to_string(),
-    ];
+    let chunks = vec![format!(
+        r#"{{"model":"{MODEL}","choices":[{{"index":0,"delta":{{"content":"Hi"}},"finish_reason":"stop"}}]}}"#
+    )];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.id, format!("chatcmpl-{}", Uuid::nil()));
     assert_eq!(response.created, 0);
 }
@@ -706,9 +682,9 @@ async fn assembly_fills_a_missing_chunk_id_and_created_from_the_caller() {
 async fn assembly_stamps_the_cost_of_the_given_calculator() {
     let chunks = content_chunks();
     let counter = FixtureCounter::new(0, 2);
-    let assembly = request(&chunks, None, &counter, &Priced);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &Priced);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     let cost = Number::from_str("0.0000025").unwrap();
     assert_eq!(
         response.hidden_params.get("response_cost"),
@@ -719,7 +695,7 @@ async fn assembly_stamps_the_cost_of_the_given_calculator() {
 #[tokio::test]
 async fn assembly_counts_reasoning_tokens_through_the_relayed_counter() {
     let chunks = vec![delta_chunk(
-        json!({ "reasoning_content": "think", "content": "Hi" }),
+        r#"{"reasoning_content":"think","content":"Hi"}"#,
         Some("stop"),
     )];
     let counter = FixtureCounter {
@@ -729,11 +705,14 @@ async fn assembly_counts_reasoning_tokens_through_the_relayed_counter() {
         fail_messages: false,
         calls: Mutex::new(Vec::new()),
     };
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(response.usage.prompt_tokens, 0);
     assert_eq!(response.usage.completion_tokens, 5);
+    let details = response.usage.completion_tokens_details.as_ref().unwrap();
+    assert_eq!(details.reasoning_tokens, Some(3));
+    assert_eq!(details.text_tokens, Some(2));
     assert_eq!(
         counter.calls(),
         vec![String::from("text:think"), String::from("response:Hi")]
@@ -742,50 +721,55 @@ async fn assembly_counts_reasoning_tokens_through_the_relayed_counter() {
 
 #[tokio::test]
 async fn relayed_counter_counts_messages_through_the_prompt_estimate() {
-    let raw = json!([{
-        "role": "user",
-        "content": [
-            { "type": "text", "text": "describe" },
-            { "type": "image_url", "image_url": { "url": "https://example.com/a.png", "detail": "high" } },
-        ],
-    }]);
-    let typed = messages(raw);
+    let typed = messages(
+        r#"[{"role":"user","content":[
+            {"type":"text","text":"describe"},
+            {"type":"image_url","image_url":{"url":"https://example.com/a.png","detail":"high"}}
+        ]}]"#,
+    );
     let counter = FixtureCounter::new(8, 0);
     let relayed = RelayedCounter { counter: &counter };
-    let counted = UsageTokenCounter::count_messages(&relayed, MODEL, Some(&typed)).await;
-    assert_eq!(counted.ok(), Some(8 + REMOTE_BOUND));
+    let tokens = UsageTokenCounter::count_messages(&relayed, MODEL, Some(&typed)).await;
+    assert_eq!(tokens.ok(), Some(8 + REMOTE_BOUND));
     assert_eq!(counter.calls(), vec![String::from("messages:user:text")]);
-    let failing = FixtureCounter::failing(9);
-    let relayed = RelayedCounter { counter: &failing };
-    let counted = UsageTokenCounter::count_messages(&relayed, MODEL, Some(&typed)).await;
+    let refusing = FixtureCounter::failing(9);
+    let bridge = RelayedCounter { counter: &refusing };
+    let denied = UsageTokenCounter::count_messages(&bridge, MODEL, Some(&typed)).await;
     assert_eq!(
-        counted.err().map(|error| error.to_string()),
+        denied.err().map(|error| error.to_string()),
         Some(String::from("either text or messages must be provided"))
     );
 }
 
 #[rstest]
-#[case::both_keys(json!({ "reasoning_content": "A", "reasoning": "B" }), Some("A"))]
-#[case::null_reasoning(json!({ "reasoning_content": "A", "reasoning": null }), Some("A"))]
-#[case::empty_reasoning_content(json!({ "reasoning_content": "", "reasoning": "B" }), Some(""))]
-#[case::null_reasoning_content(json!({ "reasoning_content": null, "reasoning": "B" }), Some("B"))]
-#[case::reasoning_only(json!({ "reasoning": "B" }), Some("B"))]
-#[case::null_reasoning_only(json!({ "reasoning": null }), None)]
-#[case::reasoning_content_only(json!({ "reasoning_content": "A" }), Some("A"))]
-#[case::neither(json!({}), None)]
+#[case::both_keys(
+    r#"{"content":"Hi","reasoning_content":"A","reasoning":"B"}"#,
+    Some("A")
+)]
+#[case::null_reasoning(
+    r#"{"content":"Hi","reasoning_content":"A","reasoning":null}"#,
+    Some("A")
+)]
+#[case::empty_reasoning_content(
+    r#"{"content":"Hi","reasoning_content":"","reasoning":"B"}"#,
+    Some("")
+)]
+#[case::null_reasoning_content(
+    r#"{"content":"Hi","reasoning_content":null,"reasoning":"B"}"#,
+    Some("B")
+)]
+#[case::reasoning_only(r#"{"content":"Hi","reasoning":"B"}"#, Some("B"))]
+#[case::null_reasoning_only(r#"{"content":"Hi","reasoning":null}"#, None)]
+#[case::reasoning_content_only(r#"{"content":"Hi","reasoning_content":"A"}"#, Some("A"))]
+#[case::neither(r#"{"content":"Hi"}"#, None)]
 fn assembly_keeps_a_non_null_reasoning_content_over_reasoning(
-    #[case] reasoning: Value,
+    #[case] delta: &str,
     #[case] expected: Option<&str>,
 ) {
-    let mut delta = json!({ "content": "Hi" });
-    delta
-        .as_object_mut()
-        .unwrap()
-        .extend(reasoning.as_object().unwrap().clone());
     let chunks = vec![delta_chunk(delta, Some("stop"))];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let parsed = parse_chunks(&assembly);
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let parsed = parse_chunks(&relay);
     let kept = parsed[0].choices[0]
         .delta
         .as_ref()
@@ -797,15 +781,13 @@ fn assembly_keeps_a_non_null_reasoning_content_over_reasoning(
 
 #[test]
 fn assembly_matches_each_choice_to_its_own_raw_reasoning_content() {
-    let body = chunk(json!([
-        { "index": 0, "delta": { "reasoning": "B" } },
-        { "index": 1, "delta": { "reasoning_content": "A", "reasoning": "B" } },
-        { "index": 2, "delta": { "reasoning": "C" } },
-    ]));
-    let chunks = vec![body.to_string()];
+    let chunks = vec![chunk(
+        r#"[{"index":0,"delta":{"reasoning":"B"}},{"index":1,"delta":{"reasoning_content":"A","reasoning":"B"}},{"index":2,"delta":{"reasoning":"C"}}]"#,
+        "",
+    )];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let parsed = parse_chunks(&assembly);
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let parsed = parse_chunks(&relay);
     let kept: Vec<Option<&str>> = parsed[0]
         .choices
         .iter()
@@ -817,13 +799,13 @@ fn assembly_matches_each_choice_to_its_own_raw_reasoning_content() {
 #[tokio::test]
 async fn assembly_logs_the_reasoning_content_when_both_keys_are_relayed() {
     let chunks = vec![delta_chunk(
-        json!({ "content": "Hi", "reasoning_content": "A", "reasoning": "B" }),
+        r#"{"content":"Hi","reasoning_content":"A","reasoning":"B"}"#,
         Some("stop"),
     )];
     let counter = FixtureCounter::new(0, 1);
-    let assembly = request(&chunks, None, &counter, &NoCost);
-    let response = complete_streaming_response(&assembly, &hooks()).await;
-    let response = chat(response.as_ref().unwrap());
+    let relay = request(&chunks, None, &counter, &NoCost);
+    let assembled = complete_streaming_response(&relay, &hooks()).await;
+    let response = chat(assembled.as_ref().unwrap());
     assert_eq!(
         response.choices[0].message.reasoning_content.as_deref(),
         Some("A")
