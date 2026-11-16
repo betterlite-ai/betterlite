@@ -1,6 +1,7 @@
 mod capture;
 mod input;
 mod ops;
+mod sign;
 mod tests;
 
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};

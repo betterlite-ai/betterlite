@@ -2,7 +2,6 @@ import asyncio
 from base64 import b64encode
 
 import httpx
-from bedrock_mantle_responses.calls import warnings_recorded
 from litellm.exceptions import ImageFetchError
 from litellm.llms.bedrock.responses.transformation import (
     BedrockOpenAIResponsesConfig,
@@ -11,6 +10,8 @@ from litellm.llms.bedrock.responses.transformation import (
 )
 from litellm.types.router import GenericLiteLLMParams
 from pydantic import JsonValue, TypeAdapter
+
+from bedrock_mantle_responses.calls import warnings_recorded
 
 from .calls import API_BASE, MODEL, Fixture, environment, signed_summary
 from .models import (
