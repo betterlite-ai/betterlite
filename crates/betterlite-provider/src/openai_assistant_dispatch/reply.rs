@@ -1,8 +1,6 @@
 use betterlite_models::decisions::openai::DecisionResponse;
 use betterlite_openai::assistants::client::ClientKind;
-use betterlite_openai::assistants::records::{
-    AssistantDeleted, AssistantObject, AssistantPage,
-};
+use betterlite_openai::assistants::records::{AssistantDeleted, AssistantObject, AssistantPage};
 use betterlite_openai::decisions::transformation::wire::ProviderRequestWire;
 use betterlite_openai::thread_runs::records::RunReply;
 use betterlite_openai::thread_runs::stream::RunEventStream;

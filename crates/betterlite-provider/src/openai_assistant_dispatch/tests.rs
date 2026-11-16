@@ -2,7 +2,6 @@
 
 use std::collections::VecDeque;
 use std::future::{Future, ready};
-use std::pin::Pin;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::tls::Verification;
@@ -10,59 +9,62 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_pre_post::error::PrePostError;
-use betterlite_models::decisions::openai::{DecisionRequestBody, DecisionResponse};
+use betterlite_models::controls::json_value::JsonValue;
+use betterlite_models::decisions::openai::{ChoiceValue, DecisionAnswer, DecisionRequestBody};
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::records::{AssistantCreate, ListParams};
 use betterlite_openai::assistants::transport::AssistantsTransport;
-use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_response;
-use betterlite_openai::decisions::openai::request::openai_request_to_ir;
-use betterlite_openai::decisions::transformation::requests::RequestConversionError;
 use betterlite_openai::decisions::transformation::wire::ProviderRequestWire;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_openai::realtime::error::RealtimeError;
 use betterlite_openai::realtime::failure::{ClientAction, RealtimeClose};
 use betterlite_openai::realtime::logging::{RealtimeLogRecord, RealtimeLogger};
 use betterlite_openai::realtime::ssl::RealtimeSsl;
 use betterlite_openai::realtime::url::QueryParams;
 use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::RunDispatch;
-use betterlite_openai::thread_runs::records::{RunRequest, RunReply};
+use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::thread_runs::stream::{RunChunks, RunStreamTransport};
+use betterlite_openai::threads::error::ThreadsError;
 use betterlite_openai::threads::operations::ThreadReply;
 use betterlite_openai::threads::records::{MessageStatus, ThreadCreate, ThreadMessageData};
 use futures_util::StreamExt as _;
 use http::HeaderMap;
 use rstest::rstest;
-use secrecy::SecretString;
-use serde_json::{Value, json};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::operation::{OperationRequest, OperationResult};
 
 use super::call::{
     AssistantsCall, AssistantsFacade, AssistantsOperation, DecisionsCall, DecisionsOperation,
-    RealtimeCall, RealtimeFailureOwned, RunsCall, ThreadsCall, ThreadsOperation,
+    OpenAiAssistantOperation, RealtimeCall, RealtimeFailureOwned, RunsCall, ThreadsCall,
+    ThreadsOperation,
 };
 use super::error::OpenAiAssistantError;
 use super::execute::dispatch;
 use super::reply::{AssistantsReply, DecisionsProjection, DecisionsReply, RunOutcome};
-use super::{
-    OpenAiAssistantRequest, OpenAiAssistantResult, OpenAiAssistantPrepared, SessionNormalizerKind,
-};
+use super::{OpenAiAssistantRequest, OpenAiAssistantResult};
 
 const BASE: &str = "https://example.test/v1";
 const KEY: &str = "sk-fixture";
-const ASSISTANT: &str = r#"{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}"#;
-const PAGE: &str =
-    r#"{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}"#;
+const ASSISTANT: &str =
+    r#"{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}"#;
+const PAGE: &str = r#"{"object":"list","data":[{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[]}],"first_id":"asst_1","last_id":"asst_1","has_more":true}"#;
 const DELETED: &str = r#"{"id":"asst_1","deleted":true,"object":"assistant.deleted"}"#;
-const THREAD: &str = r#"{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"core"}}"#;
+const THREAD: &str =
+    r#"{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"core"}}"#;
 const MESSAGE: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
 const MESSAGE_PAGE: &str = r#"{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}],"first_id":"msg_1","last_id":"msg_1","has_more":false}"#;
 const RUN: &str = r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_1","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[]}"#;
-const ERROR_BODY: &str = r#"{"error":{"message":"nope","type":"invalid_request_error"}}"#;
+const ERROR_BODY: &str = r#"{"error":{"message":"nope","type":"invalid_request_error","param":"model","code":"model_not_found"}}"#;
 const CHOICE_QUESTION: &str = r#"{"input":"Check this","questions":[{"type":"choice","name":"label","instructions":"Pick","choices":[{"value":"yes"},{"value":"no"}]}],"safety_identifier":"safe-1"}"#;
+const CHOICE_WIRE: &str = r#"{"model":"gpt-4o","input":"Check this","questions":[{"type":"choice","name":"label","instructions":"Pick","choices":[{"value":"yes"},{"value":"no"}]}],"safety_identifier":"safe-1"}"#;
+const CHOICE_ANSWERS: &str = r#"{"model":"gpt-4o","answers":[{"type":"choice","name":"label","choice":"yes","probabilities":[{"value":"yes","probability":0.9},{"value":"no","probability":0.1}],"confidence":0.9}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}"#;
+const RUN_BODY: &str = r#"{"assistant_id":"asst_1","additional_instructions":null,"instructions":"base","metadata":{"tag":"x"},"model":"gpt-4o-mini","stream":false,"tools":[{"type":"code_interpreter"}]}"#;
+const STREAM_BODY: &str = r#"{"assistant_id":"asst_1","additional_instructions":null,"instructions":"base","metadata":{"tag":"x"},"model":"gpt-4o-mini","stream":true,"tools":[{"type":"code_interpreter"}]}"#;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 struct Seen {
     method: String,
     url: String,
@@ -70,15 +72,14 @@ struct Seen {
     organization: Option<String>,
     beta: Option<String>,
     content_type: Option<String>,
-    body: Option<Value>,
+    body: Option<JsonValue>,
 }
 
 #[derive(Default)]
 struct Recorder {
     seen: Mutex<Vec<Seen>>,
     replies: Mutex<VecDeque<(u16, String)>>,
-    chunks: Mutex<Option<String>>,
-    stream_status: Mutex<Option<(u16, Vec<u8>)>>,
+    stream: Mutex<Option<String>>,
 }
 
 fn header(headers: &HeaderMap, name: &str) -> Option<String> {
@@ -95,11 +96,7 @@ impl Recorder {
     }
 
     fn queue_stream(&self, body: &str) {
-        *self.chunks.lock().unwrap() = Some(body.to_owned());
-    }
-
-    fn fail_stream(&self, status: u16, body: &str) {
-        *self.stream_status.lock().unwrap() = Some((status, body.as_bytes().to_vec()));
+        *self.stream.lock().unwrap() = Some(body.to_owned());
     }
 
     fn requests(&self) -> Vec<Seen> {
@@ -109,12 +106,14 @@ impl Recorder {
     fn record(&self, request: &OutboundRequest) {
         let mut url = request.url.clone();
         merge_query(&mut url, &request.query);
-        let body = match &request.body {
+        let body: Option<JsonValue> = match &request.body {
             RequestBody::Json(bytes) => Some(serde_json::from_slice(bytes).unwrap()),
             RequestBody::Empty | RequestBody::Bytes { .. } | RequestBody::Multipart { .. } => None,
         };
-        let content_type = header(&request.headers, "content-type")
-            .or_else(|| body.is_some().then(|| String::from("application/json")));
+        let mut content_type = header(&request.headers, "content-type");
+        if content_type.is_none() && body.is_some() {
+            content_type = Some(String::from("application/json"));
+        }
         self.seen.lock().unwrap().push(Seen {
             method: request.method.as_str().to_owned(),
             url: url.as_str().to_owned(),
@@ -148,17 +147,11 @@ impl RunStreamTransport for Recorder {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
         self.record(&request);
-        let failure = self.stream_status.lock().unwrap().take();
-        let body = self.chunks.lock().unwrap().take().unwrap_or_default();
-        ready(match failure {
-            Some((status, body)) => Err(ThreadRunsError::Status(status, body)),
-            None => {
-                let chunks: RunChunks = Box::pin(futures_util::stream::once(async move {
-                    Ok::<Vec<u8>, ThreadRunsError>(body.into_bytes())
-                }));
-                Ok(chunks)
-            }
-        })
+        let body = self.stream.lock().unwrap().take().unwrap_or_default();
+        let chunks: RunChunks = Box::pin(futures_util::stream::once(async move {
+            Ok::<Vec<u8>, ThreadRunsError>(body.into_bytes())
+        }));
+        ready(Ok(chunks))
     }
 }
 
@@ -185,9 +178,13 @@ impl RealtimeLogger for RecordingLogger {
     }
 }
 
-fn options(key: &str) -> ClientOptions {
+fn json(text: &str) -> JsonValue {
+    serde_json::from_str(text).unwrap()
+}
+
+fn options() -> ClientOptions {
     ClientOptions {
-        api_key: Some(SecretString::from(key)),
+        api_key: Some(SecretString::from(KEY)),
         api_base: Some(String::from(BASE)),
         timeout: None,
         max_retries: None,
@@ -195,16 +192,321 @@ fn options(key: &str) -> ClientOptions {
     }
 }
 
-fn run_request() -> RunRequest {
-    serde_json::from_value(json!({
-        "thread_id": "thread_1",
-        "assistant_id": "asst_1",
-        "instructions": "base",
-        "metadata": {"tag": "x"},
-        "model": "gpt-4o-mini",
-        "tools": [{"type": "code_interpreter"}],
-    }))
+async fn run_operation(
+    transport: &Arc<Recorder>,
+    logger: &mut RecordingLogger,
+    operation: OpenAiAssistantOperation,
+) -> Result<OpenAiAssistantResult, OpenAiAssistantError> {
+    let result = dispatch(
+        OperationRequest::OpenAiAssistant(OpenAiAssistantRequest),
+        operation,
+        Arc::clone(transport),
+        logger,
+    )
+    .await?;
+    let OperationResult::OpenAiAssistant(result) = result else {
+        panic!("the assistant composition returned another operation")
+    };
+    Ok(result)
+}
+
+fn assistant_create() -> AssistantCreate {
+    serde_json::from_str(r#"{"model":"gpt-4o","name":"helper"}"#).unwrap()
+}
+
+fn assistant_body() -> JsonValue {
+    json(r#"{"model":"gpt-4o","name":"helper"}"#)
+}
+
+fn assistants_operation(operation: AssistantsOperation) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Assistants(AssistantsCall {
+        options: options(),
+        operation,
+    })
+}
+
+fn caller_params() -> ListParams {
+    ListParams {
+        order: Some(String::from("asc")),
+        limit: Some(5),
+        before: Some(String::from("b")),
+        after: Some(String::from("a")),
+    }
+}
+
+async fn assistants_create() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, ASSISTANT);
+    let mut logger = RecordingLogger::default();
+    let call = assistants_operation(AssistantsOperation::Create {
+        data: assistant_create(),
+        async_requested: true,
+    });
+    let created = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Assistants(AssistantsReply::Assistant(assistant)) = created else {
+        panic!("create did not return an assistant")
+    };
+    assert_eq!(assistant.id, "asst_1");
+    assert_eq!(assistant.model, "gpt-4o");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(seen[0].url, format!("{BASE}/assistants"));
+    assert_eq!(seen[0].authorization.as_deref(), Some("Bearer sk-fixture"));
+    assert_eq!(seen[0].organization.as_deref(), Some("org-fixture"));
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+    assert_eq!(seen[0].content_type.as_deref(), Some("application/json"));
+    assert_eq!(seen[0].body.as_ref(), Some(&assistant_body()));
+}
+
+async fn assistants_delete() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, DELETED);
+    let mut logger = RecordingLogger::default();
+    let call = assistants_operation(AssistantsOperation::Delete {
+        assistant_id: String::from("a/b c"),
+        async_requested: false,
+    });
+    let deleted = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Assistants(AssistantsReply::Deleted(deleted)) = deleted else {
+        panic!("delete did not return a deletion")
+    };
+    assert!(deleted.deleted);
+    assert_eq!(deleted.id, "asst_1");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "DELETE");
+    assert_eq!(seen[0].url, format!("{BASE}/assistants/a%2Fb%20c"));
+    assert_eq!(seen[0].content_type.as_deref(), Some("application/json"));
+    assert_eq!(seen[0].body, None);
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
+
+async fn assistants_listing() {
+    let transport = Arc::new(Recorder::default());
+    for _ in 0..3 {
+        transport.queue(200, PAGE);
+    }
+    let mut logger = RecordingLogger::default();
+    let facade = assistants_operation(AssistantsOperation::List {
+        facade: AssistantsFacade::Facade {
+            aget_assistants: true,
+        },
+        params: caller_params(),
+    });
+    let page = run_operation(&transport, &mut logger, facade)
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::Assistants(AssistantsReply::Page(page)) = page else {
+        panic!("the facade listing did not return a page")
+    };
+    assert_eq!(page.data[0].id, "asst_1");
+    assert_eq!(page.has_more, Some(true));
+    let sync = assistants_operation(AssistantsOperation::List {
+        facade: AssistantsFacade::Facade {
+            aget_assistants: false,
+        },
+        params: caller_params(),
+    });
+    run_operation(&transport, &mut logger, sync).await.unwrap();
+    let direct = assistants_operation(AssistantsOperation::List {
+        facade: AssistantsFacade::AsyncHelper,
+        params: caller_params(),
+    });
+    run_operation(&transport, &mut logger, direct)
+        .await
+        .unwrap();
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 3);
+    assert_eq!(
+        seen[0].url,
+        format!("{BASE}/assistants?limit=20&order=desc")
+    );
+    assert_eq!(
+        seen[1].url,
+        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
+    );
+    assert_eq!(
+        seen[2].url,
+        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
+    );
+    for request in &seen {
+        assert_eq!(request.beta.as_deref(), Some("assistants=v2"));
+        assert_eq!(request.authorization.as_deref(), Some("Bearer sk-fixture"));
+    }
+}
+
+async fn assistants_leaf_error() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(404, ERROR_BODY);
+    let mut logger = RecordingLogger::default();
+    let call = assistants_operation(AssistantsOperation::Delete {
+        assistant_id: String::from("asst_missing"),
+        async_requested: true,
+    });
+    let Err(error) = run_operation(&transport, &mut logger, call).await else {
+        panic!("the missing assistant error did not surface")
+    };
+    assert!(matches!(
+        error,
+        OpenAiAssistantError::Assistants(AssistantsError::Status { status: 404, .. })
+    ));
+}
+
+async fn assistants_case() {
+    assistants_create().await;
+    assistants_delete().await;
+    assistants_listing().await;
+    assistants_leaf_error().await;
+}
+
+fn thread_data() -> ThreadCreate {
+    serde_json::from_str(
+        r#"{"metadata":{"team":"core"},"messages":[{"role":"user","content":"hi"}]}"#,
+    )
     .unwrap()
+}
+
+fn message_data() -> ThreadMessageData {
+    serde_json::from_str(r#"{"role":"user","content":"hi"}"#).unwrap()
+}
+
+fn threads_operation(operation: ThreadsOperation) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Threads(ThreadsCall {
+        options: options(),
+        operation,
+    })
+}
+
+async fn threads_create() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, THREAD);
+    let mut logger = RecordingLogger::default();
+    let call = threads_operation(ThreadsOperation::Create {
+        data: thread_data(),
+        async_requested: true,
+    });
+    let created = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Threads(ThreadReply::Thread(thread)) = created else {
+        panic!("create did not return a thread")
+    };
+    assert_eq!(thread.id, "thread_1");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(seen[0].url, format!("{BASE}/threads"));
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+    assert_eq!(
+        seen[0].body.as_ref(),
+        Some(&json(
+            r#"{"metadata":{"team":"core"},"messages":[{"role":"user","content":"hi"}]}"#
+        ))
+    );
+}
+
+async fn threads_retrieve() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, THREAD);
+    let mut logger = RecordingLogger::default();
+    let call = threads_operation(ThreadsOperation::Retrieve {
+        thread_id: String::from("thread_1"),
+        async_requested: false,
+    });
+    let retrieved = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Threads(ThreadReply::Thread(thread)) = retrieved else {
+        panic!("retrieve did not return a thread")
+    };
+    assert_eq!(thread.id, "thread_1");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(seen[0].url, format!("{BASE}/threads/thread_1"));
+    assert_eq!(seen[0].body, None);
+}
+
+async fn threads_add_message() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, MESSAGE);
+    let mut logger = RecordingLogger::default();
+    let call = threads_operation(ThreadsOperation::AddMessage {
+        thread_id: String::from("thread_1"),
+        data: message_data(),
+        async_requested: true,
+    });
+    let added = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Threads(ThreadReply::Message(message)) = added else {
+        panic!("add_message did not return a message")
+    };
+    assert_eq!(message.id, "msg_1");
+    assert_eq!(message.status, Some(MessageStatus::Completed));
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(seen[0].url, format!("{BASE}/threads/thread_1/messages"));
+    assert_eq!(
+        seen[0].body.as_ref(),
+        Some(&json(r#"{"role":"user","content":"hi"}"#))
+    );
+}
+
+async fn threads_list_messages() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, MESSAGE_PAGE);
+    let mut logger = RecordingLogger::default();
+    let call = threads_operation(ThreadsOperation::ListMessages {
+        thread_id: String::from("thread_1"),
+        async_requested: false,
+    });
+    let listed = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Threads(ThreadReply::Page(page)) = listed else {
+        panic!("list_messages did not return a page")
+    };
+    assert_eq!(page.data.len(), 1);
+    assert_eq!(page.data[0].id, "msg_1");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "GET");
+    assert_eq!(seen[0].url, format!("{BASE}/threads/thread_1/messages"));
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
+
+async fn threads_missing_key() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = OpenAiAssistantOperation::Threads(ThreadsCall {
+        options: ClientOptions::default(),
+        operation: ThreadsOperation::Retrieve {
+            thread_id: String::from("thread_1"),
+            async_requested: false,
+        },
+    });
+    let Err(error) = run_operation(&transport, &mut logger, call).await else {
+        panic!("the missing api key did not surface")
+    };
+    assert!(matches!(
+        error,
+        OpenAiAssistantError::Threads(ThreadsError::MissingApiKey)
+    ));
+}
+
+async fn threads_case() {
+    threads_create().await;
+    threads_retrieve().await;
+    threads_add_message().await;
+    threads_list_messages().await;
+    threads_missing_key().await;
+}
+
+fn run_request() -> RunRequest {
+    serde_json::from_str(r#"{"thread_id":"thread_1","assistant_id":"asst_1","instructions":"base","metadata":{"tag":"x"},"model":"gpt-4o-mini","tools":[{"type":"code_interpreter"}]}"#).unwrap()
+}
+
+fn runs_operation(dispatch: RunDispatch) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Runs(RunsCall {
+        options: options(),
+        dispatch,
+        request: run_request(),
+    })
 }
 
 fn stream_body() -> String {
@@ -213,609 +515,325 @@ fn stream_body() -> String {
     )
 }
 
-async fn assistants_case() {
+async fn runs_buffered() {
     let transport = Arc::new(Recorder::default());
-    transport.queue(200, ASSISTANT);
-    transport.queue(200, PAGE);
-    transport.queue(200, PAGE);
-    transport.queue(200, DELETED);
-    transport.queue(404, ERROR_BODY);
-    let mut logger = RecordingLogger::default();
-    let data: AssistantCreate =
-        serde_json::from_value(json!({"model": "gpt-4o", "name": "helper"})).unwrap();
-    let create = OpenAiAssistantRequest::Assistants(AssistantsCall {
-        options: options(KEY),
-        operation: AssistantsOperation::Create {
-            data,
-            async_requested: true,
-        },
-    });
-    let created = dispatch(
-        OperationRequest::OpenAiAssistant(create),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Assistants(
-        AssistantsReply::Assistant(assistant),
-    )) = created
-    else {
-        panic!("create did not return an assistant")
-    };
-    assert_eq!(assistant.id, "asst_1");
-
-    let list = OpenAiAssistantRequest::Assistants(AssistantsCall {
-        options: options(KEY),
-        operation: AssistantsOperation::List {
-            facade: AssistantsFacade::Facade {
-                aget_assistants: true,
-            },
-            params: ListParams::default(),
-        },
-    });
-    dispatch(
-        OperationRequest::OpenAiAssistant(list),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-
-    let direct = OpenAiAssistantRequest::Assistants(AssistantsCall {
-        options: options(KEY),
-        operation: AssistantsOperation::List {
-            facade: AssistantsFacade::AsyncHelper,
-            params: ListParams {
-                order: Some(String::from("asc")),
-                limit: Some(5),
-                before: Some(String::from("b")),
-                after: Some(String::from("a")),
-            },
-        },
-    });
-    dispatch(
-        OperationRequest::OpenAiAssistant(direct),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-
-    let delete = OpenAiAssistantRequest::Assistants(AssistantsCall {
-        options: options(KEY),
-        operation: AssistantsOperation::Delete {
-            assistant_id: String::from("a/b c"),
-            async_requested: false,
-        },
-    });
-    let deleted = dispatch(
-        OperationRequest::OpenAiAssistant(delete),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Assistants(
-        AssistantsReply::Deleted(deleted),
-    )) = deleted
-    else {
-        panic!("delete did not return a deletion")
-    };
-    assert!(deleted.deleted);
-
-    let seen = transport.requests();
-    assert_eq!(seen.len(), 4);
-    assert_eq!(seen[0].method, "POST");
-    assert_eq!(seen[0].url, format!("{BASE}/assistants"));
-    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
-    assert_eq!(
-        seen[0].body.as_ref().unwrap(),
-        &json!({"model": "gpt-4o", "name": "helper"})
-    );
-    assert_eq!(
-        seen[1].url,
-        format!("{BASE}/assistants?limit=20&order=desc")
-    );
-    assert_eq!(
-        seen[1].beta.as_deref(),
-        Some("assistants=v2"),
-        "the facade listing keeps the assistants beta header"
-    );
-    assert_eq!(
-        seen[2].url,
-        format!("{BASE}/assistants?after=a&before=b&limit=5&order=asc")
-    );
-    assert_eq!(seen[3].url, format!("{BASE}/assistants/a%2Fb%20c"));
-    assert_eq!(seen[3].method, "DELETE");
-    assert_eq!(seen[3].content_type.as_deref(), Some("application/json"));
-
-    let failure = OpenAiAssistantRequest::Assistants(AssistantsCall {
-        options: options(KEY),
-        operation: AssistantsOperation::Delete {
-            assistant_id: String::from("asst_missing"),
-            async_requested: true,
-        },
-    });
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(failure),
-        transport,
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        OpenAiAssistantError::Assistants(AssistantsError::Status { status: 404, .. })
-    ));
-}
-
-async fn threads_case() {
-    let transport = Arc::new(Recorder::default());
-    transport.queue(200, THREAD);
-    transport.queue(200, THREAD);
-    transport.queue(200, MESSAGE);
-    transport.queue(200, MESSAGE_PAGE);
-    let mut logger = RecordingLogger::default();
-    let data: ThreadCreate = serde_json::from_value(json!({
-        "metadata": {"team": "core"},
-        "messages": [{"role": "user", "content": "hi"}],
-    }))
-    .unwrap();
-    let create = OpenAiAssistantRequest::Threads(ThreadsCall {
-        options: options(KEY),
-        operation: ThreadsOperation::Create {
-            data,
-            async_requested: true,
-        },
-    });
-    let thread = dispatch(
-        OperationRequest::OpenAiAssistant(create),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Threads(ThreadReply::Thread(
-        thread,
-    ))) = thread
-    else {
-        panic!("create did not return a thread")
-    };
-    assert_eq!(thread.id, "thread_1");
-
-    let retrieve = OpenAiAssistantRequest::Threads(ThreadsCall {
-        options: options(KEY),
-        operation: ThreadsOperation::Retrieve {
-            thread_id: String::from("thread_1"),
-            async_requested: false,
-        },
-    });
-    dispatch(
-        OperationRequest::OpenAiAssistant(retrieve),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-
-    let message: ThreadMessageData =
-        serde_json::from_value(json!({"role": "user", "content": "hi"})).unwrap();
-    let add = OpenAiAssistantRequest::Threads(ThreadsCall {
-        options: options(KEY),
-        operation: ThreadsOperation::AddMessage {
-            thread_id: String::from("thread_1"),
-            data: message,
-            async_requested: false,
-        },
-    });
-    let added = dispatch(
-        OperationRequest::OpenAiAssistant(add),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Threads(ThreadReply::Message(
-        message,
-    ))) = added
-    else {
-        panic!("add_message did not return a message")
-    };
-    assert_eq!(message.status, Some(MessageStatus::Completed));
-
-    let list = OpenAiAssistantRequest::Threads(ThreadsCall {
-        options: options(KEY),
-        operation: ThreadsOperation::ListMessages {
-            thread_id: String::from("thread_1"),
-            async_requested: true,
-        },
-    });
-    let listed = dispatch(
-        OperationRequest::OpenAiAssistant(list),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Threads(ThreadReply::Page(page))) =
-        listed
-    else {
-        panic!("list_messages did not return a page")
-    };
-    assert_eq!(page.data.len(), 1);
-
-    let seen = transport.requests();
-    assert_eq!(seen.len(), 4);
-    assert_eq!(seen[0].method, "POST");
-    assert_eq!(seen[0].url, format!("{BASE}/threads"));
-    assert_eq!(
-        seen[0].body.as_ref().unwrap(),
-        &json!({"metadata": {"team": "core"}, "messages": [{"role": "user", "content": "hi"}]})
-    );
-    assert_eq!(seen[1].url, format!("{BASE}/threads/thread_1"));
-    assert_eq!(seen[2].method, "POST");
-    assert_eq!(seen[2].url, format!("{BASE}/threads/thread_1/messages"));
-    assert_eq!(
-        seen[2].body.as_ref().unwrap(),
-        &json!({"role": "user", "content": "hi"})
-    );
-    assert_eq!(seen[3].url, format!("{BASE}/threads/thread_1/messages"));
-    for request in &seen {
-        assert_eq!(request.beta.as_deref(), Some("assistants=v2"));
-        assert_eq!(request.authorization.as_deref(), Some("Bearer sk-fixture"));
-    }
-
-    let missing = OpenAiAssistantRequest::Threads(ThreadsCall {
-        options: ClientOptions::default(),
-        operation: ThreadsOperation::Retrieve {
-            thread_id: String::from("thread_1"),
-            async_requested: false,
-        },
-    });
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(missing),
-        transport,
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        OpenAiAssistantError::Threads(betterlite_openai::threads::error::ThreadsError::MissingApiKey)
-    ));
-}
-
-async fn runs_case() {
-    let transport = Arc::new(Recorder::default());
-    for _ in 0..4 {
-        transport.queue(200, RUN);
-    }
     transport.queue(200, RUN);
-    transport.queue_stream(&stream_body());
-    transport.queue(500, ERROR_BODY);
+    transport.queue(200, RUN);
     let mut logger = RecordingLogger::default();
-    let buffered = OpenAiAssistantRequest::Runs(RunsCall {
-        options: options(KEY),
-        dispatch: RunDispatch::default(),
-        request: run_request(),
-    });
-    let polled = dispatch(
-        OperationRequest::OpenAiAssistant(buffered),
-        Arc::clone(&transport),
+    let outcome = run_operation(
+        &transport,
         &mut logger,
+        runs_operation(RunDispatch::default()),
     )
     .await
     .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Runs(RunOutcome::Polled(
-        kind,
-        reply,
-    ))) = polled
-    else {
+    let OpenAiAssistantResult::Runs(RunOutcome::Polled(kind, reply)) = outcome else {
         panic!("a buffered run did not return a polled reply")
     };
     assert_eq!(kind, ClientKind::Sync);
+    assert_eq!(reply.id, "run_1");
     assert_eq!(reply.status, "completed");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(seen[0].url, format!("{BASE}/threads/thread_1/runs"));
+    assert_eq!(seen[0].body.as_ref(), Some(&json(RUN_BODY)));
+    assert_eq!(seen[1].method, "GET");
+    assert_eq!(seen[1].url, format!("{BASE}/threads/thread_1/runs/run_1"));
+}
 
-    let asynchronous = OpenAiAssistantRequest::Runs(RunsCall {
-        options: options(KEY),
-        dispatch: RunDispatch {
-            arun_thread: true,
-            stream: false,
-        },
-        request: run_request(),
-    });
-    let polled = dispatch(
-        OperationRequest::OpenAiAssistant(asynchronous),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Runs(RunOutcome::Polled(
-        kind,
-        _,
-    ))) = polled
-    else {
+async fn runs_async_facade() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(200, RUN);
+    transport.queue(200, RUN);
+    let mut logger = RecordingLogger::default();
+    let dispatch = RunDispatch {
+        arun_thread: true,
+        stream: false,
+    };
+    let outcome = run_operation(&transport, &mut logger, runs_operation(dispatch))
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::Runs(RunOutcome::Polled(kind, reply)) = outcome else {
         panic!("the async facade did not return a polled reply")
     };
     assert_eq!(kind, ClientKind::Async);
+    assert_eq!(reply.status, "completed");
+    let seen = transport.requests();
+    assert_eq!(seen.len(), 2);
+    assert_eq!(seen[0].body.as_ref(), Some(&json(RUN_BODY)));
+}
 
-    let streaming = OpenAiAssistantRequest::Runs(RunsCall {
-        options: options(KEY),
-        dispatch: RunDispatch {
-            arun_thread: false,
-            stream: true,
-        },
-        request: run_request(),
-    });
-    let streamed = dispatch(
-        OperationRequest::OpenAiAssistant(streaming),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Runs(RunOutcome::Streaming(
-        mut events,
-    ))) = streamed
-    else {
+async fn runs_streaming() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue_stream(&stream_body());
+    let mut logger = RecordingLogger::default();
+    let dispatch = RunDispatch {
+        arun_thread: false,
+        stream: true,
+    };
+    let outcome = run_operation(&transport, &mut logger, runs_operation(dispatch))
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::Runs(RunOutcome::Streaming(mut events)) = outcome else {
         panic!("a streaming run did not stay a stream")
     };
-    let mut names = Vec::new();
+    let mut names: Vec<String> = Vec::new();
     while let Some(event) = events.next().await {
         names.push(event.unwrap().name().to_owned());
     }
-    assert_eq!(names, vec!["thread.run.created", "thread.run.completed"]);
-
+    assert_eq!(names, ["thread.run.created", "thread.run.completed"]);
     let seen = transport.requests();
-    assert_eq!(seen.len(), 5);
+    assert_eq!(seen.len(), 1);
     assert_eq!(seen[0].method, "POST");
-    assert_eq!(seen[0].url, format!("{BASE}/threads/thread_1/runs"));
-    assert_eq!(
-        seen[0].body.as_ref().unwrap(),
-        &json!({
-            "assistant_id": "asst_1",
-            "additional_instructions": null,
-            "instructions": "base",
-            "metadata": {"tag": "x"},
-            "model": "gpt-4o-mini",
-            "stream": false,
-            "tools": [{"type": "code_interpreter"}],
-        })
-    );
-    assert_eq!(seen[1].method, "GET");
-    assert_eq!(seen[1].url, format!("{BASE}/threads/thread_1/runs/run_1"));
-    assert_eq!(seen[4].method, "POST");
-    assert_eq!(
-        seen[4].body.as_ref().unwrap()["stream"],
-        Value::Bool(true),
-        "the streaming run marks the create body"
-    );
-    for request in &seen {
-        assert_eq!(request.beta.as_deref(), Some("assistants=v2"));
-    }
+    assert_eq!(seen[0].body.as_ref(), Some(&json(STREAM_BODY)));
+    assert_eq!(seen[0].beta.as_deref(), Some("assistants=v2"));
+}
 
-    let failing = OpenAiAssistantRequest::Runs(RunsCall {
-        options: options(KEY),
-        dispatch: RunDispatch::default(),
-        request: run_request(),
-    });
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(failing),
-        transport,
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
+async fn runs_leaf_error() {
+    let transport = Arc::new(Recorder::default());
+    transport.queue(500, ERROR_BODY);
+    let mut logger = RecordingLogger::default();
+    let call = runs_operation(RunDispatch::default());
+    let Err(error) = run_operation(&transport, &mut logger, call).await else {
+        panic!("the run status error did not surface")
+    };
     assert!(matches!(
         error,
         OpenAiAssistantError::Runs(ThreadRunsError::Status(500, _))
     ));
 }
 
-async fn decisions_case() {
+async fn runs_case() {
+    runs_buffered().await;
+    runs_async_facade().await;
+    runs_streaming().await;
+    runs_leaf_error().await;
+}
+
+fn decision_request() -> DecisionRequestBody {
+    serde_json::from_str(CHOICE_QUESTION).unwrap()
+}
+
+fn decisions_call(
+    api_base: Option<&str>,
+    api_key: Option<&str>,
+    operation: DecisionsOperation,
+) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Decisions(DecisionsCall {
+        api_base: api_base.map(String::from),
+        api_key: api_key.map(SecretString::from),
+        operation,
+    })
+}
+
+async fn decisions_request() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
-    let request: DecisionRequestBody = serde_json::from_str(CHOICE_QUESTION).unwrap();
-    let call = OpenAiAssistantRequest::Decisions(DecisionsCall {
-        api_base: Some(String::from("https://example.test/v1")),
-        api_key: Some(String::from("sk-decisions")),
-        operation: DecisionsOperation::Request {
+    let call = decisions_call(
+        Some(BASE),
+        Some("sk-decisions"),
+        DecisionsOperation::Request {
             model: String::from("gpt-4o"),
-            request,
+            request: decision_request(),
         },
-    });
-    let projected = dispatch(
-        OperationRequest::OpenAiAssistant(call),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Decisions(DecisionsReply {
+    );
+    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Decisions(DecisionsReply {
         api_base,
         api_key,
         projection,
-    })) = projected
+    }) = projected
     else {
         panic!("the decisions request did not project")
     };
-    assert_eq!(api_base.as_deref(), Some("https://example.test/v1"));
-    assert_eq!(api_key.as_deref(), Some("sk-decisions"));
+    assert_eq!(api_base.as_deref(), Some(BASE));
+    assert_eq!(
+        api_key.as_ref().map(|key| key.expose_secret().as_str()),
+        Some("sk-decisions")
+    );
     let DecisionsProjection::Request(wire) = projection else {
         panic!("the request call produced a response projection")
     };
-    assert!(matches!(wire, ProviderRequestWire::OpenAi(_)));
-    assert_eq!(
-        serde_json::to_value(&wire).unwrap(),
-        json!({
-            "model": "gpt-4o",
-            "input": "Check this",
-            "questions": [{"type": "choice", "name": "label", "instructions": "Pick",
-                "choices": [{"value": "yes"}, {"value": "no"}]}],
-            "safety_identifier": "safe-1",
-        })
-    );
+    assert!(matches!(&wire, ProviderRequestWire::OpenAi(_)));
+    let written: JsonValue = serde_json::from_slice(&serde_json::to_vec(&wire).unwrap()).unwrap();
+    assert_eq!(written, json(CHOICE_WIRE));
+    assert!(transport.requests().is_empty());
+}
 
-    let defaults = OpenAiAssistantRequest::Decisions(DecisionsCall {
-        api_base: None,
-        api_key: None,
-        operation: DecisionsOperation::Request {
+async fn decisions_defaults() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = decisions_call(
+        None,
+        None,
+        DecisionsOperation::Request {
             model: String::from("gpt-4o"),
-            request: serde_json::from_str(CHOICE_QUESTION).unwrap(),
+            request: decision_request(),
         },
-    });
-    let projected = dispatch(
-        OperationRequest::OpenAiAssistant(defaults),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Decisions(reply)) = projected
-    else {
+    );
+    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Decisions(reply) = projected else {
         panic!("the default resolution did not project")
     };
     assert_eq!(reply.api_base.as_deref(), Some("https://api.openai.com"));
-    assert_eq!(reply.api_key, None);
+    assert!(reply.api_key.is_none());
+}
 
-    let payload = br#"{"model":"gpt-4o","answers":[{"type":"choice","name":"label","choice":"yes","probabilities":[{"value":"yes","probability":0.9},{"value":"no","probability":0.1}],"confidence":0.9}],"usage":{"input_tokens":3,"output_tokens":2,"total_tokens":5}}"#;
-    let response = OpenAiAssistantRequest::Decisions(DecisionsCall {
-        api_base: Some(String::from("https://example.test/v1")),
-        api_key: Some(String::from("sk-decisions")),
-        operation: DecisionsOperation::Response {
+async fn decisions_response() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = decisions_call(
+        Some(BASE),
+        Some("sk-decisions"),
+        DecisionsOperation::Response {
             model: String::from("gpt-4o"),
-            request: serde_json::from_str(CHOICE_QUESTION).unwrap(),
-            payload: payload.to_vec(),
+            request: decision_request(),
+            payload: CHOICE_ANSWERS.as_bytes().to_vec(),
         },
-    });
-    let projected = dispatch(
-        OperationRequest::OpenAiAssistant(response),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Decisions(DecisionsReply {
+    );
+    let projected = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Decisions(DecisionsReply {
         projection: DecisionsProjection::Response(response),
         ..
-    })) = projected
+    }) = projected
     else {
         panic!("the response call did not project its answer")
     };
     assert_eq!(response.model, "gpt-4o");
-    assert_eq!(response.usage.total_tokens.0, 5);
-    assert_eq!(
-        serde_json::to_value(&response).unwrap()["answers"][0]["choice"],
-        json!("yes")
-    );
-
-    let unsupported: DecisionRequestBody = serde_json::from_str(
-        r#"{"input":"Check this","questions":[{"type":"choice","instructions":"Pick","choices":[{"value":"only"}]}]}"#,
-    )
-    .unwrap();
-    let single = OpenAiAssistantRequest::Decisions(DecisionsCall {
-        api_base: None,
-        api_key: None,
-        operation: DecisionsOperation::Request {
-            model: String::from("gpt-4o"),
-            request: unsupported,
-        },
-    });
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(single),
-        transport,
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
-    assert!(matches!(
-        error,
-        OpenAiAssistantError::DecisionsRequest(RequestConversionError::Unsupported(_))
-    ));
-    let _ = (openai_request_to_ir, ir_to_openai_response, DecisionResponse::default);
+    assert_eq!(response.usage.total_tokens.0.as_u64(), Some(5));
+    let DecisionAnswer::Choice { name, choice, .. } = &response.answers[0] else {
+        panic!("the projected answer did not stay a choice")
+    };
+    assert_eq!(name.as_deref(), Some("label"));
+    assert!(matches!(choice, ChoiceValue::Text(text) if text == "yes"));
 }
 
-async fn realtime_session_case() {
+async fn decisions_malformed_payload() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
-    let params = QueryParams::from([
+    let call = decisions_call(
+        Some(BASE),
+        Some("sk-decisions"),
+        DecisionsOperation::Response {
+            model: String::from("gpt-4o"),
+            request: decision_request(),
+            payload: b"{not json".to_vec(),
+        },
+    );
+    let Err(error) = run_operation(&transport, &mut logger, call).await else {
+        panic!("the malformed decisions payload did not surface")
+    };
+    assert!(matches!(error, OpenAiAssistantError::DecisionsPayload(_)));
+}
+
+async fn decisions_case() {
+    decisions_request().await;
+    decisions_defaults().await;
+    decisions_response().await;
+    decisions_malformed_payload().await;
+}
+
+fn realtime_params() -> QueryParams {
+    QueryParams::from([
         (String::from("model"), Some(String::from("realtime-a"))),
-        (
-            String::from("intent"),
-            Some(String::from("transcription")),
-        ),
-    ]);
-    let connect = OpenAiAssistantRequest::Realtime(RealtimeCall::Connect {
-        api_base: Some(String::from("https://example.test/")),
+        (String::from("intent"), Some(String::from("transcription"))),
+    ])
+}
+
+fn realtime_connect(
+    api_base: &str,
+    beta_realtime: bool,
+    ssl_verification: Verification,
+) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Realtime(RealtimeCall::Connect {
+        api_base: Some(String::from(api_base)),
         api_key: Some(SecretString::from(KEY)),
         model: String::from("realtime-a"),
-        query_params: Some(params),
-        beta_realtime: true,
-        ssl_verification: Verification::Enabled,
+        query_params: Some(realtime_params()),
+        beta_realtime,
+        ssl_verification,
         max_message_size_bytes: 4096,
-    });
-    let plan = dispatch(
-        OperationRequest::OpenAiAssistant(connect),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Session(OpenAiAssistantPrepared {
-        url,
-        headers,
-        ssl,
-        max_message_size_bytes,
-        force_transcription_model,
-        event_normalizer,
-    })) = plan
-    else {
+    })
+}
+
+fn realtime_failure(failure: RealtimeFailureOwned) -> OpenAiAssistantOperation {
+    OpenAiAssistantOperation::Realtime(RealtimeCall::Failure(failure))
+}
+
+async fn realtime_secure_session() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = realtime_connect("https://example.test/", true, Verification::Enabled);
+    let prepared = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Session(plan) = prepared else {
         panic!("the session preparation did not return a session")
     };
     assert_eq!(
-        url,
+        plan.url,
         "wss://example.test/v1/realtime?model=realtime-a&intent=transcription"
     );
     assert_eq!(
-        headers.get("Authorization").map(String::as_str),
+        plan.headers.get("Authorization").map(String::as_str),
         Some("Bearer sk-fixture")
     );
-    assert_eq!(headers.get("OpenAI-Beta").map(String::as_str), Some("realtime=v1"));
-    assert_eq!(ssl, RealtimeSsl::Shared);
-    assert_eq!(max_message_size_bytes, 4096);
-    assert_eq!(force_transcription_model.as_deref(), Some("realtime-a"));
-    assert_eq!(event_normalizer, SessionNormalizerKind::Passthrough);
+    assert_eq!(
+        plan.headers.get("OpenAI-Beta").map(String::as_str),
+        Some("realtime=v1")
+    );
+    assert_eq!(plan.ssl, RealtimeSsl::Shared);
+    assert_eq!(plan.max_message_size_bytes, 4096);
+    assert_eq!(
+        plan.force_transcription_model.as_deref(),
+        Some("realtime-a")
+    );
+    assert!(!plan.event_normalizer_installed);
     assert_eq!(logger.calls.len(), 1);
-    assert_eq!(logger.calls[0].api_base, url);
-    assert_eq!(logger.calls[0].query_params, params);
+    assert_eq!(logger.calls[0].api_base, plan.url);
+    assert_eq!(logger.calls[0].query_params, realtime_params());
+    assert!(transport.requests().is_empty());
+}
 
-    let plain = OpenAiAssistantRequest::Realtime(RealtimeCall::Connect {
+async fn realtime_plain_session() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = OpenAiAssistantOperation::Realtime(RealtimeCall::Connect {
         api_base: Some(String::from("http://127.0.0.1:8080/base")),
         api_key: Some(SecretString::from(KEY)),
         model: String::from("realtime-a"),
         query_params: None,
         beta_realtime: false,
-        ssl_verification: Verification::Disabled,
+        ssl_verification: Verification::Enabled,
         max_message_size_bytes: 1024,
     });
-    let plan = dispatch(
-        OperationRequest::OpenAiAssistant(plain),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::Session(plan)) = plan else {
+    let prepared = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Session(plan) = prepared else {
         panic!("the plain session preparation did not return a session")
     };
     assert_eq!(plan.url, "ws://127.0.0.1:8080/v1/realtime?model=realtime-a");
     assert_eq!(plan.ssl, RealtimeSsl::None);
     assert_eq!(plan.force_transcription_model, None);
     assert_eq!(plan.headers.get("OpenAI-Beta"), None);
+    assert_eq!(plan.max_message_size_bytes, 1024);
+}
 
-    let no_key = OpenAiAssistantRequest::Realtime(RealtimeCall::Connect {
+async fn realtime_insecure_session() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = realtime_connect(BASE, false, Verification::Disabled);
+    let prepared = run_operation(&transport, &mut logger, call).await.unwrap();
+    let OpenAiAssistantResult::Session(plan) = prepared else {
+        panic!("the insecure session preparation did not return a session")
+    };
+    assert!(plan.url.starts_with("wss://"));
+    assert_eq!(plan.ssl, RealtimeSsl::Insecure);
+    assert_eq!(plan.headers.get("OpenAI-Beta"), None);
+}
+
+async fn realtime_missing_key() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let call = OpenAiAssistantOperation::Realtime(RealtimeCall::Connect {
         api_base: None,
         api_key: None,
         model: String::from("realtime-a"),
@@ -824,48 +842,31 @@ async fn realtime_session_case() {
         ssl_verification: Verification::Enabled,
         max_message_size_bytes: 1024,
     });
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(no_key),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
+    let Err(error) = run_operation(&transport, &mut logger, call).await else {
+        panic!("the missing realtime api key did not surface")
+    };
     assert!(matches!(
         error,
-        OpenAiAssistantError::Realtime(betterlite_openai::realtime::error::RealtimeError::MissingApiKey)
+        OpenAiAssistantError::Realtime(RealtimeError::MissingApiKey)
     ));
+}
 
-    let handshake = OpenAiAssistantRequest::Realtime(RealtimeCall::Failure(
-        RealtimeFailureOwned::Handshake { status_code: 403 },
-    ));
-    let action = dispatch(
-        OperationRequest::OpenAiAssistant(handshake),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::SessionFailure(action)) = action
-    else {
+async fn realtime_connection_failures() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let handshake = realtime_failure(RealtimeFailureOwned::Handshake { status_code: 403 });
+    let action = run_operation(&transport, &mut logger, handshake)
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::SessionFailure(action) = action else {
         panic!("a handshake refusal did not return a session failure")
     };
     assert_eq!(action, ClientAction::RefuseHandshake { status_code: 403 });
-
-    let other = OpenAiAssistantRequest::Realtime(RealtimeCall::Failure(
-        RealtimeFailureOwned::Other {
-            message: String::from("connection reset"),
-        },
-    ));
-    let action = dispatch(
-        OperationRequest::OpenAiAssistant(other),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::SessionFailure(action)) = action
-    else {
+    let other = realtime_failure(RealtimeFailureOwned::Other {
+        message: String::from("connection reset"),
+    });
+    let action = run_operation(&transport, &mut logger, other).await.unwrap();
+    let OpenAiAssistantResult::SessionFailure(action) = action else {
         panic!("a connection failure did not return a session failure")
     };
     assert_eq!(
@@ -875,45 +876,42 @@ async fn realtime_session_case() {
             reason: String::from("Internal server error: connection reset"),
         })
     );
+}
 
-    let ignored = OpenAiAssistantRequest::Realtime(RealtimeCall::Failure(
-        RealtimeFailureOwned::CloseFailed {
-            message: String::from("connection reset"),
-            close_error: String::from("already completed"),
-        },
-    ));
-    let action = dispatch(
-        OperationRequest::OpenAiAssistant(ignored),
-        Arc::clone(&transport),
-        &mut logger,
-    )
-    .await
-    .unwrap();
-    let OperationResult::OpenAiAssistant(OpenAiAssistantResult::SessionFailure(action)) = action
-    else {
+async fn realtime_close_failures() {
+    let transport = Arc::new(Recorder::default());
+    let mut logger = RecordingLogger::default();
+    let ignored = realtime_failure(RealtimeFailureOwned::CloseFailed {
+        message: String::from("connection reset"),
+        close_error: String::from("already completed"),
+    });
+    let action = run_operation(&transport, &mut logger, ignored)
+        .await
+        .unwrap();
+    let OpenAiAssistantResult::SessionFailure(action) = action else {
         panic!("an ignored close failure did not return a session failure")
     };
     assert!(matches!(action, ClientAction::IgnoreCloseFailure { .. }));
-
-    let unexpected = OpenAiAssistantRequest::Realtime(RealtimeCall::Failure(
-        RealtimeFailureOwned::CloseFailed {
-            message: String::from("connection reset"),
-            close_error: String::from("socket gone"),
-        },
-    ));
-    let error = dispatch(
-        OperationRequest::OpenAiAssistant(unexpected),
-        transport,
-        &mut logger,
-    )
-    .await
-    .unwrap_err();
+    let unexpected = realtime_failure(RealtimeFailureOwned::CloseFailed {
+        message: String::from("connection reset"),
+        close_error: String::from("socket gone"),
+    });
+    let Err(error) = run_operation(&transport, &mut logger, unexpected).await else {
+        panic!("an unexpected close failure did not surface")
+    };
     assert!(matches!(
         error,
-        OpenAiAssistantError::Realtime(
-            betterlite_openai::realtime::error::RealtimeError::UnexpectedCloseFailure { .. }
-        )
+        OpenAiAssistantError::Realtime(RealtimeError::UnexpectedCloseFailure { .. })
     ));
+}
+
+async fn realtime_session_case() {
+    realtime_secure_session().await;
+    realtime_plain_session().await;
+    realtime_insecure_session().await;
+    realtime_missing_key().await;
+    realtime_connection_failures().await;
+    realtime_close_failures().await;
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -946,10 +944,19 @@ async fn openai_assistant_dispatch_cases(#[case] scenario: Scenario) {
 async fn openai_assistant_dispatch_unsupported_operation() {
     let transport = Arc::new(Recorder::default());
     let mut logger = RecordingLogger::default();
-    let chat = OperationRequest::OpenAi(crate::openai_dispatch::OpenAiRequest);
-    let error = dispatch(chat, transport, &mut logger).await.unwrap_err();
-    assert!(matches!(
-        error,
-        OpenAiAssistantError::UnsupportedOperation
-    ));
+    let operation = assistants_operation(AssistantsOperation::Delete {
+        assistant_id: String::from("asst_1"),
+        async_requested: true,
+    });
+    let Err(error) = dispatch(
+        OperationRequest::OpenAi(crate::openai_dispatch::OpenAiRequest),
+        operation,
+        transport,
+        &mut logger,
+    )
+    .await
+    else {
+        panic!("another operation reached the assistant composition")
+    };
+    assert!(matches!(error, OpenAiAssistantError::UnsupportedOperation));
 }

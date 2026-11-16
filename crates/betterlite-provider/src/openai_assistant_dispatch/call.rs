@@ -9,6 +9,16 @@ use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::threads::records::{ThreadCreate, ThreadMessageData};
 use secrecy::SecretString;
 
+// The typed call the composition executes; operation.rs carries the unit marker above it and the caller keeps the call beside it.
+#[derive(Debug, Clone)]
+pub enum OpenAiAssistantOperation {
+    Assistants(AssistantsCall),
+    Threads(ThreadsCall),
+    Runs(RunsCall),
+    Decisions(DecisionsCall),
+    Realtime(RealtimeCall),
+}
+
 // The assistant listing reaches the facade method or async_get_assistants directly.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AssistantsFacade {
@@ -95,9 +105,16 @@ pub struct DecisionsCall {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RealtimeFailureOwned {
-    Handshake { status_code: u16 },
-    Other { message: String },
-    CloseFailed { message: String, close_error: String },
+    Handshake {
+        status_code: u16,
+    },
+    Other {
+        message: String,
+    },
+    CloseFailed {
+        message: String,
+        close_error: String,
+    },
 }
 
 impl RealtimeFailureOwned {
