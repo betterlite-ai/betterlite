@@ -287,9 +287,35 @@ fn thinking_summary_group(#[case] messages: &str, #[case] expected: &str) {
     r#"[{"role": "system", "content": "a"}, {"role": "user", "content": "q"}, {"role": "system", "content": "b"}]"#,
     r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "a"}]}, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "q"}]}, {"type": "message", "role": "system", "content": [{"type": "input_text", "text": "b"}]}]"#
 )]
+#[case::untyped_block_skipped(
+    r#"[{"role": "system", "content": [{"text": "hi"}, {"type": "text", "text": "bye"}]}]"#,
+    r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "bye"}]}]"#
+)]
+#[case::untyped_block_with_marker_skipped(
+    r#"[{"role": "system", "content": [{"text": "hi", "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#,
+    "[]"
+)]
+#[case::untyped_block_with_cache_control_skipped(
+    r#"[{"role": "system", "content": [{"text": "hi", "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": "bye"}]}]"#,
+    r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "bye"}]}]"#
+)]
 #[case::no_messages("[]", "[]")]
 fn midturn_system_responses(#[case] messages: &str, #[case] expected: &str) {
     assert_eq!(translated(messages), json(expected));
+}
+
+#[rstest]
+#[case::user_block_without_type(r#"[{"role": "user", "content": [{"text": "hi"}]}]"#)]
+#[case::assistant_block_without_type(
+    r#"[{"role": "assistant", "content": [{"type": "text", "text": "ok"}, {"text": "hi"}]}]"#
+)]
+#[case::typed_block_with_wrong_text(
+    r#"[{"role": "system", "content": [{"type": "text", "text": 5}]}]"#
+)]
+#[case::untyped_block_with_wrong_text(r#"[{"role": "system", "content": [{"text": 5}]}]"#)]
+fn rejects_blocks_outside_the_declared_types(#[case] messages: &str) {
+    let source = format!(r#"{{"messages": {messages}}}"#);
+    assert!(serde_json::from_str::<MessagesResponsesInputInput>(&source).is_err());
 }
 
 #[rstest]

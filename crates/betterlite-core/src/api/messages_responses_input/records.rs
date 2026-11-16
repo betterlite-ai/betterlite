@@ -3,10 +3,41 @@ use serde::{Deserialize, Serialize};
 use serde_with::{As, DefaultOnNull};
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "MessageRecordFields")]
 pub struct MessageRecord {
     pub role: MessageRole,
-    #[serde(default)]
     pub content: Option<Content>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MessageRecordFields {
+    role: MessageRole,
+    #[serde(default)]
+    content: Option<Content>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+#[error("a content block of a user or assistant message has no `type`")]
+pub struct MissingBlockTypeError;
+
+impl TryFrom<MessageRecordFields> for MessageRecord {
+    type Error = MissingBlockTypeError;
+
+    fn try_from(fields: MessageRecordFields) -> Result<Self, Self::Error> {
+        let untyped = matches!(
+            &fields.content,
+            Some(Content::Blocks(blocks))
+                if blocks.iter().any(|block| matches!(block, Block::Untyped(_)))
+        );
+        // AnthropicSystemMessageContent is the one content type whose blocks may omit `type`
+        if untyped && fields.role != MessageRole::System {
+            return Err(MissingBlockTypeError);
+        }
+        Ok(Self {
+            role: fields.role,
+            content: fields.content,
+        })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -24,10 +55,18 @@ pub enum Content {
     Blocks(Vec<Block>),
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+pub enum Block {
+    Known(KnownBlock),
+    // AnthropicSystemMessageContent declares `type` optional, so a mid-turn system block may omit it
+    Untyped(UntypedBlock),
+}
+
 // An unknown block type is not one of the blocks this translation reads, so it leaves the message untouched.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-pub enum Block {
+pub enum KnownBlock {
     Text(TextBlock),
     Image(ImageBlock),
     Document(DocumentBlock),
@@ -37,6 +76,18 @@ pub enum Block {
     RedactedThinking(RedactedThinkingBlock),
     #[serde(other)]
     Other,
+}
+
+// `type` stays unknown here, so a malformed typed block fails instead of falling through to this arm.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct UntypedBlock {
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub text: String,
+    #[serde(default)]
+    pub cache_control: Option<Object>,
+    #[serde(default)]
+    pub prompt_cache_breakpoint: Option<PromptCacheBreakpoint>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

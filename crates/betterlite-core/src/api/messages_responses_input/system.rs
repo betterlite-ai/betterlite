@@ -1,5 +1,5 @@
 use super::items::MessagePart;
-use super::records::{Block, Content};
+use super::records::{Block, Content, KnownBlock};
 
 pub(super) fn system_parts(content: Option<&Content>) -> Vec<MessagePart> {
     match content {
@@ -23,7 +23,7 @@ fn text_parts(text: &str) -> Vec<MessagePart> {
 fn block_parts(blocks: &[Block]) -> Vec<MessagePart> {
     let mut parts = Vec::new();
     for block in blocks {
-        let Block::Text(text) = block else {
+        let Block::Known(KnownBlock::Text(text)) = block else {
             continue;
         };
         if text.text.is_empty() {

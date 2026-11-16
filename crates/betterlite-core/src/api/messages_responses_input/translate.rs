@@ -7,8 +7,8 @@ use super::error::MessagesResponsesInputError;
 use super::items::{InputItem, MessagePart};
 use super::media::{document_part, image_url};
 use super::records::{
-    Block, Content, MessageRecord, MessageRole, RedactedThinkingBlock, ThinkingBlockRecord,
-    ToolUseBlock,
+    Block, Content, KnownBlock, MessageRecord, MessageRole, RedactedThinkingBlock,
+    ThinkingBlockRecord, ToolUseBlock,
 };
 use super::system::system_parts;
 use super::tool_results::tool_result_value;
@@ -74,7 +74,7 @@ fn tool_outputs(blocks: &[Block]) -> (Vec<InputItem>, Vec<MessagePart>) {
     let mut outputs = Vec::new();
     let mut images = Vec::new();
     for block in blocks {
-        let Block::ToolResult(tool) = block else {
+        let Block::Known(KnownBlock::ToolResult(tool)) = block else {
             continue;
         };
         let value = tool_result_value(tool.content.as_ref());
@@ -101,11 +101,11 @@ fn user_message_parts(blocks: &[Block]) -> Vec<MessagePart> {
     let mut parts = Vec::new();
     for block in blocks {
         match block {
-            Block::Text(text) => parts.push(MessagePart::Text {
+            Block::Known(KnownBlock::Text(text)) => parts.push(MessagePart::Text {
                 text: text.text.clone(),
                 prompt_cache_breakpoint: text.prompt_cache_breakpoint,
             }),
-            Block::Image(image) => {
+            Block::Known(KnownBlock::Image(image)) => {
                 if let Some(url) = image_url(image.source.as_ref()) {
                     parts.push(MessagePart::Image {
                         image_url: url,
@@ -113,7 +113,7 @@ fn user_message_parts(blocks: &[Block]) -> Vec<MessagePart> {
                     });
                 }
             }
-            Block::Document(document) => {
+            Block::Known(KnownBlock::Document(document)) => {
                 if let Some(part) = document_part(
                     document.source.as_ref(),
                     document.title.as_deref(),
@@ -122,11 +122,12 @@ fn user_message_parts(blocks: &[Block]) -> Vec<MessagePart> {
                     parts.push(part);
                 }
             }
-            Block::ToolResult(_)
-            | Block::ToolUse(_)
-            | Block::Thinking(_)
-            | Block::RedactedThinking(_)
-            | Block::Other => {}
+            Block::Known(KnownBlock::ToolResult(_))
+            | Block::Known(KnownBlock::ToolUse(_))
+            | Block::Known(KnownBlock::Thinking(_))
+            | Block::Known(KnownBlock::RedactedThinking(_))
+            | Block::Known(KnownBlock::Other)
+            | Block::Untyped(_) => {}
         }
     }
     parts
@@ -155,17 +156,20 @@ fn append_assistant_blocks(
     let mut index = 0;
     while let Some(block) = blocks.get(index) {
         match block {
-            Block::Thinking(thinking) => pending.push(thinking_part(thinking)),
-            Block::RedactedThinking(redacted) => pending.push(redacted_part(redacted)),
-            Block::ToolUse(tool) => {
+            Block::Known(KnownBlock::Thinking(thinking)) => pending.push(thinking_part(thinking)),
+            Block::Known(KnownBlock::RedactedThinking(redacted)) => {
+                pending.push(redacted_part(redacted));
+            }
+            Block::Known(KnownBlock::ToolUse(tool)) => {
                 append_reasoning(items, &mut pending);
                 items.push(function_call(tool)?);
             }
-            Block::Text(_)
-            | Block::Image(_)
-            | Block::Document(_)
-            | Block::ToolResult(_)
-            | Block::Other => {
+            Block::Known(KnownBlock::Text(_))
+            | Block::Known(KnownBlock::Image(_))
+            | Block::Known(KnownBlock::Document(_))
+            | Block::Known(KnownBlock::ToolResult(_))
+            | Block::Known(KnownBlock::Other)
+            | Block::Untyped(_) => {
                 append_reasoning(items, &mut pending);
             }
         }
@@ -232,7 +236,7 @@ fn assistant_text_parts(blocks: &[Block]) -> Vec<MessagePart> {
     blocks
         .iter()
         .filter_map(|block| {
-            let Block::Text(text) = block else {
+            let Block::Known(KnownBlock::Text(text)) = block else {
                 return None;
             };
             Some(MessagePart::OutputText {

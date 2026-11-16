@@ -2,7 +2,7 @@ use betterlite_prompts::message_fields::image_hoist::TOOL_RESULT_IMAGE_PLACEHOLD
 
 use super::items::{MessagePart, ToolOutput};
 use super::media::{document_part, image_url};
-use super::records::{Block, ToolResultContent};
+use super::records::{Block, KnownBlock, ToolResultContent};
 
 pub(super) struct ToolResultValue {
     pub(super) output: ToolOutput,
@@ -28,14 +28,15 @@ fn tool_text(blocks: &[Block], has_images: bool) -> String {
     let texts: Vec<&str> = blocks
         .iter()
         .filter_map(|block| match block {
-            Block::Text(text) => Some(text.text.as_str()),
-            Block::Image(_)
-            | Block::Document(_)
-            | Block::ToolResult(_)
-            | Block::ToolUse(_)
-            | Block::Thinking(_)
-            | Block::RedactedThinking(_)
-            | Block::Other => None,
+            Block::Known(KnownBlock::Text(text)) => Some(text.text.as_str()),
+            Block::Known(KnownBlock::Image(_))
+            | Block::Known(KnownBlock::Document(_))
+            | Block::Known(KnownBlock::ToolResult(_))
+            | Block::Known(KnownBlock::ToolUse(_))
+            | Block::Known(KnownBlock::Thinking(_))
+            | Block::Known(KnownBlock::RedactedThinking(_))
+            | Block::Known(KnownBlock::Other)
+            | Block::Untyped(_) => None,
         })
         .collect();
     let joined = texts.join("\n");
@@ -71,14 +72,14 @@ fn block_value(blocks: &[Block]) -> ToolResultValue {
     let mut images = Vec::new();
     for block in blocks {
         match block {
-            Block::Document(document) => {
+            Block::Known(KnownBlock::Document(document)) => {
                 if let Some(part) =
                     document_part(document.source.as_ref(), document.title.as_deref(), None)
                 {
                     files.push(part);
                 }
             }
-            Block::Image(image) => {
+            Block::Known(KnownBlock::Image(image)) => {
                 if let Some(url) = image_url(image.source.as_ref()) {
                     images.push(MessagePart::Image {
                         image_url: url,
@@ -86,12 +87,13 @@ fn block_value(blocks: &[Block]) -> ToolResultValue {
                     });
                 }
             }
-            Block::Text(_)
-            | Block::ToolResult(_)
-            | Block::ToolUse(_)
-            | Block::Thinking(_)
-            | Block::RedactedThinking(_)
-            | Block::Other => {}
+            Block::Known(KnownBlock::Text(_))
+            | Block::Known(KnownBlock::ToolResult(_))
+            | Block::Known(KnownBlock::ToolUse(_))
+            | Block::Known(KnownBlock::Thinking(_))
+            | Block::Known(KnownBlock::RedactedThinking(_))
+            | Block::Known(KnownBlock::Other)
+            | Block::Untyped(_) => {}
         }
     }
     let text = tool_text(blocks, !images.is_empty());

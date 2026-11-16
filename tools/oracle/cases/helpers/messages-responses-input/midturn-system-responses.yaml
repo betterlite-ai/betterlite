@@ -9,12 +9,16 @@ call:
       content: question
     - role: system
       content:
+      - text: untyped
       - type: text
         text: mid
       - type: text
         text: marked
         prompt_cache_breakpoint:
           mode: explicit
+    - role: system
+      content:
+      - text: only untyped
     - role: user
       content:
       - type: text
