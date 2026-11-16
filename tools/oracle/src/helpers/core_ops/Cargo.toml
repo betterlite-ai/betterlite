@@ -27,6 +27,7 @@ betterlite-mcp = { path = "../../../../../crates/betterlite-mcp" }
 betterlite-models = { path = "../../../../../crates/betterlite-models" }
 betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
 betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
 betterlite-policy = { path = "../../../../../crates/betterlite-policy" }
 betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-provider = { path = "../../../../../crates/betterlite-provider" }
@@ -53,11 +54,10 @@ thiserror = "2.0.17"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
-url = "2.5.8"
+url = { version = "2.5.8", features = ["serde"] }
 uuid = { version = "1.28.0", default-features = false }
 
 [dev-dependencies]
-betterlite-oracle = { path = "../../.." }
 serde-saphyr = "2.0.0"
 
 [lints]

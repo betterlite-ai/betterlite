@@ -17,7 +17,8 @@ use betterlite_openai::xai_usage::GenericTokenPricing;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
     Ai21MapStep, MinimaxInfoStep, MinimaxUrlStep, Step, TencentCostStep, TencentMapStep,

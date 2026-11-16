@@ -7,7 +7,10 @@ use serde_json::json;
 use self::fake_server::FakeServer;
 use self::input::{Input, ReadCall, WriteCall};
 use self::values::{build, run_read, run_write};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -15,7 +18,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_all()
             .build()
             .map_err(|error| helper_error("RuntimeError", error))?;
@@ -61,7 +64,7 @@ fn dispatch_read(call: &ReadCall) -> HelperResult {
 
 pub(crate) fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

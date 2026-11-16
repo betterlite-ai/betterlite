@@ -2,8 +2,8 @@
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::HelperCase;
 
 use super::Op;
 

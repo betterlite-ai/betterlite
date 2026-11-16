@@ -2,6 +2,7 @@ use betterlite_logging::gcs_client::gcs_storage_auth::RequestHeaders;
 use betterlite_logging::gcs_mock::auth::{GetTokenAndUrl, VertexAuthProvider};
 use secrecy::ExposeSecret;
 use serde_json::{Map, Value, json};
+use std::str;
 
 pub(super) fn headers_json(headers: &RequestHeaders) -> Value {
     headers
@@ -29,7 +30,7 @@ pub(super) fn token_json(request: &GetTokenAndUrl) -> Value {
 }
 
 pub(super) fn body_json(body: Option<&[u8]>) -> Value {
-    let Some(text) = body.and_then(|bytes| std::str::from_utf8(bytes).ok()) else {
+    let Some(text) = body.and_then(|bytes| str::from_utf8(bytes).ok()) else {
         return Value::Null;
     };
     serde_json::from_str(text).unwrap_or_else(|_error| Value::String(text.to_owned()))

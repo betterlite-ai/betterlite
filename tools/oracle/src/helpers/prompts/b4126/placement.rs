@@ -10,9 +10,11 @@ use betterlite_prompts::orchestration::prompt_orchestration::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::support::{self, Facts};
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -47,7 +49,7 @@ pub(crate) struct Probe {
 }
 
 pub(super) fn run(probes: &[Probe]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| support::failure("RuntimeError", &error.to_string()))?;

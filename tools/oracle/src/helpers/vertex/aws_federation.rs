@@ -9,7 +9,8 @@ use betterlite_vertex::aws_federation::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value, json};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 

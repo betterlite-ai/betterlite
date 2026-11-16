@@ -1,7 +1,8 @@
-use crate::helpers::OrHelperError as _;
 use betterlite_config::sections::studio_identity::{DEFAULT_API_BASE, Settings};
 use betterlite_models::call_helpers::headers::{HeaderSource, process_response_headers};
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_vertex::studio_interactions::credentials::StudioParams;
 use betterlite_vertex::studio_interactions::decode::{
     RawResponse, transform_delete_response, transform_get_response, transform_response,
@@ -65,10 +66,10 @@ struct ResponseCall {
     interaction_id: Option<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let calls = input
             .calls
             .iter()
@@ -78,7 +79,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn resolve(call: &Call) -> crate::helpers::HelperResult {
+fn resolve(call: &Call) -> HelperResult {
     match call {
         Call::TransformRequest(given) => request_call(given),
         Call::Lifecycle(given) => lifecycle_call(given),
@@ -86,7 +87,7 @@ fn resolve(call: &Call) -> crate::helpers::HelperResult {
     }
 }
 
-fn request_call(call: &RequestCall) -> crate::helpers::HelperResult {
+fn request_call(call: &RequestCall) -> HelperResult {
     let text = call.input.clone().map(Json::Text);
     let (model, agent) = (call.model.as_deref(), call.agent.as_deref());
     transform_request(model, agent, text.as_ref(), &call.optional_params)
@@ -106,7 +107,7 @@ fn fixed_inputs() -> (Settings, StudioParams) {
     (settings, params)
 }
 
-fn lifecycle_call(call: &LifecycleCall) -> crate::helpers::HelperResult {
+fn lifecycle_call(call: &LifecycleCall) -> HelperResult {
     let (settings, params) = fixed_inputs();
     let base = Some(call.api_base.as_str());
     lifecycle_request(call.action, &call.interaction_id, base, &params, &settings)
@@ -114,7 +115,7 @@ fn lifecycle_call(call: &LifecycleCall) -> crate::helpers::HelperResult {
         .or_value_error()
 }
 
-fn response_call(call: &ResponseCall) -> crate::helpers::HelperResult {
+fn response_call(call: &ResponseCall) -> HelperResult {
     let response = RawResponse {
         status: call.status,
         headers: &call.headers,

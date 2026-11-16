@@ -10,7 +10,8 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::support::{reason_index, reason_pairs, to_json};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::ptr;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -24,7 +25,7 @@ pub(super) fn predicates(request: &PredicateRequest) -> Value {
     let trailing_indexes: Vec<usize> = items
         .iter()
         .enumerate()
-        .filter(|(_, item)| trailing.iter().any(|kept| std::ptr::eq(*kept, *item)))
+        .filter(|(_, item)| trailing.iter().any(|kept| ptr::eq(*kept, *item)))
         .map(|(index, _)| index)
         .collect();
     json!({
