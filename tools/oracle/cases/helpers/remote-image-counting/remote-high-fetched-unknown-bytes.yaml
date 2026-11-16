@@ -3,7 +3,9 @@ name: remote-high-fetched-unknown-bytes
 call:
   b9963:
     urls:
-      "https://example.com/image.bin": "data:application/octet-stream;base64,AAAA"
+      # a server that declares image/tiff, which the downloader passes through and the dimension parser
+      # cannot place; a generic or missing declared type is refused before the count and is a deviation
+      "https://example.com/image.bin": "data:image/tiff;base64,AAAA"
     calls:
       - function: count_content
         content:

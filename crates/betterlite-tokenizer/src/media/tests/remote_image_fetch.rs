@@ -10,8 +10,12 @@ use super::support::{
     self, CaseOptions, MappingFetcher, RefusingFetcher, image_url, image_url_string, plain,
 };
 
-const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA";
-const UNKNOWN: &str = "data:application/octet-stream;base64,AAAA";
+// 1024x1024: resized to 768x768 that is four 512 tiles and 765 tokens, so counting the 300x300 default
+// dimensions after the fetch (255) fails the assertions instead of passing them
+const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAABAAAAAQA";
+// what the downloader returns for a 200 that declares image/tiff: a non-generic type the dimension parser
+// cannot place, unlike a generic or missing type, which the downloader refuses as UnknownMediaType
+const UNKNOWN: &str = "data:image/tiff;base64,AAAA";
 const REMOTE: &str = "https://example.com/image.png";
 const DISABLED: &str = "Error: Image URL download is disabled (MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0). url=https://example.com/image.png";
 const HIGH_IMAGE: &str =
@@ -80,7 +84,7 @@ async fn remote_high_exact_fetches_the_url() {
     let counted = support::count(&fixture, &image_url(REMOTE, "high"), &settings, &fetcher)
         .await
         .unwrap();
-    assert_eq!(counted.tokens, 255);
+    assert_eq!(counted.tokens, 765);
     assert_eq!(fetcher.calls.load(Ordering::SeqCst), 1);
 }
 
@@ -95,6 +99,8 @@ async fn remote_high_exact_fetches_default_dimensions_for_unknown_bytes() {
     let counted = support::count(&fixture, &image_url(REMOTE, "high"), &settings, &fetcher)
         .await
         .unwrap();
+    // the mapped bytes name no image, so this can only be the 300x300 defaults: PNG's parsed 1024x1024
+    // would count 765, and a generic or missing declared type never reaches the parser at all
     assert_eq!(counted.tokens, 255);
     assert_eq!(fetcher.calls.load(Ordering::SeqCst), 1);
 }
@@ -151,7 +157,7 @@ async fn remote_high_exact_fetches_inside_nested_content(#[case] input: String) 
     let counted = support::count(&fixture, &input, &settings, &fetcher)
         .await
         .unwrap();
-    assert_eq!(counted.tokens, 255);
+    assert_eq!(counted.tokens, 765);
     assert_eq!(fetcher.calls.load(Ordering::SeqCst), 1);
 }
 
