@@ -151,19 +151,19 @@ fn generation_headers_take_the_first_non_empty_key() {
     let global = SecretString::from("global-key");
     let environment = SecretString::from("environment-key");
     let empty = SecretString::from("");
-    let chosen = generation_headers(
+    let skips_empty = generation_headers(
         headers(&[]),
         Some(&empty),
         Some(&global),
         Some(&environment),
     );
-    assert_eq!(chosen["Authorization"], "Bearer global-key");
-    let chosen = generation_headers(headers(&[]), Some(&api), Some(&global), Some(&environment));
-    assert_eq!(chosen["Authorization"], "Bearer api-key");
-    let chosen = generation_headers(headers(&[]), None, None, Some(&environment));
-    assert_eq!(chosen["Authorization"], "Bearer environment-key");
-    let chosen = generation_headers(headers(&[]), None, None, Some(&empty));
-    assert_eq!(chosen["Authorization"], "Bearer None");
+    assert_eq!(skips_empty["Authorization"], "Bearer global-key");
+    let api_first = generation_headers(headers(&[]), Some(&api), Some(&global), Some(&environment));
+    assert_eq!(api_first["Authorization"], "Bearer api-key");
+    let environment_only = generation_headers(headers(&[]), None, None, Some(&environment));
+    assert_eq!(environment_only["Authorization"], "Bearer environment-key");
+    let all_empty = generation_headers(headers(&[]), None, None, Some(&empty));
+    assert_eq!(all_empty["Authorization"], "Bearer None");
 }
 
 #[test]
@@ -283,19 +283,19 @@ fn generation_responses_keep_existing_hidden_params_and_merge_cost_details() {
         model: Some(text("old/model")),
     };
     let raw = ok(r#"{"usage": {"cost": 2, "cost_details": {"upstream": 0.3, "cache": 0.05}}}"#);
-    let (_, hidden) = generation_response(&raw, ImageResponse::default(), hidden, "m")
+    let (_, merged) = generation_response(&raw, ImageResponse::default(), hidden, "m")
         .expect("the reply transforms");
     assert_eq!(
-        hidden.additional_headers.get("x-existing"),
+        merged.additional_headers.get("x-existing"),
         Some(&text("kept"))
     );
     let expected_details = IndexMap::from([
         (String::from("upstream"), json("0.3")),
         (String::from("cache"), json("0.05")),
     ]);
-    assert_eq!(hidden.response_cost_details, Some(expected_details));
-    assert_eq!(hidden.model, Some(text("m")));
-    let Some(Json::Number(cost)) = hidden.additional_headers.get(COST_HEADER) else {
+    assert_eq!(merged.response_cost_details, Some(expected_details));
+    assert_eq!(merged.model, Some(text("m")));
+    let Some(Json::Number(cost)) = merged.additional_headers.get(COST_HEADER) else {
         panic!("the cost header is set");
     };
     assert_eq!(cost.as_f64(), Some(2.0_f64));
@@ -317,10 +317,10 @@ fn generation_responses_without_usage_keep_the_existing_usage() {
         data: None,
         usage: Some(usage.clone()),
     };
-    let (response, hidden) =
+    let (transformed, hidden) =
         generation_response(&ok("{}"), response, ImageHiddenParams::default(), "m")
             .expect("the reply transforms");
-    assert_eq!(response.usage, Some(usage));
+    assert_eq!(transformed.usage, Some(usage));
     assert!(hidden.additional_headers.is_empty());
     assert_eq!(hidden.model, Some(text("m")));
 }

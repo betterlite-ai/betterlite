@@ -61,13 +61,13 @@ def image_values(data: list[ImageDatum]) -> list[JsonValue]:
 
 def usage_fields(usage: UsageFields) -> Object:
     details = usage["input_tokens_details"]
-    token_details: TokenDetails = {
+    input_details: Object = {
         "image_tokens": details["image_tokens"],
         "text_tokens": details["text_tokens"],
     }
     return {
         "input_tokens": usage["input_tokens"],
-        "input_tokens_details": token_details,
+        "input_tokens_details": input_details,
         "output_tokens": usage["output_tokens"],
         "total_tokens": usage["total_tokens"],
     }
@@ -106,7 +106,3 @@ def generation_fields(reply: ImageResponse) -> Object:
     fields = reply_fields(parsed, reply)
     fields["created"] = parsed["created"]
     return fields
-
-
-def edit_fields(reply: ImageResponse) -> Object:
-    return reply_fields(REPLY.validate_json(reply.model_dump_json()), reply)

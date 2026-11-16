@@ -6,10 +6,10 @@ use std::collections::BTreeMap;
 #[serde(tag = "op", rename_all = "snake_case", deny_unknown_fields)]
 pub(crate) enum Input {
     GenerationParams { cases: Vec<GenerationParamsCase> },
-    GenerationRequest { cases: Vec<GenerationRequestCase> },
+    GenerationRequest { cases: Vec<RequestCase> },
     GenerationReply { cases: Vec<ReplyCase> },
     EditParams { cases: Vec<ImageParams> },
-    EditRequest { cases: Vec<EditRequestCase> },
+    EditRequest { cases: Vec<RequestCase> },
     EditReply { cases: Vec<ReplyCase> },
 }
 #[derive(Debug, Deserialize)]
@@ -25,22 +25,7 @@ pub(crate) struct GenerationParamsCase {
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct GenerationRequestCase {
-    pub(crate) model: String,
-    pub(crate) prompt: String,
-    #[serde(default)]
-    pub(crate) optional_params: ImageParams,
-    #[serde(default)]
-    pub(crate) headers: Headers,
-    pub(crate) api_key: Option<String>,
-    pub(crate) global_api_key: Option<String>,
-    #[serde(default)]
-    pub(crate) environment: BTreeMap<String, String>,
-    pub(crate) api_base: Option<String>,
-}
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct EditRequestCase {
+pub(crate) struct RequestCase {
     pub(crate) model: String,
     pub(crate) prompt: Option<String>,
     pub(crate) image: Option<ImageCase>,

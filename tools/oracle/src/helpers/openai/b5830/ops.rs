@@ -13,9 +13,7 @@ use std::io::Cursor;
 // ast-grep-ignore: no-long-names
 use betterlite_openai::openrouter_image::edit::get_openrouter_image_edit_config as edit_config;
 
-use super::input::{
-    EditRequestCase, GenerationParamsCase, GenerationRequestCase, ImageCase, Input, ReplyCase,
-};
+use super::input::{GenerationParamsCase, ImageCase, Input, ReplyCase, RequestCase};
 
 // ast-grep-ignore: no-long-names
 use betterlite_openai::openrouter_image::generation::get_openrouter_image_generation_config as generation_config;
@@ -24,8 +22,8 @@ use betterlite_openai::openrouter_image::generation::{
     transform_response as generation_response, validate_environment as generation_headers,
 };
 use betterlite_openai::openrouter_image::shared::{ImageConfigError, ImageHiddenParams};
-use betterlite_oracle_helper_api::error::OrHelperError as _;
-use betterlite_oracle_helper_api::helper::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 pub(super) fn run(input: &Input) -> HelperResult {
@@ -41,26 +39,22 @@ pub(super) fn run(input: &Input) -> HelperResult {
 fn generation_params(cases: &[GenerationParamsCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        answers.push(generation_param_answer(case)?);
+        let config = generation_config(&case.model);
+        let mapped = config
+            .map_params(
+                &case.non_default_params,
+                case.optional_params.clone(),
+                case.drop_params,
+            )
+            .or_value_error()?;
+        answers.push(json!({
+            "supported": config.supported_params,
+            "params": mapped,
+        }));
     }
     Ok(Value::Array(answers))
 }
-
-fn generation_param_answer(case: &GenerationParamsCase) -> HelperResult {
-    let config = generation_config(&case.model);
-    let mapped = config
-        .map_params(
-            &case.non_default_params,
-            case.optional_params.clone(),
-            case.drop_params,
-        )
-        .or_config_error()?;
-    Ok(json!({
-        "supported": config.supported_params,
-        "params": mapped,
-    }))
-}
-fn generation_request(cases: &[GenerationRequestCase]) -> HelperResult {
+fn generation_request(cases: &[RequestCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
         let api_key = case.api_key.clone().map(SecretString::from);
@@ -79,7 +73,11 @@ fn generation_request(cases: &[GenerationRequestCase]) -> HelperResult {
         answers.push(json!({
             "url": generation_url(case.api_base.as_deref()),
             "headers": headers,
-            "request": generation_request_body(&case.model, &case.prompt, &case.optional_params),
+            "request": generation_request_body(
+                &case.model,
+                case.prompt.as_deref().unwrap_or_default(),
+                &case.optional_params,
+            ),
         }));
     }
     Ok(Value::Array(answers))
@@ -88,7 +86,7 @@ fn edit_params(cases: &[ImageParams]) -> HelperResult {
     let config = edit_config("");
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        let mapped = config.map_params(case).or_config_error()?;
+        let mapped = config.map_params(case).or_value_error()?;
         answers.push(json!({
             "supported": config.supported_params,
             "params": mapped,
@@ -96,53 +94,51 @@ fn edit_params(cases: &[ImageParams]) -> HelperResult {
     }
     Ok(Value::Array(answers))
 }
-fn edit_requests(cases: &[EditRequestCase]) -> HelperResult {
+fn edit_requests(cases: &[RequestCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        answers.push(edit_request(case)?);
+        let api_key = case.api_key.clone().map(SecretString::from);
+        let global_api_key = case.global_api_key.clone().map(SecretString::from);
+        let environment_key = case
+            .environment
+            .get("OPENROUTER_API_KEY")
+            .cloned()
+            .map(SecretString::from);
+        let headers = edit_headers(
+            case.headers.clone(),
+            api_key.as_ref(),
+            global_api_key.as_ref(),
+            environment_key.as_ref(),
+        )
+        .or_value_error()?;
+        let url = edit_url(
+            case.api_base.as_deref(),
+            case.environment
+                .get("OPENROUTER_API_BASE")
+                .map(String::as_str),
+        );
+        let payload = case
+            .image
+            .as_ref()
+            .map(|image| match image {
+                ImageCase::Bytes { data } | ImageCase::Reader { data, .. } => STANDARD.decode(data),
+            })
+            .transpose()
+            .or_value_error()?;
+        let (request, files, position) =
+            image_request(case, payload.as_deref()).or_value_error()?;
+        answers.push(json!({
+            "url": url,
+            "headers": headers,
+            "request": request,
+            "files": files,
+            "position": position,
+        }));
     }
     Ok(Value::Array(answers))
 }
-fn edit_request(case: &EditRequestCase) -> HelperResult {
-    let api_key = case.api_key.clone().map(SecretString::from);
-    let global_api_key = case.global_api_key.clone().map(SecretString::from);
-    let environment_key = case
-        .environment
-        .get("OPENROUTER_API_KEY")
-        .cloned()
-        .map(SecretString::from);
-    let headers = edit_headers(
-        case.headers.clone(),
-        api_key.as_ref(),
-        global_api_key.as_ref(),
-        environment_key.as_ref(),
-    )
-    .or_value_error()?;
-    let url = edit_url(
-        case.api_base.as_deref(),
-        case.environment
-            .get("OPENROUTER_API_BASE")
-            .map(String::as_str),
-    );
-    let payload = case
-        .image
-        .as_ref()
-        .map(|image| match image {
-            ImageCase::Bytes { data } | ImageCase::Reader { data, .. } => STANDARD.decode(data),
-        })
-        .transpose()
-        .or_value_error()?;
-    let (request, files, position) = image_request(case, payload.as_deref()).or_config_error()?;
-    Ok(json!({
-        "url": url,
-        "headers": headers,
-        "request": request,
-        "files": files,
-        "position": position,
-    }))
-}
 fn image_request(
-    case: &EditRequestCase,
+    case: &RequestCase,
     payload: Option<&[u8]>,
 ) -> Result<(ImageParams, Vec<String>, Option<u64>), ImageConfigError> {
     let mut reader = Cursor::new(payload.unwrap_or_default());
@@ -162,7 +158,7 @@ fn image_request(
     )?;
     let position = match &case.image {
         Some(ImageCase::Reader { .. }) => Some(reader.position()),
-        _ => None,
+        Some(ImageCase::Bytes { .. }) | None => None,
     };
     let names = files.into_iter().map(|(name, _)| name).collect();
     Ok((request, names, position))
@@ -217,9 +213,9 @@ fn reply_failure(error: OpenRouterError) -> Box<HelperError> {
     Box::new(HelperError {
         class: String::from("OpenRouterError"),
         status: u16::try_from(error.status_code).ok(),
-        error_type: None,
-        param: None,
-        code: None,
+        error_type: Some(None),
+        param: Some(None),
+        code: Some(None),
         message: error.message,
     })
 }

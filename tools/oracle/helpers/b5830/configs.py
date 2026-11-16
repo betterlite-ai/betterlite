@@ -23,10 +23,10 @@ class GenerationConfig(Protocol):
     validate_environment: Callable[
         [Headers, str, list[Never], Object, Object, str | None, str | None], Headers
     ]
-    transform_image_generation_request: Callable[
+    transform_image_generation_request: Callable[  # ast-grep-ignore: no-long-names
         [str, str, Object, Object, Headers], Object
     ]
-    transform_image_generation_response: Callable[
+    transform_image_generation_response: Callable[  # ast-grep-ignore: no-long-names
         [str, httpx.Response, ImageResponse, None, Object, Object, Object, None],
         ImageResponse,
     ]

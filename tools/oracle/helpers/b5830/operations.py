@@ -21,7 +21,7 @@ from .inputs import (
     Object,
     ReplyCase,
 )
-from .replies import edit_fields, generation_fields
+from .replies import REPLY, generation_fields, reply_fields
 
 MANAGED_ENV: Final = ("OPENROUTER_API_KEY", "OPENROUTER_API_BASE")
 
@@ -106,32 +106,33 @@ def edit_params(cases: list[Object]) -> JsonValue:
     return JSON.validate_python(answers)
 
 
-def edit_request(cases: list[EditRequestCase]) -> JsonValue:
-    return JSON.validate_python([edit_request_case(case) for case in cases])
-
-
-def edit_request_case(case: EditRequestCase) -> JsonValue:
-    activate(case["environment"], case["global_api_key"])
-    url = EDIT.get_complete_url(case["model"], case["api_base"], {})
-    headers = EDIT.validate_environment(
-        dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
-    )
-    source = image_source(case["image"])
-    request, files = EDIT.transform_image_edit_request(
-        case["model"],
-        case["prompt"],
-        source.value,
-        dict(case["optional_params"]),
-        GenericLiteLLMParams(),
-        headers,
-    )
-    return {
-        "url": url,
-        "headers": JSON.validate_python(headers),
-        "request": JSON.validate_python(request),
-        "files": JSON.validate_python(files),
-        "position": source.position(),
-    }
+def edit_requests(cases: list[EditRequestCase]) -> JsonValue:
+    answers: list[JsonValue] = []
+    for case in cases:
+        activate(case["environment"], case["global_api_key"])
+        url = EDIT.get_complete_url(case["model"], case["api_base"], {})
+        headers = EDIT.validate_environment(
+            dict(case["headers"]), case["model"], case["api_key"], None, case["api_base"]
+        )
+        source = image_source(case["image"])
+        request, files = EDIT.transform_image_edit_request(
+            case["model"],
+            case["prompt"],
+            source.value,
+            dict(case["optional_params"]),
+            GenericLiteLLMParams(),
+            headers,
+        )
+        answers.append(
+            {
+                "url": url,
+                "headers": JSON.validate_python(headers),
+                "request": JSON.validate_python(request),
+                "files": JSON.validate_python(files),
+                "position": source.position(),
+            }
+        )
+    return JSON.validate_python(answers)
 
 
 def edit_reply(cases: list[ReplyCase]) -> JsonValue:
@@ -139,7 +140,7 @@ def edit_reply(cases: list[ReplyCase]) -> JsonValue:
     for case in cases:
         raw = httpx.Response(case["status"], content=case["body"].encode(), headers=case["headers"])
         finished = EDIT.transform_image_edit_response(case["model"], raw, None)
-        answers.append(edit_fields(finished))
+        answers.append(reply_fields(REPLY.validate_json(finished.model_dump_json()), finished))
     return JSON.validate_python(answers)
 
 
@@ -154,6 +155,6 @@ def run(input_value: Input) -> JsonValue:
         case "edit_params":
             return edit_params(input_value["cases"])
         case "edit_request":
-            return edit_request(input_value["cases"])
+            return edit_requests(input_value["cases"])
         case "edit_reply":
             return edit_reply(input_value["cases"])

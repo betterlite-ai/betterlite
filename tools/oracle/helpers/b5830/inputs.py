@@ -44,14 +44,6 @@ class GenerationRequestCase(TypedDict):
     api_base: str | None
 
 
-class ReplyCase(TypedDict):
-    model: str
-    body: str
-    status: int
-    headers: Headers
-    created: int
-
-
 class EditRequestCase(TypedDict):
     model: str
     prompt: str | None
@@ -62,6 +54,14 @@ class EditRequestCase(TypedDict):
     global_api_key: str | None
     environment: dict[str, str]
     api_base: str | None
+
+
+class ReplyCase(TypedDict):
+    model: str
+    body: str
+    status: int
+    headers: Headers
+    created: int
 
 
 class GenerationParamsInput(TypedDict):

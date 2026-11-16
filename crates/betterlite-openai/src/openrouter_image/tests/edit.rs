@@ -22,7 +22,7 @@ use super::{
 
 #[test]
 fn edit_requests_use_json_not_multipart() {
-    assert!(!MULTIPART_FORM_DATA);
+    const { assert!(!MULTIPART_FORM_DATA) };
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn edit_params_share_one_image_config_for_size_and_quality() {
 fn edit_params_drop_unsupported_keys() {
     let mapped = edit_config("m")
         .map_params(&params(
-            r#"{"model": "x", "response_format": "b64_json", "size": "1024x1024", "style": "vivid"}"#,
+            r#"{"model": "x", "response_format": "b64_json", "size": "1024x1024", "style": 5}"#,
         ))
         .expect("the params map");
     assert_eq!(
@@ -142,9 +142,9 @@ fn edit_headers_require_a_key() {
     assert!(matches!(error, ImageConfigError::MissingApiKey));
     assert_eq!(error.to_string(), "OPENROUTER_API_KEY is not set");
     let empty = SecretString::from("");
-    let error = edit_headers(headers(&[]), Some(&empty), Some(&empty), Some(&empty))
+    let empty_error = edit_headers(headers(&[]), Some(&empty), Some(&empty), Some(&empty))
         .expect_err("an empty key counts as unset");
-    assert!(matches!(error, ImageConfigError::MissingApiKey));
+    assert!(matches!(empty_error, ImageConfigError::MissingApiKey));
 }
 
 #[test]
@@ -152,7 +152,7 @@ fn edit_headers_take_the_first_non_empty_key() {
     let api = SecretString::from("api-key");
     let global = SecretString::from("global-key");
     let environment = SecretString::from("environment-key");
-    let chosen = edit_headers(
+    let api_first = edit_headers(
         headers(&[("X-Extra", "1")]),
         Some(&api),
         Some(&global),
@@ -160,14 +160,15 @@ fn edit_headers_take_the_first_non_empty_key() {
     )
     .expect("a key is set");
     assert_eq!(
-        chosen,
+        api_first,
         headers(&[("X-Extra", "1"), ("Authorization", "Bearer api-key")])
     );
-    let chosen =
+    let global_only =
         edit_headers(headers(&[]), None, Some(&global), Some(&environment)).expect("a key is set");
-    assert_eq!(chosen["Authorization"], "Bearer global-key");
-    let chosen = edit_headers(headers(&[]), None, None, Some(&environment)).expect("a key is set");
-    assert_eq!(chosen["Authorization"], "Bearer environment-key");
+    assert_eq!(global_only["Authorization"], "Bearer global-key");
+    let environment_only =
+        edit_headers(headers(&[]), None, None, Some(&environment)).expect("a key is set");
+    assert_eq!(environment_only["Authorization"], "Bearer environment-key");
 }
 
 #[test]

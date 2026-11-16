@@ -182,12 +182,12 @@ fn the_key_chain_skips_an_absent_or_empty_key() {
     assert!(none.is_none());
     let all_empty = resolved_key([Some(&empty), Some(&empty), Some(&empty)]);
     assert!(all_empty.is_none());
-    let chosen = resolved_key([Some(&empty), Some(&second), Some(&environment)]);
-    assert_eq!(chosen.map(secret_text), Some("second"));
-    let chosen = resolved_key([None, Some(&empty), Some(&environment)]);
-    assert_eq!(chosen.map(secret_text), Some("environment"));
-    let chosen = resolved_key([Some(&first), Some(&second), Some(&environment)]);
-    assert_eq!(chosen.map(secret_text), Some("first"));
+    let second_choice = resolved_key([Some(&empty), Some(&second), Some(&environment)]);
+    assert_eq!(second_choice.map(secret_text), Some("second"));
+    let environment_choice = resolved_key([None, Some(&empty), Some(&environment)]);
+    assert_eq!(environment_choice.map(secret_text), Some("environment"));
+    let first_choice = resolved_key([Some(&first), Some(&second), Some(&environment)]);
+    assert_eq!(first_choice.map(secret_text), Some("first"));
 }
 
 #[test]
@@ -318,16 +318,16 @@ fn an_absent_null_or_empty_usage_is_none() {
 
 #[test]
 fn the_model_is_kept_as_the_reply_sends_it() {
-    let model = decode(r#"{"model": "openrouter/model"}"#)
+    let sent = decode(r#"{"model": "openrouter/model"}"#)
         .expect("the reply decodes")
         .model;
-    assert_eq!(model, Some(text("openrouter/model")));
-    let model = decode(r#"{"model": null}"#)
+    assert_eq!(sent, Some(text("openrouter/model")));
+    let explicit_null = decode(r#"{"model": null}"#)
         .expect("the reply decodes")
         .model;
-    assert_eq!(model, Some(Json::Null));
-    let model = decode("{}").expect("the reply decodes").model;
-    assert_eq!(model, None);
+    assert_eq!(explicit_null, Some(Json::Null));
+    let absent = decode("{}").expect("the reply decodes").model;
+    assert_eq!(absent, None);
 }
 
 #[test]

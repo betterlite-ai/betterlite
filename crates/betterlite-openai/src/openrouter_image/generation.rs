@@ -1,28 +1,24 @@
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use secrecy::SecretString;
-
 use super::decode::decode_openrouter_image_reply;
 use super::shared::{
     CHAT_COMPLETIONS, DEFAULT_API_BASE, ImageConfigError, ImageHiddenParams, SKIPPED_PARAMS,
     SUPPORTED_PARAMS, apply_usage, authorization, map_quality_to_image_size,
-    map_size_to_aspect_ratio, reply_error, resolved_key, transform_error,
+    map_size_to_aspect_ratio, reply_error, resolved_key, transform_error, user_message,
 };
 use crate::api::image_contracts::records::{ImageHttpResponse, ImageParams, ImageResponse};
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::OpenRouterError;
+use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
+use secrecy::SecretString;
 
 // ast-grep-ignore: no-long-names
 use self::OpenRouterImageGenerationConfig as GenerationConfig;
-
 const STAGE: &str = "image generation";
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 // ast-grep-ignore: no-long-names
 pub struct OpenRouterImageGenerationConfig {
     pub supported_params: [&'static str; 3],
 }
-
 #[must_use]
 // ast-grep-ignore: no-long-names
 pub const fn get_openrouter_image_generation_config(_model: &str) -> GenerationConfig {
@@ -30,7 +26,6 @@ pub const fn get_openrouter_image_generation_config(_model: &str) -> GenerationC
         supported_params: SUPPORTED_PARAMS,
     }
 }
-
 impl GenerationConfig {
     pub fn map_params(
         &self,
@@ -41,70 +36,43 @@ impl GenerationConfig {
         for (name, value) in non_default_params {
             if self.supported_params.contains(&name.as_str()) {
                 map_supported(name.as_str(), value, &mut optional_params)?;
-            } else {
-                keep_unsupported(name.as_str(), value, drop_params, &mut optional_params);
+            } else if !drop_params {
+                optional_params.insert(String::from(name), value.clone());
             }
         }
         Ok(optional_params)
     }
 }
-
 fn map_supported(
     name: &str,
     value: &Json,
     optional_params: &mut ImageParams,
 ) -> Result<(), ImageConfigError> {
-    match name {
-        "size" | "quality" => map_image_config(name, value, optional_params),
-        _ => {
-            optional_params.insert(String::from(name), value.clone());
-            Ok(())
-        }
+    if name == "size" {
+        let Json::Text(size) = value else {
+            return Err(ImageConfigError::Size);
+        };
+        let ratio = map_size_to_aspect_ratio(size);
+        image_config(optional_params)?
+            .insert(String::from("aspect_ratio"), Json::Text(ratio.to_owned()));
+        return Ok(());
     }
-}
-
-fn map_image_config(
-    name: &str,
-    value: &Json,
-    optional_params: &mut ImageParams,
-) -> Result<(), ImageConfigError> {
-    match name {
-        "size" => {
-            let Json::Text(size) = value else {
-                return Err(ImageConfigError::Size);
-            };
-            let ratio = map_size_to_aspect_ratio(size);
-            image_config(optional_params)?
-                .insert(String::from("aspect_ratio"), Json::Text(ratio.to_owned()));
-            Ok(())
-        }
-        _ => {
-            let Json::Text(quality) = value else {
-                return Err(ImageConfigError::Quality);
-            };
-            let Some(image_size) = map_quality_to_image_size(quality) else {
-                return Ok(());
-            };
-            image_config(optional_params)?.insert(
-                String::from("image_size"),
-                Json::Text(image_size.to_owned()),
-            );
-            Ok(())
-        }
+    if name == "quality" {
+        let Json::Text(quality) = value else {
+            return Err(ImageConfigError::Quality);
+        };
+        let Some(image_size) = map_quality_to_image_size(quality) else {
+            return Ok(());
+        };
+        image_config(optional_params)?.insert(
+            String::from("image_size"),
+            Json::Text(image_size.to_owned()),
+        );
+        return Ok(());
     }
+    optional_params.insert(String::from(name), value.clone());
+    Ok(())
 }
-
-fn keep_unsupported(
-    name: &str,
-    value: &Json,
-    drop_params: bool,
-    optional_params: &mut ImageParams,
-) {
-    if !drop_params {
-        optional_params.insert(String::from(name), value.clone());
-    }
-}
-
 fn image_config(
     optional_params: &mut ImageParams,
 ) -> Result<&mut IndexMap<String, Json>, ImageConfigError> {
@@ -113,10 +81,11 @@ fn image_config(
         .or_insert_with(|| Json::Object(IndexMap::new()))
     {
         Json::Object(config) => Ok(config),
-        _ => Err(ImageConfigError::ImageConfig),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Err(ImageConfigError::ImageConfig)
+        }
     }
 }
-
 #[must_use]
 pub fn complete_url(api_base: Option<&str>) -> String {
     if let Some(base) = api_base
@@ -130,7 +99,6 @@ pub fn complete_url(api_base: Option<&str>) -> String {
     }
     format!("{DEFAULT_API_BASE}{CHAT_COMPLETIONS}")
 }
-
 #[must_use]
 pub fn validate_environment(
     mut headers: Headers,
@@ -142,14 +110,13 @@ pub fn validate_environment(
     headers.insert(String::from("Authorization"), authorization(key));
     headers
 }
-
 #[must_use]
 pub fn request_body(model: &str, prompt: &str, optional_params: &ImageParams) -> ImageParams {
     let mut body = ImageParams::new();
     body.insert(String::from("model"), Json::Text(model.to_owned()));
     body.insert(
         String::from("messages"),
-        Json::List(vec![user_message(prompt)]),
+        Json::List(vec![user_message(Json::Text(prompt.to_owned()))]),
     );
     for (name, value) in optional_params {
         if !SKIPPED_PARAMS.contains(&name.as_str()) {
@@ -158,14 +125,6 @@ pub fn request_body(model: &str, prompt: &str, optional_params: &ImageParams) ->
     }
     body
 }
-
-fn user_message(prompt: &str) -> Json {
-    Json::Object(IndexMap::from([
-        (String::from("role"), Json::Text(String::from("user"))),
-        (String::from("content"), Json::Text(prompt.to_owned())),
-    ]))
-}
-
 pub fn transform_response(
     raw: &ImageHttpResponse,
     mut model_response: ImageResponse,

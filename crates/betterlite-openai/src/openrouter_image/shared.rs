@@ -1,22 +1,17 @@
-use std::io;
-use std::str::FromStr as _;
-
-use betterlite_models::call_helpers::headers::AdditionalHeaders;
-use betterlite_models::decisions::Json;
-use indexmap::IndexMap;
-use rust_decimal::Decimal;
-use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
-use serde_json::Number;
-use thiserror::Error;
-
 use super::decode::{OpenRouterImageUsage, ReplyDecodeError};
 use crate::api::image_contracts::records::{
     ImageHttpResponse, ImageInputTokens, ImageResponse, ImageUsage,
 };
 use crate::openai_base_config::Headers;
 use crate::openrouter_chat::error::OpenRouterError;
-
+use betterlite_models::{call_helpers::headers::AdditionalHeaders, decisions::Json};
+use indexmap::IndexMap;
+use rust_decimal::Decimal;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::{Deserialize, Serialize};
+use serde_json::Number;
+use std::{io, str::FromStr as _};
+use thiserror::Error;
 pub const SUPPORTED_PARAMS: [&str; 3] = ["size", "quality", "n"];
 pub const SKIPPED_PARAMS: [&str; 3] = ["model", "messages", "modalities"];
 pub const DEFAULT_API_BASE: &str = "https://openrouter.ai/api/v1";
@@ -29,7 +24,6 @@ const SIZE_ASPECT_RATIOS: [(&str, &str); 4] = [
     ("1024x1536", "2:3"),
     ("1024x1792", "9:16"),
 ];
-
 #[derive(Debug, Error)]
 pub enum ImageConfigError {
     #[error("size must be a string")]
@@ -44,7 +38,7 @@ pub enum ImageConfigError {
     UnsupportedImage,
     #[error("the image could not be read: {source}")]
     ImageRead {
-        #[source]
+        #[from]
         source: io::Error,
     },
     #[error("usage.cost could not be written as a JSON number: {source}")]
@@ -55,7 +49,6 @@ pub enum ImageConfigError {
     #[error("usage.prompt_tokens minus its input image tokens does not fit in a whole number")]
     TextTokens,
 }
-
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ImageHiddenParams {
@@ -66,7 +59,13 @@ pub struct ImageHiddenParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<Json>,
 }
-
+#[must_use]
+pub fn user_message(content: Json) -> Json {
+    Json::Object(IndexMap::from([
+        (String::from("role"), Json::Text(String::from("user"))),
+        (String::from("content"), content),
+    ]))
+}
 #[must_use]
 pub fn map_size_to_aspect_ratio(size: &str) -> &'static str {
     SIZE_ASPECT_RATIOS
@@ -74,7 +73,6 @@ pub fn map_size_to_aspect_ratio(size: &str) -> &'static str {
         .find_map(|&(name, ratio)| (name == size).then_some(ratio))
         .unwrap_or(SQUARE_ASPECT_RATIO)
 }
-
 #[must_use]
 pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
     match quality {
@@ -84,35 +82,27 @@ pub fn map_quality_to_image_size(quality: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
 #[must_use]
 pub fn resolved_key(candidates: [Option<&SecretString>; 3]) -> Option<&SecretString> {
-    for key in candidates.into_iter().flatten() {
-        if !key.expose_secret().is_empty() {
-            return Some(key);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|key| !key.expose_secret().is_empty())
 }
-
 #[must_use]
 pub fn resolved_base(candidates: [Option<&str>; 2]) -> Option<&str> {
-    for base in candidates.into_iter().flatten() {
-        if !base.is_empty() {
-            return Some(base);
-        }
-    }
-    None
+    candidates
+        .into_iter()
+        .flatten()
+        .find(|base| !base.is_empty())
 }
-
 #[must_use]
 pub fn authorization(key: Option<&SecretString>) -> String {
-    match key {
-        Some(secret) => format!("Bearer {}", secret.expose_secret()),
-        None => String::from("Bearer None"),
-    }
+    key.map_or_else(
+        || String::from("Bearer None"),
+        |secret| format!("Bearer {}", secret.expose_secret()),
+    )
 }
-
 #[must_use]
 pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
     OpenRouterError {
@@ -121,7 +111,6 @@ pub fn transform_error(stage: &str, message: &str) -> OpenRouterError {
         headers: Headers::new(),
     }
 }
-
 #[must_use]
 pub fn reply_error(
     error: ReplyDecodeError,
@@ -137,7 +126,6 @@ pub fn reply_error(
         ReplyDecodeError::Shape { message } => transform_error(stage, &message),
     }
 }
-
 fn apply_cost(
     usage: &OpenRouterImageUsage,
     hidden: &mut ImageHiddenParams,
@@ -155,7 +143,6 @@ fn apply_cost(
     }
     Ok(())
 }
-
 // the source writes float(cost), and Python's JSON keeps a decimal point on a whole float
 fn cost_number(cost: Decimal) -> Result<Number, ImageConfigError> {
     let normalized = cost.normalize().to_string();
@@ -166,7 +153,6 @@ fn cost_number(cost: Decimal) -> Result<Number, ImageConfigError> {
     };
     Number::from_str(&written).map_err(|source| ImageConfigError::Cost { source })
 }
-
 pub fn apply_usage(
     usage: &OpenRouterImageUsage,
     response: &mut ImageResponse,
