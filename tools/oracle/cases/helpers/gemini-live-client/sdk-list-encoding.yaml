@@ -1,0 +1,24 @@
+kind: helper
+name: sdk-list-encoding
+call:
+  gemini_live_client:
+    op: sdk
+    cases:
+      - {shape: bytes, base64: aGk=}
+      - {shape: bytes, base64: u/8=}
+      - {shape: bytes_list, base64: aGk=}
+      - {shape: datetime, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 0}}
+      - {shape: datetime, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 120000, offset_seconds: 0}}
+      - {shape: datetime, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 0, offset_seconds: -19800}}
+      - {shape: datetime_list, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 0}}
+      - {shape: empty_list}
+      - {shape: object_bytes, base64: aGk=}
+      - {shape: list_object_bytes, base64: aGk=}
+      - {shape: list_list_bytes, base64: aGk=}
+      - {shape: mixed_list, base64: aGk=, datetime: {year: 2024, month: 1, day: 2, hour: 3, minute: 4, second: 5, microsecond: 0}}
+      - {shape: object_bytes, base64: aGk=, depth: 99}
+      - {shape: object_bytes, base64: aGk=, depth: 100}
+      - {shape: bytes, base64: aGk=, depth: 100}
+      - {shape: bytes, base64: aGk=, depth: 101}
+env: {}
+compare: {ignore: []}

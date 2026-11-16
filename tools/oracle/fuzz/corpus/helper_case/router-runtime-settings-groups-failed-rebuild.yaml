@@ -1,0 +1,13 @@
+kind: helper
+name: router-runtime-settings-groups-failed-rebuild
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["num_retries", 4]
+      - ["routing_groups", "bad"]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/error/message, why: "Python raises its own exception text; betterlite writes its own message"}

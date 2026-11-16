@@ -1,0 +1,32 @@
+kind: helper
+name: token-count-remote-high-detail
+call:
+  b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages:
+    - role: user
+      content:
+      - {type: text, text: describe this}
+      - type: image_url
+        image_url: {url: 'https://example.com/cat.png', detail: high}
+calls:
+- b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages: null
+- b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages: []
+- b3636:
+    function: count
+    model: gpt-3.5-turbo
+    messages:
+    - role: user
+      content:
+      - {type: text, text: describe this}
+      - type: image_url
+        image_url: {url: 'HTTPS://EXAMPLE.COM/CAT.PNG', detail: high}
+env: {}
+compare: {ignore: []}

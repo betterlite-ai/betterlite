@@ -1,0 +1,33 @@
+task: B8145
+deviations:
+  - what: One runtime service account serves the proxy. There is no ui_runtime account, no billing metrics secrets and no gateway-run-monitoring secret.
+    why: betterlite is one service, and the billing metrics and metrics sidecar are not built in this module, so a second identity and the secrets that only feed enterprise metering have no consumer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L20-L30
+  - what: The proxy config object is named config.yaml in its own bucket and betterlite reads it through the LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY and LITELLM_CONFIG_BUCKET_TYPE variables set in B8146, instead of mounting it into the containers with a gcsfuse volume.
+    why: LiteLLM mounts or downloads the file with Python; betterlite reads the bucket itself (B4143), so the bucket and the object are all the runtime needs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/gcs.tf#L33-L61
+  - what: litellm_master_key is required and its secret version stores the caller's value as given. LiteLLM defaults the variable to an empty string and, when it is empty, writes sk- followed by a generated random password.
+    why: betterlite has no trial mode that generates a master key, and a required variable keeps the key an explicit caller decision instead of writing a generated secret into the state.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/secrets.tf#L1-L24
+  - what: roles/logging.logWriter is granted to the runtime account unconditionally, and no roles/monitoring.metricWriter binding is created.
+    why: LiteLLM grants both roles only when the metrics sidecar is enabled. betterlite always writes its logs, and the metrics sidecar and its metering are not part of this module.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L128-L142
+  - what: The runtime account id is cut to 22 characters of the shared name before the -runtime suffix, so it stays within GCP's 30-character account id limit. LiteLLM appends -runtime to the full name.
+    why: betterlite's shared name can reach 30 characters, so LiteLLM's form would exceed the limit and fail the apply for long tenant and env values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L6-L8
+  - what: The data bucket gets a lifecycle Delete rule from data_retention_days (0 adds no rule), both buckets take their location from bucket_location when it is set, and force_destroy comes from bucket_force_destroy. LiteLLM has no retention rule, always uses var.region and calls the variable gcs_force_destroy.
+    why: betterlite has no other owner for request-log retention, and a caller may put the buckets in a multi-region while the data stores stay in var.region; the force_destroy rename follows the module's other bucket variable name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/gcs.tf#L5-L22
+  - what: One extra_secrets map replaces gateway_extra_secrets and backend_extra_secrets, and the runtime account gets one binding per distinct secret id.
+    why: betterlite is one service, so one map and one set of accessor bindings cover what LiteLLM splits between gateway and backend; two environment names pointing at one secret still produce a single binding, as in LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L73-L82
+  - what: There is no secretAccessor binding for an OTel headers secret.
+    why: betterlite has no OTel headers secret variable; B8146 carries otel_endpoint only, so there is no secret to read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L84-L92
+  - what: The runtime service account's display name is "betterlite runtime". LiteLLM calls it a Cloud Run runtime service account. GCP service accounts have no labels, so neither sets any.
+    why: betterlite names its resources after itself, and the account id already carries the module name.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/iam.tf#L6-L8
+  - what: The identity variables live in variables_identity.tf, the secret accessor bindings sit next to the secrets in secrets.tf, and the variables and resources are split across files instead of one variables.tf and one secrets.tf/iam.tf pair with the bindings in iam.tf.
+    why: Three parallel tasks write the module, and a Terraform module reads every .tf file in its folder, so the split changes nothing for a caller.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/terraform/litellm/gcp/variables.tf
+kept_bugs: []
