@@ -1,0 +1,20 @@
+kind: helper
+name: fal-video-prepare-reference-type
+call:
+  fal_video_prepare:
+    operation: reference_type
+    models:
+      - "fal-ai/kling-video"
+      - "minimax/h3/hailuo-02"
+    references:
+      - "https://a.test/image.png"
+      - ""
+      - null
+      - ["https://a.test/image.png"]
+      - 7
+      - false
+      - {url: "https://a.test/image.png"}
+      - " data:image/png;base64,AAAA"
+env: {}
+compare:
+  ignore: []

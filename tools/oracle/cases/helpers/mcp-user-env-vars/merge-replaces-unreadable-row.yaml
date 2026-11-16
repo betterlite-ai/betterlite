@@ -1,0 +1,15 @@
+kind: helper
+name: mcp-user-env-vars-merge-replaces-unreadable-row
+call:
+  b4714:
+    function: merge
+    salt_key: b4714-salt
+    user_id: user-1
+    server_id: srv-1
+    updates: {API_KEY: fresh-secret}
+    allowed_names: [API_KEY]
+    rows:
+      - {user_id: user-1, server_id: srv-1, values_b64: 'dHSLSXLO1c4NofkmZNWooxi6pyQoacCJ6jbnmIqq-AtoJ1gatU_z5rnDPbHhz_HN_EDq0gq_FPJ7zCiJvpJtN3pfzA=='}
+env:
+  LITELLM_SALT_KEY: b4714-salt
+compare: {ignore: []}

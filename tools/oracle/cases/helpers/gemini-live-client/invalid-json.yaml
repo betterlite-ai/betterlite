@@ -1,0 +1,31 @@
+kind: helper
+name: invalid-json
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: not json
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.append", '
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '5'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '"a string"'
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '["input_audio_buffer.append"]'
+env: {}
+compare: {ignore: []}
