@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 #[test]
 fn classification_uses_the_supplied_salt() {

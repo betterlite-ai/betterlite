@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use betterlite_logging::langfuse_otel::LangfuseOtelLogger;
 use betterlite_logging::langfuse_otel::destination::{
-    build_langfuse_otel_config, build_langfuse_otel_headers, format_otel_headers,
+    OtelHeaders, build_langfuse_otel_config, build_langfuse_otel_headers, format_otel_headers,
     get_langfuse_otel_config, langfuse_authorization_header, langfuse_otel_host,
 };
 use betterlite_logging::langfuse_otel::dynamic::{
@@ -24,7 +24,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -95,7 +96,7 @@ fn config_json(config: &OpenTelemetryConfig) -> Value {
     })
 }
 
-fn header_pairs(headers: &betterlite_logging::langfuse_otel::destination::OtelHeaders) -> Value {
+fn header_pairs(headers: &OtelHeaders) -> Value {
     Value::Array(
         headers
             .iter()

@@ -1,6 +1,7 @@
 use betterlite_error::facts::{ExceptionCheckers, ProviderErrorBody, ProviderErrorFacts};
 use betterlite_error::parse::{get_body_error_code, get_error_message};
 use betterlite_error::status::map_exception_by_status;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 
 pub(crate) struct Op;
@@ -44,10 +45,10 @@ fn message(body: Option<&ProviderErrorBody>) -> Option<String> {
     get_error_message(&facts)
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::RateLimit { text, status } => {
                 serde_json::json!(ExceptionCheckers::is_error_str_rate_limit(text, *status))

@@ -17,7 +17,8 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::Layer;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::super::fixtures::{FakeSession, Fixture, Script, TestError};
 use super::super::input::{ExecuteInput, Mode, Operation, Scenario, SettingsInput, StreamKind};

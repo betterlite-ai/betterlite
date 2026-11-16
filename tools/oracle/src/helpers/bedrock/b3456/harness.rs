@@ -19,7 +19,7 @@ use betterlite_rag::bedrock_ingestion::state::BedrockRagState;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 
 #[derive(Debug, Clone, Copy)]
 struct FixedClock(SystemTime);

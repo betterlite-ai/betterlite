@@ -21,7 +21,8 @@ use super::fixtures::{self, Call, Transport};
 use super::input::{Case, DEFAULT_NOW, Input, Step};
 use super::logs::Logs;
 use super::role_input::OwnedRoleAuth;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn failure<E>(error: E) -> Box<HelperError>
 where
@@ -39,10 +40,12 @@ where
 
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
-        Input::GetCredentials(case) => run_case(case, Operation::GetCredentials),
-        Input::ResolveCredentials(case) => run_case(case, Operation::ResolveCredentials),
-        Input::ResolveS3Credentials(case) => run_case(case, Operation::ResolveS3Credentials),
-        Input::AuthWithAwsRole(case) => run_case(case, Operation::AuthWithAwsRole),
+        Input::GetCredentials(case) => run_credential_case(case, Operation::GetCredentials),
+        Input::ResolveCredentials(case) => run_credential_case(case, Operation::ResolveCredentials),
+        Input::ResolveS3Credentials(case) => {
+            run_credential_case(case, Operation::ResolveS3Credentials)
+        }
+        Input::AuthWithAwsRole(case) => run_credential_case(case, Operation::AuthWithAwsRole),
     }
 }
 
@@ -62,7 +65,7 @@ enum StepResult {
     Failed(Option<u16>),
 }
 
-fn run_case(case: &Case, operation: Operation) -> HelperResult {
+fn run_credential_case(case: &Case, operation: Operation) -> HelperResult {
     let transport = Transport::with(&case.answers);
     let native = fixtures::native(case, &transport);
     let secrets = fixtures::secrets(case.resolved_token.as_deref());
@@ -77,7 +80,7 @@ fn run_case(case: &Case, operation: Operation) -> HelperResult {
         case.steps
             .iter()
             .map(|step| {
-                let recorded = transport.record.count();
+                let recorded = transport.record.calls().len();
                 let result = fixtures::kwargs(&case.environment, &step.params).map_or_else(
                     |_| StepResult::Failed(None),
                     |sts| {

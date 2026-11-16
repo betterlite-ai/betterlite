@@ -13,7 +13,8 @@ use betterlite_guardrails::model_armor::transport::{ModelArmorTransport, file_bo
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Deserialize)]
 pub(crate) struct SanitizeRequest {

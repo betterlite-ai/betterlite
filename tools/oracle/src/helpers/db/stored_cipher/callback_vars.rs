@@ -10,7 +10,7 @@ use serde_json::Value;
 use super::cipher_settings::{KeySource, resolve};
 use super::fixed_nonces::FixedNonces;
 use super::log_recorder::LogRecorder;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]

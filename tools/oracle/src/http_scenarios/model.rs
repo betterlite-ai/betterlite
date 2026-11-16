@@ -5,8 +5,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::case::{BodyKind, Ignore, UpstreamAnswer};
 use crate::http::Response;
+use betterlite_oracle_runner::case::{BodyKind, Ignore, UpstreamAnswer};
 
 use super::error::ScenarioError;
 
