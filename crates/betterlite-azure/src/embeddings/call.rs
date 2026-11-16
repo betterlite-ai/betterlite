@@ -206,10 +206,6 @@ fn parse_response(
     match raw.parse() {
         Ok(Parsed::Embedding(response)) => Ok(response),
         Ok(Parsed::Text(text)) => Err(EmbeddingError::Azure(unexpected_text(raw.status, &text))),
-        Err(ParseError::Shape(shape)) => {
-            Err(response_error(&raw.body)
-                .unwrap_or(EmbeddingError::Parse(ParseError::Shape(shape))))
-        }
         Err(ParseError::Json(error)) if is_async => Err(EmbeddingError::Azure(AzureOpenAiError {
             status_code: raw.status,
             message: format!("Failed to parse raw Azure embedding response: {error}"),
