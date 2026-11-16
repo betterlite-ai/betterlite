@@ -1,0 +1,399 @@
+replicaCount: 1
+# numWorkers: 2
+
+image:
+  # The tag defaults to the chart appVersion.
+  repository: ghcr.io/betterlite-ai/betterlite
+  pullPolicy: Always
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: "betterlite"
+fullnameOverride: ""
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: false
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+# annotations for the betterlite deployment
+deploymentAnnotations: {}
+deploymentLabels: {}
+deploymentMinReadySeconds: 0
+
+# annotations for betterlite pods
+podAnnotations: {}
+podLabels: {}
+
+# Deployment strategy configuration, for example a RollingUpdate with maxUnavailable 0
+strategy: {}
+
+terminationGracePeriodSeconds: 90
+topologySpreadConstraints: []
+
+podSecurityContext: {}
+securityContext:
+  {}
+  # capabilities:
+  #   drop:
+  #     - ALL
+  # readOnlyRootFilesystem: false
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# Secret objects exported to the pod as environment variables, so proxy_config can reach them as os.environ/<name>
+environmentSecrets: []
+# ConfigMap objects exported to the pod as environment variables
+environmentConfigMaps: []
+
+service:
+  type: ClusterIP
+  port: 4000
+  # If service type is LoadBalancer you can optionally specify loadBalancerClass
+  # loadBalancerClass: tailscale
+
+# The address the proxy listens on inside the container
+listen: "0.0.0.0"
+
+livenessProbe:
+  path: /health/liveliness
+  initialDelaySeconds: 0
+  periodSeconds: 15
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 5
+
+readinessProbe:
+  path: /health/readiness
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 3
+
+startupProbe:
+  path: /health/readiness
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 5
+  successThreshold: 1
+  failureThreshold: 30
+
+ingress:
+  enabled: false
+  className: "nginx"
+  labels: {}
+  annotations: {}
+  hosts:
+    - host: api.example.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+# An explicit master key; unset means reuse the stored one or generate "sk-" plus 18 characters
+masterkey: ""
+# if set, use this secret for the master key; otherwise, autogenerate a new one
+masterkeySecretName: ""
+# if set, use this secret key for the master key; otherwise, use the default key
+masterkeySecretKey: ""
+
+proxyConfigMap:
+  # when true, creates a new configmap
+  create: true
+  # if create is false and name is set, use the existing ConfigMap
+  # name: ""
+  # key: "config.yaml"
+
+# The elements within proxy_config are rendered as config.yaml for the proxy
+proxy_config:
+  model_list:
+    # At least one model must exist for the proxy to start.
+    - model_name: gpt-3.5-turbo
+      litellm_params:
+        model: gpt-3.5-turbo
+        api_key: eXaMpLeOnLy
+    - model_name: fake-openai-endpoint
+      litellm_params:
+        model: openai/fake
+        api_key: fake-key
+        api_base: https://exampleopenaiendpoint-production.up.railway.app/
+  general_settings:
+    master_key: os.environ/PROXY_MASTER_KEY
+
+# Serve Prometheus /metrics from a separate process so a scrape never runs on an inference worker.
+# Adds a `metrics` port to the container and a ClusterIP `<release>-metrics` Service; that port has
+# no virtual-key auth, so keep it off public ingress.
+metricsServer:
+  enabled: false
+  port: 4001
+
+# Opt-in sidecar that runs the post-response spend pipeline, so the proxy workers only serialise
+# a compact event and go back to serving inference. It reuses the pod's in-container pgbouncer and
+# the same Redis spend transaction buffer, so the per-pod database connection budget is unchanged.
+collector:
+  enabled: false
+  # unix:///<dir>/<file>.sock (the <dir> becomes a shared emptyDir) or tcp://127.0.0.1:<port>
+  address: unix:///var/run/litellm/collector.sock
+  # Events each worker holds in memory while the sidecar is slow or restarting
+  bufferSize: 1000
+  # fallback: run the pipeline in the worker when the sidecar is unreachable or the buffer is full
+  # drop: count and discard the event instead (spend under-reports)
+  onUnavailable: fallback
+  # How long the workers keep pushing buffered events on shutdown and how long the sidecar serves open connections
+  drainTimeoutSeconds: 10
+  command:
+    - betterlite
+    - collector
+  # Sized independently of the proxy container; the pipeline is CPU bound
+  resources: {}
+  # With autoscaling.enabled, scale on a ContainerResource metric of the proxy container only,
+  # so the sidecar's CPU never scales inference replicas. Needs Kubernetes 1.30+.
+  scaleOnProxyContainerCpu: false
+
+resources:
+  {}
+  # Unset by default so the chart installs on small clusters and an upgrade never leaves a pod Pending.
+  # Production deployments should set requests and limits.
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  # 60 is the documented recommendation
+  targetCPUUtilizationPercentage: 60
+  # Deliberately left unset: the query engine's memory ratchets to the pod's worst-ever write, so a
+  # memory target scales up and never back in. Memory is a floor to provision under `resources`.
+  # targetMemoryUtilizationPercentage: 80
+  # behavior: {}
+  # Opt-in per-pod workload targets, rendered as autoscaling/v2 Pods metrics with an AverageValue
+  # target. A Prometheus Adapter must serve litellm_requests_per_second and litellm_tokens_per_second
+  targetRequestsPerSecond: ""
+  targetTokensPerSecond: ""
+
+# Autoscaling with keda is mutually exclusive with hpa
+keda:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 100
+  pollingInterval: 30
+  cooldownPeriod: 300
+  # fallback:
+  #   failureThreshold: 3
+  #   replicas: 11
+  restoreToOriginalReplicaCount: false
+  scaledObject:
+    annotations: {}
+  triggers: []
+  # First-class Prometheus triggers on the proxy's own request and token counters, appended to
+  # `triggers`; each target is the per-second load one replica should carry
+  prometheus:
+    serverAddress: ""
+    requestsPerSecond: ""
+    tokensPerSecond: ""
+  behavior: {}
+
+# Additional volumes on the output Deployment definition.
+volumes: []
+# Additional volumeMounts on the output Deployment definition.
+volumeMounts: []
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+db:
+  # Use an existing postgres server/cluster
+  useExisting: false
+
+  # How to connect to the existing postgres server/cluster
+  endpoint: localhost
+  database: litellm
+  url: postgresql://$(DATABASE_USERNAME):$(DATABASE_PASSWORD)@$(DATABASE_HOST)/$(DATABASE_NAME)
+  secret:
+    name: postgres
+    usernameKey: username
+    passwordKey: password
+    # Optional: when set, DATABASE_HOST comes from this secret key instead of db.endpoint
+    endpointKey: ""
+    # Optional: when set, DATABASE_URL_READ_REPLICA comes from this secret key instead of db.readReplicaUrl
+    readReplicaUrlKey: ""
+    # Optional: when set, DATABASE_READER_HOST comes from this secret key, so readReplicaUrl can
+    # compose the reader URL from individual secret components. Ignored when readReplicaUrlKey is set.
+    readReplicaEndpointKey: ""
+
+  # Optional read-replica routing; leave empty to keep single-DB behavior
+  readReplicaUrl: ""
+
+  # In-container connection pool (PgBouncer, transaction mode) shared by every worker in the pod.
+  # Without it a pod's footprint against the database's connection ceiling is workers x connection_limit
+  # and grows with every replica; with it the pod holds at most maxDbConnections upstream connections.
+  connectionPool:
+    enabled: false
+    maxDbConnections: 20
+    maxClientConn: 1000
+
+  # Use the Stackgres Helm chart to deploy an instance of a Stackgres cluster.
+  # The Stackgres Operator must already be installed within the target Kubernetes cluster.
+  useStackgresOperator: false
+
+  # Use the Postgres Helm chart to create a single node, stand alone postgres instance.
+  # See the "postgresql" top level key for additional configuration.
+  deployStandalone: true
+
+lifecycle: {}
+
+# Settings for the Bitnami postgresql chart, used when db.deployStandalone is true
+#
+# Bitnami retired the versioned tags under docker.io/bitnami and republished the archived builds
+# under docker.io/bitnamilegacy, so the subchart's own image defaults no longer resolve.
+#
+# Keep the tag pinned. Starting a newer PostgreSQL major against an existing data directory leaves
+# the server refusing to boot, and the only way back is a dump taken beforehand, so the chart
+# refuses to render an unpinned tag. Crossing a major version is a dump-and-restore, not an image bump.
+postgresql:
+  architecture: standalone
+  image:
+    repository: bitnamilegacy/postgresql
+    tag: 16.2.0-debian-12-r6
+  volumePermissions:
+    image:
+      repository: bitnamilegacy/os-shell
+      tag: 12-debian-12-r16
+  metrics:
+    image:
+      repository: bitnamilegacy/postgres-exporter
+      tag: 0.15.0-debian-12-r14
+  auth:
+    username: litellm
+    database: litellm
+
+    # Override these on the helm command line with
+    # `--set postgresql.auth.postgres-password=<some good password>,postgresql.auth.password=<some good password>`
+    password: NoTaGrEaTpAsSwOrD
+    postgres-password: NoTaGrEaTpAsSwOrD
+
+# Redis is the proxy's coordination store: cross-pod tpm/rpm rate limits, spend tracking and the pod
+# lock manager. Enabling this deploys the bundled Redis subchart, wires REDIS_HOST, REDIS_PORT and
+# REDIS_PASSWORD into the proxy and renders a `general_settings.coordination_redis` block into the
+# proxy config.
+#
+# To point at an existing Redis instead, leave `enabled: false` and pass a secret for REDIS_HOST,
+# REDIS_PORT, REDIS_PASSWORD or REDIS_URL; the proxy falls back to those env vars for coordination.
+# Set `cache: true` in the proxy config only if you also want LLM response caching, which is
+# independent of coordination.
+#
+# When `redis.sentinel.enabled` is set, the coordination block is rendered with sentinel_nodes and
+# service_name (from redis.sentinel.masterSet) instead of host/port, because a plain Redis client
+# cannot talk to the sentinel port.
+redis:
+  enabled: false
+  architecture: standalone
+  image:
+    repository: bitnamilegacy/redis
+    tag: 7.2.4-debian-12-r9
+  sentinel:
+    image:
+      repository: bitnamilegacy/redis-sentinel
+      tag: 7.2.4-debian-12-r7
+  metrics:
+    image:
+      repository: bitnamilegacy/redis-exporter
+      tag: 1.58.0-debian-12-r4
+  volumePermissions:
+    image:
+      repository: bitnamilegacy/os-shell
+      tag: 12-debian-12-r16
+  sysctl:
+    image:
+      repository: bitnamilegacy/os-shell
+      tag: 12-debian-12-r16
+  kubectl:
+    image:
+      repository: bitnamilegacy/kubectl
+      tag: 1.29.2-debian-12-r3
+  coordination:
+    # Set to false to keep the bundled Redis for response caching only and leave
+    # general_settings.coordination_redis out of the rendered config. A coordination_redis block
+    # you define yourself in proxy_config always wins.
+    enabled: true
+
+# Schema migration job settings
+migrationJob:
+  enabled: true # Enable or disable the schema migration Job
+  retries: 3 # Number of retries for the Job in case of failure
+  backoffLimit: 4 # Backoff limit for Job restarts
+  # Wall-clock budget for the whole Job, shared across every retry rather than granted per attempt.
+  # Without it a migration that blocks on the database never fails, and a Helm hook release waits
+  # on it forever. Set to null to opt out and restore the unbounded behaviour.
+  activeDeadlineSeconds: 1800
+  disableSchemaUpdate: false # Skip schema migrations for specific environments. When true, the job exits with code 0.
+  # Optional service account for the migration job.
+  # Only used when migrationJob.hooks.helm.enabled=true and serviceAccount.create=true.
+  # Pre-install/pre-upgrade hooks run before normal resources, so this defaults to "default".
+  serviceAccountName: ""
+  annotations: {}
+  ttlSecondsAfterFinished: 120
+  resources: {}
+  extraContainers: []
+  extraInitContainers: []
+
+  # Hook configuration
+  hooks:
+    argocd:
+      enabled: true
+    helm:
+      enabled: false
+
+# Log level for the proxy (sets LITELLM_LOG in the deployment env), a direct env entry so it takes
+# precedence over any envFrom source. Set it to "" to stop injecting it, or define LITELLM_LOG in
+# envVars below, in which case the template skips this injection entirely.
+logLevel: INFO
+
+# Additional environment variables to be added to the deployment as a map of key-value pairs
+envVars: {}
+
+# Additional environment variables to be added to the deployment as a list of k8s env vars
+extraEnvVars: {}
+
+# if you want to override the container command, you can do so here
+command: {}
+# if you want to override the container args, you can do so here
+args: {}
+
+extraContainers: []
+extraInitContainers: []
+
+# Additional Kubernetes resources to deploy with betterlite
+extraResources: []
+
+# Pod Disruption Budget
+pdb:
+  enabled: false
+  # Set exactly one of the following. If both are set, minAvailable takes precedence.
+  minAvailable: null # e.g. "50%" or 1
+  maxUnavailable: null # e.g. 1 or "20%"
+  annotations: {}
+  labels: {}
+
+serviceMonitor:
+  enabled: false
+  labels: {}
+  annotations: {}
+  interval: 15s
+  scrapeTimeout: 10s
+  relabelings: []
+  namespaceSelector:
+    matchNames: []
+
+# Images for the Helm test pods, so a cluster can point them at a mirror it already has
+test:
+  kubectlImage: docker.io/bitnamilegacy/kubectl:1.29.2-debian-12-r3
