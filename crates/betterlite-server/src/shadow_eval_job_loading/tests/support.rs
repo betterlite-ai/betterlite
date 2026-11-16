@@ -72,10 +72,11 @@ pub(crate) fn tables_and_counter() -> (FakeTables, FakeCounter) {
 }
 
 pub(crate) fn fake_tables(rows: Vec<ShadowJobRow>) -> FakeTables {
-    let mut state = TablesState::default();
-    state.rows = rows;
     FakeTables {
-        state: Mutex::new(state),
+        state: Mutex::new(TablesState {
+            rows,
+            ..TablesState::default()
+        }),
         events: event_log(),
     }
 }

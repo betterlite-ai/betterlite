@@ -209,11 +209,11 @@ async fn shadow_eval_job_loading_caches_an_empty_read() {
     let loader = make_loader(fake_tables(Vec::new()));
     let first = loader.active_jobs(now()).await;
     let second = loader.active_jobs(now()).await;
-    let database = loader.database.as_ref().unwrap();
-    let state = database.state.lock().unwrap();
     assert!(first.refilled);
     assert!(!second.refilled);
+    assert!(first.jobs.is_empty());
+    let database = loader.database.as_ref().unwrap();
+    let state = database.state.lock().unwrap();
     assert_eq!(state.find_calls, 1);
     assert!(state.stats_requests.is_empty());
-    assert!(first.jobs.is_empty());
 }
