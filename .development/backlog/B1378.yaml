@@ -1,7 +1,7 @@
 id: B1378
 milestone: M3 providers
 title: Gemini Live setup options and modality defaults
-status: todo
+status: done
 depends_on: [B1308, B1309, B1331, B193, B1004, B002, B171]
 file: tasks/B1378-gemini-live-setup.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/gemini.py"
 parent: B035
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2039
