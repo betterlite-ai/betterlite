@@ -93,7 +93,7 @@ async fn reads_daily_spend_scoped_by_key_and_user() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user", team_id, total_tokens) VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", team_id, total_tokens) VALUES
             ('r1', 'completion', 'sk-one', 1.5, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 't1', 10),
             ('r2', 'completion', 'sk-one', 0.25, CURRENT_DATE - INTERVAL '2 days', CURRENT_DATE - INTERVAL '2 days', 'gpt-4o', 'u1', 't1', 5),
             ('r3', 'completion', 'sk-two', 2.25, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o-mini', 'u2', 't2', 7);
@@ -135,7 +135,7 @@ async fn sums_an_empty_view_to_a_null_total() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user") VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user") VALUES
             ('r1', 'completion', 'sk-one', 0.1, CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1'),
             ('r2', 'completion', 'sk-one', 0.2, CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1');
         "#,
@@ -154,7 +154,7 @@ async fn ranks_the_last_thirty_days_keys_and_models() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user", total_tokens) VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", total_tokens) VALUES
             ('r1', 'completion', 'sk-one', 1.5, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 10),
             ('r2', 'completion', 'sk-two', 2.5, CURRENT_DATE - INTERVAL '2 days', CURRENT_DATE - INTERVAL '2 days', 'gpt-4o-mini', 'u1', 20),
             ('r3', 'completion', 'sk-one', 0.5, CURRENT_DATE - INTERVAL '45 days', CURRENT_DATE - INTERVAL '45 days', 'claude-3', 'u1', 30);
@@ -194,7 +194,7 @@ async fn aggregates_a_users_full_history() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user", total_tokens) VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", total_tokens) VALUES
             ('r1', 'completion', 'sk-one', 1.5, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 10),
             ('r2', 'completion', 'sk-two', 2.5, CURRENT_DATE - INTERVAL '2 days', CURRENT_DATE - INTERVAL '2 days', 'gpt-4o-mini', 'u1', 20),
             ('r3', 'completion', 'sk-one', 0.5, CURRENT_DATE - INTERVAL '45 days', CURRENT_DATE - INTERVAL '45 days', 'claude-3', 'u1', 30),
@@ -239,7 +239,7 @@ async fn groups_team_spend_by_alias_and_day() {
         &pool,
         r#"
         INSERT INTO "LiteLLM_TeamTable" (team_id, team_alias) VALUES ('t1', 'alpha'), ('t2', NULL);
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user", team_id) VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user", team_id) VALUES
             ('r1', 'completion', 'sk-one', 0.1, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 't1'),
             ('r2', 'completion', 'sk-one', 0.2, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 't1'),
             ('r3', 'completion', 'sk-one', 1.0, CURRENT_DATE - INTERVAL '1 day', CURRENT_DATE - INTERVAL '1 day', 'gpt-4o', 'u1', 't2'),
@@ -270,7 +270,7 @@ async fn keeps_the_parse_error_of_an_unreadable_amount() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user") VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user") VALUES
             ('r1', 'completion', 'sk-one', 'NaN', CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1');
         "#,
     )
@@ -310,7 +310,7 @@ async fn reads_an_exponent_amount_through_the_scientific_fallback() {
     execute(
         &pool,
         r#"
-        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, startTime, endTime, model, "user") VALUES
+        INSERT INTO "LiteLLM_SpendLogs" (request_id, call_type, api_key, spend, "startTime", "endTime", model, "user") VALUES
             ('r1', 'completion', 'sk-one', 1e20, CURRENT_DATE, CURRENT_DATE, 'gpt-4o', 'u1');
         "#,
     )
