@@ -3,6 +3,9 @@ deviations:
   - what: Construction fails with a typed error when neither gcs_bucket_name nor GCS_BUCKET_NAME is set.
     why: LiteLLM accepts a missing bucket and then requests .../b/None/o/..., which can never work. betterlite refuses to build the cache instead.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L29
+  - what: An unresolved os.environ/ reference in any of the three cache_params values is a load error that names the field.
+    why: LiteLLM's get_secret returns None for a missing environment variable and the proxy carries on, so an unset bucket reference ends up as the literal None in the request URL and an unset service-account reference silently falls back to default credentials. betterlite refuses a config whose reference does not resolve.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6364-L6367
   - what: Async methods run B3997's synchronous token lookup on the blocking pool and the HTTP call on the async client, and sync methods block on the same async path.
     why: betterlite-http has one async client, so there is no separate sync transport. The requests, headers and results are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/gcs_cache.py#L36-L40
