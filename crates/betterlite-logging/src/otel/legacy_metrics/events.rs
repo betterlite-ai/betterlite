@@ -5,7 +5,7 @@ use opentelemetry_sdk::logs::SdkLogger;
 use super::attributes::provider_label;
 use super::error::LegacyMetricsError;
 use super::inference_details::emit_inference_details;
-use super::legacy_content_events::{emit_completion_events, emit_prompt_events};
+use super::legacy_content_events::emit_content_events;
 use crate::otel::legacy_policy::capture::CaptureMode;
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::utils::coercion::OtelModelValue;
@@ -36,8 +36,7 @@ impl SemanticEventEmitter {
         if self.semconv_latest {
             return emit_inference_details(self, call, provider);
         }
-        emit_prompt_events(self, call, provider)?;
-        emit_completion_events(self, call, provider)
+        emit_content_events(self, call, provider)
     }
 
     // every semantic event is an INFO record bound to the inference span by its trace context

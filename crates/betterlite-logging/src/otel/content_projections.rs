@@ -43,23 +43,21 @@ fn turn(role: &str, content: OtelModelValue) -> OtelModelValue {
 }
 
 fn system_turns(data: &MetadataMap) -> Vec<OtelModelValue> {
-    ["system", "instructions"]
-        .iter()
-        .filter_map(|key| data.get(*key))
-        .filter(|content| !matches!(content, OtelModelValue::Null(())))
-        .map(|content| turn("system", content.clone()))
-        .collect()
+    let mut turns = Vec::new();
+    for key in ["system", "instructions"] {
+        match data.get(key) {
+            None | Some(OtelModelValue::Null(())) => {}
+            Some(content) => turns.push(turn("system", content.clone())),
+        }
+    }
+    turns
 }
 
 fn user_turns(turns: &OtelModelValue) -> Vec<OtelModelValue> {
-    match turns {
-        OtelModelValue::Array(items) => items.clone(),
-        other @ (OtelModelValue::Null(())
-        | OtelModelValue::Bool(_)
-        | OtelModelValue::Number(_)
-        | OtelModelValue::String(_)
-        | OtelModelValue::Object(_)) => vec![turn("user", other.clone())],
+    if let OtelModelValue::Array(items) = turns {
+        return items.clone();
     }
+    vec![turn("user", turns.clone())]
 }
 
 // a key present with a null value wins over input, like dict.get("messages", data.get("input"))
@@ -171,13 +169,13 @@ pub fn response_output(response: &OutputResponse<'_>) -> Option<String> {
 }
 
 fn raw_frames(chunks: &[RelayedChunk]) -> Vec<Vec<u8>> {
-    chunks
-        .iter()
-        .filter_map(|chunk| match chunk {
-            RelayedChunk::Raw(frame) => Some(frame.clone()),
-            RelayedChunk::Chat(_) | RelayedChunk::Completed(_) | RelayedChunk::Other(_) => None,
-        })
-        .collect()
+    let mut frames = Vec::new();
+    for chunk in chunks {
+        if let RelayedChunk::Raw(frame) = chunk {
+            frames.push(frame.clone());
+        }
+    }
+    frames
 }
 
 fn chat_chunks(chunks: &[RelayedChunk]) -> Option<Vec<OtelModelValue>> {
@@ -222,12 +220,12 @@ pub fn stream_output(
         .iter()
         .any(|chunk| matches!(chunk, RelayedChunk::Raw(_)))
     {
-        let assembled = assembler.assemble_sse(&raw_frames(chunks))?;
-        return response_output(&OutputResponse::ModelResponse(&assembled));
+        let from_frames = assembler.assemble_sse(&raw_frames(chunks))?;
+        return response_output(&OutputResponse::ModelResponse(&from_frames));
     }
     if let Some(values) = chat_chunks(chunks) {
-        let assembled = assembled_chat_stream(&values, data, assembler)?;
-        return response_output(&OutputResponse::ModelResponse(&assembled));
+        let from_chunks = assembled_chat_stream(&values, data, assembler)?;
+        return response_output(&OutputResponse::ModelResponse(&from_chunks));
     }
     let completed = chunks.iter().rev().find_map(|chunk| match chunk {
         RelayedChunk::Completed(response) => Some(response),

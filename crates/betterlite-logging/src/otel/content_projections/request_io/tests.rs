@@ -77,79 +77,79 @@ fn a_model_response_projects_each_choice_message_without_null_fields() {
     );
 }
 
+#[derive(Clone, Copy)]
+enum Class {
+    Model,
+    Responses,
+    Anthropic,
+}
+
 #[rstest]
-#[case::no_role(
+#[case::model_no_role(
+    Class::Model,
     r#"{"choices": [{"message": {"content": "hi"}}]}"#,
     Some(r#"[{"content":"hi","role":"assistant"}]"#)
 )]
-#[case::no_message(r#"{"choices": [{"index": 0}]}"#, Some(r#"[{"role":"assistant"}]"#))]
-#[case::no_choices(r#"{"id": "x"}"#, Some(r#"[{"role":"assistant"}]"#))]
-#[case::null_choices(r#"{"choices": null}"#, Some(r#"[{"role":"assistant"}]"#))]
-#[case::empty_choices(r#"{"choices": []}"#, Some("[]"))]
-#[case::choices_of_the_wrong_type(r#"{"choices": "x"}"#, None)]
-#[case::not_an_object(r#"["x"]"#, None)]
-fn a_model_response_without_the_usual_shape_follows_the_model_defaults(
-    #[case] response: &str,
-    #[case] expected: Option<&str>,
-) {
-    let parsed = value(response);
-    assert_eq!(
-        response_output(&OutputResponse::ModelResponse(&parsed)).as_deref(),
-        expected
-    );
-}
-
-#[rstest]
-#[case::output_list(
+#[case::model_no_message(
+    Class::Model,
+    r#"{"choices": [{"index": 0}]}"#,
+    Some(r#"[{"role":"assistant"}]"#)
+)]
+#[case::model_no_choices(Class::Model, r#"{"id": "x"}"#, Some(r#"[{"role":"assistant"}]"#))]
+#[case::model_null_choices(
+    Class::Model,
+    r#"{"choices": null}"#,
+    Some(r#"[{"role":"assistant"}]"#)
+)]
+#[case::model_empty_choices(Class::Model, r#"{"choices": []}"#, Some("[]"))]
+#[case::model_choices_of_the_wrong_type(Class::Model, r#"{"choices": "x"}"#, None)]
+#[case::model_not_an_object(Class::Model, r#"["x"]"#, None)]
+#[case::responses_output_list(
+    Class::Responses,
     r#"{"id": "r", "output": [{"type": "message", "status": null, "content": [{"type": "output_text", "text": "hi", "logprobs": null}]}]}"#,
     Some(r#"[{"content":[{"text":"hi","type":"output_text"}],"type":"message"}]"#)
 )]
-#[case::no_output(r#"{"id": "r"}"#, Some("null"))]
-#[case::null_output(r#"{"output": null}"#, Some("null"))]
-#[case::empty_output(r#"{"output": []}"#, Some("[]"))]
-#[case::not_an_object(r#""text""#, None)]
-fn a_responses_api_response_projects_its_output_list(
-    #[case] response: &str,
-    #[case] expected: Option<&str>,
-) {
-    let parsed = value(response);
-    assert_eq!(
-        response_output(&OutputResponse::ResponsesApi(&parsed)).as_deref(),
-        expected
-    );
-}
-
-#[rstest]
-#[case::full(
+#[case::responses_no_output(Class::Responses, r#"{"id": "r"}"#, Some("null"))]
+#[case::responses_null_output(Class::Responses, r#"{"output": null}"#, Some("null"))]
+#[case::responses_empty_output(Class::Responses, r#"{"output": []}"#, Some("[]"))]
+#[case::responses_not_an_object(Class::Responses, r#""text""#, None)]
+#[case::anthropic_full(
+    Class::Anthropic,
     r#"{"type": "message", "role": "assistant", "content": [{"type": "text", "text": "hi"}], "model": "x"}"#,
     Some(r#"[{"content":[{"text":"hi","type":"text"}],"role":"assistant"}]"#)
 )]
-#[case::role_defaults_to_assistant(
+#[case::anthropic_role_defaults_to_assistant(
+    Class::Anthropic,
     r#"{"type": "message", "content": "hi"}"#,
     Some(r#"[{"content":"hi","role":"assistant"}]"#)
 )]
-#[case::content_defaults_to_null(
+#[case::anthropic_content_defaults_to_null(
+    Class::Anthropic,
     r#"{"type": "message", "role": "user"}"#,
     Some(r#"[{"content":null,"role":"user"}]"#)
 )]
-#[case::explicit_null_content(
+#[case::anthropic_explicit_null_content(
+    Class::Anthropic,
     r#"{"type": "message", "content": null}"#,
     Some(r#"[{"content":null,"role":"assistant"}]"#)
 )]
-#[case::another_type(r#"{"type": "error", "content": "hi"}"#, None)]
-#[case::no_type(r#"{"role": "assistant", "content": "hi"}"#, None)]
-#[case::null_role(r#"{"type": "message", "role": null}"#, None)]
-#[case::numeric_role(r#"{"type": "message", "role": 3}"#, None)]
-#[case::a_text(r#""message""#, None)]
-#[case::a_null("null", None)]
-#[case::a_list(r#"[{"type": "message"}]"#, None)]
-fn any_other_response_is_read_as_an_anthropic_message(
+#[case::anthropic_another_type(Class::Anthropic, r#"{"type": "error", "content": "hi"}"#, None)]
+#[case::anthropic_no_type(Class::Anthropic, r#"{"role": "assistant", "content": "hi"}"#, None)]
+#[case::anthropic_null_role(Class::Anthropic, r#"{"type": "message", "role": null}"#, None)]
+#[case::anthropic_numeric_role(Class::Anthropic, r#"{"type": "message", "role": 3}"#, None)]
+#[case::anthropic_a_text(Class::Anthropic, r#""message""#, None)]
+#[case::anthropic_a_null(Class::Anthropic, "null", None)]
+#[case::anthropic_a_list(Class::Anthropic, r#"[{"type": "message"}]"#, None)]
+fn a_response_projects_to_the_json_its_class_defines(
+    #[case] class: Class,
     #[case] response: &str,
     #[case] expected: Option<&str>,
 ) {
     let parsed = value(response);
-    assert_eq!(
-        response_output(&OutputResponse::Other(&parsed)).as_deref(),
-        expected
-    );
+    let wrapped = match class {
+        Class::Model => OutputResponse::ModelResponse(&parsed),
+        Class::Responses => OutputResponse::ResponsesApi(&parsed),
+        Class::Anthropic => OutputResponse::Other(&parsed),
+    };
+    assert_eq!(response_output(&wrapped).as_deref(), expected);
 }

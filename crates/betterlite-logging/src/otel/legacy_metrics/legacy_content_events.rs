@@ -31,7 +31,7 @@ fn event_object<'item>(
 // only a string content is an attribute: LiteLLM's SDK record drops a list of parts with a warning
 fn content_text(content: Option<&OtelModelValue>) -> Option<&str> {
     content
-        .filter(|content| is_truthy(content))
+        .filter(|text| is_truthy(text))
         .and_then(OtelModelValue::as_str)
 }
 
@@ -109,33 +109,27 @@ fn completion_record(
     }
 }
 
-pub fn emit_prompt_events(
+pub fn emit_content_events(
     emitter: &SemanticEventEmitter,
     call: &EventCall<'_>,
     provider: Option<&str>,
 ) -> Result<(), LegacyMetricsError> {
+    let capture = call.capture_mode.capture_in_event();
     let messages = call
         .kwargs
         .get("messages")
         .and_then(OtelModelValue::as_array)
         .unwrap_or_default();
+    let mut records = Vec::new();
     for message in messages {
         let fields = event_object(message, "messages")?;
-        let record = prompt_record(fields, call.capture_mode.capture_in_event(), provider);
-        emitter.emit_record(call.span_context, record.body, record.attributes);
+        records.push(prompt_record(fields, capture, provider));
     }
-    Ok(())
-}
-
-pub fn emit_completion_events(
-    emitter: &SemanticEventEmitter,
-    call: &EventCall<'_>,
-    provider: Option<&str>,
-) -> Result<(), LegacyMetricsError> {
     for (index, choice) in (0_i64..).zip(choices_of(call.response)) {
         let fields = event_object(choice, "choices")?;
-        let capture = call.capture_mode.capture_in_event();
-        let record = completion_record(index, fields, capture, provider);
+        records.push(completion_record(index, fields, capture, provider));
+    }
+    for record in records {
         emitter.emit_record(call.span_context, record.body, record.attributes);
     }
     Ok(())

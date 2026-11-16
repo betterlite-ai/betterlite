@@ -56,6 +56,10 @@ pub fn record_seconds(histogram: &Histogram<f64>, value: Decimal, attributes: &[
     }
 }
 
+fn elapsed(from: Decimal, to: Decimal) -> Result<Decimal, LegacyMetricsError> {
+    to.checked_sub(from).ok_or(LegacyMetricsError::TimeRange)
+}
+
 pub fn record_ttft_metric(
     histogram: &Histogram<f64>,
     context: &LatencyContext<'_>,
@@ -66,16 +70,16 @@ pub fn record_ttft_metric(
         .and_then(OtelModelValue::as_object)
         .and_then(|params| params.get("stream"))
         .is_some_and(is_truthy);
-    if !streaming {
-        return Ok(());
-    }
-    let api = stamp(context.kwargs, "api_call_start_time", context.resolver)?;
-    let completion = stamp(context.kwargs, "completion_start_time", context.resolver)?;
-    if let (Stamp::At(api_start), Stamp::At(first_token)) = (api, completion) {
-        let seconds = first_token
-            .checked_sub(api_start)
-            .ok_or(LegacyMetricsError::TimeRange)?;
-        record_seconds(histogram, seconds, context.attributes);
+    let moments = (
+        stamp(context.kwargs, "api_call_start_time", context.resolver)?,
+        stamp(context.kwargs, "completion_start_time", context.resolver)?,
+    );
+    if let (true, (Stamp::At(call_start), Stamp::At(first_token))) = (streaming, moments) {
+        record_seconds(
+            histogram,
+            elapsed(call_start, first_token)?,
+            context.attributes,
+        );
     }
     Ok(())
 }
@@ -85,21 +89,19 @@ pub fn record_tpot_metric(
     context: &LatencyContext<'_>,
     completion_tokens: Decimal,
 ) -> Result<(), LegacyMetricsError> {
-    let completion = stamp(context.kwargs, "completion_start_time", context.resolver)?;
-    let api = stamp(context.kwargs, "api_call_start_time", context.resolver)?;
-    let generation = match (completion, api) {
+    let generation = match (
+        stamp(context.kwargs, "completion_start_time", context.resolver)?,
+        stamp(context.kwargs, "api_call_start_time", context.resolver)?,
+    ) {
         (Stamp::At(started), _) | (Stamp::Absent, Stamp::At(started)) => {
-            context.end_time.checked_sub(started)
+            elapsed(started, context.end_time)?
         }
-        (Stamp::Unparsed, _) | (Stamp::Absent, Stamp::Unparsed | Stamp::Absent) => {
-            Some(context.duration)
-        }
-    }
-    .ok_or(LegacyMetricsError::TimeRange)?;
+        (Stamp::Unparsed, _) | (Stamp::Absent, Stamp::Unparsed | Stamp::Absent) => context.duration,
+    };
+    let per_token = generation
+        .checked_div(completion_tokens)
+        .ok_or(LegacyMetricsError::TimeRange)?;
     if generation > Decimal::ZERO {
-        let per_token = generation
-            .checked_div(completion_tokens)
-            .ok_or(LegacyMetricsError::TimeRange)?;
         record_seconds(histogram, per_token, context.attributes);
     }
     Ok(())
@@ -109,20 +111,16 @@ pub fn record_api_latency_metric(
     histogram: &Histogram<f64>,
     context: &LatencyContext<'_>,
 ) -> Result<(), LegacyMetricsError> {
-    let Stamp::At(api_start) = stamp(context.kwargs, "api_call_start_time", context.resolver)?
-    else {
-        return Ok(());
+    let span = match (
+        stamp(context.kwargs, "api_call_start_time", context.resolver)?,
+        stamp(context.kwargs, "end_time", context.resolver)?,
+    ) {
+        (Stamp::At(call_start), Stamp::Absent) => elapsed(call_start, context.end_time)?,
+        (Stamp::At(call_start), Stamp::At(finished)) => elapsed(call_start, finished)?,
+        (Stamp::Absent | Stamp::Unparsed, _) | (Stamp::At(_), Stamp::Unparsed) => return Ok(()),
     };
-    let end = match stamp(context.kwargs, "end_time", context.resolver)? {
-        Stamp::Absent => context.end_time,
-        Stamp::At(finished) => finished,
-        Stamp::Unparsed => return Ok(()),
-    };
-    let seconds = end
-        .checked_sub(api_start)
-        .ok_or(LegacyMetricsError::TimeRange)?;
-    if seconds > Decimal::ZERO {
-        record_seconds(histogram, seconds, context.attributes);
+    if span > Decimal::ZERO {
+        record_seconds(histogram, span, context.attributes);
     }
     Ok(())
 }

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal, NotRequired, TypedDict
 
 import litellm
@@ -134,9 +134,13 @@ def metric_lines(reader: InMemoryMetricReader) -> list[MetricLine]:
     return sorted(lines, key=metric_key)
 
 
-def new_logger(request: Input, reader: InMemoryMetricReader, logger_provider: LoggerProvider) -> OpenTelemetry:
+def new_logger(
+    request: Input, reader: InMemoryMetricReader, logger_provider: LoggerProvider
+) -> OpenTelemetry:
     settings = request["config"] if "config" in request else Config()
-    categories = {OTELSemconvCategory.GEN_AI_LATEST_EXPERIMENTAL} if settings.get("semconv") is True else set()
+    categories: set[OTELSemconvCategory] = set()
+    if settings.get("semconv") is True:
+        categories.add(OTELSemconvCategory.GEN_AI_LATEST_EXPERIMENTAL)
     config = OpenTelemetryConfig(
         exporter="in_memory",
         enable_metrics=True,
@@ -162,22 +166,24 @@ def record_success(request: Input) -> Recorded:
     logger_provider = LoggerProvider()
     logger_provider.add_log_record_processor(SimpleLogRecordProcessor(log_exporter))
     previous = litellm.callback_settings
-    litellm.callback_settings = (
-        {"otel": {"attributes": request["callback_settings"]}} if "callback_settings" in request else {}
-    )
+    litellm.callback_settings = {}
+    if "callback_settings" in request:
+        litellm.callback_settings = {"otel": {"attributes": request["callback_settings"]}}
     try:
         new_logger(request, reader, logger_provider).log_success_event(
             request["kwargs"],
             request.get("response"),
-            datetime.fromtimestamp(request["start_time"]),
-            datetime.fromtimestamp(request["end_time"]),
+            datetime.fromtimestamp(request["start_time"], tz=UTC),
+            datetime.fromtimestamp(request["end_time"], tz=UTC),
         )
     finally:
         litellm.callback_settings = previous
     events = [
         EventLine(
             body=JSON.validate_python(log.log_record.body),
-            attributes=attribute_values(TEXTS.validate_python(dict(log.log_record.attributes or {}))),
+            attributes=attribute_values(
+                TEXTS.validate_python(dict(log.log_record.attributes or {}))
+            ),
         )
         for log in log_exporter.get_finished_logs()
     ]
@@ -201,8 +207,11 @@ def parsed(text: str | None) -> JsonValue:
     return JSON.validate_json(text)
 
 
-def relayed(chunks: list[Chunk]) -> list[ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]]:
-    typed: list[ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]] = []
+Relayed = ModelResponseStream | ResponseCompletedEvent | dict[str, JsonValue]
+
+
+def relayed(chunks: list[Chunk]) -> list[Relayed]:
+    typed: list[Relayed] = []
     for chunk in chunks:
         match chunk["type"]:
             case "chat":

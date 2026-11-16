@@ -48,11 +48,25 @@ fn set(listed: &[&str]) -> BTreeSet<String> {
 
 #[test]
 fn the_metric_metadata_keys_are_the_fifteen_litellm_names() {
-    assert_eq!(METRIC_METADATA_KEYS.len(), 15);
-    assert_eq!(METRIC_METADATA_KEYS.first(), Some(&"user_api_key_hash"));
     assert_eq!(
-        METRIC_METADATA_KEYS.last(),
-        Some(&"vector_store_request_metadata")
+        METRIC_METADATA_KEYS,
+        [
+            "user_api_key_hash",
+            "user_api_key_alias",
+            "user_api_key_team_id",
+            "user_api_key_org_id",
+            "user_api_key_user_id",
+            "user_api_key_team_alias",
+            "user_api_key_user_email",
+            "spend_logs_metadata",
+            "requester_ip_address",
+            "requester_metadata",
+            "user_api_key_end_user_id",
+            "prompt_management_metadata",
+            "applied_guardrails",
+            "mcp_tool_call_metadata",
+            "vector_store_request_metadata",
+        ]
     );
 }
 
@@ -214,7 +228,7 @@ fn the_resolved_filter_allows_by_list(
 fn a_configured_filter_is_validated_when_the_state_is_built() {
     let settings = CountingSettings::new(None);
     let bad = typed(r#"{"include_list": ["gen_ai.token.type"]}"#);
-    let result = MetricFilterState::new(Some(bad), None, Arc::clone(&settings));
+    let result = MetricFilterState::new(Some(bad), None, Arc::<CountingSettings>::clone(&settings));
     assert!(matches!(result, Err(LegacyMetricsError::TokenTypeFiltered)));
     assert_eq!(settings.reads.load(Ordering::SeqCst), 0);
     let not_mapping = MetricFilterState::new(Some(typed(r#""x""#)), None, settings);
@@ -227,7 +241,8 @@ fn a_configured_filter_is_validated_when_the_state_is_built() {
 #[test]
 fn an_unset_filter_resolves_on_the_first_record_and_only_once() {
     let settings = CountingSettings::new(Some(r#"{"exclude_list": ["hidden_params"]}"#));
-    let state = MetricFilterState::new(None, None, Arc::clone(&settings)).expect("state");
+    let state = MetricFilterState::new(None, None, Arc::<CountingSettings>::clone(&settings))
+        .expect("state");
     assert_eq!(settings.reads.load(Ordering::SeqCst), 0);
     assert!(!state.ensure().expect("first").allows("hidden_params"));
     assert!(state.ensure().expect("second").allows("gen_ai.system"));
@@ -248,7 +263,7 @@ fn callback_settings_are_read_only_for_the_default_otel_callback(
     let state = MetricFilterState::new(
         None,
         callback_name.map(str::to_owned),
-        Arc::clone(&settings),
+        Arc::<CountingSettings>::clone(&settings),
     )
     .expect("state");
     assert_eq!(
@@ -262,7 +277,12 @@ fn callback_settings_are_read_only_for_the_default_otel_callback(
 fn the_config_attributes_win_over_the_callback_settings() {
     let settings = CountingSettings::new(Some(r#"{"exclude_list": ["hidden_params"]}"#));
     let config = typed(r#"{"exclude_list": ["gen_ai.system"]}"#);
-    let state = MetricFilterState::new(Some(config), None, Arc::clone(&settings)).expect("state");
+    let state = MetricFilterState::new(
+        Some(config),
+        None,
+        Arc::<CountingSettings>::clone(&settings),
+    )
+    .expect("state");
     let resolved = state.ensure().expect("resolved");
     assert!(resolved.allows("hidden_params"));
     assert!(!resolved.allows("gen_ai.system"));
@@ -280,7 +300,8 @@ fn null_config_attributes_and_null_settings_mean_unset() {
 #[test]
 fn a_bad_setting_fails_every_record_and_is_not_cached() {
     let settings = CountingSettings::new(Some(r#"{"include_list": ["nope"]}"#));
-    let state = MetricFilterState::new(None, None, Arc::clone(&settings)).expect("state");
+    let state = MetricFilterState::new(None, None, Arc::<CountingSettings>::clone(&settings))
+        .expect("state");
     assert!(state.ensure().is_err());
     assert!(state.ensure().is_err());
     assert_eq!(settings.reads.load(Ordering::SeqCst), 2);

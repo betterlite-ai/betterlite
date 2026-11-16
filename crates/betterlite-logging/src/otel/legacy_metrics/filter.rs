@@ -150,9 +150,13 @@ impl MetricFilterState {
     }
 
     pub fn ensure(&self) -> Result<Arc<ResolvedFilter>, LegacyMetricsError> {
-        let mut slot = self.resolved.lock().unwrap_or_else(PoisonError::into_inner);
-        if let Some(resolved) = slot.as_ref() {
-            return Ok(Arc::clone(resolved));
+        let cached = self
+            .resolved
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
+        if let Some(resolved) = cached {
+            return Ok(resolved);
         }
         let mut attributes = self.config_attributes.clone();
         if attributes.is_none() && matches!(self.callback_name.as_deref(), None | Some("otel")) {
@@ -166,7 +170,7 @@ impl MetricFilterState {
             .map(build_metric_attribute_filter)
             .transpose()?;
         let resolved = Arc::new(resolve_metric_filter(filter.as_ref())?);
-        *slot = Some(Arc::clone(&resolved));
+        *self.resolved.lock().unwrap_or_else(PoisonError::into_inner) = Some(Arc::clone(&resolved));
         Ok(resolved)
     }
 
