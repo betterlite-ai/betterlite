@@ -147,80 +147,27 @@ pub(super) fn json_entry(text: &str) -> Json {
     serde_json::from_str(text).expect("the batch entry decodes")
 }
 
-fn model_name_field(model_name: Option<&str>) -> String {
-    model_name.map_or_else(String::new, |name| format!(r#""model_name":"{name}","#))
+// The fixture is the wire JSON an oracle case sends: the variant's leading keys, the deployment's model_info and the case's content.
+pub(super) fn wire_input(
+    head: &str,
+    model_info: Option<&str>,
+    content: &str,
+) -> BatchOutputUsageInput {
+    let info = model_info.map_or_else(String::new, |info| format!(r#","model_info":{info}"#));
+    parse_input(&format!(r#"{{{head}{info},"content":{content}}}"#))
 }
 
-fn model_info_field(model_info: Option<&str>) -> String {
-    model_info.map_or_else(String::new, |info| format!(r#""model_info":{info},"#))
-}
-
-// The fixture is the wire JSON an oracle case sends, assembled around the case's own lines.
 pub(super) fn output_input(
     provider: &str,
     model_name: Option<&str>,
     model_info: Option<&str>,
     lines: &str,
 ) -> BatchOutputUsageInput {
-    let name = model_name_field(model_name);
-    let info = model_info_field(model_info);
-    parse_input(
-        &[
-            r#"{"kind":"output_usage","provider":""#,
-            provider,
-            r#"","#,
-            name.as_str(),
-            info.as_str(),
-            r#""content":{"kind":"lines","lines":["#,
-            lines,
-            "]}}",
-        ]
-        .concat(),
-    )
-}
-
-pub(super) fn output_bytes(
-    provider: &str,
-    model_name: Option<&str>,
-    model_info: Option<&str>,
-    bytes: &[u8],
-) -> BatchOutputUsageInput {
-    let name = model_name_field(model_name);
-    let info = model_info_field(model_info);
-    let encoded = format!("{bytes:?}");
-    parse_input(
-        &[
-            r#"{"kind":"output_usage","provider":""#,
-            provider,
-            r#"","#,
-            name.as_str(),
-            info.as_str(),
-            r#""content":{"kind":"bytes","bytes":"#,
-            encoded.as_str(),
-            "}}",
-        ]
-        .concat(),
-    )
-}
-
-pub(super) fn vertex_input(
-    model_name: Option<&str>,
-    model_info: Option<&str>,
-    lines: &str,
-) -> BatchOutputUsageInput {
-    let name = model_name.map_or_else(|| "null".to_owned(), |name| format!(r#""{name}""#));
-    let info = model_info_field(model_info);
-    parse_input(
-        &[
-            r#"{"kind":"vertex_usage","model_name":"#,
-            name.as_str(),
-            ",",
-            info.as_str(),
-            r#""content":{"kind":"lines","lines":["#,
-            lines,
-            "]}}",
-        ]
-        .concat(),
+    let name = model_name.map_or_else(String::new, |name| format!(r#","model_name":"{name}""#));
+    wire_input(
+        &format!(r#""kind":"output_usage","provider":"{provider}"{name}"#),
+        model_info,
+        &format!(r#"{{"kind":"lines","lines":[{lines}]}}"#),
     )
 }
 

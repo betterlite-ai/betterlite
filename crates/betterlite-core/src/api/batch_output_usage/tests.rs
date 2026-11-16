@@ -22,8 +22,8 @@ use super::{
 use crate::api::api_boundaries::ApiLimits;
 use support::{
     BATCH_MODEL_INFO, ByModelLookup, EmbeddingProviders, FakeVertex, NoProviders, OCR_MODEL_INFO,
-    RecordedCall, ScriptedCounter, bedrock_input, json_entry, logged, output_bytes, output_input,
-    prompt_only_usage, run, run_captured, run_with_lookup, totals, vertex_input,
+    RecordedCall, ScriptedCounter, bedrock_input, json_entry, logged, output_input,
+    prompt_only_usage, run, run_captured, run_with_lookup, totals, wire_input,
 };
 
 #[test]
@@ -445,11 +445,12 @@ fn vertex_native_usage(
     #[case] models: Vec<String>,
     #[case] cost: Decimal,
 ) {
-    let decoded = vertex_input(
-        model_name,
+    let name = serde_json::to_string(&model_name).expect("the model name encodes");
+    let decoded = wire_input(
+        &format!(r#""kind":"vertex_usage","model_name":{name}"#),
         Some(BATCH_MODEL_INFO),
-        r#"{"request": {"contents": []}, "response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
-        {"request": {"contents": []}}"#,
+        r#"{"kind": "lines", "lines": [{"request": {"contents": []}, "response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+        {"request": {"contents": []}}]}"#,
     );
     let (outcome, logs) = run_captured(&decoded, &FakeVertex);
     let result = outcome.expect("the batch is costed");
@@ -464,11 +465,11 @@ fn vertex_native_usage(
 
 #[test]
 fn vertex_models_are_counted_once() {
-    let decoded = vertex_input(
-        None,
+    let decoded = wire_input(
+        r#""kind":"vertex_usage","model_name":null"#,
         Some(BATCH_MODEL_INFO),
-        r#"{"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
-        {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}}"#,
+        r#"{"kind": "lines", "lines": [{"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}},
+        {"response": {"model": "gemini-test", "usage": {"prompt_tokens": 10, "completion_tokens": 5}}}]}"#,
     );
     let result = run(&decoded, &FakeVertex).expect("the batch is costed");
     assert_eq!(result.usage, totals(20, 10, 30));
@@ -484,11 +485,11 @@ fn malformed_bytes() -> Vec<u8> {
 
 #[test]
 fn malformed_output_line_warning() {
-    let decoded = output_bytes(
-        "openai",
-        Some("gpt-4o-batch"),
+    let bytes = malformed_bytes();
+    let decoded = wire_input(
+        r#""kind":"output_usage","provider":"openai","model_name":"gpt-4o-batch""#,
         Some(BATCH_MODEL_INFO),
-        &malformed_bytes(),
+        &format!(r#"{{"kind":"bytes","bytes":{bytes:?}}}"#),
     );
     let (outcome, logs) = run_captured(&decoded, &NoProviders);
     let result = outcome.expect("the batch is costed");
