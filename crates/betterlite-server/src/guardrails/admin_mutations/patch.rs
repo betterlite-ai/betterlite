@@ -17,7 +17,7 @@ use super::body::decode_patch_body;
 use super::error::{MANAGE_ADMIN_REQUIRED, MutationError, is_configuration_error, logged};
 use super::response::StoredGuardrail;
 use super::review_rows::ReviewRows;
-use super::{MutationState, authenticated, mutation_database, require_admin};
+use super::{MutationState, authenticated, require_admin};
 use crate::auth::auth_identity::AuthContext;
 
 const PATCH_FAILED: &str = "Error updating guardrail";
@@ -33,14 +33,14 @@ where
     S: ReviewRows + 'static,
 {
     let context = authenticated(caller)?;
-    let request = decode_patch_body(&body).map_err(MutationError::body)?;
+    let request = decode_patch_body(&body).map_err(|error| MutationError::Body(Box::new(error)))?;
     require_admin(&context, MANAGE_ADMIN_REQUIRED)?;
-    let database = mutation_database(&state)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     let registry = database.runtime.registry();
     let existing = registry
         .get_guardrail_by_id_from_db(&guardrail_id)
         .await
-        .map_err(|error| logged(PATCH_FAILED, &error))?;
+        .map_err(|source| logged(PATCH_FAILED, MutationError::Registry { source }))?;
     let Some(existing) = existing else {
         return Err(MutationError::NotFound { guardrail_id });
     };
@@ -48,7 +48,7 @@ where
     let updated = registry
         .update_guardrail_in_db(&guardrail_id, &merged, Utc::now())
         .await
-        .map_err(|error| logged(PATCH_FAILED, &error))?;
+        .map_err(|source| logged(PATCH_FAILED, MutationError::Registry { source }))?;
     let name = updated.guardrail_name.clone();
     let synced = database
         .runtime
@@ -65,7 +65,7 @@ where
                 registry
                     .update_guardrail_in_db(&guardrail_id, &existing, Utc::now())
                     .await
-                    .map_err(|rollback| logged(PATCH_FAILED, &rollback))?;
+                    .map_err(|source| logged(PATCH_FAILED, MutationError::Registry { source }))?;
                 return Err(MutationError::UpdateRejected { source: error });
             }
             tracing::warn!(
@@ -77,9 +77,9 @@ where
         .review_rows
         .find_unique(&guardrail_id)
         .await
-        .map_err(|error| logged(PATCH_FAILED, &error))?;
+        .map_err(|source| logged(PATCH_FAILED, MutationError::ReviewRows { source }))?;
     let Some(review) = review else {
-        return Err(MutationError::missing_after_update(&guardrail_id));
+        return Err(MutationError::MissingAfterUpdate { guardrail_id });
     };
     Ok(Json(StoredGuardrail::from_rows(updated, review)))
 }

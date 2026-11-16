@@ -263,7 +263,6 @@ pub(super) fn detail(body: &str) -> String {
     text(field(&parse(body), "detail")).to_owned()
 }
 
-/// The first entry of a 422 body's `detail` list.
 pub(super) fn first_issue(body: &str) -> JsonData {
     match field(&parse(body), "detail") {
         JsonData::Array(items) => items.first().cloned().expect("one issue"),

@@ -80,13 +80,3 @@ fn require_admin(context: &AuthContext, detail: &'static str) -> Result<(), Muta
     }
     Err(MutationError::Forbidden { detail })
 }
-
-fn mutation_database<R, S>(
-    state: &MutationState<R, S>,
-) -> Result<&MutationDatabase<R, S>, MutationError>
-where
-    R: GuardrailRows,
-    S: ReviewRows,
-{
-    state.database.as_ref().ok_or(MutationError::NoDatabase)
-}

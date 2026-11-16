@@ -15,7 +15,7 @@ use chrono::Utc;
 use super::error::{MutationError, REVIEW_ADMIN_REQUIRED, logged};
 use super::response::SubmissionDecision;
 use super::review_rows::{ReviewRow, ReviewRows};
-use super::{MutationDatabase, MutationState, authenticated, mutation_database, require_admin};
+use super::{MutationDatabase, MutationState, authenticated, require_admin};
 use crate::auth::auth_identity::AuthContext;
 
 const PENDING_REVIEW: &str = "pending_review";
@@ -37,13 +37,13 @@ where
 {
     let context = authenticated(caller)?;
     require_admin(&context, REVIEW_ADMIN_REQUIRED)?;
-    let database = mutation_database(&state)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     let row = pending_row(database, &guardrail_id, APPROVE_FAILED).await?;
     database
         .review_rows
         .set_status(&guardrail_id, ACTIVE, Utc::now())
         .await
-        .map_err(|error| logged(APPROVE_FAILED, &error))?;
+        .map_err(|source| logged(APPROVE_FAILED, MutationError::ReviewRows { source }))?;
     let Some(params) =
         parse_json_object(row.litellm_params.as_ref()).filter(|params| !params.0.is_empty())
     else {
@@ -55,7 +55,12 @@ where
                 "Approved guardrail {} (ID: {guardrail_id}) and initialized in memory",
                 row.guardrail_name
             );
-            Ok(Json(decision(guardrail_id, ACTIVE, APPROVED_MESSAGE, None)))
+            Ok(Json(SubmissionDecision {
+                guardrail_id,
+                status: ACTIVE,
+                message: APPROVED_MESSAGE,
+                warning: None,
+            }))
         }
         Err(error) => {
             tracing::warn!(
@@ -64,12 +69,12 @@ where
             let warning = format!(
                 "Guardrail was marked active but failed to initialize in memory: {error}. It will be picked up on the next sync cycle."
             );
-            Ok(Json(decision(
+            Ok(Json(SubmissionDecision {
                 guardrail_id,
-                ACTIVE,
-                APPROVED_MESSAGE,
-                Some(warning),
-            )))
+                status: ACTIVE,
+                message: APPROVED_MESSAGE,
+                warning: Some(warning),
+            }))
         }
     }
 }
@@ -85,33 +90,19 @@ where
 {
     let context = authenticated(caller)?;
     require_admin(&context, REVIEW_ADMIN_REQUIRED)?;
-    let database = mutation_database(&state)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     pending_row(database, &guardrail_id, REJECT_FAILED).await?;
     database
         .review_rows
         .set_status(&guardrail_id, REJECTED, Utc::now())
         .await
-        .map_err(|error| logged(REJECT_FAILED, &error))?;
-    Ok(Json(decision(
+        .map_err(|source| logged(REJECT_FAILED, MutationError::ReviewRows { source }))?;
+    Ok(Json(SubmissionDecision {
         guardrail_id,
-        REJECTED,
-        REJECTED_MESSAGE,
-        None,
-    )))
-}
-
-fn decision(
-    guardrail_id: String,
-    status: &'static str,
-    message: &'static str,
-    warning: Option<String>,
-) -> SubmissionDecision {
-    SubmissionDecision {
-        guardrail_id,
-        status,
-        message,
-        warning,
-    }
+        status: REJECTED,
+        message: REJECTED_MESSAGE,
+        warning: None,
+    }))
 }
 
 async fn pending_row<R, S>(
@@ -127,7 +118,7 @@ where
         .review_rows
         .find_unique(guardrail_id)
         .await
-        .map_err(|error| logged(context, &error))?;
+        .map_err(|source| logged(context, MutationError::ReviewRows { source }))?;
     let Some(row) = row else {
         return Err(MutationError::SubmissionNotFound);
     };
@@ -144,7 +135,9 @@ fn parse_json_object(value: Option<&JsonData>) -> Option<OpaqueParams> {
     let text = match value? {
         JsonData::Object(fields) => serde_json::to_string(fields).ok()?,
         JsonData::String(text) => text.clone(),
-        _ => return None,
+        JsonData::Null | JsonData::Bool(_) | JsonData::Number(_) | JsonData::Array(_) => {
+            return None;
+        }
     };
     serde_json::from_str(&text).ok()
 }

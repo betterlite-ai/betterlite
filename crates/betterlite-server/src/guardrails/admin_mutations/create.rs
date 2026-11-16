@@ -11,7 +11,7 @@ use super::body::{WriteRequest, decode_write_request};
 use super::error::{MANAGE_ADMIN_REQUIRED, MutationError, is_configuration_error, logged};
 use super::response::CreatedGuardrail;
 use super::review_rows::ReviewRows;
-use super::{MutationDatabase, MutationState, authenticated, mutation_database, require_admin};
+use super::{MutationDatabase, MutationState, authenticated, require_admin};
 use crate::auth::auth_identity::AuthContext;
 
 const DB_FAILED: &str = "Error adding guardrail to db";
@@ -26,9 +26,10 @@ where
     S: ReviewRows + 'static,
 {
     let context = authenticated(caller)?;
-    let request = decode_write_request(&body).map_err(MutationError::body)?;
+    let request =
+        decode_write_request(&body).map_err(|error| MutationError::Body(Box::new(error)))?;
     require_admin(&context, MANAGE_ADMIN_REQUIRED)?;
-    let database = mutation_database(&state)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     let WriteRequest {
         guardrail,
         guardrail_info,
@@ -38,7 +39,7 @@ where
         .registry()
         .add_guardrail_to_db(&guardrail, Utc::now())
         .await
-        .map_err(|error| logged(DB_FAILED, &error))?;
+        .map_err(|source| logged(DB_FAILED, MutationError::Registry { source }))?;
     let guardrail_id = created.guardrail_id.clone().unwrap_or_default();
     let name = created.guardrail_name.clone();
     let started = database

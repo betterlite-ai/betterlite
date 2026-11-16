@@ -6,6 +6,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::body::BodyError;
+use super::review_rows::ReviewRowsError;
 use crate::tracing_routes::router::unauthenticated;
 
 pub(super) const MANAGE_ADMIN_REQUIRED: &str = "Admin access required to manage guardrails";
@@ -33,8 +34,12 @@ pub(super) enum MutationError {
     Configuration { source: RegistryError },
     #[error("Invalid guardrail configuration, update rejected: {source}")]
     UpdateRejected { source: RegistryError },
-    #[error("{detail}")]
-    Internal { detail: String },
+    #[error("{source}")]
+    Registry { source: RegistryError },
+    #[error("{source}")]
+    ReviewRows { source: ReviewRowsError },
+    #[error("Guardrail with ID {guardrail_id} not found after the update")]
+    MissingAfterUpdate { guardrail_id: String },
 }
 
 #[derive(Serialize)]
@@ -57,33 +62,16 @@ pub(super) const fn is_configuration_error(error: &RegistryError) -> bool {
 }
 
 impl MutationError {
-    pub(super) fn body(error: BodyError) -> Self {
-        Self::Body(Box::new(error))
-    }
-
-    pub(super) fn internal<E>(error: E) -> Self
-    where
-        E: std::fmt::Display,
-    {
-        Self::Internal {
-            detail: error.to_string(),
-        }
-    }
-
-    pub(super) fn missing_after_update(guardrail_id: &str) -> Self {
-        Self::Internal {
-            detail: format!("Guardrail with ID {guardrail_id} not found after the update"),
-        }
-    }
-
     fn status(&self) -> StatusCode {
         match self {
             Self::Unauthenticated => StatusCode::UNAUTHORIZED,
             Self::Body(_) => StatusCode::UNPROCESSABLE_ENTITY,
             Self::Forbidden { .. } => StatusCode::FORBIDDEN,
-            Self::NoDatabase | Self::MissingParams | Self::Internal { .. } => {
-                StatusCode::INTERNAL_SERVER_ERROR
-            }
+            Self::NoDatabase
+            | Self::MissingParams
+            | Self::Registry { .. }
+            | Self::ReviewRows { .. }
+            | Self::MissingAfterUpdate { .. } => StatusCode::INTERNAL_SERVER_ERROR,
             Self::NotFound { .. } | Self::SubmissionNotFound => StatusCode::NOT_FOUND,
             Self::NotPendingReview { .. } | Self::Configuration { .. } => StatusCode::BAD_REQUEST,
             Self::UpdateRejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
@@ -92,14 +80,9 @@ impl MutationError {
 }
 
 // LiteLLM's eager 500s: verbose_proxy_logger.exception(<context>: %s, e) then str(e) as the detail
-pub(super) fn logged<E>(context: &str, error: &E) -> MutationError
-where
-    E: std::fmt::Display,
-{
+pub(super) fn logged(context: &str, error: MutationError) -> MutationError {
     tracing::error!("{context}: {error}");
-    MutationError::Internal {
-        detail: error.to_string(),
-    }
+    error
 }
 
 impl IntoResponse for MutationError {

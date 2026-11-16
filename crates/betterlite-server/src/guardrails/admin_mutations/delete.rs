@@ -7,7 +7,7 @@ use betterlite_guardrails::guardrail_registry::rows::GuardrailRows;
 
 use super::error::{MANAGE_ADMIN_REQUIRED, MutationError};
 use super::review_rows::ReviewRows;
-use super::{MutationState, authenticated, mutation_database, require_admin};
+use super::{MutationState, authenticated, require_admin};
 use crate::auth::auth_identity::AuthContext;
 
 // LiteLLM logs 'Unknown' because the delete result holds only the message
@@ -24,19 +24,19 @@ where
 {
     let context = authenticated(caller)?;
     require_admin(&context, MANAGE_ADMIN_REQUIRED)?;
-    let database = mutation_database(&state)?;
+    let database = state.database.as_ref().ok_or(MutationError::NoDatabase)?;
     let registry = database.runtime.registry();
     let existing = registry
         .get_guardrail_by_id_from_db(&guardrail_id)
         .await
-        .map_err(MutationError::internal)?;
+        .map_err(|source| MutationError::Registry { source })?;
     if existing.is_none() {
         return Err(MutationError::NotFound { guardrail_id });
     }
     let message = registry
         .delete_guardrail_from_db(&guardrail_id)
         .await
-        .map_err(MutationError::internal)?;
+        .map_err(|source| MutationError::Registry { source })?;
     database
         .runtime
         .handler()

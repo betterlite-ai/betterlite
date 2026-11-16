@@ -201,7 +201,13 @@ impl BodyError {
         let field = match source {
             GuardrailParamsError::InvalidField { field }
             | GuardrailParamsError::MissingField { field } => Some(field.as_str()),
-            _ => None,
+            GuardrailParamsError::RouteModelMissing
+            | GuardrailParamsError::ViolationNeedsMcpSecurity { .. }
+            | GuardrailParamsError::ChecksNeedDecisionModel { .. }
+            | GuardrailParamsError::InvalidTimeout
+            | GuardrailParamsError::TrailingData
+            | GuardrailParamsError::Environment(_)
+            | GuardrailParamsError::Encode { .. } => None,
         };
         if let Some(field) = field {
             for part in field.split('.').filter(|part| !part.is_empty()) {
