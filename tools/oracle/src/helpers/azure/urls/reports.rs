@@ -12,7 +12,8 @@ use betterlite_config::sections::azure_url_policy::{AzureCredentials, Raw};
 use secrecy::ExposeSecret;
 use serde_json::json;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::sources::NoSources;
 use super::{
@@ -186,7 +187,7 @@ fn v1_image_resource_reset(steps: &[ImageStep]) -> HelperResult {
     Ok(json!({ "steps": results }))
 }
 
-pub(super) fn invoke(input: &Input) -> HelperResult {
+pub(super) fn invoke_reports_call(input: &Input) -> HelperResult {
     match input {
         Input::CredentialPrecedence(steps) => credential_precedence(steps),
         Input::DeploymentBaseUrl(steps) => Ok(deployment_base_url(steps)),

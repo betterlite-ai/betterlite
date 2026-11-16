@@ -11,6 +11,9 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use super::fakes::{self, Database, FakeEngine, Handle};
 use super::scripted::{Capture, ScriptedClock, ScriptedLock};
 use super::{Flag, Report, Scenario, TargetName, failure};
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::Runtime;
+use tracing::subscriber;
 
 type ScenarioPolicy = AuthReconnect<FakeEngine, ScriptedClock, ScriptedLock>;
 
@@ -105,8 +108,8 @@ fn scenario_report(
 
 pub(super) fn run_scenario(
     scenario: &Scenario,
-    runtime: &tokio::runtime::Runtime,
-) -> Result<Report, Box<crate::helpers::HelperError>> {
+    runtime: &Runtime,
+) -> Result<Report, Box<HelperError>> {
     let effects = fakes::Effects::default();
     let engine = scenario_engine(scenario, &effects);
     let clock = ScriptedClock::from_values(&scenario.clock)?;
@@ -136,7 +139,7 @@ pub(super) fn run_scenario(
     let subscriber = tracing_subscriber::registry().with(Capture {
         effects: Arc::clone(&effects),
     });
-    let result = tracing::subscriber::with_default(subscriber, || {
+    let result = subscriber::with_default(subscriber, || {
         runtime.block_on(policy.attempt_db_reconnect(&request, stale.as_ref()))
     });
     Ok(scenario_report(

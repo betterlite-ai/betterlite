@@ -8,7 +8,9 @@ use betterlite_policy::scope::{matches_pattern, scope_matches};
 use betterlite_policy::values::{Policy, PolicyAttachment, PolicyCondition, PolicyScope};
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use serde::de::DeserializeOwned;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
@@ -59,7 +61,7 @@ fn invalid_input(message: String) -> Box<HelperError> {
 
 fn decode<T>(value: serde_json::Value) -> Result<T, Box<HelperError>>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_value(value)
         .map_err(|error| invalid_input(format!("invalid helper input: {error}")))

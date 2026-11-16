@@ -7,7 +7,8 @@ use betterlite_server::guardrail_message_scope::exception::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]

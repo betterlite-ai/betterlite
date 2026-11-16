@@ -6,13 +6,15 @@ use betterlite_openai::infinity_embedding::error::{InfinityEmbeddingError, SYNTH
 use betterlite_openai::infinity_embedding::{self, decode_infinity_embedding};
 use betterlite_openai::jina_embedding;
 use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 pub(crate) struct Op;
 
-type Failed = Box<crate::helpers::HelperError>;
+type Failed = Box<HelperError>;
 
 #[derive(Deserialize)]
 pub(crate) struct Input {
@@ -53,7 +55,7 @@ struct Failure {
 }
 
 fn failure(class: &str, status: Option<u16>, message: String) -> Failed {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: class.to_owned(),
         status,
         error_type: None,
@@ -63,10 +65,10 @@ fn failure(class: &str, status: Option<u16>, message: String) -> Failed {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(json!({"jina": jina(&input.jina)?, "infinity": infinity(&input.infinity)?}))
     }
 }
@@ -112,7 +114,7 @@ fn jina_reply(
     )))
 }
 
-fn jina(call: &Call) -> crate::helpers::HelperResult {
+fn jina(call: &Call) -> HelperResult {
     let key = call.api_key.clone().map(SecretString::from);
     let credentials =
         jina_embedding::resolve_credentials(call.base.as_deref(), key.as_ref(), &settings(call)?);
@@ -190,7 +192,7 @@ fn carried_error(supplied: &Failure) -> Result<Value, Failed> {
     }
 }
 
-fn infinity(call: &Call) -> crate::helpers::HelperResult {
+fn infinity(call: &Call) -> HelperResult {
     let key = call.api_key.clone().map(SecretString::from);
     let headers =
         infinity_embedding::validate_environment(&call.headers, key.as_ref(), &settings(call)?);

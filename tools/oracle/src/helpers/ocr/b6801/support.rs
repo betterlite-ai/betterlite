@@ -20,7 +20,8 @@ use betterlite_ocr::ocr_http::{OcrClient, SecretSource};
 use betterlite_ocr::ocr_settings::OcrSettings;
 use secrecy::SecretString;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use tokio::runtime::{Builder, Runtime};
 
 pub(super) fn fail(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -103,8 +104,8 @@ impl VertexTokenSource for NoVertex {
     }
 }
 
-pub(super) fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+pub(super) fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| fail("RuntimeError", error.to_string()))

@@ -7,7 +7,7 @@ use betterlite_mcp::session_tokens::mint_session_token;
 use betterlite_mcp::types::{SessionKeys, SessionPrincipal, SessionSigningKeys, SessionTokenKind};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::bridge::Failure;
 

@@ -15,6 +15,8 @@ use indexmap::IndexMap;
 use serde_json::Value;
 
 use super::input::ContextSpec;
+use betterlite_oracle_helper_api::error::HelperError;
+use serde::de::DeserializeOwned;
 
 pub(crate) struct StateSpec<'probe> {
     pub(crate) stream: bool,
@@ -30,7 +32,7 @@ pub(crate) struct StateSpec<'probe> {
 
 pub(crate) fn build(
     spec: &StateSpec<'_>,
-) -> Result<(LoggingState, CorrelationContext), Box<crate::compare::helper::HelperError>> {
+) -> Result<(LoggingState, CorrelationContext), Box<HelperError>> {
     let mut context = CorrelationContext {
         trace_id: spec.context.trace_id.clone(),
         session_id: spec.context.session_id.clone(),
@@ -56,7 +58,7 @@ pub(crate) fn build(
     Ok((state, context))
 }
 
-fn init(spec: &StateSpec<'_>) -> Result<LoggingInit, Box<crate::compare::helper::HelperError>> {
+fn init(spec: &StateSpec<'_>) -> Result<LoggingInit, Box<HelperError>> {
     let mut kwargs = IndexMap::new();
     if let Some(session_id) = spec.session_id {
         kwargs.insert(
@@ -94,16 +96,16 @@ fn init(spec: &StateSpec<'_>) -> Result<LoggingInit, Box<crate::compare::helper:
 
 pub(crate) fn params(
     values: &BTreeMap<String, Value>,
-) -> Result<IndexMap<String, Json>, Box<crate::compare::helper::HelperError>> {
+) -> Result<IndexMap<String, Json>, Box<HelperError>> {
     values
         .iter()
         .map(|(name, value)| Ok((name.clone(), decode::<Json>(value)?)))
         .collect()
 }
 
-pub(crate) fn decode<T>(value: &Value) -> Result<T, Box<crate::compare::helper::HelperError>>
+pub(crate) fn decode<T>(value: &Value) -> Result<T, Box<HelperError>>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     serde_json::from_str(
         serde_json::to_string(value)

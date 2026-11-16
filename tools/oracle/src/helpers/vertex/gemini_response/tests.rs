@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::json;
 
-use crate::case::HelperCase;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_gemini_response() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<HelperCase> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())

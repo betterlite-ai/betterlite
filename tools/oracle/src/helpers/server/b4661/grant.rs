@@ -3,7 +3,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
 use super::support::{ConfigSpec, config_from};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(super) fn run(configs: &[ConfigSpec]) -> HelperResult {
     let grants = configs

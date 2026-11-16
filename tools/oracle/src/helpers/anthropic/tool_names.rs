@@ -5,6 +5,8 @@ use betterlite_anthropic::tool_names::{
     ToolName, basic_sanitize_tool_name, build_tool_name_maps, rewrite_tool_names_in_messages,
     sanitize_tool_names_in_request,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -26,9 +28,9 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-fn json_error(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
+fn json_error(error: &serde_json::Error) -> Box<HelperError> {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "AnthropicToolNames".to_owned(),
         status: None,
         error_type: None,
@@ -38,10 +40,10 @@ fn json_error(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::Basic { name } => {
                 let encoded = serde_json::to_string(name).map_err(|error| json_error(&error))?;

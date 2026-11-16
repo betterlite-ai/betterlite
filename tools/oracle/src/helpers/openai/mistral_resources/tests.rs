@@ -5,11 +5,12 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+fn run_case_file(file: &str) -> Value {
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/mistral-resources")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -18,7 +19,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_mistral_resources() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -39,7 +40,7 @@ fn helper_seeds_select_mistral_resources() {
 
 #[test]
 fn oracle_ocr_reads_back_as_user_data() {
-    let result = run_case("ocr-user-data-round-trip.yaml");
+    let result = run_case_file("ocr-user-data-round-trip.yaml");
     let files = &result["files"];
     assert_eq!(
         files["uploads"][0]["url"],
@@ -59,7 +60,7 @@ fn oracle_ocr_reads_back_as_user_data() {
 
 #[test]
 fn oracle_ocr_file_and_list_bodies_map_every_purpose() {
-    let result = run_case("ocr-user-data-round-trip.yaml");
+    let result = run_case_file("ocr-user-data-round-trip.yaml");
     let files = &result["files"];
     let purposes: Vec<&Value> = files["bodies"]
         .as_array()
@@ -100,8 +101,8 @@ fn oracle_ocr_file_and_list_bodies_map_every_purpose() {
 
 #[test]
 fn oracle_rejects_purposes_mistral_lacks() {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("cases/helpers/mistral-resources/unsupported-purpose-400.yaml");
+    let path =
+        Path::new(ORACLE_DIR).join("cases/helpers/mistral-resources/unsupported-purpose-400.yaml");
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
     let error = super::Op::decode_and_run(&case.call.input).expect_err("a rejected purpose");
     assert_eq!(error.class, "MistralError");
@@ -135,7 +136,7 @@ fn a_list_purpose_mistral_lacks_is_a_400() {
 
 #[test]
 fn oracle_upload_endpoints_and_list_filters() {
-    let result = run_case("file-defaults-and-list-purpose.yaml");
+    let result = run_case_file("file-defaults-and-list-purpose.yaml");
     let files = &result["files"];
     assert_eq!(
         files["uploads"],
@@ -158,7 +159,7 @@ fn oracle_upload_endpoints_and_list_filters() {
 
 #[test]
 fn oracle_batch_create_keeps_none_apart_from_empty() {
-    let result = run_case("batch-none-versus-empty.yaml");
+    let result = run_case_file("batch-none-versus-empty.yaml");
     let calls = result["create"].as_array().unwrap();
     assert_eq!(
         calls[0]["body"],
@@ -183,7 +184,7 @@ fn oracle_batch_create_keeps_none_apart_from_empty() {
 
 #[test]
 fn oracle_retrieve_is_an_explicit_get_with_its_own_key() {
-    let result = run_case("native-retrieve-get.yaml");
+    let result = run_case_file("native-retrieve-get.yaml");
     let calls = result["retrieve"].as_array().unwrap();
     assert_eq!(calls[0]["method"], "GET");
     assert_eq!(
@@ -205,7 +206,7 @@ fn oracle_retrieve_is_an_explicit_get_with_its_own_key() {
 
 #[test]
 fn oracle_maps_every_job_status_and_its_terminal_time() {
-    let result = run_case("all-job-statuses.yaml");
+    let result = run_case_file("all-job-statuses.yaml");
     let calls = result["jobs"].as_array().unwrap();
     let statuses: Vec<&Value> = calls.iter().map(|call| &call["batch"]["status"]).collect();
     assert_eq!(
@@ -231,7 +232,7 @@ fn oracle_maps_every_job_status_and_its_terminal_time() {
 
 #[test]
 fn oracle_counts_succeeded_requests_and_error_multiplicity() {
-    let result = run_case("succeeded-count-and-error-multiplicity.yaml");
+    let result = run_case_file("succeeded-count-and-error-multiplicity.yaml");
     let calls = result["jobs"].as_array().unwrap();
     let counts = &calls[0]["batch"]["request_counts"];
     assert_eq!(counts["completed"], json!(3_i64));

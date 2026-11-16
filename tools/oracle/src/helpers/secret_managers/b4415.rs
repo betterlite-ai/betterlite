@@ -14,8 +14,10 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use script::{Resolver, Route, Script};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -72,18 +74,16 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| {
-                Box::new(HelperError {
-                    class: "RuntimeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: "RuntimeError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         Ok(runtime.block_on(execute(input)))
     }
 }

@@ -314,7 +314,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*")"
       && grep -lq 'bedrock_other_transcription' tools/oracle/fuzz/corpus/helper_case/bedrock_other_transcription*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_transcription$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_other_transcription$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: native-audio-validation
     why: The native transcription contract is absent or differs from its pinned fixture.

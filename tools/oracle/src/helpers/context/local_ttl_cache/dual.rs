@@ -1,9 +1,10 @@
-use crate::helpers::OrHelperError as _;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::{
     CacheError, CacheValue, LocalTtlCache,
     dual::{CacheEvent, Diagnostics, DualLocalCache, EventKind, Ttl},
 };
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_redact::secret::Redactor;
 use serde_json::json;
 use std::sync::{
@@ -11,7 +12,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
 };
 
-pub(super) fn run() -> crate::helpers::HelperResult {
+pub(super) fn run() -> HelperResult {
     let clock = Arc::new(AtomicU64::new(0.0_f64.to_bits()));
     let source = Arc::clone(&clock);
     let memory = Arc::new(Mutex::new(
@@ -53,12 +54,10 @@ pub(super) fn run() -> crate::helpers::HelperResult {
         "get_event": captured.iter().any(|event| event.kind == EventKind::Error)}))
 }
 
-fn diagnostics(
-    events: &Arc<Mutex<Vec<CacheEvent>>>,
-) -> Result<Diagnostics, Box<crate::helpers::HelperError>> {
+fn diagnostics(events: &Arc<Mutex<Vec<CacheEvent>>>) -> Result<Diagnostics, Box<HelperError>> {
     let sink = Arc::clone(events);
     let redactor = Redactor::new(16).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "RedactionError".to_owned(),
             status: None,
             error_type: Some(None),

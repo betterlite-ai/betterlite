@@ -3,7 +3,7 @@
 use serde_json::json;
 
 use super::Op;
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 #[test]
 fn credentials_prefer_the_arguments() {

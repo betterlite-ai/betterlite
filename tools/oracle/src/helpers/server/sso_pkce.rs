@@ -4,7 +4,8 @@ use betterlite_config::sso_pkce::load_pkce_settings;
 use betterlite_server::sso_pkce::{OsEntropy, generic_sso_redirect_params};
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]

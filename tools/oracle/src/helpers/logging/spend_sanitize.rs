@@ -8,6 +8,8 @@ use betterlite_logging::spend_sanitize::projection::convert_to_json_serializable
 use betterlite_logging::spend_sanitize::raw_model::scrub_raw_model_from_errors;
 use betterlite_logging::spend_sanitize::request_body::sanitize_request_body;
 use betterlite_logging::spend_sanitize::value::{SpendMapping, SpendValue};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Serialize;
 use serde_json::{Value, json};
 use spec::Decoder;
@@ -47,10 +49,10 @@ pub(crate) struct BodySpec {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::SanitizeRequestBody { bodies } => sanitize_bodies(bodies),
             Input::SanitizeErrorInformation {
@@ -83,7 +85,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn sanitize_bodies(bodies: &[BodySpec]) -> crate::helpers::HelperResult {
+fn sanitize_bodies(bodies: &[BodySpec]) -> HelperResult {
     let sanitized = bodies
         .iter()
         .map(|spec| {
@@ -95,11 +97,7 @@ fn sanitize_bodies(bodies: &[BodySpec]) -> crate::helpers::HelperResult {
     Ok(json!({ "result": sanitized }))
 }
 
-fn sanitize_error(
-    information: &Value,
-    store_bodies: bool,
-    max_string_length: i64,
-) -> crate::helpers::HelperResult {
+fn sanitize_error(information: &Value, store_bodies: bool, max_string_length: i64) -> HelperResult {
     let decoded = decode(information)?;
     let policy = SpendSanitizePolicy {
         store_bodies,
@@ -109,7 +107,7 @@ fn sanitize_error(
     Ok(json!({ "result": to_value(sanitized)? }))
 }
 
-fn scrub_model(information: &Value, raw_model: &str) -> crate::helpers::HelperResult {
+fn scrub_model(information: &Value, raw_model: &str) -> HelperResult {
     let decoded = decode(information)?;
     let scrubbed = scrub_raw_model_from_errors(mapping_of(&decoded)?, raw_model);
     Ok(json!({ "result": to_value(scrubbed)? }))
@@ -119,7 +117,7 @@ fn sanitize_and_project(
     sanitize_body: &Value,
     project_body: &Value,
     max_string_length: i64,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let body = decode(sanitize_body)?;
     let sanitized = sanitize_request_body(mapping_of(&body)?, max_string_length);
     let projected = decode(project_body)?;
@@ -131,21 +129,21 @@ fn sanitize_and_project(
     }))
 }
 
-fn decode(value: &Value) -> Result<SpendValue, Box<crate::helpers::HelperError>> {
+fn decode(value: &Value) -> Result<SpendValue, Box<HelperError>> {
     match Decoder::default().decode(value) {
         Ok(decoded) => Ok(decoded),
         Err(message) => Err(invalid(&message)),
     }
 }
 
-fn mapping_of(value: &SpendValue) -> Result<&SpendMapping, Box<crate::helpers::HelperError>> {
+fn mapping_of(value: &SpendValue) -> Result<&SpendMapping, Box<HelperError>> {
     let SpendValue::Mapping(mapping) = value else {
         return Err(invalid("the sanitizer input must be a mapping"));
     };
     Ok(mapping)
 }
 
-fn to_value<T>(value: T) -> Result<Value, Box<crate::helpers::HelperError>>
+fn to_value<T>(value: T) -> Result<Value, Box<HelperError>>
 where
     T: Serialize,
 {
@@ -155,8 +153,8 @@ where
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

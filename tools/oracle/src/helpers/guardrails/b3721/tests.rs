@@ -1,7 +1,7 @@
 #![cfg(test)]
 
-use crate::case::HelperCase;
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use std::{fs, path::Path};
 
 #[rstest::rstest]
@@ -42,11 +42,11 @@ use std::{fs, path::Path};
 #[case::structured_precedence("structured-precedence")]
 #[case::whole_list_masked_output("whole-list-masked-output")]
 fn cases_match_litellm(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/bedrock-messages")
         .join(format!("{name}.yaml"));
     let source = fs::read_to_string(path).unwrap();
     let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
-    let result = run_case(&case, false).unwrap();
+    let result = run_case(&[crate::GROUP], &case, false).unwrap();
     assert!(matches!(result, HelperRun::Match));
 }

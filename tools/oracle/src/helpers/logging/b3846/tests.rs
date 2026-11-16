@@ -1,10 +1,15 @@
 #![cfg(test)]
 
+use betterlite_oracle_helper_api::helper::Helper;
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
+use std::path::Path;
+
 #[test]
 fn helper_functions_dispatch() {
     let input = serde_json::json!({"function": "infer_span_kind", "call_type": "embedding"});
     let decoded = serde_json::from_value(input).unwrap();
-    let result = <super::Op as crate::helpers::Helper>::run(&decoded).unwrap();
+    let result = <super::Op as Helper>::run(&decoded).unwrap();
     assert_eq!(result, serde_json::json!({"result": {"kind": "EMBEDDING"}}));
 }
 
@@ -25,15 +30,15 @@ fn helper_functions_dispatch() {
 #[case::span_kind_unknown("span-kind-unknown.yaml")]
 #[case::tool_attributes_optional_and_metadata("tool-attributes-optional-and-metadata.yaml")]
 fn helper_case_matches_litellm(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/vendor-mapping")
         .join(name);
-    let cases = crate::case::load_cases(&[path]).unwrap();
-    let Some(crate::case::LoadedCase::Helper(case)) = cases.first() else {
+    let cases = load_helper_cases(&[path]).unwrap();
+    let Some(case) = cases.first() else {
         panic!("expected a helper case");
     };
     assert!(matches!(
-        crate::helpers::run_case(case, false).unwrap(),
-        crate::helpers::HelperRun::Match
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
     ));
 }

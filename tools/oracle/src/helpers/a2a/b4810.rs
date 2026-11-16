@@ -16,8 +16,8 @@ use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use crate::compare::helper::HelperError;
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod state;
 mod streaming;

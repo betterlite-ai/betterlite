@@ -5,11 +5,12 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+fn run_case_file(file: &str) -> Value {
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/embedding-host-plan")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -18,7 +19,7 @@ fn run_case(file: &str) -> Value {
 
 #[test]
 fn helper_seeds_select_embedding_host_plan() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -40,7 +41,7 @@ fn helper_seeds_select_embedding_host_plan() {
 
 #[test]
 fn mixed_input_keeps_text_and_drops_nonstrings_after_an_image() {
-    let result = run_case("jina-mixed-images-and-nonstrings.yaml");
+    let result = run_case_file("jina-mixed-images-and-nonstrings.yaml");
     let expected = json!([
         {"text": "before"}, {"image": "aGVsbG8="}, {"text": "after"},
         {"text": "data:image/png;base64,***"},
@@ -54,7 +55,7 @@ fn mixed_input_keeps_text_and_drops_nonstrings_after_an_image() {
 
 #[test]
 fn the_normalized_input_beats_the_optional_one_and_the_hook_gets_the_builtin() {
-    let result = run_case("jina-input-overlay-and-hook.yaml");
+    let result = run_case_file("jina-input-overlay-and-hook.yaml");
     let request = &result["jina"]["request"];
     assert_eq!(request["input"], json!(["plain"]));
     assert_eq!(request["model"], "other");
@@ -67,7 +68,7 @@ fn the_normalized_input_beats_the_optional_one_and_the_hook_gets_the_builtin() {
 
 #[test]
 fn the_endpoint_suffix_differs_between_the_hosts() {
-    let result = run_case("endpoint-suffix-differences.yaml");
+    let result = run_case_file("endpoint-suffix-differences.yaml");
     assert_eq!(
         result["jina"]["url"],
         "https://x.test/v1/embeddings/embeddings"
@@ -77,7 +78,7 @@ fn the_endpoint_suffix_differs_between_the_hosts() {
 
 #[test]
 fn aliases_and_caller_headers_resolve_per_host() {
-    let result = run_case("aliases-and-header-precedence.yaml");
+    let result = run_case_file("aliases-and-header-precedence.yaml");
     assert_eq!(result["jina"]["api_base"], "https://env.test/v1");
     assert_eq!(result["jina"]["api_key"], "second");
     assert_eq!(result["jina"]["url"], "https://api.jina.ai/v1/embeddings");
@@ -92,7 +93,7 @@ fn aliases_and_caller_headers_resolve_per_host() {
 
 #[test]
 fn infinity_counters_stay_independent_and_errors_keep_their_headers() {
-    let result = run_case("infinity-usage-and-error-headers.yaml");
+    let result = run_case_file("infinity-usage-and-error-headers.yaml");
     let usage = &result["infinity"]["response"]["usage"];
     assert_eq!(
         *usage,

@@ -9,7 +9,8 @@ use betterlite_rate_limit::model_descriptors::key_owns_tpm::key_owns_tpm_from_re
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 struct GroupMap(BTreeMap<String, String>);
 
@@ -73,10 +74,7 @@ enum DescriptorFunction {
     ProjectIo,
 }
 
-fn descriptors_answer(
-    function: DescriptorFunction,
-    input: &DescriptorInput,
-) -> crate::helpers::HelperResult {
+fn descriptors_answer(function: DescriptorFunction, input: &DescriptorInput) -> HelperResult {
     let auth = UserAPIKeyAuth::construct(AuthInput::Dict(input.auth.clone())).or_value_error()?;
     let builder = ModelDescriptorBuilder {
         window_size: input.window_size,
@@ -104,7 +102,7 @@ fn descriptors_answer(
     Ok(json!({"descriptors": descriptors}))
 }
 
-fn key_owns_tpm_answer(input: &RequestMetadataInput) -> crate::helpers::HelperResult {
+fn key_owns_tpm_answer(input: &RequestMetadataInput) -> HelperResult {
     let model = input.model.as_ref().map(|entry| RateLimitedModel {
         requested: entry.requested.clone(),
         group: entry.group.clone(),
@@ -117,10 +115,10 @@ fn key_owns_tpm_answer(input: &RequestMetadataInput) -> crate::helpers::HelperRe
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::RatedModel(case) => {
                 let model = ModelDescriptorBuilder {

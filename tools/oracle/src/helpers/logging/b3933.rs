@@ -23,8 +23,12 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use self::transport::{FixedClock, Reply, ScriptedTransport};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
-type HelperFailure = Box<crate::helpers::HelperError>;
+type HelperFailure = Box<HelperError>;
 
 #[derive(Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
@@ -64,9 +68,9 @@ enum Action {
 
 fn value_error<E>(error: E) -> HelperFailure
 where
-    E: std::fmt::Display,
+    E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
@@ -164,7 +168,7 @@ fn play(
     logger: &Arc<DatadogLogger>,
     transport: &ScriptedTransport,
 ) -> Result<Value, HelperFailure> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(value_error)?;
@@ -200,10 +204,10 @@ fn play(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut scenarios = Vec::new();
         for scenario in &input.scenarios {
             scenarios.push(run_scenario(scenario)?);

@@ -5,6 +5,8 @@ use std::{
     time::Duration,
 };
 
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_secret_managers::{
     google_secret_manager::{
         Dependencies, GoogleSecretManager, GoogleSecretManagerError, HttpResponse,
@@ -15,6 +17,8 @@ use betterlite_secret_managers::{
 };
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use std::fmt::Display;
+use tokio::runtime::{Builder, Runtime};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -173,7 +177,7 @@ fn open_session(input: &Input) -> Result<Session, GoogleSecretManagerError> {
     })
 }
 
-fn play(runtime: &tokio::runtime::Runtime, session: &Session, steps: &[Step]) -> Vec<StepResult> {
+fn play(runtime: &Runtime, session: &Session, steps: &[Step]) -> Vec<StepResult> {
     let mut results = Vec::new();
     for step in steps {
         match step {
@@ -196,14 +200,14 @@ fn play(runtime: &tokio::runtime::Runtime, session: &Session, steps: &[Step]) ->
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let Ok(session) = open_session(input) else {
             return Ok(serde_json::json!({"initialized": false}));
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(runtime_failure)?;
@@ -221,11 +225,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn runtime_failure<Source>(source: Source) -> Box<crate::helpers::HelperError>
+fn runtime_failure<Source>(source: Source) -> Box<HelperError>
 where
-    Source: std::fmt::Display,
+    Source: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "RuntimeError".to_owned(),
         status: None,
         error_type: None,

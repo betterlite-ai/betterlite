@@ -1,4 +1,4 @@
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use std::collections::BTreeMap;
 
 use betterlite_config::loader::ConfigLoader;
@@ -11,7 +11,7 @@ use betterlite_openai::base_helpers::{
 use betterlite_openai::error::{OpenAiError, ProviderError, ProviderErrorParts};
 use serde_json::{Map, Value};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -101,7 +101,7 @@ pub(crate) struct ModifyCall {
     configured: Option<bool>,
 }
 
-pub(crate) fn invoke(call: &BaseCall) -> Outcome {
+pub(crate) fn invoke_base_call(call: &BaseCall) -> Outcome {
     let openai = |error: OpenAiError| openai_helper_error(&error);
     let value = match call.clone() {
         BaseCall::BaseError(parts) => serde_json::to_value(ProviderError::from(parts)),
@@ -219,10 +219,10 @@ fn openai_helper_error(error: &OpenAiError) -> Box<HelperError> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = BaseCall;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        invoke(input)
+    fn run(input: &Self::Input) -> HelperResult {
+        invoke_base_call(input)
     }
 }

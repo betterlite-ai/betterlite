@@ -4,9 +4,13 @@ use betterlite_logging::worker::WorkerSettings;
 use serde::Deserialize;
 use tracing_subscriber::registry;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use scenario::scenario;
+use std::fmt::Display;
+use tokio::runtime::Builder;
+use tracing::subscriber;
 
 mod scenario;
 
@@ -78,18 +82,17 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(failure)?;
-        tracing::subscriber::with_default(registry(), || runtime.block_on(scenario(input)))
-            .map_err(failure)
+        subscriber::with_default(registry(), || runtime.block_on(scenario(input))).map_err(failure)
     }
 }
 
 fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "WorkerTraceError".to_owned(),

@@ -4,6 +4,8 @@ use betterlite_core::routes::{
     CallType,
     catalog::{CATALOG, RouteCatalog},
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -20,10 +22,10 @@ struct CallTypesOutput<'catalog> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let catalog = RouteCatalog::parse(CATALOG).map_err(route_metadata_error)?;
         let output = match input {
             Input::FullTable => serde_json::to_value(&catalog),
@@ -38,11 +40,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn route_metadata_error<E>(error: E) -> Box<crate::helpers::HelperError>
+fn route_metadata_error<E>(error: E) -> Box<HelperError>
 where
     E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

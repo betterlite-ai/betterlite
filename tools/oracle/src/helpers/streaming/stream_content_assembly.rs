@@ -1,3 +1,4 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_streaming::stream_content_assembly::wire::Chunk;
 use betterlite_streaming::stream_content_assembly::{
     AssemblyError, ContentField, decode_stream_audio_fragment, get_combined_audio_content,
@@ -33,10 +34,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let result = match input {
             Input::Batch { cases } => {
                 let results: Result<Vec<_>, _> = cases.iter().map(Self::run).collect();

@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_websearch::search_tool_access::hook_kwargs::{
     SearchCaller, SearchHookKwargs, caller_from_kwargs,
 };
@@ -11,6 +13,7 @@ use betterlite_websearch::search_tool_access::tool_selection::{
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -64,10 +67,10 @@ struct CorrelationOutput {
     kwargs: IndexMap<String, String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::SelectTool => select_tool(input),
             Operation::CallerFromKwargs => caller_value(input),
@@ -76,21 +79,21 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn select_tool(input: &Input) -> crate::helpers::HelperResult {
+fn select_tool(input: &Input) -> HelperResult {
     let tool = SearchToolSelector::new(input.search_tool_name.clone())
         .select_from_router(input.search_tools.as_deref())
         .map(SelectedTool::from);
     serde_json::to_value(SelectionOutput { tool }).map_err(failure)
 }
 
-fn caller_value(input: &Input) -> crate::helpers::HelperResult {
+fn caller_value(input: &Input) -> HelperResult {
     let Some(caller) = caller_from_kwargs(input.kwargs.as_ref()) else {
         return Ok(serde_json::Value::Null);
     };
     serde_json::to_value(caller).map_err(failure)
 }
 
-fn correlation_value(input: &Input) -> crate::helpers::HelperResult {
+fn correlation_value(input: &Input) -> HelperResult {
     let correlation = parent_correlation(input.kwargs.as_ref(), input.caller.as_ref());
     let metadata = correlation.as_search_metadata();
     let kwargs = correlation.as_search_kwargs();
@@ -102,12 +105,12 @@ fn correlation_value(input: &Input) -> crate::helpers::HelperResult {
     .map_err(failure)
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     let message = error.to_string();
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "SearchToolAccessError".to_owned(),
         message,
         status: None,

@@ -14,7 +14,8 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use serde::{Deserialize, Serialize};
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]

@@ -16,9 +16,11 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::scripted::{Reply, Seen, Server};
+use tokio::runtime::{Builder, Runtime};
 
 const SAAS_HOST: &str = "api.hiddenlayer.ai";
 const DETECTION_BODY: &str = r#"{"messages":[{"role":"user","content":"hello"}]}"#;
@@ -160,8 +162,8 @@ fn classify(error: &HiddenlayerError) -> Value {
     }
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .or_config_error()

@@ -15,7 +15,8 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 const URL_BASES: [Option<&str>; 6] = [
     None,
@@ -100,7 +101,7 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -135,7 +136,7 @@ fn params(probe: &Probe) -> Value {
     Value::Object(fields)
 }
 
-fn durations(probe: &Probe) -> Result<Value, Box<crate::helpers::HelperError>> {
+fn durations(probe: &Probe) -> Result<Value, Box<HelperError>> {
     let mut found = Vec::new();
     for text in &probe.texts {
         let seconds = duration_number(srt_vtt_duration(text)).or_config_error()?;

@@ -1,4 +1,3 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_openai::openai_base_config::forwarding::{
     BaseConfigError, ForwardingFailure, OpenAiErrorParts, OpenAiErrorRecord, ResponseForward,
     forward_response,
@@ -8,6 +7,8 @@ use betterlite_openai::openai_base_config::{
     azure_model_family, is_o_series_model, metadata_filter_limit, model_family,
     overlapping_api_base_path,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
@@ -158,7 +159,7 @@ fn mapped(value: &MappingInput) -> Value {
     Value::Object(existing)
 }
 #[rustfmt::skip]
-fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
+fn invoke_base_config_call(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     match input {
         BaseCall::OSeriesRouting(value) => Ok(json!(is_o_series_model(
             &value.model,
@@ -201,9 +202,9 @@ fn invoke(input: &BaseCall) -> Result<Value, Box<HelperError>> {
     }
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = BaseCall;
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_base_config_call(input)
     }
 }

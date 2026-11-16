@@ -1,7 +1,7 @@
 use super::input::Local;
 use super::resolver;
-use crate::helpers::HelperResult;
 use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_oracle_helper_api::helper::HelperResult;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
 

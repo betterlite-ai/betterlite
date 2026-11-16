@@ -1,6 +1,7 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::scim_projections::group::project_group;
 use betterlite_server::scim_projections::user::{ScimUserSource, project_user};
 use betterlite_server::scim_records::user::User;

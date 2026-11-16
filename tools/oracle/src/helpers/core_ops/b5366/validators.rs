@@ -8,7 +8,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::errors;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const MEDIUM_THINKING_BUDGET: u32 = 2048;
 

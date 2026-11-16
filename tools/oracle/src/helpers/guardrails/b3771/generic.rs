@@ -7,17 +7,21 @@ use betterlite_guardrails::generic_guardrail_api::{
 };
 use betterlite_guardrails::generic_guardrail_contracts::{
     GenericGuardrailAPIMetadata, GenericGuardrailAPIRequest, GenericGuardrailAPIResponse,
-    GuardrailInputType, StreamingTransformMode, UnreachableFallback,
+    GenericGuardrailAPISettings, GuardrailInputType, StreamingTransformMode, UnreachableFallback,
 };
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
 use super::support::{failure_with_class, parse_json_field};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::slice;
+use tokio::runtime::Builder;
 
-pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResult {
+pub(super) fn metadata(input: &serde_json::Value) -> HelperResult {
     let litellm_field = input
         .get("litellm_metadata")
         .cloned()
@@ -34,7 +38,7 @@ pub(super) fn metadata(input: &serde_json::Value) -> crate::helpers::HelperResul
     object.retain(|_, item| !item.is_null());
     Ok(serde_json::Value::Object(object))
 }
-pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
+pub(super) fn call(input: &serde_json::Value) -> HelperResult {
     let request = input
         .get("generic_call")
         .cloned()
@@ -43,7 +47,7 @@ pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
 }
 fn mock_base(
     request: &serde_json::Value,
-) -> Result<(String, Option<MockProvider>), Box<crate::helpers::HelperError>> {
+) -> Result<(String, Option<MockProvider>), Box<HelperError>> {
     let answer: Option<UpstreamAnswer> = parse_json_field(request, "answer")?;
     let Some(reply) = &answer else {
         let silent = TcpListener::bind(("127.0.0.1", 0))
@@ -58,15 +62,15 @@ fn mock_base(
         );
         return Ok((base, None));
     };
-    let script = MockScript::try_from(std::slice::from_ref(reply))
+    let script = MockScript::try_from(slice::from_ref(reply))
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let provider = MockProvider::start(script)
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
     let base = provider.base_url.clone();
     Ok((base, Some(provider)))
 }
-fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+fn run_call(request: &serde_json::Value) -> HelperResult {
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
@@ -90,7 +94,7 @@ fn run_call(request: &serde_json::Value) -> crate::helpers::HelperResult {
 }
 pub(super) fn result_payload(
     result: Result<GenericGuardrailAPIResponse, GenericGuardrailAPIError>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     match result {
         Ok(response) => Ok(json!({
             "texts": response.texts,
@@ -112,9 +116,7 @@ pub(super) fn result_payload(
         }
     }
 }
-fn settings(
-    request: &serde_json::Value,
-) -> betterlite_guardrails::generic_guardrail_contracts::GenericGuardrailAPISettings {
+fn settings(request: &serde_json::Value) -> GenericGuardrailAPISettings {
     let unreachable_fallback = match request
         .get("unreachable_fallback")
         .and_then(serde_json::Value::as_str)
@@ -126,7 +128,7 @@ fn settings(
         .get("fail_on_error")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(true);
-    betterlite_guardrails::generic_guardrail_contracts::GenericGuardrailAPISettings {
+    GenericGuardrailAPISettings {
         unreachable_fallback,
         fail_on_error,
         streaming_end_of_stream_only: false,
@@ -136,7 +138,7 @@ fn settings(
 }
 fn request_payload(
     request: &serde_json::Value,
-) -> Result<GenericGuardrailAPIRequest, Box<crate::helpers::HelperError>> {
+) -> Result<GenericGuardrailAPIRequest, Box<HelperError>> {
     let has_inputs = request.get("inputs").is_some();
     let inputs = request.get("inputs").cloned().unwrap_or_else(|| json!({}));
     let texts = parse_json_field::<Vec<String>>(&inputs, "texts")?.or_else(|| {

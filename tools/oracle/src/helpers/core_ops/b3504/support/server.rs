@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 
 use super::Reply;
 use super::helper_failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const READ_TIMEOUT: Duration = Duration::from_secs(5);
 const RETRY: Duration = Duration::from_millis(10);

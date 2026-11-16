@@ -3,9 +3,10 @@ use betterlite_auth::auth_identity::records::{
 };
 use betterlite_auth::auth_identity::roles::{AuthMethod, PrincipalType, TeamRole, map_role};
 use betterlite_core::api::managed_resource_access::{
-    ResourceRecord, build_list_page, build_owner_filter, can_access_resource,
+    OwnerFilter, ResourceRecord, build_list_page, build_owner_filter, can_access_resource,
     resolve_resource_owner_id,
 };
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -68,24 +69,21 @@ impl From<&PrincipalFields> for Principal {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let principal = Principal::from(&input.principal);
         let owner_filter =
             build_owner_filter(&principal).map_or(serde_json::Value::Null, |filter| match filter {
-                betterlite_core::api::managed_resource_access::OwnerFilter::CreatedBy {
-                    created_by,
-                } => json!({"created_by": created_by}),
-                betterlite_core::api::managed_resource_access::OwnerFilter::TeamId { team_id } => {
+                OwnerFilter::CreatedBy { created_by } => json!({"created_by": created_by}),
+                OwnerFilter::TeamId { team_id } => {
                     json!({"team_id": team_id})
                 }
-                betterlite_core::api::managed_resource_access::OwnerFilter::UserOrTeam {
-                    user_id,
-                    team_id,
-                } => json!({"OR": [{"created_by": user_id}, {"team_id": team_id}]}),
-                betterlite_core::api::managed_resource_access::OwnerFilter::Admin => json!({}),
+                OwnerFilter::UserOrTeam { user_id, team_id } => {
+                    json!({"OR": [{"created_by": user_id}, {"team_id": team_id}]})
+                }
+                OwnerFilter::Admin => json!({}),
             });
         let access = input
             .records

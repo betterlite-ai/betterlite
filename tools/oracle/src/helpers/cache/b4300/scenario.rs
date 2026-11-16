@@ -27,7 +27,8 @@ use serde_json::json;
 
 use super::backend::SeededBackend;
 use super::input::{Eligibility, Entries, Input, Retrieve};
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 pub(crate) async fn run(input: &Input) -> HelperResult {
     match input {

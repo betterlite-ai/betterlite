@@ -16,9 +16,11 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::input::{SpeechHeaderKeys, Step, Voice};
+use betterlite_openai::image_generation::reply::ImageDatum;
+use tokio::runtime::Builder;
 
 const BODY_LIMIT: usize = 1024 * 1024;
 
@@ -117,7 +119,7 @@ fn render_audio(response: SpeechResponse) -> Result<Value, Box<HelperError>> {
     let status = response.status;
     let content_type = response.content_type.clone();
     let headers = response.headers.clone();
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| failure("InvalidInput", None, error.to_string()))?;
     let audio = runtime
@@ -176,7 +178,7 @@ fn image_reply(status: u16, body: &str, created: i64) -> Result<Value, Box<Helpe
     Ok(Value::Object(payload))
 }
 
-fn datum(image: &betterlite_openai::image_generation::reply::ImageDatum) -> Value {
+fn datum(image: &ImageDatum) -> Value {
     let mut fields = Object::new();
     if let Some(url) = &image.url {
         fields.insert(String::from("url"), Value::from(url.clone()));

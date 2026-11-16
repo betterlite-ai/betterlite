@@ -8,9 +8,10 @@ use std::path::PathBuf;
 use serde_json::Value;
 
 use super::parse_scenario;
-use crate::case::{BodyKind, Request, UpstreamAnswer};
+use crate::case::Request;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::case::{BodyKind, UpstreamAnswer};
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 mod routing_scenarios_behaviors;
 mod routing_scenarios_boundaries;

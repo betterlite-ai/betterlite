@@ -1,4 +1,5 @@
 use betterlite_context::call_context::{BillingPolicy, CallContext, CallInputs, Phase};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
@@ -18,9 +19,9 @@ pub(crate) enum Input {
     ProviderItems,
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let context = CallContext::start(CallInputs {
             id: || Uuid::from_u128(1),
             now: || {

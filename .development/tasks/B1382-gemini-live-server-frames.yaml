@@ -72,7 +72,7 @@ checks:
       run: test -f crates/betterlite-vertex/fuzz/fuzz_targets/gemini_live_frames.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-vertex/fuzz/corpus/gemini_live_frames)" && cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(replays_the_gemini_live_frames_corpus)'
       why: decode_gemini_live_frame and its production transition consume malformed, reordered and sequential server frames.
     - id: live-frame-seeds
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*')" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::vertex::gemini_live_frames::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/gemini_live_frames*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^gemini_live_frames::/)'
       why: Shared-reader tests require call.gemini_live_frames on each new sequence fixture.
 oracle_cases:
   - tools/oracle/cases/helpers/gemini-live-frames/standalone-usage.yaml

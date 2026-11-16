@@ -25,7 +25,6 @@ scope:
     - packaging/helm/betterlite-helm/tests/masterkey_secret_tests.yaml
     - packaging/helm/betterlite-helm/tests/db_credentials_tests.yaml
     - packaging/helm/betterlite-helm/tests/coordination_redis_tests.yaml
-    - packaging/helm/betterlite-helm/tests/connection_pool_tests.yaml
     - packaging/helm/betterlite-helm/tests/bundled_db_images_tests.yaml
     - packaging/helm/tests/helm_checks.sh
   lint_tables: false
@@ -63,8 +62,6 @@ dod:
     proof: [image-suite]
   - text: The coordination_redis block is injected for the bundled Redis (plain and sentinel) and never replaces a user block.
     proof: [redis-suite]
-  - text: The pgbouncer variables appear only when db.connectionPool.enabled is true.
-    proof: [pool-suite]
   - text: No billingMetrics key or LITELLM_BILLING_METRICS variable is in the chart.
     proof: [no-billing]
 checks:
@@ -89,9 +86,6 @@ checks:
     - id: redis-suite
       why: the coordination_redis injection is missing or replaces a user block
       run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/coordination_redis_tests.yaml
-    - id: pool-suite
-      why: the pgbouncer variables are missing or always present
-      run: sh packaging/helm/tests/helm_checks.sh unittest packaging/helm/betterlite-helm tests/connection_pool_tests.yaml
     - id: no-billing
       why: enterprise billing metering was ported, or the chart does not exist
       run: test -f packaging/helm/betterlite-helm/values.yaml && ! grep -rqi 'billing' packaging/helm/betterlite-helm

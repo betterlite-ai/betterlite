@@ -5,6 +5,7 @@ use betterlite_openai::cloudflare_chat::{complete_url, validate_environment};
 use betterlite_openai::cloudflare_decisions::CloudflareDecisionsConfig;
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::error::ProviderError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -69,10 +70,10 @@ struct DecisionsUrlCall {
     model: String,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let decisions = CloudflareDecisionsConfig::new(None);
         Ok(json!({
             "chat_urls": input.chat_urls.iter().map(chat_url).collect::<Vec<_>>(),

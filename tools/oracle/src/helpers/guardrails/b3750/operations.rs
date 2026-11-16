@@ -10,11 +10,14 @@ use betterlite_guardrails::aim::settings::AimHook;
 use betterlite_guardrails::aim::stream::AimStreamChunk;
 use betterlite_guardrails::aim::stream::inspect_output_stream;
 use futures_util::StreamExt as _;
+use futures_util::stream::iter;
 use serde_json::json;
 
 use super::fakes::{Built, build};
 use super::{HookArg, Input, Op, OutputArgs, RequestArgs, Settings, StreamArgs, failure};
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::{Builder, Runtime};
 
 const ANALYZE_PATH: &str = "/fw/v1/analyze";
 
@@ -24,9 +27,9 @@ fn prepared(
     answer: &GuardrailValue,
     status: u16,
     frames: &[GuardrailValue],
-) -> Result<(Built, tokio::runtime::Runtime), Box<HelperError>> {
+) -> Result<(Built, Runtime), Box<HelperError>> {
     let built = build(settings, environment, answer, status, frames)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", error.to_string()))?;
@@ -184,7 +187,7 @@ fn stream(args: &StreamArgs) -> HelperResult {
     runtime.block_on(async {
         let stream = inspect_output_stream(
             &built.guardrail,
-            futures_util::stream::iter(chunks),
+            iter(chunks),
             &args.request_data,
             args.key_alias.as_deref(),
         )

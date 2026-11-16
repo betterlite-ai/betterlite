@@ -14,12 +14,14 @@ use http::header::HeaderValue;
 use serde_json::{Value, json};
 use thiserror::Error;
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{
     AllowlistLoadInput, CheckScenario, ElicitationInput, ElicitationScenario, Input,
     SessionBehaviour,
 };
+use tokio::runtime::{Builder, Runtime};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
     match input {
@@ -85,7 +87,7 @@ fn latin1_header_value(text: &str) -> Option<HeaderValue> {
 }
 
 fn elicitation_value(input: &ElicitationInput) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| Box::new(failure("RuntimeError", error.to_string())))?;
@@ -98,7 +100,7 @@ fn elicitation_value(input: &ElicitationInput) -> HelperResult {
 }
 
 fn elicitation_scenario(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     scenario: &ElicitationScenario,
 ) -> Result<Value, Box<HelperError>> {
     let session = scenario.session.clone().map(|behaviour| RecordingSession {

@@ -40,7 +40,7 @@ use serde_json::Number;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Debug, Error)]
 pub(super) enum FixtureError {

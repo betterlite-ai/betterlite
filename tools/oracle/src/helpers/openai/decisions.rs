@@ -10,6 +10,7 @@ use betterlite_openai::decisions::openai::response::to_openai::ir_to_openai_resp
 use betterlite_openai::decisions::transformation::provider_config::DecisionsProviderConfig as _;
 use betterlite_openai::decisions::transformation::requests::systemone_request_to_ir;
 use betterlite_openai::decisions::transformation::responses::to_ir::systemone_response_to_ir;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -105,10 +106,10 @@ struct GlobalsCall {
     openai_key: Option<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(json!({
             "systemone_to_request": input.systemone_to_request.iter().map(call_systemone_to_request).collect::<Vec<_>>(),
             "request_roundtrip": input.request_roundtrip.iter().map(call_request_roundtrip).collect::<Vec<_>>(),

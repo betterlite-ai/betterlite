@@ -3,12 +3,13 @@
 use std::fs;
 use std::path::Path;
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> serde_json::Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> serde_json::Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/xai-identity")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -17,7 +18,7 @@ fn run_case(file: &str) -> serde_json::Value {
 
 #[test]
 fn helper_seeds_select_xai_identity() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -38,7 +39,7 @@ fn helper_seeds_select_xai_identity() {
 
 #[test]
 fn oracle_key_modes_pick_the_documented_source() {
-    let result = run_case("key-modes.yaml");
+    let result = run_case_file("key-modes.yaml");
     let calls = result["calls"].as_array().unwrap();
     let chat: Vec<_> = calls.iter().map(|call| call["chat_key"].clone()).collect();
     let legacy: Vec<_> = calls
@@ -65,7 +66,7 @@ fn oracle_key_modes_pick_the_documented_source() {
 
 #[test]
 fn oracle_header_casing_keeps_caller_content_type() {
-    let result = run_case("header-casing.yaml");
+    let result = run_case_file("header-casing.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(
         calls[0]["headers"],
@@ -87,7 +88,7 @@ fn oracle_header_casing_keeps_caller_content_type() {
 
 #[test]
 fn oracle_provider_prefix_is_removed_everywhere() {
-    let result = run_case("repeated-provider-prefix.yaml");
+    let result = run_case_file("repeated-provider-prefix.yaml");
     let calls = result["calls"].as_array().unwrap();
     assert_eq!(calls[0]["base_model"], "grok-4");
     assert_eq!(calls[1]["base_model"], "grok-4");

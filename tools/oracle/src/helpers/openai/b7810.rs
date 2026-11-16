@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_openai::milvus_vector_store::OptionalParams;
 use betterlite_openai::vector_stores::store::{Query, SearchParams};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -134,10 +135,10 @@ struct PgSearchCall {
     api_base: String,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(Value::Array(
             input.calls.iter().map(calls::run_call).collect(),
         ))

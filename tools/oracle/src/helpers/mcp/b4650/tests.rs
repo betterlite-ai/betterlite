@@ -1,6 +1,10 @@
 #![cfg(test)]
 
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
+use std::fs;
+use std::path::Path;
 
 #[rstest]
 #[case::result_union("credential-contracts/result-union")]
@@ -17,9 +21,9 @@ use rstest::rstest;
 )]
 #[case::auth_config_aws_sigv4_defaults("credential-contracts/auth-config-aws-sigv4-defaults")]
 fn replays_b4650_against_litellm(#[case] name: &str) {
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let source = std::fs::read_to_string(root.join(format!("cases/helpers/{name}.yaml"))).unwrap();
-    let case = serde_saphyr::from_str::<crate::case::HelperCase>(&source).unwrap();
-    let result = crate::helpers::run_case(&case, false).unwrap();
-    assert!(matches!(result, crate::helpers::HelperRun::Match));
+    let root = Path::new(ORACLE_DIR);
+    let source = fs::read_to_string(root.join(format!("cases/helpers/{name}.yaml"))).unwrap();
+    let case = serde_saphyr::from_str::<HelperCase>(&source).unwrap();
+    let result = run_case(&[crate::GROUP], &case, false).unwrap();
+    assert!(matches!(result, HelperRun::Match));
 }

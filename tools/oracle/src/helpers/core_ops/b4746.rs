@@ -4,7 +4,7 @@ mod session;
 
 mod tests;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use input::Input;
 

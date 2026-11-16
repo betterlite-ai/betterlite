@@ -4,6 +4,8 @@ use betterlite_db::mcp_stored_contracts::{
     JsonValue, MCPAuthType, MCPCredentials, MCPTokenEndpointAuthMethod, MCPTransport, decode,
     pinned,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -26,6 +28,10 @@ enum Call {
 }
 
 impl Call {
+    #[expect(
+        clippy::map_err_ignore,
+        reason = "the step answer is only the exception class LiteLLM raises, so each failure keeps its class and drops the error"
+    )]
     fn evaluate(&self) -> Result<Value, &'static str> {
         match self {
             Self::CredentialContract(value) => {
@@ -60,10 +66,10 @@ struct Outcome {
     error: Option<&'static str>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let results: BTreeMap<_, _> = input
             .steps
             .iter()
@@ -83,7 +89,7 @@ impl crate::helpers::Helper for Op {
             })
             .collect();
         serde_json::to_value(results).map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "SerializationError".to_owned(),
                 status: None,
                 error_type: None,
@@ -95,6 +101,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the step answer is only the exception class LiteLLM raises, so each failure keeps its class and drops the error"
+)]
 fn parse_tools(value: &Value) -> Result<Value, &'static str> {
     let bytes = serde_json::to_vec(value).map_err(|_| "SerializationError")?;
     let decoded = decode::decode_mcp_stored_contract(&bytes).map_err(|_| "JSONDecodeError")?;
@@ -107,6 +117,10 @@ fn parse_tools(value: &Value) -> Result<Value, &'static str> {
     serde_json::to_value(tools).map_err(|_| "SerializationError")
 }
 
+#[expect(
+    clippy::map_err_ignore,
+    reason = "the step answer is only the exception class LiteLLM raises, so each failure keeps its class and drops the error"
+)]
 fn parse_metadata(value: &Value) -> Result<Value, &'static str> {
     let metadata: BTreeMap<String, JsonValue> =
         serde_json::from_value(value.clone()).map_err(|_| "ValidationError")?;

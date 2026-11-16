@@ -14,13 +14,17 @@ use reqwest::StatusCode;
 use secrecy::SecretString;
 use serde_json::json;
 
-use crate::case::UpstreamAnswer;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
 use super::support::{disconnection_script, error_failure, failure_with_class, parse_json_field};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::slice;
+use tokio::runtime::Builder;
 
-pub(super) fn verdict(input: &serde_json::Value) -> crate::helpers::HelperResult {
+pub(super) fn verdict(input: &serde_json::Value) -> HelperResult {
     let response = GraySwanResponse {
         violation: input
             .get("score")
@@ -62,7 +66,7 @@ fn input_type(input: &serde_json::Value) -> GuardrailInputType {
 fn parse_settings(
     value: &serde_json::Value,
     default_action: OnFlaggedAction,
-) -> Result<Configured, Box<crate::helpers::HelperError>> {
+) -> Result<Configured, Box<HelperError>> {
     let action = match value.get("action").and_then(serde_json::Value::as_str) {
         Some("BLOCK") => OnFlaggedAction::Block,
         Some("MONITOR") => OnFlaggedAction::Monitor,
@@ -110,7 +114,7 @@ struct Request {
     fail: String,
 }
 // grayswan_payload nests settings under "config"; grayswan_call puts them at the top level.
-fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::helpers::HelperError>> {
+fn parse_request(request: &serde_json::Value) -> Result<Request, Box<HelperError>> {
     let settings_source = request
         .get("config")
         .cloned()
@@ -139,9 +143,7 @@ fn parse_request(request: &serde_json::Value) -> Result<Request, Box<crate::help
         fail,
     })
 }
-fn parse_messages(
-    request: &serde_json::Value,
-) -> Result<Vec<GuardrailMessage>, Box<crate::helpers::HelperError>> {
+fn parse_messages(request: &serde_json::Value) -> Result<Vec<GuardrailMessage>, Box<HelperError>> {
     let fallback_message = || {
         Ok(vec![GuardrailMessage {
             role: "user".to_owned(),
@@ -173,12 +175,12 @@ fn request_flags(request: &serde_json::Value) -> (GuardrailInputType, String) {
         .to_owned();
     (input_type, fail)
 }
-pub(super) fn payload(input: &serde_json::Value) -> crate::helpers::HelperResult {
+pub(super) fn payload(input: &serde_json::Value) -> HelperResult {
     let found = input.get("grayswan_payload").cloned();
     let request = found.unwrap_or_else(|| json!({}));
     run_payload(parse_request(&request)?)
 }
-fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
+fn run_payload(parsed: Request) -> HelperResult {
     let guardrail = GraySwanGuardrail {
         settings: parsed.settings,
         client: reqwest::Client::default(),
@@ -195,14 +197,14 @@ fn run_payload(parsed: Request) -> crate::helpers::HelperResult {
     serde_json::to_value(payload)
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))
 }
-pub(super) fn call(input: &serde_json::Value) -> crate::helpers::HelperResult {
+pub(super) fn call(input: &serde_json::Value) -> HelperResult {
     let found = input.get("grayswan_call").cloned();
     let request = found.unwrap_or_else(|| json!({}));
     run_call(parse_request(&request)?)
 }
-fn run_call(call: Request) -> crate::helpers::HelperResult {
+fn run_call(call: Request) -> HelperResult {
     let script = match &call.answer {
-        Some(reply) => MockScript::try_from(std::slice::from_ref(reply))
+        Some(reply) => MockScript::try_from(slice::from_ref(reply))
             .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?,
         None => disconnection_script(&call.fail),
     };
@@ -223,7 +225,7 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
         request_history: call.context,
         litellm_metadata: BTreeMap::new(),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure_with_class("GuardrailError", None, error.to_string()))?;
@@ -239,7 +241,7 @@ fn run_call(call: Request) -> crate::helpers::HelperResult {
         .map(|_outcome| payload.unwrap_or(serde_json::Value::Null))
         .map_err(|error| failure(&error))
 }
-pub(super) fn failure(error: &GraySwanGuardrailAPIError) -> Box<crate::helpers::HelperError> {
+pub(super) fn failure(error: &GraySwanGuardrailAPIError) -> Box<HelperError> {
     let is_blocked = matches!(error, GraySwanGuardrailAPIError::Blocked { .. });
     let status = match error {
         GraySwanGuardrailAPIError::Blocked { .. } => Some(400_u16),

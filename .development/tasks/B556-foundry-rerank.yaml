@@ -175,7 +175,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_rerank*")"
       && grep -lq 'foundry_rerank' tools/oracle/fuzz/corpus/helper_case/foundry_rerank* && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_rerank$/)' && cargo nextest run
+      -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_rerank$/)' && cargo nextest run
       --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-foundry-rerank-auth
     why: Only None api_key consults AZURE_AI_API_KEY then litellm.azure_key; explicit empty suppresses that fallback

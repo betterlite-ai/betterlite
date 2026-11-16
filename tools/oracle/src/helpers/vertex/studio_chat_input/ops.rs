@@ -8,9 +8,11 @@ use betterlite_vertex::gemini_options::params::ReasoningSupport;
 use betterlite_vertex::studio_chat::{supported_openai_params, transform_messages};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::io::Error;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -64,7 +66,7 @@ impl RemoteMediaFetcher for NoFetch {
 
 pub(super) fn run(input: &Input) -> HelperResult {
     let catalog = Catalog(input.reasoning_models.iter().cloned().collect());
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .build()
         .map_err(|error| runtime_error(&error))?;
     let results: Vec<Value> = input
@@ -92,7 +94,7 @@ fn answer(runtime: &Runtime, step: &Step, catalog: &Catalog) -> Value {
     }
 }
 
-fn runtime_error(error: &std::io::Error) -> Box<HelperError> {
+fn runtime_error(error: &Error) -> Box<HelperError> {
     Box::new(HelperError {
         class: "RuntimeError".to_owned(),
         status: None,

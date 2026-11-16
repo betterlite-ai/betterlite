@@ -11,7 +11,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -91,7 +93,7 @@ pub(super) fn run(input: &Input) -> HelperResult {
             "calls": calls.iter().map(request_outcome).collect::<Result<Vec<_>, _>>()?,
         })),
         Input::Response { calls } => {
-            let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+            let runtime = Builder::new_current_thread().build()?;
             let outcomes: Vec<Value> = calls
                 .iter()
                 .map(|call| runtime.block_on(response_outcome(call)))

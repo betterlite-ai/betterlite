@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use betterlite_prompts::arguments::json::{Json, Object};
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod fixture;
 mod steps;

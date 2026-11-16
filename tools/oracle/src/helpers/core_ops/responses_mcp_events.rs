@@ -8,6 +8,8 @@ use betterlite_core::api::responses_mcp_events::list_tools::{
     DiagnosticLevel, DiscoveredTool, ServerEntry, ToolAttribute, create_mcp_list_tools_events,
 };
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -46,10 +48,10 @@ pub(crate) struct ToolInput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::OutputItemsAndFunctionCallId { output } => {
                 let response: ResponsesApiResponse = serde_json::from_value(
@@ -82,7 +84,7 @@ fn assign_event_field(
     field: &str,
     value: &Value,
     event: Option<&BTreeMap<String, Value>>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let mut target = if let Some(fields) = event {
         StreamEvent {
             fields: fields
@@ -132,7 +134,7 @@ fn list_tools_projection(
 fn call_events(
     request: &McpCallRequest,
     ids: Vec<String>,
-) -> Result<Vec<StreamEvent>, Box<crate::helpers::HelperError>> {
+) -> Result<Vec<StreamEvent>, Box<HelperError>> {
     let mut remaining = ids.into_iter();
     create_mcp_call_events(request, || remaining.next().unwrap_or_default())
         .map_err(|error: McpEventError| helper_error(&error.to_string()))
@@ -162,8 +164,8 @@ where
         })
 }
 
-fn helper_error(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn helper_error(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

@@ -13,6 +13,7 @@ use betterlite_provider::nvidia_nim_rerank::retrieval::NvidiaNimRerankConfig;
 use betterlite_provider::nvidia_nim_rerank::{
     NvidiaNimRerankError, NvidiaNimRerankSelection, select_rerank_config,
 };
+use std::sync::Mutex;
 
 fn retrieval() -> NvidiaNimRerankConfig {
     NvidiaNimRerankConfig {
@@ -25,7 +26,7 @@ fn retrieval() -> NvidiaNimRerankConfig {
 fn ranking() -> NvidiaNimRankingConfig {
     NvidiaNimRankingConfig {
         retrieval: retrieval(),
-        top_n: std::sync::Mutex::new(None),
+        top_n: Mutex::new(None),
     }
 }
 

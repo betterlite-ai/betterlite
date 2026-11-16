@@ -1,0 +1,10 @@
+model_list:
+  - model_name: classifier-router
+    litellm_params:
+      model: openai/gpt-4o
+      complexity_router_config:
+        reminder_markers:
+          - open: " <System-Reminder> "
+            close: " </System-Reminder> "
+          - open: "<environment_context>"
+            close: "</environment_context>"

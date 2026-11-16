@@ -1,6 +1,8 @@
 use betterlite_logging::otel::model::trace_controls::caller_trace_controls;
 use betterlite_logging::otel::model::utils::coercion::{OtelModelValue, as_int, as_str_tuple};
 use betterlite_logging::otel::model::utils::time::{FixedLocalTimeResolver, to_ns, to_seconds};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::FixedOffset;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -11,10 +13,10 @@ pub(crate) struct Op;
 #[path = "b3892/tests.rs"]
 mod tests;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Value;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.get("function").and_then(Value::as_str) {
             Some("trace") => trace(input),
             Some("coercion") => coercions(input),
@@ -24,8 +26,8 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
@@ -35,14 +37,14 @@ fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
     })
 }
 
-fn trace(input: &Value) -> crate::helpers::HelperResult {
+fn trace(input: &Value) -> HelperResult {
     let parsed = serde_json::from_value::<OtelModelValue>(input.clone())
         .map_err(|error| invalid(&error.to_string()))?;
     serde_json::to_value(caller_trace_controls(&parsed))
         .map_err(|error| invalid(&error.to_string()))
 }
 
-fn coercions(input: &Value) -> crate::helpers::HelperResult {
+fn coercions(input: &Value) -> HelperResult {
     let values = input
         .get("values")
         .and_then(Value::as_array)
@@ -50,7 +52,7 @@ fn coercions(input: &Value) -> crate::helpers::HelperResult {
     Ok(Value::Array(values.iter().map(coerce).collect()))
 }
 
-fn time_values(input: &Value) -> crate::helpers::HelperResult {
+fn time_values(input: &Value) -> HelperResult {
     let values = input
         .get("values")
         .and_then(Value::as_array)

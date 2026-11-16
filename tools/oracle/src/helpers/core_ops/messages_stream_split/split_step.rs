@@ -13,7 +13,9 @@ use serde::Serialize;
 use super::projection::{ChunkView, StatusView, chunk_view};
 use super::source::ScriptedSource;
 use super::{Mode, SplitStep, stream_failure};
-use crate::helpers::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use std::iter;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Serialize)]
 pub(super) struct SplitView {
@@ -111,7 +113,7 @@ fn runs(step: &SplitStep, failure: Option<&StreamFailure>) -> Vec<Run> {
         messages_attr: step.messages_attr.clone(),
         pulls: 0,
     };
-    let sources: Vec<ScriptedSource> = std::iter::repeat_n(template, step.splitters).collect();
+    let sources: Vec<ScriptedSource> = iter::repeat_n(template, step.splitters).collect();
     match step.mode {
         Mode::Sync => sources
             .into_iter()
@@ -168,8 +170,6 @@ async fn drive(step: &SplitStep, failure: Option<&StreamFailure>) -> SplitView {
 
 pub(super) fn run_split(step: &SplitStep) -> Result<SplitView, Box<HelperError>> {
     let failure = step.failure.as_ref().map(stream_failure).transpose()?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .or_value_error()?;
+    let runtime = Builder::new_current_thread().build().or_value_error()?;
     Ok(runtime.block_on(drive(step, failure.as_ref())))
 }

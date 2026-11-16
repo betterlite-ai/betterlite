@@ -4,12 +4,13 @@ use std::fs;
 use std::path::Path;
 
 use super::Input;
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
+use betterlite_oracle_runner::case::helper::HelperCase;
+use betterlite_oracle_runner::case::helper::validate_helper;
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_xai_realtime() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let sources: Vec<String> = fs::read_dir(corpus)
         .expect("the helper corpus")
         .map(|entry| entry.expect("a corpus entry").path())

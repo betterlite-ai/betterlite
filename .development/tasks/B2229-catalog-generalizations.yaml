@@ -200,7 +200,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/catalog_generalizations*")"
       && grep -lq 'catalog_generalizations' tools/oracle/fuzz/corpus/helper_case/catalog_generalizations* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_catalog_generalizations$/)'
+      nextest run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_catalog_generalizations$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-install-and-legacy-extends
     why: Initial raw rules/list and all compiled collections are empty. set_rules accepts a list only, otherwise

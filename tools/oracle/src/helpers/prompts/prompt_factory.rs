@@ -1,4 +1,5 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::builtin::{Field, Message, PromptError};
 use betterlite_prompts::error::FactoryError;
 use betterlite_prompts::factory::custom::{
@@ -10,7 +11,9 @@ use betterlite_prompts::factory::{Output, PromptFactory, prompt_factory};
 use chrono::{TimeZone as _, Utc};
 use serde::Deserialize;
 use serde_json::{Value, to_value};
+use std::io::Error;
 use std::sync::Mutex;
+use tokio::runtime::Builder;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "mode", rename_all = "snake_case")]
@@ -79,7 +82,7 @@ fn factory_prompt(model: &str, messages: &[Message], provider: Option<&str>) -> 
         cache: Mutex::new(builtin_entries()),
         hub: Hub::Unreachable,
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| runtime_failure(&error))?;
@@ -97,7 +100,7 @@ fn output_value(output: Output) -> Value {
     }
 }
 
-fn runtime_failure(error: &std::io::Error) -> Box<HelperError> {
+fn runtime_failure(error: &Error) -> Box<HelperError> {
     Box::new(HelperError {
         class: "Runtime".to_owned(),
         status: None,

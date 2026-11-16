@@ -1,4 +1,3 @@
-use crate::helpers::HelperError;
 use betterlite_config::sections::mistral_resources::Settings;
 use betterlite_openai::api::batch_records::CreateBatchRequest;
 use betterlite_openai::mistral_batches::records::MistralBatchJob;
@@ -12,6 +11,8 @@ use betterlite_openai::mistral_files::transformation::{
 };
 use betterlite_openai::mistral_identity::auth_headers;
 use betterlite_openai::openai_base_config::Headers;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::media_metadata::{FileBody, FileData};
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -148,9 +149,9 @@ fn retrieve_outcome(call: &RetrieveCall, settings: &Settings) -> Value {
     }
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let settings = resource_settings(&input.env);
         let files = input
             .files

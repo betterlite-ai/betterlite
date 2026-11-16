@@ -6,12 +6,13 @@ use std::path::Path;
 use rstest::rstest;
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/xai-usage")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -19,14 +20,14 @@ fn run_case(file: &str) -> Value {
 }
 
 fn run_input(input: &Value) -> Value {
-    use crate::helpers::Helper as _;
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
     super::Op::decode_and_run(input).unwrap()
 }
 
 #[test]
 fn helper_seeds_select_xai_usage() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -46,14 +47,14 @@ fn helper_seeds_select_xai_usage() {
 
 #[test]
 fn oracle_ticks_divide_by_ten_billion() {
-    let result = run_case("ticks-and-booleans.yaml");
+    let result = run_case_file("ticks-and-booleans.yaml");
     assert_eq!(result["cost"], "1.25");
     assert_eq!(result["restated_cost"], "1.25");
 }
 
 #[test]
 fn oracle_reported_zero_suppresses_the_generic_price() {
-    let result = run_case("reported-zero.yaml");
+    let result = run_case_file("reported-zero.yaml");
     assert_eq!(result["prompt_cost"], "0");
     assert_eq!(result["completion_cost"], "0");
 }
@@ -98,7 +99,7 @@ fn oracle_malformed_search_counts_attach_without_a_charge(#[case] calls: Value) 
 
 #[test]
 fn oracle_reasoning_folds_once() {
-    let result = run_case("fold-once-and-preserve-larger-total.yaml");
+    let result = run_case_file("fold-once-and-preserve-larger-total.yaml");
     let expected = serde_json::json!({
         "prompt_tokens": 10_u32,
         "completion_tokens": 25_u32,
@@ -110,7 +111,7 @@ fn oracle_reasoning_folds_once() {
 
 #[test]
 fn oracle_larger_total_leaves_reasoning_raw() {
-    let result = run_case("raw-reasoning-larger-total.yaml");
+    let result = run_case_file("raw-reasoning-larger-total.yaml");
     let expected = serde_json::json!({
         "prompt_tokens": 10_u32,
         "completion_tokens": 20_u32,
@@ -122,14 +123,14 @@ fn oracle_larger_total_leaves_reasoning_raw() {
 
 #[test]
 fn oracle_numeric_text_counts_as_search_calls() {
-    let result = run_case("search-count-conversion.yaml");
+    let result = run_case_file("search-count-conversion.yaml");
     assert_eq!(result["web_search_requests"], 3_u32);
     assert_eq!(result["search_cost"], "0.03");
 }
 
 #[test]
 fn oracle_search_rate_tries_medium_then_low_then_high() {
-    let result = run_case("medium-low-high-rate.yaml");
+    let result = run_case_file("medium-low-high-rate.yaml");
     assert_eq!(result["web_search_requests"], 2_u32);
     assert_eq!(result["search_cost"], "0.04");
 }

@@ -6,6 +6,7 @@ use betterlite_openai::api::responses_event_records::records::ResponsesAPIStream
 use betterlite_openai::api::responses_objects::ResponsesApiResponse;
 use betterlite_openai::api::responses_objects::request_params::ResponsesApiRequestParams;
 use betterlite_openai::api::responses_shapes::DeleteResponseResult;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_provider::api::responses_provider_contract::config::ResponsesProviderConfig;
 use betterlite_provider::api::responses_provider_contract::error::ResponsesContractError;
 use betterlite_provider::api::responses_provider_contract::records::{
@@ -24,9 +25,9 @@ pub(super) enum FixtureError {
     Unused,
 }
 
-impl From<FixtureError> for Box<crate::helpers::HelperError> {
+impl From<FixtureError> for Box<HelperError> {
     fn from(error: FixtureError) -> Self {
-        Self::new(crate::helpers::HelperError {
+        Self::new(HelperError {
             class: String::from("ValueError"),
             status: None,
             error_type: None,
