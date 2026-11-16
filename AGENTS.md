@@ -22,6 +22,13 @@ Run the oracle with `cargo run --locked -p betterlite-oracle -- --self-check too
 the cases only. Omit it to compare a built betterlite gateway or the native helpers
 with LiteLLM; a task check on helper cases never uses it.
 
+A helper case only needs the group crates that own its operations.
+`cargo gate oracle-groups <case files or folders>` prints the package for each case
+file, and `cargo run --locked -p betterlite-oracle-groups --features <those packages> -- <files>`
+runs them without building the whole oracle or the gateway. The helper corpus replay,
+`replays_the_helper_case_corpus`, runs the same way with
+`-p betterlite-oracle-groups --features <group package>`.
+
 Helper cases cache LiteLLM's answers in two folders. Runs read
 `~/.cache/betterlite-oracle` first, then the worktree's `target/oracle-answers`,
 and store a new answer in the worktree one. Only a clean main checkout runs with
