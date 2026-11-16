@@ -3,9 +3,8 @@ from typing import Literal, NotRequired, TypeAlias, TypedDict
 
 from litellm.types.utils import EmbeddingResponse
 from openai.types import CreateEmbeddingResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic import JsonValue as Json
-from pydantic import TypeAdapter, ValidationError
 
 EmbeddingInput: TypeAlias = list[str] | list[int] | list[list[int]]
 ClientName: TypeAlias = Literal["azure_open_ai", "async_azure_open_ai", "open_ai", "async_open_ai"]

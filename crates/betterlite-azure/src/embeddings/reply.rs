@@ -63,49 +63,47 @@ pub fn convert_embedding(
     }
 }
 
-fn error_status(error: &IndexMap<String, Json>) -> u16 {
-    match error.get("code") {
-        None => ERROR_STATUS,
-        Some(Json::Number(code)) => code
-            .as_u64()
-            .and_then(|value| u16::try_from(value).ok())
-            .unwrap_or(DEFAULT_STATUS),
-        Some(_other) => DEFAULT_STATUS,
-    }
-}
-
 // the "error" check that opens convert_to_model_response_object: only a meaningful error raises
 #[must_use]
 pub fn response_error(body: &[u8]) -> Option<EmbeddingError> {
     let Ok(Json::Object(fields)) = serde_json::from_slice::<Json>(body) else {
         return None;
     };
-    match fields.get("error")? {
-        Json::Null => None,
-        Json::Text(text) if text.is_empty() => None,
+    let (status_code, message) = match fields.get("error")? {
+        Json::Null => return None,
+        Json::Text(text) if text.is_empty() => return None,
         Json::Object(error) => {
             let message = error.get("message");
-            let said_something = match message {
+            let spoke = match message {
                 None | Some(Json::Null) => false,
                 Some(Json::Text(text)) => !text.is_empty(),
                 Some(_other) => true,
             };
-            let code_given = error.get("code").is_some_and(|code| *code != Json::Null);
+            let coded = error.get("code").is_some_and(|code| *code != Json::Null);
+            if !spoke && !coded {
+                return None;
+            }
+            let status = match error.get("code") {
+                None => ERROR_STATUS,
+                Some(Json::Number(code)) => code
+                    .as_u64()
+                    .and_then(|value| u16::try_from(value).ok())
+                    .unwrap_or(DEFAULT_STATUS),
+                Some(_other) => DEFAULT_STATUS,
+            };
             let text = match message {
                 None => ERROR_MESSAGE.to_owned(),
                 Some(Json::Text(text)) => text.clone(),
                 Some(other) => serde_json::to_string(other).unwrap_or_default(),
             };
-            (said_something || code_given).then(|| EmbeddingError::Response {
-                status_code: error_status(error),
-                message: text,
-            })
+            (status, text)
         }
         Json::Text(_) | Json::Bool(_) | Json::Number(_) | Json::List(_) => {
-            Some(EmbeddingError::Response {
-                status_code: ERROR_STATUS,
-                message: ERROR_MESSAGE.to_owned(),
-            })
+            (ERROR_STATUS, ERROR_MESSAGE.to_owned())
         }
-    }
+    };
+    Some(EmbeddingError::Response {
+        status_code,
+        message,
+    })
 }

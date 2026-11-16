@@ -234,8 +234,16 @@ pub(super) fn run(
     calls: &Calls,
     recorder: Recorder,
 ) -> Run {
-    let sources = NoSources::default();
-    drive(request, answer, calls, recorder, &sources, false)
+    let credentials = Credentials {
+        sources: NoSources::default(),
+        refresh_enabled: false,
+    };
+    drive(request, answer, calls, recorder, &credentials)
+}
+
+struct Credentials {
+    sources: NoSources,
+    refresh_enabled: bool,
 }
 
 // no api key and the token refresh on: the client resolution asks the failing source for a provider
@@ -243,14 +251,16 @@ pub(super) fn unresolved_client_run(aembedding: bool, status: Option<u16>) -> Ru
     let input = EmbeddingInput::Text("a".to_owned());
     let mut request = call(&input, aembedding);
     request.api_key = None;
-    let sources = NoSources { status };
+    let credentials = Credentials {
+        sources: NoSources { status },
+        refresh_enabled: true,
+    };
     drive(
         request,
         &json_reply(&[]),
         &Calls::default(),
         Recorder::default(),
-        &sources,
-        true,
+        &credentials,
     )
 }
 
@@ -259,21 +269,20 @@ fn drive(
     answer: &Answer,
     calls: &Calls,
     recorder: Recorder,
-    sources: &NoSources,
-    refresh_enabled: bool,
+    credentials: &Credentials,
 ) -> Run {
     let factory = build_factory(answer, calls);
     let settings = Settings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let mut cache = Cache::default();
-    let mut refresh_cache = RefreshProviderCache::new(sources);
+    let mut refresh_cache = RefreshProviderCache::new(&credentials.sources);
     let setup = ClientSetup {
         provider: None,
         settings: &settings,
         environment: &environment,
-        refresh_enabled,
+        refresh_enabled: credentials.refresh_enabled,
         session: SessionKind::Dedicated,
-        sources,
+        sources: &credentials.sources,
         cache: &mut cache,
         refresh_cache: &mut refresh_cache,
     };

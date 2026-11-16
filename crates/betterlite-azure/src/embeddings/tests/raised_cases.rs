@@ -11,7 +11,7 @@ use super::support::{
 
 // a full 200 embeddings body that also carries an "error" field, as an OpenAI-compatible provider sends it
 fn with_error(error: &str) -> Answer {
-    let open = &BODY[..BODY.len() - 1];
+    let open = BODY.strip_suffix('}').unwrap();
     Answer::Reply {
         status: 200,
         headers: headers(&[("content-type", "application/json")]),

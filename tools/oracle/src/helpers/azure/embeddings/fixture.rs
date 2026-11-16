@@ -34,25 +34,28 @@ pub(super) struct Reply {
 #[serde(rename_all = "snake_case")]
 pub(super) enum Answer {
     Reply(Reply),
-    Connection {},
+    Connection(BTreeMap<String, String>),
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
 pub(super) enum ClientName {
-    AzureOpenAi,
-    AsyncAzureOpenAi,
-    OpenAi,
-    AsyncOpenAi,
+    #[serde(rename = "azure_open_ai")]
+    Azure,
+    #[serde(rename = "async_azure_open_ai")]
+    AsyncAzure,
+    #[serde(rename = "open_ai")]
+    Plain,
+    #[serde(rename = "async_open_ai")]
+    AsyncPlain,
 }
 
 impl ClientName {
     pub(super) const fn kind(self) -> ClientKind {
         match self {
-            Self::AzureOpenAi => ClientKind::AzureOpenAi,
-            Self::AsyncAzureOpenAi => ClientKind::AsyncAzureOpenAi,
-            Self::OpenAi => ClientKind::OpenAi,
-            Self::AsyncOpenAi => ClientKind::AsyncOpenAi,
+            Self::Azure => ClientKind::AzureOpenAi,
+            Self::AsyncAzure => ClientKind::AsyncAzureOpenAi,
+            Self::Plain => ClientKind::OpenAi,
+            Self::AsyncPlain => ClientKind::AsyncOpenAi,
         }
     }
 }
@@ -100,7 +103,7 @@ impl EmbeddingClient for Sdk {
             .unwrap_or_else(PoisonError::into_inner)
             .push(wire_view(data));
         ready(match &self.answer {
-            Answer::Connection {} => Err(SdkError {
+            Answer::Connection(_) => Err(SdkError {
                 status_code: None,
                 headers: None,
                 response: None,
