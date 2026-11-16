@@ -13,7 +13,7 @@ use crate::databricks_chat::response::{
     Reply, ReplyFunction, ReplyToolCall, ResponseInput, transform_response,
 };
 use crate::databricks_chat::tests::{
-    at, at_mut, dump, fill, has, json, len_of, object, set, text_of, unset,
+    at, dump, fill, has, json, len_of, object, set, text_of, unset,
 };
 use crate::ollama_chat::ids::IdSource;
 
@@ -594,6 +594,20 @@ fn json_mode_body(tool_calls: Json) -> Json {
     ]))
 }
 
+// A json mode body whose only choice carries the given finish_reason, or none at all
+fn json_mode_body_finishing(tool_calls: Json, finish_reason: Option<&str>) -> Json {
+    let message = object([
+        ("role", json!("assistant")),
+        ("content", Json::Null),
+        ("tool_calls", tool_calls),
+    ]);
+    let mut choice = object([("index", json!(0)), ("message", message)]);
+    if let Some(reason) = finish_reason {
+        set(&mut choice, "finish_reason", Json::Text(reason.to_owned()));
+    }
+    body_with(choice)
+}
+
 #[test]
 fn json_mode_turns_a_json_tool_call_into_content() {
     let tool_calls =
@@ -641,10 +655,10 @@ fn json_mode_with_empty_arguments_does_not_convert() {
 
 #[test]
 fn json_mode_does_not_need_a_finish_reason() {
-    let mut value = json_mode_body(
+    let value = json_mode_body_finishing(
         json!([{"id": "t1", "function": {"name": "json_tool_call", "arguments": "{}"}}]),
+        None,
     );
-    unset(at_mut(&mut value, "choices.0"), "finish_reason");
     let output = success(&value, true);
     assert_eq!(*at(&output, "choices.0.finish_reason"), json!("stop"));
 }
@@ -755,12 +769,7 @@ fn json_mode_keeps_an_empty_parallel_call_next_to_the_json_tool_call() {
         {"id": "t1", "function": {"name": "multi_tool_use.parallel", "arguments": "{\"tool_uses\": []}"}},
         {"id": "t2", "function": {"name": "json_tool_call", "arguments": "{\"a\":1}"}}
     ]);
-    let mut value = json_mode_body(tool_calls);
-    set(
-        at_mut(&mut value, "choices.0"),
-        "finish_reason",
-        json!("tool_calls"),
-    );
+    let value = json_mode_body_finishing(tool_calls, Some("tool_calls"));
     let output = success(&value, true);
     assert_eq!(*at(&message_of(&output), "content"), json!(null));
     assert_eq!(*at(&output, "choices.0.finish_reason"), json!("tool_calls"));

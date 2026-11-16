@@ -38,23 +38,6 @@ pub(crate) fn at<'doc>(doc: &'doc Json, path: &str) -> &'doc Json {
     current
 }
 
-// The value at a dotted path for a test that edits the document, which must exist
-pub(crate) fn at_mut<'doc>(doc: &'doc mut Json, path: &str) -> &'doc mut Json {
-    let (step, rest) = path.split_once('.').unwrap_or((path, ""));
-    let child = match doc {
-        Json::Object(fields) => fields.get_mut(step).unwrap(),
-        Json::List(items) => &mut items[step.parse::<usize>().unwrap()],
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) => {
-            panic!("the path {path} leaves the document at {step}")
-        }
-    };
-    if rest.is_empty() {
-        child
-    } else {
-        at_mut(child, rest)
-    }
-}
-
 // Sets one key of an object document
 pub(crate) fn set(doc: &mut Json, key: &str, value: Json) {
     if let Json::Object(fields) = doc {
