@@ -21,6 +21,6 @@ deviations:
   - what: "A ratio written with non-ASCII decimal digits, such as ١٢٨٠:720, leaves the resolution out. LiteLLM's str.isdigit() accepts them and int() converts them, so it reports a resolution."
     why: "The area comparison reads ASCII digits only; the Unicode digit grammar is a Python runtime habit that docs/compatibility.md does not port."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L74-L81
-  - what: "A provider reply whose id or status is not a string yields an empty id and the queued status instead of a validation failure. LiteLLM's pydantic VideoObject rejects a null or numeric id and status with a 500."
-    why: "The task record decoder names the wrong field and the projection stays readable; the creation reply for a working provider always carries both as strings."
+  - what: "A provider reply whose id or status is null yields an empty id and the queued status instead of a validation failure. LiteLLM fills the id default only when the key is absent, so a present null reaches pydantic VideoObject and fails validation."
+    why: "The task record decoder reads both fields as optional, and the creation reply for a working provider always carries them as strings; a numeric value still fails the decode and names the field."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L306-L318

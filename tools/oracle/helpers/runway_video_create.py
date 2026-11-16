@@ -1,4 +1,5 @@
 import os
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Final, Literal, Protocol, TypedDict, runtime_checkable
 
@@ -25,44 +26,48 @@ RUNWAY_VARIABLES: Final = (
 )
 
 
+VideoRequestTransform = Callable[
+    [str, str, str, JsonObject, GenericLiteLLMParams, JsonObject],
+    tuple[JsonValue, JsonValue, str],
+]
+
+
+VideoReplyTransform = Callable[
+    [str, httpx.Response, Logging, str | None, JsonObject | None],
+    VideoObject,
+]
+
+
 @runtime_checkable
 class VideoConfig(Protocol):
     def map_openai_params(
-        self, _params: JsonObject, _model: str, _drop_params: bool
+        self, video_create_optional_request_params: JsonObject, model: str, *, drop_params: bool
     ) -> JsonObject: ...
 
     def get_complete_url(
-        self, _model: str, _api_base: str | None, _litellm_params: JsonObject
+        self, model: str, api_base: str | None, litellm_params: JsonObject
     ) -> str: ...
 
     def validate_environment(
         self,
-        _headers: dict[str, str],
-        _model: str,
-        _api_key: str | None,
-        _litellm_params: GenericLiteLLMParams,
+        headers: dict[str, str],
+        model: str,
+        api_key: str | None,
+        litellm_params: GenericLiteLLMParams,
     ) -> JsonObject: ...
 
     def use_multipart_form_data(self) -> bool: ...
 
+    # ruff counts a def's parameters (PLR0913), so the six-argument call types are property values
+    @property
     def transform_video_create_request(  # ast-grep-ignore: no-long-names
         self,
-        _model: str,
-        _prompt: str,
-        _api_base: str,
-        _params: JsonObject,
-        _litellm_params: GenericLiteLLMParams,
-        _headers: dict[str, str],
-    ) -> tuple[JsonValue, JsonValue, str]: ...
+    ) -> VideoRequestTransform: ...
 
+    @property
     def transform_video_create_response(  # ast-grep-ignore: no-long-names
         self,
-        _model: str,
-        _raw_response: httpx.Response,
-        _logging_obj: Logging,
-        _custom_llm_provider: str | None,
-        _request_data: JsonObject | None,
-    ) -> VideoObject: ...
+    ) -> VideoReplyTransform: ...
 
 
 # litellm's config class carries untyped parameters, so the protocol is the declared shape
@@ -123,7 +128,7 @@ def logging_object(model: str) -> Logging:
         messages=None,
         stream=False,
         call_type="video_generation",
-        start_time=datetime.now(UTC),
+        start_time=datetime(2026, 1, 1, tzinfo=UTC),
         litellm_call_id="runway-video-call",
         function_id="runway-video-function",
     )
@@ -138,7 +143,7 @@ def create_value(model: str, prompt: str, call: CreateCall) -> JsonValue:
     except ValueError:
         return JSON.validate_python({"credentials_error": True})
     complete = CONFIG.get_complete_url(model, call["api_base"], EMPTY)
-    mapped = CONFIG.map_openai_params(call["params"], model, DROP_PARAMS)
+    mapped = CONFIG.map_openai_params(call["params"], model, drop_params=DROP_PARAMS)
     body, files, url = CONFIG.transform_video_create_request(
         model, prompt, complete, mapped, litellm_params, headers
     )
