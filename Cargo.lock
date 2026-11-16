@@ -2847,6 +2847,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-secret-managers",
  "betterlite-semantic",
+ "betterlite-server",
  "betterlite-streaming",
  "betterlite-tokenizer",
  "betterlite-transcribe",
