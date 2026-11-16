@@ -38,7 +38,11 @@ pub fn io_token_reservation_ops(
         return Ok(Vec::new());
     }
     let usage = io_usage(reconciliation);
-    if usage.unresolved() && !state.reservation_released {
+    if usage.response.is_none()
+        && usage.combined.is_none()
+        && usage.aggregate == 0
+        && !state.reservation_released
+    {
         return Ok(Vec::new());
     }
     let counts = usage.counts(state.itpm_reserved_tokens, state.otpm_reserved_tokens);
@@ -176,13 +180,6 @@ struct IoUsage {
 }
 
 impl IoUsage {
-    const fn unresolved(&self) -> bool {
-        if self.response.is_some() || self.combined.is_some() {
-            return false;
-        }
-        self.aggregate == 0
-    }
-
     fn counts(&self, input_reserved: i64, output_reserved: i64) -> (i64, i64) {
         if let Some((input, output)) = self.response {
             return (token_count(input), token_count(output));
