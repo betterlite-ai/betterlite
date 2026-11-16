@@ -64,5 +64,45 @@ calls:
         fallback_key: null
         rerank_base: null
         image_base: null
+  - b8172:
+      function: family_settings
+      dashscope:
+        base: null
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: null
+        brand_key: sk-qwen
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: sk-cn
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+  - b8172:
+      function: family_settings
+      dashscope:
+        base: https://dash-env.test/v1
+        brand_key: null
+        fallback_key: sk-dash
+        rerank_base: null
+        image_base: null
+      qwencloud:
+        base: https://intl-env.test/v1
+        brand_key: sk-qwen
+        fallback_key: null
+        rerank_base: null
+        image_base: null
+      qwen_ai_platform:
+        base: null
+        brand_key: sk-cn
+        fallback_key: null
+        rerank_base: null
+        image_base: null
 env: {}
 compare: {ignore: []}

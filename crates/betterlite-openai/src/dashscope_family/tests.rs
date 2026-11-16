@@ -4,11 +4,10 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
-    DASHSCOPE_RERANK_URL, DashscopeFamily, FamilyEnv, QWEN_AI_PLATFORM_CHAT_BASE,
-    QWEN_AI_PLATFORM_IMAGE_BASE, QWEN_AI_PLATFORM_KEY_MESSAGE, QWEN_AI_PLATFORM_RERANK_URL,
-    QWENCLOUD_CHAT_BASE, QWENCLOUD_IMAGE_BASE, QWENCLOUD_KEY_MESSAGE, QWENCLOUD_RERANK_URL,
-    chat_policy, embedding_config, embedding_identity, image_config, image_identity,
-    missing_family_key_message, rerank_config, rerank_settings, resolve_family_api_key,
+    DashscopeFamily, FamilyEnv, QWEN_AI_PLATFORM_IMAGE_BASE, QWEN_AI_PLATFORM_KEY_MESSAGE,
+    QWENCLOUD_IMAGE_BASE, QWENCLOUD_KEY_MESSAGE, chat_config, chat_policy, embedding_config,
+    embedding_identity, image_config, image_identity, missing_family_key_message, rerank_config,
+    rerank_settings, resolve_family_api_key,
 };
 
 fn no_env() -> FamilyEnv {
@@ -33,8 +32,16 @@ fn env_with_keys() -> FamilyEnv {
 
 #[rstest]
 #[case::dashscope(DashscopeFamily::Dashscope, crate::dashscope_chat::DEFAULT_BASE, false)]
-#[case::qwencloud(DashscopeFamily::QwenCloud, QWENCLOUD_CHAT_BASE, true)]
-#[case::qwen_ai_platform(DashscopeFamily::QwenAiPlatform, QWEN_AI_PLATFORM_CHAT_BASE, true)]
+#[case::qwencloud(
+    DashscopeFamily::QwenCloud,
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    true
+)]
+#[case::qwen_ai_platform(
+    DashscopeFamily::QwenAiPlatform,
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    true
+)]
 fn chat_policy_carries_the_family_base_and_environment_rule(
     #[case] family: DashscopeFamily,
     #[case] default_base: &str,
@@ -48,6 +55,37 @@ fn chat_policy_carries_the_family_base_and_environment_rule(
     assert_eq!(policy.default_base, default_base);
     assert_eq!(policy.env_base.as_deref(), Some("https://env.test/v1"));
     assert_eq!(policy.env_in_complete_url, env_in_complete_url);
+}
+
+#[rstest]
+#[case::qwencloud(DashscopeFamily::QwenCloud)]
+#[case::qwen_ai_platform(DashscopeFamily::QwenAiPlatform)]
+fn a_brand_chat_config_falls_through_to_the_dashscope_key(#[case] family: DashscopeFamily) {
+    let with_brand = FamilyEnv {
+        brand_key: Some(SecretString::from("sk-brand")),
+        fallback_key: Some(SecretString::from("sk-dash")),
+        ..no_env()
+    };
+    let brand_key = chat_config(family, &with_brand).provider_info(None, None);
+    assert_eq!(
+        brand_key
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("sk-brand")
+    );
+    let dashscope_only = FamilyEnv {
+        fallback_key: Some(SecretString::from("sk-dash")),
+        ..no_env()
+    };
+    let dashscope_key = chat_config(family, &dashscope_only).provider_info(None, None);
+    assert_eq!(
+        dashscope_key
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().as_str()),
+        Some("sk-dash")
+    );
 }
 
 #[test]
@@ -77,10 +115,14 @@ fn the_plain_embedding_identity_reads_only_the_dashscope_key() {
 }
 
 #[rstest]
-#[case::qwencloud(DashscopeFamily::QwenCloud, QWENCLOUD_CHAT_BASE, QWENCLOUD_KEY_MESSAGE)]
+#[case::qwencloud(
+    DashscopeFamily::QwenCloud,
+    "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    QWENCLOUD_KEY_MESSAGE
+)]
 #[case::qwen_ai_platform(
     DashscopeFamily::QwenAiPlatform,
-    QWEN_AI_PLATFORM_CHAT_BASE,
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
     QWEN_AI_PLATFORM_KEY_MESSAGE
 )]
 fn a_brand_embedding_identity_reads_the_brand_key_before_the_dashscope_key(
@@ -112,7 +154,10 @@ fn a_brand_embedding_identity_reads_the_brand_key_before_the_dashscope_key(
 #[test]
 fn embedding_config_carries_the_family_identity() {
     let config = embedding_config(DashscopeFamily::QwenCloud, &env_with_keys());
-    assert_eq!(config.identity.default_base, QWENCLOUD_CHAT_BASE);
+    assert_eq!(
+        config.identity.default_base,
+        "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    );
     assert_eq!(
         config
             .identity
@@ -124,9 +169,18 @@ fn embedding_config_carries_the_family_identity() {
 }
 
 #[rstest]
-#[case::dashscope(DashscopeFamily::Dashscope, DASHSCOPE_RERANK_URL)]
-#[case::qwencloud(DashscopeFamily::QwenCloud, QWENCLOUD_RERANK_URL)]
-#[case::qwen_ai_platform(DashscopeFamily::QwenAiPlatform, QWEN_AI_PLATFORM_RERANK_URL)]
+#[case::dashscope(
+    DashscopeFamily::Dashscope,
+    "https://dashscope.aliyuncs.com/compatible-api/v1/reranks"
+)]
+#[case::qwencloud(
+    DashscopeFamily::QwenCloud,
+    "https://dashscope-intl.aliyuncs.com/compatible-api/v1/reranks"
+)]
+#[case::qwen_ai_platform(
+    DashscopeFamily::QwenAiPlatform,
+    "https://dashscope.aliyuncs.com/compatible-api/v1/reranks"
+)]
 fn rerank_settings_carry_the_family_url_and_environment_values(
     #[case] family: DashscopeFamily,
     #[case] default_rerank_url: &str,
