@@ -17,13 +17,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use crate::budget_permission_rows::JsonData;
-
 use super::codec::{USER_ENV_VARS_KEY, decode_user_env_vars, parse_user_env_vars};
 use super::error::UserEnvVarsError;
 use super::lock::user_env_vars_lock_key;
 use super::postgres::composite_key;
-use super::store::{UserEnvVars, values_text};
+use super::store::UserEnvVars;
 
 use fakes::{
     FakeRow, FakeTable, SALT, TestCipher, lock, recording_cipher, sealed, test_cipher, test_store,
@@ -182,18 +180,6 @@ fn decode_empty_blob_is_empty_without_a_warning() {
 }
 
 #[test]
-fn values_text_rejects_a_row_without_a_text_values_b64() {
-    let row = JsonData::Object(BTreeMap::from([
-        ("user_id".to_owned(), JsonData::String("user-1".to_owned())),
-        ("values_b64".to_owned(), JsonData::Null),
-    ]));
-    assert!(matches!(
-        values_text(&row),
-        Err(UserEnvVarsError::MissingValues)
-    ));
-}
-
-#[test]
 fn decode_invalid_json_is_empty_without_a_warning() {
     let (logs, subscriber) = capture_logs();
     let _guard = set_default(subscriber);
@@ -268,6 +254,14 @@ async fn get_returns_the_decoded_map_for_the_composite_key() {
         .expect("the read succeeds");
     assert_eq!(exposed(&values), texts([("API_KEY", "s3cr3t-value")]));
     assert_eq!(table.events(), ["find_unique"]);
+}
+
+#[tokio::test]
+async fn get_rejects_a_row_whose_values_b64_is_null() {
+    let table = FakeTable::new(vec![FakeRow::with_null_values("alice", "srv-1")]);
+    let store = test_store(&table);
+    let result = store.get_user_env_vars("alice", "srv-1").await;
+    assert!(matches!(result, Err(UserEnvVarsError::MissingValues)));
 }
 
 #[tokio::test]

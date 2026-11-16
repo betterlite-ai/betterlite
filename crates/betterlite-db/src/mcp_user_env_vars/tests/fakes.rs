@@ -30,6 +30,7 @@ pub(super) struct FakeRow {
     pub(super) user_id: String,
     pub(super) server_id: String,
     pub(super) values_b64: String,
+    pub(super) values_null: bool,
 }
 
 impl FakeRow {
@@ -38,20 +39,30 @@ impl FakeRow {
             user_id: user_id.to_owned(),
             server_id: server_id.to_owned(),
             values_b64,
+            values_null: false,
+        }
+    }
+
+    pub(super) fn with_null_values(user_id: &str, server_id: &str) -> Self {
+        Self {
+            values_null: true,
+            ..Self::new(user_id, server_id, String::new())
         }
     }
 
     fn data(&self) -> JsonData {
+        let values = if self.values_null {
+            JsonData::Null
+        } else {
+            JsonData::String(self.values_b64.clone())
+        };
         JsonData::Object(BTreeMap::from([
             ("user_id".to_owned(), JsonData::String(self.user_id.clone())),
             (
                 "server_id".to_owned(),
                 JsonData::String(self.server_id.clone()),
             ),
-            (
-                "values_b64".to_owned(),
-                JsonData::String(self.values_b64.clone()),
-            ),
+            ("values_b64".to_owned(), values),
         ]))
     }
 }
@@ -89,6 +100,7 @@ impl FakeState {
         for row in &mut self.rows {
             if row.user_id == user_id && row.server_id == server_id {
                 row.values_b64 = values_b64.to_owned();
+                row.values_null = false;
                 return;
             }
         }

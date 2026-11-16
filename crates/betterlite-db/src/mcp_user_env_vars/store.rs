@@ -39,7 +39,10 @@ where
         let Some(row) = self.table.find_unique(user_id, server_id).await? else {
             return Ok(UserEnvVars::new());
         };
-        Ok(decode_user_env_vars(values_text(&row)?, &self.cipher))
+        Ok(decode_user_env_vars(
+            text_field(&row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
+            &self.cipher,
+        ))
     }
 
     // an empty id list returns before any query, as LiteLLM skips the pointless round trip
@@ -55,7 +58,10 @@ where
         let mut found = BTreeMap::new();
         for row in &rows {
             let server_id = text_field(row, "server_id").ok_or(McpTableError::MissingServerId)?;
-            let values = decode_user_env_vars(values_text(row)?, &self.cipher);
+            let values = decode_user_env_vars(
+                text_field(row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
+                &self.cipher,
+            );
             found.insert(server_id.to_owned(), values);
         }
         Ok(found)
@@ -114,7 +120,10 @@ where
                 .await?;
             let mut merged = UserEnvVars::new();
             if let Some(row) = row {
-                merged = decode_user_env_vars(values_text(&row)?, self.cipher);
+                merged = decode_user_env_vars(
+                    text_field(&row, "values_b64").ok_or(UserEnvVarsError::MissingValues)?,
+                    self.cipher,
+                );
             }
             for (name, value) in self.updates {
                 merged.insert(name.clone(), value.clone());
@@ -130,13 +139,6 @@ where
 }
 
 // values_b64 is a non-null text column, so a row without one is an error and not an unset value
-pub(crate) fn values_text(row: &JsonData) -> Result<&str, UserEnvVarsError> {
-    match text_field(row, "values_b64") {
-        Some(text) => Ok(text),
-        None => Err(UserEnvVarsError::MissingValues),
-    }
-}
-
 fn text_field<'row>(row: &'row JsonData, name: &str) -> Option<&'row str> {
     let JsonData::Object(fields) = row else {
         return None;
