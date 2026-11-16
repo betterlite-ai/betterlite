@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::mem;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_core::api::api_boundaries::ApiLimits;
@@ -113,12 +114,14 @@ fn event_sources(input: &Input) -> EventSources {
     EventSources {
         clock: Arc::new(move || Ok::<i64, StreamItemsError>(now)),
         ids: Arc::new(move || {
-            let mut queue = queue.lock().unwrap_or_else(PoisonError::into_inner);
-            if let Some(id) = queue.0.pop_front() {
+            let mut pending = queue.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(id) = pending.0.pop_front() {
                 return id;
             }
-            queue.1 = queue.1.saturating_add(1);
-            format!("missing-uuid-{}", queue.1)
+            pending.1 = pending.1.saturating_add(1);
+            let next = pending.1;
+            drop(pending);
+            format!("missing-uuid-{next}")
         }),
     }
 }
@@ -129,10 +132,11 @@ fn apply_step(
     step: &Step,
 ) -> Result<Value, Box<HelperError>> {
     match step {
-        Step::Initial => match return_default_initial_events(state, sources).or_value_error()? {
-            Some(event) => serde_json::to_value(&event).or_value_error(),
-            None => Ok(Value::Null),
-        },
+        Step::Initial => return_default_initial_events(state, sources)
+            .or_value_error()?
+            .map_or(Ok(Value::Null), |event| {
+                serde_json::to_value(&event).or_value_error()
+            }),
         Step::MessageItems => {
             queue_message_added(state, sources).or_value_error()?;
             pending_events(state)
@@ -147,12 +151,11 @@ fn apply_step(
             content,
             sequence_number,
         } => reasoning_events(item_id, content, *sequence_number),
-        Step::DefaultDone { completion } => {
-            match return_default_done_events(state, sources, completion).or_value_error()? {
-                Some(event) => serde_json::to_value(&event).or_value_error(),
-                None => Ok(Value::Null),
-            }
-        }
+        Step::DefaultDone { completion } => return_default_done_events(state, sources, completion)
+            .or_value_error()?
+            .map_or(Ok(Value::Null), |event| {
+                serde_json::to_value(&event).or_value_error()
+            }),
         Step::Snapshot { chunk, hidden } => snapshot_step(state, chunk, hidden.as_ref()),
         Step::MergeFields { fields } => {
             merge_provider_specific_fields(state, fields);
@@ -254,7 +257,7 @@ fn set_value(state: &mut ChatStreamState<AssemblyContext>, step: &Step) -> Value
 }
 
 fn pending_events(state: &mut ChatStreamState<AssemblyContext>) -> Result<Value, Box<HelperError>> {
-    let events = std::mem::take(&mut state.progress.pending_response_events);
+    let events = mem::take(&mut state.progress.pending_response_events);
     let views = events
         .iter()
         .map(serde_json::to_value)
@@ -264,10 +267,10 @@ fn pending_events(state: &mut ChatStreamState<AssemblyContext>) -> Result<Value,
 }
 
 fn snapshot_view(snapshot: &Json) -> Value {
-    let fields = object(snapshot);
+    let snapshot_fields = object(snapshot);
     json!({
-        "usage": fields.and_then(|fields| fields.get("usage")),
-        "_hidden_params": fields.and_then(|fields| fields.get("_hidden_params")),
+        "usage": snapshot_fields.and_then(|fields| fields.get("usage")),
+        "_hidden_params": snapshot_fields.and_then(|fields| fields.get("_hidden_params")),
     })
 }
 
@@ -287,7 +290,7 @@ fn assembled_view(response: Option<&Json>) -> Value {
         .and_then(object)
         .and_then(|hidden| hidden.get("provider_specific_fields"));
     json!({
-        "content": message.and_then(|message| message.get("content")),
+        "content": message.and_then(|fields| fields.get("content")),
         "provider_specific_fields": provider_fields,
     })
 }
