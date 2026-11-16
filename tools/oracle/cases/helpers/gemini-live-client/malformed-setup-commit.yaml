@@ -1,0 +1,51 @@
+kind: helper
+name: malformed-setup-commit
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true, "prefixPaddingMs": "bad"}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": "true"}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": 1}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": null}}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": true}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": "on"}}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": null}}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": []}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": "manual"}'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: not json
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '[1]'
+      - kind: message
+        message: '{"type": "input_audio_buffer.commit"}'
+        session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true}}, "extra": 1}}'
+calls:
+  - gemini_live_client:
+      op: client
+      steps:
+        - kind: message
+          message: '{"type": "input_audio_buffer.end"}'
+          session_configuration_request: '{"setup": {"realtimeInputConfig": {"automaticActivityDetection": {"disabled": true, "silenceDurationMs": "soon"}}}}'
+env: {}
+compare: {ignore: []}

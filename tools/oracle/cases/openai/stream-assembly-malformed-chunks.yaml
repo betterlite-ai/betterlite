@@ -1,0 +1,32 @@
+kind: helper
+name: stream-assembly-malformed-chunks
+call:
+  b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - 'data: not json'
+    - 'data: [DONE]'
+    - ''
+    - 'data: {}'
+    - 'data: {"choices": [1, 2]}'
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "system_fingerprint": "fp_abc", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hello"}}]}'
+    - 'data: {"error": {"message": "boom", "code": 500}}'
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}]}'
+    - 'data: {"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": []}'
+    messages: null
+    counter: {messages: 5, response_text: 2}
+calls:
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - 'data: not json'
+    - 'data: [DONE]'
+    - ''
+    - 'data: {}'
+    - 'data: {"choices": [1, 2]}'
+    messages: null
+    counter: {messages: 5, response_text: 2}
+env: {}
+compare: {ignore: []}
