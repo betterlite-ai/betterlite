@@ -1,0 +1,21 @@
+task: B3740
+deviations:
+  - what: Betterlite returns the caller's buffered chunks after a clean scan. LiteLLM re-yields a chat stream through MockResponseIterator, which emits one assembled ModelResponse chunk instead of the original chunks.
+    why: Response iteration over an already assembled stream is the U6 contract, which is not finalized (B104). The buffered chunks are the caller's own objects and the scan changes nothing in them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L587-L590
+  - what: Betterlite does not decorate the hooks with @log_guardrail_information.
+    why: B3664 replaces the decorator with an invocation value the caller starts and finishes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1580
+  - what: The sync logging hook detects an async caller through tokio's current Handle and returns the deferred call; LiteLLM calls asyncio.get_running_loop() and returns (kwargs, result). In a sync context betterlite hands the audit to an injected AuditSpawner, which the proxy builds from a background thread, instead of starting a daemon thread with its own asyncio event loop.
+    why: Live dispatch of the async hook is B8666 and the unified lifecycle is B3680; the injected spawner keeps the same fire-and-forget contract without an asyncio thread that a Rust proxy does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L612-L642
+  - what: A stream that cannot be assembled fails closed with HTTP 400 and the assembly message. LiteLLM lets stream_chunk_builder raise an uncaught APIError with status 500 when a delta carries content its chunk builder cannot join.
+    why: A stream the DLP layer cannot read must not be released, and the hook promises a 400 with the documented message; the uncaught 500 exposes a LiteLLM-internal exception type instead of the guardrail's block answer.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9264-L9271
+  - what: The deferred audit writes its guardrail record through the engine's own record base and sink and has no reference to the caller's started invocation or log target.
+    why: The audit runs on another thread and must own everything it touches; the invocation and log target borrow the caller's request, so they cannot cross that boundary.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L185-L195
+kept_bugs:
+  - what: Non-content streamed responses such as embeddings and rerank are released without any DLP scan.
+    why: Purview can only evaluate ModelResponse, TextCompletionResponse and ResponsesAPIResponse bodies, and a working LiteLLM setup relies on every other response type passing straight through.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/purview_dlp.py#L569-L573
