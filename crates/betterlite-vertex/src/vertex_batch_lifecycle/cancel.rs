@@ -60,14 +60,16 @@ pub fn cancel_target(
 
 // LiteLLM removes one terminal ":cancel" as text, and only the fallback path trims slashes off the remainder
 pub(super) fn retrieval_url(cancel_url: &str) -> String {
-    match cancel_url.strip_suffix(":cancel") {
-        Some(retrieve) => retrieve.to_owned(),
-        None => cancel_url
-            .rsplit_once(":cancel")
-            .map_or(cancel_url, |(head, _tail)| head)
-            .trim_end_matches('/')
-            .to_owned(),
-    }
+    cancel_url.strip_suffix(":cancel").map_or_else(
+        || {
+            cancel_url
+                .rsplit_once(":cancel")
+                .map_or(cancel_url, |(head, _tail)| head)
+                .trim_end_matches('/')
+                .to_owned()
+        },
+        str::to_owned,
+    )
 }
 
 pub async fn prepare_batch_cancel<Lookup>(
