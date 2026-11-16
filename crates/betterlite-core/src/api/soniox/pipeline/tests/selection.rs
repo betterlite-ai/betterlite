@@ -3,6 +3,7 @@ use serde_json::json;
 use super::support::{self, answer, call, params, pipeline_with, response, target};
 use crate::api::soniox::pipeline::client::{ClientKind, SuppliedClient};
 use crate::api::soniox::pipeline::error::PipelineError;
+use crate::api::soniox::records::auth::MISSING_KEY;
 
 fn caller_file_answers() -> Vec<support::Reply> {
     vec![
@@ -146,6 +147,33 @@ async fn an_async_call_replaces_a_supplied_sync_client() {
     assert!(supplied_effects.kinds().is_empty());
     assert_eq!(provider.calls().len(), 4);
     assert_eq!(response.text.as_deref(), Some("hello"));
+}
+
+#[tokio::test]
+async fn a_missing_api_key_returns_the_prepare_soniox_401() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let recorder = support::Recorder::new(Vec::new(), &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = params(&[("file_id", json!("caller-file"))]);
+    let mut call = call(&case_params, false);
+    call.api_key = None;
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
+        .await;
+
+    let error = outcome.expect_err("a call without an API key cannot be authorized");
+    let exception = error
+        .provider()
+        .expect("the auth failure is the Soniox 401");
+    assert_eq!(exception.status_code, 401);
+    assert_eq!(exception.message, MISSING_KEY);
+    assert!(matches!(error, PipelineError::Prepare(_)));
+    assert!(recorder.calls().is_empty());
+    assert!(effects.kinds().is_empty());
+    assert!(response.hidden_params.is_empty());
 }
 
 #[tokio::test]

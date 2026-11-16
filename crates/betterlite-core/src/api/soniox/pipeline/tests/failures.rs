@@ -431,3 +431,100 @@ async fn a_large_integer_duration_is_divided_once_before_rounding_to_seconds() {
         Some(&json!(9007199254740.994))
     );
 }
+
+#[tokio::test]
+async fn a_boolean_duration_is_refused_where_python_reads_a_float() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let mut answers = vec![
+        answer(200, r#"{"id":"file_1"}"#),
+        answer(200, r#"{"id":"tr_1"}"#),
+        answer(200, r#"{"status":"completed","audio_duration_ms":true}"#),
+        answer(200, r#"{"text":"hello"}"#),
+    ];
+    answers.push(answer(200, "{}"));
+    answers.push(answer(200, "{}"));
+    let recorder = support::Recorder::new(answers, &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = super::support::params(&[("soniox_max_polling_attempts", json!(1))]);
+    let call = call(&case_params, false);
+    let mut stream = support::NamedStream::new(AUDIO_NAME, AUDIO_CONTENT);
+    let mut file = AudioFile::Stream(&mut stream);
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(
+            &call,
+            target(Some(&mut file), &mut response, &mut logger),
+            None,
+        )
+        .await;
+
+    match outcome.expect_err("a boolean is not a milliseconds number") {
+        PipelineError::Duration { field, value } => {
+            assert_eq!(field, "audio_duration_ms");
+            assert_eq!(value, "true");
+        }
+        other => panic!("expected the duration error, got {other:?}"),
+    }
+    assert_eq!(response.text.as_deref(), Some("hello"));
+    let calls = recorder.calls();
+    assert_eq!(calls.len(), 6);
+    assert_eq!(calls[4].method, Method::DELETE);
+    assert_eq!(calls[5].method, Method::DELETE);
+}
+
+#[tokio::test]
+async fn a_bad_api_base_fails_the_create_without_a_request() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let recorder = support::Recorder::new(Vec::new(), &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = super::support::params(&[
+        ("soniox_max_polling_attempts", json!(1)),
+        ("file_id", json!("caller-file")),
+    ]);
+    let mut call = call(&case_params, false);
+    call.api_base = Some("not a url");
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
+        .await;
+
+    match outcome.expect_err("the create URL cannot be parsed") {
+        PipelineError::Url { url, .. } => {
+            assert_eq!(url, "not a url/v1/transcriptions");
+        }
+        other => panic!("expected the URL error, got {other:?}"),
+    }
+    assert_eq!(effects.kinds(), ["pre_call"]);
+    assert!(recorder.calls().is_empty());
+}
+
+#[tokio::test]
+async fn an_unsendable_header_fails_the_create_without_a_request() {
+    let effects = support::Effects::default();
+    let book = support::LogBook::default();
+    let recorder = support::Recorder::new(Vec::new(), &effects);
+    let pipeline = pipeline_with(&recorder, &recorder);
+    let case_params = super::support::params(&[
+        ("soniox_max_polling_attempts", json!(1)),
+        ("file_id", json!("caller-file")),
+    ]);
+    let mut call = call(&case_params, false);
+    call.headers
+        .insert("bad name".to_owned(), "value".to_owned());
+    let mut response = response();
+    let mut logger = support::Logger::new(&effects, &book);
+    let outcome = pipeline
+        .transcribe::<support::Recorder<'_>>(&call, target(None, &mut response, &mut logger), None)
+        .await;
+
+    assert!(matches!(
+        outcome.expect_err("the header cannot be sent"),
+        PipelineError::Header(_)
+    ));
+    assert_eq!(effects.kinds(), ["pre_call"]);
+    assert!(recorder.calls().is_empty());
+}
