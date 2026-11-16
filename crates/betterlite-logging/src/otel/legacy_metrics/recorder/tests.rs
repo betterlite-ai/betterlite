@@ -227,9 +227,13 @@ fn an_empty_hidden_params_object_is_not_an_attribute() {
     assert!(!duration_attributes(&recorded).contains_key("hidden_params"));
 }
 
-#[test]
-fn a_call_without_a_provider_has_no_system_attribute() {
-    let recorded = record(r#"{"litellm_params": {"custom_llm_provider": ""}}"#, None);
+#[rstest]
+#[case::empty("\"\"")]
+#[case::number("3")]
+#[case::null("null")]
+fn a_call_without_a_provider_has_no_system_attribute(#[case] provider: &str) {
+    let extra = format!(r#"{{"litellm_params": {{"custom_llm_provider": {provider}}}}}"#);
+    let recorded = record(&extra, None);
     assert!(!duration_attributes(&recorded).contains_key("gen_ai.system"));
 }
 
