@@ -1,8 +1,11 @@
+use std::future::{Future, ready};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use betterlite_models::catalog::{BundledCatalog, ModelCatalog};
+use betterlite_prompts::media::inline::RemoteMediaFetcher;
+use betterlite_prompts::media_fetch::error::ImageFetchError;
 use betterlite_tokenizer::count::messages;
 use betterlite_tokenizer::count::request::Message;
 use betterlite_tokenizer::count::settings::Settings as CountSettings;
@@ -81,14 +84,14 @@ impl BlockingCounter for DirectRunner {
     }
 }
 
-struct Fixture {
+pub(crate) struct Fixture {
     service: Arc<CountingService>,
     counted: TextCounted,
     max_exact_chars: NonZeroUsize,
 }
 
 impl Fixture {
-    fn texter(&self) -> Texter<'_> {
+    pub(crate) fn texter(&self) -> Texter<'_> {
         Texter {
             counter: self.service.as_ref(),
             counted: &self.counted,
@@ -97,7 +100,26 @@ impl Fixture {
     }
 }
 
-fn fixture(encoding: Encoding) -> Result<Fixture, Box<HelperError>> {
+// no oracle run may touch the network, so a remote image URL has to refuse
+pub(crate) struct RefusingFetcher;
+
+impl RemoteMediaFetcher for RefusingFetcher {
+    fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
+        ready(Err(ImageFetchError::Disabled {
+            url: url.to_owned(),
+        }))
+    }
+
+    fn convert_urls(
+        &self,
+        urls: &[String],
+    ) -> impl Future<Output = Result<Vec<String>, ImageFetchError>> {
+        let url = urls.first().cloned().unwrap_or_default();
+        ready(Err(ImageFetchError::Disabled { url }))
+    }
+}
+
+pub(crate) fn fixture(encoding: Encoding) -> Result<Fixture, Box<HelperError>> {
     let settings = CountSettings::default();
     let limits = settings
         .encode_limits()
@@ -221,7 +243,7 @@ async fn count_call(
             ImageCounting::Exact
         },
     };
-    let counted = count_token_media(&fixture.texter(), &media, &settings)
+    let counted = count_token_media(&fixture.texter(), &media, &settings, &RefusingFetcher)
         .await
         .map_err(|error| failure(error.to_string()))?;
     Ok(json!(counted.tokens))
@@ -277,7 +299,7 @@ async fn input_tokens(
         .ok_or_else(|| failure("the token count does not fit in a machine word".to_owned()))
 }
 
-fn failure(message: String) -> Box<HelperError> {
+pub(crate) fn failure(message: String) -> Box<HelperError> {
     Box::new(HelperError {
         class: "MediaError".to_owned(),
         status: None,
