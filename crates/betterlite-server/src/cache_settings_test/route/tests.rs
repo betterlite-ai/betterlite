@@ -183,6 +183,18 @@ async fn route_tests_only_redis_caches(#[case] given: &str) {
 }
 
 #[tokio::test]
+async fn route_drops_null_options_the_redis_client_does_not_read() {
+    let redis = FakeRedis::start().await;
+    let mut target = redis_target(&redis);
+    target["socket_timeout"] = Value::Null;
+    target["an_option_no_client_reads"] = Value::Null;
+    let body = support::request(target);
+    let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(text, SUCCESS_BODY);
+}
+
+#[tokio::test]
 async fn route_reports_a_construction_error() {
     let body = support::request(json!({"type": "redis"}));
     let (status, text) = support::post(support::state(None), Some(support::admin()), &body).await;
