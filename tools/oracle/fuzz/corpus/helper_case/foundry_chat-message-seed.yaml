@@ -2,6 +2,9 @@ kind: helper
 name: foundry-chat-message-seed
 call:
   foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
     requests:
       - model: mistral-large
         messages:

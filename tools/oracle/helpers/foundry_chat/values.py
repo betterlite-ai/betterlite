@@ -15,8 +15,8 @@ from .contracts import (
     RESPONSE,
     UNSUPPORTED,
     AuthCall,
+    Environment,
     Failure,
-    Headers,
     JsonObject,
     MapCall,
     ProviderCall,
@@ -26,7 +26,7 @@ from .contracts import (
 )
 
 
-def apply_environment(environment: Headers) -> None:
+def apply_environment(environment: Environment) -> None:
     for name in AZURE_NAMES:
         os.environ.pop(name, None)
     os.environ.update(environment)

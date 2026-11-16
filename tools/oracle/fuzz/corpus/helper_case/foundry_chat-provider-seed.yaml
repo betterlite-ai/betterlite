@@ -2,6 +2,7 @@ kind: helper
 name: foundry-chat-provider-seed
 call:
   foundry_chat:
+    model_cost: {}
     chat_models: [gpt-4o]
     text_models: [text-davinci-003]
     providers:

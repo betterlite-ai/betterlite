@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 JsonObject: TypeAlias = dict[str, JsonValue]
 Messages: TypeAlias = list[JsonObject]
 Headers: TypeAlias = dict[str, str]
+Environment: TypeAlias = dict[str, str]
 AZURE_NAMES: Final[tuple[str, ...]] = (
     "AZURE_AI_API_BASE",
     "AZURE_AI_API_KEY",
@@ -48,7 +49,7 @@ class ProviderCall(TypedDict):
     model: str
     api_base: str | None
     api_key: str | None
-    environment: Headers
+    environment: Environment
 
 
 class AuthCall(TypedDict):
@@ -56,7 +57,7 @@ class AuthCall(TypedDict):
     api_key: str | None
     headers: Headers
     litellm_params: JsonObject
-    environment: Headers
+    environment: Environment
 
 
 class Input(TypedDict):
@@ -73,12 +74,6 @@ class Input(TypedDict):
     providers: NotRequired[list[ProviderCall]]
     auths: NotRequired[list[AuthCall]]
     fields: NotRequired[bool]
-
-
-class UsageRecord(TypedDict):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
 
 
 class MessageRecord(TypedDict):
@@ -98,7 +93,7 @@ class ResponseRecord(TypedDict):
     created: int
     model: NotRequired[str | None]
     system_fingerprint: NotRequired[str | None]
-    usage: NotRequired[UsageRecord | None]
+    usage: NotRequired[JsonObject | None]
     choices: list[ChoiceRecord]
 
 

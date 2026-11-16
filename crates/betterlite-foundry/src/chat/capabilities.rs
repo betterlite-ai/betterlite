@@ -41,15 +41,6 @@ pub fn model_map_lookup_name(model: &str, cost_map: &dyn CostMap) -> String {
     }
 }
 
-pub(super) fn studio_config() -> OpenAiConfig {
-    OpenAiConfig {
-        family: ConfigFamily::AzureAiStudio,
-        api_key: None,
-        headers: Headers::new(),
-        settings: OpenAiSettings::default(),
-    }
-}
-
 fn gpt_reasoning_name(model: &str) -> bool {
     let empty = CatalogCapabilities {
         chat_models: BTreeSet::new(),
@@ -132,7 +123,13 @@ where
         };
         gpt_5::supported_params(&mut wrapped, model, catalog).await
     } else {
-        studio_config().supported_params(model, catalog)
+        OpenAiConfig {
+            family: ConfigFamily::AzureAiStudio,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        }
+        .supported_params(model, catalog)
     };
     if !supports_tool_choice(capabilities, model).await {
         params.retain(|param| *param != "tool_choice");
@@ -153,7 +150,13 @@ where
 {
     if !gpt_reasoning_name(request.model) {
         // the superclass copy reads the plain GPT allowlist, not this provider's filtered one
-        studio_config().map_params(
+        OpenAiConfig {
+            family: ConfigFamily::AzureAiStudio,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        }
+        .map_params(
             request.model,
             request.non_default_params,
             request.optional_params,

@@ -66,11 +66,11 @@ impl Helper for Op {
     }
 }
 
-fn insert_section<T>(
+fn insert_section<T, Report: FnMut(&T) -> Value>(
     answer: &mut Map<String, Value>,
     name: &str,
     calls: Option<&[T]>,
-    report: impl FnMut(&T) -> Value,
+    report: Report,
 ) {
     if let Some(calls) = calls {
         answer.insert(String::from(name), calls.iter().map(report).collect());

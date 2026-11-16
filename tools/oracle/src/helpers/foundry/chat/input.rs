@@ -8,11 +8,8 @@ use serde_json::Value;
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     pub(crate) model_cost: BTreeMap<String, Value>,
-    #[serde(default)]
     pub(crate) chat_models: Vec<String>,
-    #[serde(default)]
     pub(crate) text_models: Vec<String>,
     #[serde(default)]
     pub(crate) embedding_models: Vec<String>,
