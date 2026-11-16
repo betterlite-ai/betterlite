@@ -204,6 +204,13 @@ fn default_done_progression_finishes_only_with_every_done_flag() {
     assert!(is_stream_finished(&state));
     state.progress.finished = false;
     assert!(is_stream_finished(&state));
+    let mut state = state_with("{}");
+    state.progress.sent_content_part_done = true;
+    state.progress.sent_output_item_done = true;
+    assert!(
+        !is_stream_finished(&state),
+        "the text done flag is required too"
+    );
 }
 
 #[test]
