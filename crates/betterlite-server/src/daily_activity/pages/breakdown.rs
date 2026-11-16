@@ -1,0 +1,216 @@
+use betterlite_analytics::daily_metrics::{
+    BreakdownMetrics, KeyMetadata, KeyMetricWithMetadata, MetricWithMetadata, SpendMetrics,
+};
+use betterlite_db::daily_activity_contracts::KeyMetadataRow;
+use betterlite_db::daily_activity_sql::PTU_SENTINEL_API_KEY;
+use indexmap::IndexMap;
+use std::collections::BTreeMap;
+
+use super::error::PagesError;
+use super::metadata::{EntityMetadata, MetadataFields};
+use super::record::DailySpendRecord;
+
+macro_rules! accumulate {
+    ($target:ident, $field:ident, $value:expr) => {
+        $target.$field = $target.$field.checked_add($value).ok_or(PagesError::Overflow)?
+    };
+    ($target:ident, $record:ident, $($field:ident),+ $(,)?) => {
+        $(
+            accumulate!($target, $field, $record.$field);
+        )+
+    };
+}
+
+pub struct BreakdownContext<'text> {
+    pub model_metadata: &'text BTreeMap<String, MetadataFields>,
+    pub provider_metadata: &'text BTreeMap<String, MetadataFields>,
+    pub api_key_metadata: &'text BTreeMap<String, KeyMetadataRow>,
+    pub entity_id_field: Option<&'text str>,
+    pub entity_metadata: Option<&'text EntityMetadata>,
+}
+
+pub fn update_breakdown_metrics(
+    breakdown: &mut BreakdownMetrics,
+    record: &DailySpendRecord,
+    context: &BreakdownContext<'_>,
+) -> Result<(), PagesError> {
+    let is_ptu_sentinel = record.api_key == PTU_SENTINEL_API_KEY;
+    let keys = (!is_ptu_sentinel).then_some(context.api_key_metadata);
+    update_model_buckets(breakdown, record, context, is_ptu_sentinel)?;
+    update_tool_and_entity_buckets(breakdown, record, context, keys)?;
+    if !is_ptu_sentinel {
+        let provider = record.custom_llm_provider.as_deref().unwrap_or("unknown");
+        update_dimension(
+            &mut breakdown.providers,
+            Some(provider),
+            context.provider_metadata,
+            record,
+            keys,
+        )?;
+        update_key_breakdown(&mut breakdown.api_keys, context.api_key_metadata, record)?;
+    }
+    Ok(())
+}
+
+fn update_model_buckets(
+    breakdown: &mut BreakdownMetrics,
+    record: &DailySpendRecord,
+    context: &BreakdownContext<'_>,
+    is_ptu_sentinel: bool,
+) -> Result<(), PagesError> {
+    let keys = (!is_ptu_sentinel).then_some(context.api_key_metadata);
+    let model_key = if is_ptu_sentinel {
+        record.model_group.as_deref().or(record.model.as_deref())
+    } else {
+        record.model.as_deref()
+    };
+    update_dimension(
+        &mut breakdown.models,
+        model_key,
+        context.model_metadata,
+        record,
+        keys,
+    )?;
+    let group_key = record.model_group.as_deref().or(record.model.as_deref());
+    update_dimension(
+        &mut breakdown.model_groups,
+        group_key,
+        context.model_metadata,
+        record,
+        keys,
+    )
+}
+
+fn update_tool_and_entity_buckets(
+    breakdown: &mut BreakdownMetrics,
+    record: &DailySpendRecord,
+    context: &BreakdownContext<'_>,
+    entity_keys: Option<&BTreeMap<String, KeyMetadataRow>>,
+) -> Result<(), PagesError> {
+    let no_metadata = BTreeMap::new();
+    // sentinels keep their key row on these two dimensions, unlike the model, provider and key buckets
+    let tool_keys = Some(context.api_key_metadata);
+    update_dimension(
+        &mut breakdown.mcp_servers,
+        record.mcp_namespaced_tool_name.as_deref(),
+        &no_metadata,
+        record,
+        tool_keys,
+    )?;
+    update_dimension(
+        &mut breakdown.endpoints,
+        record.endpoint.as_deref(),
+        &no_metadata,
+        record,
+        tool_keys,
+    )?;
+    if context.entity_id_field.is_none() {
+        return Ok(());
+    }
+    let entity = record.entity_id.as_deref().unwrap_or("Unassigned");
+    update_dimension(
+        &mut breakdown.entities,
+        Some(entity),
+        context.entity_metadata.unwrap_or(&no_metadata),
+        record,
+        entity_keys,
+    )
+}
+
+fn update_dimension(
+    dimension: &mut IndexMap<String, MetricWithMetadata>,
+    key: Option<&str>,
+    metadata_fields: &BTreeMap<String, MetadataFields>,
+    record: &DailySpendRecord,
+    api_key_metadata: Option<&BTreeMap<String, KeyMetadataRow>>,
+) -> Result<(), PagesError> {
+    let Some(dimension_key) = key else {
+        return Ok(());
+    };
+    let bucket = dimension
+        .entry(dimension_key.to_owned())
+        .or_insert_with(|| MetricWithMetadata {
+            metrics: SpendMetrics::default(),
+            metadata: metadata_fields
+                .get(dimension_key)
+                .cloned()
+                .unwrap_or_default(),
+            api_key_breakdown: IndexMap::new(),
+        });
+    update_metrics(&mut bucket.metrics, record)?;
+    api_key_metadata.map_or(Ok(()), |metadata| {
+        update_key_breakdown(&mut bucket.api_key_breakdown, metadata, record)
+    })
+}
+
+fn update_key_breakdown(
+    keys: &mut IndexMap<String, KeyMetricWithMetadata>,
+    api_key_metadata: &BTreeMap<String, KeyMetadataRow>,
+    record: &DailySpendRecord,
+) -> Result<(), PagesError> {
+    let bucket = keys
+        .entry(record.api_key.clone())
+        .or_insert_with(|| key_metric(api_key_metadata, &record.api_key));
+    update_metrics(&mut bucket.metrics, record)
+}
+
+fn key_metric(
+    api_key_metadata: &BTreeMap<String, KeyMetadataRow>,
+    api_key: &str,
+) -> KeyMetricWithMetadata {
+    let metadata = api_key_metadata.get(api_key).map_or(
+        KeyMetadata {
+            key_alias: None,
+            team_id: None,
+            user_id: None,
+            user_email: None,
+            key_exists: Some(false),
+        },
+        |row| KeyMetadata {
+            key_alias: row.key_alias.clone(),
+            team_id: row.team_id.clone(),
+            user_id: row.user_id.clone(),
+            user_email: row.user_email.clone(),
+            key_exists: Some(row.key_exists),
+        },
+    );
+    KeyMetricWithMetadata {
+        metrics: SpendMetrics::default(),
+        metadata,
+    }
+}
+
+pub(super) fn update_metrics(
+    existing: &mut SpendMetrics,
+    record: &DailySpendRecord,
+) -> Result<(), PagesError> {
+    accumulate!(
+        existing,
+        record,
+        spend,
+        flat_cost,
+        prompt_tokens,
+        completion_tokens,
+        cache_read_input_tokens,
+        cache_creation_input_tokens,
+        compression_saved_tokens,
+        compression_savings_spend,
+        prompt_caching_savings_spend,
+        gateway_caching_savings,
+        autorouter_savings_spend,
+        api_requests,
+        successful_requests,
+        failed_requests,
+        total_response_time_ms,
+        timed_requests
+    );
+    let added_tokens = record
+        .prompt_tokens
+        .checked_add(record.completion_tokens)
+        .ok_or(PagesError::Overflow)?;
+    accumulate!(existing, total_tokens, added_tokens);
+    Ok(())
+}
+
+#[path = "tests/breakdown.rs"]
+mod tests;
