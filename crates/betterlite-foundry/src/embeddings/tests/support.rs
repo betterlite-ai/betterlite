@@ -8,6 +8,7 @@ use betterlite_openai::embedding::EmbeddingRecord;
 use betterlite_prompts::arguments::json::Object;
 use http::header::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::runtime::{Builder, Runtime};
 
 use crate::embeddings::call::{
     EmbeddingClientFactory, EmbeddingMode, FoundryEmbeddingRequest, SuppliedClient, TextEmbedding,
@@ -41,11 +42,11 @@ pub(super) fn key(value: &str) -> SecretString {
 pub(super) fn header_map(headers: &[(String, String)]) -> HeaderMap {
     let mut map = HeaderMap::new();
     for (name, value) in headers {
-        if let (Ok(name), Ok(value)) = (
+        if let (Ok(header_name), Ok(header_value)) = (
             HeaderName::from_bytes(name.as_bytes()),
             HeaderValue::from_str(value),
         ) {
-            map.append(name, value);
+            map.append(header_name, header_value);
         }
     }
     map
@@ -133,6 +134,7 @@ pub(super) struct Factory {
     pub(super) seen: Seen,
     pub(super) sync_calls: Mutex<Vec<Duration>>,
     pub(super) async_calls: Mutex<Vec<Duration>>,
+    pub(super) runtime: Runtime,
 }
 
 impl Factory {
@@ -142,6 +144,7 @@ impl Factory {
             seen: Seen::default(),
             sync_calls: Mutex::new(Vec::new()),
             async_calls: Mutex::new(Vec::new()),
+            runtime: Builder::new_current_thread().build().unwrap(),
         }
     }
 
@@ -252,21 +255,14 @@ pub(super) fn request<'call>(
     }
 }
 
-pub(super) fn reply(body: &str, headers: &[(&str, &str)]) -> EmbeddingReply {
-    let mut decoded = decode_foundry_embedding(body.as_bytes()).expect("a valid reply fixture");
-    decoded.additional_headers = projected_headers(&header_map(&pairs(headers)));
-    decoded
-}
-
 pub(super) fn run(
     request: &FoundryEmbeddingRequest<'_>,
     supplied: Option<SuppliedClient<'_, ImageClient>>,
     factory: &Factory,
     text: &Text,
 ) -> Result<FoundryEmbeddingResponse, FoundryEmbeddingError> {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .expect("a runtime")
+    factory
+        .runtime
         .block_on(embedding(request, supplied, factory, text))
 }
 
