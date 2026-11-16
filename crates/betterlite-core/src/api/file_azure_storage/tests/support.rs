@@ -197,11 +197,13 @@ impl Harness {
     pub(crate) fn new(settings: Settings, replies: &[(u16, &str)]) -> Self {
         let recorder = Recorder::new(replies);
         let clock = ManualClock::new();
+        let transport = Arc::clone(&recorder);
+        let clock_source = Arc::clone(&clock);
         let backend = AzureBlobStorageBackend::new(
             settings,
             AzureFileStorageDeps {
-                transport: Arc::clone(&recorder),
-                clock: Arc::clone(&clock),
+                transport,
+                clock: clock_source,
                 environment: Arc::new(BTreeMap::new()),
                 ids: Arc::new(FixedIds(FIXED_ID.to_owned())),
                 chain_factory: Arc::new(FixedChain),

@@ -119,15 +119,15 @@ async fn account_key_precedence() {
         .await
         .expect("upload");
     assert_eq!(url, "https://acct.blob.core.windows.net/files/a.txt");
-    let create = harness.calls().get(1).expect("the create request");
+    let calls = harness.calls();
+    let create = calls.get(1).expect("the create request");
     assert!(
         create
             .header("authorization")
             .is_some_and(|value| value.starts_with("SharedKey acct:"))
     );
     assert!(
-        harness
-            .calls()
+        calls
             .iter()
             .all(|call| call.header("authorization") != Some("Bearer tok-1"))
     );
