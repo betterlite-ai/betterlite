@@ -148,7 +148,7 @@ checks:
     run: >-
       list=$(cargo nextest list --locked -p betterlite-oracle-redact -E 'test(/::tests::/)' --message-format oneline) &&
       for name in redaction::tests::matches_pinned_redaction structured_redaction::tests::matches_pinned_masking; do grep -q "$name" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
-      cargo nextest run --locked -p betterlite-oracle-redact --no-tests=fail -E 'test(/^redaction::tests::/) | test(/^structured_redaction::tests::/)'
+      cargo nextest run --locked -p betterlite-oracle -p betterlite-oracle-redact --no-tests=fail -E 'test(/^redaction::tests::/) | test(/^structured_redaction::tests::/)'
   - id: registry-tests
     why: the oracle's registry no longer decodes or runs an operation after the redact group left the crate
     run: >-

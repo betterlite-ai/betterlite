@@ -106,7 +106,7 @@ checks:
       run: '! grep -q "fn utils_error_level_logs_the_record_and_allows_the_console" crates/betterlite-logging/src/verbose_hooks/tests.rs && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/::verbose_hooks_cases::case_[0-9]+_utils_debug_level$/)'' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/::verbose_hooks_cases::case_[0-9]+_utils_error_level$/)'' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E ''test(/^verbose_hooks::/)'''
     - id: adapter-logger-levels
       why: the oracle adapter copies the level from its input instead of reporting the logger method called, or the ERROR case is missing
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::fixture_logger_records_the_level_of_the_method_called$/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::verbose_hooks::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml)" && cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/::fixture_logger_records_the_level_of_the_method_called$/)' && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::verbose_hooks::/)'
 oracle_cases:
   - tools/oracle/cases/helpers/providers/verbose-hooks/utils-error-level.yaml
   - tools/oracle/cases/helpers/providers/verbose-hooks/main-console-fails.yaml

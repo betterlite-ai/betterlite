@@ -65,7 +65,7 @@ checks:
       run: test -f tools/oracle/helpers/generic_sso_error.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
     - id: generic-callback-corpora
       why: The new callback setting or helper operation is missing from existing parser corpora.
-      run: grep -rlq 'generic_sso_error:' tools/oracle/fuzz/corpus/helper_case/generic-sso-error-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/generic-sso-callback-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
+      run: grep -rlq 'generic_sso_error:' tools/oracle/fuzz/corpus/helper_case/generic-sso-error-* && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/generic-sso-callback-*')" && cargo nextest run --locked -p betterlite-config -p betterlite-oracle -p betterlite-oracle-server --no-tests=fail -E 'test(replays_the_config_yaml_corpus) | test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/generic-sso-error/pkce-hint-when-disabled.yaml
   - tools/oracle/cases/helpers/generic-sso-error/enabled-pkce-retains-original-error.yaml

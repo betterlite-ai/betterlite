@@ -63,7 +63,7 @@ checks:
     run: test -f tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-valid.json && test -f tools/oracle/fuzz/corpus/mock_script/routing-mock-scripts-invalid.json
       && git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/mock_script | grep
       -Fq "/routing-mock-scripts-" && test -f tools/oracle/fuzz/fuzz_targets/mock_script.rs && cargo nextest run --locked
-      -p betterlite-oracle --no-tests=fail -E 'test(replays_the_mock_script_corpus)'
+      -p betterlite-oracle-runner --no-tests=fail -E 'test(replays_the_mock_script_corpus)'
 oracle_cases: []
 deviations: []
 out_of_scope:

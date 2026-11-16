@@ -175,7 +175,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/datadog_budget_reset_decoder)"
         && test -f tools/oracle/fuzz/fuzz_targets/datadog_budget_reset_decoder.rs
         && test -n "$(ls -A tools/oracle/fuzz/corpus/datadog_budget_reset_decoder)"
-        && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_datadog_budget_reset_decoder_corpus)'
+        && cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_datadog_budget_reset_decoder_corpus)'
     - id: helper-python
       why: the oracle adapters fail strict Python checks
       run: >-
