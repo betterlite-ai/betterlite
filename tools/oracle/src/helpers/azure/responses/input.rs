@@ -10,12 +10,12 @@ use std::collections::BTreeMap;
 pub(crate) enum Input {
     BaseAndApiVersion(UrlCall),
     StripModelPrefix(Steps<TransformStep>),
-    OSeriesOptions(CapabilityCall),
+    OSeriesOptions(Box<CapabilityCall>),
     ReasoningNullFields(Steps<TransformStep>),
     WebsocketModelQuery(Steps<WebsocketStep>),
     ResourceIdBeforeQuery(Steps<ResourceStep>),
     CancelResponse(Steps<ReplyStep>),
-    AzureResponsesCapabilities(CapabilityCall),
+    AzureResponsesCapabilities(Box<CapabilityCall>),
 }
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -1,6 +1,5 @@
 use betterlite_openai::response_events::RawResponse;
 use indexmap::IndexMap;
-use serde_json::Value;
 
 use crate::responses::decode::{cancel_reply, decode_azure_response_resource};
 use crate::responses::error::ResponsesError;
@@ -17,44 +16,29 @@ where
     })
 }
 
-fn outcome(status: u16, text: &str) -> Value {
-    with_reply(status, text, |reply| match cancel_reply(reply) {
-        Ok(response) => serde_json::json!({
-            "id": response.id,
-            "created_at": response.created_at,
-            "status": response.status,
-            "model": response.model,
-        }),
-        Err(error) => {
-            serde_json::json!({"status": error.http_status(), "message": error.to_string()})
-        }
-    })
-}
-
 pub(super) fn cancel_response() {
-    let cancelled = outcome(
-        200,
-        r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled","model":"gpt-5"}"#,
-    );
+    let body = r#"{"id":"resp_1","created_at":9,"output":[],"status":"cancelled","model":"gpt-5"}"#;
+    let cancelled = with_reply(200, body, cancel_reply).unwrap();
     assert_eq!(
-        cancelled,
-        serde_json::json!({
-            "id": "resp_1",
-            "created_at": 9,
-            "status": "cancelled",
-            "model": "gpt-5"
-        })
+        (
+            cancelled.id.as_str(),
+            cancelled.created_at,
+            cancelled.status.as_deref(),
+            cancelled.model.as_deref(),
+        ),
+        ("resp_1", 9_i64, Some("cancelled"), Some("gpt-5"))
     );
     // a body that is not JSON fails as the upstream error, carrying the reply's own status
-    let unparsed = outcome(503, "still not json");
-    assert_eq!(unparsed["status"], serde_json::json!(503));
-    assert!(unparsed["message"].as_str().unwrap().contains("still not json"));
+    let unparsed = with_reply(503, "still not json", cancel_reply).unwrap_err();
+    assert_eq!(unparsed.http_status(), Some(503_u16));
+    assert!(unparsed.to_string().contains("still not json"));
     // a JSON body that is not a response record fails without an upstream status
-    let invalid = outcome(200, r#"{"id":"resp_2","created_at":5,"output":"bad"}"#);
-    assert_eq!(invalid["status"], Value::Null);
+    let invalid = r#"{"id":"resp_2","created_at":5,"output":"bad"}"#;
+    let record = with_reply(200, invalid, cancel_reply).unwrap_err();
+    assert_eq!(record.http_status(), None);
     // Azure parses a JSON array before the record check rejects it
-    let array = outcome(200, "[]");
-    assert_eq!(array["status"], Value::Null);
+    let array = with_reply(200, "[]", cancel_reply).unwrap_err();
+    assert_eq!(array.http_status(), None);
     decode_boundaries();
 }
 

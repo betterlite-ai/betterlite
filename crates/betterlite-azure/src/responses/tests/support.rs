@@ -6,7 +6,6 @@ use betterlite_config::sections::azure_credentials::DeploymentSettings;
 use betterlite_config::sections::azure_responses::Settings;
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
-use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_openai::reasoning_models::{
     DropParams, ReasoningCapabilities, catalogue_declares_default,
 };
@@ -18,6 +17,7 @@ use betterlite_openai::response_params::params::{
 };
 use betterlite_prompts::arguments::json::{Json, Object};
 use secrecy::SecretString;
+use serde::Serialize;
 use tokio::runtime::{Builder, Runtime};
 
 use crate::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -134,17 +134,14 @@ impl ResponsesCapabilities for CapabilityFixture {
     }
 }
 
-pub(super) fn fixture() -> CapabilityFixture {
+pub(super) fn fixture_with(cost: &str) -> CapabilityFixture {
     CapabilityFixture {
-        entries: serde_json::from_str(MODEL_COST).unwrap(),
+        entries: serde_json::from_str(cost).unwrap(),
     }
 }
 
-pub(super) fn catalog() -> CatalogCapabilities {
-    CatalogCapabilities {
-        chat_models: fixture().entries.keys().cloned().collect::<BTreeSet<_>>(),
-        text_models: BTreeSet::new(),
-    }
+pub(super) fn fixture() -> CapabilityFixture {
+    fixture_with(MODEL_COST)
 }
 
 pub(super) fn runtime() -> Runtime {
@@ -176,22 +173,28 @@ pub(super) fn options(model: &str, provider: ProviderId, text: &str) -> Response
 pub(super) fn mapped(
     options: &ResponsesOptions,
     drop: DropParams,
-) -> Result<serde_json::Value, ResponseParamsError> {
-    mapped_with(MODEL_COST, options, drop)
+) -> Result<ResponsesParams, ResponseParamsError> {
+    mapped_with(&mut fixture(), options, drop)
 }
 
 pub(super) fn mapped_with(
-    cost: &str,
+    capabilities: &mut CapabilityFixture,
     options: &ResponsesOptions,
     drop: DropParams,
-) -> Result<serde_json::Value, ResponseParamsError> {
-    let mut capabilities = CapabilityFixture {
-        entries: serde_json::from_str(cost).unwrap(),
-    };
+) -> Result<ResponsesParams, ResponseParamsError> {
     let mut bundled = BundledReasoningModels::default();
-    runtime()
-        .block_on(map_params(&mut capabilities, options, drop, &mut bundled))
-        .map(|mapped| serde_json::to_value(mapped).unwrap())
+    runtime().block_on(map_params(capabilities, options, drop, &mut bundled))
+}
+
+pub(super) fn json(text: &str) -> Json {
+    serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn to_json<T>(value: &T) -> Json
+where
+    T: Serialize,
+{
+    json(&serde_json::to_string(value).unwrap())
 }
 
 pub(super) fn supported() -> BTreeSet<&'static str> {

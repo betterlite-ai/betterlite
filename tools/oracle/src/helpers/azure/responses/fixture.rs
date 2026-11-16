@@ -21,15 +21,12 @@ impl MapFixture {
         }
     }
     fn field(&self, request: &CapabilityRequest<'_>, key: &str) -> Option<&Value> {
-        let entry = match request.custom_llm_provider {
-            None => {
-                let known = self.catalog.chat_models.contains(request.model)
-                    || self.catalog.text_models.contains(request.model);
-                known.then(|| self.entries.get(request.model)).flatten()
-            }
-            Some(_) => self.entries.get(request.model),
-        };
-        entry?.get(key)
+        let listed = self.catalog.chat_models.contains(request.model)
+            || self.catalog.text_models.contains(request.model);
+        if request.custom_llm_provider.is_none() && !listed {
+            return None;
+        }
+        self.entries.get(request.model)?.get(key)
     }
 }
 impl ReasoningCapabilities for MapFixture {

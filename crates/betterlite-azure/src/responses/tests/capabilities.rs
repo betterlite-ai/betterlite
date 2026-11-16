@@ -1,7 +1,8 @@
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_openai::response_params::error::ResponseParamsError;
-use serde_json::{Value, json};
+use betterlite_openai::response_params::params::ResponsesOptions;
+use betterlite_prompts::arguments::json::Json;
 
 use super::support;
 use crate::responses::capabilities::{
@@ -17,24 +18,34 @@ const GLOBAL_DROP: DropParams = DropParams {
     request: false,
 };
 
-fn azure_options(
-    model: &str,
-    params: &str,
-) -> betterlite_openai::response_params::params::ResponsesOptions {
+fn azure_options(model: &str, params: &str) -> ResponsesOptions {
     support::options(model, ProviderId::Azure, params)
+}
+
+fn mapped_json(options: &ResponsesOptions, drop: DropParams) -> Json {
+    support::to_json(&support::mapped(options, drop).unwrap())
+}
+
+fn rejects_temperature(options: &ResponsesOptions) -> bool {
+    matches!(
+        support::mapped(options, NO_DROP),
+        Err(ResponseParamsError::UnsupportedTemperature { .. })
+    )
 }
 
 pub(super) fn azure_responses_capabilities() {
     let base = supported_params();
-    assert!(!base.contains("context_management"));
-    assert_eq!(base.len() + 1, support::supported().len());
+    let removed: Vec<&str> = support::supported().difference(&base).copied().collect();
+    assert_eq!(removed, ["context_management"]);
     let o_series = o_series_supported_params();
-    assert!(!o_series.contains("temperature"));
-    assert_eq!(o_series.len() + 1, base.len());
-    mapping();
+    let narrowed: Vec<&str> = base.difference(&o_series).copied().collect();
+    assert_eq!(narrowed, ["temperature"]);
+    gated_sampling();
+    passed_sampling();
+    o_series_mapping();
 }
 
-fn mapping() {
+fn gated_sampling() {
     // the Azure config skips the OpenAI-only reasoning gate, so a provider that would reject it maps
     let openai_provider = support::options(
         "gpt-5-unknown",
@@ -42,76 +53,77 @@ fn mapping() {
         r#"{"reasoning":{"effort":"high"}}"#,
     );
     assert_eq!(
-        support::mapped(&openai_provider, NO_DROP).unwrap(),
-        json!({"reasoning": {"effort": "high"}})
+        mapped_json(&openai_provider, NO_DROP),
+        support::json(r#"{"reasoning":{"effort":"high"}}"#)
     );
     // an active effort rejects a non-default temperature
     let rejected = azure_options(
         "gpt-5",
         r#"{"temperature":0.2,"reasoning":{"effort":"high"},"top_p":0.9}"#,
     );
-    let error = support::mapped(&rejected, NO_DROP).unwrap_err();
-    assert!(matches!(
-        error,
-        ResponseParamsError::UnsupportedTemperature { .. }
-    ));
+    assert!(rejects_temperature(&rejected));
     // dropping it removes temperature, and then top_p falls to the same check
     assert_eq!(
-        support::mapped(&rejected, GLOBAL_DROP).unwrap(),
-        json!({"reasoning": {"effort": "high"}})
-    );
-    // an effort of none keeps the sampling parameters
-    let none = azure_options(
-        "gpt-5",
-        r#"{"temperature":0.2,"reasoning":{"effort":"none"}}"#,
-    );
-    assert_eq!(
-        support::mapped(&none, NO_DROP).unwrap(),
-        json!({"temperature": 0.2, "reasoning": {"effort": "none"}})
-    );
-    // the catalog's declared default effort answers when the request omits one
-    let defaulted = azure_options("gpt-5", r#"{"temperature":1,"top_p":0.5}"#);
-    assert_eq!(
-        support::mapped(&defaulted, NO_DROP).unwrap(),
-        json!({"temperature": 1, "top_p": 0.5})
+        mapped_json(&rejected, GLOBAL_DROP),
+        support::json(r#"{"reasoning":{"effort":"high"}}"#)
     );
     // an entry without none support rejects the temperature of an active effort
     let plain = azure_options(
         "gpt-5-plain",
         r#"{"temperature":0.2,"reasoning":{"effort":"high"}}"#,
     );
-    assert!(matches!(
-        support::mapped(&plain, NO_DROP).unwrap_err(),
-        ResponseParamsError::UnsupportedTemperature { .. }
-    ));
+    assert!(rejects_temperature(&plain));
+    // a label-less entry falls back on the catalogue's declared default, so the sampling stays gated
+    let unlabeled = azure_options("gpt-5-nolabel", r#"{"temperature":0.2}"#);
+    assert!(rejects_temperature(&unlabeled));
+    // and a catalogue with no declared default lets the none-support flag answer, keeping the sampling
+    let mut no_default = support::fixture_with(support::NO_DEFAULT_MODEL_COST);
+    let kept = support::mapped_with(&mut no_default, &unlabeled, NO_DROP).unwrap();
+    assert_eq!(
+        support::to_json(&kept),
+        support::json(r#"{"temperature":0.2}"#)
+    );
+}
+
+fn passed_sampling() {
+    // an effort of none keeps the sampling parameters
+    let none = azure_options(
+        "gpt-5",
+        r#"{"temperature":0.2,"reasoning":{"effort":"none"}}"#,
+    );
+    assert_eq!(
+        mapped_json(&none, NO_DROP),
+        support::json(r#"{"temperature":0.2,"reasoning":{"effort":"none"}}"#)
+    );
+    // the catalog's declared default effort answers when the request omits one
+    let defaulted = azure_options("gpt-5", r#"{"temperature":1,"top_p":0.5}"#);
+    assert_eq!(
+        mapped_json(&defaulted, NO_DROP),
+        support::json(r#"{"temperature":1,"top_p":0.5}"#)
+    );
     // a prefixed model is not the bare gpt-5 family, so its sampling passes through
     let prefixed = azure_options("azure/gpt-5", r#"{"temperature":0.2,"top_p":0.9}"#);
     assert_eq!(
-        support::mapped(&prefixed, NO_DROP).unwrap(),
-        json!({"temperature": 0.2, "top_p": 0.9})
+        mapped_json(&prefixed, NO_DROP),
+        support::json(r#"{"temperature":0.2,"top_p":0.9}"#)
     );
     // the shared minimum output-token floor still applies
     let floor = azure_options("azure/gpt-5", r#"{"max_output_tokens":4}"#);
     assert_eq!(
-        support::mapped(&floor, NO_DROP).unwrap(),
-        json!({"max_output_tokens": 16})
+        mapped_json(&floor, NO_DROP),
+        support::json(r#"{"max_output_tokens":16}"#)
     );
-    // a label-less entry falls back on the catalogue's declared default, so the sampling stays gated
-    let unlabeled = azure_options("gpt-5-nolabel", r#"{"temperature":0.2}"#);
-    assert!(matches!(
-        support::mapped(&unlabeled, NO_DROP).unwrap_err(),
-        ResponseParamsError::UnsupportedTemperature { .. }
-    ));
-    // and a catalogue with no declared default lets the none-support flag answer, keeping the sampling
-    assert_eq!(
-        support::mapped_with(support::NO_DEFAULT_MODEL_COST, &unlabeled, NO_DROP).unwrap(),
-        json!({"temperature": 0.2})
-    );
+}
+
+fn o_series_mapping() {
     // the O-series mapper copies values and only drops temperature when allowed
     let params = support::params(r#"{"temperature":0.2,"top_p":0.9}"#);
-    let kept: Value = serde_json::to_value(o_series_map_params("o3", &params, NO_DROP)).unwrap();
-    assert_eq!(kept, json!({"temperature": 0.2, "top_p": 0.9}));
-    let dropped: Value =
-        serde_json::to_value(o_series_map_params("o3", &params, GLOBAL_DROP)).unwrap();
-    assert_eq!(dropped, json!({"top_p": 0.9}));
+    assert_eq!(
+        support::to_json(&o_series_map_params("o3", &params, NO_DROP)),
+        support::json(r#"{"temperature":0.2,"top_p":0.9}"#)
+    );
+    assert_eq!(
+        support::to_json(&o_series_map_params("o3", &params, GLOBAL_DROP)),
+        support::json(r#"{"top_p":0.9}"#)
+    );
 }

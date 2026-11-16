@@ -1,16 +1,14 @@
 use betterlite_openai::response_resources::request::{
-    InputItemsOrder, ListInputItemsQuery, ResourceOperation, ResourceRequest,
+    InputItemsOrder, ListInputItemsQuery, ResourceOperation,
 };
-use serde_json::{Value, json};
 
+use super::support;
 use crate::responses::error::ResponsesError;
 use crate::responses::resources::{
     list_input_items, resource_request, url_for_response_id_in_path,
 };
 
-fn payload(request: &ResourceRequest) -> Value {
-    serde_json::to_value(&request.payload).unwrap()
-}
+const DEFAULT_ITEMS: &str = r#"{"limit": 20, "order": "desc"}"#;
 
 pub(super) fn resource_id_before_query() {
     let base = "https://res.openai.azure.com/openai/responses?api-version=2024-10-21";
@@ -37,63 +35,47 @@ pub(super) fn resource_id_before_query() {
         url_for_response_id_in_path("https://host", "", ""),
         Err(ResponsesError::ResponseId { .. })
     ));
-    // get, delete and cancel carry no data
-    for operation in [
-        ResourceOperation::Get,
-        ResourceOperation::Delete,
-        ResourceOperation::Cancel,
-    ] {
-        let request = resource_request(base, "resp_1", operation).unwrap();
-        assert!(request.payload.is_empty());
-    }
+    sent_resources(base);
+    input_items();
+    filled_input_items();
+}
+
+fn sent_resources(base: &str) {
+    // get and delete use the id URL, cancel adds /cancel, and none of them carries data
+    let get = resource_request(base, "resp_1", ResourceOperation::Get).unwrap();
+    let delete = resource_request(base, "resp_1", ResourceOperation::Delete).unwrap();
+    let cancel = resource_request(base, "resp_1", ResourceOperation::Cancel).unwrap();
+    let plain = "https://res.openai.azure.com/openai/responses/resp_1?api-version=2024-10-21";
+    assert_eq!([get.url.as_str(), delete.url.as_str()], [plain, plain]);
     assert_eq!(
-        resource_request(base, "resp_1", ResourceOperation::Cancel)
-            .unwrap()
-            .url,
+        cancel.url,
         "https://res.openai.azure.com/openai/responses/resp_1/cancel?api-version=2024-10-21"
     );
-    input_items();
+    assert!(get.payload.is_empty() && delete.payload.is_empty() && cancel.payload.is_empty());
 }
 
 fn input_items() {
-    let query = ListInputItemsQuery::default();
-    let request =
-        list_input_items("https://host/base?api-version=2024-10-21", "resp_1", &query).unwrap();
+    let defaulted = list_input_items(
+        "https://host/base?api-version=2024-10-21",
+        "resp_1",
+        &ListInputItemsQuery::default(),
+    )
+    .unwrap();
     assert_eq!(
-        request.url,
+        defaulted.url,
         "https://host/base/resp_1/input_items?api-version=2024-10-21"
     );
-    assert_eq!(payload(&request), json!({"limit": 20, "order": "desc"}));
-    let filled = ListInputItemsQuery {
-        after: Some(String::from("a")),
-        before: Some(String::from("b")),
-        include: Some(vec![
-            String::from("reasoning.encrypted_content"),
-            String::from("message"),
-        ]),
-        limit: Some(5),
-        order: None,
-    };
-    let request = list_input_items("https://host", "resp_1", &filled).unwrap();
-    assert_eq!(
-        payload(&request),
-        json!({
-            "after": "a",
-            "before": "b",
-            "include": "reasoning.encrypted_content,message",
-            "limit": 5
-        })
-    );
+    assert_eq!(defaulted.payload, support::object(DEFAULT_ITEMS));
     // an empty include list is not a query parameter
     let empty = ListInputItemsQuery {
         after: None,
         before: None,
         include: Some(Vec::new()),
-        limit: Some(20),
+        limit: Some(20_i64),
         order: Some(InputItemsOrder::Desc),
     };
-    let request = list_input_items("https://host", "resp_1", &empty).unwrap();
-    assert_eq!(payload(&request), json!({"limit": 20, "order": "desc"}));
+    let unincluded = list_input_items("https://host", "resp_1", &empty).unwrap();
+    assert_eq!(unincluded.payload, support::object(DEFAULT_ITEMS));
     // an explicit None limit and order write no query parameter at all
     let omitted = ListInputItemsQuery {
         after: None,
@@ -102,6 +84,26 @@ fn input_items() {
         limit: None,
         order: None,
     };
-    let request = list_input_items("https://host", "resp_1", &omitted).unwrap();
-    assert_eq!(payload(&request), json!({}));
+    let bare = list_input_items("https://host", "resp_1", &omitted).unwrap();
+    assert!(bare.payload.is_empty());
+}
+
+fn filled_input_items() {
+    let filled = ListInputItemsQuery {
+        after: Some(String::from("a")),
+        before: Some(String::from("b")),
+        include: Some(vec![
+            String::from("reasoning.encrypted_content"),
+            String::from("message"),
+        ]),
+        limit: Some(5_i64),
+        order: None,
+    };
+    let request = list_input_items("https://host", "resp_1", &filled).unwrap();
+    assert_eq!(
+        request.payload,
+        support::object(
+            r#"{"after": "a", "before": "b", "include": "reasoning.encrypted_content,message", "limit": 5}"#
+        )
+    );
 }

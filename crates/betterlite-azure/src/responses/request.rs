@@ -6,6 +6,7 @@ use super::error::ResponsesError;
 use super::input::azure_input;
 
 // LiteLLM's stripped model name drops these three routing prefixes and keeps "azure/" untouched
+#[must_use]
 pub fn strip_model(model: &str) -> String {
     model
         .replace("responses/", "")

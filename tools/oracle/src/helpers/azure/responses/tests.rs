@@ -5,6 +5,7 @@ use std::path::Path;
 
 use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use betterlite_oracle_runner::helpers::ORACLE_DIR;
+use serde_json::Value;
 
 #[test]
 fn helper_seeds_select_azure_responses() {
@@ -26,7 +27,7 @@ fn helper_seeds_select_azure_responses() {
             .call
             .input
             .get("function")
-            .and_then(serde_json::Value::as_str)
+            .and_then(Value::as_str)
             .unwrap();
         case.call.operation == "azure_responses"
             && [

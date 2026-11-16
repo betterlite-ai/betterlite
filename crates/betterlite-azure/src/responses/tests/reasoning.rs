@@ -1,22 +1,36 @@
 use betterlite_openai::response_input::ResponsesInput;
-use serde_json::{Value, json};
+use betterlite_prompts::arguments::json::Json;
 
 use super::support;
 use crate::responses::request::transform_request;
 
-fn transformed(items: Value) -> Vec<Value> {
-    let input: ResponsesInput = serde_json::from_value(items).unwrap();
-    let body =
+fn transformed(items: &str) -> Vec<Json> {
+    let input: ResponsesInput = serde_json::from_str(items).unwrap();
+    let mut body =
         transform_request("azure/o_series/gpt-5", &input, &support::object("{}"), None).unwrap();
-    serde_json::to_value(body).unwrap()["input"]
-        .as_array()
-        .unwrap()
-        .clone()
+    let Some(Json::List(sent)) = body.shift_remove("input") else {
+        panic!("the request input is not a list");
+    };
+    sent
+}
+
+fn list_len(item: &Json, key: &str) -> Option<usize> {
+    match item.as_object()?.get(key)? {
+        Json::List(entries) => Some(entries.len()),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => None,
+    }
+}
+
+fn summary_entries(count: u16) -> String {
+    let entries: Vec<String> = (0..count)
+        .map(|index| format!(r#"{{"type":"summary_text","text":"{index}"}}"#))
+        .collect();
+    entries.join(",")
 }
 
 pub(super) fn reasoning_null_fields() {
-    let items = transformed(json!([
-        {
+    let items = transformed(
+        r#"[{
             "type": "reasoning",
             "id": "rs_1",
             "summary": [{"type": "summary_text", "text": "a", "extra": null, "y": 1}],
@@ -27,106 +41,87 @@ pub(super) fn reasoning_null_fields() {
             "keep": {"nested": null}
         },
         {"type": "message", "role": "user", "content": "hi", "status": "completed"},
-        {"role": "user", "content": "hi", "status": "completed"},
-        {"type": "reasoning", "id": "rs_2", "reasoning_content": [{"type": "summary_text", "text": "b"}]},
-        {
-            "type": "reasoning",
-            "id": "rs_3",
-            "summary": [{"type": "summary_text", "text": "a"}],
-            "status": "incomplete"
-        },
-        {
-            "type": "reasoning",
-            "id": "rs_4",
-            "summary": [{"type": "summary_text", "text": 5}],
-            "status": "completed",
-            "other": null
-        },
-        {"type": "reasoning", "id": "rs_5", "reasoning_content": "plain text", "status": "completed", "content": null},
-        {"type": "reasoning", "id": "rs_6", "summary": [], "status": "bogus"}
-    ]));
+        {"role": "user", "content": "hi", "status": "completed"}]"#,
+    );
     // a validated item drops its status even when the source carried one, and dumps its nulls
+    let validated = r#"{
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [{"type": "summary_text", "text": "a", "y": 1}],
+        "content": [{"type": "reasoning_text", "text": "t"}],
+        "keep": {"nested": null}
+    }"#;
     assert_eq!(
-        items[0],
-        json!({
-            "type": "reasoning",
-            "id": "rs_1",
-            "summary": [{"type": "summary_text", "text": "a", "y": 1}],
-            "content": [{"type": "reasoning_text", "text": "t"}],
-            "keep": {"nested": null}
-        })
+        items,
+        [
+            support::json(validated),
+            // a message item loses every status field, a plain item keeps its own
+            support::json(r#"{"type": "message", "role": "user", "content": "hi"}"#),
+            support::json(r#"{"role": "user", "content": "hi", "status": "completed"}"#),
+        ]
     );
-    // a message item loses every status field, a plain item keeps its own
-    assert_eq!(
-        items[1],
-        json!({"type": "message", "role": "user", "content": "hi"})
-    );
-    assert_eq!(
-        items[2],
-        json!({"role": "user", "content": "hi", "status": "completed"})
-    );
-    // an absent summary is synthesized from the reasoning content list
-    assert_eq!(
-        items[3],
-        json!({
-            "type": "reasoning",
-            "id": "rs_2",
-            "summary": [{"type": "summary_text", "text": "b"}],
-            "reasoning_content": [{"type": "summary_text", "text": "b"}]
-        })
-    );
-    // validation removes any status, whichever literal it held
-    assert_eq!(
-        items[4],
-        json!({
-            "type": "reasoning",
-            "id": "rs_3",
-            "summary": [{"type": "summary_text", "text": "a"}]
-        })
-    );
-    // and keeps unrelated null fields, dropping only null status/content/encrypted_content
-    assert_eq!(
-        items[5],
-        json!({
-            "type": "reasoning",
-            "id": "rs_4",
-            "summary": [{"type": "summary_text", "text": 5}],
-            "status": "completed",
-            "other": null
-        })
-    );
-    // text reasoning content cannot become a summary, so the source item survives
-    assert_eq!(
-        items[6],
-        json!({"type": "reasoning", "id": "rs_5", "reasoning_content": "plain text", "status": "completed"})
-    );
-    assert_eq!(
-        items[7],
-        json!({"type": "reasoning", "id": "rs_6", "summary": [], "status": "bogus"})
-    );
+    synthesized_summary();
+    failed_validation();
     long_reasoning_content();
 }
 
+fn synthesized_summary() {
+    let items = transformed(
+        r#"[
+        {"type": "reasoning", "id": "rs_2", "reasoning_content": [{"type": "summary_text", "text": "b"}]},
+        {"type": "reasoning", "id": "rs_3", "summary": [{"type": "summary_text", "text": "a"}], "status": "incomplete"}
+        ]"#,
+    );
+    // an absent summary is synthesized from the reasoning content list
+    let synthesized = r#"{
+        "type": "reasoning",
+        "id": "rs_2",
+        "summary": [{"type": "summary_text", "text": "b"}],
+        "reasoning_content": [{"type": "summary_text", "text": "b"}]
+    }"#;
+    // validation removes any status, whichever literal it held
+    let validated = r#"{"type": "reasoning", "id": "rs_3", "summary": [{"type": "summary_text", "text": "a"}]}"#;
+    assert_eq!(
+        items,
+        [support::json(synthesized), support::json(validated)]
+    );
+}
+
+fn failed_validation() {
+    let items = transformed(
+        r#"[
+        {"type": "reasoning", "id": "rs_4", "summary": [{"type": "summary_text", "text": 5}], "status": "completed", "other": null},
+        {"type": "reasoning", "id": "rs_5", "reasoning_content": "plain text", "status": "completed", "content": null},
+        {"type": "reasoning", "id": "rs_6", "summary": [], "status": "bogus"}
+        ]"#,
+    );
+    // a failed item keeps unrelated null fields, dropping only null status/content/encrypted_content
+    let kept = r#"{"type": "reasoning", "id": "rs_4", "summary": [{"type": "summary_text", "text": 5}], "status": "completed", "other": null}"#;
+    // text reasoning content cannot become a summary, so the source item survives
+    let plain = r#"{"type": "reasoning", "id": "rs_5", "reasoning_content": "plain text", "status": "completed"}"#;
+    let bogus = r#"{"type": "reasoning", "id": "rs_6", "summary": [], "status": "bogus"}"#;
+    assert_eq!(
+        items,
+        [
+            support::json(kept),
+            support::json(plain),
+            support::json(bogus),
+        ]
+    );
+}
+
 fn long_reasoning_content() {
-    let at_limit: Vec<Value> = (0..100)
-        .map(|index| json!({"type": "summary_text", "text": index.to_string()}))
-        .collect();
-    let over_limit: Vec<Value> = (0..101)
-        .map(|index| json!({"type": "summary_text", "text": index.to_string()}))
-        .collect();
-    let items = transformed(json!([
-        {"type": "reasoning", "id": "rs_100", "reasoning_content": at_limit},
-        {"type": "reasoning", "id": "rs_101", "reasoning_content": over_limit}
-    ]));
+    let at_limit = summary_entries(100);
+    let over_limit = summary_entries(101);
+    let items = transformed(&format!(
+        r#"[
+        {{"type": "reasoning", "id": "rs_100", "reasoning_content": [{at_limit}]}},
+        {{"type": "reasoning", "id": "rs_101", "reasoning_content": [{over_limit}]}}
+        ]"#
+    ));
     // exactly one hundred entries still synthesize a summary
-    assert_eq!(
-        items[0]["summary"].as_array().map(Vec::len),
-        Some(100_usize)
-    );
+    assert_eq!(list_len(&items[0], "summary"), Some(100_usize));
     // one more entry makes LiteLLM's slice-plus-ellipsis raise, so the item is kept as it arrived
-    assert_eq!(items[1].get("summary"), None);
-    assert_eq!(
-        items[1]["reasoning_content"].as_array().map(Vec::len),
-        Some(101_usize)
-    );
+    assert_eq!(list_len(&items[1], "summary"), None);
+    assert_eq!(list_len(&items[1], "reasoning_content"), Some(101_usize));
 }
