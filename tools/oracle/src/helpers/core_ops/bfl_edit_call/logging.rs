@@ -38,7 +38,7 @@ pub(super) fn logging_state() -> Result<(Redactor, LoggingState), Box<HelperErro
         },
         &redactor,
         || String::from("generated"),
-        Duration::default(),
+        Duration::default,
     )
     .map_err(|error| failure(&error))?;
     Ok((redactor, state))

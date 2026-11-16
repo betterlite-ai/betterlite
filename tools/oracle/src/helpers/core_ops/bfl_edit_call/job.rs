@@ -73,6 +73,7 @@ async fn execute(
         aimage_edit: false,
         max_depth,
         configured_key: configured_key.as_ref(),
+        configured_base: &job.configured.api_base,
         now_seconds: 0,
     };
     let prepared = prepare_call(&mut call, log)?;

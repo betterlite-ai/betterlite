@@ -208,8 +208,12 @@ class ImageEditHandler(Protocol):
     ) -> ImageResponse | Awaitable[ImageResponse]: ...
 
 
-def call(job: Job, logging: RecordingLogging, client: HTTPHandler) -> ImageResponse:
-    handler: ImageEditHandler = HANDLER()
+def call(
+    handler: ImageEditHandler,
+    job: Job,
+    logging: RecordingLogging,
+    client: HTTPHandler,
+) -> ImageResponse:
     timeout = job["timeout_millis"]
     pending = handler.image_edit(
         job["model"],
@@ -237,7 +241,7 @@ def projection(response: ImageResponse) -> dict[str, JsonValue]:
 
 def outcome(job: Job, logging: RecordingLogging, client: HTTPHandler) -> JsonValue:
     try:
-        return projection(call(job, logging, client))
+        return projection(call(HANDLER(), job, logging, client))
     except ERROR as error:
         failure: dict[str, JsonValue] = {"ok": False, "status": error.status_code}
         return failure
