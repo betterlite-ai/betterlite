@@ -163,7 +163,12 @@ fn failure_response(failure: &GuardrailFailure) -> Response {
     let status = failure_status(failure);
     let message = match failure {
         GuardrailFailure::Http { detail, .. } => detail.clone(),
-        _ => failure.to_string(),
+        GuardrailFailure::GuardrailRaised { .. }
+        | GuardrailFailure::BlockedPii { .. }
+        | GuardrailFailure::HttpObject { .. }
+        | GuardrailFailure::ModifyResponse(_)
+        | GuardrailFailure::SensitiveDataRoute(_)
+        | GuardrailFailure::Other(_) => failure.to_string(),
     };
     proxy_error(status, &message, INTERNAL_TYPE, None, &status.to_string())
 }
