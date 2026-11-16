@@ -262,7 +262,7 @@ async fn index_url_uses_the_request_authority() {
 #[case::separator_runs("a///b  c", "a-b-c")]
 #[case::edges("--Hello--", "hello")]
 #[case::digits("V2 Beta", "v2-beta")]
-#[case::non_ascii("Ünïcode", "n-code")]
+#[case::non_ascii("\u{dc}n\u{ef}code", "n-code")]
 #[case::empty_slug("???", "skill-1")]
 #[tokio::test]
 async fn name_slugifies_the_declared_name(#[case] declared: &str, #[case] expected: &str) {

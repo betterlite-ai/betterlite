@@ -239,6 +239,13 @@ impl ScriptedRepository {
         Ok(state.rows.clone())
     }
 
+    fn found_row(&self, skill_id: &str) -> Result<Option<SkillTable>, TableError> {
+        let rows = self.record_read(Call::FindUnique(skill_id.to_owned()))?;
+        Ok(rows
+            .into_iter()
+            .find(|existing| existing.skill_id == skill_id))
+    }
+
     pub(super) fn replace_row(&self, replacement: SkillTable) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         let found = state
@@ -304,13 +311,7 @@ impl SkillRepository for ScriptedRepository {
         &self,
         skill_id: &str,
     ) -> impl Future<Output = Result<Option<SkillTable>, TableError>> + Send {
-        let skill_id = skill_id.to_owned();
-        async move {
-            let rows = self.record_read(Call::FindUnique(skill_id.clone()))?;
-            Ok(rows
-                .into_iter()
-                .find(|existing| existing.skill_id == skill_id))
-        }
+        ready(self.found_row(skill_id))
     }
 
     fn find_many(
@@ -318,7 +319,7 @@ impl SkillRepository for ScriptedRepository {
         page: SkillPage,
         created_by: Option<Vec<String>>,
     ) -> impl Future<Output = Result<Vec<SkillTable>, TableError>> + Send {
-        async move { self.record_read(Call::FindMany { page, created_by }) }
+        ready(self.record_read(Call::FindMany { page, created_by }))
     }
 
     fn delete(&self, _skill_id: &str) -> impl Future<Output = Result<(), TableError>> + Send {
