@@ -1,0 +1,13 @@
+kind: helper
+name: rate-limit-agent-legacy-id
+call:
+  b3017:
+    agent_lookup:
+      config_agents:
+        - agent_name: alpha
+          agent_card_params: {model: gpt-4o}
+          litellm_params: {max_budget_per_session: 1}
+      registered_agents: []
+      lookup_id: d78dd198aac8ed658aa6c1b936dfaea0e5dd6599a8690c527fa09d1598562978
+env: {}
+compare: {ignore: []}

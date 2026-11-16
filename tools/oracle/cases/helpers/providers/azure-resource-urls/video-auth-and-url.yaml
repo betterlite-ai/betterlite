@@ -1,0 +1,39 @@
+kind: helper
+name: video-auth-and-url
+call:
+  azure_resource_urls:
+    video_auth_and_url:
+      urls:
+        - {api_base: "https://r.example", module: {}, environment: {}}
+        - {api_base: "https://r.example", api_version: "2025-01-01", module: {}, environment: {}}
+        - {api_base: "https://r.example", api_version: "v1", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/v1/videos?api-version=2024-01-01", api_version: "2025-01-01", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/v1/videos", api_version: "preview", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/responses", module: {}, environment: {}}
+        - {api_base: "https://r.example/openai/responses?api-version=latest", api_version: "2024-01-01", module: {}, environment: {}}
+        - {api_version: "2025-01-01", module: {api_base: "https://m.example"}, environment: {}}
+        - {api_version: "2025-01-01", module: {}, environment: {AZURE_API_BASE: https://env.example}}
+      auth:
+        - {resource: container, headers: {}, api_key: "k1", module: {}, environment: {}}
+        - {resource: container, headers: {API-Key: old}, api_key: "k1", module: {}, environment: {}}
+        - {resource: container, headers: {api-key: keep}, api_key: "k1", module: {}, environment: {}}
+        - {resource: container, headers: {}, api_key: "", module: {api_key: module-key}, environment: {}}
+        - {resource: container, headers: {}, api_key: "k1", module: {api_key: module-key}, environment: {}}
+        - {resource: container, headers: {}, module: {azure_key: azure-module}, environment: {}}
+        - {resource: container, headers: {}, module: {}, environment: {AZURE_AD_TOKEN: env-token}}
+        - {resource: container, headers: {}, api_key: "k1", params: {api_key: own, azure_ad_token: ignored}, module: {}, environment: {}}
+        - {resource: container, headers: {}, params: {azure_ad_token: tok}, module: {}, environment: {}}
+        - {resource: video, headers: {}, api_key: "pos", module: {}, environment: {}}
+        - {resource: video, headers: {}, api_key: "pos", params: {api_key: own}, module: {}, environment: {}}
+        - {resource: video, headers: {}, api_key: "pos", params: {api_key: ""}, module: {}, environment: {}}
+        - {resource: video, headers: {}, api_key: "pos", params: {azure_ad_token: tok}, module: {}, environment: {}}
+        - {resource: video, headers: {}, api_key: "", params: {azure_ad_token: tok}, module: {}, environment: {}}
+        - {resource: video, headers: {}, params: {azure_ad_token: tok}, module: {api_key: module-key}, environment: {}}
+        - {resource: video, headers: {}, api_key: "pos", module: {}, environment: {AZURE_API_KEY: env-key}}
+        - {resource: video, headers: {}, module: {}, environment: {AZURE_API_KEY: env-key, AZURE_OPENAI_API_KEY: env-openai-key}}
+        - {resource: vector_store, headers: {}, params: {api_key: own}, module: {api_key: module-key}, environment: {}}
+        - {resource: vector_store, headers: {}, module: {api_key: module-key, azure_key: azure-module}, environment: {}}
+        - {resource: vector_store, headers: {}, params: {azure_ad_token: tok}, module: {}, environment: {}}
+        - {resource: vector_store, headers: {}, module: {}, environment: {}}
+env: {}
+compare: {ignore: []}

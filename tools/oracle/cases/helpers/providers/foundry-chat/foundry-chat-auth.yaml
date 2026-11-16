@@ -1,0 +1,22 @@
+kind: helper
+name: foundry-chat-auth
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: []
+    text_models: []
+    auths:
+      - {api_base: "https://resource.services.ai.azure.com", api_key: explicit-key, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: "https://resource.openai.azure.com", api_key: explicit-key, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: explicit-key, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: null, api_key: explicit-key, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {}, litellm_params: {api_key: params-key}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {}, litellm_params: {}, environment: {AZURE_OPENAI_API_KEY: configured-key}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {}, litellm_params: {}, environment: {AZURE_API_KEY: azure-key}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {api-key: preset-key, Content-Type: text/plain}, litellm_params: {}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: "", headers: {}, litellm_params: {api_key: params-key}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: null, headers: {api-key: preset-key}, litellm_params: {api_key: params-key}, environment: {}}
+      - {api_base: "https://studio.example.test", api_key: explicit-key, headers: {api-key: preset-key}, litellm_params: {}, environment: {}}
+env: {}
+compare: {ignore: []}

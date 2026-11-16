@@ -1,0 +1,14 @@
+kind: helper
+name: watsonx-chat-provider-info-without-environment
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps: []
+    infos:
+      - {api_base: null, api_key: null}
+      - {api_base: https://explicit, api_key: null}
+      - {api_base: null, api_key: explicit-key}
+    urls: []
+    plans: []

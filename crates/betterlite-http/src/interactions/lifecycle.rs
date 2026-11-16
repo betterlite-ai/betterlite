@@ -162,18 +162,26 @@ pub(crate) fn check_status(
     body: Vec<u8>,
 ) -> Result<UpstreamResponse, RequestFailure> {
     if !(200..=299).contains(&status_code) {
-        let message = body_text(&body);
-        return Err(RequestFailure::Status {
-            status_code,
-            headers,
-            body: message,
-        });
+        return Err(status_failure(status_code, headers, &body));
     }
     Ok(UpstreamResponse {
         status_code,
         headers,
         body,
     })
+}
+
+// a status failure names the error even when the body could not be read, which a failing stream leaves empty
+pub(crate) fn status_failure(
+    status_code: u16,
+    headers: ResponseHeaders,
+    body: &[u8],
+) -> RequestFailure {
+    RequestFailure::Status {
+        status_code,
+        headers,
+        body: body_text(body),
+    }
 }
 
 // httpx's response.text: UTF-8 with errors="replace", so each invalid sequence reads as one U+FFFD

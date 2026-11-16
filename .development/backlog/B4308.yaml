@@ -1,14 +1,14 @@
 id: B4308
 milestone: M8 platform
 title: Test cache connections with target-bound credentials
-status: todo
+status: done
 depends_on: [B003, B726, B1600, B4299, B4306, B4326]
 file: tasks/B4308-cache-connection-test.yaml
 covers:
   - "litellm/proxy/management_endpoints/cache_settings_endpoints.py"
 parent: B125
 split_from: B125
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2090
