@@ -7,7 +7,8 @@ use crate::openai_media_dispatch::call::{ImageEditCall, OpenAiMediaOperation};
 use crate::openai_media_dispatch::error::OpenAiMediaError;
 use crate::openai_media_dispatch::execute::dispatch;
 use crate::openai_media_dispatch::{
-    MediaMethod, MediaPartBody, MediaPayload, OpenAiMediaRequest, OpenAiMediaResult,
+    MediaMethod, MediaPartBody, MediaPayload, OpenAiMediaPrepared, OpenAiMediaRequest,
+    OpenAiMediaResult,
 };
 use crate::operation::{OperationRequest, OperationResult};
 
@@ -82,6 +83,10 @@ async fn gpt_images() {
     assert_eq!(prepared.method, MediaMethod::Post);
     assert_eq!(prepared.url, "https://images.test/v1/images/edits");
     assert!(prepared.multipart);
+    gpt_form(&prepared);
+}
+
+fn gpt_form(prepared: &OpenAiMediaPrepared) {
     let MediaPayload::ImageData(data) = &prepared.body else {
         panic!("the edit sends its form data");
     };

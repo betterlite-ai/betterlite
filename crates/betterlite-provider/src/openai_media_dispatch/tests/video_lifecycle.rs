@@ -77,12 +77,7 @@ async fn list() {
     assert!(!outcome.request.multipart);
     assert_eq!(
         outcome.request.query,
-        [
-            (String::from("after"), String::from("vid-1")),
-            (String::from("limit"), String::from("2")),
-            (String::from("order"), String::from("desc")),
-            (String::from("user"), String::from("u1")),
-        ]
+        video_options(r#"{"after":"vid-1","limit":"2","order":"desc","user":"u1"}"#)
     );
     let VideoReplyKind::List(list) = &outcome.reply else {
         panic!("the list decodes a list");

@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_openai::speech::client::SpeechConnection;
 use betterlite_openai::speech::error::SpeechError;
 use betterlite_openai::speech::request::{SpeechFormat, SpeechOptions};
@@ -70,6 +71,17 @@ async fn binary_reply() {
         panic!("the speech reply stays binary");
     };
     let sent = fixture.only_request();
+    speech_request(&sent);
+    let status = response.status;
+    let bytes = response
+        .content(1024)
+        .await
+        .expect("the speech bytes are read");
+    assert_eq!(status, 200);
+    assert_eq!(bytes, SPEECH_BYTES.to_vec());
+}
+
+fn speech_request(sent: &OutboundRequest) {
     assert_eq!(sent.method, Method::POST);
     assert_eq!(sent.url.as_str(), "https://speech.test/v1/audio/speech");
     assert_eq!(
@@ -91,18 +103,11 @@ async fn binary_reply() {
         Some("keep")
     );
     assert_eq!(
-        json_body(&sent),
+        json_body(sent),
         options(
             r#"{"input":"hello there","model":"tts-1","voice":"alloy","response_format":"wav","speed":1.5,"instructions":"calm"}"#
         )
     );
-    let status = response.status;
-    let bytes = response
-        .content(1024)
-        .await
-        .expect("the speech bytes are read");
-    assert_eq!(status, 200);
-    assert_eq!(bytes, SPEECH_BYTES.to_vec());
 }
 
 async fn upstream_failure() {
