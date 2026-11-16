@@ -226,7 +226,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_completion*")"
       && grep -lq 'azure_completion' tools/oracle/fuzz/corpus/helper_case/azure_completion* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_completion$/)' && cargo
+      --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_completion$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-azure-text-auth
     why: validate_environment starts with content-type=application/json; non-None api_key adds api-key even when

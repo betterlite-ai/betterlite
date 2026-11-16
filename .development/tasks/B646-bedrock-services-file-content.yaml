@@ -130,7 +130,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content*")"
       && grep -lq 'bedrock_services_file_content' tools/oracle/fuzz/corpus/helper_case/bedrock_services_file_content*
-      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_file_content$/)'
+      && cargo nextest run --locked -p betterlite-oracle-bedrock --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_services_file_content$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-raw-binary-reply
     why: For raw_response.status_code<400, return B004 HttpxBinaryResponseContent wrapping the original response,

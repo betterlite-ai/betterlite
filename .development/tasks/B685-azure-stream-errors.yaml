@@ -202,7 +202,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_stream_errors*")"
       && grep -lq 'azure_stream_errors' tools/oracle/fuzz/corpus/helper_case/azure_stream_errors* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_stream_errors$/)'
+      run --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_stream_errors$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: parser-corpus
     why: The named outside-byte production decoder lacks its target, new seeds or passing replay.

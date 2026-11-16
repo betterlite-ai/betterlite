@@ -167,7 +167,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/model_metadata_projection*")"
       && grep -lq 'model_metadata_projection' tools/oracle/fuzz/corpus/helper_case/model_metadata_projection* &&
-      cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_model_metadata_projection$/)'
+      cargo nextest run --locked -p betterlite-oracle-models --no-tests=fail -E 'test(/::helper_seeds_select_model_metadata_projection$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-metadata-defaults
     why: Set key to the selected catalog key. Missing or None input_cost_per_token/output_cost_per_token each become

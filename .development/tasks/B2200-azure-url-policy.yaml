@@ -38,7 +38,7 @@ checks:
   - id: helper-case-corpus
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_urls*")"
       && grep -lq 'azure_urls' tools/oracle/fuzz/corpus/helper_case/azure_urls* && cargo nextest run --locked -p
-      betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_azure_urls$/)' && cargo nextest run --locked
+      betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_urls$/)' && cargo nextest run --locked
       -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
   - id: config-azure-api-base
