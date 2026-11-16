@@ -9,7 +9,7 @@ pub struct MessageRecord {
     pub content: Option<Content>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageRole {
     System,

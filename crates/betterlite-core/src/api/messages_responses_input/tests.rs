@@ -37,7 +37,7 @@ fn translated(messages: &str) -> Json {
 )]
 #[case::base64_empty_data_dropped(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "base64", "data": ""}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::base64_empty_media_and_title_default(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "base64", "media_type": "", "data": "QQ=="}, "title": ""}]}]"#,
@@ -49,15 +49,15 @@ fn translated(messages: &str) -> Json {
 )]
 #[case::url_empty_dropped(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "url", "url": ""}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::missing_source_dropped(
     r#"[{"role": "user", "content": [{"type": "document", "title": "x.pdf"}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::unknown_source_dropped(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "file", "file_id": "file-1"}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::marker_carried(
     r#"[{"role": "user", "content": [{"type": "document", "source": {"type": "base64", "data": "QUJD"}, "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#,
@@ -102,7 +102,7 @@ fn document_file_data(#[case] messages: &str, #[case] expected: &str) {
 )]
 #[case::base64_empty_data_dropped(
     r#"[{"role": "user", "content": [{"type": "image", "source": {"type": "base64", "data": ""}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::url_with_marker(
     r#"[{"role": "user", "content": [{"type": "image", "source": {"type": "url", "url": "https://example.com/i.png"}, "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#,
@@ -110,12 +110,12 @@ fn document_file_data(#[case] messages: &str, #[case] expected: &str) {
 )]
 #[case::url_empty_dropped(
     r#"[{"role": "user", "content": [{"type": "image", "source": {"type": "url", "url": ""}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
-#[case::missing_source_dropped(r#"[{"role": "user", "content": [{"type": "image"}]}]"#, r#"[]"#)]
+#[case::missing_source_dropped(r#"[{"role": "user", "content": [{"type": "image"}]}]"#, "[]")]
 #[case::unknown_source_dropped(
     r#"[{"role": "user", "content": [{"type": "image", "source": {"type": "file", "file_id": "file-1"}}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::text_before_image(
     r#"[{"role": "user", "content": [{"type": "text", "text": "look"}, {"type": "image", "source": {"type": "url", "url": "https://example.com/i.png"}}]}]"#,
@@ -205,7 +205,7 @@ fn tool_result_output(#[case] messages: &str, #[case] expected: &str) {
 )]
 #[case::redacted_plain_dropped(
     r#"[{"role": "assistant", "content": [{"type": "redacted_thinking", "data": "opaque"}]}]"#,
-    r#"[]"#
+    "[]"
 )]
 #[case::mixed_encrypted_run(
     r#"[{"role": "assistant", "content": [{"type": "thinking", "thinking": "a"}, {"type": "redacted_thinking", "data": "litellm_encrypted_reasoning:E"}, {"type": "thinking", "thinking": "b"}]}]"#,
@@ -244,7 +244,7 @@ fn thinking_summary_group(#[case] messages: &str, #[case] expected: &str) {
     r#"[{"role": "system", "content": "be brief"}]"#,
     r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "be brief"}]}]"#
 )]
-#[case::empty_string_content(r#"[{"role": "system", "content": ""}]"#, r#"[]"#)]
+#[case::empty_string_content(r#"[{"role": "system", "content": ""}]"#, "[]")]
 #[case::text_blocks_with_marker(
     r#"[{"role": "system", "content": [{"type": "text", "text": "a"}, {"type": "text", "text": "b", "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#,
     r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "a"}, {"type": "input_text", "text": "b", "prompt_cache_breakpoint": {"mode": "explicit"}}]}]"#
@@ -255,14 +255,14 @@ fn thinking_summary_group(#[case] messages: &str, #[case] expected: &str) {
 )]
 #[case::empty_text_blocks_dropped(
     r#"[{"role": "system", "content": [{"type": "text", "text": ""}, {"type": "text"}]}]"#,
-    r#"[]"#
+    "[]"
 )]
-#[case::missing_content(r#"[{"role": "system"}]"#, r#"[]"#)]
+#[case::missing_content(r#"[{"role": "system"}]"#, "[]")]
 #[case::interleaved_system_turns(
     r#"[{"role": "system", "content": "a"}, {"role": "user", "content": "q"}, {"role": "system", "content": "b"}]"#,
     r#"[{"type": "message", "role": "system", "content": [{"type": "input_text", "text": "a"}]}, {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "q"}]}, {"type": "message", "role": "system", "content": [{"type": "input_text", "text": "b"}]}]"#
 )]
-#[case::no_messages(r#"[]"#, r#"[]"#)]
+#[case::no_messages("[]", "[]")]
 fn midturn_system_responses(#[case] messages: &str, #[case] expected: &str) {
     assert_eq!(translated(messages), json(expected));
 }
@@ -303,14 +303,14 @@ fn usage_translation(#[case] source: &str, #[case] expected: &str) {
     None,
     r#"{"type": "thinking", "thinking": "a", "signature": null}"#
 )]
-#[case::no_text_no_encryption(r#"[{"text": ""}]"#, None, r#"null"#)]
+#[case::no_text_no_encryption(r#"[{"text": ""}]"#, None, "null")]
 #[case::summary_with_encrypted_content(
     r#"[{"text": "a"}]"#,
     Some("ENC"),
     r#"{"type": "thinking", "thinking": "a", "signature": "litellm_encrypted_reasoning:ENC"}"#
 )]
 #[case::encrypted_without_summary(
-    r#"[]"#,
+    "[]",
     Some("ENC"),
     r#"{"type": "redacted_thinking", "data": "litellm_encrypted_reasoning:ENC"}"#
 )]
@@ -319,7 +319,7 @@ fn usage_translation(#[case] source: &str, #[case] expected: &str) {
     Some(""),
     r#"{"type": "thinking", "thinking": "a", "signature": null}"#
 )]
-#[case::nothing_to_report(r#"[]"#, None, r#"null"#)]
+#[case::nothing_to_report("[]", None, "null")]
 fn reasoning_item_thinking_block(
     #[case] summary: &str,
     #[case] encrypted_content: Option<&str>,

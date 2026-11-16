@@ -21,16 +21,18 @@ fn text_parts(text: &str) -> Vec<MessagePart> {
 
 // Only a non-empty text block reads as mid-turn system content; every other block shape is dropped.
 fn block_parts(blocks: &[Block]) -> Vec<MessagePart> {
-    blocks
-        .iter()
-        .filter_map(|block| {
-            let Block::Text(text) = block else {
-                return None;
-            };
-            (!text.text.is_empty()).then(|| MessagePart::Text {
-                text: text.text.clone(),
-                prompt_cache_breakpoint: text.prompt_cache_breakpoint,
-            })
-        })
-        .collect()
+    let mut parts = Vec::new();
+    for block in blocks {
+        let Block::Text(text) = block else {
+            continue;
+        };
+        if text.text.is_empty() {
+            continue;
+        }
+        parts.push(MessagePart::Text {
+            text: text.text.clone(),
+            prompt_cache_breakpoint: text.prompt_cache_breakpoint,
+        });
+    }
+    parts
 }
