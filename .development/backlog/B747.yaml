@@ -1,7 +1,7 @@
 id: B747
 milestone: M4 keys, spend and management
 title: Model allowlist patterns and alias resolution
-status: todo
+status: done
 depends_on: [B001, B002, B003, B171, B302, B730, B732, B856, B860]
 file: tasks/B747-auth-model-patterns.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/auth/model_access_denied.py"
 parent: B052
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1923

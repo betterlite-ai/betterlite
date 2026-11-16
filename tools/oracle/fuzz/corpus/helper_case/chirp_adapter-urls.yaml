@@ -1,0 +1,12 @@
+kind: helper
+name: chirp-adapter-urls-seed
+call:
+  chirp_adapter:
+    function: urls
+    project: oracle-project
+    location: eu
+    cases:
+      - {model: chirp_2, api_base: null}
+      - {model: chirp_2, api_base: 'https://seed.example/v1'}
+env: {}
+compare: {ignore: []}

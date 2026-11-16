@@ -312,7 +312,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_provider*")"
       && grep -lq 'bedrock_provider' tools/oracle/fuzz/corpus/helper_case/bedrock_provider* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_provider$/)' && cargo
+      --locked -p betterlite-oracle-provider --no-tests=fail -E 'test(/::helper_seeds_select_bedrock_provider$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: unsupported-operation
     why: The unsupported operation invariant has no passing production test.
