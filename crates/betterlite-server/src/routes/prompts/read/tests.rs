@@ -54,6 +54,19 @@ async fn oneshot_list_metadata_allowlist_accepts_the_base_or_versioned_id(#[case
 }
 
 #[rstest]
+#[case::base_id("alpha")]
+#[case::versioned_id("alpha.v2")]
+#[tokio::test]
+async fn oneshot_list_metadata_allowlist_reads_a_versioned_only_prompt(#[case] allowed: &str) {
+    let prompts = registry(vec![config_prompt("alpha.v2", "development")]);
+    let key = key_context(&json!({"metadata": {"prompts": [allowed]}}).to_string());
+    let (status, body) = call(state(prompts, None), "/prompts/list", key).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["prompts"].as_array().unwrap().len(), 1);
+    assert_eq!(body["prompts"][0]["prompt_id"], "alpha");
+}
+
+#[rstest]
 #[case::admin(&[Role::PlatformAdmin])]
 #[case::viewer(&[Role::PlatformViewer])]
 #[tokio::test]
@@ -243,6 +256,25 @@ async fn oneshot_versions_fallback_without_a_table_sorts_the_registry() {
 }
 
 #[tokio::test]
+async fn oneshot_versions_fallback_environment_filters_the_registry() {
+    let prompts = registry(vec![
+        config_prompt("alpha", "development"),
+        config_prompt("alpha.v2", "development"),
+        config_prompt("alpha_v3", "production"),
+    ]);
+    let (status, body) = call(
+        state(prompts, None),
+        "/prompts/alpha/versions?environment=production",
+        master_context(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let listed = body["prompts"].as_array().unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["version"], json!(3));
+}
+
+#[tokio::test]
 async fn oneshot_versions_missing_history_is_a_not_found() {
     let table = FakePromptTable::answering(Vec::new());
     let (status, body) = call(
@@ -343,6 +375,16 @@ async fn oneshot_info_metadata_key_cannot_read_another_prompt() {
 }
 
 #[tokio::test]
+async fn oneshot_info_allowlist_covering_the_prompt_is_served() {
+    let prompts = registry(vec![config_prompt("alpha", "development")]);
+    let key =
+        key_context(r#"{"user_role": "proxy_admin", "metadata": {"prompts": ["beta", "alpha"]}}"#);
+    let (status, body) = call(state(prompts, None), "/prompts/alpha/info", key).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["prompt_spec"]["prompt_id"], "alpha");
+}
+
+#[tokio::test]
 async fn oneshot_info_ordinary_key_is_forbidden() {
     let prompts = registry(vec![config_prompt("alpha", "development")]);
     let (status, body) = call(
@@ -398,16 +440,21 @@ async fn oneshot_info_environments_are_sorted_and_distinct() {
         stored_prompt("alpha", 2, "development"),
         stored_prompt("alpha", 3, "development"),
         stored_prompt("alpha", 4, ""),
+        stored_prompt("beta", 1, "staging"),
     ]);
     let prompts = registry(vec![config_prompt("alpha", "development")]);
     let (status, body) = call(
-        state(prompts, Some(table)),
+        state(prompts, Some(Arc::clone(&table))),
         "/prompts/alpha/info",
         master_context(),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["environments"], json!(["development", "production"]));
+    let queries = table.queries();
+    assert_eq!(queries.len(), 1);
+    assert_eq!(queries[0].filter.prompt_id.as_deref(), Some("alpha"));
+    assert_eq!(queries[0].distinct, vec![PromptColumn::Environment]);
 }
 
 #[tokio::test]
