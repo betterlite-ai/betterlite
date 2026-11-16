@@ -175,6 +175,14 @@ async fn model_gate_follows_mode_then_catalog_endpoints(
 #[case::empty_role(r#"[{"role":""}]"#, "agent")]
 #[case::null_role(r#"[{"role":null}]"#, "agent")]
 #[case::non_object_items_are_skipped(r#"["text",{"role":"user"}]"#, "user")]
+#[case::zero_role(r#"[{"role":0}]"#, "agent")]
+#[case::nonzero_number_role(r#"[{"role":7}]"#, "user")]
+#[case::false_role(r#"[{"role":false}]"#, "agent")]
+#[case::true_role(r#"[{"role":true}]"#, "user")]
+#[case::empty_list_role(r#"[{"role":[]}]"#, "agent")]
+#[case::filled_list_role(r#"[{"role":["x"]}]"#, "user")]
+#[case::empty_object_role(r#"[{"role":{}}]"#, "agent")]
+#[case::filled_object_role(r#"[{"role":{"a":1}}]"#, "user")]
 fn initiator_marks_agent_traffic(#[case] text: &str, #[case] expected: &str) {
     assert_eq!(initiator(&input(text)), expected);
 }
