@@ -1,0 +1,8 @@
+kind: helper
+name: azure-resource-urls-container_normalized_base-seed
+call:
+  azure_resource_urls:
+    container_normalized_base:
+      - {api_base: "https://r.example/openai/responses/", api_version: "2025-01-01", module: {}, environment: {}}
+env: {}
+compare: {ignore: []}

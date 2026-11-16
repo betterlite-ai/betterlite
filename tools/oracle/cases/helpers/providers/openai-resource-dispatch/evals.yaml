@@ -1,0 +1,9 @@
+kind: helper
+name: openai-resource-dispatch-evals
+call:
+  openai_resource_dispatch:
+    case: evals_get
+    api_base: https://api.evals.test
+    eval_id: eval/1
+env: {}
+compare: {ignore: []}

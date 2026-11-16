@@ -1,0 +1,16 @@
+kind: helper
+name: watsonx-chat-provider-info-vllm-environment
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env:
+      HOSTED_VLLM_API_BASE: https://vllm-env
+      HOSTED_VLLM_API_KEY: vllm-key
+    maps: []
+    infos:
+      - {api_base: null, api_key: null}
+      - {api_base: https://explicit, api_key: explicit-key}
+      - {api_base: "", api_key: ""}
+    urls: []
+    plans: []

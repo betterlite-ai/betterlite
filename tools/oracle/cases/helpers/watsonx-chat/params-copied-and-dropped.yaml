@@ -1,0 +1,33 @@
+kind: helper
+name: watsonx-chat-params-copied-and-dropped
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps:
+      - non_default:
+          temperature: 0.5
+          max_tokens: 64
+          top_p: 0.9
+          frequency_penalty: 0.1
+          stop: [end]
+          seed: 7
+          stream: true
+          logprobs: true
+          top_logprobs: 2
+          n: 3
+          presence_penalty: 0.2
+          response_format: {type: json_object}
+          reasoning_effort: low
+          user: caller
+          max_completion_tokens: 10
+          top_k: 5
+        optional: {}
+      - non_default: {temperature: null, stop: null}
+        optional: {temperature: 1, max_tokens: 9}
+      - non_default: {temperature: 0.5}
+        optional: {temperature: 1, extra_body: {a: 1}}
+    infos: []
+    urls: []
+    plans: []

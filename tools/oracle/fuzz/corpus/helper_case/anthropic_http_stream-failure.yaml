@@ -1,0 +1,27 @@
+kind: helper
+name: anthropic-http-stream-failure-seed
+call:
+  anthropic_http_stream:
+    scenario: non_http_error_500
+    api_base: https://api.anthropic.com/v1/messages
+    messages:
+      - role: user
+        content: hi
+    model: claude-3-5-sonnet
+    json_mode: false
+    headers: {}
+    request_header_names: []
+    response_header_names: []
+    data: '{"stream":true}'
+    request_data: {}
+    speed: null
+    reverse_map: {}
+    optional_params: {}
+    litellm_params: {}
+    upstream_status: null
+    upstream_headers: {}
+    upstream_lines: []
+    upstream_body: null
+    failure_message: connection reset
+env: {}
+compare: {ignore: []}
