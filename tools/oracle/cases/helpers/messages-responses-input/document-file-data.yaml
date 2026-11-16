@@ -1,0 +1,40 @@
+kind: helper
+name: messages-responses-input-document-file-data
+call:
+  messages_responses_input:
+    messages:
+    - role: user
+      content:
+      - type: document
+        source:
+          type: base64
+          data: QUJD
+      - type: document
+        source:
+          type: base64
+          media_type: text/plain
+          data: aGk=
+        title: notes.txt
+      - type: document
+        source:
+          type: url
+          url: https://example.com/doc.pdf
+        title: ignored.pdf
+      - type: document
+        source:
+          type: base64
+          data: ""
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: toolu_doc
+        content:
+        - type: document
+          source:
+            type: base64
+            data: RUZH
+          title: t.pdf
+    usage: null
+env: {}
+compare:
+  ignore: []

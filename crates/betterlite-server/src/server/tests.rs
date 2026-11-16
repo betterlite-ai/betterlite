@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fs::{File, read_to_string};
 use std::future::pending;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,14 +17,15 @@ use rstest::rstest;
 use signal_hook::consts::SIGTERM;
 use signal_hook::low_level::raise;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::{Instant, sleep, timeout};
 use tracing::subscriber::set_default;
 use url::Url;
 
 use super::chat_setup::chat_executor;
-use super::{CONNECTION_DRAIN_TIMEOUT, OUTBOUND_DRAIN_TIMEOUT, run};
+use super::connections::CONNECTION_DRAIN_TIMEOUT;
+use super::{OUTBOUND_DRAIN_TIMEOUT, run_with_listener};
 
 // Answers with headers and then keeps the response open, so the client holds a lease on it.
 async fn hold_open(listener: TcpListener) {
@@ -39,12 +41,16 @@ async fn hold_open(listener: TcpListener) {
     pending::<()>().await;
 }
 
+// the listener is bound before the signal handler, so only the listening line says SIGTERM is handled
 async fn shut_down(
-    port: u16,
+    log: &Path,
     held: StreamResponse,
     release: Option<Duration>,
 ) -> Option<StreamResponse> {
-    while TcpStream::connect(("127.0.0.1", port)).await.is_err() {
+    while !read_to_string(log)
+        .unwrap()
+        .contains("betterlite server listening")
+    {
         sleep(Duration::from_millis(10)).await;
     }
     raise(SIGTERM).unwrap();
@@ -66,12 +72,7 @@ async fn http_pool_tests_behavior(#[case] release: Option<Duration>, #[case] war
     let upstream = Url::parse(&format!("http://{}/", provider.local_addr().unwrap())).unwrap();
     let mut origin = JoinSet::new();
     origin.spawn(hold_open(provider));
-    let port = TcpListener::bind("127.0.0.1:0")
-        .await
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let environment = BTreeMap::new();
     let config = ConfigLoader {
         lookup: environment.clone(),
@@ -101,8 +102,11 @@ async fn http_pool_tests_behavior(#[case] release: Option<Duration>, #[case] war
         .saturating_add(OUTBOUND_DRAIN_TIMEOUT)
         .saturating_add(Duration::from_secs(1));
     let (served, _kept) = tokio::join!(
-        timeout(limit, run(config, chat, "127.0.0.1", port)),
-        shut_down(port, held, release)
+        timeout(
+            limit,
+            run_with_listener(config, chat, listener, "127.0.0.1")
+        ),
+        shut_down(&path, held, release)
     );
     let elapsed = started.elapsed();
     served.unwrap().unwrap();

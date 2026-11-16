@@ -1,0 +1,7 @@
+kind: helper
+name: shadow-pairwise-response-format
+call:
+  b4084:
+    operation: response_format
+env: {}
+compare: {ignore: []}

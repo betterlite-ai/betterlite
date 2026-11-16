@@ -1,0 +1,31 @@
+kind: helper
+name: fal-flux-hidden-metadata-presence
+call:
+  fal_flux:
+    operation: hidden_metadata_presence
+    profiles: [ultra, pro_v11, schnell, dev]
+    replies:
+      - status: 200
+        headers: {x-request-id: req-1}
+        body: '{"images": ["https://a.test/1.png", {"url": "https://b.test/2.png", "b64_json": "aGk=", "width": 640, "height": 480, "content_type": "image/webp"}, 7, null, true, {"url": 5}], "seed": 42, "timings": {"inference": 2.5}, "has_nsfw_concepts": [false], "prompt": "ignored"}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": ["https://c.test/3.png"], "seed": null, "timings": null}'
+        existing:
+          - {url: "https://existing.test/0.png", b64_json: null}
+      - status: 200
+        headers: {}
+        body: '{}'
+        existing: []
+      - status: 200
+        headers: {}
+        body: '{"images": {"url": "not a list"}, "has_nsfw_concepts": []}'
+        existing: []
+      - status: 502
+        headers: {x-request-id: req-1}
+        body: '{'
+        existing: []
+env: {}
+compare:
+  ignore: []

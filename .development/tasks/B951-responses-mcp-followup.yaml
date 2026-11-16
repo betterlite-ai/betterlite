@@ -235,7 +235,7 @@ checks:
     run: test -f tools/oracle/helpers/responses_mcp_followup.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
   - id: helper-corpus
     why: The responses_mcp_followup helper tag has no added shared-parser seed or the helper corpus replay fails.
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*)" && grep -qE '^[[:space:]]+responses_mcp_followup:' tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-*)" && grep -qE '^[[:space:]]+responses_mcp_followup:' tools/oracle/fuzz/corpus/helper_case/responses_mcp_followup-* && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-core-ops --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: new-oracle-cases
     why: No new Responses MCP follow-up parity fixture was added on this branch.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/responses-mcp-followup)"

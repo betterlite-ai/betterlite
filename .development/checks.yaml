@@ -144,16 +144,30 @@ base:
       run: cargo shear
       turn: now
     - id: corpus-replays
-      why: every fuzz corpus file the change touches still passes the replays_the_ tests of the package that owns the corpus, since task checks leave those tests out
+      why: every fuzz corpus file the change touches still passes the replays_the_ tests of the package that owns the corpus, since task checks leave those tests out; a helper case corpus file replays in the group crates that own its operations instead of the whole oracle (Max, 11-16)
       run: |-
         set -o pipefail
-        dirs=$(git diff --name-only "${GATE_BASE}" -- ':(glob)**/fuzz/corpus/**' | sed 's#/fuzz/corpus/.*##' | sort -u) || exit 1
-        if [[ -z ${dirs} ]]; then echo "the change touches no fuzz corpus"; exit 0; fi
-        mapfile -t corpora <<< "${dirs}"
-        root=$(pwd -P) || exit 1
-        packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -r --arg root "${root}/" '.packages[] | select(.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | IN($ARGS.positional[])) | "-p", .name' --args "${corpora[@]}") || exit 1
-        if [[ -z ${packages} ]]; then echo "no package owns the corpus in ${dirs}"; exit 1; fi
-        mapfile -t flags <<< "${packages}"
+        helpers=tools/oracle/fuzz/corpus/helper_case/
+        changed=$(git diff --name-only "${GATE_BASE}" -- ':(glob)**/fuzz/corpus/**') || exit 1
+        if [[ -z ${changed} ]]; then echo "the change touches no fuzz corpus"; exit 0; fi
+        dirs=$(awk -v helpers="${helpers}" 'index($0, helpers) != 1 { sub("/fuzz/corpus/.*", ""); if (!seen[$0]++) print }' <<< "${changed}")
+        flags=()
+        if [[ -n ${dirs} ]]; then
+          mapfile -t corpora <<< "${dirs}"
+          root=$(pwd -P) || exit 1
+          packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -r --arg root "${root}/" '.packages[] | select(.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | IN($ARGS.positional[])) | "-p", .name' --args "${corpora[@]}") || exit 1
+          if [[ -z ${packages} ]]; then echo "no package owns the corpus in ${dirs}"; exit 1; fi
+          mapfile -t flags <<< "${packages}"
+        fi
+        cases=$(git diff --name-only --diff-filter=d "${GATE_BASE}" -- "${helpers}") || exit 1
+        if [[ -n ${cases} ]]; then
+          mapfile -t files <<< "${cases}"
+          plan=$(cargo gate oracle-groups "${files[@]}") || exit 1
+          if grep -q -E '^(gateway|betterlite-oracle) ' <<< "${plan}"; then flags+=(-p betterlite-oracle); fi
+          features=$(awk '$1 != "gateway" && $1 != "betterlite-oracle" && !seen[$1]++ { printf "%sbetterlite-oracle-groups/%s", separator, $1; separator = "," }' <<< "${plan}")
+          if [[ -n ${features} ]]; then flags+=(-p betterlite-oracle-groups --features "${features}"); fi
+        fi
+        if (( ${#flags[@]} == 0 )); then echo "the change only deletes helper case corpus files"; exit 0; fi
         cargo nextest run --locked --no-tests=warn "${flags[@]}" -E 'test(/replays_the_/)'
     - id: hooks
       why: the prek pre-commit hooks (hygiene, test placement, ast-grep rules, typos, rustfmt, ruff, mypy and the Python rules) pass on the files the change touches, and on every file when it touches hook config or tool versions; on this machine basedpyright checks only the helper files the change touches, and CI runs it over the whole helpers folder; a change to hook config runs it over the whole folder here too, since prek's batches of all 740 files fail on files the change never touched (B9951, 11-13)
@@ -212,7 +226,7 @@ optional:
     after_green: true
     run: cargo llvm-cov nextest --workspace --locked --fail-under-lines 85
   - id: mutants
-    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; test binaries run under a 4 GB address space limit through cargo's target runner, so a mutant that loops and allocates aborts its own test instead of the whole flow; the oracle tests start LiteLLM once per case, so mutants there take hours; the task commands and a push to main still run them; verification builds in the worktree target and freshly checks every selected mutant; fuzz targets are left out, since no test runs them
+    why: every mutant in the changed Rust code outside tools/oracle is caught by a test; test binaries run under a 4 GB address space limit through cargo's target runner, so a mutant that loops and allocates aborts its own test instead of the whole flow; the oracle tests start LiteLLM once per case, so mutants there take hours; the task commands and main's scheduled runs still run them; verification builds in the worktree target and freshly checks every selected mutant; fuzz targets are left out, since no test runs them
     after_green: true
     run: |-
       set -e
@@ -223,7 +237,14 @@ optional:
       git diff "${GATE_BASE}" -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > "${GATE_LOG_DIR}/mutants.diff"
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER='' TMPDIR="${scratch}" cargo mutants --in-diff "${GATE_LOG_DIR}/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "${GATE_LOG_DIR}" ${MUTANTS_SHARD:+--shard "${MUTANTS_SHARD}" --sharding round-robin}
   - id: oracle
-    why: betterlite answers the oracle cases the same way the pinned LiteLLM does
+    why: betterlite answers the oracle cases the same way the pinned LiteLLM does; a helper case runs in only the group crates that own its operations, and only the other kinds of case build the gateway, since a helper task built 104 workspace crates plus the gateway for one group (Max, 11-16)
     run: |-
       read -r -a cases <<< "${GATE_ORACLE_CASES}"
-      cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- "${cases[@]}"
+      plan=$(cargo gate oracle-groups "${cases[@]}") || exit 1
+      if [[ -z ${plan} ]]; then echo "no YAML cases found in ${GATE_ORACLE_CASES}"; exit 1; fi
+      if grep -q '^gateway ' <<< "${plan}"; then cargo build --locked --quiet -p betterlite || exit 1; fi
+      whole=$(awk '($1 == "gateway" || $1 == "betterlite-oracle") && !seen[$2]++ { print $2 }' <<< "${plan}")
+      if [[ -n ${whole} ]]; then mapfile -t files <<< "${whole}"; cargo run --locked --quiet -p betterlite-oracle -- "${files[@]}" || exit 1; fi
+      grouped=$(awk '$1 != "gateway" && $1 != "betterlite-oracle" && !seen[$2]++ { print $2 }' <<< "${plan}")
+      features=$(awk '$1 != "gateway" && $1 != "betterlite-oracle" && !seen[$1]++ { printf "%s%s", separator, $1; separator = "," }' <<< "${plan}")
+      if [[ -n ${grouped} ]]; then mapfile -t files <<< "${grouped}"; cargo run --locked --quiet -p betterlite-oracle-groups --features "${features}" -- "${files[@]}"; fi

@@ -1,0 +1,13 @@
+kind: helper
+name: remote-auto-no-fetch
+call:
+  b9963:
+    calls:
+      - function: count_content
+        content:
+          - type: image_url
+            image_url:
+              url: https://example.com/missing.png
+              detail: auto
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,29 @@
+{
+  "api_version": {
+    "default_value": "v1",
+    "description": "API version for Javelin service",
+    "required": false,
+    "type": "string"
+  },
+  "application": {
+    "description": "Application name for Javelin service",
+    "required": false,
+    "type": "string"
+  },
+  "config": {
+    "description": "Configuration parameters for Javelin service",
+    "required": false,
+    "type": "object"
+  },
+  "guard_name": {
+    "description": "Name of the Javelin guard to use",
+    "required": false,
+    "type": "string"
+  },
+  "metadata": {
+    "description": "Additional metadata to send with requests",
+    "required": false,
+    "type": "object"
+  },
+  "ui_friendly_name": "Javelin Guardrails"
+}

@@ -1,9 +1,13 @@
+use std::sync::atomic::AtomicUsize;
+
 use rstest::rstest;
 
 use crate::media::count::Warning;
 use crate::media::settings::ImageCounting;
 
-use super::support::{self, CaseOptions};
+use super::support::{
+    self, CaseOptions, RefusingFetcher, document, file, image_url, image_url_string, plain,
+};
 
 const PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABA";
 const TRUNCATED: &str = "data:image/png;base64,iVBORw0KGgo=";
@@ -79,30 +83,6 @@ const fn failed(message: &'static str) -> Expected {
     Expected::Failed(message)
 }
 
-fn plain(inner: &str) -> String {
-    format!(r#"{{"content":[{inner}]}}"#)
-}
-
-fn image_url(url: &str, detail: &str) -> String {
-    format!(
-        r#"{{"content":[{{"type":"image_url","image_url":{{"url":"{url}","detail":"{detail}"}}}}]}}"#
-    )
-}
-
-fn image_url_string(url: &str) -> String {
-    format!(r#"{{"content":[{{"type":"image_url","image_url":"{url}"}}]}}"#)
-}
-
-fn document(source: &str, title: &str) -> String {
-    format!(r#"{{"content":[{{"type":"document","title":"{title}","source":{source}}}]}}"#)
-}
-
-fn file(filename: &str, file_data: &str) -> String {
-    format!(
-        r#"{{"content":[{{"type":"file","file":{{"filename":"{filename}","file_data":"{file_data}"}}}}]}}"#
-    )
-}
-
 #[rstest]
 #[case::text_item(plain(r#""hello world""#), EXACT, tokens(2))]
 #[case::text_block(plain(r#"{"type":"text","text":"hello world"}"#), EXACT, tokens(2))]
@@ -120,10 +100,12 @@ fn file(filename: &str, file_data: &str) -> String {
 #[case::image_url_auto(image_url(PNG, "auto"), EXACT, tokens(85))]
 #[case::image_url_high_local(image_url(PNG, "high"), EXACT, tokens(255))]
 #[case::image_url_high_local_default_mode(image_url(PNG, "high"), DEFAULT, tokens(250))]
-#[case::image_url_remote_high_exact(
+#[case::image_url_remote_high_exact_refused(
     image_url(REMOTE, "high"),
     EXACT,
-    failed("an image needs its exact dimensions and no local bytes were given")
+    failed(
+        "Error: Image URL download is disabled (MAX_IMAGE_URL_DOWNLOAD_SIZE_MB=0). url=https://example.com/image.png"
+    )
 )]
 #[case::image_url_remote_high_default(image_url(REMOTE, "high"), DEFAULT, remote_tokens(250))]
 #[case::image_url_remote_high_settings(image_url(REMOTE, "high"), DEFAULT_123, remote_tokens(123))]
@@ -362,7 +344,13 @@ async fn media_tokens_media_token_tests_behavior(
 ) {
     let fixture = support::words_fixture();
     let settings = support::settings(&options);
-    match (support::count(&fixture, &input, &settings).await, expected) {
+    let fetcher = RefusingFetcher {
+        calls: AtomicUsize::new(0),
+    };
+    match (
+        support::count(&fixture, &input, &settings, &fetcher).await,
+        expected,
+    ) {
         (
             Ok(counted),
             Expected::Counted {

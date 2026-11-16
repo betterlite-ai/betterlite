@@ -1,0 +1,15 @@
+task: B1039
+deviations:
+  - what: A response slot holding something other than an object (a string, number or list at response, or at an Anthropic result) makes LiteLLM's success check raise and drops the whole file's accounting, while betterlite counts that line failed and keeps billing the rest.
+    why: The line's pass/fail answer is read from the typed entry, so one unexpected line cannot discard the other lines' costs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L741-L756
+  - what: A native Vertex row whose usage metadata fails conversion raises out of LiteLLM's calculate_vertex_ai_batch_cost_and_usage and loses the whole batch, while betterlite counts that row failed.
+    why: B1040's native_vertex_batch_row_stats reports the row's own conversion error, so this slice counts it failed instead of discarding the priced rows beside it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/batches/transformation.py#L69-L83
+  - what: Python's json.loads auto-detects UTF-16 and UTF-32 and accepts NaN and Infinity, while betterlite's reader takes strict UTF-8 JSON and reports such a line malformed.
+    why: One strict decoder serves the public entry point and the fuzz target, so a byte sequence has one meaning on both paths.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/batches/batch_utils.py#L593-L601
+  - what: An output over 16 MiB, a line over 1 MiB or more than 65536 lines is rejected with an error where LiteLLM reads whatever the provider wrote.
+    why: B1087's ApiLimits bound every decoder entry point; a caller that needs more raises the limits it passes.
+    link: ""
+kept_bugs: []

@@ -1,0 +1,13 @@
+kind: helper
+name: existing-ssml
+call:
+  azure_native_speech:
+    existing_ssml:
+      inputs:
+        - "<speak version='1.0' xml:lang='en-US'><voice name='en-US-AriaNeural'>Hi</voice></speak>"
+        - 'prefix <speak>inner</speak> suffix'
+        - 'prefix <speak version="1.0">inner</speak>'
+        - '<speak >not closed'
+        - '<SPEAK>x</SPEAK><speakx>y</speakx>'
+env: {}
+compare: {ignore: []}

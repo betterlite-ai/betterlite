@@ -184,7 +184,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-oracle-logging --no-tests=fail -E 'test(/^b3883::/)'
     - id: helper-case-corpus
       why: Oracle helper cases and corpus must replay with the new budget lookups decoder.
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/budget-lookups)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/budget-lookups)" && cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-logging --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 
 oracle_cases:
   - tools/oracle/cases/helpers/budget-lookups/team-assembly-with-carried-snapshot.yaml

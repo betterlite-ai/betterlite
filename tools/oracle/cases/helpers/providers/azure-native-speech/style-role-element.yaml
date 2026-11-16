@@ -1,0 +1,16 @@
+kind: helper
+name: style-role-element
+call:
+  azure_native_speech:
+    style_role_element:
+      cases:
+        - {}
+        - {style: cheerful}
+        - {styledegree: '1.5'}
+        - {role: Girl}
+        - {style: cheerful, styledegree: '0.5', role: Boy, lang: es-ES}
+        - {style: '', styledegree: '', role: ''}
+        - {style: sad, styledegree: ''}
+        - {style: 'a&b"c', role: Senior_Male}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,15 @@
+kind: helper
+name: vertex-gemini-edit-images-before-prompt
+call:
+  vertex_gemini_edit:
+    model: vertex_ai/gemini-2.5-flash-image
+    prompt: blend these into one
+    image:
+      - {kind: bytes, data_base64: iVBORw0KGgo=}
+      - null
+      - {kind: bytes, data_base64: R0lGODlh}
+    optional_params: {size: 1280x896}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

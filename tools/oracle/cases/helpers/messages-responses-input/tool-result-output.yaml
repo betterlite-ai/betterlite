@@ -1,0 +1,36 @@
+kind: helper
+name: messages-responses-input-tool-result-output
+call:
+  messages_responses_input:
+    messages:
+    - role: user
+      content:
+      - type: tool_result
+        tool_use_id: toolu_text
+        content: the answer
+      - type: tool_result
+        tool_use_id: toolu_parts
+        content:
+        - type: text
+          text: a
+        - type: text
+          text: b
+        - type: document
+          source:
+            type: base64
+            data: QUJD
+          title: r.pdf
+          prompt_cache_breakpoint:
+            mode: explicit
+        - type: image
+          source:
+            type: url
+            url: https://example.com/marked.png
+          prompt_cache_breakpoint:
+            mode: explicit
+      - type: tool_result
+        tool_use_id: toolu_empty
+    usage: null
+env: {}
+compare:
+  ignore: []
