@@ -1949,6 +1949,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-streaming",
  "betterlite-tokenizer",
  "chrono",
  "fancy-regex 0.19.2",
@@ -4457,7 +4458,6 @@ version = "0.0.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-core",
- "betterlite-guardrails",
  "betterlite-server",
  "form_urlencoded",
  "libfuzzer-sys",
@@ -4673,6 +4673,7 @@ name = "betterlite-vertex-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "betterlite-config",
  "betterlite-http",
  "betterlite-models",
  "betterlite-tokenizer",
