@@ -2,9 +2,14 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_logging::logging_state::correlation::{
     CorrelationContext, CorrelationSettings, CorrelationSetup,
 };
@@ -15,14 +20,19 @@ use betterlite_logging::logging_state::{LoggingInit, LoggingState};
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::container_contracts::records::ContainerFileObject;
+use betterlite_openai::containers::container_file_http::ContainerFileHttpError;
 use betterlite_openai::containers::container_file_http::ContainerFileUpload;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
+use betterlite_openai::containers::container_file_http::transport::TransferError;
 use betterlite_prompts::media_metadata::FileData;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use chrono::{DateTime, FixedOffset};
+use http::{HeaderMap, Method};
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio::net::TcpListener;
+use url::Url;
 
 use super::execution::{
     AsyncUploadExecutor, ContainerFileUploadCall, UploadExecutor, UploadFailure,
@@ -304,4 +314,35 @@ impl AsyncUploadExecutor for StubExecutor {
     ) -> impl Future<Output = Result<ContainerFileObject, Self::Failure>> + Send {
         ready(self.answer(call))
     }
+}
+
+const TIMEOUT_LIMITS: TransportLimits = TransportLimits {
+    read_timeout: Duration::from_millis(100),
+    ..TransportLimits::DEFAULT
+};
+
+// a real read timeout: a bound listener that never answers, and the client's own read limit ends the wait
+pub(crate) async fn timeout_failure() -> ContainerFileHttpError {
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("the listener");
+    let address = listener.local_addr().expect("the address");
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).expect("the policy"),
+    );
+    let client = ProxiedClient::build(base_builder().http1_only(), &policy, TIMEOUT_LIMITS)
+        .expect("the client");
+    let request = OutboundRequest {
+        method: Method::GET,
+        url: Url::parse(&format!("http://{address}/")).expect("the URL"),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: TIMEOUT_LIMITS.read_timeout,
+    };
+    let failure = client
+        .send_buffered(request)
+        .await
+        .expect_err("the answer never comes");
+    ContainerFileHttpError::Transfer(TransferError::Transport(failure))
 }

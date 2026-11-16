@@ -3,10 +3,12 @@ use std::error::Error as StdError;
 use std::future::Future;
 use std::sync::Mutex;
 
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::logging_state::LoggingState;
 use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::container_contracts::records::ContainerFileObject;
 use betterlite_openai::containers::container_file_http::request::ParamValue;
+use betterlite_openai::containers::container_file_http::transport::TransferError;
 use betterlite_openai::containers::container_file_http::{
     ContainerFileHttpError, ContainerFileUpload,
 };
@@ -28,7 +30,7 @@ pub struct ContainerFileUploadCall<'call> {
     pub file: &'call ContainerFileUpload,
 }
 
-// what exception_type reads off the handler's failure: the message, and the status a provider answer carried
+// what exception_type reads off the handler's failure: the message, and the status a provider answer or a timeout carried
 pub trait UploadFailure: StdError + Send + Sync + 'static {
     fn status_code(&self) -> Option<u16>;
 
@@ -55,11 +57,17 @@ pub trait AsyncUploadExecutor: Send + Sync {
     ) -> impl Future<Output = Result<ContainerFileObject, Self::Failure>> + Send;
 }
 
-// every other handler failure reaches exception_type's catchall, where the status is unknown
+// an httpx timeout becomes litellm.Timeout with status 408; every other handler failure reaches the catchall with no status
 impl UploadFailure for ContainerFileHttpError {
     fn status_code(&self) -> Option<u16> {
         if let Self::Provider(error) = self {
             return Some(error.status_code);
+        }
+        if let Self::Transfer(TransferError::Transport(
+            TransportError::Deadline(_) | TransportError::ConnectTimeout(_),
+        )) = self
+        {
+            return Some(408);
         }
         None
     }
