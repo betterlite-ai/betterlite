@@ -9,7 +9,7 @@ use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
 
 #[test]
-fn helper_seeds_select_studio_veo_request() {
+fn replays_the_studio_veo_request_seeds() {
     let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")

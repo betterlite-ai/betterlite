@@ -12,7 +12,9 @@ use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_vertex::studio_veo_request::create::{CreateInput, create_request};
 use betterlite_vertex::studio_veo_request::environment::{KeySources, validate_environment};
 use betterlite_vertex::studio_veo_request::error::StudioVeoError;
-use betterlite_vertex::studio_veo_request::params::{MapInput, Reference, map_openai_params};
+use betterlite_vertex::studio_veo_request::params::{
+    MapInput, MappedParams, Reference, map_openai_params,
+};
 use betterlite_vertex::studio_veo_request::url::complete_url;
 use betterlite_vertex::vertex_veo_request::image::{B1120Mime, ImageInput};
 use secrecy::{ExposeSecret as _, SecretString};
