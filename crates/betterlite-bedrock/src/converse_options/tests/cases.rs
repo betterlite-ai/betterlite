@@ -108,6 +108,11 @@ fn accepts_thinking(session: &mut Session<'_>, model: &str, base_model: &str) ->
 }
 
 pub(super) fn nova2_reasoning_config() {
+    nova2_name_detection();
+    nova2_effort_levels();
+}
+
+fn nova2_name_detection() {
     for model in [
         "amazon.nova-2-lite-v1:0",
         "us.amazon.nova-2-pro-preview-20251202-v1:0",
@@ -132,6 +137,9 @@ pub(super) fn nova2_reasoning_config() {
     ] {
         assert!(!is_nova_2_model(model), "{model} is not a Nova 2 model");
     }
+}
+
+fn nova2_effort_levels() {
     for effort in ["low", "medium", "high"] {
         let config = nova_reasoning_config(effort).expect("a valid effort");
         let expected = params(&format!(
@@ -140,26 +148,36 @@ pub(super) fn nova2_reasoning_config() {
         assert_eq!(config, expected, "{effort}");
     }
     for effort in ["minimal", "xhigh", "max", "none", "", "High", "high "] {
-        let error = nova_reasoning_config(effort).expect_err("a rejected effort");
-        assert_eq!(
-            error.to_string(),
-            format!(
-                "Invalid reasoning_effort value '{effort}' for Nova 2 models. Supported values: ['low', 'medium', 'high']"
-            )
-        );
-        assert_eq!(error.status_code(), Some(400));
-        let ConverseOptionsError::NovaEffort {
-            model, provider, ..
-        } = &error
-        else {
-            panic!("a Nova rejection");
-        };
-        assert_eq!(model, NOVA_2_REJECTION_MODEL);
-        assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
+        assert_nova_rejection(effort);
     }
 }
 
+fn assert_nova_rejection(effort: &str) {
+    let error = nova_reasoning_config(effort).expect_err("a rejected effort");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Invalid reasoning_effort value '{effort}' for Nova 2 models. Supported values: ['low', 'medium', 'high']"
+        )
+    );
+    assert_eq!(error.status_code(), Some(400));
+    let ConverseOptionsError::NovaEffort {
+        model, provider, ..
+    } = &error
+    else {
+        panic!("a Nova rejection");
+    };
+    assert_eq!(model, NOVA_2_REJECTION_MODEL);
+    assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
+}
+
 pub(super) fn gpt_reasoning_object() {
+    gpt_reasoning_detection();
+    gpt_effort_object();
+    gpt_prefix_precedence();
+}
+
+fn gpt_reasoning_detection() {
     for model in [
         "openai.gpt-5",
         "us.openai.gpt-5-2025-08-07",
@@ -189,7 +207,9 @@ pub(super) fn gpt_reasoning_object() {
     assert!(requires_min_max_tokens("us.openai.gpt-5"));
     assert!(!requires_min_max_tokens("xai-grok-4"));
     assert!(!requires_min_max_tokens("amazon.nova-2-lite-v1:0"));
+}
 
+fn gpt_effort_object() {
     let fixture = Fixture::new("{}", "{}");
     let mut session = Session::new(&fixture);
     let mut optional = params(
@@ -214,7 +234,11 @@ pub(super) fn gpt_reasoning_object() {
         "the GPT branch leaves unrelated keys alone"
     );
     assert_eq!(optional.get("reasoning_effort"), None);
+}
 
+fn gpt_prefix_precedence() {
+    let fixture = Fixture::new("{}", "{}");
+    let mut session = Session::new(&fixture);
     let mut mixed = ParamMap::new();
     handle(
         &fixture,
@@ -247,6 +271,12 @@ pub(super) fn gpt_reasoning_object() {
 }
 
 pub(super) fn gpt_oss_and_deepseek_effort() {
+    raw_effort_passthrough();
+    deepseek_family_detection();
+    deepseek_supported_params();
+}
+
+fn raw_effort_passthrough() {
     let fixture = Fixture::new(CAPABILITY_MAP, "{}");
     let mut session = Session::new(&fixture);
     for (model, effort) in [
@@ -268,6 +298,9 @@ pub(super) fn gpt_oss_and_deepseek_effort() {
             "{model} keeps the caller's thinking"
         );
     }
+}
+
+fn deepseek_family_detection() {
     assert!(is_deepseek_model("deepseek.v3-v1:0", ""));
     assert!(is_deepseek_model("", "us.deepseek.v3-v1:0"));
     assert!(!is_deepseek_model(
@@ -281,7 +314,11 @@ pub(super) fn gpt_oss_and_deepseek_effort() {
         "deepseek.v3-v1:0"
     ));
     assert!(!rejects_reasoning_effort("amazon.nova-pro-v1:0", ""));
+}
 
+fn deepseek_supported_params() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let v3 = supported(&fixture, &mut session, "deepseek.v3-v1:0");
     assert!(
         v3.contains(&"reasoning_effort".to_owned()),
@@ -308,6 +345,17 @@ pub(super) fn gpt_oss_and_deepseek_effort() {
 }
 
 pub(super) fn anthropic_adaptive_effort() {
+    adaptive_effort_mapping();
+    adaptive_keeps_output_config();
+    adaptive_minimal_and_none();
+    adaptive_rejects_existing_effort();
+    adaptive_rejects_unmappable_effort();
+    adaptive_xhigh_capability();
+    adaptive_plain_thinking();
+    adaptive_unhashable_effort();
+}
+
+fn adaptive_effort_mapping() {
     for (effort, mapped) in [
         ("low", "low"),
         ("minimal", "low"),
@@ -321,10 +369,11 @@ pub(super) fn anthropic_adaptive_effort() {
     for effort in ["none", "", "High", "high "] {
         assert_eq!(output_config_effort(effort), None, "{effort}");
     }
+}
 
+fn adaptive_keeps_output_config() {
     let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
     let mut session = Session::new(&fixture);
-
     let mut adaptive = params(
         r#"{"thinking": {"type": "enabled", "budget_tokens": 1024}, "output_config": {"format": "x"}}"#,
     );
@@ -349,7 +398,11 @@ pub(super) fn anthropic_adaptive_effort() {
         adaptive.get("_output_config_normalized"),
         Some(&ParamValue::Bool(true))
     );
+}
 
+fn adaptive_minimal_and_none() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut minimal = ParamMap::new();
     handle(
         &fixture,
@@ -363,7 +416,6 @@ pub(super) fn anthropic_adaptive_effort() {
         minimal.get("output_config"),
         Some(&value(r#"{"effort": "low"}"#))
     );
-
     let mut cleared = params(
         r#"{"thinking": {"type": "enabled", "budget_tokens": 2048}, "output_config": {"effort": "high"}, "_output_config_normalized": false}"#,
     );
@@ -382,7 +434,11 @@ pub(super) fn anthropic_adaptive_effort() {
         Some(&ParamValue::Bool(false)),
         "the none branch leaves an existing marker alone"
     );
+}
 
+fn adaptive_rejects_existing_effort() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut existing = params(r#"{"output_config": {"effort": "ultra", "format": "x"}}"#);
     let error = handle(
         &fixture,
@@ -405,7 +461,11 @@ pub(super) fn anthropic_adaptive_effort() {
     };
     assert_eq!(model, "fixture-adaptive");
     assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
+}
 
+fn adaptive_rejects_unmappable_effort() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut invalid = ParamMap::new();
     let error = handle(
         &fixture,
@@ -427,7 +487,11 @@ pub(super) fn anthropic_adaptive_effort() {
     assert_eq!(model, "fixture-adaptive");
     assert_eq!(provider, BEDROCK_CONVERSE_PROVIDER);
     assert!(matches!(error, ConverseOptionsError::InvalidEffort(_)));
+}
 
+fn adaptive_xhigh_capability() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut xhigh = ParamMap::new();
     let error = handle(
         &fixture,
@@ -455,7 +519,11 @@ pub(super) fn anthropic_adaptive_effort() {
         allowed.get("output_config"),
         Some(&value(r#"{"effort": "xhigh"}"#))
     );
+}
 
+fn adaptive_plain_thinking() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut plain = ParamMap::new();
     handle(
         &fixture,
@@ -471,7 +539,11 @@ pub(super) fn anthropic_adaptive_effort() {
     );
     assert_eq!(plain.get("output_config"), None);
     assert_eq!(plain.get("_output_config_normalized"), None);
+}
 
+fn adaptive_unhashable_effort() {
+    let fixture = Fixture::new(ADAPTIVE_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut unhashable = params(r#"{"output_config": {"effort": ["high"]}}"#);
     let error = handle(
         &fixture,
@@ -486,11 +558,18 @@ pub(super) fn anthropic_adaptive_effort() {
 }
 
 pub(super) fn minimum_thinking_budget() {
-    fn clamp(source: &str, minimum: i64) -> ParamMap {
-        let mut optional = params(source);
-        clamp_thinking_budget_tokens(&mut optional, minimum);
-        optional
-    }
+    budget_clamps_to_the_minimum();
+    budget_keeps_integers_and_the_configured_minimum();
+    budget_leaves_other_shapes();
+}
+
+fn clamp(source: &str, minimum: i64) -> ParamMap {
+    let mut optional = params(source);
+    clamp_thinking_budget_tokens(&mut optional, minimum);
+    optional
+}
+
+fn budget_clamps_to_the_minimum() {
     assert_eq!(
         clamp(
             r#"{"thinking": {"type": "enabled", "budget_tokens": 512}}"#,
@@ -513,6 +592,9 @@ pub(super) fn minimum_thinking_budget() {
         params(r#"{"thinking": {"budget_tokens": 1024}}"#),
         "the minimum itself is kept"
     );
+}
+
+fn budget_keeps_integers_and_the_configured_minimum() {
     assert_eq!(
         clamp(
             r#"{"thinking": {"budget_tokens": 16384}, "max_tokens": 1024}"#,
@@ -535,6 +617,9 @@ pub(super) fn minimum_thinking_budget() {
         params(r#"{"thinking": {"budget_tokens": 2048}}"#),
         "the configured minimum is used"
     );
+}
+
+fn budget_leaves_other_shapes() {
     for source in [
         r#"{"thinking": {"budget_tokens": 512.0}}"#,
         r#"{"thinking": {"budget_tokens": "512"}}"#,
@@ -588,6 +673,11 @@ pub(super) fn nova_web_search_only() {
 }
 
 pub(super) fn sampling_capabilities() {
+    sampling_flags();
+    thinking_acceptance();
+}
+
+fn sampling_flags() {
     let fixture = Fixture::new(CAPABILITY_MAP, "{}");
     let catalogs = fixture.catalogs();
     assert!(
@@ -616,7 +706,10 @@ pub(super) fn sampling_capabilities() {
         supports_sampling_params("fixture-unknown", &catalogs),
         "an unmapped model supports sampling"
     );
+}
 
+fn thinking_acceptance() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
     let mut session = Session::new(&fixture);
     for model in [
         "anthropic.claude-3-7-sonnet-20250219-v1:0",
@@ -650,9 +743,16 @@ pub(super) fn sampling_capabilities() {
 }
 
 pub(super) fn supported_param_list() {
+    supported_anthropic_and_nova();
+    supported_nova2_and_deepseek();
+    supported_gpt_models();
+    supported_arns();
+    supported_tool_flags();
+}
+
+fn supported_anthropic_and_nova() {
     let fixture = Fixture::new(CAPABILITY_MAP, "{}");
     let mut session = Session::new(&fixture);
-
     let mut anthropic = names(&BASE_PARAMS);
     anthropic.extend(names(&[
         "tools",
@@ -670,14 +770,17 @@ pub(super) fn supported_param_list() {
         ),
         anthropic
     );
-
     let mut nova = names(&BASE_PARAMS);
     nova.extend(names(&["tools", "web_search_options", "tool_choice"]));
     assert_eq!(
         supported(&fixture, &mut session, "amazon.nova-pro-v1:0"),
         nova
     );
+}
 
+fn supported_nova2_and_deepseek() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
+    let mut session = Session::new(&fixture);
     // This fixture entry declares supports_sampling_params false, so the pair is absent.
     let mut nova2 = names(&[
         "max_tokens",
@@ -697,7 +800,6 @@ pub(super) fn supported_param_list() {
         supported(&fixture, &mut session, "amazon.nova-2-lite-v1:0"),
         nova2
     );
-
     let mut deepseek = names(&BASE_PARAMS);
     deepseek.push("reasoning_effort".to_owned());
     assert_eq!(
@@ -709,7 +811,11 @@ pub(super) fn supported_param_list() {
         names(&BASE_PARAMS),
         "DeepSeek R1 lists no reasoning_effort"
     );
+}
 
+fn supported_gpt_models() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut gpt_oss = names(&BASE_PARAMS);
     gpt_oss.push("reasoning_effort".to_owned());
     assert_eq!(
@@ -720,7 +826,6 @@ pub(super) fn supported_param_list() {
         supported(&fixture, &mut session, "us.openai.gpt-5"),
         gpt_oss
     );
-
     let mut wrapped_gpt = names(&BASE_PARAMS);
     wrapped_gpt.extend(names(&["tools", "web_search_options", "reasoning_effort"]));
     assert_eq!(
@@ -728,7 +833,11 @@ pub(super) fn supported_param_list() {
         wrapped_gpt,
         "the nova wrapper hides the GPT marker from the base model alone"
     );
+}
 
+fn supported_arns() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut arn = names(&BASE_PARAMS);
     arn.extend(names(&[
         "tools",
@@ -762,14 +871,17 @@ pub(super) fn supported_param_list() {
         ),
         plain_arn
     );
+}
 
+fn supported_tool_flags() {
+    let fixture = Fixture::new(CAPABILITY_MAP, "{}");
+    let mut session = Session::new(&fixture);
     let mut cohere = names(&BASE_PARAMS);
     cohere.push("tools".to_owned());
     assert_eq!(
         supported(&fixture, &mut session, "cohere.command-r-v1:0"),
         cohere
     );
-
     let mut flagged = names(&BASE_PARAMS);
     flagged.push("tools".to_owned());
     assert_eq!(supported(&fixture, &mut session, "fixture-tools"), flagged);
@@ -784,7 +896,6 @@ pub(super) fn supported_param_list() {
         supported(&fixture, &mut session, "fixture-tool-choice"),
         choice
     );
-
     assert_eq!(
         auto_tool_choice(),
         params(r#"{"auto": {}}"#),
@@ -793,6 +904,11 @@ pub(super) fn supported_param_list() {
 }
 
 pub(super) fn converse_class_defaults() {
+    class_default_blocks();
+    class_default_attributes();
+}
+
+fn class_default_blocks() {
     let empty = class_attributes(&ParamMap::new());
     assert_eq!(
         get_config(&empty),
@@ -813,7 +929,9 @@ pub(super) fn converse_class_defaults() {
         ["guardrailConfig", "performanceConfig", "serviceTier"],
         "the block order is the class body's order"
     );
+}
 
+fn class_default_attributes() {
     let arguments = params(
         r#"{"maxTokens": 0, "stopSequences": [], "temperature": 0, "topP": null, "topK": 0}"#,
     );
