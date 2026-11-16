@@ -1,7 +1,8 @@
 use betterlite_prompts::anthropic_results::images::ImageError;
 use betterlite_prompts::anthropic_results::tool_result::ToolResultError;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use std::error::Error;
 
 pub(super) fn helper_failure(status: Option<u16>, message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -24,7 +25,7 @@ pub(super) fn image_failure(error: &ImageError) -> Box<HelperError> {
 
 pub(super) fn tool_result_failure<Failure>(error: &ToolResultError<Failure>) -> Box<HelperError>
 where
-    Failure: std::error::Error + Send + Sync + 'static,
+    Failure: Error + Send + Sync + 'static,
 {
     let status = match error {
         ToolResultError::Image(ImageError::Fetch(_)) => Some(400),

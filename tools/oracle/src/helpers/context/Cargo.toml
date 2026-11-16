@@ -1,0 +1,36 @@
+[package]
+name = "betterlite-oracle-context"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+betterlite-a2a = { path = "../../../../../crates/betterlite-a2a" }
+betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-context = { path = "../../../../../crates/betterlite-context" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-openai = { path = "../../../../../crates/betterlite-openai" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-websearch = { path = "../../../../../crates/betterlite-websearch" }
+indexmap = { version = "2.14.2", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "json", "registry"] }
+uuid = { version = "1.28.0", default-features = false }
+
+[dev-dependencies]
+rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
+
+[lints]
+workspace = true

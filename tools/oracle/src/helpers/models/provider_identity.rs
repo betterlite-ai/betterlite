@@ -7,7 +7,8 @@ use betterlite_models::identity::explicit_prefix::{PrefixClassificationInput, cl
 use betterlite_models::identity::openrouter::normalize_openrouter_prefix;
 use serde_json::to_value;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(tag = "check", rename_all = "snake_case", deny_unknown_fields)]

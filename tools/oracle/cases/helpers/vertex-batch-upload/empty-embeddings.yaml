@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-batch-upload-empty-embeddings
+call:
+  vertex_batch_upload:
+    calls:
+      - content: |-
+          {"custom_id":"a","url":"/v1/embeddings","body":{"model":"text-embedding-005","input":[]}}
+        passthrough: false
+env: {}
+compare: {ignore: []}

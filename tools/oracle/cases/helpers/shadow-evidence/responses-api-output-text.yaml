@@ -1,0 +1,90 @@
+kind: helper
+name: shadow-responses-api-output-text
+call:
+  b4081:
+    operation: responses_text
+    response:
+      id: resp_1
+      created_at: 1
+      output:
+        - type: message
+          id: msg_1
+          status: completed
+          role: assistant
+          content:
+            - type: output_text
+              text: "Hello "
+              annotations: []
+            - type: output_text
+              text: world
+              annotations: []
+    metadata: {}
+    routed_model: ""
+calls:
+  - b4081:
+      operation: responses_text
+      response:
+        id: resp_1
+        created_at: 1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: "Hello "
+                annotations: []
+              - type: output_text
+                text: world
+                annotations: []
+          - type: message
+            id: msg_2
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: "!"
+                annotations: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: responses_text
+      response:
+        id: resp_4
+        created_at: 1
+        output: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: responses_text
+      response:
+        created_at: 1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: Hello
+                annotations: []
+      metadata: {}
+      routed_model: ""
+  - b4081:
+      operation: responses_text
+      response:
+        id: resp_1
+        output:
+          - type: message
+            id: msg_1
+            status: completed
+            role: assistant
+            content:
+              - type: output_text
+                text: Hello
+                annotations: []
+      metadata: {}
+      routed_model: ""
+env: {}
+compare: {ignore: []}

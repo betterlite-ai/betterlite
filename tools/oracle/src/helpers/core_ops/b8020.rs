@@ -11,6 +11,8 @@ use betterlite_core::api::search_providers::serper::{
 use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_openai::search::provider::{SearchProvider as _, SearchQuery};
 use betterlite_openai::search::records::SearchResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -131,10 +133,10 @@ impl Config {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut outcomes = Vec::with_capacity(input.calls.len());
         for call in &input.calls {
             let config = match call.provider {
@@ -192,8 +194,8 @@ fn settings_json(api_key: Option<&SecretString>, api_base: &str) -> Value {
     })
 }
 
-fn failure(error: &serde_json::Error) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn failure(error: &serde_json::Error) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "B8020Input".to_owned(),
         message: error.to_string(),
         status: None,

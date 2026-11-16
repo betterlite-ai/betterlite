@@ -23,7 +23,8 @@ use betterlite_provider::oci_common::OciError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -79,7 +80,7 @@ fn oci_failure(error: OciError) -> Box<HelperError> {
     })
 }
 
-fn encoded<T>(value: &T) -> crate::helpers::HelperResult
+fn encoded<T>(value: &T) -> HelperResult
 where
     T: Serialize,
 {
@@ -122,7 +123,7 @@ fn base_response() -> ChatResponse {
     }
 }
 
-fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
+fn finish_reasons(reasons: &[Option<String>]) -> HelperResult {
     let normalized = reasons
         .iter()
         .map(|reason| normalize_oci_finish_reason(reason.as_deref()))
@@ -130,13 +131,13 @@ fn finish_reasons(reasons: &[Option<String>]) -> crate::helpers::HelperResult {
     encoded(&normalized)
 }
 
-fn generic_response(body: &Json, status: u16) -> crate::helpers::HelperResult {
+fn generic_response(body: &Json, status: u16) -> HelperResult {
     let mut response = base_response();
     handle_generic_response(body, status, &mut response).map_err(oci_failure)?;
     encoded(&response)
 }
 
-fn stream_choices<T, F>(items: &[T], handle: F) -> crate::helpers::HelperResult
+fn stream_choices<T, F>(items: &[T], handle: F) -> HelperResult
 where
     F: Fn(&T) -> Result<Choice, OciError>,
 {
@@ -149,10 +150,10 @@ where
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::GenericMessages { messages } => {
                 encoded(&adapt_generic_messages(messages).map_err(oci_failure)?)

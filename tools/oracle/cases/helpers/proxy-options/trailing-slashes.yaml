@@ -1,0 +1,31 @@
+kind: helper
+name: trailing-slashes
+call:
+  proxy_options:
+    operation: responses_url
+    params:
+      - api_base: https://proxy.example/v1///
+        environment_base: null
+      - api_base: null
+        environment_base: https://env.example///
+      - api_base: https://proxy.example
+        environment_base: null
+calls:
+  - proxy_options:
+      operation: image_request
+      params:
+        - endpoint: generations
+          api_base: https://proxy.example/v1//
+          api_key: sk-image
+          environment_base: null
+          environment_key: null
+          headers:
+            X-Trace: abc
+        - endpoint: edits
+          api_base: null
+          api_key: null
+          environment_base: https://env.example///
+          environment_key: sk-env
+          headers: {}
+env: {}
+compare: {ignore: []}

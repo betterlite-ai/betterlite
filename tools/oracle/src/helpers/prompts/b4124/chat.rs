@@ -7,7 +7,8 @@ use betterlite_prompts::message_content::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const FLAG_KEY: &str = "supports_prompt_cache_breakpoint";
 const PROVIDER_KEY: &str = "litellm_provider";

@@ -7,7 +7,10 @@ use serde::Deserialize;
 use serde_json::json;
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_redis::redis_connection_settings::error::RedisSettingsError;
+use betterlite_redis::redis_connection_settings::url_parts;
 
 pub(crate) struct Op;
 
@@ -43,7 +46,7 @@ pub(crate) enum Input {
 #[derive(Debug, Error)]
 enum Failure {
     #[error(transparent)]
-    Settings(#[from] betterlite_redis::redis_connection_settings::error::RedisSettingsError),
+    Settings(#[from] RedisSettingsError),
 }
 
 impl Helper for Op {
@@ -58,7 +61,7 @@ impl Helper for Op {
         let settings =
             resolve_redis_kwargs(overrides.clone(), ClientKind::from(*client), environment)
                 .map_err(Failure::from)?;
-        let uses_tls = betterlite_redis::redis_connection_settings::url_parts::uses_tls(
+        let uses_tls = url_parts::uses_tls(
             settings
                 .startup_nodes
                 .as_ref()
@@ -97,24 +100,16 @@ impl From<Failure> for Box<HelperError> {
         let class = match &failure {
             Failure::Settings(error) => match error {
                 // litellm's _coerce_redis_kwargs_types catches a bad int() or bool() cast and drops it without a word; betterlite names the setting instead, so no case sends it a value that would exercise this arm.
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::Environment { .. }
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::MissingTarget
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamRequiresTls
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::AwsIamMissingSettings { .. } => {
-                    "ValueError"
-                }
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidClusterNodesJson { .. }
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidSentinelNodesJson { .. } => {
-                    "JSONDecodeError"
-                }
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::InvalidUrl { .. }
-                | betterlite_redis::redis_connection_settings::error::RedisSettingsError::UrlCannotStripUserinfo => {
-                    "RuntimeError"
-                }
+                RedisSettingsError::Environment { .. }
+                | RedisSettingsError::MissingTarget
+                | RedisSettingsError::AwsIamRequiresTls
+                | RedisSettingsError::AwsIamMissingSettings { .. } => "ValueError",
+                RedisSettingsError::InvalidClusterNodesJson { .. }
+                | RedisSettingsError::InvalidSentinelNodesJson { .. } => "JSONDecodeError",
+                RedisSettingsError::InvalidUrl { .. }
+                | RedisSettingsError::UrlCannotStripUserinfo => "RuntimeError",
                 // Url/Cluster/Sentinel targets silently drop an unrecognized name in litellm; only a bare Direct connection forwards it straight into redis.Redis.__init__, which raises TypeError for an unexpected keyword argument.
-                betterlite_redis::redis_connection_settings::error::RedisSettingsError::UnknownOption { .. } => {
-                    "TypeError"
-                }
+                RedisSettingsError::UnknownOption { .. } => "TypeError",
             },
         };
         Self::new(HelperError {

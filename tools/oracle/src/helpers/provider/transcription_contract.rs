@@ -11,7 +11,10 @@ use http::HeaderMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::str;
+use std::str::Utf8Error;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
@@ -45,7 +48,7 @@ enum HelperFailure {
     #[error("the case bytes are not UTF-8: {source}")]
     NotUtf8 {
         #[source]
-        source: std::str::Utf8Error,
+        source: Utf8Error,
     },
 }
 
@@ -103,7 +106,7 @@ fn data_view(data: &AudioTranscriptionData) -> HelperResult {
     match data {
         AudioTranscriptionData::Object(object) => Ok(json!({"kind": "object", "value": object})),
         AudioTranscriptionData::Bytes(bytes) => {
-            let text = std::str::from_utf8(bytes)
+            let text = str::from_utf8(bytes)
                 .map_err(|source| HelperFailure::NotUtf8 { source })
                 .or_value_error()?;
             Ok(json!({"kind": "bytes", "value": text}))

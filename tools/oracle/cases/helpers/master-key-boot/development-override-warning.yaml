@@ -1,0 +1,17 @@
+kind: helper
+name: master-key-boot-development-override-warning
+call:
+  master_key_boot:
+    master_key: ""
+    environment_master_key: null
+    general_settings:
+      dangerously_permit_weak_or_unset_master_key: true
+    config_file_path: null
+    override_env_is_on: false
+    database:
+      salt_key_is_set: false
+      is_configured: false
+    stored_secret_count: null
+env: {}
+compare:
+  ignore: []

@@ -7,7 +7,7 @@ use serde_json::Value;
 use super::Step;
 use super::fixture::NoHfTransport;
 use super::warnings::Warnings;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) type Environment<'env> = CapabilityEnvironment<'env, NoDynamicMetadata, NoHfTransport>;
 

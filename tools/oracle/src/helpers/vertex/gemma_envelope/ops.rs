@@ -9,7 +9,7 @@ use betterlite_vertex::gemma_envelope::response::unwrap_predictions;
 use serde_json::{Value, json};
 
 use super::input::{FakeStreamCase, Input, TransformCase};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn run(input: &Input) -> Result<Value, Box<HelperError>> {
     Ok(json!({
