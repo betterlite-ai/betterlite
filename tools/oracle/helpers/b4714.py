@@ -92,7 +92,10 @@ def row_matches(row: FakeRow, where: Where) -> bool:
     for key, condition in where.items():
         if key == COMPOSITE_KEY:
             composite = TEXTS.validate_python(condition)
-            matched = row["user_id"] == composite["user_id"] and row["server_id"] == composite["server_id"]
+            matched = (
+                row["user_id"] == composite["user_id"]
+                and row["server_id"] == composite["server_id"]
+            )
         else:
             matched = field_matches(row.get(key), condition)
         if not matched:
@@ -199,9 +202,13 @@ def run(call: Input) -> Answer:
     result: dict[str, str] | dict[str, dict[str, str]] | None = None
     match call["function"]:
         case "get":
-            result = asyncio.run(mcp_db.get_user_env_vars(client, call["user_id"], call["server_id"]))
+            result = asyncio.run(
+                mcp_db.get_user_env_vars(client, call["user_id"], call["server_id"])
+            )
         case "bulk":
-            result = asyncio.run(mcp_db.get_user_env_vars_bulk(client, call["user_id"], call["server_ids"]))
+            result = asyncio.run(
+                mcp_db.get_user_env_vars_bulk(client, call["user_id"], call["server_ids"])
+            )
         case "merge":
             result = asyncio.run(
                 mcp_db.merge_user_env_vars(
