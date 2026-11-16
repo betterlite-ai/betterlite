@@ -51,13 +51,13 @@ resource "litellm_organization" "test_org_bulk" {
   organization_alias = "%s"
   max_budget         = 100.0
   budget_duration    = "30d"
-  
+
   depends_on = [litellm_model.test_model]
 }
 
 resource "litellm_organization_member_add" "test_members" {
   organization_id = litellm_organization.test_org_bulk.id
-  
+
   member {
     user_id    = "%s"
     user_email = "%s@example.com"

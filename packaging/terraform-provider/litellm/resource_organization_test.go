@@ -52,7 +52,7 @@ resource "litellm_organization" "test" {
   organization_alias = "%s"
   max_budget         = 100.0
   budget_duration    = "30d"
-  
+
   depends_on = [litellm_model.test_model]
 }
 `, alias)
