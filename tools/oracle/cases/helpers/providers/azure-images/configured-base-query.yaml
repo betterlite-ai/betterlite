@@ -1,0 +1,29 @@
+kind: helper
+name: configured-base-query
+call:
+  azure_images:
+    targets:
+      - azure_endpoint: https://example.openai.azure.com/openai/deployments/dall-e-3?foo=1
+        api_version: "2025-02-01-preview"
+        model: dall-e-3
+      - base_url: https://gateway.example/azure
+        api_version: "2025-02-01-preview"
+        model: dall-e-3
+    urls:
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com?foo=1&api-version=1
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com?foo=1&bar=2
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com/azure/openai
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com/openai/v1
+        global_version: "2025-02-01-preview"
+      - model: dall-e-3
+        api_base: https://example.openai.azure.com?api-version=
+        global_version: "2025-02-01-preview"
+env: {}
+compare: {ignore: []}

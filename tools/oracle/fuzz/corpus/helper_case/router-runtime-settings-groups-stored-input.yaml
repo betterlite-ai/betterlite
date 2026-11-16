@@ -1,0 +1,10 @@
+kind: helper
+name: router-runtime-settings-groups-stored-input
+call:
+  b9711:
+    function: settings
+    initial: {"routing_groups": [{"group_name": "fast", "models": ["gpt"], "routing_strategy": "least-busy"}]}
+    kwargs:
+      - ["routing_strategy", "least-busy"]
+env: {}
+compare: {ignore: []}

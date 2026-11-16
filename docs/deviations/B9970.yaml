@@ -1,0 +1,13 @@
+task: B9970
+deviations:
+  - what: >-
+      GET /global/spend/models answers 422 with
+      {"detail":{"error":"Invalid limit: <n>, error: Limit must be greater than 0"}}
+      for a negative limit, for global and internal viewers alike, the body
+      /global/spend/keys gives. A zero limit still returns an empty list.
+    why: >-
+      LiteLLM passes the negative limit to Postgres, which rejects LIMIT with a
+      negative value, and the route answers 500 for input the client sent wrong.
+      No working setup relies on that 500.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L4304
+kept_bugs: []
