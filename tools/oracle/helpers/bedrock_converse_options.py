@@ -98,16 +98,16 @@ class ConverseConfig(AmazonConverseConfig):
         return self.get_supported_openai_params(model)
 
     def apply_effort(self, model: str, effort: str, optional_params: dict[str, JsonValue]) -> None:
-        self._handle_reasoning_effort_parameter(model, effort, optional_params)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L520-L569
+        self._handle_reasoning_effort_parameter(model, effort, optional_params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L520-L569
 
     def clamp_budget(self, optional_params: dict[str, JsonValue]) -> None:
-        self._clamp_thinking_budget_tokens(optional_params)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L594-L609
+        self._clamp_thinking_budget_tokens(optional_params)  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L594-L609
 
     def grounding(self, model: str) -> Grounding | None:
-        return self._map_web_search_options({}, model)  # noqa: E501  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L446-L473
+        return self._map_web_search_options({}, model)  # type: ignore[misc]  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L446-L473
 
     def auto_tool_choice(self) -> JsonValue:
-        return JSON.validate_python(self._auto_tool_choice())
+        return JSON.validate_python(self._auto_tool_choice())  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/converse_transformation.py#L736-L737
 
 
 def flags(call: Flags) -> JsonValue:

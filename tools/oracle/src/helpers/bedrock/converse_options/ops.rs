@@ -8,7 +8,6 @@ use betterlite_bedrock::converse_options::budget::clamp_thinking_budget_tokens;
 use betterlite_bedrock::converse_options::config::{
     CUSTOM_LLM_PROVIDER, class_attributes, config_blocks, get_config,
 };
-use betterlite_bedrock::converse_options::error::ConverseOptionsError;
 use betterlite_bedrock::converse_options::family::{
     is_nova_2_model, is_openai_gpt_reasoning_model, requires_min_max_tokens,
 };

@@ -189,9 +189,9 @@ fn bedrock_converse_options_config_cases(#[case] field: Field) {
                 only_global.litellm_settings.stop_sequences,
                 Some(vec!["gamma".to_owned()])
             );
-            let configured = load(&format!(
-                "model_list:\n- model_name: unit\n  litellm_params: {{model: bedrock/unit, stopSequences: [deploy]}}\nlitellm_settings: {{stopSequences: [global]}}\n"
-            ))
+            let configured = load(
+                "model_list:\n- model_name: unit\n  litellm_params: {model: bedrock/unit, stopSequences: [deploy]}\nlitellm_settings: {stopSequences: [global]}\n",
+            )
             .unwrap();
             assert_eq!(
                 configured.resolve(0).stop_sequences,
