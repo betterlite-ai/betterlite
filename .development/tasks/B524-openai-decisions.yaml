@@ -210,7 +210,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_decisions*")"
       && grep -lq 'openai_decisions' tools/oracle/fuzz/corpus/helper_case/openai_decisions* && cargo nextest run
-      --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_decisions$/)' && cargo
+      --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_decisions$/)' && cargo
       nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-decision-answer-alignment
     why: 'Response-to-IR iterates questions: missing or mismatched answer types become refusal; extra answers are

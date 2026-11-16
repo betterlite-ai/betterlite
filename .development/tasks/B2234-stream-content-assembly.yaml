@@ -146,7 +146,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_content_assembly*")"
       && grep -lq 'stream_content_assembly' tools/oracle/fuzz/corpus/helper_case/stream_content_assembly* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_stream_content_assembly$/)'
+      nextest run --locked -p betterlite-oracle-streaming --no-tests=fail -E 'test(/::helper_seeds_select_stream_content_assembly$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-content-and-reasoning
     why: 'Concatenate selected content or reasoning_content from all choices in order; absent key contributes empty

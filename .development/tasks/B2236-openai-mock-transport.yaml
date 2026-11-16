@@ -148,7 +148,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_mock_transport*")"
       && grep -lq 'openai_mock_transport' tools/oracle/fuzz/corpus/helper_case/openai_mock_transport* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_mock_transport$/)'
+      run --locked -p betterlite-oracle-http --no-tests=fail -E 'test(/::helper_seeds_select_openai_mock_transport$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-mock-reply-literals
     why: Always status200, content-type application/json; id chatcmpl-mock- followed by first8 lowercase UUID4 hex
