@@ -1,0 +1,10 @@
+---
+source: crates/betterlite-config/tests/config_tests/mod.rs
+expression: other
+---
+Err(
+    MissingEnvironment {
+        variable: "FAKE_OPENAI_API_BASE",
+        path: "model_list.0.litellm_params.api_base",
+    },
+)
