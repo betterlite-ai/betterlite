@@ -266,6 +266,7 @@ async fn obsolete_bootstrap_warning() {
 async fn native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepted_with() {
     let pairs = [
         ("DATABASE_URL", "postgresql://unreachable.example:1/db"),
+        ("DIRECT_URL", "postgresql://unreachable.example:1/direct"),
         ("PRISMA_OFFLINE_MODE", "true"),
         ("PRISMA_CLI_PATH", "/opt/prisma"),
         ("PRISMA_NODEENV_CACHE_DIR", "/cache"),
@@ -281,6 +282,7 @@ async fn native_prisma_bootstrap_variables_and_litellm_migration_dir_are_accepte
     assert_eq!(settings.bootstrap_inputs.len(), 5);
     assert_eq!(log.matches("accepted but have no effect").count(), 1);
     assert!(!settings.updates_enabled);
+    assert!(settings.direct_url.is_some());
     // the obsolete inputs change no setting and start no Node toolchain: the schema check alone runs
     let startup = NativeStartup::packaged(settings.clone()).expect("the native startup builds");
     let state = DatabaseState::from_settings(&settings);

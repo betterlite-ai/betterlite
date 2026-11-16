@@ -183,6 +183,18 @@ fn defaults_and_precedence() {
     .database_startup;
     assert_eq!(pinned_deploy.deploy_timeout, Duration::from_secs(1200));
 
+    let empty_deploy = config(
+        "general_settings: {}\n",
+        &[
+            ("LITELLM_PRISMA_COMMAND_TIMEOUT", "900"),
+            ("LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT", ""),
+        ],
+    )
+    .sections
+    .database_startup;
+    // an empty deploy variable is unset, so the command budget carries over
+    assert_eq!(empty_deploy.deploy_timeout, Duration::from_secs(900));
+
     let (invalid_deploy, log) = logged(|| {
         config(
             "general_settings: {}\n",
