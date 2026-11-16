@@ -1,4 +1,3 @@
-use std::fmt;
 use std::num::NonZeroUsize;
 
 use betterlite_openai::files::error::FilesError;
@@ -37,19 +36,6 @@ pub enum Outcome {
     Page(Box<FilePage>),
     Content(Box<BinaryContent>),
     Streaming(Box<FileContentStreamingResult>),
-}
-
-// The streaming reply holds a response body and its exit flag, so only the variant is shown
-impl fmt::Debug for Outcome {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Object(file) => formatter.debug_tuple("Object").field(file).finish(),
-            Self::Deleted(deleted) => formatter.debug_tuple("Deleted").field(deleted).finish(),
-            Self::Page(page) => formatter.debug_tuple("Page").field(page).finish(),
-            Self::Content(content) => formatter.debug_tuple("Content").field(content).finish(),
-            Self::Streaming(_) => formatter.write_str("Streaming(..)"),
-        }
-    }
 }
 
 impl<T: FileTransport> Dispatch<'_, T> {

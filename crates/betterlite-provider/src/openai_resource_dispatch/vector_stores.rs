@@ -6,7 +6,6 @@ use betterlite_openai::vector_stores::files::{
     FileCreateParams, FileListParams, FileOperation, create_request as file_create_request,
     file_request, list_request as file_list_request,
 };
-use betterlite_openai::vector_stores::reply::{ReplyKind, VectorReply, transform_response};
 use betterlite_openai::vector_stores::store::{
     CreateParams, Query, SearchParams, create_request as store_create_request, search_request,
 };
@@ -14,7 +13,6 @@ use betterlite_openai::vector_stores::{
     Headers, Request, complete_url, file_endpoints, get_auth_credentials, store_endpoints,
     validate_environment,
 };
-use http::Response;
 use secrecy::SecretString;
 
 pub struct Dispatch<'a> {
@@ -38,7 +36,6 @@ pub enum Call<'a> {
     },
     Endpoints(EndpointKind),
     Request(RequestCall<'a>),
-    Reply(ReplyCall<'a>),
 }
 
 #[derive(Clone, Copy)]
@@ -73,19 +70,12 @@ pub enum RequestCall<'a> {
     },
 }
 
-pub enum ReplyCall<'a> {
-    Search(&'a Response<Vec<u8>>),
-    Create(&'a Response<Vec<u8>>),
-    File(&'a Response<Vec<u8>>),
-}
-
 #[derive(Debug)]
 pub enum Outcome {
     Headers(Headers),
     Url(String),
     Endpoints(Box<VectorStoreIndexEndpoints>),
     Request(Request),
-    Reply(Box<VectorReply>),
 }
 
 impl Dispatch<'_> {
@@ -125,15 +115,6 @@ impl Dispatch<'_> {
                 Ok(Outcome::Endpoints(Box::new(file_endpoints())))
             }
             Call::Request(request) => Ok(Outcome::Request(request_outcome(request)?)),
-            Call::Reply(ReplyCall::Search(response)) => Ok(Outcome::Reply(Box::new(
-                transform_response(ReplyKind::Search, response)?,
-            ))),
-            Call::Reply(ReplyCall::Create(response)) => Ok(Outcome::Reply(Box::new(
-                transform_response(ReplyKind::Create, response)?,
-            ))),
-            Call::Reply(ReplyCall::File(response)) => Ok(Outcome::Reply(Box::new(
-                transform_response(ReplyKind::File, response)?,
-            ))),
         }
     }
 }

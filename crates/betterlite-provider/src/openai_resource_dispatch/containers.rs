@@ -2,9 +2,6 @@ use betterlite_openai::api::container_contracts::config::{
     BaseContainerConfig, ContainerListQuery, ContainerRequestContext,
 };
 use betterlite_openai::api::container_contracts::error::ContainerError;
-use betterlite_openai::api::container_contracts::records::{
-    ContainerFileListResponse, ContainerListResponse, ContainerObject, DeleteContainerResult,
-};
 use betterlite_openai::openai_base_config::Object;
 
 pub struct Dispatch<'a> {
@@ -13,13 +10,8 @@ pub struct Dispatch<'a> {
     pub call: Call<'a>,
 }
 
-// B522's six resource operations; a request transform and its reply decode stay separate calls
+// B522's six request operations plus the file-content decode that keeps the bytes intact
 pub enum Call<'a> {
-    Request(RequestCall<'a>),
-    Reply(ReplyCall<'a>),
-}
-
-pub enum RequestCall<'a> {
     Create {
         name: &'a str,
         params: &'a Object,
@@ -46,25 +38,13 @@ pub enum RequestCall<'a> {
         file_id: &'a str,
         api_base: &'a str,
     },
-}
-
-pub enum ReplyCall<'a> {
-    Create(&'a [u8]),
-    List(&'a [u8]),
-    Retrieve(&'a [u8]),
-    Delete(&'a [u8]),
-    FileList(&'a [u8]),
-    FileContent(&'a [u8]),
+    FileContentReply(&'a [u8]),
 }
 
 #[derive(Debug)]
 pub enum Outcome {
     Create(Object),
     Request { url: String, query: Object },
-    Container(Box<ContainerObject>),
-    List(Box<ContainerListResponse>),
-    Deleted(Box<DeleteContainerResult>),
-    FileList(Box<ContainerFileListResponse>),
     FileContent(Box<[u8]>),
 }
 
@@ -77,94 +57,79 @@ impl Dispatch<'_> {
             call,
         } = self;
         match call {
-            Call::Request(request) => request_outcome(config, context, request),
-            Call::Reply(reply) => reply_outcome(config, reply),
+            Call::Create { name, params } => Ok(Outcome::Create(
+                config.transform_container_create_request(name, params, context),
+            )),
+            Call::List { api_base, query } => Ok(list_outcome(config, api_base, context, &query)),
+            Call::Retrieve {
+                container_id,
+                api_base,
+            } => {
+                let (url, query) =
+                    config.transform_container_retrieve_request(container_id, api_base, context)?;
+                Ok(Outcome::Request { url, query })
+            }
+            Call::Delete {
+                container_id,
+                api_base,
+            } => {
+                let (url, query) =
+                    config.transform_container_delete_request(container_id, api_base, context)?;
+                Ok(Outcome::Request { url, query })
+            }
+            Call::FileList {
+                container_id,
+                api_base,
+                query,
+            } => file_list_request(config, context, container_id, api_base, &query),
+            Call::FileContent {
+                container_id,
+                file_id,
+                api_base,
+            } => file_content_request(config, context, container_id, file_id, api_base),
+            Call::FileContentReply(body) => Ok(Outcome::FileContent(
+                config
+                    .transform_container_file_content_response(body)?
+                    .into_boxed_slice(),
+            )),
         }
     }
 }
 
-fn request_outcome(
+fn list_outcome(
     config: &dyn BaseContainerConfig,
+    api_base: &str,
     context: ContainerRequestContext<'_>,
-    call: RequestCall<'_>,
-) -> Result<Outcome, ContainerError> {
-    Ok(match call {
-        RequestCall::Create { name, params } => {
-            Outcome::Create(config.transform_container_create_request(name, params, context))
-        }
-        RequestCall::List { api_base, query } => {
-            let (url, query) = config.transform_container_list_request(api_base, context, &query);
-            Outcome::Request { url, query }
-        }
-        RequestCall::Retrieve {
-            container_id,
-            api_base,
-        } => {
-            let (url, query) =
-                config.transform_container_retrieve_request(container_id, api_base, context)?;
-            Outcome::Request { url, query }
-        }
-        RequestCall::Delete {
-            container_id,
-            api_base,
-        } => {
-            let (url, query) =
-                config.transform_container_delete_request(container_id, api_base, context)?;
-            Outcome::Request { url, query }
-        }
-        RequestCall::FileList {
-            container_id,
-            api_base,
-            query,
-        } => {
-            let (url, query) = config.transform_container_file_list_request(
-                container_id,
-                api_base,
-                context,
-                &query,
-            )?;
-            Outcome::Request { url, query }
-        }
-        RequestCall::FileContent {
-            container_id,
-            file_id,
-            api_base,
-        } => {
-            let (url, query) = config.transform_container_file_content_request(
-                container_id,
-                file_id,
-                api_base,
-                context,
-            )?;
-            Outcome::Request { url, query }
-        }
-    })
+    query: &ContainerListQuery<'_>,
+) -> Outcome {
+    let (url, query) = config.transform_container_list_request(api_base, context, query);
+    Outcome::Request { url, query }
 }
 
-fn reply_outcome(
+fn file_list_request(
     config: &dyn BaseContainerConfig,
-    reply: ReplyCall<'_>,
+    context: ContainerRequestContext<'_>,
+    container_id: &str,
+    api_base: &str,
+    query: &ContainerListQuery<'_>,
 ) -> Result<Outcome, ContainerError> {
-    Ok(match reply {
-        ReplyCall::Create(body) => {
-            Outcome::Container(Box::new(config.transform_container_create_response(body)?))
-        }
-        ReplyCall::List(body) => {
-            Outcome::List(Box::new(config.transform_container_list_response(body)?))
-        }
-        ReplyCall::Retrieve(body) => Outcome::Container(Box::new(
-            config.transform_container_retrieve_response(body)?,
-        )),
-        ReplyCall::Delete(body) => {
-            Outcome::Deleted(Box::new(config.transform_container_delete_response(body)?))
-        }
-        ReplyCall::FileList(body) => Outcome::FileList(Box::new(
-            config.transform_container_file_list_response(body)?,
-        )),
-        ReplyCall::FileContent(body) => Outcome::FileContent(
-            config
-                .transform_container_file_content_response(body)?
-                .into_boxed_slice(),
-        ),
-    })
+    let (url, query) =
+        config.transform_container_file_list_request(container_id, api_base, context, query)?;
+    Ok(Outcome::Request { url, query })
+}
+
+fn file_content_request(
+    config: &dyn BaseContainerConfig,
+    context: ContainerRequestContext<'_>,
+    container_id: &str,
+    file_id: &str,
+    api_base: &str,
+) -> Result<Outcome, ContainerError> {
+    let (url, query) = config.transform_container_file_content_request(
+        container_id,
+        file_id,
+        api_base,
+        context,
+    )?;
+    Ok(Outcome::Request { url, query })
 }
