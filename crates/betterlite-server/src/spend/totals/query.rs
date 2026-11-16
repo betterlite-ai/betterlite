@@ -32,16 +32,16 @@ pub fn decode_spend_totals_query(raw: &[u8]) -> SpendTotalsQuery {
 // pydantic reads a JSON int from text: digits with single underscores, an optional sign, and a zero fraction
 fn parse_limit(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    let (negative, unsigned) = match trimmed.strip_prefix('-') {
-        Some(rest) => (true, rest),
-        None => (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
-    };
+    let (negative, unsigned) = trimmed.strip_prefix('-').map_or_else(
+        || (false, trimmed.strip_prefix('+').unwrap_or(trimmed)),
+        |rest| (true, rest),
+    );
     let (whole, fraction) = match unsigned.split_once('.') {
         Some((whole, fraction)) => (whole, Some(fraction)),
         None => (unsigned, None),
     };
-    if let Some(fraction) = fraction
-        && (fraction.is_empty() || !fraction.bytes().all(|byte| byte == b'0'))
+    if let Some(decimals) = fraction
+        && (decimals.is_empty() || !decimals.bytes().all(|byte| byte == b'0'))
     {
         return None;
     }

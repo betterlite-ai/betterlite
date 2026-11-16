@@ -7,7 +7,9 @@ use betterlite_logging::prometheus_query::transport::{QueryRequest, Transport};
 use betterlite_logging::prometheus_query::{PrometheusQuery, PrometheusSettings};
 use chrono::{DateTime, Utc};
 
-use super::super::prometheus::{DailySpendFailure, DailySpendSource, PrometheusDailySpendSource};
+use super::super::prometheus::{
+    DailySpendFailure, DailySpendSource as _, PrometheusDailySpendSource,
+};
 use super::support::decimal;
 
 const END_OF_WINDOW: i64 = 1_724_112_000;
@@ -83,14 +85,14 @@ async fn reads_the_daily_spend_from_a_prometheus_response() {
 
 #[tokio::test]
 async fn reports_a_prometheus_failure_as_a_query_failure() {
-    let source = PrometheusDailySpendSource {
+    let prometheus = PrometheusDailySpendSource {
         query: PrometheusQuery {
             settings: settings(),
             transport: RefusedTransport,
             clock: FixedClock,
         },
     };
-    let failure = source.daily_spend(Some("hashed")).await.unwrap_err();
+    let failure = prometheus.daily_spend(Some("hashed")).await.unwrap_err();
     match failure {
         DailySpendFailure::Query { source } => {
             assert!(matches!(source, QueryError::Transport(Refused)));

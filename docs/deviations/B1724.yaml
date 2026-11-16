@@ -59,6 +59,16 @@ deviations:
       treats an amount it cannot represent as unreadable spend data and keeps the
       typed parse cause in the error.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3951-L3957
+  - what: >-
+      A failed /global/spend/logs or /global/spend request carries the route prefix
+      and the typed cause in its message, with no Python traceback. A missing
+      database on /global/spend answers "No db connected" where LiteLLM sends the
+      Python repr of the detail dict.
+    why: >-
+      LiteLLM appends traceback.format_exc() to the message, which puts server file
+      paths and source lines in an HTTP response. The wrapper, type, param and code
+      stay the same, so a client that reads those fields sees no change.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L3911-L3923
 kept_bugs:
   - what: >-
       An internal viewer's /global/spend/keys ignores the limit it sends and always

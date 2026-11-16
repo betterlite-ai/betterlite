@@ -38,11 +38,11 @@ fn rounds_each_daily_amount_before_summing_the_team_total() {
 }
 
 #[rstest]
-#[case::binary_below_the_midpoint(2.675, "2.67")]
-#[case::exact_midpoint(0.125, "0.12")]
-#[case::binary_below_ten(10.555, "10.55")]
-#[case::exact_cent(1.25, "1.25")]
-#[case::exact_above_the_midpoint(0.135, "0.14")]
+#[case::binary_below_the_midpoint(2.675_f64, "2.67")]
+#[case::exact_midpoint(0.125_f64, "0.12")]
+#[case::binary_below_ten(10.555_f64, "10.55")]
+#[case::exact_cent(1.25_f64, "1.25")]
+#[case::exact_above_the_midpoint(0.135_f64, "0.14")]
 fn rounds_retained_floats_to_the_nearest_even_cent(#[case] value: f64, #[case] expected: &str) {
     let rows = [row(
         Some("alpha"),

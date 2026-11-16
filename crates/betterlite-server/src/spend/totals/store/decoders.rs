@@ -106,10 +106,7 @@ impl TryFrom<&Row> for TeamSpend {
 }
 
 fn required_amount(row: &Row, column: &'static str) -> Result<Decimal, TotalsStoreError> {
-    match optional_amount(row, column)? {
-        Some(value) => Ok(value),
-        None => Err(TotalsStoreError::InvalidAmount { column }),
-    }
+    optional_amount(row, column)?.ok_or(TotalsStoreError::InvalidAmount { column })
 }
 
 fn optional_amount(row: &Row, column: &'static str) -> Result<Option<Decimal>, TotalsStoreError> {

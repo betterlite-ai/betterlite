@@ -17,6 +17,31 @@ use betterlite_postgres_fixture::connection::PostgresFixture;
 use super::super::store::{PostgresTotalsStore, TotalsStore as _, TotalsStoreError};
 use super::support::{decimal, retained};
 
+const SCHEMA_SQL: &str = r#"
+CREATE TABLE "LiteLLM_SpendLogs" (
+    request_id TEXT PRIMARY KEY,
+    call_type TEXT NOT NULL DEFAULT '',
+    api_key TEXT NOT NULL DEFAULT '',
+    spend DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+    total_tokens INTEGER NOT NULL DEFAULT 0,
+    "startTime" TIMESTAMP(3) NOT NULL,
+    "endTime" TIMESTAMP(3),
+    model TEXT NOT NULL DEFAULT '',
+    "user" TEXT DEFAULT '',
+    team_id TEXT
+);
+CREATE TABLE "LiteLLM_VerificationToken" (
+    token TEXT PRIMARY KEY,
+    key_alias TEXT,
+    key_name TEXT,
+    user_id TEXT
+);
+CREATE TABLE "LiteLLM_TeamTable" (
+    team_id TEXT PRIMARY KEY,
+    team_alias TEXT
+);
+"#;
+
 #[derive(Parser)]
 struct Environment {
     #[arg(long, env = "POSTGRES_TEST_URL")]
@@ -43,7 +68,7 @@ async fn database() -> (PostgresFixture, Pool) {
     let pool = Pool::builder(manager).max_size(1).build().unwrap();
     let client = pool.get().await.unwrap();
     let views = format!(
-        "{MONTHLY_GLOBAL_SPEND_SQL}\n{SPEND_PER_KEY_SQL}\n{USER_KEY_SPEND_SQL}\n{LAST_30D_KEYS_BY_SPEND_SQL}\n{LAST_30D_MODELS_BY_SPEND_SQL}"
+        "{SCHEMA_SQL}\n{MONTHLY_GLOBAL_SPEND_SQL}\n{SPEND_PER_KEY_SQL}\n{USER_KEY_SPEND_SQL}\n{LAST_30D_KEYS_BY_SPEND_SQL}\n{LAST_30D_MODELS_BY_SPEND_SQL}"
     );
     client.batch_execute(&views).await.unwrap();
     drop(client);

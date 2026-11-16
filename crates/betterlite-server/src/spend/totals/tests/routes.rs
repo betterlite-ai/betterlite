@@ -113,6 +113,7 @@ async fn logs_read_the_user_key_view_for_an_internal_viewer() {
     assert_eq!(reply.status, StatusCode::OK);
     let body: Vec<UserKeyDailyBody> = decode(&reply);
     assert_eq!(body.len(), 1);
+    assert_eq!(body[0].date, "2026-01-01");
     assert_eq!(body[0].user, "u1");
     assert_eq!(body[0].api_key, "sk-one");
     assert_eq!(body[0].spend, decimal("1.25"));
@@ -280,7 +281,9 @@ async fn logs_scope_the_monthly_view_to_the_requested_key() {
     assert_eq!(reply.status, StatusCode::OK);
     let body: Vec<KeyDailyBody> = decode(&reply);
     assert_eq!(body.len(), 1);
+    assert_eq!(body[0].date, "2026-01-01");
     assert_eq!(body[0].api_key, "sk-one");
+    assert_eq!(body[0].spend, decimal("3.5"));
     assert_eq!(store.calls(), vec!["key_daily_spend(sk-one)".to_owned()]);
 }
 
@@ -390,6 +393,22 @@ async fn spend_keeps_a_null_sum_null() {
     assert!(body_text(&reply).contains(r#""spend":null"#));
 }
 
+#[rstest]
+#[case::logs("/global/spend/logs")]
+#[case::spend("/global/spend")]
+#[case::teams("/global/spend/teams")]
+#[tokio::test]
+async fn routes_without_a_limit_parameter_ignore_unparsable_text(#[case] uri: &str) {
+    let store = store_with(spend_store());
+    let reply = call(
+        &format!("{uri}?limit=five"),
+        Some(&admin()),
+        state(Some(&store), None, Decimal::ZERO),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::OK);
+}
+
 #[tokio::test]
 async fn spend_requires_a_database() {
     let reply = call(
@@ -449,7 +468,15 @@ async fn spend_wraps_a_database_failure() {
 #[tokio::test]
 async fn keys_read_the_last_thirty_days_view_without_a_limit() {
     let mut fake = spend_store();
-    fake.keys = vec![key_spend("sk-one", "1.5"), key_spend("sk-two", "0.5")];
+    fake.keys = vec![
+        KeySpend {
+            api_key: "sk-one".to_owned(),
+            total_spend: decimal("1.5"),
+            key_alias: Some("primary".to_owned()),
+            key_name: Some("one".to_owned()),
+        },
+        key_spend("sk-two", "0.5"),
+    ];
     let store = store_with(fake);
     let reply = call(
         "/global/spend/keys",
@@ -462,6 +489,10 @@ async fn keys_read_the_last_thirty_days_view_without_a_limit() {
     assert_eq!(body.len(), 2);
     assert_eq!(body[0].api_key, "sk-one");
     assert_eq!(body[0].total_spend, decimal("1.5"));
+    assert_eq!(body[0].key_alias.as_deref(), Some("primary"));
+    assert_eq!(body[0].key_name.as_deref(), Some("one"));
+    assert_eq!(body[1].key_alias, None);
+    assert_eq!(body[1].key_name, None);
     assert_eq!(store.calls(), vec!["keys_by_spend(None)".to_owned()]);
 }
 
@@ -674,6 +705,7 @@ async fn models_default_the_limit_to_ten() {
     let body: Vec<ModelBody> = decode(&reply);
     assert_eq!(body.len(), 1);
     assert_eq!(body[0].model, "gpt-4o");
+    assert_eq!(body[0].total_spend, decimal("2.5"));
     assert_eq!(store.calls(), vec!["models_by_spend(10)".to_owned()]);
 }
 
@@ -728,6 +760,8 @@ async fn models_use_the_user_aggregation_for_an_internal_viewer() {
     .await;
     let limited_body: Vec<UserModelBody> = decode(&limited);
     assert_eq!(limited_body.len(), 1);
+    assert_eq!(limited_body[0].model, "gpt-4o");
+    assert_eq!(limited_body[0].total_spend, decimal("2.5"));
     assert_eq!(limited_body[0].total_tokens, 12);
     let default = call(
         "/global/spend/models",

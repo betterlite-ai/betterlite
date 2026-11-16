@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use async_trait::async_trait;
 use axum::Router;
@@ -81,7 +81,10 @@ impl FakeStore {
     where
         Row: Clone,
     {
-        self.calls.lock().unwrap().push(call);
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         match self.failure {
             Some(FakeFailure::NoDatabase) => {
                 Err(TotalsStoreError::Database(DbError::NoDbConnected))
