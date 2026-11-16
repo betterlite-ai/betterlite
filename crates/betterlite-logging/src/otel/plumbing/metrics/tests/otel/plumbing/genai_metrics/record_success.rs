@@ -1,10 +1,13 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use betterlite_logging::otel::legacy_metrics::recorder::MetricCall;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::support::{
-    COST, DURATION, RESPONSE, Recorded, TOKENS, TPOT, TTFT, USAGE_2_4, names, record,
-    record_result, sums,
+    COST, DURATION, NoSettings, RESPONSE, Recorded, TOKENS, TPOT, TTFT, USAGE_2_4, build, kwargs,
+    names, record, record_result, sums,
 };
 
 #[test]
@@ -89,6 +92,21 @@ fn token_usage_is_split_by_the_token_type_attribute() {
 fn the_cost_is_recorded_only_when_it_is_positive(#[case] extra: &str, #[case] recorded_cost: bool) {
     let recorded = record(extra, None);
     assert_eq!(!sums(&recorded, COST).is_empty(), recorded_cost);
+}
+
+#[test]
+fn a_duration_outside_the_decimal_range_is_an_error() {
+    let (recorder, _provider, _exporter) = build(Arc::new(NoSettings), None);
+    let call_kwargs = kwargs("{}");
+    let error = recorder
+        .record(&MetricCall {
+            kwargs: &call_kwargs,
+            response: None,
+            start_time: Decimal::MIN,
+            end_time: Decimal::MAX,
+        })
+        .expect_err("out of range");
+    assert!(error.to_string().contains("out of range"));
 }
 
 #[test]
