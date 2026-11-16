@@ -137,8 +137,8 @@ fn summary_entity_sums_days_ranks_and_keeps_the_first_alias() {
             Vec::new(),
             Vec::new(),
             vec![
-                ("team-1", alias_entry("Alpha", "2", 1, 10)),
-                ("team-2", alias_entry("Beta", "9", 2, 20)),
+                ("team-1", alias_entry("Alpha", entry("2", 1, 10))),
+                ("team-2", alias_entry("Beta", entry("9", 2, 20))),
             ],
         ),
     );
@@ -147,7 +147,7 @@ fn summary_entity_sums_days_ranks_and_keeps_the_first_alias() {
         breakdown(
             Vec::new(),
             Vec::new(),
-            vec![("team-1", alias_entry("Renamed", "3", 1, 5))],
+            vec![("team-1", alias_entry("Renamed", entry("3", 1, 5)))],
         ),
     );
     assert_eq!(
@@ -210,14 +210,14 @@ fn summary_entity_keeps_first_seen_order_on_a_spend_tie() {
 
 #[test]
 fn summary_entity_rejects_a_non_text_alias() {
+    let mut non_text = entry("1", 1, 1);
+    non_text
+        .metadata
+        .insert("alias".to_owned(), Json::Bool(true));
     let page = page(
         vec![day(
             on(2026, 1, 1),
-            breakdown(
-                Vec::new(),
-                Vec::new(),
-                vec![("team-1", non_text_alias_entry("1", 1, 1))],
-            ),
+            breakdown(Vec::new(), Vec::new(), vec![("team-1", non_text)]),
         )],
         metadata("1", 1, 1, 0, 1),
     );

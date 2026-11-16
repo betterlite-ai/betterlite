@@ -62,8 +62,7 @@ async fn source_teams_pages_first_with_the_team_table() {
     assert_eq!(call.page_size, PAGINATED_PAGE_SIZE);
     assert_eq!(call.timezone_offset_minutes, None);
     assert!(!call.include_current_utc_day);
-    assert!(call.entity_metadata_absent);
-    assert!(call.callbacks_absent);
+    assert_eq!(call.extras, ExtrasAbsence::Both);
     assert!(call.exclude_entity_ids.is_empty());
 }
 

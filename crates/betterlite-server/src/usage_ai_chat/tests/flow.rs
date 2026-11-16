@@ -32,24 +32,29 @@ async fn flow_streams_a_plain_answer() {
     );
 }
 
+const DAYS: [(&str, &str); 2] = [("start_date", "2026-01-01"), ("end_date", "2026-01-31")];
+const TEAM_DAYS: [(&str, &str); 3] = [
+    ("start_date", "2026-01-01"),
+    ("end_date", "2026-01-31"),
+    ("team_ids", "team-1, team-2"),
+];
+
 #[tokio::test]
 async fn flow_streams_tool_events_in_order() {
     let model = fake_model()
         .replying(tool_call("get_usage_data", ARGS))
         .streaming(&["Total", " spend"]);
-    let served = page(Vec::new(), metadata("1.5", 1, 1, 0, 10));
-    let parts = chat_parts(model, fake_source().serving(served.clone()));
+    let parts = chat_parts(model, fake_source().serving(empty_page()));
     let messages = [ChatMessage::User {
         content: "how much?".to_owned(),
     }];
     let request = chat_request(&messages, Some(" claude-3 "), Some("alice"), false);
-    let days = [("start_date", "2026-01-01"), ("end_date", "2026-01-31")];
     assert_eq!(
         drive(&parts, &request).await,
         [
             status_frame("Thinking..."),
-            frame_tool("get_usage_data", "global usage data", &days, "running"),
-            frame_tool("get_usage_data", "global usage data", &days, "complete"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "running"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "complete"),
             status_frame("Analyzing results..."),
             chunk_frame("Total"),
             chunk_frame(" spend"),
@@ -58,15 +63,28 @@ async fn flow_streams_tool_events_in_order() {
     );
     assert_eq!(
         parts.data.calls(),
-        [SourceCall::Global {
-            start_date: "2026-01-01".to_owned(),
-            end_date: "2026-01-31".to_owned(),
-            user_id: Some("alice".to_owned()),
-        }]
+        [SourceCall::global(
+            "2026-01-01",
+            "2026-01-31",
+            Some("alice")
+        )]
     );
+    assert_eq!(parts.model.requests()[0].model, "claude-3");
+}
+
+#[tokio::test]
+async fn flow_feeds_the_tool_result_back_to_the_model() {
+    let model = fake_model()
+        .replying(tool_call("get_usage_data", ARGS))
+        .streaming(&["Total"]);
+    let served = page(Vec::new(), metadata("1.5", 1, 1, 0, 10));
+    let parts = chat_parts(model, fake_source().serving(served.clone()));
+    let messages = [ChatMessage::User {
+        content: "how much?".to_owned(),
+    }];
+    let request = chat_request(&messages, Some("  claude-3  "), Some("alice"), false);
+    drive(&parts, &request).await;
     let requests = parts.model.requests();
-    assert_eq!(requests.len(), 2);
-    assert_eq!(requests[0].model, "claude-3");
     assert_eq!(requests[1].model, "claude-3");
     assert_eq!(requests[1].tools, None);
     assert_eq!(
@@ -129,93 +147,81 @@ async fn flow_drops_text_that_arrives_with_tool_calls() {
 
 #[tokio::test]
 async fn flow_runs_every_admin_tool_call_in_order() {
-    let reply = ModelReply {
-        content: None,
-        tool_calls: vec![
-            ModelToolCall {
-                id: "call-1".to_owned(),
-                name: "get_team_usage_data".to_owned(),
-                arguments: "{\"start_date\":\"2026-01-01\",\"end_date\":\"2026-01-31\",\"team_ids\":\"team-1, team-2\"}".to_owned(),
-            },
-            ModelToolCall {
-                id: "call-2".to_owned(),
-                name: "get_tag_usage_data".to_owned(),
-                arguments: "{\"start_date\":\"2026-01-01\",\"end_date\":\"2026-01-31\"}".to_owned(),
-            },
-        ],
-    };
+    let parts = chat_parts(
+        fake_model()
+            .replying(admin_tool_reply())
+            .streaming(&["done"]),
+        fake_source().serving(empty_page()).serving(empty_page()),
+    );
+    let messages = [ChatMessage::User {
+        content: "teams and tags".to_owned(),
+    }];
+    let frames = drive(
+        &parts,
+        &chat_request(&messages, None, Some("admin-1"), true),
+    )
+    .await;
+    let events: [(&str, &str, &[(&str, &str)], &str); 4] = [
+        (
+            "get_team_usage_data",
+            "team usage data",
+            &TEAM_DAYS,
+            "running",
+        ),
+        (
+            "get_team_usage_data",
+            "team usage data",
+            &TEAM_DAYS,
+            "complete",
+        ),
+        ("get_tag_usage_data", "tag usage data", &DAYS, "running"),
+        ("get_tag_usage_data", "tag usage data", &DAYS, "complete"),
+    ];
+    let expected = events
+        .into_iter()
+        .map(|(name, label, arguments, status)| frame_tool(name, label, arguments, status))
+        .collect::<Vec<String>>();
+    assert_eq!(frames[1..5].to_vec(), expected);
+    assert_eq!(frames[7], done_frame());
+}
+
+#[tokio::test]
+async fn flow_feeds_every_admin_tool_result_back_to_the_model() {
     let team_page = page(Vec::new(), metadata("2", 1, 1, 0, 5));
     let tag_page = empty_page();
+    let team_summary = summarise_entity_data(&team_page, EntityLabel::Team).unwrap();
+    let tag_summary = summarise_entity_data(&tag_page, EntityLabel::Tag).unwrap();
     let parts = chat_parts(
-        fake_model().replying(reply).streaming(&["done"]),
-        fake_source()
-            .serving(team_page.clone())
-            .serving(tag_page.clone()),
+        fake_model()
+            .replying(admin_tool_reply())
+            .streaming(&["done"]),
+        fake_source().serving(team_page).serving(tag_page),
     );
     let messages = [ChatMessage::User {
         content: "teams and tags".to_owned(),
     }];
     let request = chat_request(&messages, None, Some("admin-1"), true);
-    let frames = drive(&parts, &request).await;
-    let id_days = [("start_date", "2026-01-01"), ("end_date", "2026-01-31")];
-    assert_eq!(frames.len(), 8);
-    assert_eq!(
-        frames[1],
-        frame_tool(
-            "get_team_usage_data",
-            "team usage data",
-            &id_days,
-            "running"
-        )
-    );
-    assert_eq!(
-        frames[2],
-        frame_tool(
-            "get_team_usage_data",
-            "team usage data",
-            &id_days,
-            "complete"
-        )
-    );
-    assert_eq!(
-        frames[3],
-        frame_tool("get_tag_usage_data", "tag usage data", &id_days, "running")
-    );
-    assert_eq!(
-        frames[4],
-        frame_tool("get_tag_usage_data", "tag usage data", &id_days, "complete")
-    );
-    assert_eq!(frames[7], done_frame());
+    drive(&parts, &request).await;
+    let team_ids = vec!["team-1".to_owned(), "team-2".to_owned()];
     assert_eq!(
         parts.data.calls(),
         [
-            SourceCall::Teams {
-                start_date: "2026-01-01".to_owned(),
-                end_date: "2026-01-31".to_owned(),
-                team_ids: Some(vec!["team-1".to_owned(), "team-2".to_owned()]),
-            },
-            SourceCall::Tags {
-                start_date: "2026-01-01".to_owned(),
-                end_date: "2026-01-31".to_owned(),
-                tags: None,
-            },
+            SourceCall::teams("2026-01-01", "2026-01-31", Some(team_ids.as_slice())),
+            SourceCall::tags("2026-01-01", "2026-01-31", None),
         ]
     );
-    let requests = parts.model.requests();
-    assert_eq!(requests[0].tools.as_ref().unwrap().len(), 3);
     assert_eq!(
-        requests[1].messages[3],
-        ChatMessage::Tool {
-            tool_call_id: "call-1".to_owned(),
-            content: summarise_entity_data(&team_page, EntityLabel::Team).unwrap(),
-        }
-    );
-    assert_eq!(
-        requests[1].messages[4],
-        ChatMessage::Tool {
-            tool_call_id: "call-2".to_owned(),
-            content: summarise_entity_data(&tag_page, EntityLabel::Tag).unwrap(),
-        }
+        parts.model.requests()[1].messages[3..5].to_vec(),
+        [
+            ChatMessage::Tool {
+                tool_call_id: "call-1".to_owned(),
+                content: team_summary,
+            },
+            ChatMessage::Tool {
+                tool_call_id: "call-2".to_owned(),
+                content: tag_summary,
+            },
+        ]
     );
 }
 
@@ -229,13 +235,12 @@ async fn flow_reports_a_tool_failure_and_keeps_going() {
         content: "hi".to_owned(),
     }];
     let frames = drive(&parts, &chat_request(&messages, None, Some("alice"), false)).await;
-    let days = [("start_date", "2026-01-01"), ("end_date", "2026-01-31")];
     assert_eq!(
         frames,
         [
             status_frame("Thinking..."),
-            frame_tool("get_usage_data", "global usage data", &days, "running"),
-            frame_tool("get_usage_data", "global usage data", &days, "error"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "running"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "error"),
             status_frame("Analyzing results..."),
             chunk_frame("Sorry."),
             done_frame(),
@@ -318,13 +323,12 @@ async fn flow_ends_with_a_generic_error_when_the_stream_fails() {
         content: "hi".to_owned(),
     }];
     let frames = drive(&parts, &chat_request(&messages, None, Some("alice"), false)).await;
-    let days = [("start_date", "2026-01-01"), ("end_date", "2026-01-31")];
     assert_eq!(
         frames,
         [
             status_frame("Thinking..."),
-            frame_tool("get_usage_data", "global usage data", &days, "running"),
-            frame_tool("get_usage_data", "global usage data", &days, "complete"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "running"),
+            frame_tool("get_usage_data", "global usage data", &DAYS, "complete"),
             status_frame("Analyzing results..."),
             ERROR_FRAME.to_owned(),
         ]
@@ -431,11 +435,11 @@ async fn flow_replaces_the_models_user_id_for_a_non_admin() {
     assert!(frames[1].contains("\"user_id\": \"mallory\""));
     assert_eq!(
         parts.data.calls(),
-        [SourceCall::Global {
-            start_date: "2026-01-01".to_owned(),
-            end_date: "2026-01-31".to_owned(),
-            user_id: Some("alice".to_owned()),
-        }]
+        [SourceCall::global(
+            "2026-01-01",
+            "2026-01-31",
+            Some("alice")
+        )]
     );
 }
 

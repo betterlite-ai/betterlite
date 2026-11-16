@@ -104,11 +104,7 @@ fn fetch_args_missing_or_empty_dates_fail_for_every_tool(#[case] tool: UsageTool
 
 #[test]
 fn fetch_args_team_and_tag_pass_only_non_empty_filters() {
-    let with_ids = args(&[
-        ("start_date", "2026-01-01"),
-        ("end_date", "2026-01-31"),
-        ("team_ids", "team-1, team-2"),
-    ]);
+    let with_ids = dated_args("team_ids", "team-1, team-2");
     assert_eq!(
         resolve_fetch_kwargs(UsageTool::Team, &with_ids, None, true).unwrap(),
         FetchArguments::Team {
@@ -117,11 +113,7 @@ fn fetch_args_team_and_tag_pass_only_non_empty_filters() {
             team_ids: Some("team-1, team-2".to_owned()),
         }
     );
-    let blank_ids = args(&[
-        ("start_date", "2026-01-01"),
-        ("end_date", "2026-01-31"),
-        ("team_ids", ""),
-    ]);
+    let blank_ids = dated_args("team_ids", "");
     assert_eq!(
         resolve_fetch_kwargs(UsageTool::Team, &blank_ids, None, true).unwrap(),
         FetchArguments::Team {
@@ -130,11 +122,7 @@ fn fetch_args_team_and_tag_pass_only_non_empty_filters() {
             team_ids: None,
         }
     );
-    let with_tags = args(&[
-        ("start_date", "2026-01-01"),
-        ("end_date", "2026-01-31"),
-        ("tags", "prod,beta"),
-    ]);
+    let with_tags = dated_args("tags", "prod,beta");
     assert_eq!(
         resolve_fetch_kwargs(UsageTool::Tag, &with_tags, None, true).unwrap(),
         FetchArguments::Tag {
@@ -143,11 +131,7 @@ fn fetch_args_team_and_tag_pass_only_non_empty_filters() {
             tags: Some("prod,beta".to_owned()),
         }
     );
-    let blank_tags = args(&[
-        ("start_date", "2026-01-01"),
-        ("end_date", "2026-01-31"),
-        ("tags", ""),
-    ]);
+    let blank_tags = dated_args("tags", "");
     assert_eq!(
         resolve_fetch_kwargs(UsageTool::Tag, &blank_tags, None, true).unwrap(),
         FetchArguments::Tag {
@@ -167,9 +151,24 @@ fn fetch_args_decode_keeps_key_order_and_rejects_other_shapes() {
         ["end_date", "start_date"]
     );
     assert_eq!(decoded["start_date"], "2026-01-01");
-    assert!(decode_tool_arguments("[1, 2]").is_err());
-    assert!(decode_tool_arguments(r#"{"start_date": 5}"#).is_err());
-    assert!(decode_tool_arguments(r#"{"start_date": null}"#).is_err());
-    assert!(decode_tool_arguments("").is_err());
-    assert!(decode_tool_arguments(r#"{"start_date": "2026-01-01"#).is_err());
+    assert!(matches!(
+        decode_tool_arguments("[1, 2]"),
+        Err(UsageChatError::InvalidToolArguments { .. })
+    ));
+    assert!(matches!(
+        decode_tool_arguments(r#"{"start_date": 5}"#),
+        Err(UsageChatError::InvalidToolArguments { .. })
+    ));
+    assert!(matches!(
+        decode_tool_arguments(r#"{"start_date": null}"#),
+        Err(UsageChatError::InvalidToolArguments { .. })
+    ));
+    assert!(matches!(
+        decode_tool_arguments(""),
+        Err(UsageChatError::InvalidToolArguments { .. })
+    ));
+    assert!(matches!(
+        decode_tool_arguments(r#"{"start_date": "2026-01-01"#),
+        Err(UsageChatError::InvalidToolArguments { .. })
+    ));
 }

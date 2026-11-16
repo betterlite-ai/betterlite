@@ -15,6 +15,7 @@ use std::path::Path;
 use betterlite_analytics::daily_metrics::MetricWithMetadata;
 use betterlite_db::daily_activity_contracts::identifiers::DailyActivityTable;
 use betterlite_error::proxy_error_types::common::CommonProxyErrors;
+use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
 use tokio::sync::mpsc;
@@ -33,18 +34,21 @@ use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::messages::ChatMessage;
 use crate::usage_ai_chat::model::{ModelReply, ModelToolCall};
 use crate::usage_ai_chat::prompt::{SYSTEM_PROMPT_BASE, build_system_prompt};
-use crate::usage_ai_chat::source::{DailyActivityUsageData, UsageDataSource};
+use crate::usage_ai_chat::source::{DailyActivityUsageData, UsageDataSource as _};
 use crate::usage_ai_chat::sse::{SseEvent, ToolCallStatus, sse_frame};
 use crate::usage_ai_chat::summary::{EntityLabel, summarise_entity_data, summarise_usage_data};
 use crate::usage_ai_chat::tools::{SchemaKind, ToolKind, UsageTool, tools_for_role};
 use support::{
-    ERROR_FRAME, RecordingRepository, SourceCall, alias_entry, answer, args, breakdown, chat_parts,
-    chat_request, chunk_frame, concrete_repository, day, done_frame, drive, empty_page, entry,
-    fake_model, fake_source, frame_tool, metadata, non_text_alias_entry, on, page,
-    recording_database, recording_repository, require_send, spend_of, status_frame, tool_call,
+    ERROR_FRAME, ExtrasAbsence, RecordingRepository, SourceCall, admin_tool_reply, alias_entry,
+    answer, args, breakdown, chat_parts, chat_request, chunk_frame, concrete_repository,
+    dated_args, day, done_frame, drive, empty_page, entry, fake_model, fake_source, frame_tool,
+    metadata, on, page, recording_database, recording_repository, require_send, spend_of,
+    status_frame, tool_call,
 };
 
 const ARGS: &str = "{\"start_date\": \"2026-01-01\", \"end_date\": \"2026-01-31\"}";
+const TEAM_ARGS: &str =
+    "{\"start_date\":\"2026-01-01\",\"end_date\":\"2026-01-31\",\"team_ids\":\"team-1, team-2\"}";
 
 #[test]
 fn replays_the_usage_tool_arguments_corpus() {

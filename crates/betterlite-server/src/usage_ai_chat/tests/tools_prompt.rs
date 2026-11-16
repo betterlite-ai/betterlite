@@ -80,32 +80,33 @@ fn tools_schemas_match_litellm() {
         global.properties["user_id"].description,
         "Optional user ID filter. Omit for global view."
     );
+}
+
+#[test]
+fn tools_team_and_tag_schemas_match_litellm() {
+    let tools = tools_for_role(true);
+    let team = &tools[1].function.parameters;
     assert_eq!(
-        tools[1]
-            .function
-            .parameters
-            .properties
+        team.properties
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
         ["start_date", "end_date", "team_ids"]
     );
     assert_eq!(
-        tools[1].function.parameters.properties["team_ids"].description,
+        team.properties["team_ids"].description,
         "Optional comma-separated team IDs. Omit for all teams."
     );
+    let tag = &tools[2].function.parameters;
     assert_eq!(
-        tools[2]
-            .function
-            .parameters
-            .properties
+        tag.properties
             .keys()
             .map(String::as_str)
             .collect::<Vec<_>>(),
         ["start_date", "end_date", "tags"]
     );
     assert_eq!(
-        tools[2].function.parameters.properties["tags"].description,
+        tag.properties["tags"].description,
         "Optional comma-separated tag names. Omit for all tags."
     );
     assert!(tools.iter().all(|tool| {

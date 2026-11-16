@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::sync::Mutex;
 
 use betterlite_analytics::daily_metrics::{
@@ -34,7 +34,7 @@ use crate::usage_ai_chat::flow::stream_usage_ai_chat;
 use crate::usage_ai_chat::messages::ChatMessage;
 use crate::usage_ai_chat::model::{ModelReply, ModelRequest, ModelToolCall, UsageChatModel};
 use crate::usage_ai_chat::parts::{UsageChatParts, UsageChatRequest};
-use crate::usage_ai_chat::source::{UsageActivityRepository, UsageDataSource};
+use crate::usage_ai_chat::source::{Ids, PageResult, UsageActivityRepository, UsageDataSource};
 use crate::usage_ai_chat::tools::ToolDefinition;
 
 pub(crate) fn money(text: &str) -> Decimal {
@@ -71,6 +71,36 @@ pub(crate) fn metrics(spend: &str, api_requests: i64, total_tokens: i64) -> Spen
     }
 }
 
+macro_rules! daily_metadata {
+    ($spend:expr, $requests:expr, $successful:expr, $failed:expr, $tokens:expr) => {
+        DailySpendMetadata {
+            total_spend: money($spend),
+            total_flat_cost: Decimal::ZERO,
+            total_prompt_tokens: 0,
+            total_completion_tokens: 0,
+            total_tokens: $tokens,
+            total_api_requests: $requests,
+            total_successful_requests: $successful,
+            total_failed_requests: $failed,
+            total_cache_read_input_tokens: 0,
+            total_cache_creation_tokens: 0,
+            total_compression_saved_tokens: 0,
+            total_compression_savings: Decimal::ZERO,
+            total_prompt_caching_savings: Decimal::ZERO,
+            total_gateway_caching_savings: Decimal::ZERO,
+            total_autorouter_savings_spend: Decimal::ZERO,
+            total_response_time_ms: 0,
+            total_timed_requests: 0,
+            page: 1,
+            total_pages: 1,
+            has_more: false,
+            api_key_limit: None,
+            total_api_keys: None,
+            entity_total_api_keys: None,
+        }
+    };
+}
+
 pub(crate) fn metadata(
     spend: &str,
     requests: i64,
@@ -78,31 +108,7 @@ pub(crate) fn metadata(
     failed: i64,
     tokens: i64,
 ) -> DailySpendMetadata {
-    DailySpendMetadata {
-        total_spend: money(spend),
-        total_flat_cost: Decimal::ZERO,
-        total_prompt_tokens: 0,
-        total_completion_tokens: 0,
-        total_tokens: tokens,
-        total_api_requests: requests,
-        total_successful_requests: successful,
-        total_failed_requests: failed,
-        total_cache_read_input_tokens: 0,
-        total_cache_creation_tokens: 0,
-        total_compression_saved_tokens: 0,
-        total_compression_savings: Decimal::ZERO,
-        total_prompt_caching_savings: Decimal::ZERO,
-        total_gateway_caching_savings: Decimal::ZERO,
-        total_autorouter_savings_spend: Decimal::ZERO,
-        total_response_time_ms: 0,
-        total_timed_requests: 0,
-        page: 1,
-        total_pages: 1,
-        has_more: false,
-        api_key_limit: None,
-        total_api_keys: None,
-        entity_total_api_keys: None,
-    }
+    daily_metadata!(spend, requests, successful, failed, tokens)
 }
 
 pub(crate) fn entry(spend: &str, api_requests: i64, total_tokens: i64) -> MetricWithMetadata {
@@ -113,33 +119,11 @@ pub(crate) fn entry(spend: &str, api_requests: i64, total_tokens: i64) -> Metric
     }
 }
 
-pub(crate) fn alias_entry(
-    alias: &str,
-    spend: &str,
-    api_requests: i64,
-    total_tokens: i64,
-) -> MetricWithMetadata {
-    let mut metadata: IndexMap<String, Json> = IndexMap::new();
-    metadata.insert("alias".to_owned(), Json::Text(alias.to_owned()));
-    MetricWithMetadata {
-        metrics: metrics(spend, api_requests, total_tokens),
-        metadata,
-        api_key_breakdown: IndexMap::new(),
-    }
-}
-
-pub(crate) fn non_text_alias_entry(
-    spend: &str,
-    api_requests: i64,
-    total_tokens: i64,
-) -> MetricWithMetadata {
-    let mut metadata: IndexMap<String, Json> = IndexMap::new();
-    metadata.insert("alias".to_owned(), Json::Bool(true));
-    MetricWithMetadata {
-        metrics: metrics(spend, api_requests, total_tokens),
-        metadata,
-        api_key_breakdown: IndexMap::new(),
-    }
+pub(crate) fn alias_entry(alias: &str, mut entry: MetricWithMetadata) -> MetricWithMetadata {
+    entry
+        .metadata
+        .insert("alias".to_owned(), Json::Text(alias.to_owned()));
+    entry
 }
 
 pub(crate) fn breakdown(
@@ -194,6 +178,24 @@ pub(crate) fn tool_call(name: &str, arguments: &str) -> ModelReply {
     }
 }
 
+pub(crate) fn admin_tool_reply() -> ModelReply {
+    ModelReply {
+        content: None,
+        tool_calls: vec![
+            ModelToolCall {
+                id: "call-1".to_owned(),
+                name: "get_team_usage_data".to_owned(),
+                arguments: super::TEAM_ARGS.to_owned(),
+            },
+            ModelToolCall {
+                id: "call-2".to_owned(),
+                name: "get_tag_usage_data".to_owned(),
+                arguments: super::ARGS.to_owned(),
+            },
+        ],
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("{0}")]
 pub(crate) struct FakeFailure(pub(crate) String);
@@ -221,7 +223,7 @@ impl RecordedRequest {
         Self {
             model: request.model.to_owned(),
             messages: request.messages.to_vec(),
-            tools: request.tools.map(|tools| tools.to_vec()),
+            tools: request.tools.map(<[ToolDefinition]>::to_vec),
             temperature: request.temperature,
         }
     }
@@ -259,14 +261,14 @@ impl FakeModel {
     }
 
     pub(crate) fn streaming(self, chunks: &[&str]) -> Self {
-        let chunks = chunks
+        let scripted = chunks
             .iter()
             .map(|chunk| (*chunk).to_owned())
             .collect::<Vec<String>>();
         self.streams
             .lock()
             .unwrap()
-            .push_back(StreamStep::Chunks(chunks));
+            .push_back(StreamStep::Chunks(scripted));
         self
     }
 
@@ -281,6 +283,11 @@ impl FakeModel {
     pub(crate) fn requests(&self) -> Vec<RecordedRequest> {
         self.requests.lock().unwrap().clone()
     }
+
+    fn record(&self, request: &ModelRequest<'_>) {
+        let recorded = RecordedRequest::capture(request);
+        self.requests.lock().unwrap().push(recorded);
+    }
 }
 
 impl UsageChatModel for FakeModel {
@@ -290,19 +297,11 @@ impl UsageChatModel for FakeModel {
         &self,
         request: &ModelRequest<'_>,
     ) -> impl Future<Output = Result<ModelReply, FakeFailure>> + Send {
-        let recorded = RecordedRequest::capture(request);
-        let step = self
-            .completions
-            .lock()
-            .unwrap()
-            .pop_front()
-            .expect("scripted completion");
-        async move {
-            self.requests.lock().unwrap().push(recorded);
-            match step {
-                ReplyStep::Reply(reply) => Ok(reply),
-                ReplyStep::Fail(error) => Err(error),
-            }
+        self.record(request);
+        let step = self.completions.lock().unwrap().pop_front();
+        match step.expect("scripted completion") {
+            ReplyStep::Reply(reply) => ready(Ok(reply)),
+            ReplyStep::Fail(error) => ready(Err(error)),
         }
     }
 
@@ -312,23 +311,20 @@ impl UsageChatModel for FakeModel {
     ) -> impl Future<
         Output = Result<impl Stream<Item = Result<String, FakeFailure>> + Send, FakeFailure>,
     > + Send {
-        let recorded = RecordedRequest::capture(request);
-        let step = self
+        self.record(request);
+        match self
             .streams
             .lock()
             .unwrap()
             .pop_front()
-            .expect("scripted stream");
-        async move {
-            self.requests.lock().unwrap().push(recorded);
-            match step {
-                StreamStep::Chunks(chunks) => {
-                    let items: Vec<Result<String, FakeFailure>> =
-                        chunks.into_iter().map(Ok).collect();
-                    Ok(stream::iter(items))
-                }
-                StreamStep::Fail(error) => Err(error),
+            .expect("scripted stream")
+        {
+            StreamStep::Chunks(scripted) => {
+                let items: Vec<Result<String, FakeFailure>> =
+                    scripted.into_iter().map(Ok).collect();
+                ready(Ok(stream::iter(items)))
             }
+            StreamStep::Fail(error) => ready(Err(error)),
         }
     }
 }
@@ -350,6 +346,32 @@ pub(crate) enum SourceCall {
         end_date: String,
         tags: Option<Vec<String>>,
     },
+}
+
+impl SourceCall {
+    pub(crate) fn global(start_date: &str, end_date: &str, user_id: Option<&str>) -> Self {
+        Self::Global {
+            start_date: start_date.to_owned(),
+            end_date: end_date.to_owned(),
+            user_id: user_id.map(str::to_owned),
+        }
+    }
+
+    pub(crate) fn teams(start_date: &str, end_date: &str, team_ids: Option<&[String]>) -> Self {
+        Self::Teams {
+            start_date: start_date.to_owned(),
+            end_date: end_date.to_owned(),
+            team_ids: team_ids.map(<[String]>::to_vec),
+        }
+    }
+
+    pub(crate) fn tags(start_date: &str, end_date: &str, tags: Option<&[String]>) -> Self {
+        Self::Tags {
+            start_date: start_date.to_owned(),
+            end_date: end_date.to_owned(),
+            tags: tags.map(<[String]>::to_vec),
+        }
+    }
 }
 
 pub(crate) struct FakeSource {
@@ -379,59 +401,32 @@ impl FakeSource {
         self.calls.lock().unwrap().clone()
     }
 
-    fn take(
-        &self,
-        call: SourceCall,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
-        async move {
-            self.calls.lock().unwrap().push(call);
+    fn take(&self, call: SourceCall) -> Ready<PageResult> {
+        self.calls.lock().unwrap().push(call);
+        ready(
             self.pages
                 .lock()
                 .unwrap()
                 .pop_front()
-                .expect("scripted page")
-        }
+                .expect("scripted page"),
+        )
     }
 }
 
 impl UsageDataSource for FakeSource {
-    fn global(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        user_id: Option<&str>,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
-        self.take(SourceCall::Global {
-            start_date: start_date.to_owned(),
-            end_date: end_date.to_owned(),
-            user_id: user_id.map(str::to_owned),
-        })
+    async fn global(&self, start_date: &str, end_date: &str, user_id: Option<&str>) -> PageResult {
+        self.take(SourceCall::global(start_date, end_date, user_id))
+            .await
     }
 
-    fn teams(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        team_ids: Option<&[String]>,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
-        self.take(SourceCall::Teams {
-            start_date: start_date.to_owned(),
-            end_date: end_date.to_owned(),
-            team_ids: team_ids.map(<[String]>::to_vec),
-        })
+    async fn teams(&self, start_date: &str, end_date: &str, team_ids: Ids<'_>) -> PageResult {
+        self.take(SourceCall::teams(start_date, end_date, team_ids))
+            .await
     }
 
-    fn tags(
-        &self,
-        start_date: &str,
-        end_date: &str,
-        tags: Option<&[String]>,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
-        self.take(SourceCall::Tags {
-            start_date: start_date.to_owned(),
-            end_date: end_date.to_owned(),
-            tags: tags.map(<[String]>::to_vec),
-        })
+    async fn tags(&self, start_date: &str, end_date: &str, tags: Ids<'_>) -> PageResult {
+        self.take(SourceCall::tags(start_date, end_date, tags))
+            .await
     }
 }
 
@@ -466,6 +461,14 @@ impl AggregatedCall {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ExtrasAbsence {
+    Both,
+    EntityMetadata,
+    Callbacks,
+    Neither,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct PagedCall {
     pub(crate) table: DailyActivityTable,
@@ -480,8 +483,7 @@ pub(crate) struct PagedCall {
     pub(crate) page_size: i64,
     pub(crate) timezone_offset_minutes: Option<i64>,
     pub(crate) include_current_utc_day: bool,
-    pub(crate) entity_metadata_absent: bool,
-    pub(crate) callbacks_absent: bool,
+    pub(crate) extras: ExtrasAbsence,
 }
 
 pub(crate) struct RecordingRepository {
@@ -514,25 +516,22 @@ impl RecordingRepository {
 }
 
 impl UsageActivityRepository for RecordingRepository {
-    fn aggregated(
-        &self,
-        scope: &DailyActivityScope,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
+    fn aggregated(&self, scope: &DailyActivityScope) -> impl Future<Output = PageResult> + Send {
         let call = AggregatedCall::from_input(scope.as_ref());
-        async move {
-            self.aggregated.lock().unwrap().push(call);
+        self.aggregated.lock().unwrap().push(call);
+        ready(
             self.pages
                 .lock()
                 .unwrap()
                 .pop_front()
-                .expect("scripted page")
-        }
+                .expect("scripted page"),
+        )
     }
 
     fn page(
         &self,
         request: &DailyActivityPageRequest<'_>,
-    ) -> impl Future<Output = Result<DailySpendPage, UsageChatError>> + Send {
+    ) -> impl Future<Output = PageResult> + Send {
         let call = PagedCall {
             table: request.table,
             entity_id_field: request.entity_id_field.to_owned(),
@@ -546,18 +545,25 @@ impl UsageActivityRepository for RecordingRepository {
             page_size: request.page_size,
             timezone_offset_minutes: request.timezone_offset_minutes,
             include_current_utc_day: request.include_current_utc_day,
-            entity_metadata_absent: request.entity_metadata.is_none(),
-            callbacks_absent: request.callbacks.metadata_metrics.is_none()
-                && request.callbacks.resolve_entity_metadata.is_none(),
+            extras: match (
+                request.entity_metadata.is_none(),
+                request.callbacks.metadata_metrics.is_none()
+                    && request.callbacks.resolve_entity_metadata.is_none(),
+            ) {
+                (true, true) => ExtrasAbsence::Both,
+                (true, false) => ExtrasAbsence::EntityMetadata,
+                (false, true) => ExtrasAbsence::Callbacks,
+                (false, false) => ExtrasAbsence::Neither,
+            },
         };
-        async move {
-            self.paged.lock().unwrap().push(call);
+        self.paged.lock().unwrap().push(call);
+        ready(
             self.pages
                 .lock()
                 .unwrap()
                 .pop_front()
-                .expect("scripted page")
-        }
+                .expect("scripted page"),
+        )
     }
 }
 
@@ -572,6 +578,8 @@ pub(crate) struct RecordingDatabase {
     pub(crate) queries: Mutex<Vec<SqlQuery>>,
     pub(crate) finds: Mutex<Vec<FindCall>>,
     pub(crate) counts: Mutex<Vec<DailyActivityTable>>,
+    pub(crate) total: i64,
+    pub(crate) rows: Vec<DailyActivityRow>,
 }
 
 pub(crate) fn recording_database() -> RecordingDatabase {
@@ -579,6 +587,8 @@ pub(crate) fn recording_database() -> RecordingDatabase {
         queries: Mutex::new(Vec::new()),
         finds: Mutex::new(Vec::new()),
         counts: Mutex::new(Vec::new()),
+        total: 0,
+        rows: Vec::new(),
     }
 }
 
@@ -625,7 +635,7 @@ impl DailyActivityDatabase for RecordingDatabase {
         _predicate: &'database SqlQuery,
     ) -> DatabaseFuture<'database, i64> {
         self.counts.lock().unwrap().push(table);
-        Box::pin(ready(Ok(0)))
+        Box::pin(ready(Ok(self.total)))
     }
 
     fn find_daily<'database>(
@@ -635,11 +645,10 @@ impl DailyActivityDatabase for RecordingDatabase {
         skip: i64,
         take: i64,
     ) -> DatabaseFuture<'database, Vec<DailyActivityRow>> {
-        self.finds
-            .lock()
-            .unwrap()
-            .push(FindCall { table, skip, take });
-        Box::pin(ready(Ok(Vec::new())))
+        let call = FindCall { table, skip, take };
+        self.finds.lock().unwrap().push(call);
+        let rows = self.rows.clone();
+        Box::pin(ready(Ok(rows)))
     }
 }
 
@@ -747,7 +756,10 @@ where
     frames
 }
 
-pub(crate) fn require_send<Value: Send>(value: Value) -> Value {
+pub(crate) fn require_send<Value>(value: Value) -> Value
+where
+    Value: Send,
+{
     value
 }
 
@@ -760,4 +772,10 @@ pub(crate) fn args(entries: &[(&str, &str)]) -> IndexMap<String, String> {
         .iter()
         .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
         .collect()
+}
+
+pub(crate) fn dated_args(key: &str, value: &str) -> IndexMap<String, String> {
+    let mut arguments = args(&[("start_date", "2026-01-01"), ("end_date", "2026-01-31")]);
+    arguments.insert(key.to_owned(), value.to_owned());
+    arguments
 }

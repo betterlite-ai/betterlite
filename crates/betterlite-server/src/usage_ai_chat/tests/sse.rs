@@ -66,7 +66,7 @@ fn sse_escapes_quotes_backslashes_and_control_characters() {
 #[test]
 fn sse_escapes_non_ascii_like_python_json_dumps() {
     let event = SseEvent::Chunk {
-        content: "é\u{7f}\u{0100}\u{ffff}😀".to_owned(),
+        content: "\u{e9}\u{7f}\u{0100}\u{ffff}\u{1f600}".to_owned(),
     };
     assert_eq!(
         sse_frame(&event),
