@@ -1,0 +1,10 @@
+kind: helper
+name: router-runtime-settings-strategy-change
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["routing_strategy", "least-busy"]
+env: {}
+compare: {ignore: []}

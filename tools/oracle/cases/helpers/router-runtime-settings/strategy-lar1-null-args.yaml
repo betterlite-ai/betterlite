@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-strategy-lar1-null-args
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["routing_strategy", "lar1"]
+      - ["routing_strategy_args", null]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: router-runtime-settings-strategy-with-args
+call:
+  b9711:
+    function: settings
+    initial: {}
+    kwargs:
+      - ["routing_strategy", "usage-based-routing-v2"]
+      - ["routing_strategy_args", {"ttl": 30}]
+env: {}
+compare: {ignore: []}

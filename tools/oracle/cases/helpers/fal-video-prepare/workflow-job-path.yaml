@@ -1,0 +1,32 @@
+kind: helper
+name: fal-video-prepare-workflow-job-path
+call:
+  fal_video_prepare:
+    operation: workflow_job_path
+    api_bases:
+      - null
+      - ""
+      - "https://queue.fal.run/"
+      - "https://proxy.test/fal/"
+    jobs:
+      - model: "fal-ai/kling-video/extra"
+        request_id: "req-1"
+      - model: "workflows/fal-ai/name"
+        request_id: "req 1/.."
+      - model: "comfy/fal-ai/name"
+        request_id: "req-2"
+      - model: "fal-ai/workflows/name"
+        request_id: "req-3"
+      - model: "fal-ai/kling-video"
+        request_id: ".."
+      - model: "fal-ai/kling-video"
+        request_id: "."
+      - model: "fal-ai/kling-video"
+        request_id: ""
+      - model: ""
+        request_id: "req-4"
+      - model: "workflows/fal-ai"
+        request_id: "req-5"
+env: {}
+compare:
+  ignore: []

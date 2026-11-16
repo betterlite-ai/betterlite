@@ -1,0 +1,27 @@
+kind: helper
+name: response-output-responses-api
+call:
+  b3857:
+    function: response_output
+    kind: responses_api
+    response:
+      id: resp-1
+      created_at: 1
+      model: gpt-4o
+      object: response
+      status: completed
+      output:
+      - type: message
+        id: msg-1
+        status: completed
+        role: assistant
+        content:
+        - type: output_text
+          text: hi
+          annotations: []
+      parallel_tool_calls: true
+      tool_choice: auto
+      tools: []
+env: {}
+compare:
+  ignore: []

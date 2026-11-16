@@ -1,0 +1,18 @@
+kind: helper
+name: audio-mime-types
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: mime
+        format: pcm16
+      - kind: mime
+        format: g711_ulaw
+      - kind: mime
+        format: g711_alaw
+      - kind: mime
+        format: opus
+      - kind: mime
+        format: pcm24
+env: {}
+compare: {ignore: []}

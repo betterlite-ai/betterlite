@@ -159,3 +159,10 @@ path = "fuzz_targets/ptu_model_info.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "mcp_user_env_vars"
+path = "fuzz_targets/mcp_user_env_vars.rs"
+test = false
+doc = false
+bench = false

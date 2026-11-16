@@ -1,0 +1,50 @@
+task: B3636
+deviations:
+  - what: >-
+      A remote high-detail image part is removed from the message before the local count, and its cost is
+      added as the upper bound computed from the image settings alone (1445 tokens at the defaults). The
+      estimate never loads the image, so it finishes without network access and cannot fail on a fetch
+      timeout or an unreachable host.
+    why: >-
+      The task's own deviation entry requires an eager upper bound: estimation runs before the pass-through
+      collector returns, and fetching a caller-supplied URL would add a request of our own and an SSRF-sized
+      trust boundary. LiteLLM's relay helper adds the same upper bound for this part, so the count for a
+      remote high-detail image is identical; only the other image parts differ, as the next entry says.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L125-L135
+  - what: >-
+      Every other image part is handed to the local tokenizer with the rest of the message. When the
+      message carries an image_url block whose URL is not a remote high-detail image (a low or auto detail
+      remote URL, a data URL, or an image_url string), the tokenizer refuses the block, so the prompt count
+      falls back to zero the way any count failure does. LiteLLM leaves the same part in the message and
+      counts it in _count_image_tokens, which downloads a remote URL's bytes to read its dimensions and
+      decodes a data URL. Counting local image bytes is the tokenizer's work, not this module's.
+    why: >-
+      betterlite does not fetch URLs while estimating, and this task's scope covers the relay assembly, not
+      image token counting inside the tokenizer. A zero prompt count is what LiteLLM itself records when
+      the count raises, so the fallback is not new behavior, only the set of inputs that reaches it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L694-L731
+  - what: >-
+      A chunk object that carries no usable chunk fields is dropped. An error object such as
+      {"error": {"message": "boom"}} parses through LiteLLM's ModelResponseStream(**chunk) into a chunk with
+      a generated chatcmpl id, a wall-clock created time, a null model and one empty choice, so a stream
+      holding only error chunks still logs a completion with empty content and model null. An error chunk
+      ahead of usable chunks also supplies the built response's id and created, because LiteLLM takes the
+      id from the first non-empty chunk id and created from the first chunk. betterlite's chunk parser
+      reports a provider error for the same object, and the relay drops it, so the response keeps the
+      first usable chunk's id and created; a stream that yields no usable chunk returns None and logs the
+      warning instead of a fabricated completion.
+    why: >-
+      The task says to parse each chunk with the iterator's chunk_parser and filter what does not parse, and
+      to return None when nothing parses. Logging an empty completion for a failed stream records a
+      response that never existed, so the None path is the honest result and the one the task requires.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L329-L341
+kept_bugs:
+  - what: >-
+      An empty message list counts 3 prompt tokens rather than 0, because the tokenizer adds the reply
+      priming tokens after an empty message loop. betterlite keeps it: the tokenizer already counts this
+      way and LiteLLM's pass-through logging records the same number for an empty messages list.
+    why: >-
+      A working setup reads the logged prompt count and the cost computed from it, and every stream built
+      with messages=[] would change its recorded cost if betterlite dropped the priming tokens. The oracle
+      case token-count-remote-high-detail pins the value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L564

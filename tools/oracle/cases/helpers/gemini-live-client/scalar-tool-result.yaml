@@ -1,0 +1,32 @@
+kind: helper
+name: scalar-tool-result
+call:
+  gemini_live_client:
+    op: client
+    steps:
+      - kind: message
+        tool_calls:
+          - {call_id: call_1, name: get_weather}
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{\"a\": 1}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "5"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "[1, 2]"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "\"5\""}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "true"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "null"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "not json"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "{}"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": null}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1"}}'
+      - kind: message
+        message: '{"type": "conversation.item.create", "item": {"type": "function_call_output", "call_id": "call_1", "output": "[]"}}'
+env: {}
+compare: {ignore: []}
