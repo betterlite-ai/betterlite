@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::error::Error;
 use std::fs;
+use std::future::{Future, ready};
 use std::io::{self, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
@@ -21,7 +23,9 @@ use betterlite_config::sections::guardrail_params::params::LitellmParams;
 use betterlite_config::sections::guardrail_params::records::{
     Guardrail, GuardrailDefinitionLocation,
 };
-use betterlite_db::auxiliary_repository::repository::{PrismaClient, TableBinding, TableError};
+use betterlite_db::auxiliary_repository::repository::{
+    PrismaClient, TableBinding as _, TableError,
+};
 use betterlite_db::budget_permission_rows::{JsonData, Timestamp};
 use betterlite_db::database_replica::availability::Availability;
 use betterlite_db::postgres_store::session::PostgresStore;
@@ -41,6 +45,7 @@ use betterlite_redis::config_sync::publish::{PublishChange, PublishFuture};
 use chrono::{DateTime, NaiveDateTime, Utc};
 use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 use tower::ServiceExt as _;
@@ -244,38 +249,26 @@ pub(super) fn parse(text: &str) -> JsonData {
 }
 
 pub(super) fn field<'value>(value: &'value JsonData, name: &str) -> &'value JsonData {
-    match value {
-        JsonData::Object(fields) => fields
-            .get(name)
-            .unwrap_or_else(|| panic!("the body has no {name}: {value:?}")),
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_)) => panic!("not an object: {other:?}"),
-    }
+    let JsonData::Object(fields) = value else {
+        panic!("not an object: {value:?}");
+    };
+    fields
+        .get(name)
+        .unwrap_or_else(|| panic!("the body has no {name}: {value:?}"))
 }
 
 pub(super) fn keys(value: &JsonData) -> Vec<String> {
-    match value {
-        JsonData::Object(fields) => fields.keys().cloned().collect(),
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Array(_)) => panic!("not an object: {other:?}"),
-    }
+    let JsonData::Object(fields) = value else {
+        panic!("not an object: {value:?}");
+    };
+    fields.keys().cloned().collect()
 }
 
 pub(super) fn text(value: &JsonData) -> &str {
-    match value {
-        JsonData::String(text) => text,
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::Array(_)
-        | JsonData::Object(_)) => panic!("not a string: {other:?}"),
-    }
+    let JsonData::String(text) = value else {
+        panic!("not a string: {value:?}");
+    };
+    text
 }
 
 pub(super) fn detail(body: &str) -> String {
@@ -283,14 +276,11 @@ pub(super) fn detail(body: &str) -> String {
 }
 
 pub(super) fn first_issue(body: &str) -> JsonData {
-    match field(&parse(body), "detail") {
-        JsonData::Array(items) => items.first().cloned().expect("one issue"),
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Object(_)) => panic!("the detail is not a list: {other:?}"),
-    }
+    let detail = field(&parse(body), "detail");
+    let JsonData::Array(items) = detail else {
+        panic!("the detail is not a list: {detail:?}");
+    };
+    items.first().cloned().expect("one issue")
 }
 
 #[test]
@@ -298,14 +288,14 @@ fn error_keeps_the_typed_cause() {
     let registry = MutationError::Registry {
         source: RegistryError::MissingGuardrailType,
     };
-    let registry_cause = std::error::Error::source(&registry).expect("a registry cause");
+    let registry_cause = Error::source(&registry).expect("a registry cause");
     assert_eq!(registry_cause.to_string(), "guardrail_type is required");
     let rows = MutationError::ReviewRows {
         source: ReviewRowsError::MissingRow {
             guardrail_id: "g1".to_owned(),
         },
     };
-    let rows_cause = std::error::Error::source(&rows).expect("a review rows cause");
+    let rows_cause = Error::source(&rows).expect("a review rows cause");
     assert_eq!(
         rows_cause.to_string(),
         "Guardrail with ID g1 not found after the update"
@@ -358,12 +348,8 @@ impl FakeGuardrails {
     }
 
     pub(super) fn row(&self, id: &str) -> Option<GuardrailRow> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .rows
-            .get(id)
-            .cloned()
+        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        store.rows.get(id).cloned()
     }
 
     pub(super) fn rows(&self) -> Vec<GuardrailRow> {
@@ -390,13 +376,29 @@ impl FakeGuardrails {
             .failures
             .insert(failure);
     }
+
+    fn find_row(&self, id: &str) -> Result<Option<GuardrailRow>, RowsError> {
+        if self
+            .0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .failures
+            .contains(&Failure::Find)
+        {
+            return Err(RowsError::MissingRow);
+        }
+        Ok(self.row(id))
+    }
 }
 
 impl GuardrailRows for FakeGuardrails {
-    async fn create(&self, row: NewGuardrailRow) -> Result<GuardrailRow, RowsError> {
+    fn create(
+        &self,
+        row: NewGuardrailRow,
+    ) -> impl Future<Output = Result<GuardrailRow, RowsError>> + Send {
         let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.failures.contains(&Failure::Create) {
-            return Err(RowsError::MissingRow);
+            return ready(Err(RowsError::MissingRow));
         }
         store.created = store.created.saturating_add(1);
         let created = GuardrailRow {
@@ -412,62 +414,63 @@ impl GuardrailRows for FakeGuardrails {
         store
             .rows
             .insert(created.guardrail_id.clone(), created.clone());
-        Ok(created)
+        drop(store);
+        ready(Ok(created))
     }
 
-    async fn delete(&self, guardrail_id: &str) -> Result<(), RowsError> {
+    fn delete(&self, guardrail_id: &str) -> impl Future<Output = Result<(), RowsError>> + Send {
         let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.failures.contains(&Failure::Delete) || store.rows.remove(guardrail_id).is_none() {
-            return Err(RowsError::MissingRow);
+            return ready(Err(RowsError::MissingRow));
         }
-        Ok(())
+        drop(store);
+        ready(Ok(()))
     }
 
-    async fn update(
+    fn update(
         &self,
         guardrail_id: &str,
         row: GuardrailUpdate,
-    ) -> Result<Option<GuardrailRow>, RowsError> {
+    ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
         let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.failures.contains(&Failure::Update) {
-            return Err(RowsError::MissingRow);
+            return ready(Err(RowsError::MissingRow));
         }
         let Some(existing) = store.rows.get_mut(guardrail_id) else {
-            return Ok(None);
+            return ready(Ok(None));
         };
         existing.guardrail_name = row.guardrail_name;
         existing.litellm_params = Some(row.litellm_params);
         existing.guardrail_info = Some(row.guardrail_info);
         existing.updated_at = Timestamp::Aware(row.updated_at.fixed_offset());
-        Ok(Some(existing.clone()))
+        let updated = existing.clone();
+        drop(store);
+        ready(Ok(Some(updated)))
     }
 
-    async fn find_active(&self) -> Result<Vec<GuardrailRow>, RowsError> {
-        Ok(self
+    fn find_active(&self) -> impl Future<Output = Result<Vec<GuardrailRow>, RowsError>> + Send {
+        ready(Ok(self
             .rows()
             .into_iter()
             .filter(|row| row.status == "active")
-            .collect())
+            .collect()))
     }
 
-    async fn find_by_id(&self, guardrail_id: &str) -> Result<Option<GuardrailRow>, RowsError> {
-        if self
-            .0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .failures
-            .contains(&Failure::Find)
-        {
-            return Err(RowsError::MissingRow);
-        }
-        Ok(self.row(guardrail_id))
+    fn find_by_id(
+        &self,
+        guardrail_id: &str,
+    ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
+        ready(self.find_row(guardrail_id))
     }
 
-    async fn find_by_name(&self, guardrail_name: &str) -> Result<Option<GuardrailRow>, RowsError> {
-        Ok(self
+    fn find_by_name(
+        &self,
+        guardrail_name: &str,
+    ) -> impl Future<Output = Result<Option<GuardrailRow>, RowsError>> + Send {
+        ready(Ok(self
             .rows()
             .into_iter()
-            .find(|row| row.guardrail_name == guardrail_name))
+            .find(|row| row.guardrail_name == guardrail_name)))
     }
 }
 
@@ -478,12 +481,18 @@ impl FakeReviews {
     }
 
     pub(super) fn row(&self, id: &str) -> Option<ReviewRow> {
-        self.0
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .rows
-            .get(id)
-            .cloned()
+        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        store.rows.get(id).cloned()
+    }
+
+    fn lookup(&self, guardrail_id: &str) -> Result<Option<ReviewRow>, ReviewRowsError> {
+        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        if store.fail_find {
+            return Err(ReviewRowsError::MissingRow {
+                guardrail_id: guardrail_id.to_owned(),
+            });
+        }
+        Ok(store.rows.get(guardrail_id).cloned())
     }
 
     pub(super) fn statuses(&self) -> Vec<String> {
@@ -510,34 +519,32 @@ impl FakeReviews {
 }
 
 impl ReviewRows for FakeReviews {
-    async fn find_unique(&self, guardrail_id: &str) -> Result<Option<ReviewRow>, ReviewRowsError> {
-        let store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
-        if store.fail_find {
-            return Err(ReviewRowsError::MissingRow {
-                guardrail_id: guardrail_id.to_owned(),
-            });
-        }
-        Ok(store.rows.get(guardrail_id).cloned())
+    fn find_unique(
+        &self,
+        guardrail_id: &str,
+    ) -> impl Future<Output = Result<Option<ReviewRow>, ReviewRowsError>> + Send {
+        ready(self.lookup(guardrail_id))
     }
 
-    async fn set_status(
+    fn set_status(
         &self,
         guardrail_id: &str,
         status: &str,
         now: DateTime<Utc>,
-    ) -> Result<(), ReviewRowsError> {
+    ) -> impl Future<Output = Result<(), ReviewRowsError>> + Send {
         let mut store = self.0.lock().unwrap_or_else(PoisonError::into_inner);
         if store.fail_set {
-            return Err(ReviewRowsError::MissingRow {
+            return ready(Err(ReviewRowsError::MissingRow {
                 guardrail_id: guardrail_id.to_owned(),
-            });
+            }));
         }
         store.statuses.push(status.to_owned());
         if let Some(row) = store.rows.get_mut(guardrail_id) {
             row.status = status.to_owned();
             row.reviewed_at = Some(Timestamp::Aware(now.fixed_offset()));
         }
-        Ok(())
+        drop(store);
+        ready(Ok(()))
     }
 }
 

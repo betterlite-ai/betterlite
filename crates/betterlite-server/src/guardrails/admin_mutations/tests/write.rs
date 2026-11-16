@@ -11,7 +11,7 @@ async fn create_stores_the_row_and_starts_the_guardrail() {
     let parsed = parse(&body);
     assert_eq!(text(field(&parsed, "guardrail_name")), "my-guard");
     assert_eq!(
-        text(field(&field(&parsed, "litellm_params"), "guardrail")),
+        text(field(field(&parsed, "litellm_params"), "guardrail")),
         "bedrock"
     );
     assert_eq!(keys(&parsed).len(), 3);
@@ -642,7 +642,7 @@ async fn delete_removes_the_row_and_the_memory_entry() {
                 GuardrailDefinitionLocation::Db,
             )
             .expect("the guardrail starts");
-    }
+    };
     let (status, body) = send(
         harness.router,
         request("DELETE", "/guardrails/g1", Some(admin()), None),

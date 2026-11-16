@@ -171,7 +171,7 @@ async fn review_approve_keeps_a_held_guardrail() {
                 GuardrailDefinitionLocation::Config,
             )
             .expect("the config guardrail starts");
-    }
+    };
     let (status, _body) = send(
         harness.router,
         request(

@@ -1,5 +1,5 @@
-fn issue_of(error: BodyError) -> JsonData {
-    parse(&serde_json::to_string(&error).expect("the issue serializes"))
+fn issue_of(error: &BodyError) -> JsonData {
+    parse(&serde_json::to_string(error).expect("the issue serializes"))
 }
 
 fn issue_type(issue: &JsonData) -> String {
@@ -7,25 +7,20 @@ fn issue_type(issue: &JsonData) -> String {
 }
 
 fn issue_loc(issue: &JsonData) -> Vec<JsonData> {
-    match field(issue, "loc") {
-        JsonData::Array(items) => items.clone(),
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::String(_)
-        | JsonData::Object(_)) => panic!("the loc is not a list: {other:?}"),
-    }
+    let loc = field(issue, "loc");
+    let JsonData::Array(items) = loc else {
+        panic!("the loc is not a list: {loc:?}");
+    };
+    items.clone()
 }
 
 fn loc_field(issue: &JsonData, position: usize) -> String {
-    match &issue_loc(issue)[position] {
-        JsonData::String(name) => name.clone(),
-        other @ (JsonData::Null
-        | JsonData::Bool(_)
-        | JsonData::Number(_)
-        | JsonData::Array(_)
-        | JsonData::Object(_)) => panic!("the loc part is not text: {other:?}"),
-    }
+    let loc = issue_loc(issue);
+    let part = &loc[position];
+    let JsonData::String(name) = part else {
+        panic!("the loc part is not text: {part:?}");
+    };
+    name.clone()
 }
 
 fn issue_message(issue: &JsonData) -> String {
@@ -40,14 +35,19 @@ fn create_error(text: &str) -> JsonData {
     let error = decode_write_request(text.as_bytes())
         .err()
         .expect("the create body is rejected");
-    issue_of(error)
+    issue_of(&error)
 }
 
 fn create_error_bytes(bytes: &[u8]) -> JsonData {
     let error = decode_write_request(bytes)
         .err()
         .expect("the create body is rejected");
-    issue_of(error)
+    issue_of(&error)
+}
+
+fn patch_error(bytes: &[u8]) -> JsonData {
+    let error = decode_patch_body(bytes).expect_err("the patch body is rejected");
+    issue_of(&error)
 }
 
 #[test]
@@ -214,11 +214,7 @@ fn body_patch_null_name_and_params_are_not_sent() {
 
 #[test]
 fn body_patch_bad_params_is_reported() {
-    let issue = issue_of(
-        decode_patch_body(br#"{"litellm_params":5}"#)
-            .err()
-            .expect("the patch body is rejected"),
-    );
+    let issue = patch_error(br#"{"litellm_params":5}"#);
     assert_eq!(issue_type(&issue), "value_error");
     assert_eq!(issue_loc(&issue).len(), 2);
     assert_eq!(loc_field(&issue, 1), "litellm_params");
@@ -227,32 +223,20 @@ fn body_patch_bad_params_is_reported() {
 
 #[test]
 fn body_patch_truncated_json_is_reported() {
-    let issue = issue_of(
-        decode_patch_body(b"{")
-            .err()
-            .expect("the patch body is rejected"),
-    );
+    let issue = patch_error(b"{");
     assert_eq!(issue_type(&issue), "json_invalid");
     assert_eq!(issue_message(&issue), "JSON decode error");
 }
 
 #[test]
 fn body_patch_bad_utf8_is_reported() {
-    let issue = issue_of(
-        decode_patch_body(&[0x22, 0xff, 0x22])
-            .err()
-            .expect("the patch body is rejected"),
-    );
+    let issue = patch_error(&[0x22, 0xff, 0x22]);
     assert_eq!(issue_type(&issue), "json_invalid");
 }
 
 #[test]
 fn body_patch_trailing_data_is_reported() {
-    let issue = issue_of(
-        decode_patch_body(b"{} {}")
-            .err()
-            .expect("the patch body is rejected"),
-    );
+    let issue = patch_error(b"{} {}");
     assert_eq!(issue_type(&issue), "json_invalid");
 }
 
@@ -307,7 +291,7 @@ async fn body_patch_validation_answers_422_in_the_fastapi_shape() {
 #[tokio::test]
 async fn auth_create_answers_401_before_the_body() {
     let harness = harness();
-    let (missing, _body) = send(
+    let (missing, _) = send(
         harness.router.clone(),
         request("POST", "/guardrails", None, Some("{}")),
     )
@@ -325,37 +309,37 @@ async fn auth_create_answers_401_before_the_body() {
 #[tokio::test]
 async fn auth_all_six_routes_answer_401() {
     let harness = harness();
-    let (create, _body) = send(
+    let (create, _) = send(
         harness.router.clone(),
         request("POST", "/guardrails", None, Some(CREATE_JSON)),
     )
     .await;
     assert_eq!(create, StatusCode::UNAUTHORIZED);
-    let (replace, _body) = send(
+    let (replace, _) = send(
         harness.router.clone(),
         request("PUT", "/guardrails/g1", None, Some(CREATE_JSON)),
     )
     .await;
     assert_eq!(replace, StatusCode::UNAUTHORIZED);
-    let (patch, _body) = send(
+    let (patch, _) = send(
         harness.router.clone(),
         request("PATCH", "/guardrails/g1", None, Some("{}")),
     )
     .await;
     assert_eq!(patch, StatusCode::UNAUTHORIZED);
-    let (delete, _body) = send(
+    let (delete, _) = send(
         harness.router.clone(),
         request("DELETE", "/guardrails/g1", None, None),
     )
     .await;
     assert_eq!(delete, StatusCode::UNAUTHORIZED);
-    let (approve, _body) = send(
+    let (approve, _) = send(
         harness.router.clone(),
         request("POST", "/guardrails/submissions/g1/approve", None, None),
     )
     .await;
     assert_eq!(approve, StatusCode::UNAUTHORIZED);
-    let (reject, _body) = send(
+    let (reject, _) = send(
         harness.router,
         request("POST", "/guardrails/submissions/g1/reject", None, None),
     )
@@ -366,13 +350,13 @@ async fn auth_all_six_routes_answer_401() {
 #[tokio::test]
 async fn auth_bad_body_is_a_422_for_any_caller() {
     let harness = harness();
-    let (viewer, _body) = send(
+    let (viewer, _) = send(
         harness.router.clone(),
         request("POST", "/guardrails", Some(viewer()), Some("{}")),
     )
     .await;
     assert_eq!(viewer, StatusCode::UNPROCESSABLE_ENTITY);
-    let (role_admin, _body) = send(
+    let (role_admin, _) = send(
         harness.router,
         request("POST", "/guardrails", Some(role_admin()), Some("{}")),
     )
@@ -380,66 +364,60 @@ async fn auth_bad_body_is_a_422_for_any_caller() {
     assert_eq!(role_admin, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+#[rstest]
+#[case::create("POST", "/guardrails", Some(CREATE_JSON))]
+#[case::replace("PUT", "/guardrails/g1", Some(CREATE_JSON))]
+#[case::patch("PATCH", "/guardrails/g1", Some("{}"))]
+#[case::delete("DELETE", "/guardrails/g1", None)]
 #[tokio::test]
-async fn auth_viewer_is_forbidden_on_the_guardrail_routes() {
+async fn auth_viewer_is_forbidden_on_the_guardrail_routes(
+    #[case] method: &str,
+    #[case] uri: &str,
+    #[case] payload: Option<&str>,
+) {
     let harness = harness();
-    let routes = [
-        ("POST", "/guardrails", Some(CREATE_JSON)),
-        ("PUT", "/guardrails/g1", Some(CREATE_JSON)),
-        ("PATCH", "/guardrails/g1", Some("{}")),
-        ("DELETE", "/guardrails/g1", None),
-    ];
-    for (method, uri, payload) in routes {
-        let (status, body) = send(
-            harness.router.clone(),
-            request(method, uri, Some(viewer()), payload),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
-        assert_eq!(
-            detail(&body),
-            "Admin access required to manage guardrails",
-            "{method} {uri}"
-        );
-    }
+    let (status, body) = send(
+        harness.router,
+        request(method, uri, Some(viewer()), payload),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{method} {uri}");
+    assert_eq!(
+        detail(&body),
+        "Admin access required to manage guardrails",
+        "{method} {uri}"
+    );
 }
 
+#[rstest]
+#[case::approve("/guardrails/submissions/g1/approve")]
+#[case::reject("/guardrails/submissions/g1/reject")]
 #[tokio::test]
-async fn auth_viewer_is_forbidden_on_the_review_routes() {
+async fn auth_viewer_is_forbidden_on_the_review_routes(#[case] uri: &str) {
     let harness = harness();
-    for uri in [
-        "/guardrails/submissions/g1/approve",
-        "/guardrails/submissions/g1/reject",
-    ] {
-        let (status, body) = send(
-            harness.router.clone(),
-            request("POST", uri, Some(viewer()), None),
-        )
-        .await;
-        assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
-        assert_eq!(detail(&body), "Admin access required", "{uri}");
-    }
+    let (status, body) = send(harness.router, request("POST", uri, Some(viewer()), None)).await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{uri}");
+    assert_eq!(detail(&body), "Admin access required", "{uri}");
 }
 
+#[rstest]
+#[case::create("POST", "/guardrails", Some(CREATE_JSON))]
+#[case::replace("PUT", "/guardrails/g1", Some(CREATE_JSON))]
+#[case::patch("PATCH", "/guardrails/g1", Some("{}"))]
+#[case::delete("DELETE", "/guardrails/g1", None)]
+#[case::approve("POST", "/guardrails/submissions/g1/approve", None)]
+#[case::reject("POST", "/guardrails/submissions/g1/reject", None)]
 #[tokio::test]
-async fn auth_no_database_is_a_500_on_every_route() {
-    let router = bare_router();
-    let routes = [
-        ("POST", "/guardrails", Some(CREATE_JSON)),
-        ("PUT", "/guardrails/g1", Some(CREATE_JSON)),
-        ("PATCH", "/guardrails/g1", Some("{}")),
-        ("DELETE", "/guardrails/g1", None),
-        ("POST", "/guardrails/submissions/g1/approve", None),
-        ("POST", "/guardrails/submissions/g1/reject", None),
-    ];
-    for (method, uri, payload) in routes {
-        let (status, body) =
-            send(router.clone(), request(method, uri, Some(admin()), payload)).await;
-        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{method} {uri}");
-        assert_eq!(
-            detail(&body),
-            "Prisma client not initialized",
-            "{method} {uri}"
-        );
-    }
+async fn auth_no_database_is_a_500_on_every_route(
+    #[case] method: &str,
+    #[case] uri: &str,
+    #[case] payload: Option<&str>,
+) {
+    let (status, body) = send(bare_router(), request(method, uri, Some(admin()), payload)).await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR, "{method} {uri}");
+    assert_eq!(
+        detail(&body),
+        "Prisma client not initialized",
+        "{method} {uri}"
+    );
 }
