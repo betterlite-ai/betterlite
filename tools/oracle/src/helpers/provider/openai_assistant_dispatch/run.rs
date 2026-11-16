@@ -124,7 +124,7 @@ fn assistants(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError
             params: input.params.list_params(),
         },
         Operation::Create => AssistantsOperation::Create {
-            data: from_data::<AssistantCreate>(input, "data")?,
+            data: Box::new(from_data::<AssistantCreate>(input, "data")?),
             async_requested: true,
         },
         Operation::Delete => AssistantsOperation::Delete {
@@ -151,7 +151,7 @@ fn threads(input: &Input) -> Result<OpenAiAssistantOperation, Box<HelperError>> 
         },
         Operation::AddMessage => ThreadsOperation::AddMessage {
             thread_id: required(input.thread_id.as_deref(), "thread_id")?,
-            data: from_data::<ThreadMessageData>(input, "data")?,
+            data: Box::new(from_data::<ThreadMessageData>(input, "data")?),
             async_requested: true,
         },
         Operation::ListMessages => ThreadsOperation::ListMessages {

@@ -36,9 +36,9 @@ fn status_of(error: &OpenAiAssistantError) -> Option<u16> {
 
 pub(crate) async fn outcome(result: OpenAiAssistantResult) -> Result<Value, Box<HelperError>> {
     match result {
-        OpenAiAssistantResult::Assistants(reply) => Ok(assistants(reply)),
-        OpenAiAssistantResult::Threads(reply) => Ok(threads(reply)),
-        OpenAiAssistantResult::Runs(run) => runs(run).await,
+        OpenAiAssistantResult::Assistants(reply) => Ok(assistants(*reply)),
+        OpenAiAssistantResult::Threads(reply) => Ok(threads(*reply)),
+        OpenAiAssistantResult::Runs(run) => runs(*run).await,
         OpenAiAssistantResult::Decisions(reply) => decisions(&reply),
         OpenAiAssistantResult::Session(prepared) => Ok(session(&prepared)),
         OpenAiAssistantResult::SessionFailure(action) => Ok(action_value(&action)),
