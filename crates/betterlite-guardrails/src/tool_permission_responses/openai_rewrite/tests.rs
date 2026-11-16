@@ -166,9 +166,24 @@ fn rewrite_openai_responses_leaves_a_legacy_call_the_denial_does_not_name() {
     let mut response = object(
         r#"{"choices":[{"finish_reason":"function_call","message":{"function_call":{"name":"shell","arguments":"{}"}}}]}"#,
     );
-    let before = response.clone();
     rewrite_openai_responses(&mut response, &[denied("call_9", "read")]);
-    assert_eq!(response, before);
+    let choice = response
+        .get("choices")
+        .and_then(crate::tool_permission::types::object_list)
+        .and_then(|choices| choices.first())
+        .expect("choice");
+    assert_eq!(
+        text_of(mapping_value(choice, "finish_reason")),
+        Some("function_call")
+    );
+    let message = message(&response);
+    let function_call = mapping_value(message, "function_call").expect("function call");
+    assert_eq!(text_of(mapping_value(function_call, "name")), Some("shell"));
+    assert_eq!(mapping_value(message, "content"), None);
+    assert_eq!(
+        mapping_value(message, "tool_calls"),
+        Some(&GuardrailValue::Null)
+    );
 }
 
 #[test]

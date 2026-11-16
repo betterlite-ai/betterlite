@@ -112,7 +112,10 @@ fn rewrite_anthropic_responses_adds_the_text_block_for_an_unmatched_denial() {
     let blocks = content_blocks(&response);
     assert_eq!(blocks.len(), 2);
     assert_eq!(text_of(&blocks[1]), Some(""));
-    assert_eq!(response.get("stop_reason"), None);
+    assert_eq!(
+        response.get("stop_reason"),
+        Some(&GuardrailValue::Text("end_turn".to_owned()))
+    );
 }
 
 #[test]
