@@ -555,10 +555,12 @@ fn response_without_results_fails(body: &[u8]) {
         .unwrap_err();
     assert!(matches!(error, WatsonxRerankError::NoResults { .. }));
     assert_eq!(error.status(), None);
-    assert!(
-        error
-            .to_string()
-            .contains("No results found in the response=")
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "No results found in the response={}",
+            String::from_utf8_lossy(body)
+        )
     );
 }
 

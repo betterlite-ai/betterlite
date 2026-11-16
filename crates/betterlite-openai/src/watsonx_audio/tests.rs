@@ -398,8 +398,13 @@ fn reply_without_text_or_usage_fails(body: &[u8]) {
     let error = config(&auth).transform_audio_response(body).unwrap_err();
     assert!(matches!(error, WatsonxAudioError::MissingFields { .. }));
     assert_eq!(error.status(), None);
-    assert!(error.to_string().contains("Invalid response format"));
-    assert!(error.to_string().contains("task"));
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Invalid response format. Received response does not match the expected format. Got: {}",
+            String::from_utf8_lossy(body)
+        )
+    );
 }
 
 #[rstest]
