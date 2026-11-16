@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::decisions::Json;
 
@@ -40,11 +40,11 @@ impl Default for PromptInfo {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-#[serde(into = "PromptLiteLLMParamsJson")]
 pub struct PromptLiteLLMParams {
     pub prompt_id: Option<String>,
     pub prompt_integration: String,
     pub api_base: Option<String>,
+    #[serde(serialize_with = "serialize_api_key")]
     pub api_key: Option<SecretString>,
     pub provider_specific_query_params: Option<IndexMap<String, Json>>,
     #[serde(default)]
@@ -58,37 +58,17 @@ pub struct PromptLiteLLMParams {
     pub extra: IndexMap<String, Json>,
 }
 
-// The database row stores the key the way LiteLLM's model_dump_json does, so this copy exposes the secret and a response copy masks it first
-#[derive(Clone, Serialize)]
-struct PromptLiteLLMParamsJson {
-    prompt_id: Option<String>,
-    prompt_integration: String,
-    api_base: Option<String>,
-    api_key: Option<String>,
-    provider_specific_query_params: Option<IndexMap<String, Json>>,
-    #[serde(rename = "ignore_prompt_manager_model")]
-    ignore_model: bool,
-    #[serde(rename = "ignore_prompt_manager_optional_params")]
-    ignore_optional_params: bool,
-    dotprompt_content: Option<String>,
-    #[serde(flatten)]
-    extra: IndexMap<String, Json>,
-}
-
-impl From<PromptLiteLLMParams> for PromptLiteLLMParamsJson {
-    fn from(params: PromptLiteLLMParams) -> Self {
-        let api_key = params.api_key.map(|key| key.expose_secret().to_owned());
-        Self {
-            prompt_id: params.prompt_id,
-            prompt_integration: params.prompt_integration,
-            api_base: params.api_base,
-            api_key,
-            provider_specific_query_params: params.provider_specific_query_params,
-            ignore_model: params.ignore_model,
-            ignore_optional_params: params.ignore_optional_params,
-            dotprompt_content: params.dotprompt_content,
-            extra: params.extra,
-        }
+// The database row stores the key the way LiteLLM's model_dump_json does; serde hands the field as &Option, and a pub fn keeps clippy's ref_option quiet
+pub fn serialize_api_key<S>(
+    api_key: &Option<SecretString>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    match api_key {
+        Some(key) => serializer.serialize_some(key.expose_secret()),
+        None => serializer.serialize_none(),
     }
 }
 
