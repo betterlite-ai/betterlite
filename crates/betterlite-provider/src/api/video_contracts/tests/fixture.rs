@@ -62,11 +62,6 @@ fn refuse_failure(raw_response: &UpstreamResponse) -> Result<(), FixtureError> {
     Ok(())
 }
 
-fn queued(reply: &VideoReply<'_>) -> Result<VideoObject, FixtureError> {
-    let id = String::from_utf8(reply.raw_response.body.clone())?;
-    Ok(VideoObject::new(id, "queued".to_owned()))
-}
-
 impl BaseVideoConfig for Subject {
     type Error = FixtureError;
     type SyncClient = SyncHandle;
@@ -104,7 +99,8 @@ impl BaseVideoConfig for Subject {
         reply: VideoReply<'_>,
         _request_data: Option<&Params>,
     ) -> Result<VideoObject, FixtureError> {
-        queued(&reply)
+        let id = String::from_utf8(reply.raw_response.body.clone())?;
+        Ok(VideoObject::new(id, "queued".to_owned()))
     }
 
     fn transform_video_content_request(
@@ -149,7 +145,8 @@ impl BaseVideoConfig for Subject {
         &self,
         reply: VideoReply<'_>,
     ) -> Result<VideoObject, FixtureError> {
-        queued(&reply)
+        let id = String::from_utf8(reply.raw_response.body.clone())?;
+        Ok(VideoObject::new(id, "queued".to_owned()))
     }
 
     fn transform_video_list_request(
@@ -185,7 +182,8 @@ impl BaseVideoConfig for Subject {
             .logging_obj
             .model_call_details
             .insert("status_seen".to_owned(), Json::Bool(true));
-        let mut video = queued(&reply)?;
+        let id = String::from_utf8(reply.raw_response.body.clone())?;
+        let mut video = VideoObject::new(id, "queued".to_owned());
         video.status = reply.custom_llm_provider.unwrap_or("none").to_owned();
         video.progress = Some(i64::from(client.is_some()));
         Ok(video)
