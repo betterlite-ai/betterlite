@@ -63,12 +63,6 @@ pub enum HubDispatchError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("the predibase custom prompt for {model} cannot be read")]
-    CustomPrompt {
-        model: String,
-        #[source]
-        source: serde_json::Error,
-    },
     #[error("the {url} endpoint is not a valid URL")]
     Url {
         url: String,

@@ -106,7 +106,7 @@ pub async fn chat_request(
     prepared(call, deps, key.as_ref(), &body)
 }
 
-struct NoMapping;
+pub struct NoMapping;
 
 impl ProviderMappingSource for NoMapping {
     fn mapping(&self, _model_id: &str) -> Result<ProviderMapping, HuggingfaceChatError> {

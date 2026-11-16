@@ -150,6 +150,16 @@ async fn the_embedding_arm_fails_with_500_when_the_reply_has_an_error_key() {
     };
     assert_eq!(error.status_code, 500);
     assert_eq!(error.message, "boom");
+    assert!(
+        state
+            .model_call_details
+            .get("api_call_start_time")
+            .is_some()
+    );
+    let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
+        panic!("the post_call keeps its arguments");
+    };
+    assert!(args.contains_key("complete_input_dict"));
     let event = state.model_call_details.get("log_event_type");
     assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
 }
@@ -477,6 +487,10 @@ async fn the_predibase_arm_wraps_the_generate_reply() {
         .first()
         .and_then(|choice| choice.content.as_deref());
     assert_eq!(content, Some("hello"));
+    let Some(Json::Object(args)) = state.model_call_details.get("additional_args") else {
+        panic!("the post_call keeps its arguments");
+    };
+    assert!(args.contains_key("complete_input_dict"));
     let event = state.model_call_details.get("log_event_type");
     assert_eq!(event, Some(&Json::Text(String::from("post_api_call"))));
 }

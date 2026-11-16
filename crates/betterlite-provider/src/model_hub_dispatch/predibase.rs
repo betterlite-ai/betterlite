@@ -8,7 +8,6 @@ use betterlite_logging::logging_pre_post::pre_call::{PreCall, pre_call};
 use betterlite_models::decisions::Json;
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_prompts::arguments::json::{Json as PromptJson, Object};
-use betterlite_prompts::factory::custom::CustomPromptTemplate;
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
 
@@ -38,20 +37,18 @@ struct Endpoint {
     stream: bool,
 }
 
-fn custom_prompts(
-    table: &CustomPromptTable,
-) -> Result<BTreeMap<String, CustomPrompt>, HubDispatchError> {
-    let mut converted = BTreeMap::new();
-    for (model, template) in table {
-        let error = |source| HubDispatchError::CustomPrompt {
-            model: model.clone(),
-            source,
-        };
-        let raw = serde_json::to_value(template).map_err(error)?;
-        let prompt = serde_json::from_value(raw).map_err(error)?;
-        converted.insert(model.clone(), prompt);
-    }
-    Ok(converted)
+fn custom_prompts(table: &CustomPromptTable) -> BTreeMap<String, CustomPrompt> {
+    table
+        .iter()
+        .map(|(model, template)| {
+            let prompt = CustomPrompt {
+                roles: Some(template.roles.clone()),
+                initial_prompt_value: Some(template.initial_prompt_value.clone()),
+                final_prompt_value: Some(template.final_prompt_value.clone()),
+            };
+            (model.clone(), prompt)
+        })
+        .collect()
 }
 
 fn log_headers(headers: &Headers) -> IndexMap<String, Json> {
@@ -124,7 +121,7 @@ async fn request_body(
     options: &Object,
 ) -> Result<RequestBody, HubDispatchError> {
     let empty = CustomPromptTable::new();
-    let custom = custom_prompts(call.custom_prompt_dict.unwrap_or(&empty))?;
+    let custom = custom_prompts(call.custom_prompt_dict.unwrap_or(&empty));
     let config = PredibaseConfig {
         details: true,
         max_new_tokens: deps.default_max_tokens,

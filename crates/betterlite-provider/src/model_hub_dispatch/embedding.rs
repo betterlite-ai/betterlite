@@ -161,7 +161,7 @@ pub async fn embed(
     Ok(embedding)
 }
 
-struct NoTag;
+pub struct NoTag;
 
 impl PipelineTagSource for NoTag {
     fn tag(

@@ -439,7 +439,10 @@ fn logging(redactor: &Redactor) -> (LoggingState, PrePostEnv<'_>) {
     .unwrap();
     let env = PrePostEnv {
         debug: DebugSettings::default(),
-        globals: GlobalFlags::default(),
+        globals: GlobalFlags {
+            log_raw_request_response: true,
+            turn_off_message_logging: false,
+        },
         decision: Decision {
             content: false,
             key_info: false,
