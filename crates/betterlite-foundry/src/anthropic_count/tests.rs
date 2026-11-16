@@ -157,6 +157,31 @@ fn azure_auth_and_beta() {
     assert_eq!(entranced["x-api-key"], ARGUMENT_KEY);
     assert_eq!(entranced["Authorization"], "Bearer azure-token");
     assert!(!entranced.contains_key("api-key"));
+
+    let typed = Call {
+        params: Params::Typed(Some(SecretString::from("typed-key"))),
+        ..Call::default()
+    };
+    let typed_headers = handle_headers(&typed);
+    assert_eq!(typed_headers["x-api-key"], ARGUMENT_KEY);
+    assert_eq!(typed_headers["api-key"], "typed-key");
+
+    let typed_empty = Call {
+        params: Params::Typed(Some(SecretString::from(""))),
+        ..Call::default()
+    };
+    let typed_empty_headers = handle_headers(&typed_empty);
+    assert_eq!(typed_empty_headers["x-api-key"], ARGUMENT_KEY);
+    assert_eq!(typed_empty_headers["api-key"], ARGUMENT_KEY);
+
+    let empty_key_configured = Call {
+        params: Params::Key(SecretString::from("")),
+        configured_key: Some(SecretString::from("configured-key")),
+        ..Call::default()
+    };
+    let empty_key_headers = handle_headers(&empty_key_configured);
+    assert_eq!(empty_key_headers["x-api-key"], ARGUMENT_KEY);
+    assert_eq!(empty_key_headers["api-key"], "configured-key");
 }
 
 fn native_count_result() {
@@ -279,6 +304,47 @@ fn optional_native_selection() {
     });
     let empty_seen = empty.seen.expect("a request");
     assert_eq!(empty_seen.headers["x-api-key"], "environment-key");
+
+    let empty_environment_key = run_counter(&Call {
+        params: Params::Absent,
+        environment_key: Some(SecretString::from("")),
+        ..Call::default()
+    });
+    assert!(empty_environment_key.result.is_none());
+    assert!(empty_environment_key.seen.is_none());
+    assert_eq!(
+        empty_environment_key.warnings,
+        [Warning {
+            subject: "No Azure AI API key found for token counting".to_owned(),
+            status: None,
+        }]
+    );
+
+    let empty_deployment_base = run_counter(&Call {
+        api_base: Some(String::new()),
+        environment_base: Some("https://env.services.ai.azure.com".to_owned()),
+        ..Call::default()
+    });
+    let empty_deployment_seen = empty_deployment_base.seen.expect("a request");
+    assert_eq!(
+        empty_deployment_seen.url,
+        "https://env.services.ai.azure.com/anthropic/v1/messages/count_tokens"
+    );
+
+    let empty_environment_base = run_counter(&Call {
+        api_base: None,
+        environment_base: Some(String::new()),
+        ..Call::default()
+    });
+    assert!(empty_environment_base.result.is_none());
+    assert!(empty_environment_base.seen.is_none());
+    assert_eq!(
+        empty_environment_base.warnings,
+        [Warning {
+            subject: "No Azure AI API base found for token counting".to_owned(),
+            status: None,
+        }]
+    );
 
     let credentials_only = run_counter(&Call {
         params: Params::Absent,
@@ -674,6 +740,7 @@ enum Params {
     Absent,
     Null,
     Key(SecretString),
+    Typed(Option<SecretString>),
 }
 
 struct Call {
@@ -839,6 +906,8 @@ const fn params_key(params: &Params) -> ParamsKey<'_> {
         Params::Absent => ParamsKey::DictAbsent,
         Params::Null => ParamsKey::DictNull,
         Params::Key(secret) => ParamsKey::Dict(secret),
+        Params::Typed(None) => ParamsKey::Typed(None),
+        Params::Typed(Some(secret)) => ParamsKey::Typed(Some(secret)),
     }
 }
 

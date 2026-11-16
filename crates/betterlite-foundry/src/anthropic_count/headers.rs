@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_anthropic::credentials::ANTHROPIC_VERSION;
 use betterlite_azure::azure_urls::{EnvironmentHeadersRequest, validate_azure_environment};
 use betterlite_azure::credentials::selection::AzureTokenError;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -11,7 +12,6 @@ pub type Headers = BTreeMap<String, String>;
 const CONTENT_TYPE_HEADER: &str = "Content-Type";
 const CONTENT_TYPE_JSON: &str = "application/json";
 const ANTHROPIC_VERSION_HEADER: &str = "anthropic-version";
-const ANTHROPIC_VERSION: &str = "2023-06-01";
 const ANTHROPIC_BETA_HEADER: &str = "anthropic-beta";
 const ANTHROPIC_KEY_HEADER: &str = "x-api-key";
 
