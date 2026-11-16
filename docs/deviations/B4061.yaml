@@ -1,0 +1,24 @@
+task: B4061
+deviations:
+  - what: >-
+      A prompt's litellm_params.api_key is returned as ***REDACTED*** in the list, version history and info responses
+      instead of the stored secret.
+    why: >-
+      LiteLLM copies the configured PromptLiteLLMParams into every display record, so a proxy that stores a prompt key
+      hands it back to any caller the route lets through. betterlite never sends a secret back to a client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L278-L290
+  - what: >-
+      The raw template of a prompt whose registry entry carries a manager callback is null; only a dotprompt_content
+      template is returned.
+    why: >-
+      LiteLLM reads prompt_callback.prompt_manager.get_all_prompts_as_json() off a DotpromptManager. betterlite's
+      registry keeps a PromptManagementClient without that manager, and the accessor that would expose it
+      (DotpromptManager::with_prompt_manager) is pub(crate) to betterlite-prompts, so this task cannot reach it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L442-L459
+kept_bugs:
+  - what: >-
+      A dotprompt_content that does not parse yields no raw template, and the response still succeeds.
+    why: >-
+      LiteLLM wraps the whole template lookup in `except Exception: pass`, and a working setup relies on a malformed
+      dotprompt not failing the info response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py#L460-L461
