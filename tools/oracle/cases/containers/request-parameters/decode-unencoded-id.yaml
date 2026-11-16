@@ -1,0 +1,10 @@
+kind: helper
+name: decode-unencoded-id
+call:
+  b3361:
+    function: decode_managed_id
+    container_id: "container_raw"
+    custom_llm_provider: "azure"
+    litellm_params: {api_key: "sk-test"}
+env: {}
+compare: {ignore: []}
