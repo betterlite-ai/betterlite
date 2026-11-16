@@ -118,13 +118,11 @@ impl<T: Transport + 'static> SyncManager<T> {
         if !acquired {
             return false;
         }
-        let mut stored = self
+        *self
             .reporter
             .stored
             .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        *stored = initial;
-        drop(stored);
+            .unwrap_or_else(PoisonError::into_inner) = initial;
         self.launch(run, owner).await;
         true
     }
