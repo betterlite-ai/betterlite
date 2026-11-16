@@ -129,19 +129,19 @@ impl PromptTableActions for FakeTable {
     fn update(
         &self,
         filter: PromptRowFilter,
-        data: PromptRowUpdate,
+        changes: PromptRowUpdate,
     ) -> impl Future<Output = Result<Option<PromptRow>, FakeFailure>> + Send {
-        let mut rows = self.rows.lock().expect("rows");
-        let updated = rows
-            .iter_mut()
-            .find(|row| row_matches(row, &filter))
-            .map(|row| {
-                row.litellm_params = data.litellm_params;
-                row.prompt_info = Some(data.prompt_info);
-                row.created_by = data.created_by.or(row.created_by.take());
-                row.clone()
-            });
-        drop(rows);
+        let updated = {
+            let mut rows = self.rows.lock().expect("rows");
+            rows.iter_mut()
+                .find(|row| row_matches(row, &filter))
+                .map(|row| {
+                    row.litellm_params = changes.litellm_params;
+                    row.prompt_info = Some(changes.prompt_info);
+                    row.created_by = changes.created_by.or(row.created_by.take());
+                    row.clone()
+                })
+        };
         ready(Ok(updated))
     }
 
