@@ -23,8 +23,9 @@ pub async fn get_mcp_server_ids(
     let Some(permission_id) = object_permission_id else {
         return Vec::new();
     };
-    match store.mcp_servers(permission_id).await {
-        Ok(Some(servers)) => servers,
-        Ok(None) | Err(_failure) => Vec::new(),
-    }
+    let found = match store.mcp_servers(permission_id).await {
+        Ok(servers) => servers,
+        Err(_failure) => None,
+    };
+    found.unwrap_or_default()
 }
