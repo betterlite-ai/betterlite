@@ -25,11 +25,11 @@ fn helper_seeds_select_openai_resource_dispatch() {
         })
         .collect();
     assert!(!seeds.is_empty(), "no openai_resource_dispatch seeds");
-    for (path, source) in &seeds {
+    seeds.iter().for_each(|(path, source)| {
         let case = parse_helper_case(path, source).expect("a valid helper case");
         assert_eq!(case.call.operation, "openai_resource_dispatch");
         (GROUP.check)(&case.call.operation, &case.call.input)
             .expect("the group owns openai_resource_dispatch")
             .expect("the dispatch input");
-    }
+    });
 }

@@ -39,16 +39,16 @@ impl Fixture {
     }
 
     fn job_answer(&self) -> Result<Vec<u8>, JobSdkError> {
-        let succeeded = (200..300).contains(&self.status);
-        succeeded
-            .then(|| self.body.clone())
-            .ok_or_else(|| JobSdkError {
-                status: self.status,
+        match self.status {
+            200..=299 => Ok(self.body.clone()),
+            status => Err(JobSdkError {
+                status,
                 error_type: None,
                 param: None,
                 code: None,
                 message: String::from(FAILURE),
-            })
+            }),
+        }
     }
 }
 

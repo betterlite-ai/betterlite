@@ -62,96 +62,79 @@ pub enum RunCall<'call> {
 #[derive(Debug)]
 pub enum Outcome {
     Body(Object),
-    Url {
-        url: String,
-        body: Object,
-    },
-    Headers {
-        url: String,
-        headers: Headers,
-    },
-    HeadersAndBody {
-        url: String,
-        headers: Headers,
-        body: Object,
-    },
+    Url((String, Object)),
+    Headers((String, Headers)),
+    HeadersAndBody((String, Headers, Object)),
 }
 
 impl Dispatch<'_> {
     pub fn run(self) -> Result<Outcome, EvalsError> {
-        let Self {
-            config,
-            context,
-            call,
-        } = self;
-        Ok(match call {
-            Call::Eval(EvalCall::Create(request)) => {
-                Outcome::Body(config.transform_create_eval_request(request, &context)?)
-            }
-            Call::Eval(EvalCall::List(params)) => {
-                let (url, body) = config.transform_list_evals_request(params, &context)?;
-                Outcome::Url { url, body }
-            }
-            Call::Eval(EvalCall::Get { eval_id, api_base }) => {
-                let (url, headers) =
-                    config.transform_get_eval_request(eval_id, api_base, &context)?;
-                Outcome::Headers { url, headers }
-            }
-            Call::Eval(EvalCall::Update {
-                eval_id,
-                request,
-                api_base,
-            }) => {
-                let (url, headers, body) =
-                    config.transform_update_eval_request(eval_id, request, api_base, &context)?;
-                Outcome::HeadersAndBody { url, headers, body }
-            }
-            Call::Eval(EvalCall::Delete { eval_id, api_base }) => {
-                let (url, headers) =
-                    config.transform_delete_eval_request(eval_id, api_base, &context)?;
-                Outcome::Headers { url, headers }
-            }
-            Call::Eval(EvalCall::Cancel { eval_id, api_base }) => {
-                let (url, headers, body) =
-                    config.transform_cancel_eval_request(eval_id, api_base, &context)?;
-                Outcome::HeadersAndBody { url, headers, body }
-            }
-            Call::Run(RunCall::Create { eval_id, request }) => {
-                let (url, body) =
-                    config.transform_create_run_request(eval_id, request, &context)?;
-                Outcome::Url { url, body }
-            }
-            Call::Run(RunCall::List { eval_id, params }) => {
-                let (url, body) = config.transform_list_runs_request(eval_id, params, &context)?;
-                Outcome::Url { url, body }
-            }
-            Call::Run(RunCall::Get(id)) => {
-                let (url, headers) = config.transform_get_run_request(
-                    id.eval_id,
-                    id.run_id,
-                    id.api_base,
-                    &context,
-                )?;
-                Outcome::Headers { url, headers }
-            }
-            Call::Run(RunCall::Cancel(id)) => {
-                let (url, headers, body) = config.transform_cancel_run_request(
-                    id.eval_id,
-                    id.run_id,
-                    id.api_base,
-                    &context,
-                )?;
-                Outcome::HeadersAndBody { url, headers, body }
-            }
-            Call::Run(RunCall::Delete(id)) => {
-                let (url, headers, body) = config.transform_delete_run_request(
-                    id.eval_id,
-                    id.run_id,
-                    id.api_base,
-                    &context,
-                )?;
-                Outcome::HeadersAndBody { url, headers, body }
-            }
-        })
+        match self.call {
+            Call::Eval(eval) => eval_call(self.config, &self.context, eval),
+            Call::Run(run) => run_call(self.config, &self.context, run),
+        }
+    }
+}
+
+fn eval_call(
+    config: &dyn BaseEvalsAPIConfig<Error = EvalsError>,
+    context: &EvalsRequestContext<'_>,
+    call: EvalCall<'_>,
+) -> Result<Outcome, EvalsError> {
+    Ok(match call {
+        EvalCall::Create(request) => {
+            Outcome::Body(config.transform_create_eval_request(request, context)?)
+        }
+        EvalCall::List(params) => {
+            Outcome::Url(config.transform_list_evals_request(params, context)?)
+        }
+        EvalCall::Get { eval_id, api_base } => {
+            Outcome::Headers(config.transform_get_eval_request(eval_id, api_base, context)?)
+        }
+        EvalCall::Update {
+            eval_id,
+            request,
+            api_base,
+        } => Outcome::HeadersAndBody(
+            config.transform_update_eval_request(eval_id, request, api_base, context)?,
+        ),
+        EvalCall::Delete { eval_id, api_base } => {
+            Outcome::Headers(config.transform_delete_eval_request(eval_id, api_base, context)?)
+        }
+        EvalCall::Cancel { eval_id, api_base } => Outcome::HeadersAndBody(
+            config.transform_cancel_eval_request(eval_id, api_base, context)?,
+        ),
+    })
+}
+
+fn run_call(
+    config: &dyn BaseEvalsAPIConfig<Error = EvalsError>,
+    context: &EvalsRequestContext<'_>,
+    call: RunCall<'_>,
+) -> Result<Outcome, EvalsError> {
+    match call {
+        RunCall::Create { eval_id, request } => {
+            let created = config.transform_create_run_request(eval_id, request, context)?;
+            Ok(Outcome::Url(created))
+        }
+        RunCall::List { eval_id, params } => {
+            let listed = config.transform_list_runs_request(eval_id, params, context)?;
+            Ok(Outcome::Url(listed))
+        }
+        RunCall::Get(id) => {
+            let fetched =
+                config.transform_get_run_request(id.eval_id, id.run_id, id.api_base, context)?;
+            Ok(Outcome::Headers(fetched))
+        }
+        RunCall::Cancel(id) => {
+            let cancelled =
+                config.transform_cancel_run_request(id.eval_id, id.run_id, id.api_base, context)?;
+            Ok(Outcome::HeadersAndBody(cancelled))
+        }
+        RunCall::Delete(id) => {
+            let deleted =
+                config.transform_delete_run_request(id.eval_id, id.run_id, id.api_base, context)?;
+            Ok(Outcome::HeadersAndBody(deleted))
+        }
     }
 }

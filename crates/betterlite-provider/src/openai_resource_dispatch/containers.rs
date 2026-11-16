@@ -10,7 +10,7 @@ pub struct Dispatch<'call> {
     pub call: Call<'call>,
 }
 
-// B522's six request operations plus the file-content decode that keeps the bytes intact
+// B522's four container requests, then the container-file calls
 pub enum Call<'call> {
     Create {
         name: &'call str,
@@ -28,17 +28,22 @@ pub enum Call<'call> {
         id: &'call str,
         api_base: &'call str,
     },
-    FileList {
+    File(FileCall<'call>),
+}
+
+// The file-content decode keeps the bytes intact
+pub enum FileCall<'call> {
+    List {
         container_id: &'call str,
         api_base: &'call str,
         query: ContainerListQuery<'call>,
     },
-    FileContent {
+    Content {
         container_id: &'call str,
         file_id: &'call str,
         api_base: &'call str,
     },
-    FileContentReply(&'call [u8]),
+    ContentReply(&'call [u8]),
 }
 
 #[derive(Debug)]
@@ -68,31 +73,41 @@ impl Dispatch<'_> {
             Call::Delete { id, api_base } => {
                 Outcome::Request(config.transform_container_delete_request(id, api_base, context)?)
             }
-            Call::FileList {
-                container_id,
-                api_base,
-                query,
-            } => Outcome::Request(config.transform_container_file_list_request(
-                container_id,
-                api_base,
-                context,
-                &query,
-            )?),
-            Call::FileContent {
-                container_id,
-                file_id,
-                api_base,
-            } => Outcome::Request(config.transform_container_file_content_request(
-                container_id,
-                file_id,
-                api_base,
-                context,
-            )?),
-            Call::FileContentReply(body) => Outcome::FileContent(
-                config
-                    .transform_container_file_content_response(body)?
-                    .into_boxed_slice(),
-            ),
+            Call::File(file) => file_call(config, context, file)?,
         })
     }
+}
+
+fn file_call(
+    config: &dyn BaseContainerConfig,
+    context: ContainerRequestContext<'_>,
+    call: FileCall<'_>,
+) -> Result<Outcome, ContainerError> {
+    Ok(match call {
+        FileCall::List {
+            container_id,
+            api_base,
+            query,
+        } => Outcome::Request(config.transform_container_file_list_request(
+            container_id,
+            api_base,
+            context,
+            &query,
+        )?),
+        FileCall::Content {
+            container_id,
+            file_id,
+            api_base,
+        } => Outcome::Request(config.transform_container_file_content_request(
+            container_id,
+            file_id,
+            api_base,
+            context,
+        )?),
+        FileCall::ContentReply(body) => Outcome::FileContent(
+            config
+                .transform_container_file_content_response(body)?
+                .into_boxed_slice(),
+        ),
+    })
 }

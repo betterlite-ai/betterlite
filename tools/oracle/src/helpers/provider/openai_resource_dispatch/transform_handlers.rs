@@ -97,7 +97,7 @@ pub(super) async fn evals_get(case: &EvalsGet) -> HelperResult {
         call,
     }));
     let outcome = dispatch(operation).await.map_err(leaf_failure)?;
-    let OpenAiResourceResult::Evals(EvalsOutcome::Headers { url, headers }) = outcome else {
+    let OpenAiResourceResult::Evals(EvalsOutcome::Headers((url, headers))) = outcome else {
         return Err(failure("Variant", OTHER_OUTCOME));
     };
     Ok(json!({ "url": url, "headers": headers }))

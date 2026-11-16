@@ -18,12 +18,23 @@ use crate::openai_resource_dispatch::{
 const API_BASE: &str = "https://api.evals.test";
 const EVAL_URL: &str = "https://api.evals.test/v1/evals/eval_1";
 const RUN_URL: &str = "https://api.evals.test/v1/evals/eval_1/runs/run_1";
+const RUNS_URL: &str = "https://api.evals.test/v1/evals/eval_1/runs";
 
 // What a transform returns: the url when it has one, whether the auth headers came back, and the body
 struct Expected {
     url: Option<&'static str>,
     headers: bool,
     body: Option<Object>,
+}
+
+impl Expected {
+    fn new(url: Option<&'static str>, headers: bool, body: Option<&str>) -> Self {
+        Self {
+            url,
+            headers,
+            body: body.map(object),
+        }
+    }
 }
 
 fn auth_headers() -> Headers {
@@ -62,9 +73,9 @@ async fn row(call: Call<'_>, expected: Expected) {
     };
     let (url, returned, body) = match outcome {
         Outcome::Body(body) => (None, None, Some(body)),
-        Outcome::Url { url, body } => (Some(url), None, Some(body)),
-        Outcome::Headers { url, headers } => (Some(url), Some(headers), None),
-        Outcome::HeadersAndBody { url, headers, body } => (Some(url), Some(headers), Some(body)),
+        Outcome::Url((url, body)) => (Some(url), None, Some(body)),
+        Outcome::Headers((url, headers)) => (Some(url), Some(headers), None),
+        Outcome::HeadersAndBody((url, headers, body)) => (Some(url), Some(headers), Some(body)),
     };
     assert_eq!(url.as_deref(), expected.url);
     assert_eq!(returned, expected.headers.then(auth_headers));
@@ -104,12 +115,8 @@ fn run_id() -> RunId<'static> {
 async fn eval_rows() {
     let data = create_data();
     let created = r#"{"name":"smoke","data_source_config":{"type":"custom","item_schema":{"type":"object"},"include_sample_schema":true},"testing_criteria":[{"type":"llm_as_judge","model":"gpt-test"}]}"#;
-    let expected = Expected {
-        url: None,
-        headers: false,
-        body: Some(object(created)),
-    };
-    row(Call::Eval(EvalCall::Create(&data)), expected).await;
+    let create = Call::Eval(EvalCall::Create(&data));
+    row(create, Expected::new(None, false, Some(created))).await;
     let listing = ListEvalsParams {
         limit: Some(3),
         after: Some(String::from("eval_0")),
@@ -118,28 +125,16 @@ async fn eval_rows() {
         order_by: Some(EvalOrderBy::UpdatedAt),
     };
     let listed = r#"{"limit":3,"after":"eval_0","order":"desc","order_by":"updated_at"}"#;
-    let expected = Expected {
-        url: Some("https://api.evals.test/v1/evals"),
-        headers: false,
-        body: Some(object(listed)),
-    };
-    row(Call::Eval(EvalCall::List(&listing)), expected).await;
-    let expected = Expected {
-        url: Some(EVAL_URL),
-        headers: true,
-        body: None,
-    };
-    row(Call::Eval(get("eval_1")), expected).await;
-    let delete = EvalCall::Delete {
+    let list_url = Some("https://api.evals.test/v1/evals");
+    let list = Call::Eval(EvalCall::List(&listing));
+    row(list, Expected::new(list_url, false, Some(listed))).await;
+    let fetch = Call::Eval(get("eval_1"));
+    row(fetch, Expected::new(Some(EVAL_URL), true, None)).await;
+    let delete = Call::Eval(EvalCall::Delete {
         eval_id: "eval_1",
         api_base: API_BASE,
-    };
-    let expected = Expected {
-        url: Some(EVAL_URL),
-        headers: true,
-        body: None,
-    };
-    row(Call::Eval(delete), expected).await;
+    });
+    row(delete, Expected::new(Some(EVAL_URL), true, None)).await;
 }
 
 async fn eval_body_rows() {
@@ -147,27 +142,19 @@ async fn eval_body_rows() {
         name: Some(String::from("renamed")),
         metadata: Some(object(r#"{"team":"core"}"#)),
     };
-    let call = EvalCall::Update {
+    let renamed = r#"{"name":"renamed","metadata":{"team":"core"}}"#;
+    let change = Call::Eval(EvalCall::Update {
         eval_id: "eval_1",
         request: &update,
         api_base: API_BASE,
-    };
-    let expected = Expected {
-        url: Some(EVAL_URL),
-        headers: true,
-        body: Some(object(r#"{"name":"renamed","metadata":{"team":"core"}}"#)),
-    };
-    row(Call::Eval(call), expected).await;
-    let cancel = EvalCall::Cancel {
+    });
+    row(change, Expected::new(Some(EVAL_URL), true, Some(renamed))).await;
+    let cancel = Call::Eval(EvalCall::Cancel {
         eval_id: "eval_1",
         api_base: API_BASE,
-    };
-    let expected = Expected {
-        url: Some("https://api.evals.test/v1/evals/eval_1/cancel"),
-        headers: true,
-        body: Some(object("{}")),
-    };
-    row(Call::Eval(cancel), expected).await;
+    });
+    let cancel_url = Some("https://api.evals.test/v1/evals/eval_1/cancel");
+    row(cancel, Expected::new(cancel_url, true, Some("{}"))).await;
 }
 
 async fn run_rows() {
@@ -176,56 +163,34 @@ async fn run_rows() {
         name: Some(String::from("nightly")),
         metadata: None,
     };
-    let create = RunCall::Create {
+    let created = r#"{"data_source":{"type":"completions"},"name":"nightly"}"#;
+    let create = Call::Run(RunCall::Create {
         eval_id: "eval_1",
         request: &data,
-    };
-    let runs_url = "https://api.evals.test/v1/evals/eval_1/runs";
-    let expected = Expected {
-        url: Some(runs_url),
-        headers: false,
-        body: Some(object(
-            r#"{"data_source":{"type":"completions"},"name":"nightly"}"#,
-        )),
-    };
-    row(Call::Run(create), expected).await;
+    });
+    row(create, Expected::new(Some(RUNS_URL), false, Some(created))).await;
     let listing = ListRunsParams {
         limit: Some(2),
         after: None,
         before: Some(String::from("run_0")),
         order: Some(EvalOrder::Asc),
     };
-    let list = RunCall::List {
+    let listed = r#"{"limit":2,"before":"run_0","order":"asc"}"#;
+    let list = Call::Run(RunCall::List {
         eval_id: "eval_1",
         params: &listing,
-    };
-    let expected = Expected {
-        url: Some(runs_url),
-        headers: false,
-        body: Some(object(r#"{"limit":2,"before":"run_0","order":"asc"}"#)),
-    };
-    row(Call::Run(list), expected).await;
+    });
+    row(list, Expected::new(Some(RUNS_URL), false, Some(listed))).await;
 }
 
 async fn run_path_rows() {
-    let expected = Expected {
-        url: Some(RUN_URL),
-        headers: true,
-        body: None,
-    };
-    row(Call::Run(RunCall::Get(run_id())), expected).await;
-    let expected = Expected {
-        url: Some(RUN_URL),
-        headers: true,
-        body: Some(object("{}")),
-    };
-    row(Call::Run(RunCall::Delete(run_id())), expected).await;
-    let expected = Expected {
-        url: Some("https://api.evals.test/v1/evals/eval_1/runs/run_1/cancel"),
-        headers: true,
-        body: Some(object("{}")),
-    };
-    row(Call::Run(RunCall::Cancel(run_id())), expected).await;
+    let fetch = Call::Run(RunCall::Get(run_id()));
+    row(fetch, Expected::new(Some(RUN_URL), true, None)).await;
+    let delete = Call::Run(RunCall::Delete(run_id()));
+    row(delete, Expected::new(Some(RUN_URL), true, Some("{}"))).await;
+    let cancel = Call::Run(RunCall::Cancel(run_id()));
+    let cancel_url = Some("https://api.evals.test/v1/evals/eval_1/runs/run_1/cancel");
+    row(cancel, Expected::new(cancel_url, true, Some("{}"))).await;
 }
 
 async fn error_row() {

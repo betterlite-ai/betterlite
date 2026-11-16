@@ -7,7 +7,7 @@ use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::openai_base_config::Object;
 
 use super::fixture::{container_config, object};
-use crate::openai_resource_dispatch::containers::{Call, Dispatch, Outcome};
+use crate::openai_resource_dispatch::containers::{Call, Dispatch, FileCall, Outcome};
 use crate::openai_resource_dispatch::{
     OpenAiResourceError, OpenAiResourceOperation, OpenAiResourceResult, dispatch,
 };
@@ -75,11 +75,11 @@ async fn list_rows() {
         order: None,
         extra_query: None,
     };
-    let files = Call::FileList {
+    let files = Call::File(FileCall::List {
         container_id: "cntr_1",
         api_base: API_BASE,
         query: limited,
-    };
+    });
     let files_url = "https://api.containers.test/v1/cntr_1/files";
     request_row(files, files_url, r#"{"limit":"1"}"#).await;
 }
@@ -96,18 +96,18 @@ async fn path_rows() {
         api_base: API_BASE,
     };
     request_row(delete, container_url, "{}").await;
-    let content = Call::FileContent {
+    let content = Call::File(FileCall::Content {
         container_id: "cntr_1",
         file_id: "cfile_1",
         api_base: API_BASE,
-    };
+    });
     let content_url = "https://api.containers.test/v1/cntr_1/files/cfile_1/content";
     request_row(content, content_url, "{}").await;
 }
 
 async fn content_reply_row() {
     let raw = b"\x00\x01raw\xff";
-    let result = run(Call::FileContentReply(raw), &object("{}")).await;
+    let result = run(Call::File(FileCall::ContentReply(raw)), &object("{}")).await;
     let Ok(OpenAiResourceResult::Containers(Outcome::FileContent(content))) = result else {
         panic!("the file content reply keeps its bytes");
     };
@@ -119,13 +119,11 @@ async fn error_row() {
         id: "..",
         api_base: API_BASE,
     };
-    let result = run(call, &object("{}")).await;
-    let Err(error) = result else {
-        panic!("a dot path segment is a leaf error");
-    };
     assert!(matches!(
-        error,
-        OpenAiResourceError::Containers(ContainerError::PathSegment { .. })
+        run(call, &object("{}")).await,
+        Err(OpenAiResourceError::Containers(
+            ContainerError::PathSegment { .. }
+        ))
     ));
 }
 

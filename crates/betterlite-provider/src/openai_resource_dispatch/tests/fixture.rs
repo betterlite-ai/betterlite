@@ -1,5 +1,6 @@
+use std::fmt::Debug;
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::Settings;
@@ -29,7 +30,7 @@ use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use rust_decimal::Decimal;
 use secrecy::SecretString;
-use serde_json::Value;
+use serde::de::DeserializeOwned;
 use url::Url;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,9 +144,13 @@ impl Fixture {
         self.seen.lock().unwrap().clone()
     }
 
-    fn answer(&self, request: &OutboundRequest) -> (u16, HeaderMap) {
+    fn answer(&self, request: &OutboundRequest) -> UpstreamResponse {
         self.seen.lock().unwrap().push(project(request));
-        (self.status, header_map(&self.headers))
+        UpstreamResponse {
+            status: self.status,
+            headers: header_map(&self.headers),
+            body: self.body.clone(),
+        }
     }
 }
 
@@ -165,23 +170,18 @@ impl FileTransport for Fixture {
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
-        let (status, headers) = self.answer(&request);
-        ready(Ok(UpstreamResponse {
-            status,
-            headers,
-            body: self.body.clone(),
-        }))
+        ready(Ok(self.answer(&request)))
     }
 
     fn send_stream(
         &self,
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
-        let (status, headers) = self.answer(&request);
+        let reply = self.answer(&request);
         let chunks: Vec<Result<Vec<u8>, HttpError>> = self.chunks.iter().cloned().map(Ok).collect();
         ready(Ok(StreamReply {
-            status,
-            headers,
+            status: reply.status,
+            headers: reply.headers,
             body: iter(chunks).boxed(),
         }))
     }
@@ -333,8 +333,12 @@ pub(crate) fn object(json: &str) -> Object {
     serde_json::from_str(json).unwrap()
 }
 
-pub(crate) fn value(json: &str) -> Value {
+pub(crate) fn parse<T: DeserializeOwned>(json: &str) -> T {
     serde_json::from_str(json).unwrap()
+}
+
+pub(crate) fn assert_json<T: DeserializeOwned + PartialEq + Debug>(actual: &T, json: &str) {
+    assert_eq!(*actual, parse::<T>(json));
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -358,11 +362,11 @@ pub(crate) struct JobSdk {
 }
 
 impl JobSdk {
-    fn log(&self, call: JobCall) {
-        self.calls.lock().unwrap().push(call);
-    }
-
-    fn reply(&self) -> Result<Vec<u8>, JobSdkError> {
+    fn record(&self, call: JobCall) -> Result<Vec<u8>, JobSdkError> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(call);
         self.answer.clone().map_err(|message| JobSdkError {
             status: 400,
             error_type: Some(String::from("invalid_request_error")),
@@ -379,30 +383,26 @@ impl JobsApi for JobSdk {
     }
 
     fn create(&self, data: &FineTuneCreate) -> Result<Vec<u8>, JobSdkError> {
-        self.log(JobCall::Create {
+        self.record(JobCall::Create {
             model: data.model.clone(),
             training_file: data.training_file.clone(),
             suffix: data.suffix.clone(),
-        });
-        self.reply()
+        })
     }
 
     fn list(&self, after: Option<&str>, limit: Option<i64>) -> Result<Vec<u8>, JobSdkError> {
-        self.log(JobCall::List {
+        self.record(JobCall::List {
             after: after.map(str::to_owned),
             limit,
-        });
-        self.reply()
+        })
     }
 
     fn retrieve(&self, job_id: &str) -> Result<Vec<u8>, JobSdkError> {
-        self.log(JobCall::Retrieve(job_id.to_owned()));
-        self.reply()
+        self.record(JobCall::Retrieve(job_id.to_owned()))
     }
 
     fn cancel(&self, job_id: &str) -> Result<Vec<u8>, JobSdkError> {
-        self.log(JobCall::Cancel(job_id.to_owned()));
-        self.reply()
+        self.record(JobCall::Cancel(job_id.to_owned()))
     }
 }
 

@@ -13,9 +13,8 @@ use betterlite_openai::vector_stores::store::{CreateParams, Query, SearchParams}
 use betterlite_openai::vector_stores::{Headers, Request};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Value;
 
-use super::fixture::value;
+use super::fixture::{assert_json, parse};
 use crate::openai_resource_dispatch::vector_stores::{
     Call, Dispatch, EndpointKind, Outcome, RequestCall,
 };
@@ -203,9 +202,9 @@ async fn endpoint_rows() {
 async fn search_request_row() {
     let terms = Query::Many(vec![String::from("a"), String::from("b")]);
     let params = SearchParams {
-        filters: Some(value(r#"{"type":"eq"}"#)),
+        filters: Some(parse(r#"{"type":"eq"}"#)),
         max_num_results: Some(5),
-        ranking_options: Some(value(r#"{"ranker":"auto"}"#)),
+        ranking_options: Some(parse(r#"{"ranker":"auto"}"#)),
         rewrite_query: Some(false),
     };
     let base = "https://h.example/v1/vector_stores?api-version=1";
@@ -221,16 +220,16 @@ async fn search_request_row() {
         "https://h.example/v1/vector_stores/a%2Fb%20c/search?api-version=1"
     );
     let sent = r#"{"query":["a","b"],"filters":{"type":"eq"},"max_num_results":5,"ranking_options":{"ranker":"auto"},"rewrite_query":false}"#;
-    assert_eq!(found.body, value(sent));
+    assert_json(&found.body, sent);
 }
 
 async fn create_request_rows() {
     let mut metadata = IndexMap::new();
     for index in 0..20_u8 {
-        metadata.insert(format!("k{index}"), Value::from("v"));
+        metadata.insert(format!("k{index}"), parse("\"v\""));
     }
-    metadata.insert(String::from("hidden_params"), Value::from("x"));
-    metadata.shift_insert(1, String::from("count"), Value::from(3_i64));
+    metadata.insert(String::from("hidden_params"), parse("\"x\""));
+    metadata.shift_insert(1, String::from("count"), parse("3"));
     let params = CreateParams {
         name: Some(String::from("docs")),
         file_ids: Some(vec![String::from("f1")]),
@@ -254,13 +253,13 @@ async fn create_request_rows() {
     })
     .await;
     let nulls = r#"{"name":null,"file_ids":null,"expires_after":null,"chunking_strategy":null,"metadata":null}"#;
-    assert_eq!(defaults.body, value(nulls));
+    assert_json(&defaults.body, nulls);
 }
 
 async fn attached_file_request_rows() {
     let attributes = IndexMap::from([
-        (String::from("team"), Value::from("a")),
-        (String::from("rank"), Value::from(2_i64)),
+        (String::from("team"), parse("\"a\"")),
+        (String::from("rank"), parse("2")),
     ]);
     let attach = FileCreateParams {
         file_id: Some(String::from("file_1")),
@@ -274,7 +273,7 @@ async fn attached_file_request_rows() {
     .await;
     assert_eq!(attached.url, API_BASE);
     let sent = r#"{"file_id":"file_1","attributes":{"team":"a"}}"#;
-    assert_eq!(attached.body, value(sent));
+    assert_json(&attached.body, sent);
     let paging = FileListParams {
         after: Some(String::from("file_9")),
         before: None,
@@ -289,7 +288,7 @@ async fn attached_file_request_rows() {
     .await;
     assert_eq!(listed.url, API_BASE);
     let paged = r#"{"after":"file_9","limit":10,"order":"desc"}"#;
-    assert_eq!(listed.body, value(paged));
+    assert_json(&listed.body, paged);
 }
 
 async fn file_operation_rows() {
@@ -306,10 +305,10 @@ async fn file_operation_rows() {
         })
         .await;
         assert_eq!(found.url, format!("{API_BASE}{suffix}"));
-        assert_eq!(found.body, value("{}"));
+        assert_json(&found.body, "{}");
     }
     let update = FileOperation::Update(FileUpdateParams {
-        attributes: Attributes::Other(Value::from(7_i64)),
+        attributes: Attributes::Other(parse("7")),
     });
     let updated = request_of(RequestCall::File {
         operation: &update,
@@ -317,7 +316,7 @@ async fn file_operation_rows() {
         api_base: API_BASE,
     })
     .await;
-    assert_eq!(updated.body, value(r#"{"attributes":7}"#));
+    assert_json(&updated.body, r#"{"attributes":7}"#);
 }
 
 async fn file_operation_error_row() {
@@ -348,7 +347,7 @@ async fn reply_rows() {
         .map(|hit| hit.file_id.as_deref())
         .collect();
     assert_eq!(file_ids, [Some("f")]);
-    assert_eq!(serde_json::to_value(&*found).unwrap(), value(search));
+    assert_json(&serde_json::to_value(&*found).unwrap(), search);
     let create = r#"{"id":"vs_1","object":"vector_store","created_at":1700000000,"name":"docs","bytes":2048,"file_counts":{"in_progress":0,"completed":1,"failed":0,"cancelled":0,"total":1},"status":"completed","expires_after":{"anchor":"last_active_at","days":7},"expires_at":1700604800,"last_active_at":1700000000,"metadata":{"team":"core"}}"#;
     let Ok(VectorReply::Record(store)) = reply_of(ReplyKind::Create, 200, create).await else {
         panic!("the create reply decodes to a record");
@@ -359,7 +358,7 @@ async fn reply_rows() {
     assert_eq!(created.id.as_deref(), Some("vs_1"));
     assert_eq!(created.name.as_deref(), Some("docs"));
     assert_eq!(created.status, Some(VectorStoreStatus::Completed));
-    assert_eq!(serde_json::to_value(&*store).unwrap(), value(create));
+    assert_json(&serde_json::to_value(&*store).unwrap(), create);
 }
 
 async fn file_reply_row() {
@@ -367,7 +366,7 @@ async fn file_reply_row() {
     let Ok(VectorReply::Json(kept)) = reply_of(ReplyKind::File, 200, attached).await else {
         panic!("the attached-file reply stays JSON");
     };
-    assert_eq!(kept, value(attached));
+    assert_json(&kept, attached);
 }
 
 async fn reply_error_row() {
