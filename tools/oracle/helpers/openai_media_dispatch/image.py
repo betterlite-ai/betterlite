@@ -33,9 +33,7 @@ def datum_value(item: JsonValue) -> JsonValue:
 def image_reply(value: JsonValue) -> JsonValue:
     fields = OBJECT.validate_python(value)
     data = OBJECTS.validate_python(fields["data"])
-    rendered: list[JsonValue] = []
-    for item in data:
-        rendered.append(datum_value(item))
+    rendered: list[JsonValue] = [datum_value(item) for item in data]
     return {
         "created": fields["created"],
         "background": fields["background"],
