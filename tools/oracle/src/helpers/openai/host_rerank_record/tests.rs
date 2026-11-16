@@ -5,30 +5,31 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::{Helper as _, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper as _, HelperResult};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 const FIXED_ID: &str = "00000000-0000-4000-8000-000000000001";
 
 fn parse_case(file: &str) -> HelperCase {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/host-rerank-record")
         .join(file);
     serde_saphyr::from_str(&fs::read_to_string(path).expect("the case is readable"))
         .expect("the case parses as a helper case")
 }
 
-fn run_case(file: &str) -> HelperResult {
+fn run_case_file(file: &str) -> HelperResult {
     super::Op::decode_and_run(&parse_case(file).call.input)
 }
 
 fn answer(file: &str) -> Value {
-    run_case(file).unwrap()
+    run_case_file(file).unwrap()
 }
 
 #[test]
 fn helper_seeds_select_host_rerank_record() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -85,14 +86,14 @@ fn a_base_path_is_replaced() {
 
 #[test]
 fn a_jina_status_is_a_plain_error_with_the_body() {
-    let error = run_case("generic-status-and-json-errors.yaml").unwrap_err();
+    let error = run_case_file("generic-status-and-json-errors.yaml").unwrap_err();
     assert_eq!(error.status, None);
     assert_eq!(error.message, r#"{"results":[]}"#);
 }
 
 #[test]
 fn an_infinity_body_that_is_not_json_carries_the_upstream_status() {
-    let error = run_case("infinity-json-error-keeps-status.yaml").unwrap_err();
+    let error = run_case_file("infinity-json-error-keeps-status.yaml").unwrap_err();
     assert_eq!(error.status, Some(502));
     assert!(error.message.contains("bad gateway"));
 }

@@ -89,7 +89,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-auth --no-tests=fail -E 'test(/^agent_caller::loaders::/)'
     - id: oracle-cases
       why: ceilings, caller records or agent access intersections differ from LiteLLM's on the same input
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-ceilings)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::auth::b4778::/)'
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/agent-ceilings)" && cargo nextest run --locked -p betterlite-oracle-auth --no-tests=fail -E 'test(/^b4778::/)'
 oracle_cases:
   - tools/oracle/cases/agent-ceilings/ceiling-no-groups-attached.yaml
   - tools/oracle/cases/agent-ceilings/ceiling-unions-loaded-groups.yaml

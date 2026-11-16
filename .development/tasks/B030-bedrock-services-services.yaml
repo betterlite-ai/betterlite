@@ -34,8 +34,8 @@ description: >-
   The current managed-batch source message is LiteLLM-executed batches need a database: set DATABASE_URL so LiteLLM
   can keep the batch and its files. Public route owners apply B184 message rewriting while matching status/type/param/code.
   Request URL downloads remain disabled: local file/multipart bytes are accepted; a route requiring fetched bytes
-  fails through its existing media error owner, with zero outbound fetch. The decision to enable request URL downloads
-  and to add managed files/batches remains open for Max.
+  fails through its existing media error owner, with zero outbound fetch. An R2 fix task wires request URL downloads in, and betterlite
+  builds no managed files (decisions 2026-10-31).
 
 
   Write standalone Rust test bedrock_services_dispatch_credential_identity_isolation in betterlite-provider: Distinct
@@ -239,7 +239,7 @@ deviations:
     500 (source message Managed files hook not found); LiteLLM-executed batch creation without ManagedBatchStore
     fails HTTP 400, type invalid_request_error, param None, code 400, with the source database-required message
     even if DATABASE_URL is set.
-  why: Keep the open-source behavior while Max decides whether betterlite should implement managed files and batches
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
     independently. The pinned enterprise hook is absent; native S3 support does not supply it.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L470-L483
 out_of_scope:

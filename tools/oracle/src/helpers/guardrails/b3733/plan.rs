@@ -4,7 +4,8 @@ use betterlite_guardrails::model_armor::file_scanning::{ByteDataType, plan_file_
 use betterlite_prompts::message_content::Message;
 use serde::Serialize;
 
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Serialize)]
 struct Attachment {

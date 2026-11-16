@@ -1,9 +1,12 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::worker_options::callback_settings::CallbackSettings;
 use betterlite_server::worker_options::{
     DirectoryMode, LaunchOptions, launch_plan, prometheus_directory,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -18,10 +21,10 @@ pub(crate) struct Input {
     environment: BTreeMap<String, String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.function.as_str() {
             "launch_plan" => {
                 let Some(options) = input.options.as_ref() else {
@@ -56,11 +59,11 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn failure<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "WorkerLaunchError".to_owned(),
         message: error.to_string(),
         status: None,

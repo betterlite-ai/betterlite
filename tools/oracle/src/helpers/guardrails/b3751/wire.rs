@@ -13,14 +13,16 @@ use super::akto_inputs;
 use super::failure;
 use super::inputs_json;
 use super::settings;
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperError;
-use crate::mock::MockProvider;
-use crate::mock::ProviderRequest;
-use crate::routing_mock_scripts::MockScript;
-use crate::routing_mock_scripts::ProviderCall;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, ProviderCall};
+use std::slice;
+use tokio::runtime::Builder;
+use url::form_urlencoded;
 
-pub(super) fn build_payload(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn build_payload(input: &Input) -> HelperResult {
     let guardrail = settings(input)?;
     let payload = payload_of(input, &guardrail)?;
     normalize(payload)
@@ -45,7 +47,7 @@ fn payload_of(input: &Input, guardrail: &AktoMirroring) -> Result<AktoPayload, B
     .map_err(|error| failure("AktoError", None, error.to_string()))
 }
 
-pub(super) fn normalize(payload: AktoPayload) -> crate::helpers::HelperResult {
+pub(super) fn normalize(payload: AktoPayload) -> HelperResult {
     let request_headers: Value = serde_json::from_str(&payload.request_headers)
         .map_err(|error| failure("JsonError", None, error.to_string()))?;
     let response_headers: Value = serde_json::from_str(&payload.response_headers)
@@ -102,7 +104,7 @@ fn decode_encoded(encoded: &str, response_payload: bool) -> Result<Value, Box<He
         .map_err(|error| failure("JsonError", None, error.to_string()))
 }
 
-pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::HelperResult {
+pub(super) fn send(input: &Input, fire_and_forget: bool) -> HelperResult {
     let mut guardrail = settings(input)?;
     let mock = MockProvider::start(script(&input.answer)?)
         .map_err(|error| failure("MockError", None, error.to_string()))?;
@@ -115,7 +117,7 @@ pub(super) fn send(input: &Input, fire_and_forget: bool) -> crate::helpers::Help
     report(&calls, answer)
 }
 
-pub(super) fn unreachable(input: &Input) -> crate::helpers::HelperResult {
+pub(super) fn unreachable(input: &Input) -> HelperResult {
     let Err(error) =
         settings(input)?.handle_unreachable(akto_inputs(input), &AktoError::Unreachable)
     else {
@@ -138,7 +140,7 @@ fn deliver(
         guardrails: input.guardrails.unwrap_or(false),
         ingest_data: input.ingest_data.unwrap_or(false),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure("RuntimeError", None, error.to_string()))?;
@@ -152,10 +154,7 @@ fn deliver(
     }))
 }
 
-fn report(
-    calls: &[ProviderCall],
-    answer: Option<Result<AktoAnswer, AktoError>>,
-) -> crate::helpers::HelperResult {
+fn report(calls: &[ProviderCall], answer: Option<Result<AktoAnswer, AktoError>>) -> HelperResult {
     let request = calls
         .first()
         .ok_or_else(|| failure("MockError", None, "no request reached the mock".to_owned()))
@@ -178,7 +177,7 @@ fn script(answer: &super::AnswerInput) -> Result<MockScript, Box<HelperError>> {
         body: Some(answer.body.clone().unwrap_or(Value::Null)),
         events: None,
     };
-    MockScript::try_from(std::slice::from_ref(&reply))
+    MockScript::try_from(slice::from_ref(&reply))
         .map_err(|error| failure("ScriptError", None, error.to_string()))
 }
 
@@ -189,7 +188,7 @@ fn captured_request(request: &ProviderRequest) -> Result<Value, Box<HelperError>
     };
     let mut params = serde_json::Map::new();
     if let Some(found) = query {
-        for (name, value) in url::form_urlencoded::parse(found.as_bytes()) {
+        for (name, value) in form_urlencoded::parse(found.as_bytes()) {
             params.insert(name.into_owned(), Value::String(value.into_owned()));
         }
     }

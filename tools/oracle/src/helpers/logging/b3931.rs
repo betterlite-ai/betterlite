@@ -16,9 +16,13 @@ use betterlite_logging::exporter_options::redaction::redact_standard_logging_pay
 use betterlite_logging::exporter_options::truncation::truncate_standard_logging_payload_content;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::fmt::Display;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
@@ -125,10 +129,10 @@ impl CallbackFailureCounter for RecordingCounter {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Options { options } => options_output(options),
             Input::Truncate { payload } => truncate(payload),
@@ -161,7 +165,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn options_output(options: &Value) -> crate::helpers::HelperResult {
+fn options_output(options: &Value) -> HelperResult {
     let parsed: CustomLoggerOptions = decode(options)?;
     encode(OptionsOutput {
         turn_off_message_logging: parsed.turn_off_message_logging,
@@ -169,24 +173,20 @@ fn options_output(options: &Value) -> crate::helpers::HelperResult {
     })
 }
 
-fn truncate(payload: &Value) -> crate::helpers::HelperResult {
+fn truncate(payload: &Value) -> HelperResult {
     let parsed: StandardLoggingPayload = decode(payload)?;
     // ast-grep-ignore: no-long-names
     let truncated = truncate_standard_logging_payload_content(&parsed);
     encode(truncated)
 }
 
-fn base64(payload: &Value, max_depth: i64) -> crate::helpers::HelperResult {
+fn base64(payload: &Value, max_depth: i64) -> HelperResult {
     let parsed: StandardLoggingPayload = decode(payload)?;
     let stripper = Base64Stripper::new().map_err(value_error)?;
     encode(stripper.strip_base64_from_messages(&parsed, max_depth))
 }
 
-fn redact(
-    details: &DetailsInput,
-    policy: &RedactionPolicy,
-    stamp: &StampInput,
-) -> crate::helpers::HelperResult {
+fn redact(details: &DetailsInput, policy: &RedactionPolicy, stamp: &StampInput) -> HelperResult {
     let call_details = ModelCallDetails {
         standard_logging_object: details.standard_logging_object.clone(),
         proxy_server_request: details.proxy_server_request.clone(),
@@ -212,7 +212,7 @@ fn redact(
     encode(output)
 }
 
-fn failure(callback_name: &str, counters: &[String]) -> crate::helpers::HelperResult {
+fn failure(callback_name: &str, counters: &[String]) -> HelperResult {
     let recorded: Vec<RecordingCounter> = counters
         .iter()
         .map(|_| RecordingCounter::default())
@@ -240,9 +240,9 @@ fn health_status(status: &StatusInput) -> IntegrationHealthStatus {
     }
 }
 
-fn decode<T>(value: &Value) -> Result<T, Box<crate::helpers::HelperError>>
+fn decode<T>(value: &Value) -> Result<T, Box<HelperError>>
 where
-    T: serde::de::DeserializeOwned,
+    T: DeserializeOwned,
 {
     match serde_json::from_value(value.clone()) {
         Ok(decoded) => Ok(decoded),
@@ -250,7 +250,7 @@ where
     }
 }
 
-fn encode<T>(value: T) -> crate::helpers::HelperResult
+fn encode<T>(value: T) -> HelperResult
 where
     T: Serialize,
 {
@@ -260,11 +260,11 @@ where
     }
 }
 
-fn value_error<E>(error: E) -> Box<crate::helpers::HelperError>
+fn value_error<E>(error: E) -> Box<HelperError>
 where
-    E: std::fmt::Display,
+    E: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,
