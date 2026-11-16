@@ -2,6 +2,21 @@ suite: test coordination redis
 templates:
   - configmap-betterlite.yaml
 tests:
+  - it: should render the proxy_config under the config.yaml key
+    template: configmap-betterlite.yaml
+    asserts:
+      - isKind:
+          of: ConfigMap
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-betterlite-config
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "model_name: gpt-3.5-turbo"
+      - matchRegex:
+          path: data["config.yaml"]
+          pattern: "master_key: os.environ/PROXY_MASTER_KEY"
+
   - it: should not render coordination_redis when redis is disabled
     template: configmap-betterlite.yaml
     set:
