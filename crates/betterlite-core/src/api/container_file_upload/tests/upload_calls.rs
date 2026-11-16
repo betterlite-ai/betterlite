@@ -39,33 +39,11 @@ fn upload_uses_the_openai_provider_and_the_six_hundred_second_default() {
 }
 
 #[test]
-fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
+fn upload_passes_named_credentials_in_litellm_params() {
     let mut fixture = Fixture::new();
     fixture.api_key = Some(SecretString::from(API_KEY));
     fixture.api_base = Some(API_BASE.to_owned());
     fixture.api_version = Some(API_VERSION.to_owned());
-    fixture
-        .kwargs
-        .insert("ssl_verify".to_owned(), Json::Bool(false));
-    fixture
-        .kwargs
-        .insert("organization".to_owned(), Json::Text("org-1".to_owned()));
-    fixture.kwargs.insert(
-        "tags".to_owned(),
-        Json::List(vec![Json::Text("one".to_owned()), Json::Bool(true)]),
-    );
-    fixture.kwargs.insert(
-        "extra".to_owned(),
-        Json::Object(IndexMap::from([(
-            "nested".to_owned(),
-            Json::Number(Number::from(7_i64)),
-        )])),
-    );
-    fixture.kwargs.insert(
-        "top_p".to_owned(),
-        Json::Number(Number::from_f64(0.5).expect("the fixture float is finite")),
-    );
-    fixture.kwargs.insert("stop".to_owned(), Json::Null);
     let request = fixture.request();
     let executor = StubExecutor::replying(object("file_1"));
 
@@ -85,6 +63,32 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
         Some(&JsonValue::Text(API_VERSION.to_owned()))
     );
     assert_eq!(
+        seen.litellm_params.get("litellm_call_id"),
+        Some(&JsonValue::Text(CALL_ID.to_owned()))
+    );
+}
+
+#[test]
+fn upload_passes_scalar_kwargs_in_litellm_params() {
+    let mut fixture = Fixture::new();
+    fixture
+        .kwargs
+        .insert("ssl_verify".to_owned(), Json::Bool(false));
+    fixture
+        .kwargs
+        .insert("organization".to_owned(), Json::Text("org-1".to_owned()));
+    fixture.kwargs.insert(
+        "top_p".to_owned(),
+        Json::Number(Number::from_f64(0.5).expect("the fixture float is finite")),
+    );
+    fixture.kwargs.insert("stop".to_owned(), Json::Null);
+    let request = fixture.request();
+    let executor = StubExecutor::replying(object("file_1"));
+
+    upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+
+    let seen = executor.seen().expect("the executor ran");
+    assert_eq!(
         seen.litellm_params.get("ssl_verify"),
         Some(&JsonValue::Bool(false))
     );
@@ -92,6 +96,35 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
         seen.litellm_params.get("organization"),
         Some(&JsonValue::Text("org-1".to_owned()))
     );
+    assert_eq!(
+        seen.litellm_params.get("top_p"),
+        Some(&JsonValue::Number(
+            Number::from_f64(0.5).expect("the fixture float is finite")
+        ))
+    );
+    assert_eq!(seen.litellm_params.get("stop"), Some(&JsonValue::Null));
+}
+
+#[test]
+fn upload_passes_container_kwargs_in_litellm_params() {
+    let mut fixture = Fixture::new();
+    fixture.kwargs.insert(
+        "tags".to_owned(),
+        Json::List(vec![Json::Text("one".to_owned()), Json::Bool(true)]),
+    );
+    fixture.kwargs.insert(
+        "extra".to_owned(),
+        Json::Object(IndexMap::from([(
+            "nested".to_owned(),
+            Json::Number(Number::from(7_i64)),
+        )])),
+    );
+    let request = fixture.request();
+    let executor = StubExecutor::replying(object("file_1"));
+
+    upload_container_file(&executor, fixture.deps(), &request).expect("the upload succeeds");
+
+    let seen = executor.seen().expect("the executor ran");
     assert_eq!(
         seen.litellm_params.get("tags"),
         Some(&JsonValue::Array(vec![
@@ -105,17 +138,6 @@ fn upload_passes_named_credentials_and_kwargs_in_litellm_params() {
             "nested".to_owned(),
             JsonValue::Number(Number::from(7_i64)),
         )])))
-    );
-    assert_eq!(
-        seen.litellm_params.get("top_p"),
-        Some(&JsonValue::Number(
-            Number::from_f64(0.5).expect("the fixture float is finite")
-        ))
-    );
-    assert_eq!(seen.litellm_params.get("stop"), Some(&JsonValue::Null));
-    assert_eq!(
-        seen.litellm_params.get("litellm_call_id"),
-        Some(&JsonValue::Text(CALL_ID.to_owned()))
     );
 }
 
