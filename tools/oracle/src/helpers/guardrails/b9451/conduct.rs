@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use super::scripted::outcome_view;
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Case {
+pub(crate) struct Case {
     name: String,
 }
 

@@ -13,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::scripted::{Scripted, outcome_view};
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
@@ -27,7 +27,7 @@ const ENCODED_FIELDS: [&str; 6] = [
 ];
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Case {
+pub(crate) struct Case {
     akto_api_key: String,
     unreachable_fallback: String,
     event_hook: LitellmParamsMode,

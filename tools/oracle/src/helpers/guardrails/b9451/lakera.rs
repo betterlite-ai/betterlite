@@ -22,7 +22,7 @@ use betterlite_oracle_runner::case::UpstreamAnswer;
 const ITEM_NAME: &str = "prompt_injection";
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Case {
+pub(crate) struct Case {
     hook: LakeraHook,
     gate: Option<bool>,
     api_key: String,

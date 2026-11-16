@@ -8,7 +8,7 @@ mod scripted;
 use serde::Deserialize;
 use tokio::runtime::Builder;
 
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;

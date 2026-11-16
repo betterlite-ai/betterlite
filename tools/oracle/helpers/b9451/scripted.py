@@ -9,8 +9,8 @@ from urllib.parse import parse_qsl, urlsplit
 from litellm.caching.dual_cache import DualCache
 from litellm.proxy._types import ProxyException, UserAPIKeyAuth
 from litellm.types.utils import Choices, ModelResponse
-from pydantic import TypeAdapter
 from pydantic import JsonValue as Json
+from pydantic import TypeAdapter
 from starlette.exceptions import HTTPException
 
 T = TypeVar("T")

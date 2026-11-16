@@ -15,7 +15,7 @@ use serde_json::{Value, json};
 use ulid::Ulid;
 
 use super::scripted::{Hook, Scripted, chat_response, contents, outcome_view};
-use betterlite_oracle_helper_api::error::OrHelperError;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::HelperResult;
 use betterlite_oracle_runner::case::UpstreamAnswer;
 
@@ -27,7 +27,7 @@ const HEADER_NAMES: [&str; 4] = [
 ];
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Case {
+pub(crate) struct Case {
     hook: Hook,
     gate: bool,
     api_key: String,

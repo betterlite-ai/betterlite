@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use url::form_urlencoded;
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_runner::case::UpstreamAnswer;
 use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
 use betterlite_oracle_runner::routing_mock_scripts::{MockScript, redact_credentials};

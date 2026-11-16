@@ -72,10 +72,7 @@ async def run_akto(case: AktoCase) -> Json:
             akto_api_key=case["akto_api_key"],
             unreachable_fallback=case["unreachable_fallback"],
         )
-        config: Guardrail = {  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1291
-            "guardrail_name": "akto",
-            "litellm_params": params,
-        }
+        config: Guardrail = {"guardrail_name": "akto", "litellm_params": params}
         guardrail = cast(AktoHooks, initialize_guardrail(params, config))  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/akto/__init__.py#L11-L27
         outcome = await attempt(call_hook(guardrail, case))
         await asyncio.gather(*guardrail.background_tasks)
