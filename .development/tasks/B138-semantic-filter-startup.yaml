@@ -158,7 +158,7 @@ checks:
       run: >-
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-*")" &&
         grep -lE '^[[:space:]]+b138:' tools/oracle/fuzz/corpus/helper_case/semantic_filter_startup-* &&
-        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        cargo nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
     - id: new-oracle-cases
       why: no new oracle case exists on this branch
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/semantic-filter-startup)"

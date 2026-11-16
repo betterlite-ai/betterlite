@@ -1,0 +1,15 @@
+kind: helper
+name: messages_agentic_stream-held-back-seed
+call:
+  messages_agentic_stream:
+    model: claude-seed
+    chunks:
+      - "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_seed\",\"model\":\"claude-seed\",\"usage\":{\"input_tokens\":1}}}\n\n"
+      - "event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+    hold_back: true
+    server_fulfilled_tool_names: [web_search]
+    ping_interval_seconds: 0.1
+    reply: {kind: absent, chunks: []}
+    steps: [read, release_drain, read, release_hook, read_all]
+env: {}
+compare: {ignore: []}

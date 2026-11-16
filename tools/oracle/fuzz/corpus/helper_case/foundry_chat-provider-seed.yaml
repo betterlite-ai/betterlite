@@ -1,0 +1,20 @@
+kind: helper
+name: foundry-chat-provider-seed
+call:
+  foundry_chat:
+    model_cost: {}
+    chat_models: [gpt-4o]
+    text_models: [text-davinci-003]
+    providers:
+      - {model: gpt-4o, api_base: "https://seed.openai.azure.com", api_key: seed-key, environment: {}}
+      - {model: gpt-4o, api_base: "https://seed.services.ai.azure.com", api_key: null, environment: {AZURE_AI_API_KEY: seed-env-key}}
+    auths:
+      - {api_base: "https://seed.services.ai.azure.com", api_key: seed-key, headers: {}, litellm_params: {}, environment: {}}
+      - {api_base: "https://seed.example.test", api_key: null, headers: {}, litellm_params: {}, environment: {}}
+    responses:
+      - model: deployment
+        body: |-
+          {"id":"seed","object":"chat.completion","created":1,"model":"provider-sent","choices":[{"index":0,"message":{"role":"assistant","content":"hi"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}
+    fields: true
+env: {}
+compare: {ignore: []}

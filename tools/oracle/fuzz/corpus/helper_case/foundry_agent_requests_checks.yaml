@@ -1,0 +1,13 @@
+kind: helper
+name: foundry-agent-requests-checks-seed
+call:
+  foundry_agent_requests:
+    checks:
+      - {status: 200, body: ok, expected: [200], error_msg: create-thread}
+      - {status: 404, body: missing, expected: [200], error_msg: create-thread}
+calls:
+  - foundry_agent_requests:
+      flags:
+        - {model: azure_ai/agents/seeded, stream: true}
+env: {}
+compare: {ignore: []}
