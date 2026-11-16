@@ -369,10 +369,12 @@ fn test_throttled_and_server_errors() -> ScenarioFuture {
         ]);
         let (guardrail, _clock) = guardrail(Arc::clone(&poster));
 
+        let throttled = token_error(guardrail.get_obo_token(ASSERTION).await);
         assert!(matches!(
-            token_error(guardrail.get_obo_token(ASSERTION).await),
+            &throttled,
             Agent365TokenError::Throttled { status: 408 }
         ));
+        assert_eq!(throttled.to_string(), "HTTP 408");
         assert!(matches!(
             token_error(guardrail.get_obo_token("second.assertion.value").await),
             Agent365TokenError::Throttled { status: 429 }
@@ -471,6 +473,10 @@ fn test_exchange_errors_carry_the_gateway_verdict() -> ScenarioFuture {
         assert_eq!(client.description, "AADSTS700016: application not found");
         assert_eq!(client.aadsts_codes, vec![700_016]);
         assert!(client.gateway_owned());
+        assert_eq!(
+            client.to_string(),
+            "invalid_client: AADSTS700016: application not found"
+        );
         let assertion = exchange_failure(guardrail.get_obo_token("assertion.50027.value").await);
         assert!(!assertion.gateway_owned());
         assert_eq!(assertion.aadsts_codes, vec![50027]);
