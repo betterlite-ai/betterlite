@@ -3,6 +3,7 @@ use betterlite_oracle_helper_api::error::OrHelperError as _;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::Value;
+use tokio::runtime::Builder;
 
 mod calls;
 mod rows;
@@ -105,9 +106,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .or_value_error()?;
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         runtime.block_on(async {
             match input {
                 Input::FindConflict(call) => calls::find_conflict(call).await,
