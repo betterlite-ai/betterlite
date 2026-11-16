@@ -152,10 +152,10 @@ async fn require_run_passes_a_store_failure_on() {
 }
 
 #[rstest]
-#[case::first_event(SequenceTable::Events, &[], &[], 0)]
-#[case::after_events(SequenceTable::Events, &[0, 1, 4], &[], 5)]
-#[case::first_message(SequenceTable::Messages, &[3], &[], 0)]
-#[case::after_messages(SequenceTable::Messages, &[9], &[0, 2], 3)]
+#[case::first_event(SequenceTable::Events, &[], &[], 0_i32)]
+#[case::after_events(SequenceTable::Events, &[0_i32, 1_i32, 4_i32], &[], 5_i32)]
+#[case::first_message(SequenceTable::Messages, &[3_i32], &[], 0_i32)]
+#[case::after_messages(SequenceTable::Messages, &[9_i32], &[0_i32, 2_i32], 3_i32)]
 #[tokio::test]
 async fn the_next_sequence_number_follows_the_highest_of_that_table(
     #[case] table: SequenceTable,
@@ -166,12 +166,7 @@ async fn the_next_sequence_number_follows_the_highest_of_that_table(
     let store = Arc::new(FakeStore::default());
     let run_id = store.seed_run(None, "review", "running");
     let other = store.seed_run(None, "review", "running");
-    events
-        .iter()
-        .for_each(|number| store.seed_event(&run_id, *number));
-    messages
-        .iter()
-        .for_each(|number| store.seed_message(&run_id, *number));
+    store.seed_sequences(&run_id, events, messages);
     store.seed_event(&other, 40);
     store.seed_message(&other, 50);
     let port: &FakeStore = &store;

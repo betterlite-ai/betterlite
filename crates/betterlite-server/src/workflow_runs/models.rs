@@ -133,24 +133,25 @@ pub struct RunListResponse {
     pub count: usize,
 }
 
+fn json_column(value: Option<&JsonObject>) -> Result<Option<String>, RunsError> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+    Ok(Some(serde_json::to_string(value)?))
+}
+
 impl RunCreateData {
     pub fn from_request(
         request: &WorkflowRunCreateRequest,
         created_by: Option<String>,
     ) -> Result<Self, RunsError> {
+        let input = json_column(request.input.as_ref())?;
+        let metadata = json_column(request.metadata.as_ref())?;
         Ok(Self {
             workflow_type: request.workflow_type.clone(),
             created_by,
-            input: request
-                .input
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?,
-            metadata: request
-                .metadata
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?,
+            input,
+            metadata,
         })
     }
 }
@@ -159,16 +160,8 @@ impl RunUpdateData {
     pub fn from_request(request: &WorkflowRunUpdateRequest) -> Result<Self, RunsError> {
         Ok(Self {
             status: request.status,
-            output: request
-                .output
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?,
-            metadata: request
-                .metadata
-                .as_ref()
-                .map(serde_json::to_string)
-                .transpose()?,
+            output: json_column(request.output.as_ref())?,
+            metadata: json_column(request.metadata.as_ref())?,
         })
     }
 }

@@ -82,8 +82,10 @@ pub(super) enum LocReply {
 }
 
 fn at(offset_seconds: i64) -> DateTime<Utc> {
-    DateTime::<Utc>::from_timestamp(BASE_SECONDS, 0).expect("base time")
-        + Duration::seconds(offset_seconds)
+    DateTime::<Utc>::from_timestamp(BASE_SECONDS, 0)
+        .expect("base time")
+        .checked_add_signed(Duration::seconds(offset_seconds))
+        .expect("offset time")
 }
 
 impl FakeStore {
@@ -111,6 +113,7 @@ impl FakeStore {
             events: None,
             messages: None,
         });
+        drop(state);
         run_id
     }
 
@@ -126,6 +129,7 @@ impl FakeStore {
             created_at: at(0),
             run: None,
         });
+        drop(state);
     }
 
     pub(super) fn seed_message(&self, run_id: &str, sequence_number: i32) {
@@ -133,6 +137,15 @@ impl FakeStore {
         state
             .message_sequences
             .push((run_id.to_owned(), sequence_number));
+    }
+
+    pub(super) fn seed_sequences(&self, run_id: &str, events: &[i32], messages: &[i32]) {
+        for number in events {
+            self.seed_event(run_id, *number);
+        }
+        for number in messages {
+            self.seed_message(run_id, *number);
+        }
     }
 
     pub(super) fn recorded(&self) -> Recorded {
@@ -185,7 +198,9 @@ impl WorkflowRunStore for FakeStore {
             .expect("seeded run");
         row.input = data.input.as_deref().map(parse_json);
         row.metadata = data.metadata.as_deref().map(parse_json);
-        Ok(row.clone())
+        let created = row.clone();
+        drop(state);
+        Ok(created)
     }
 
     async fn find_many(
@@ -202,7 +217,8 @@ impl WorkflowRunStore for FakeStore {
             .filter(|row| matches_filter(row, filter))
             .cloned()
             .collect();
-        rows.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+        drop(state);
+        rows.sort_by_key(|left| std::cmp::Reverse(left.created_at));
         rows.truncate(usize::from(take));
         Ok(rows)
     }
@@ -219,17 +235,21 @@ impl WorkflowRunStore for FakeStore {
     ) -> Result<Option<WorkflowRunRow>, StoreError> {
         self.check()?;
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let latest = state
-            .events
-            .iter()
-            .filter(|event| event.run_id == run_id)
-            .max_by_key(|event| event.sequence_number)
-            .cloned();
-        let found = state.runs.iter().find(|row| row.run_id == run_id).cloned();
-        Ok(found.map(|mut row| {
-            row.events = Some(latest.into_iter().collect());
-            row
-        }))
+        let Some(mut run) = state.runs.iter().find(|row| row.run_id == run_id).cloned() else {
+            return Ok(None);
+        };
+        run.events = Some(
+            state
+                .events
+                .iter()
+                .filter(|event| event.run_id == run_id)
+                .max_by_key(|event| event.sequence_number)
+                .cloned()
+                .into_iter()
+                .collect(),
+        );
+        drop(state);
+        Ok(Some(run))
     }
 
     async fn update(
@@ -258,7 +278,9 @@ impl WorkflowRunStore for FakeStore {
         if let Some(metadata) = &data.metadata {
             row.metadata = Some(parse_json(metadata));
         }
-        Ok(Some(row.clone()))
+        let updated = row.clone();
+        drop(state);
+        Ok(Some(updated))
     }
 
     async fn latest_sequence(
@@ -268,24 +290,22 @@ impl WorkflowRunStore for FakeStore {
     ) -> Result<Option<SequenceRow>, StoreError> {
         self.check()?;
         let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let numbers: Vec<i32> = match table {
+        let latest = match table {
             SequenceTable::Events => state
                 .events
                 .iter()
                 .filter(|event| event.run_id == run_id)
                 .map(|event| event.sequence_number)
-                .collect(),
+                .max(),
             SequenceTable::Messages => state
                 .message_sequences
                 .iter()
                 .filter(|(owner, _number)| owner == run_id)
                 .map(|(_owner, number)| *number)
-                .collect(),
+                .max(),
         };
-        Ok(numbers
-            .into_iter()
-            .max()
-            .map(|sequence_number| SequenceRow { sequence_number }))
+        drop(state);
+        Ok(latest.map(|sequence_number| SequenceRow { sequence_number }))
     }
 }
 
@@ -329,13 +349,14 @@ pub(super) fn member(token: &str) -> Principal {
 }
 
 pub(super) async fn call(
-    store: Option<&Arc<FakeStore>>,
+    fake_store: Option<&Arc<FakeStore>>,
     caller: Option<&Principal>,
     method: Method,
     uri: &str,
     body: &str,
 ) -> Reply {
-    let store = store.map(|fake| -> Arc<dyn WorkflowRunStore> { Arc::<FakeStore>::clone(fake) });
+    let store =
+        fake_store.map(|fake| -> Arc<dyn WorkflowRunStore> { Arc::<FakeStore>::clone(fake) });
     let application = router(WorkflowRunsState { store });
     let mut request = Request::builder()
         .method(method)

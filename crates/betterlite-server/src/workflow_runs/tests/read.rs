@@ -38,7 +38,7 @@ async fn get_returns_the_run_with_only_its_latest_event() {
     assert_eq!(row.run_id, "run-0");
     let events = row.events.unwrap();
     assert_eq!(events.len(), 1);
-    assert_eq!(events.first().unwrap().sequence_number, 2);
+    assert_eq!(events.first().unwrap().sequence_number, 2_i32);
 }
 
 #[tokio::test]

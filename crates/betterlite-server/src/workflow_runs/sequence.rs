@@ -7,11 +7,12 @@ pub async fn next_sequence_number(
     run_id: &str,
     table: SequenceTable,
 ) -> Result<i32, RunsError> {
-    match store.latest_sequence(run_id, table).await? {
-        Some(row) => row
-            .sequence_number
-            .checked_add(1)
-            .ok_or(RunsError::SequenceOverflow),
-        None => Ok(0),
-    }
+    store
+        .latest_sequence(run_id, table)
+        .await?
+        .map_or(Ok(0_i32), |row| {
+            row.sequence_number
+                .checked_add(1)
+                .ok_or(RunsError::SequenceOverflow)
+        })
 }

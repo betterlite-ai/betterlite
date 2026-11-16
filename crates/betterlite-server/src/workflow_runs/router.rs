@@ -14,6 +14,7 @@ use crate::workflow_runs::models::{
     RunCreateData, RunListResponse, RunUpdateData, RunWhere, StatusFilter,
     WorkflowRunCreateRequest, WorkflowRunRow, WorkflowRunUpdateRequest,
 };
+use crate::workflow_runs::store::WorkflowRunStore;
 
 const DEFAULT_LIMIT: u8 = 50;
 const MAX_LIMIT: u8 = 250;
@@ -51,6 +52,20 @@ where
     Ok(decoded)
 }
 
+fn require_caller(identity: Option<Extension<AuthContext>>) -> Result<RunCaller, RunsError> {
+    let Some(Extension(context)) = identity else {
+        return Err(RunsError::Unauthenticated);
+    };
+    Ok(RunCaller::from_principal(&context.principal))
+}
+
+fn require_store(state: &WorkflowRunsState) -> Result<&dyn WorkflowRunStore, RunsError> {
+    let Some(store) = state.store.as_deref() else {
+        return Err(RunsError::DbNotConnected);
+    };
+    Ok(store)
+}
+
 fn parse_limit(raw: Option<&str>) -> Result<u8, ValidationFailure> {
     let Some(text) = raw else {
         return Ok(DEFAULT_LIMIT);
@@ -81,12 +96,9 @@ async fn create_run(
     identity: Option<Extension<AuthContext>>,
     body: Bytes,
 ) -> Result<Json<WorkflowRunRow>, RunsError> {
-    let Some(Extension(context)) = identity else {
-        return Err(RunsError::Unauthenticated);
-    };
-    let caller = RunCaller::from_principal(&context.principal);
+    let caller = require_caller(identity)?;
     let request: WorkflowRunCreateRequest = decode_body(&body)?;
-    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = require_store(&state)?;
     let data = RunCreateData::from_request(&request, caller.key)?;
     Ok(Json(store.create(&data).await?))
 }
@@ -96,15 +108,12 @@ async fn list_runs(
     identity: Option<Extension<AuthContext>>,
     uri: Uri,
 ) -> Result<Json<RunListResponse>, RunsError> {
-    let Some(Extension(context)) = identity else {
-        return Err(RunsError::Unauthenticated);
-    };
-    let caller = RunCaller::from_principal(&context.principal);
+    let caller = require_caller(identity)?;
     let Ok(Query(query)) = Query::<ListQuery>::try_from_uri(&uri) else {
         return Err(RunsError::from(ValidationFailure::Query));
     };
     let take = parse_limit(query.limit.as_deref())?;
-    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = require_store(&state)?;
     // LiteLLM lists every run for a non-admin caller that has no key token; that caller sees none here
     let created_by = match (caller.has_admin_view(), caller.key) {
         (true, _) => None,
@@ -134,15 +143,12 @@ async fn get_run(
     identity: Option<Extension<AuthContext>>,
     Path(run_id): Path<String>,
 ) -> Result<Json<WorkflowRunRow>, RunsError> {
-    let Some(Extension(context)) = identity else {
-        return Err(RunsError::Unauthenticated);
-    };
-    let caller = RunCaller::from_principal(&context.principal);
-    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let caller = require_caller(identity)?;
+    let store = require_store(&state)?;
     let run = store
         .find_unique_with_latest_event(&run_id)
         .await?
-        .ok_or_else(|| RunsError::NotFound { run_id })?;
+        .ok_or(RunsError::NotFound { run_id })?;
     Ok(Json(ensure_owner(run, caller.read_scope())?))
 }
 
@@ -152,12 +158,9 @@ async fn update_run(
     Path(run_id): Path<String>,
     body: Bytes,
 ) -> Result<Json<WorkflowRunRow>, RunsError> {
-    let Some(Extension(context)) = identity else {
-        return Err(RunsError::Unauthenticated);
-    };
-    let caller = RunCaller::from_principal(&context.principal);
+    let caller = require_caller(identity)?;
     let request: WorkflowRunUpdateRequest = decode_body(&body)?;
-    let store = state.store.as_deref().ok_or(RunsError::DbNotConnected)?;
+    let store = require_store(&state)?;
     let update = RunUpdateData::from_request(&request)?;
     if update == RunUpdateData::default() {
         return Err(RunsError::NoFieldsToUpdate);
