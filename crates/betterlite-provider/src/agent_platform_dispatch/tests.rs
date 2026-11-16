@@ -503,6 +503,18 @@ fn langgraph_prefers_a_global_base_and_key_before_the_environment() {
 }
 
 #[test]
+fn langgraph_takes_the_global_headers_when_none_are_given() {
+    let mut harness = Harness::new("langgraph", "agent");
+    harness.globals_headers = Some(headers(&[("x-global", "1")]));
+    let recorder = Recorder::answer("hi");
+    complete_langgraph(&harness.context(), &recorder).expect("the call resolves");
+    assert_eq!(
+        recorder.calls()[0].headers,
+        Some(headers(&[("x-global", "1")]))
+    );
+}
+
+#[test]
 fn langgraph_passes_a_handler_error_through_unchanged() {
     let harness = Harness::new("langgraph", "agent");
     let recorder = Recorder::failing(503);
@@ -530,6 +542,18 @@ fn langflow_passes_the_provider_info_pair() {
     assert_eq!(exposed(call.api_key.as_ref()), Some(String::from("lf-key")));
     assert_eq!(call.custom_llm_provider, "langflow");
     assert!(call.provider_config.is_none());
+}
+
+#[test]
+fn langflow_takes_the_global_headers_when_none_are_given() {
+    let mut harness = Harness::new("langflow", "flow-1");
+    harness.globals_headers = Some(headers(&[("x-global", "1")]));
+    let recorder = Recorder::answer("hello");
+    complete_langflow(&harness.context(), &recorder).expect("the call resolves");
+    assert_eq!(
+        recorder.calls()[0].headers,
+        Some(headers(&[("x-global", "1")]))
+    );
 }
 
 #[test]
