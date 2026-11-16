@@ -5,6 +5,8 @@ call:
     operation: cost
     params:
       model: gen4_image
+      prices:
+        output_cost_per_image: 0.5
       calls:
         - data:
             - b64_json: null
@@ -16,11 +18,7 @@ call:
             - b64_json: QUJD
               url: null
               revised_prompt: null
-          prices:
-            output_cost_per_image: 0.5
         - data: []
-          prices:
-            output_cost_per_image: 0.5
         - data:
             - b64_json: null
               url: https://delivery.test/c.png
@@ -28,22 +26,48 @@ call:
             - b64_json: null
               url: https://delivery.test/d.png
               revised_prompt: null
-          prices:
-            output_cost_per_image: 0.25
         - data:
             - b64_json: null
               url: null
               revised_prompt: null
-          prices:
-            output_cost_per_image: 0
-        - data:
-            - b64_json: null
-              url: null
-              revised_prompt: null
-            - b64_json: null
-              url: null
-              revised_prompt: null
-          prices:
-            output_cost_per_image: null
+calls:
+  - runway_images:
+      operation: cost
+      params:
+        model: gen4_image
+        prices:
+          output_cost_per_image: 0
+        calls:
+          - data:
+              - b64_json: null
+                url: null
+                revised_prompt: null
+  - runway_images:
+      operation: cost
+      params:
+        model: gen4_image
+        prices:
+          output_cost_per_image: null
+        calls:
+          - data:
+              - b64_json: null
+                url: null
+                revised_prompt: null
+              - b64_json: null
+                url: null
+                revised_prompt: null
+  - runway_images:
+      operation: cost
+      params:
+        model: gen4_image
+        prices: {}
+        calls:
+          - data:
+              - b64_json: null
+                url: null
+                revised_prompt: null
+              - b64_json: null
+                url: null
+                revised_prompt: null
 env: {}
 compare: {ignore: []}

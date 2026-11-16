@@ -5,14 +5,11 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 use betterlite_core::api::runway::images::cost::cost_calculator;
-use betterlite_core::api::runway::images::error::RunwayImageError;
 use betterlite_core::api::runway::images::params::{map_openai_params, request_body};
 use betterlite_core::api::runway::images::transform::RunwayImageTransform;
 use betterlite_core::api::runway::images::{RunwayImageConfig, SUPPORTED_OPENAI_PARAMS};
-use betterlite_core::api::runway::tasks::error::RunwayTaskError;
 use betterlite_core::cost::image_dispatch::policy::{ImageResponseView, PricedImage};
 use betterlite_models::image_cost::ImageBilling;
-use betterlite_models::image_cost::error::ImageCostError;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_openai::api::image_contracts::records::{
     ImageData, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
@@ -82,13 +79,13 @@ struct ResponseInput {
 struct CostCall {
     #[serde(default)]
     data: Vec<ImageData>,
-    prices: PriceRecord,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Cost {
     model: String,
+    prices: PriceRecord,
     calls: Vec<CostCall>,
 }
 
@@ -112,50 +109,6 @@ where
         code: None,
         message: error.to_string(),
     })
-}
-
-const fn task_error_name(error: &RunwayTaskError) -> &'static str {
-    match error {
-        RunwayTaskError::TimedOut { .. } => "timeout",
-        RunwayTaskError::Failed { .. } => "failed",
-        RunwayTaskError::Cancelled { .. } => "cancelled",
-        RunwayTaskError::UnknownStatus { .. } => "unknown_status",
-        RunwayTaskError::HttpStatus { .. } => "http_status",
-        RunwayTaskError::Decode { .. } | RunwayTaskError::TrailingBytes(_) => "decode",
-        RunwayTaskError::Environment { .. }
-        | RunwayTaskError::MissingCredentials
-        | RunwayTaskError::InvalidHeader(_)
-        | RunwayTaskError::TaskUrl(_)
-        | RunwayTaskError::TaskId(_)
-        | RunwayTaskError::Transport(_)
-        | RunwayTaskError::TooLarge { .. } => "other",
-    }
-}
-
-const fn image_error_name(error: &RunwayImageError) -> &'static str {
-    match error {
-        RunwayImageError::Submission { .. } => "submission",
-        RunwayImageError::MissingTaskId => "missing_task_id",
-        RunwayImageError::UnsupportedParameter { .. } => "unsupported",
-        RunwayImageError::InvalidSize => "invalid_size",
-        RunwayImageError::Task(inner) => task_error_name(inner),
-    }
-}
-
-const fn cost_error_name(error: &ImageCostError) -> &'static str {
-    match error {
-        ImageCostError::UnknownModel { .. } => "unknown_model",
-        ImageCostError::NotImageResponse => "not_image_response",
-        ImageCostError::NoPrice { .. } => "no_price",
-        ImageCostError::WrongFieldType { .. } => "wrong_field_type",
-        ImageCostError::MalformedSize { .. } => "malformed_size",
-        ImageCostError::DimensionOverflow => "dimension_overflow",
-        ImageCostError::CounterOverflow => "counter_overflow",
-        ImageCostError::Overflow => "overflow",
-        ImageCostError::Rate(_) => "rate",
-        ImageCostError::Tier(_) => "tier",
-        ImageCostError::TokenCost(_) => "token_cost",
-    }
 }
 
 fn mapping(input: &Mapping) -> HelperResult {
@@ -203,16 +156,14 @@ fn response(input: &ResponseInput) -> HelperResult {
         .enable_all()
         .build()
         .map_err(failure)?;
-    let outcome =
-        runtime.block_on(transform.transform(&outgoing, &input.request_headers, existing));
-    match outcome {
-        Ok(finished) => Ok(json!({
-            "response": finished,
-            "gets": transport.describe(),
-            "sleeps": clock.pauses(),
-        })),
-        Err(error) => Ok(json!({"error": image_error_name(&error)})),
-    }
+    let finished = runtime
+        .block_on(transform.transform(&outgoing, &input.request_headers, existing))
+        .map_err(failure)?;
+    Ok(json!({
+        "response": finished,
+        "gets": transport.describe(),
+        "sleeps": clock.pauses(),
+    }))
 }
 
 fn cost(input: &Cost) -> HelperResult {
@@ -229,13 +180,10 @@ fn cost(input: &Cost) -> HelperResult {
         let image = PricedImage {
             model: &input.model,
             response: ImageResponseView::Image(&billing),
-            prices: Some(&call.prices),
+            prices: Some(&input.prices),
         };
-        let value = match cost_calculator(&image, &lookup) {
-            Ok(cost) => json!({"cost": cost.normalize().to_string()}),
-            Err(error) => json!({"error": cost_error_name(&error)}),
-        };
-        values.push(value);
+        let price = cost_calculator(&image, &lookup).map_err(failure)?;
+        values.push(json!({"cost": price.normalize().to_string()}));
     }
     Ok(json!({"costs": values}))
 }
