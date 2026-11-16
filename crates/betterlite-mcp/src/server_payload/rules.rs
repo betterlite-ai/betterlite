@@ -105,9 +105,9 @@ pub fn warn_if_id_jag_server_outruns_sso(
         return;
     }
     if let Some(reason) = gap {
-        let server = server_id.unwrap_or("None");
         tracing::warn!(
-            "MCP server {server} is registered with auth_type=oauth2_id_jag, but {reason}."
+            "MCP server {} is registered with auth_type=oauth2_id_jag, but {reason}.",
+            server_id.unwrap_or("None")
         );
     }
 }

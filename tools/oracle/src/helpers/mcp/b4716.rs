@@ -34,7 +34,7 @@ pub(crate) enum Input {
         delegate_auth_to_upstream: bool,
     },
     ConflictMessage {
-        field: String,
+        field: ConflictField,
         value: String,
         server_id: String,
     },
@@ -51,6 +51,12 @@ pub(crate) enum Input {
 pub(crate) struct PayloadInput {
     payload: Json,
     stdio: StdioPolicy,
+}
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ConflictField {
+    ServerName,
+    Alias,
 }
 impl Helper for Op {
     type Input = Input;
@@ -111,12 +117,11 @@ fn validate_payload(call: &PayloadInput) -> HelperResult {
         Err(error) => Ok(validation_error(&error)),
     }
 }
-fn conflict_message(field: &str, value: &str, server_id: &str) -> Value {
+fn conflict_message(field: &ConflictField, value: &str, server_id: &str) -> Value {
     let conflict = McpIdentifierConflict {
-        field: if field == "alias" {
-            IdentifierField::Alias
-        } else {
-            IdentifierField::ServerName
+        field: match field {
+            ConflictField::ServerName => IdentifierField::ServerName,
+            ConflictField::Alias => IdentifierField::Alias,
         },
         value: value.to_owned(),
         server_id: server_id.to_owned(),
