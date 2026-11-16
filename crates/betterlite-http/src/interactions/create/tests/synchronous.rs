@@ -63,7 +63,7 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
     );
     assert!(received.head.contains("x-goog-api-key: key-1\r\n"));
     assert!(received.head.contains("content-type: application/json\r\n"));
-    // the caller's own headers only feed validate_environment, so the POST carries what it returned
+    // the caller's own headers only feed validate_environment, so the POST and the log carry what it returned
     assert!(!received.head.contains("x-caller: c1\r\n"));
     assert_eq!(
         posted(&received.body),
@@ -76,7 +76,7 @@ fn create_interaction_posts_the_provider_request_and_returns_the_transformed_res
         recorded.api_base,
         format!("http://{}/base/v1beta/interactions", serving.address)
     );
-    assert_eq!(recorded.headers["x-caller"].expose_secret(), "c1");
+    assert_eq!(recorded.headers["x-goog-api-key"].expose_secret(), "key-1");
     assert_eq!(
         logging.model_call_details.get("complete_input_dict"),
         Some(&posted(r#"{"model": "m", "input": "hello"}"#))
@@ -392,5 +392,6 @@ fn create_interaction_skips_the_proxy_check_for_a_supplied_client() {
     );
 
     assert_eq!(outcome.unwrap(), CreateOutcome::Response("{}".to_owned()));
+    assert!(clients.sync_clients.is_empty());
     serving.request.join().unwrap();
 }
