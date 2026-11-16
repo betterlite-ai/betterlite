@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 use crate::auth_model_lists::access_groups::{AccessGroupScope, models_from_access_groups};
 use crate::auth_model_lists::lists::dedup_first;
 use crate::auth_model_patterns::{ALL_PROXY_MODELS, ALL_TEAM_MODELS};
-// get_key_models' proxy union: proxy_model_list, then model_access_groups.keys() when included
 fn proxy_models(
     proxy_model_list: &[String],
     model_access_groups: &IndexMap<String, Vec<String>>,
