@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::error::Error as _;
 use std::fmt::Debug;
 use std::future::Future;
 use std::mem;
@@ -18,6 +19,7 @@ use betterlite_streaming::streamed_response_assembly::cost::{
 use betterlite_streaming::streamed_response_assembly::response::{ChatResponse, Response};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{Message, MessageContent, Part};
+use betterlite_tokenizer::image::error::ImageError;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Number, Value, json};
@@ -29,8 +31,9 @@ use tracing_subscriber::registry;
 use uuid::Uuid;
 
 use super::{
-    RelayAssemblyRequest, RelayTokenCounter, RelayedCounter, complete_streaming_response,
-    count_relayed_prompt_tokens, is_remote_high_detail_image,
+    RelayAssemblyRequest, RelayTokenCounter, RelayedCountError, RelayedCounter,
+    complete_streaming_response, count_relayed_prompt_tokens, is_remote_high_detail_image,
+    parse_chunks,
 };
 
 const MODEL: &str = "relay-test-model";
@@ -758,5 +761,128 @@ async fn relayed_counter_counts_messages_through_the_prompt_estimate() {
     assert_eq!(
         counted.err().map(|error| error.to_string()),
         Some(String::from("either text or messages must be provided"))
+    );
+}
+
+#[rstest]
+#[case::both_keys(json!({ "reasoning_content": "A", "reasoning": "B" }), Some("A"))]
+#[case::null_reasoning(json!({ "reasoning_content": "A", "reasoning": null }), Some("A"))]
+#[case::empty_reasoning_content(json!({ "reasoning_content": "", "reasoning": "B" }), Some(""))]
+#[case::null_reasoning_content(json!({ "reasoning_content": null, "reasoning": "B" }), Some("B"))]
+#[case::reasoning_only(json!({ "reasoning": "B" }), Some("B"))]
+#[case::null_reasoning_only(json!({ "reasoning": null }), None)]
+#[case::reasoning_content_only(json!({ "reasoning_content": "A" }), Some("A"))]
+#[case::neither(json!({}), None)]
+fn assembly_keeps_a_non_null_reasoning_content_over_reasoning(
+    #[case] reasoning: Value,
+    #[case] expected: Option<&str>,
+) {
+    let mut delta = json!({ "content": "Hi" });
+    delta
+        .as_object_mut()
+        .unwrap()
+        .extend(reasoning.as_object().unwrap().clone());
+    let chunks = vec![delta_chunk(delta, Some("stop"))];
+    let counter = FixtureCounter::new(0, 1);
+    let assembly = request(&chunks, None, &counter, &NoCost);
+    let parsed = parse_chunks(&assembly);
+    let kept = parsed[0].choices[0]
+        .delta
+        .as_ref()
+        .unwrap()
+        .reasoning_content
+        .as_deref();
+    assert_eq!(kept, expected);
+}
+
+#[test]
+fn assembly_matches_each_choice_to_its_own_raw_reasoning_content() {
+    let body = chunk(json!([
+        { "index": 0, "delta": { "reasoning": "B" } },
+        { "index": 1, "delta": { "reasoning_content": "A", "reasoning": "B" } },
+        { "index": 2, "delta": { "reasoning": "C" } },
+    ]));
+    let chunks = vec![body.to_string()];
+    let counter = FixtureCounter::new(0, 1);
+    let assembly = request(&chunks, None, &counter, &NoCost);
+    let parsed = parse_chunks(&assembly);
+    let kept: Vec<Option<&str>> = parsed[0]
+        .choices
+        .iter()
+        .map(|choice| choice.delta.as_ref().unwrap().reasoning_content.as_deref())
+        .collect();
+    assert_eq!(kept, vec![Some("B"), Some("A"), Some("C")]);
+}
+
+#[tokio::test]
+async fn assembly_logs_the_reasoning_content_when_both_keys_are_relayed() {
+    let chunks = vec![delta_chunk(
+        json!({ "content": "Hi", "reasoning_content": "A", "reasoning": "B" }),
+        Some("stop"),
+    )];
+    let counter = FixtureCounter::new(0, 1);
+    let assembly = request(&chunks, None, &counter, &NoCost);
+    let response = complete_streaming_response(&assembly, &hooks()).await;
+    let response = chat(response.as_ref().unwrap());
+    assert_eq!(
+        response.choices[0].message.reasoning_content.as_deref(),
+        Some("A")
+    );
+    assert_eq!(
+        counter.calls(),
+        vec![String::from("text:A"), String::from("response:Hi")]
+    );
+}
+
+#[test]
+fn relayed_count_error_keeps_the_image_bound_failure_as_its_source() {
+    let error = RelayedCountError::UpperBound(ImageError::ZeroTile);
+    assert_eq!(
+        error.to_string(),
+        "the high detail image upper bound could not be computed"
+    );
+    assert_eq!(
+        error.source().map(ToString::to_string),
+        Some(String::from("a zero tile size cannot divide an image"))
+    );
+}
+
+#[rstest]
+#[case::counter(
+    RelayedCountError::Counter(CountError::MissingInput),
+    "either text or messages must be provided"
+)]
+#[case::overflow(
+    RelayedCountError::Overflow,
+    "the token count does not fit in a machine word"
+)]
+#[case::image_overflow(
+    RelayedCountError::UpperBound(ImageError::Overflow),
+    "the token count does not fit in a machine word"
+)]
+fn relayed_count_error_converts_to_the_builder_error(
+    #[case] error: RelayedCountError,
+    #[case] message: &str,
+) {
+    assert_eq!(CountError::from(error).to_string(), message);
+}
+
+#[tokio::test]
+async fn relayed_count_error_logs_an_image_bound_failure_it_cannot_keep() {
+    let (converted, logs) = capture(async {
+        let converted = CountError::from(RelayedCountError::UpperBound(ImageError::ZeroTile));
+        assert_eq!(
+            converted.to_string(),
+            "the token count does not fit in a machine word"
+        );
+        None
+    })
+    .await;
+    assert!(converted.is_none());
+    assert_eq!(
+        logs,
+        vec![String::from(
+            "ERROR The high detail image upper bound could not be computed: a zero tile size cannot divide an image"
+        )]
     );
 }

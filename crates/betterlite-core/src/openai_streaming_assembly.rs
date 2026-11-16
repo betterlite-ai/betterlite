@@ -15,10 +15,12 @@ use betterlite_streaming::streamed_response_assembly::response::Response;
 use betterlite_streaming::streamed_response_assembly::{self, AssemblyError, Request};
 use betterlite_tokenizer::count::error::CountError;
 use betterlite_tokenizer::count::request::{Message, MessageContent, Part};
+use betterlite_tokenizer::image::error::ImageError;
 use betterlite_tokenizer::image::geometry::high_detail_upper_bound;
 use betterlite_tokenizer::image::settings::Settings;
 use betterlite_tokenizer::image::tokens::DEFAULT_BASE_TOKENS;
 use serde_json::Value;
+use thiserror::Error;
 use uuid::Uuid;
 
 mod tests;
@@ -27,6 +29,34 @@ const SSE_DATA_PREFIX: &str = "data: ";
 const SSE_DATA_BARE_PREFIX: &str = "data:";
 const IMAGE_URL_TYPE: &str = "image_url";
 const HIGH_DETAIL: &str = "high";
+
+#[derive(Debug, Error)]
+pub enum RelayedCountError {
+    #[error(transparent)]
+    Counter(#[from] CountError),
+    #[error("the high detail image upper bound could not be computed")]
+    UpperBound(#[source] ImageError),
+    #[error("the token count does not fit in a machine word")]
+    Overflow,
+}
+
+// The builder's prompt count callback speaks CountError and turns any failure into zero, so only an overflow keeps its class.
+impl From<RelayedCountError> for CountError {
+    fn from(error: RelayedCountError) -> Self {
+        match error {
+            RelayedCountError::Counter(source) => source,
+            RelayedCountError::UpperBound(ImageError::Overflow) | RelayedCountError::Overflow => {
+                Self::Overflow
+            }
+            RelayedCountError::UpperBound(source) => {
+                tracing::error!(
+                    "The high detail image upper bound could not be computed: {source}"
+                );
+                Self::Overflow
+            }
+        }
+    }
+}
 
 // The relay logging path is synchronous, so the caller binds a counter it can call from there.
 pub trait RelayTokenCounter: Send + Sync {
@@ -50,7 +80,7 @@ pub fn count_relayed_prompt_tokens(
     counter: &dyn RelayTokenCounter,
     model: &str,
     messages: Option<&[Message]>,
-) -> Result<i64, CountError> {
+) -> Result<i64, RelayedCountError> {
     let Some(messages) = messages else {
         return Ok(0);
     };
@@ -63,13 +93,15 @@ pub fn count_relayed_prompt_tokens(
     }
     let counted = counter.count_messages(model, &local)?;
     let bound = high_detail_upper_bound(DEFAULT_BASE_TOKENS, &Settings::default())
-        .map_err(|_error| CountError::Overflow)?;
-    let per_image = i64::try_from(bound).map_err(|_error| CountError::Overflow)?;
-    let images = i64::try_from(remote_images).map_err(|_error| CountError::Overflow)?;
-    let remote_tokens = per_image.checked_mul(images).ok_or(CountError::Overflow)?;
+        .map_err(RelayedCountError::UpperBound)?;
+    let per_image = i64::try_from(bound).map_err(|_error| RelayedCountError::Overflow)?;
+    let images = i64::try_from(remote_images).map_err(|_error| RelayedCountError::Overflow)?;
+    let remote_tokens = per_image
+        .checked_mul(images)
+        .ok_or(RelayedCountError::Overflow)?;
     counted
         .checked_add(remote_tokens)
-        .ok_or(CountError::Overflow)
+        .ok_or(RelayedCountError::Overflow)
 }
 
 // LiteLLM drops the remote parts from the content list and leaves a content that is not a list alone.
@@ -123,8 +155,10 @@ where
     let counter = RelayedCounter {
         counter: request.counter,
     };
-    let count_prompt_tokens =
-        || count_relayed_prompt_tokens(request.counter, request.model, request.messages);
+    let count_prompt_tokens = || {
+        count_relayed_prompt_tokens(request.counter, request.model, request.messages)
+            .map_err(CountError::from)
+    };
     let builder_request = Request {
         chunks: Some(chunks),
         messages: request.messages,
@@ -157,7 +191,7 @@ impl UsageTokenCounter for RelayedCounter<'_> {
         model: &str,
         messages: Option<&[Message]>,
     ) -> Result<i64, CountError> {
-        count_relayed_prompt_tokens(self.counter, model, messages)
+        count_relayed_prompt_tokens(self.counter, model, messages).map_err(CountError::from)
     }
 }
 
@@ -177,8 +211,22 @@ fn parse_chunk(raw: &str, identify: fn() -> Uuid, clock: fn() -> i64) -> Option<
     if fields.is_empty() {
         return None;
     }
-    let reply = chunk_parser(&value, identify, clock).ok()?;
+    let mut reply = chunk_parser(&value, identify, clock).ok()?;
+    keep_reasoning_content(&value, &mut reply);
     relay_chunk(&value, &reply)
+}
+
+// The relay's parser is ModelResponseStream(**chunk), where Delta maps reasoning onto reasoning_content only when
+// reasoning_content is None. The streaming handler's chunk_parser lets reasoning win, so the raw value is put back.
+fn keep_reasoning_content(raw: &Value, reply: &mut StreamReply) {
+    let Some(Value::Array(raw_choices)) = raw.get("choices") else {
+        return;
+    };
+    for (choice, raw_choice) in reply.choices.iter_mut().zip(raw_choices) {
+        if let Some(Value::String(text)) = raw_choice.pointer("/delta/reasoning_content") {
+            choice.delta.reasoning_content = Some(text.clone());
+        }
+    }
 }
 
 fn relay_chunk(raw: &Value, reply: &StreamReply) -> Option<Chunk> {

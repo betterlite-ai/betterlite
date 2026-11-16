@@ -28,5 +28,45 @@ calls:
     - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"content": " world"}, "finish_reason": "stop"}]}'
     messages: []
     counter: {messages: 3, response_text: 2}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi", "reasoning_content": "A", "reasoning": "B"}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 1}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi", "reasoning_content": "A", "reasoning": null}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 1}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi", "reasoning_content": null, "reasoning": "B"}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 1}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi", "reasoning": "B"}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 1}
+- b3636:
+    function: assemble
+    model: gpt-3.5-turbo
+    chunks:
+    - '{"id": "chatcmpl-1", "object": "chat.completion.chunk", "created": 1700000000, "model": "gpt-3.5-turbo", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hi", "reasoning": null}, "finish_reason": "stop"}]}'
+    messages:
+    - {role: user, content: hello world}
+    counter: {messages: 9, response_text: 1}
 env: {}
 compare: {ignore: []}

@@ -22,18 +22,20 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use counter::BundledCounter;
 use fixture::{FixtureCounter, NoCosts, hooks};
 
-const ASSEMBLE: &str = "assemble";
-const COUNT: &str = "count";
-
 #[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    function: String,
-    model: String,
-    chunks: Option<Vec<String>>,
-    messages: Option<Vec<Message>>,
-    #[serde(default)]
-    counter: FixtureCounter,
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    Assemble {
+        model: String,
+        chunks: Vec<String>,
+        messages: Option<Vec<Message>>,
+        #[serde(default)]
+        counter: FixtureCounter,
+    },
+    Count {
+        model: String,
+        messages: Option<Vec<Message>>,
+    },
 }
 
 pub(crate) struct Op;
@@ -42,29 +44,35 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        match input.function.as_str() {
-            ASSEMBLE => run_assemble(input),
-            COUNT => run_count(input),
-            other => Err(failure(format!(
-                "{other} is neither {ASSEMBLE} nor {COUNT}"
-            ))),
+        match input {
+            Input::Assemble {
+                model,
+                chunks,
+                messages,
+                counter,
+            } => run_assemble(model, chunks, messages.as_deref(), counter),
+            Input::Count { model, messages } => run_count(model, messages.as_deref()),
         }
     }
 }
 
-fn run_assemble(input: &Input) -> HelperResult {
+fn run_assemble(
+    model: &str,
+    chunks: &[String],
+    messages: Option<&[Message]>,
+    counter: &FixtureCounter,
+) -> HelperResult {
     let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|error| failure(error.to_string()))?;
     let costs = NoCosts;
     let hooks = hooks()?;
-    let chunks = input.chunks.as_deref().unwrap_or_default();
     let assembly = RelayAssemblyRequest {
         chunks,
-        model: &input.model,
-        messages: input.messages.as_deref(),
-        counter: &input.counter,
+        model,
+        messages,
+        counter,
         costs: &costs,
         identify: Uuid::nil,
         clock: i64::default,
@@ -75,9 +83,9 @@ fn run_assemble(input: &Input) -> HelperResult {
     }
 }
 
-fn run_count(input: &Input) -> HelperResult {
+fn run_count(model: &str, messages: Option<&[Message]>) -> HelperResult {
     let counter = BundledCounter::new()?;
-    let counted = count_relayed_prompt_tokens(&counter, &input.model, input.messages.as_deref())
+    let counted = count_relayed_prompt_tokens(&counter, model, messages)
         .map_err(|error| failure(error.to_string()))?;
     Ok(json!({ "prompt_tokens": counted }))
 }
@@ -114,6 +122,7 @@ fn choice_view(choice: &ChatChoice) -> Value {
         "finish_reason": choice.finish_reason,
         "role": choice.message.role,
         "content": choice.message.content,
+        "reasoning_content": choice.message.reasoning_content,
     })
 }
 

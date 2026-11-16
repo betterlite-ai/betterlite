@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Literal, TypedDict
+from typing import Literal, NotRequired, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers.openai_passthrough_logging_handler import (
@@ -26,6 +26,7 @@ class CountInput(TypedDict):
 class DumpMessage(TypedDict):
     role: str | None
     content: str | None
+    reasoning_content: NotRequired[str | None]
 
 
 class DumpChoice(TypedDict):
@@ -55,6 +56,7 @@ class ChoiceView(TypedDict):
     finish_reason: str | None
     role: str | None
     content: str | None
+    reasoning_content: str | None
 
 
 class UsageView(TypedDict):
@@ -98,12 +100,16 @@ def response_view(response: ModelResponse | TextCompletionResponse) -> ResponseV
     choices: list[ChoiceView] = []
     for choice in dump["choices"]:
         message = choice["message"]
+        reasoning: str | None = None
+        if "reasoning_content" in message:
+            reasoning = message["reasoning_content"]
         choices.append(
             {
                 "index": choice["index"],
                 "finish_reason": choice["finish_reason"],
                 "role": message["role"],
                 "content": message["content"],
+                "reasoning_content": reasoning,
             }
         )
     usage = dump["usage"]
