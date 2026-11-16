@@ -191,10 +191,6 @@ def item_value(item: ModelResponseStream | str) -> JsonValue:
             return sse_value(item)
 
 
-def content_values(items: list[ContentItemDump]) -> list[JsonValue]:
-    return [{"type": item["type"], "text": parsed_text(item["text"])} for item in items]
-
-
 def recorded(script: Script) -> tuple[JsonValue, JsonValue]:
     path: JsonValue = None
     body: JsonValue = None
@@ -271,13 +267,21 @@ async def mcp_async(input_value: McpInput) -> JsonValue:
     returned_value: JsonValue = None
     if returned is not None:
         returned_dump = MCP_RESPONSE.validate_json(returned.model_dump_json())
-        returned_value = content_values(returned_dump["mcp_tool_call_response"])
+        returned_value = [
+            {"type": item["type"], "text": parsed_text(item["text"])}
+            for item in returned_dump["mcp_tool_call_response"]
+        ]
     response_dump = MCP_RESPONSE.validate_json(response.model_dump_json())
     original_dump = TOOL_RESULT.validate_json(original.model_dump_json())
     return {
         "returned": returned_value,
-        "response": content_values(response_dump["mcp_tool_call_response"]),
-        "original": content_values(original_dump["content"]),
+        "response": [
+            {"type": item["type"], "text": parsed_text(item["text"])}
+            for item in response_dump["mcp_tool_call_response"]
+        ],
+        "original": [
+            {"type": item["type"], "text": parsed_text(item["text"])} for item in original_dump["content"]
+        ],
         "path": path,
         "request": request,
     }

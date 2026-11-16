@@ -7,7 +7,7 @@ use crate::cisco_conversation::{Fields, InspectMessage};
 use crate::cisco_inspection::hooks::{extract_response_messages, record_applied_guardrail};
 use crate::cisco_stream_scan::events;
 use crate::cisco_stream_scan::rebuild;
-use crate::cisco_stream_scan::{StreamItem, api_error_detail, block_detail};
+use crate::cisco_stream_scan::{StreamItem, api_error_detail};
 use crate::cisco_verdict_enforcement::api_error::{ApiErrorDetail, ApiErrorOutcome};
 use crate::cisco_verdict_enforcement::block_payload::{BlockPayload, GuardrailException};
 use crate::cisco_verdict_enforcement::finalize::FinalizeOutcome;
@@ -21,7 +21,7 @@ pub(super) fn stream_outcome(
         FinalizeOutcome::Blocked(payload) => Some(blocked_stream(
             guardrail_name,
             BlockPayload::STATUS_CODE,
-            block_detail(&payload),
+            serde_json::to_string(&payload).map_or_else(|_| Json::Null, |text| Json::parse(&text)),
         )),
         FinalizeOutcome::ApiError(ApiErrorOutcome::Blocked(detail)) => Some(blocked_stream(
             guardrail_name,

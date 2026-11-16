@@ -12,7 +12,7 @@ use betterlite_config::sections::cisco_verdict_contracts::{
     Configured, FallbackAction, FlaggedAction, InspectionType,
 };
 use betterlite_config::sections::guardrail_params::mode::LitellmParamsMode;
-use betterlite_logging::callback_logger::CallbackLogger;
+use betterlite_logging::callback_logger::CallbackLogger as _;
 use betterlite_logging::mcp_tool_hook::types::{
     McpHiddenParams, McpPostCallResponse, McpToolHookCall, McpToolResult,
 };
@@ -173,7 +173,7 @@ fn response_copy() -> McpPostCallResponse {
     McpPostCallResponse {
         mcp_tool_call_response: vec![text_item("secret")],
         hidden_params: McpHiddenParams {
-            response_cost: Some(0.25),
+            response_cost: Some(0.25_f64),
         },
     }
 }
@@ -329,7 +329,7 @@ async fn a_block_replaces_the_copy_and_the_original() {
         .expect("hook");
 
     let reply = result.expect("blocking reply");
-    assert_eq!(reply.hidden_params.response_cost, Some(0.25));
+    assert_eq!(reply.hidden_params.response_cost, Some(0.25_f64));
     assert_eq!(reply.mcp_tool_call_response.len(), 1);
     let text = blocking_text(&reply);
     assert!(text.contains("Blocked by Cisco AI Defense Guardrail"));

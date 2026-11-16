@@ -1,7 +1,9 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
+use std::iter::repeat_with;
 
 use axum::Router;
 use axum::http::StatusCode;
@@ -203,7 +205,7 @@ async fn an_upstream_error_is_returned() {
 
     let result = scan_stream(&guardrail, &mut request_data, stream::iter(failing), args()).await;
 
-    assert!(result.is_err());
+    result.expect_err("the upstream error is returned");
 }
 
 #[tokio::test]
@@ -456,7 +458,7 @@ async fn an_unserializable_response_yields_the_scan_error_event() {
     );
     let mut request_data = obj(r#"{"metadata":{}}"#);
     let chunks = vec![chunk(FIRST_CHUNK)];
-    let mut response = std::collections::BTreeMap::new();
+    let mut response = BTreeMap::new();
     response.insert(vec![1_u8, 2, 3], "value");
 
     let items =
@@ -506,8 +508,8 @@ async fn a_stream_over_the_item_limit_is_withheld_when_scanned() {
     let guardrail = guardrail(InspectionType::Chat, FallbackAction::Block, base);
     let mut request_data = obj(r#"{"metadata":{}}"#);
     let one = chunk(SECOND_CHUNK);
-    let endless =
-        (0..=ApiLimits::default().max_items).map(move |_| Ok::<Chunk, io::Error>(one.clone()));
+    let endless = repeat_with(move || Ok::<Chunk, io::Error>(one.clone()))
+        .take(ApiLimits::default().max_items.saturating_add(1));
 
     let items = scan_stream(&guardrail, &mut request_data, stream::iter(endless), args())
         .await
@@ -526,8 +528,8 @@ async fn a_stream_over_the_item_limit_is_withheld_when_passed_through() {
     );
     let mut request_data = obj("{}");
     let one = chunk(SECOND_CHUNK);
-    let endless =
-        (0..=ApiLimits::default().max_items).map(move |_| Ok::<Chunk, io::Error>(one.clone()));
+    let endless = repeat_with(move || Ok::<Chunk, io::Error>(one.clone()))
+        .take(ApiLimits::default().max_items.saturating_add(1));
 
     let items = scan_stream(&guardrail, &mut request_data, stream::iter(endless), args())
         .await

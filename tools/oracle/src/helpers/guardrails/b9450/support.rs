@@ -37,13 +37,11 @@ impl Harness {
             .enable_all()
             .build()
             .map_err(|error| fail("OSError", error.to_string()))?;
-        match MockScript::try_from(slice::from_ref(answer)) {
-            Ok(script) => match MockProvider::start(script) {
-                Ok(provider) => Ok(Self { provider, runtime }),
-                Err(error) => Err(fail("MockError", error.to_string())),
-            },
-            Err(error) => Err(fail("MockError", error.to_string())),
-        }
+        let script = MockScript::try_from(slice::from_ref(answer))
+            .map_err(|error| fail("MockError", error.to_string()))?;
+        let provider =
+            MockProvider::start(script).map_err(|error| fail("MockError", error.to_string()))?;
+        Ok(Self { provider, runtime })
     }
 
     pub(super) fn guardrail(
@@ -68,19 +66,19 @@ impl Harness {
 }
 
 pub(super) fn selection(settings: &Value) -> Result<GuardrailBase, Box<HelperError>> {
-    let event_hook = match settings.get("event_hook") {
-        None | Some(Value::Null) => None,
-        Some(value) => {
-            let mode = serde_json::from_value::<LitellmParamsMode>(value.clone())
-                .map_err(|error| fail("InvalidInput", error.to_string()))?;
-            Some(mode)
-        }
-    };
+    let event_hook = settings
+        .get("event_hook")
+        .filter(|value| !value.is_null())
+        .map(|value| serde_json::from_value::<LitellmParamsMode>(value.clone()))
+        .transpose()
+        .map_err(|error| fail("InvalidInput", error.to_string()))?;
+    let default_on = matches!(settings.get("default_on"), Some(Value::Bool(true)));
+    let guardrail_name = Some("cisco-ai-defense".to_owned());
     let configured = GuardrailSettings {
-        guardrail_name: Some("cisco-ai-defense".to_owned()),
+        guardrail_name,
         supported_event_hooks: None,
         event_hook,
-        default_on: matches!(settings.get("default_on"), Some(Value::Bool(true))),
+        default_on,
         mask_request_content: false,
         mask_response_content: false,
         violation_message_template: None,

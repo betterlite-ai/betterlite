@@ -22,7 +22,6 @@ use crate::cisco_stream_scan::delivery::{
 };
 use crate::cisco_stream_scan::scan_text::chunk_scan_text;
 use crate::cisco_verdict_enforcement::api_error::ApiErrorDetail;
-use crate::cisco_verdict_enforcement::block_payload::BlockPayload;
 use crate::cisco_verdict_enforcement::finalize::ResponseSurface;
 use crate::cisco_verdict_enforcement::support::insert_serialized;
 
@@ -89,8 +88,8 @@ where
         chunks: 0,
     };
     let mut buffered = Vec::new();
-    let mut chunks = pin!(chunks);
-    while let Some(item) = chunks.next().await {
+    let mut upstream = pin!(chunks);
+    while let Some(item) = upstream.next().await {
         match item {
             Ok(chunk) => {
                 let size = serde_json::to_string(&chunk).map_or(usize::MAX, |text| text.len());
@@ -157,7 +156,7 @@ async fn scan_assembled<Value>(
     key_user_id: Option<&str>,
 ) -> Vec<StreamItem>
 where
-    Value: Serialize + ?Sized,
+    Value: Serialize + Sync + ?Sized,
 {
     let name = guardrail.settings.guardrail_name.as_str();
     let scanned_response = match assembly::response_fields(response) {
@@ -221,13 +220,6 @@ fn first_item_is_text_completion(chunks: &[Chunk]) -> bool {
             .iter()
             .any(|choice| matches!(&choice.text, TextField::Present(_)))
     })
-}
-
-pub(crate) fn block_detail(payload: &BlockPayload) -> Json {
-    match serde_json::to_string(payload) {
-        Ok(text) => Json::parse(&text),
-        Err(_) => Json::Null,
-    }
 }
 
 pub(crate) fn api_error_detail(detail: &ApiErrorDetail) -> Json {

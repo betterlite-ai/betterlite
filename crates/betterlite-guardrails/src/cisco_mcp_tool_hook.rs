@@ -10,6 +10,7 @@ use betterlite_logging::callback_logger::error::LoggerError;
 use betterlite_logging::mcp_tool_hook::types::{McpPostCallResponse, McpToolHookCall};
 
 use crate::cisco_conversation::Fields;
+use crate::cisco_conversation::json::Json;
 use crate::cisco_inspection::construct::CiscoInspectionGuardrail;
 use crate::cisco_inspection::hooks::record_applied_guardrail;
 use crate::cisco_inspection::mcp::inspect_mcp_response;
@@ -18,7 +19,7 @@ use crate::cisco_mcp_tool_hook::replace::{block, rewritten_items};
 use crate::cisco_mcp_tool_hook::request::{
     guardrail_data, original_present, request_fields, scanned_response,
 };
-use crate::cisco_stream_scan::{api_error_detail, block_detail};
+use crate::cisco_stream_scan::api_error_detail;
 use crate::cisco_verdict_enforcement::api_error::ApiErrorOutcome;
 use crate::cisco_verdict_enforcement::finalize::FinalizeOutcome;
 use crate::guardrail_base::GuardrailBase;
@@ -90,7 +91,8 @@ fn apply_outcome(
 ) -> Option<McpPostCallResponse> {
     match outcome {
         FinalizeOutcome::Blocked(payload) => {
-            let detail = block_detail(&payload);
+            let detail = serde_json::to_string(&payload)
+                .map_or_else(|_| Json::Null, |text| Json::parse(&text));
             Some(block(call, request_data, &detail, guardrail_name))
         }
         FinalizeOutcome::ApiError(ApiErrorOutcome::Blocked(detail)) => {
