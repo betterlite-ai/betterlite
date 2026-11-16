@@ -1,13 +1,14 @@
 use std::time::Duration;
 
 use betterlite_logging::azure_storage_logging::http_ops::{StorageAuthorization, storage_request};
+use betterlite_logging::azure_storage_logging::transport::StorageRequest;
 use http::Method;
 use percent_encoding::utf8_percent_encode;
 
 use super::AzureBlobStorageBackend;
 use super::error::AzureFileStorageError;
 use super::naming::{PATH_SAFE, generated_file_name};
-use super::request::{append_request, resource_exists, send};
+use super::request::{octet_request, resource_exists, send};
 use crate::api::file_storage_contracts::storage::UploadOptions;
 
 pub(super) async fn upload_file(
@@ -129,6 +130,22 @@ async fn ensure_file_url(
     ))
 }
 
+// LiteLLM's shared client types every token request octet-stream, the empty bodies included
+fn upload_request(
+    method: Method,
+    url: String,
+    auth: &StorageAuthorization<'_>,
+    now: Duration,
+    body: &[u8],
+) -> Result<StorageRequest, AzureFileStorageError> {
+    match auth {
+        StorageAuthorization::Bearer(_) => octet_request(method, url, auth, now, body),
+        StorageAuthorization::SharedKey { .. } => {
+            storage_request(method, url, auth, now, body).map_err(AzureFileStorageError::from)
+        }
+    }
+}
+
 // create_file, append and flush; the SDK's flush adds retainUncommittedData and close
 async fn write_file(
     backend: &AzureBlobStorageBackend,
@@ -138,26 +155,18 @@ async fn write_file(
     now: Duration,
 ) -> Result<(), AzureFileStorageError> {
     let create_url = format!("{base_url}?resource=file");
-    let create_request = storage_request(Method::PUT, create_url, auth, now, &[])?;
+    let create_request = upload_request(Method::PUT, create_url, auth, now, &[])?;
     send(backend, create_request, "create_file").await?;
     let append_url = format!("{base_url}?action=append&position=0");
-    match auth {
-        StorageAuthorization::Bearer(_) => {
-            let append = append_request(append_url, auth, now, content)?;
-            send(backend, append, "append").await?;
-        }
-        StorageAuthorization::SharedKey { .. } => {
-            let append = storage_request(Method::PATCH, append_url, auth, now, content)?;
-            send(backend, append, "append").await?;
-        }
-    }
+    let append = upload_request(Method::PATCH, append_url, auth, now, content)?;
+    send(backend, append, "append").await?;
     let position = content.len();
     let flush_query = match auth {
         StorageAuthorization::Bearer(_) => "",
         StorageAuthorization::SharedKey { .. } => "&retainUncommittedData=false&close=false",
     };
     let flush_url = format!("{base_url}?action=flush&position={position}{flush_query}");
-    let flush_request = storage_request(Method::PATCH, flush_url, auth, now, &[])?;
+    let flush_request = upload_request(Method::PATCH, flush_url, auth, now, &[])?;
     send(backend, flush_request, "flush").await?;
     Ok(())
 }

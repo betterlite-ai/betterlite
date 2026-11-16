@@ -46,14 +46,15 @@ pub(super) async fn resource_exists(
     }
 }
 
-// LiteLLM's file upload appends bytes, so the REST helper's JSON content type is replaced
-pub(super) fn append_request(
+// LiteLLM's upload types every request as the file bytes, so the JSON type is replaced
+pub(super) fn octet_request(
+    method: Method,
     url: String,
     auth: &StorageAuthorization<'_>,
     now: Duration,
     body: &[u8],
 ) -> Result<StorageRequest, AzureFileStorageError> {
-    let mut request = storage_request(Method::PATCH, url, auth, now, body)?;
+    let mut request = storage_request(method, url, auth, now, body)?;
     if let Some((_name, value)) = request
         .headers
         .iter_mut()

@@ -7,7 +7,7 @@ use rstest::rstest;
 
 use super::support::{Harness, paths, settings};
 use crate::api::file_storage_contracts::storage::{
-    FileNamingStrategy, FileStorageBackend, UploadOptions,
+    FileNamingStrategy, FileStorageBackend as _, UploadOptions,
 };
 
 const DFS: &str = "https://acct.dfs.core.windows.net/files";
@@ -46,19 +46,19 @@ async fn token_upload_sequence() {
     let create = calls.first().expect("the create request");
     assert_eq!(create.body, b"");
     assert_eq!(create.header("content-length"), Some("0"));
-    assert_eq!(create.header("content-type"), None);
     let append = calls.get(1).expect("the append request");
     assert_eq!(append.body, b"abc");
-    assert_eq!(
-        append.header("content-type"),
-        Some("application/octet-stream")
-    );
     assert_eq!(append.header("x-ms-version"), Some("2019-07-07"));
     assert_eq!(append.header("authorization"), Some("Bearer tok-1"));
     let flush = calls.get(2).expect("the flush request");
     assert_eq!(flush.body, b"");
     assert_eq!(flush.header("content-length"), Some("0"));
-    assert_eq!(flush.header("content-type"), None);
+    // LiteLLM's client types every token request as the file bytes, the empty create and flush too
+    assert!(
+        calls
+            .iter()
+            .all(|request| request.header("content-type") == Some("application/octet-stream"))
+    );
 }
 
 // a slash-only prefix strips to nothing, and LiteLLM still joins it with a slash, so one extra stays
@@ -83,7 +83,7 @@ async fn token_upload_prefixes(#[case] prefix: Option<&str>, #[case] expected: &
     assert_eq!(
         paths(&harness.calls())
             .first()
-            .map(|(_method, url)| url.clone()),
+            .map(|(_method, first_url)| first_url.clone()),
         Some(format!("{DFS}{expected}?resource=file")),
         "{prefix:?}"
     );
