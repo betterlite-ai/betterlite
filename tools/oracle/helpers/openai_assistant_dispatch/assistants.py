@@ -14,14 +14,14 @@ def assistants_answer(input_value: Input, wire: Wire) -> JsonValue:
     operation = input_value["operation"]
     payload: dict[str, JsonValue]
     if operation == "create_assistant":
-        created = asyncio.run(
+        created = asyncio.run(  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2417-L2426
             HELPERS.async_create_assistants(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2417-L2426
                 **credentials(input_value),
                 client=async_client(input_value, wire),
                 create_assistant_data=input_value["data"],
             )
         )
-        payload = {"id": created.id, "object": created.object}
+        payload = {"id": created.id, "object": created.object}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2417-L2426
     elif operation == "delete_assistant":
         deleted = asyncio.run(
             HELPERS.async_delete_assistant(

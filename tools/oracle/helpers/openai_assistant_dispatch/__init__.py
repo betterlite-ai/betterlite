@@ -22,8 +22,8 @@ async def stream_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
     names: list[JsonValue] = []
     error_status: int | None = None
     try:
-        async with manager as stream:
-            names = [event.event async for event in stream]
+        async with manager as stream:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3003-L3014
+            names = [event.event async for event in stream]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3003-L3014
     except openai.APIStatusError as error:
         error_status = error.status_code
     return {
@@ -47,7 +47,7 @@ def runs_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
             arun_thread=True,
             event_handler=None,
         )
-        run_object = asyncio.run(polled)
+        run_object = asyncio.run(polled)  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3073-L3093
     else:
         run_object = RUNS.run_thread(  # pyright: ignore[reportUnknownMemberType]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3119
             **body,
@@ -57,7 +57,7 @@ def runs_answer(input_value: Input, wire: Wire) -> dict[str, JsonValue]:
             arun_thread=False,
             event_handler=None,
         )
-    return {"kind": "polled", "id": run_object.id, "status": run_object.status}
+    return {"kind": "polled", "id": run_object.id, "status": run_object.status}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L3073-L3115
 
 
 def run(input_value: Input) -> dict[str, JsonValue]:

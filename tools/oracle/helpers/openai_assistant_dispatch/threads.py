@@ -28,11 +28,11 @@ async def threads_answer(input_value: Input, wire: Wire) -> JsonValue:
             thread_id=input_value["thread_id"],
             message_data=input_value["data"],
         )
-        payload = {"kind": "message", "id": message.id, "status": message.status}
+        payload = {"kind": "message", "id": message.id, "status": message.status}  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2532-L2542
     else:
         page = await THREADS.async_get_messages(
             **credentials(input_value), client=client, thread_id=input_value["thread_id"]
         )
-        ids: list[JsonValue] = [item.id for item in page.data]
+        ids: list[JsonValue] = [item.id for item in page.data]  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2644-L2653
         payload = {"kind": "page", "ids": ids}
     return payload

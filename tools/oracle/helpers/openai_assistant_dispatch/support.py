@@ -61,7 +61,7 @@ class Input(TypedDict):
     environment: dict[str, str]
 
 
-# Each call lists the keywords of one LiteLLM method, so every typed dict types the kwargs it unpacks.
+# Each call lists one LiteLLM method's keywords, so a typed dict names the kwargs it unpacks.
 class Credentials(TypedDict):
     api_key: str | None
     api_base: str | None
