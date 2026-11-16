@@ -4,8 +4,10 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::iter::repeat_with;
+use std::sync::{Arc, Mutex};
 
 use axum::Router;
+use axum::body::Bytes;
 use axum::http::StatusCode;
 use axum::routing::post;
 use betterlite_config::sections::cisco_verdict_contracts::{
@@ -86,6 +88,31 @@ async fn serve(status: StatusCode, body: Vec<u8>) -> (String, JoinSet<io::Result
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     (base, server)
+}
+
+// The same inspect stub, keeping the request body so a test can read the conversation it was sent.
+async fn serve_capturing(
+    status: StatusCode,
+    body: Vec<u8>,
+) -> (String, Arc<Mutex<Vec<u8>>>, JoinSet<io::Result<()>>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("addr"));
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&captured);
+    let router = Router::new().route(
+        "/inspect",
+        post(move |payload: Bytes| {
+            let reply = body.clone();
+            let sink = Arc::clone(&sink);
+            async move {
+                *sink.lock().expect("capture") = payload.to_vec();
+                (status, reply)
+            }
+        }),
+    );
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    (base, captured, server)
 }
 
 fn args() -> PostCallArgs<'static> {
@@ -311,6 +338,44 @@ async fn an_allowed_scan_passes_the_chunks_and_records_the_guardrail() {
 
     assert_eq!(items, passed_chunks());
     assert_eq!(applied_guardrails(&request_data), vec!["cisco-ai-defense"]);
+}
+
+#[tokio::test]
+async fn the_request_messages_lead_the_inspected_conversation() {
+    let (base, captured, _server) =
+        serve_capturing(StatusCode::OK, br#"{"action":"allow"}"#.to_vec()).await;
+    let guardrail = guardrail(InspectionType::Chat, FallbackAction::Block, base);
+    let mut request_data =
+        obj(r#"{"messages":[{"role":"user","content":"hello there"}],"metadata":{}}"#);
+
+    let items = scan_stream(
+        &guardrail,
+        &mut request_data,
+        stream::iter(chat_chunks()),
+        args(),
+    )
+    .await
+    .expect("stream");
+
+    assert_eq!(items, passed_chunks());
+    let sent = captured.lock().expect("capture").clone();
+    let text = std::str::from_utf8(&sent).expect("utf8");
+    let Json::Object(payload) = Json::parse(text) else {
+        panic!("expected the inspect payload object");
+    };
+    let Json::List(messages) = Json::parse(payload.get("messages").map_or("null", |raw| raw.get()))
+    else {
+        panic!("expected the payload messages");
+    };
+    assert_eq!(messages.len(), 2);
+    let Json::Object(first) = &messages[0] else {
+        panic!("expected an object message");
+    };
+    assert_eq!(first.get("role").map(|raw| raw.get()), Some("\"user\""));
+    assert_eq!(
+        first.get("content").map(|raw| raw.get()),
+        Some("\"hello there\"")
+    );
 }
 
 #[tokio::test]
