@@ -378,59 +378,15 @@ fn stream_items(input: &Input) -> Vec<StreamItem> {
     }
 }
 
-fn event_view(event: &Object) -> Value {
-    let kind = field_text(event, "type");
-    let kind_name = kind.as_str().map(str::to_owned);
-    match kind_name.as_deref() {
-        Some("content_block_start") => json!({
-            "type": kind,
-            "index": event.get("index").map_or(Value::Null, exact),
-            "content_block": event
-                .get("content_block")
-                .map_or(Value::Null, block_view),
-        }),
-        Some("content_block_delta") => json!({
-            "type": kind,
-            "index": event.get("index").map_or(Value::Null, exact),
-            "delta": {
-                "type": field_text_or(event, "delta", "type"),
-                "text": field_text_or(event, "delta", "text"),
-            },
-        }),
-        Some("content_block_stop") => json!({
-            "type": kind,
-            "index": event.get("index").map_or(Value::Null, exact),
-        }),
-        Some("message_delta") => json!({
-            "type": kind,
-            "delta": {
-                "stop_reason": field_text_or(event, "delta", "stop_reason"),
-            },
-        }),
-        _ => json!({ "type": kind }),
-    }
-}
-
-fn field_text_or(fields: &Object, key: &str, inner: &str) -> Value {
-    fields
-        .get(key)
-        .and_then(|value| mapping_value(value, inner))
-        .map_or(Value::Null, text_of)
-}
-
 fn raw_chunk_view(bytes: &[u8]) -> Value {
     let Ok(text) = std::str::from_utf8(bytes) else {
         return json!({ "events": Value::Array(Vec::new()) });
     };
-    let events: Vec<Value> = text
-        .split("\n\n")
-        .filter_map(event_object)
-        .map(|event| event_view(&event))
-        .collect();
+    let events: Vec<Value> = text.split("\n\n").filter_map(event_object).collect();
     json!({ "events": Value::Array(events) })
 }
 
-fn event_object(frame: &str) -> Option<Object> {
+fn event_object(frame: &str) -> Option<Value> {
     let payload = frame
         .lines()
         .find_map(|line| line.trim().strip_prefix("data:"))?

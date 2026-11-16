@@ -28,85 +28,44 @@ class Input(TypedDict):
     max_chunks: NotRequired[int]
 
 
+class Bag(TypedDict, total=False):
+    type: str | None
+    text: str | None
+    id: str | None
+    name: str | None
+    index: int | None
+    role: str | None
+    content: str | None
+    arguments: str | None
+    finish_reason: str | None
+    stop_reason: str | None
+    tool_calls: "list[Bag] | None"
+    function_call: "Bag | None"
+    function: "Bag | None"
+    message: "Bag | None"
+    delta: "Bag | None"
+    content_block: "Bag | None"
+    metadata: "Bag | None"
+    litellm_metadata: "Bag | None"
+    applied_guardrails: list[str] | None
+
+
+class Choices(TypedDict):
+    choices: list[Bag]
+
+
+class AnthropicContent(TypedDict):
+    content: list[Bag]
+
+
+class AnthropicResponse(AnthropicContent, total=False):
+    stop_reason: str | None
+
+
 class Blocked(TypedDict):
     status: int
     message: str
     blocked_content: bool
-
-
-class FunctionFields(TypedDict, total=False):
-    name: str | None
-    arguments: str | None
-
-
-class ToolCallFields(TypedDict, total=False):
-    id: str | None
-    type: str | None
-    function: FunctionFields | None
-
-
-class MessageFields(TypedDict, total=False):
-    role: str | None
-    content: str | None
-    tool_calls: list[ToolCallFields] | None
-    function_call: FunctionFields | None
-
-
-class ChoiceFields(TypedDict, total=False):
-    index: int | None
-    finish_reason: str | None
-    message: MessageFields | None
-    delta: MessageFields | None
-
-
-class ChoicesResponse(TypedDict):
-    choices: list[ChoiceFields]
-
-
-class BlockFields(TypedDict, total=False):
-    type: str | None
-    text: str | None
-    id: str | None
-    name: str | None
-
-
-class DeltaFields(TypedDict, total=False):
-    type: str | None
-    text: str | None
-    stop_reason: str | None
-
-
-class AnthropicContent(TypedDict):
-    content: list[BlockFields]
-
-
-class AnthropicResponseFields(AnthropicContent, total=False):
-    stop_reason: str | None
-
-
-class Envelope(TypedDict, total=False):
-    type: str | None
-
-
-class BlockStartFields(TypedDict, total=False):
-    type: str | None
-    index: int | None
-    content_block: BlockFields | None
-
-
-class DeltaEventFields(TypedDict, total=False):
-    type: str | None
-    index: int | None
-    delta: DeltaFields | None
-
-
-class Bucket(TypedDict, total=False):
-    applied_guardrails: list[str]
-
-
-class Buckets(TypedDict, total=False):
-    metadata: Bucket | None
-    litellm_metadata: Bucket | None
 
 
 def build_guardrail(input_value: Input) -> ToolPermissionGuardrail:
@@ -129,7 +88,7 @@ def blocked_of(error: GuardrailRaisedException) -> Blocked:
     }
 
 
-def function_view(function: FunctionFields | None) -> JsonValue:
+def function_view(function: Bag | None) -> JsonValue:
     if function is None:
         return None
     return TypeAdapter(JsonValue).validate_python(
@@ -137,7 +96,7 @@ def function_view(function: FunctionFields | None) -> JsonValue:
     )
 
 
-def tool_call_view(call: ToolCallFields) -> JsonValue:
+def tool_call_view(call: Bag) -> JsonValue:
     return TypeAdapter(JsonValue).validate_python(
         {
             "id": call.get("id"),
@@ -147,7 +106,7 @@ def tool_call_view(call: ToolCallFields) -> JsonValue:
     )
 
 
-def message_view(message: MessageFields | None) -> JsonValue:
+def message_view(message: Bag | None) -> JsonValue:
     if message is None:
         return None
     calls = message.get("tool_calls")
@@ -164,7 +123,7 @@ def message_view(message: MessageFields | None) -> JsonValue:
     )
 
 
-def choice_view(choice: ChoiceFields) -> JsonValue:
+def choice_view(choice: Bag) -> JsonValue:
     message = choice.get("message")
     if message is None:
         message = choice.get("delta")
@@ -177,13 +136,13 @@ def choice_view(choice: ChoiceFields) -> JsonValue:
     )
 
 
-def choices_view(response: ChoicesResponse) -> JsonValue:
+def choices_view(response: Choices) -> JsonValue:
     return TypeAdapter(JsonValue).validate_python(
         [choice_view(choice) for choice in response["choices"]]
     )
 
 
-def block_view(block: BlockFields) -> JsonValue:
+def block_view(block: Bag) -> JsonValue:
     return TypeAdapter(JsonValue).validate_python(
         {
             "type": block.get("type"),
@@ -194,7 +153,7 @@ def block_view(block: BlockFields) -> JsonValue:
     )
 
 
-def anthropic_view(response: AnthropicResponseFields) -> JsonValue:
+def anthropic_view(response: AnthropicResponse) -> JsonValue:
     return TypeAdapter(JsonValue).validate_python(
         {
             "content": [block_view(block) for block in response["content"]],
@@ -204,10 +163,10 @@ def anthropic_view(response: AnthropicResponseFields) -> JsonValue:
 
 
 def applied_guardrails(data: dict[str, JsonValue]) -> list[str] | None:
-    buckets = TypeAdapter(Buckets).validate_python(data)
-    bucket = buckets.get("metadata")
+    fields = TypeAdapter(Bag).validate_python(data)
+    bucket = fields.get("metadata")
     if "litellm_metadata" in data:
-        bucket = buckets.get("litellm_metadata")
+        bucket = fields.get("litellm_metadata")
     if bucket is None:
         return None
     return bucket.get("applied_guardrails")
@@ -230,7 +189,7 @@ def success(input_value: Input) -> JsonValue:
             )
         except GuardrailRaisedException as error:
             blocked = blocked_of(error)
-        dump = TypeAdapter(ChoicesResponse).validate_json(response.model_dump_json())
+        dump = TypeAdapter(Choices).validate_json(response.model_dump_json())
         response_view = choices_view(dump)
     else:
         anthropic_response = TypeAdapter(AnthropicMessagesResponse).validate_python(payload)
@@ -243,7 +202,7 @@ def success(input_value: Input) -> JsonValue:
         except GuardrailRaisedException as error:
             blocked = blocked_of(error)
         response_view = anthropic_view(
-            TypeAdapter(AnthropicResponseFields).validate_python(anthropic_response)
+            TypeAdapter(AnthropicResponse).validate_python(anthropic_response)
         )
     return TypeAdapter(JsonValue).validate_python(
         {
@@ -252,50 +211,6 @@ def success(input_value: Input) -> JsonValue:
             "applied_guardrails": applied_guardrails(data),
         }
     )
-
-
-def event_view(event: JsonValue) -> JsonValue:
-    envelope = TypeAdapter(Envelope).validate_python(event)
-    kind = envelope.get("type")
-    if kind == "content_block_start":
-        block_start = TypeAdapter(BlockStartFields).validate_python(event)
-        block = block_start.get("content_block")
-        return TypeAdapter(JsonValue).validate_python(
-            {
-                "type": kind,
-                "index": block_start.get("index"),
-                "content_block": None if block is None else block_view(block),
-            }
-        )
-    if kind == "content_block_delta":
-        delta_event = TypeAdapter(DeltaEventFields).validate_python(event)
-        delta = delta_event.get("delta")
-        return TypeAdapter(JsonValue).validate_python(
-            {
-                "type": kind,
-                "index": delta_event.get("index"),
-                "delta": None
-                if delta is None
-                else {"type": delta.get("type"), "text": delta.get("text")},
-            }
-        )
-    if kind == "content_block_stop":
-        stop_event = TypeAdapter(DeltaEventFields).validate_python(event)
-        return TypeAdapter(JsonValue).validate_python(
-            {"type": kind, "index": stop_event.get("index")}
-        )
-    if kind == "message_delta":
-        message_delta = TypeAdapter(DeltaEventFields).validate_python(event)
-        delta = message_delta.get("delta")
-        return TypeAdapter(JsonValue).validate_python(
-            {
-                "type": kind,
-                "delta": None
-                if delta is None
-                else {"stop_reason": delta.get("stop_reason")},
-            }
-        )
-    return TypeAdapter(JsonValue).validate_python({"type": kind})
 
 
 def data_payload(frame: str) -> JsonValue | None:
@@ -315,7 +230,7 @@ def raw_chunk_view(text: str) -> JsonValue:
     for frame in text.split("\n\n"):
         payload = data_payload(frame)
         if payload is not None:
-            events.append(event_view(payload))
+            events.append(payload)
     return TypeAdapter(JsonValue).validate_python({"events": events})
 
 
@@ -333,10 +248,7 @@ Streamed = ModelResponseStream | bytes | str
 
 
 async def collect_stream(stream: AsyncIterator[Streamed]) -> list[Streamed]:
-    collected: list[Streamed] = []
-    async for item in stream:
-        collected.append(item)
-    return collected
+    return [item async for item in stream]
 
 
 def streamed_view(item: Streamed) -> JsonValue:
@@ -346,7 +258,7 @@ def streamed_view(item: Streamed) -> JsonValue:
         case str():
             return raw_chunk_view(item)
         case ModelResponseStream():
-            chunk = TypeAdapter(ChoicesResponse).validate_json(item.model_dump_json())
+            chunk = TypeAdapter(Choices).validate_json(item.model_dump_json())
             return TypeAdapter(JsonValue).validate_python({"choices": choices_view(chunk)})
 
 
