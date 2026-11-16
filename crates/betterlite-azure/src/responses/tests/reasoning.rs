@@ -146,17 +146,17 @@ fn sanitized_null_fields() {
 }
 
 fn sanitized_reasoning_content() {
-    let at_limit_entries = summary_entries(100);
+    let content_entries = summary_entries(100);
     let at_limit = Json::Object(sanitize_item(&support::object(&format!(
-        r#"{{"type": "reasoning", "id": "rs_100", "reasoning_content": [{at_limit_entries}], "status": "completed"}}"#
+        r#"{{"type": "reasoning", "id": "rs_100", "reasoning_content": [{content_entries}], "status": "completed"}}"#
     ))));
     // exactly one hundred entries validate, so the filter drops the status it carried
     assert_eq!(list_len(&at_limit, "summary"), Some(100_usize));
     let fields = at_limit.as_object().unwrap();
     assert!(!fields.contains_key("status"));
-    let over_limit_entries = summary_entries(101);
+    let overflow_entries = summary_entries(101);
     let over_limit = Json::Object(sanitize_item(&support::object(&format!(
-        r#"{{"type": "reasoning", "id": "rs_101", "reasoning_content": [{over_limit_entries}]}}"#
+        r#"{{"type": "reasoning", "id": "rs_101", "reasoning_content": [{overflow_entries}]}}"#
     ))));
     // one more entry fails validation, so the source item survives with no synthesized summary
     assert_eq!(list_len(&over_limit, "summary"), None);
