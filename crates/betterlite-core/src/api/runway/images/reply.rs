@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_openai::api::image_contracts::records::{ImageData, ImageResponse};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -24,12 +26,12 @@ pub fn apply_task_output(task: &RunwayTask, mut response: ImageResponse) -> Imag
                 url: fields.get("url").cloned(),
             }),
             TaskOutput::Unsupported(raw) => {
-                // B1534 leaves a mapping with a non-string value undecoded; LiteLLM still appends an entry for it
-                if let Ok(member) = serde_json::from_str::<OutputMember>(raw) {
+                // B1534 leaves a mapping with a non-string value undecoded; LiteLLM appends an entry only for a JSON object
+                if let Ok(member) = serde_json::from_str::<BTreeMap<String, TextOrOther>>(raw) {
                     data.push(ImageData {
-                        b64_json: text_of(member.b64_json),
+                        b64_json: member.get("b64_json").and_then(text_of),
                         revised_prompt: None,
-                        url: text_of(member.url),
+                        url: member.get("url").and_then(text_of),
                     });
                 }
             }
@@ -39,23 +41,15 @@ pub fn apply_task_output(task: &RunwayTask, mut response: ImageResponse) -> Imag
 }
 
 #[derive(Debug, Deserialize)]
-struct OutputMember {
-    #[serde(default)]
-    b64_json: Option<TextOrOther>,
-    #[serde(default)]
-    url: Option<TextOrOther>,
-}
-
-#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum TextOrOther {
     Text(String),
     Other(IgnoredAny),
 }
 
-fn text_of(value: Option<TextOrOther>) -> Option<String> {
+fn text_of(value: &TextOrOther) -> Option<String> {
     match value {
-        Some(TextOrOther::Text(text)) => Some(text),
-        Some(TextOrOther::Other(_)) | None => None,
+        TextOrOther::Text(text) => Some(text.clone()),
+        TextOrOther::Other(_) => None,
     }
 }

@@ -347,7 +347,7 @@ fn a_mapping_without_image_fields_still_adds_an_entry() {
 #[test]
 fn other_members_are_skipped() {
     let finished = apply_task_output(
-        &task(r#"{"status":"SUCCEEDED","output":[7,true,null,[1],1.5]}"#),
+        &task(r#"{"status":"SUCCEEDED","output":[7,true,null,[1],["a","b"],1.5]}"#),
         response(3, None),
     );
     assert_eq!(finished.data, Some(Vec::new()));

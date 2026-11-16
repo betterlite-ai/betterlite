@@ -21,6 +21,6 @@ call:
       step_millis: 0
       replies:
         - status: 200
-          body: '{"id":"task_mix","status":"SUCCEEDED","output":["https://delivery.test/string.png",{"url":"https://delivery.test/object.png","b64_json":"QUJD"},{"url":"https://delivery.test/only.png"},{},7,true,null]}'
+          body: '{"id":"task_mix","status":"SUCCEEDED","output":["https://delivery.test/string.png",{"url":"https://delivery.test/object.png","b64_json":"QUJD"},{"url":"https://delivery.test/only.png"},{},7,true,null,[1],["a","b"]]}'
 env: {}
 compare: {ignore: []}
