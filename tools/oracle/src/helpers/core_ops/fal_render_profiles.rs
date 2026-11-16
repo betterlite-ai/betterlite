@@ -17,6 +17,8 @@ use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
+mod tests;
+
 type Environment = BTreeMap<String, String>;
 
 const IDEOGRAM_MODEL: &str = "fal-ai/ideogram/v3";
