@@ -23,7 +23,7 @@ pub const PING_INTERVAL_SECONDS: f64 = 15.0;
 pub const KEEPALIVE_PING: &[u8] = b"event: ping\ndata: {\"type\": \"ping\"}\n\n";
 
 // LiteLLM's SERVER_FULFILLED_TOOL_LEAK_ERROR_SSE_BYTES, which ends the turn instead of leaking the call
-pub const SERVER_FULFILLED_TOOL_LEAK_ERROR: &[u8] = b"event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"Server-side tool retrieval failed, so this turn could not be completed. Please retry.\"}}\n\n";
+pub const LEAK_ERROR_FRAME: &[u8] = b"event: error\ndata: {\"type\": \"error\", \"error\": {\"type\": \"api_error\", \"message\": \"Server-side tool retrieval failed, so this turn could not be completed. Please retry.\"}}\n\n";
 
 // what the iterator is constructed with; the interceptor reads it when a hook fires
 #[derive(Clone, Debug)]
@@ -107,5 +107,23 @@ pub fn decode_messages_agentic_stream(
 #[must_use]
 // ast-grep-ignore: no-long-names, no-one-line-functions
 pub fn is_server_fulfilled_tool_leak_error(chunk: &[u8]) -> bool {
-    chunk == SERVER_FULFILLED_TOOL_LEAK_ERROR
+    chunk == LEAK_ERROR_FRAME
+}
+
+impl MessagesAgenticError {
+    // the stream's error names its own provider and follow-up types, which these variants never hold
+    #[must_use]
+    pub fn widen<Provider, FollowUp>(self) -> MessagesAgenticError<Provider, FollowUp>
+    where
+        Provider: Error + 'static,
+        FollowUp: Error + 'static,
+    {
+        match self {
+            Self::Limit(limit) => MessagesAgenticError::Limit(limit),
+            Self::Json(source) => MessagesAgenticError::Json(source),
+            Self::Utf8(source) => MessagesAgenticError::Utf8(source),
+            Self::Shape { field, expected } => MessagesAgenticError::Shape { field, expected },
+            Self::Provider(never) | Self::FollowUp(never) => match never {},
+        }
+    }
 }

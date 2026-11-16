@@ -148,7 +148,10 @@ fn started_tool_use(fields: &IndexMap<String, Json>, names: &BTreeSet<String>) -
     }
 }
 
-pub(super) fn text_field<'a>(fields: &'a IndexMap<String, Json>, key: &str) -> Option<&'a str> {
+pub(super) fn text_field<'fields>(
+    fields: &'fields IndexMap<String, Json>,
+    key: &str,
+) -> Option<&'fields str> {
     match fields.get(key) {
         Some(Json::Text(text)) => Some(text),
         Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_))

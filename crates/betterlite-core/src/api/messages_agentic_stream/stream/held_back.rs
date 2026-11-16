@@ -12,7 +12,7 @@ use crate::api::messages_sse_events::stream::MessagesProviderStream;
 
 impl<S, I> MessagesAgenticStream<S, I>
 where
-    S: MessagesProviderStream,
+    S: MessagesProviderStream + Send,
     I: AgenticInterceptor,
     S::Error: Error + 'static,
     <I::FollowUp as MessagesProviderStream>::Error: Error + 'static,
@@ -44,24 +44,24 @@ where
         Ok(self.replay_next())
     }
 
-    // LiteLLM's _drain_upstream, run only while the client reads; true means the stream ended
+    // LiteLLM's _drain_upstream, given one interval per client read; true means the stream ended
     async fn drain_upstream(
         &mut self,
         interval: f64,
     ) -> Result<bool, MessagesAgenticStreamError<S, I>> {
+        let mut deadline = (self.clock)(interval);
         loop {
-            let sleep = (self.clock)(interval);
-            let outcome = select(self.inner.next_chunk(), sleep).await;
-            match outcome {
-                Either::Left((chunk, _sleep)) => {
-                    let Some(chunk) = chunk.map_err(MessagesAgenticError::Provider)? else {
-                        return Ok(true);
-                    };
-                    self.collect(&chunk)?;
-                    self.collected.push(chunk);
+            let read = match select(self.inner.next_chunk(), deadline).await {
+                Either::Left((read, pending)) => {
+                    deadline = pending;
+                    read
                 }
                 Either::Right(((), _read)) => return Ok(false),
-            }
+            };
+            let Some(chunk) = read.map_err(MessagesAgenticError::Provider)? else {
+                return Ok(true);
+            };
+            self.collect(chunk)?;
         }
     }
 

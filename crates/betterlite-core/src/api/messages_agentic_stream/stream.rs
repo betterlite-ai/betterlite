@@ -9,10 +9,10 @@ use tracing::{debug, error, warn};
 use super::events::{buffer_holds_server_tool_use, rebuild_agentic_response};
 use super::interceptor::{AgenticFollowUp, AgenticHookFuture, AgenticInterceptor};
 use super::{
-    MessagesAgenticError, MessagesAgenticStreamError, MessagesAgenticStreamInput,
-    MessagesAgenticStreamResult, PING_INTERVAL_SECONDS, SERVER_FULFILLED_TOOL_LEAK_ERROR,
+    LEAK_ERROR_FRAME, MessagesAgenticError, MessagesAgenticStreamError, MessagesAgenticStreamInput,
+    MessagesAgenticStreamResult, PING_INTERVAL_SECONDS,
 };
-use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, JsonBoundary};
+use crate::api::api_boundaries::{ApiBoundariesInput, ApiLimits, ItemsBoundary, JsonBoundary};
 use crate::api::messages_sse_events::stream::MessagesProviderStream;
 use crate::meta_muse_realtime::request::Sleep;
 
@@ -46,7 +46,7 @@ enum HookState<FollowUp> {
 
 impl<S, I> MessagesAgenticStream<S, I>
 where
-    S: MessagesProviderStream,
+    S: MessagesProviderStream + Send,
     I: AgenticInterceptor,
     S::Error: Error + 'static,
     <I::FollowUp as MessagesProviderStream>::Error: Error + 'static,
@@ -114,8 +114,7 @@ where
                 .map_err(MessagesAgenticError::Provider)?;
             match chunk {
                 Some(chunk) => {
-                    self.collect(&chunk)?;
-                    self.collected.push(chunk.clone());
+                    self.collect(chunk.clone())?;
                     return Ok(Some(chunk));
                 }
                 None => {
@@ -133,12 +132,17 @@ where
         }
     }
 
-    fn collect(&mut self, chunk: &[u8]) -> Result<(), MessagesAgenticStreamError<S, I>> {
+    // the buffer is bounded by bytes and by chunk count, so empty chunks cannot grow it either
+    fn collect(&mut self, chunk: Vec<u8>) -> Result<(), MessagesAgenticStreamError<S, I>> {
         let total = self.collected_bytes.saturating_add(chunk.len());
         self.limits.check(ApiBoundariesInput::Json(JsonBoundary {
             known_bytes: total,
         }))?;
+        self.limits.check(ApiBoundariesInput::Items(ItemsBoundary {
+            known_count: self.collected.len().saturating_add(1),
+        }))?;
         self.collected_bytes = total;
+        self.collected.push(chunk);
         Ok(())
     }
 
@@ -158,7 +162,7 @@ where
             "AgenticStreamingIterator: hooks did not replace a message containing a server-fulfilled tool_use [model={}]; emitting an SSE error instead of leaking the tool call to the client",
             self.input.model,
         );
-        Some(SERVER_FULFILLED_TOOL_LEAK_ERROR.to_vec())
+        Some(LEAK_ERROR_FRAME.to_vec())
     }
 
     fn replay_next(&mut self) -> Option<Vec<u8>> {
@@ -171,16 +175,17 @@ where
         if let Some(holds) = self.leak {
             return Ok(holds);
         }
-        let holds = match self.input.hold_back.as_ref() {
-            Some(policy) => {
-                let raw = self.collected.concat();
-                buffer_holds_server_tool_use(
-                    &raw,
-                    &policy.server_fulfilled_tool_names,
-                    &self.limits,
-                )?
-            }
-            None => false,
+        let Some(policy) = self.input.hold_back.as_ref() else {
+            return Ok(false);
+        };
+        let raw = self.collected.concat();
+        let holds = match buffer_holds_server_tool_use(
+            &raw,
+            &policy.server_fulfilled_tool_names,
+            &self.limits,
+        ) {
+            Ok(holds) => holds,
+            Err(failure) => return Err(failure.widen()),
         };
         self.leak = Some(holds);
         Ok(holds)
