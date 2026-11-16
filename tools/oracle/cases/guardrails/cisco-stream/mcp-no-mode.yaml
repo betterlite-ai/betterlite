@@ -3,7 +3,7 @@ name: mcp-no-mode
 call:
   b9450:
     operation: mcp
-    settings: {api_key: oracle-key, inspection_type: mcp, mode: post_call}
+    settings: {api_key: oracle-key, inspection_type: mcp, event_hook: logging_only}
     kwargs:
       mcp_tool_name: get_weather
       metadata: {}
