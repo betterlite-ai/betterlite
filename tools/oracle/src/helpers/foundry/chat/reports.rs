@@ -161,8 +161,7 @@ pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
     let configured = resolved
         .deployments
         .into_iter()
-        .next()
-        .and_then(|item| item.api_key);
+        .find_map(|item| item.api_key);
     let credentials = DeploymentSettings {
         azure_ad_token: None,
         tenant_id: None,
