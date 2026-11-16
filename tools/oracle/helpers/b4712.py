@@ -260,12 +260,13 @@ def where_matches(values: FakeRow, where: Where) -> bool:
 
 
 def written(outcome: LiteLLM_MCPServerTable | mcp_db.McpIdentifierConflict | None) -> Outcome:
+    if outcome is None:
+        return None, None
     match outcome:
         case mcp_db.McpIdentifierConflict(field=field, value=value, server_id=server_id):
             return None, {"field": field, "value": value, "server_id": server_id}
         case LiteLLM_MCPServerTable(server_id=server_id):
             return server_id, None
-    return None, None
 
 
 def server_view(server: LiteLLM_MCPServerTable) -> ServerView:
@@ -297,7 +298,7 @@ def server_view(server: LiteLLM_MCPServerTable) -> ServerView:
 
 
 def row_views(client: FakeClient) -> list[ServerView]:
-    views = []
+    views: list[ServerView] = []
     for row in client.fake_db.litellm_mcpservertable.rows:
         server = LiteLLM_MCPServerTable.model_validate(row.model_dump())
         mcp_db.decrypt_global_env_var_values(server.env_vars)

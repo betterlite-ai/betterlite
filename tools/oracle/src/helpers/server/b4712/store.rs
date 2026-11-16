@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
@@ -18,7 +19,7 @@ pub(super) struct MemoryStore {
     rows: Mutex<Vec<JsonData>>,
     users: Vec<String>,
     credential_server_id: String,
-    deleted_children: Mutex<Vec<&'static str>>,
+    deleted_children: Mutex<Vec<(&'static str, String)>>,
 }
 
 impl MemoryStore {
@@ -42,7 +43,61 @@ impl MemoryStore {
         self.deleted_children
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone()
+            .iter()
+            .map(|(label, _server_id)| *label)
+            .collect()
+    }
+
+    fn matching<F>(&self, keep: F) -> Vec<JsonData>
+    where
+        F: Fn(&JsonData) -> bool,
+    {
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .filter(|row| keep(row))
+            .cloned()
+            .collect()
+    }
+
+    fn insert(&self, data: &RowFields) -> Result<JsonData, McpTableError> {
+        let row = stored_row(data)?;
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(row.clone());
+        Ok(row)
+    }
+
+    fn live_draft(&self, server_id: &str, cutoff: DateTime<Utc>) -> Option<JsonData> {
+        let drafts = self.matching(|row| text(row, "approval_status") == Some("draft"));
+        drafts.into_iter().find(|row| {
+            text(row, "server_id") == Some(server_id)
+                && text(row, "updated_at")
+                    .and_then(iso_to_epoch)
+                    .is_some_and(|stamp| stamp >= cutoff)
+        })
+    }
+
+    fn remove(&self, server_id: &str) -> Option<JsonData> {
+        let removed = self.matching(|row| text(row, "server_id") == Some(server_id));
+        self.rows
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .retain(|row| text(row, "server_id") != Some(server_id));
+        removed.into_iter().next()
+    }
+
+    fn locked_write(&self, request: LockedWrite) -> Result<LockedWriteOutcome, McpTableError> {
+        if let Some(conflict) = self.conflict(&request) {
+            return Ok(LockedWriteOutcome::Conflict(conflict));
+        }
+        let written = match request.write {
+            ServerWrite::Create(data) => Some(self.insert(&data)?),
+            ServerWrite::Update(update) => self.update_row(&update)?,
+        };
+        Ok(LockedWriteOutcome::Written(written))
     }
 
     fn update_row(&self, update: &ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
@@ -54,7 +109,9 @@ impl MemoryStore {
             return Ok(None);
         };
         apply(row, &update.data)?;
-        Ok(Some(row.clone()))
+        let updated = row.clone();
+        drop(rows);
+        Ok(Some(updated))
     }
 
     // Mirrors LiteLLM's _find_mcp_server_identifier_conflict: alias first, both columns, drafts never collide.
@@ -97,96 +154,76 @@ impl MemoryStore {
 }
 
 impl ServerWriteStore for MemoryStore {
-    async fn find_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(rows
-            .iter()
-            .find(|row| text(row, "server_id") == Some(server_id))
-            .cloned())
+    fn find_server(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        let found = self.matching(|row| text(row, "server_id") == Some(server_id));
+        ready(Ok(found.into_iter().next()))
     }
 
-    async fn find_drafts(&self) -> Result<Vec<JsonData>, McpTableError> {
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(rows
-            .iter()
-            .filter(|row| text(row, "approval_status") == Some("draft"))
-            .cloned()
-            .collect())
+    fn find_drafts(&self) -> impl Future<Output = Result<Vec<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.matching(|row| {
+            text(row, "approval_status") == Some("draft")
+        })))
     }
 
-    async fn find_draft_updated_since(
+    fn find_draft_updated_since(
         &self,
         server_id: &str,
         cutoff: DateTime<Utc>,
-    ) -> Result<Option<JsonData>, McpTableError> {
-        let rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(rows
-            .iter()
-            .find(|row| {
-                text(row, "server_id") == Some(server_id)
-                    && text(row, "approval_status") == Some("draft")
-                    && text(row, "updated_at")
-                        .and_then(iso_to_epoch)
-                        .is_some_and(|stamp| stamp >= cutoff)
-            })
-            .cloned())
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.live_draft(server_id, cutoff)))
     }
 
-    async fn create_server(&self, data: RowFields) -> Result<JsonData, McpTableError> {
-        let row = stored_row(&data)?;
-        self.rows
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(row.clone());
-        Ok(row)
+    fn create_server(
+        &self,
+        data: RowFields,
+    ) -> impl Future<Output = Result<JsonData, McpTableError>> + Send {
+        ready(self.insert(&data))
     }
 
-    async fn update_server(&self, update: ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
-        self.update_row(&update)
+    fn update_server(
+        &self,
+        update: ServerUpdate,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(self.update_row(&update))
     }
 
-    async fn write_if_identifier_free(
+    fn write_if_identifier_free(
         &self,
         request: LockedWrite,
-    ) -> Result<LockedWriteOutcome, McpTableError> {
-        if let Some(conflict) = self.conflict(&request) {
-            return Ok(LockedWriteOutcome::Conflict(conflict));
-        }
-        let written = match request.write {
-            ServerWrite::Create(data) => Some(self.create_server(data).await?),
-            ServerWrite::Update(update) => self.update_row(&update)?,
-        };
-        Ok(LockedWriteOutcome::Written(written))
+    ) -> impl Future<Output = Result<LockedWriteOutcome, McpTableError>> + Send {
+        ready(self.locked_write(request))
     }
 
-    async fn delete_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
-        let Some(index) = rows
-            .iter()
-            .position(|row| text(row, "server_id") == Some(server_id))
-        else {
-            return Ok(None);
-        };
-        Ok(Some(rows.remove(index)))
+    fn delete_server(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.remove(server_id)))
     }
 
-    async fn credential_user_ids(&self, server_id: &str) -> Result<Vec<String>, McpTableError> {
-        if server_id == self.credential_server_id {
-            return Ok(self.users.clone());
-        }
-        Ok(Vec::new())
+    fn credential_user_ids(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Vec<String>, McpTableError>> + Send {
+        let enumerated = (server_id == self.credential_server_id).then(|| self.users.clone());
+        ready(Ok(enumerated.unwrap_or_default()))
     }
 
-    async fn delete_children(
+    fn delete_children(
         &self,
         table: ChildTable,
-        _server_id: &str,
-    ) -> Result<(), McpTableError> {
-        self.deleted_children
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), McpTableError>> + Send {
+        let mut deleted = self
+            .deleted_children
             .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(table.label());
-        Ok(())
+            .unwrap_or_else(PoisonError::into_inner);
+        deleted.push((table.label(), server_id.to_owned()));
+        drop(deleted);
+        ready(Ok(()))
     }
 }
 
@@ -213,12 +250,17 @@ impl RecordingInvalidation {
 }
 
 impl TokenCacheInvalidation for RecordingInvalidation {
-    async fn invalidate(&self, user_id: &str, server_id: &str) -> Result<(), TokenCacheError> {
+    fn invalidate(
+        &self,
+        user_id: &str,
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), TokenCacheError>> + Send {
+        let call = (user_id.to_owned(), server_id.to_owned());
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push((user_id.to_owned(), server_id.to_owned()));
-        Ok(())
+            .push(call);
+        ready(Ok(()))
     }
 }
 

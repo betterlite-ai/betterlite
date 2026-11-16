@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::future::{Future, ready};
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_db::auxiliary_repository::repository::TableError;
@@ -91,7 +92,68 @@ impl FakeStore {
         if let JsonData::Object(fields) = found {
             fields.extend(object(data));
         }
-        Some(found.clone())
+        let updated = found.clone();
+        drop(state);
+        Some(updated)
+    }
+
+    fn drafts(&self) -> Vec<JsonData> {
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state
+            .rows
+            .iter()
+            .filter(|row| text(row, "approval_status") == Some("draft"))
+            .cloned()
+            .collect()
+    }
+
+    // The configured fault fails the one store call it names.
+    fn check(&self, fault: Fault) -> Result<(), McpTableError> {
+        if self.fault == fault {
+            return Err(McpTableError::Table(TableError::MissingRow));
+        }
+        Ok(())
+    }
+
+    fn live_draft(&self, server_id: &str, cutoff: DateTime<Utc>) -> Option<JsonData> {
+        let mut drafts = self.drafts().into_iter();
+        drafts.find(|row| {
+            server_id_of(row).as_deref() == Some(server_id)
+                && text(row, "updated_at")
+                    .and_then(iso_to_epoch)
+                    .is_some_and(|stamp| stamp >= cutoff)
+        })
+    }
+
+    fn remove(&self, server_id: &str) -> Option<JsonData> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        let found = state
+            .rows
+            .iter()
+            .position(|row| server_id_of(row).as_deref() == Some(server_id));
+        let removed = found.map(|index| state.rows.remove(index));
+        drop(state);
+        removed
+    }
+
+    fn users_of(&self, server_id: &str) -> Result<Vec<String>, McpTableError> {
+        self.check(Fault::CredentialEnumeration)?;
+        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        Ok(state
+            .credential_users
+            .get(server_id)
+            .cloned()
+            .unwrap_or_default())
+    }
+
+    fn record_child(&self, table: ChildTable, server_id: &str) -> Result<(), McpTableError> {
+        self.check(Fault::ChildCleanup)?;
+        self.state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .child_deletes
+            .push((table, server_id.to_owned()));
+        Ok(())
     }
 
     fn insert(&self, data: &RowFields) -> JsonData {
@@ -108,93 +170,73 @@ impl FakeStore {
 }
 
 impl ServerWriteStore for FakeStore {
-    async fn find_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        Ok(self.find(server_id))
+    fn find_server(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.find(server_id)))
     }
 
-    async fn find_drafts(&self) -> Result<Vec<JsonData>, McpTableError> {
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(state
-            .rows
-            .iter()
-            .filter(|row| text(row, "approval_status") == Some("draft"))
-            .cloned()
-            .collect())
+    fn find_drafts(&self) -> impl Future<Output = Result<Vec<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.drafts()))
     }
 
-    async fn find_draft_updated_since(
+    fn find_draft_updated_since(
         &self,
         server_id: &str,
         cutoff: DateTime<Utc>,
-    ) -> Result<Option<JsonData>, McpTableError> {
-        let drafts = self.find_drafts().await?;
-        Ok(drafts
-            .into_iter()
-            .filter(|row| server_id_of(row).as_deref() == Some(server_id))
-            .find(|row| {
-                text(row, "updated_at")
-                    .and_then(iso_to_epoch)
-                    .is_some_and(|stamp| stamp >= cutoff)
-            }))
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.live_draft(server_id, cutoff)))
     }
 
-    async fn create_server(&self, data: RowFields) -> Result<JsonData, McpTableError> {
-        if self.fault == Fault::LostCreateRace {
-            return Err(McpTableError::Table(TableError::MissingRow));
-        }
-        Ok(self.insert(&data))
+    fn create_server(
+        &self,
+        data: RowFields,
+    ) -> impl Future<Output = Result<JsonData, McpTableError>> + Send {
+        ready(
+            self.check(Fault::LostCreateRace)
+                .map(|()| self.insert(&data)),
+        )
     }
 
-    async fn update_server(&self, update: ServerUpdate) -> Result<Option<JsonData>, McpTableError> {
-        Ok(self.apply(&update.data, &update.server_id))
+    fn update_server(
+        &self,
+        update: ServerUpdate,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.apply(&update.data, &update.server_id)))
     }
 
-    async fn write_if_identifier_free(
+    fn write_if_identifier_free(
         &self,
         request: LockedWrite,
-    ) -> Result<LockedWriteOutcome, McpTableError> {
+    ) -> impl Future<Output = Result<LockedWriteOutcome, McpTableError>> + Send {
         let written = match request.write {
             ServerWrite::Create(data) => Some(self.insert(&data)),
             ServerWrite::Update(update) => self.apply(&update.data, &update.server_id),
         };
-        Ok(LockedWriteOutcome::Written(written))
+        ready(Ok(LockedWriteOutcome::Written(written)))
     }
 
-    async fn delete_server(&self, server_id: &str) -> Result<Option<JsonData>, McpTableError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        let found = state
-            .rows
-            .iter()
-            .position(|row| server_id_of(row).as_deref() == Some(server_id));
-        Ok(found.map(|index| state.rows.remove(index)))
+    fn delete_server(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Option<JsonData>, McpTableError>> + Send {
+        ready(Ok(self.remove(server_id)))
     }
 
-    async fn credential_user_ids(&self, server_id: &str) -> Result<Vec<String>, McpTableError> {
-        if self.fault == Fault::CredentialEnumeration {
-            return Err(McpTableError::Table(TableError::MissingRow));
-        }
-        let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        Ok(state
-            .credential_users
-            .get(server_id)
-            .cloned()
-            .unwrap_or_default())
+    fn credential_user_ids(
+        &self,
+        server_id: &str,
+    ) -> impl Future<Output = Result<Vec<String>, McpTableError>> + Send {
+        ready(self.users_of(server_id))
     }
 
-    async fn delete_children(
+    fn delete_children(
         &self,
         table: ChildTable,
         server_id: &str,
-    ) -> Result<(), McpTableError> {
-        if self.fault == Fault::ChildCleanup {
-            return Err(McpTableError::Table(TableError::MissingRow));
-        }
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .child_deletes
-            .push((table, server_id.to_owned()));
-        Ok(())
+    ) -> impl Future<Output = Result<(), McpTableError>> + Send {
+        ready(self.record_child(table, server_id))
     }
 }
 
@@ -216,16 +258,7 @@ impl RecordingInvalidation {
             .insert(user_id.to_owned());
     }
 
-    pub(crate) fn calls(&self) -> Vec<(String, String)> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone()
-    }
-}
-
-impl TokenCacheInvalidation for RecordingInvalidation {
-    async fn invalidate(&self, user_id: &str, server_id: &str) -> Result<(), TokenCacheError> {
+    fn record(&self, user_id: &str, server_id: &str) -> Result<(), TokenCacheError> {
         let failing = self
             .failing
             .lock()
@@ -241,6 +274,23 @@ impl TokenCacheInvalidation for RecordingInvalidation {
             .unwrap_or_else(PoisonError::into_inner)
             .push((user_id.to_owned(), server_id.to_owned()));
         Ok(())
+    }
+
+    pub(crate) fn calls(&self) -> Vec<(String, String)> {
+        self.calls
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+}
+
+impl TokenCacheInvalidation for RecordingInvalidation {
+    fn invalidate(
+        &self,
+        user_id: &str,
+        server_id: &str,
+    ) -> impl Future<Output = Result<(), TokenCacheError>> + Send {
+        ready(self.record(user_id, server_id))
     }
 }
 

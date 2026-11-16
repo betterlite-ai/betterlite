@@ -29,10 +29,9 @@ pub fn decode_server_row(
         parse_text_columns(fields)?;
     }
     let mut servers = readable_mcp_servers(vec![row], cipher)?;
-    match servers.pop() {
-        Some(server) => Ok(server),
-        None => Err(ServerWriteError::UnreadableRow { server_id }),
-    }
+    servers
+        .pop()
+        .ok_or(ServerWriteError::UnreadableRow { server_id })
 }
 
 fn parse_text_columns(fields: &mut BTreeMap<String, JsonData>) -> Result<(), ServerWriteError> {
