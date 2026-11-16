@@ -1925,6 +1925,7 @@ dependencies = [
  "betterlite-db",
  "betterlite-env",
  "betterlite-http",
+ "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",
