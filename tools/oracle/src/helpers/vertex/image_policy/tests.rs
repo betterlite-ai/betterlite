@@ -46,8 +46,8 @@ fn billing(kind: &str, response: &Value) -> Value {
         "model": "oracle-vertex-image",
         "catalog": {
             "output_cost_per_image": 0.5,
-            "input_cost_per_token": 0,
-            "output_cost_per_token": 0,
+            "input_cost_per_token": 0_i64,
+            "output_cost_per_token": 0_i64,
         },
         "response": response,
     }])
@@ -92,13 +92,13 @@ fn models_name_the_python_config_classes() {
 #[test]
 fn a_zero_token_price_costs_nothing_even_with_a_per_image_price() {
     let usage = json!({
-        "input_tokens": 10,
-        "output_tokens": 20,
-        "total_tokens": 30,
+        "input_tokens": 10_i64,
+        "output_tokens": 20_i64,
+        "total_tokens": 30_i64,
         "web_search_requests": null,
     });
     let input = input(
-        &billing("generation", &json!({"images": 3, "usage": usage})),
+        &billing("generation", &json!({"images": 3_i64, "usage": usage})),
         &json!([]),
     );
     let value = Op::run(&input).expect("the cost is priced");
@@ -108,13 +108,13 @@ fn a_zero_token_price_costs_nothing_even_with_a_per_image_price() {
 #[test]
 fn search_alone_is_priced_when_no_image_came_back() {
     let usage = json!({
-        "input_tokens": 0,
-        "output_tokens": 0,
-        "total_tokens": 0,
-        "web_search_requests": 2,
+        "input_tokens": 0_i64,
+        "output_tokens": 0_i64,
+        "total_tokens": 0_i64,
+        "web_search_requests": 2_i64,
     });
     let input = input(
-        &billing("generation", &json!({"images": 0, "usage": usage})),
+        &billing("generation", &json!({"images": 0_i64, "usage": usage})),
         &json!([]),
     );
     let value = Op::run(&input).expect("the cost is priced");

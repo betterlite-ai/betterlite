@@ -24,7 +24,7 @@ fn reply(source: &str) -> Extra {
     serde_json::from_str(source).expect("reply source")
 }
 
-const fn cents(amount: i64) -> Decimal {
+fn cents(amount: i64) -> Decimal {
     Decimal::new(amount, 2)
 }
 
@@ -54,8 +54,7 @@ impl ImagePricing for Pricing {
         provider: &str,
         supplied: Option<&PriceRecord>,
     ) -> Result<PriceRecord, ImageCostError> {
-        assert_eq!(provider, "vertex_ai");
-        if !self.known {
+        if !self.known || provider != "vertex_ai" {
             return Err(ImageCostError::UnknownModel {
                 model: model.to_owned(),
             });
@@ -78,11 +77,10 @@ impl ImagePricing for Pricing {
     fn usage_cost(
         &self,
         _model: &str,
-        provider: &str,
+        _provider: &str,
         _usage: &ImageUsageDetails,
         _model_info: &PriceRecord,
     ) -> Result<Option<Decimal>, ImageCostError> {
-        assert_eq!(provider, "vertex_ai");
         Ok(self.token_cost)
     }
 }

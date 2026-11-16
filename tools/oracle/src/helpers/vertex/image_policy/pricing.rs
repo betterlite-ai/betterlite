@@ -69,16 +69,13 @@ impl ImagePricing for CatalogPricing<'_> {
         usage: &ImageUsageDetails,
         model_info: &PriceRecord,
     ) -> Result<Option<Decimal>, ImageCostError> {
-        image_usage_cost(
-            &ImageUsageCostRequest {
-                model,
-                custom_llm_provider: Some(provider),
-                usage,
-                model_info: Some(model_info),
-                moment: DateTime::UNIX_EPOCH,
-            },
-            self,
-            &TimeZoneDatabase::from_env(),
-        )
+        let request = ImageUsageCostRequest {
+            model,
+            custom_llm_provider: Some(provider),
+            usage,
+            model_info: Some(model_info),
+            moment: DateTime::UNIX_EPOCH,
+        };
+        image_usage_cost(&request, self, &TimeZoneDatabase::from_env())
     }
 }

@@ -13,7 +13,9 @@ use betterlite_vertex::vertex_image_policy::cost::{
 };
 use betterlite_vertex::vertex_image_policy::error::PredictionError;
 use betterlite_vertex::vertex_image_policy::prediction::{
-    is_image_generation_response, process_image_generation_response,
+    is_image_generation_response,
+    // ast-grep-ignore: no-long-names
+    process_image_generation_response,
 };
 use betterlite_vertex::vertex_imagen_generation::response::ImagenGenerationResponse;
 use serde::Deserialize;
@@ -139,23 +141,19 @@ fn billing_value(case: &Billing) -> Result<Value, Box<HelperError>> {
                     tokens,
                     web_search_requests: fields.web_search_requests,
                 });
-            generation_cost(
-                &pricing,
-                &case.model,
-                None,
-                &GeneratedImages {
-                    image_count: images.images,
-                    usage,
-                },
-            )
+            let generated = GeneratedImages {
+                image_count: images.images,
+                usage,
+            };
+            generation_cost(&pricing, &case.model, None, &generated)
         }
         BillingKind::Edit => {
-            let response = match &case.response {
-                Some(images) => EditResponse::Image {
+            let response = case
+                .response
+                .as_ref()
+                .map_or(EditResponse::Other, |images| EditResponse::Image {
                     image_count: images.images,
-                },
-                None => EditResponse::Other,
-            };
+                });
             edit_cost(&pricing, &case.model, response)
         }
     }
@@ -163,7 +161,7 @@ fn billing_value(case: &Billing) -> Result<Value, Box<HelperError>> {
     Ok(json!({"cost": cost.normalize().to_string()}))
 }
 
-fn cost_failure(error: &ImageCostError) -> Box<HelperError> {
+fn cost_failure(error: &ImageCostError) -> HelperError {
     let class = match error {
         ImageCostError::NotImageResponse => "ValueError",
         ImageCostError::UnknownModel { .. } => "Exception",
@@ -177,14 +175,14 @@ fn cost_failure(error: &ImageCostError) -> Box<HelperError> {
         | ImageCostError::Tier(_)
         | ImageCostError::TokenCost(_) => "ImageCostError",
     };
-    Box::new(HelperError {
+    HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
         message: error.to_string(),
-    })
+    }
 }
 
 fn prediction_failure(error: &PredictionError) -> Box<HelperError> {
@@ -206,28 +204,32 @@ fn prediction_failure(error: &PredictionError) -> Box<HelperError> {
 
 fn reply_value(case: &Reply) -> Result<Value, Box<HelperError>> {
     match case.kind {
-        ReplyKind::Detect => {
-            let detected = is_image_generation_response(&case.body)
-                .map_err(|error| prediction_failure(&error))?;
-            Ok(json!({"detected": detected}))
-        }
-        ReplyKind::Convert => {
-            let mut response = ImagenGenerationResponse::default();
-            for encoded in &case.existing {
-                response.data.push(ImageData {
-                    b64_json: encoded.clone(),
-                    revised_prompt: None,
-                    url: None,
-                });
-            }
-            process_image_generation_response(&case.body, &mut response)
-                .map_err(|error| prediction_failure(&error))?;
-            let images: Vec<Option<&str>> = response
-                .data
-                .iter()
-                .map(|image| image.b64_json.as_deref())
-                .collect();
-            Ok(json!({"images": images}))
-        }
+        ReplyKind::Detect => detect_value(&case.body),
+        ReplyKind::Convert => convert_value(case),
     }
+}
+
+fn detect_value(body: &Extra) -> Result<Value, Box<HelperError>> {
+    let detected =
+        is_image_generation_response(body).map_err(|error| prediction_failure(&error))?;
+    Ok(json!({"detected": detected}))
+}
+
+fn convert_value(case: &Reply) -> Result<Value, Box<HelperError>> {
+    let mut response = ImagenGenerationResponse::default();
+    for encoded in &case.existing {
+        response.data.push(ImageData {
+            b64_json: encoded.clone(),
+            revised_prompt: None,
+            url: None,
+        });
+    }
+    // ast-grep-ignore: no-long-names
+    process_image_generation_response(&case.body, &mut response)
+        .map_err(|error| prediction_failure(&error))?;
+    let mut images: Vec<Option<&str>> = Vec::with_capacity(response.data.len());
+    for image in &response.data {
+        images.push(image.b64_json.as_deref());
+    }
+    Ok(json!({"images": images}))
 }

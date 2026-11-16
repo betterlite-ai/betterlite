@@ -98,11 +98,16 @@ def billing_value(case: BillingCase) -> JsonObject:
         "litellm_provider": "vertex_ai",
         "mode": "image_generation",
     }
-    litellm.register_model({f"vertex_ai/{case['model']}": entry})
+    model_cost: JsonObject = {f"vertex_ai/{case['model']}": entry}
+    litellm.register_model(model_cost)
     response = case["response"]
     if case["kind"] == "edit":
         # anything but an ImageResponse is what the null response stands for
-        cost = edit_cost(case["model"], {} if response is None else image_response(response))
+        not_an_image: JsonObject = {}
+        cost = edit_cost(
+            case["model"],
+            not_an_image if response is None else image_response(response),
+        )
     elif response is None:
         raise ValueError("a generation cost needs a response")
     else:

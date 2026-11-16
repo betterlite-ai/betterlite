@@ -51,7 +51,7 @@ pub fn is_image_generation_response(reply: &Extra) -> Result<bool, PredictionErr
     Ok(first.contains_key(IMAGE_KEY))
 }
 
-// process_image_generation_response: every prediction must hold the key, and the images replace response.data
+// ast-grep-ignore: no-long-names
 pub fn process_image_generation_response(
     reply: &Extra,
     response: &mut ImagenGenerationResponse,
