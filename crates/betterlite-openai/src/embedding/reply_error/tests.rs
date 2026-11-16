@@ -109,20 +109,20 @@ fn keeps_no_message_for_a_null_message_with_a_code() {
     );
 }
 
+// a code that is not a whole u16 falls back to 422, and a truthy non-string message is its JSON text
 #[rstest]
-#[case::text(r#""rate_limit""#)]
-#[case::float("1.5")]
-#[case::negative("-1")]
-#[case::too_large("70000")]
-fn a_code_that_is_not_a_status_falls_back_to_422(#[case] code: &str) {
-    let reply = fixture(&format!(
-        r#"{{"error": {{"message": "boom", "code": {code}}}}}"#
-    ));
+#[case::text_code(r#"{"error": {"message": "boom", "code": "rate_limit"}}"#, "boom")]
+#[case::float_code(r#"{"error": {"message": "boom", "code": 1.5}}"#, "boom")]
+#[case::negative_code(r#"{"error": {"message": "boom", "code": -1}}"#, "boom")]
+#[case::too_large_code(r#"{"error": {"message": "boom", "code": 70000}}"#, "boom")]
+#[case::true_message(r#"{"error": {"message": true}}"#, "true")]
+#[case::number_message(r#"{"error": {"message": 5}}"#, "5")]
+fn falls_back_to_422_with_the_message_text(#[case] body: &str, #[case] message: &str) {
     assert_eq!(
-        reply_error(&reply),
+        reply_error(&fixture(body)),
         Some(ReplyFailure {
             status: 422,
-            message: Some(String::from("boom")),
+            message: Some(String::from(message)),
         })
     );
 }
@@ -134,20 +134,6 @@ fn encodes_a_structured_message_as_json() {
         Some(ReplyFailure {
             status: 422,
             message: Some(String::from(r#"{"reason":"boom"}"#)),
-        })
-    );
-}
-
-#[rstest]
-#[case::true_flag("true")]
-#[case::number("5")]
-fn a_truthy_message_that_is_not_a_string_is_its_json_text(#[case] message: &str) {
-    let reply = fixture(&format!(r#"{{"error": {{"message": {message}}}}}"#));
-    assert_eq!(
-        reply_error(&reply),
-        Some(ReplyFailure {
-            status: 422,
-            message: Some(String::from(message)),
         })
     );
 }

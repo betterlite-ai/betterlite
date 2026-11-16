@@ -109,12 +109,18 @@ fn images_before_text() {
     let null_data = r#"{"object":"list","data":null,"model":"image-model"}"#;
     let factory = Factory::new(Answer::json(null_data));
     let text = Text::replying(TEXT_ONE);
-    let error = run(&call, None, &factory, &text).unwrap_err();
-    assert!(matches!(error, FoundryEmbeddingError::ImageDataMissing));
+    let sync_error = run(&call, None, &factory, &text).unwrap_err();
+    assert!(matches!(
+        sync_error,
+        FoundryEmbeddingError::ImageDataMissing
+    ));
     assert!(text.calls().is_empty());
     call.mode = EmbeddingMode::Async;
-    let error = run(&call, None, &factory, &text).unwrap_err();
-    assert!(matches!(error, FoundryEmbeddingError::ImageDataMissing));
+    let async_error = run(&call, None, &factory, &text).unwrap_err();
+    assert!(matches!(
+        async_error,
+        FoundryEmbeddingError::ImageDataMissing
+    ));
     assert!(text.calls().is_empty());
     assert_eq!(factory.requests().len(), 2);
 }

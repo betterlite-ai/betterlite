@@ -47,33 +47,22 @@ fn text_group_header() {
     let mut call = request(MODEL, &input);
     call.api_key = Some(&secret);
     let factory = Factory::new(Answer::json(IMAGE_ONE));
-    let multilingual = [(
-        "llm_provider-azureml-model-group",
-        "offer-cohere-embed-multili-paygo",
-    )];
-    let response = run(
-        &call,
-        None,
-        &factory,
-        &Text::headed(&multilingual, TEXT_ONE),
-    )
-    .unwrap();
-    assert_eq!(
-        response.model.as_deref(),
-        Some("Cohere-embed-v3-multilingual")
-    );
-    let english = [(
-        "llm_provider-azureml-model-group",
-        "offer-cohere-embed-english-paygo",
-    )];
-    let response = run(&call, None, &factory, &Text::headed(&english, TEXT_ONE)).unwrap();
-    assert_eq!(response.model.as_deref(), Some("Cohere-embed-v3-english"));
-    let custom = [("llm_provider-azureml-model-group", "custom-group")];
-    let response = run(&call, None, &factory, &Text::headed(&custom, TEXT_ONE)).unwrap();
-    assert_eq!(response.model.as_deref(), Some("custom-group"));
-    let empty = [("llm_provider-azureml-model-group", "")];
-    let response = run(&call, None, &factory, &Text::headed(&empty, TEXT_ONE)).unwrap();
-    assert_eq!(response.model.as_deref(), Some("text-model"));
+    for (group, model) in [
+        (
+            "offer-cohere-embed-multili-paygo",
+            "Cohere-embed-v3-multilingual",
+        ),
+        (
+            "offer-cohere-embed-english-paygo",
+            "Cohere-embed-v3-english",
+        ),
+        ("custom-group", "custom-group"),
+        ("", "text-model"),
+    ] {
+        let headers = [("llm_provider-azureml-model-group", group)];
+        let response = run(&call, None, &factory, &Text::headed(&headers, TEXT_ONE)).unwrap();
+        assert_eq!(response.model.as_deref(), Some(model), "{group}");
+    }
 }
 
 fn image_group_header() {
@@ -92,28 +81,37 @@ fn image_group_header() {
 
 // the reply sends the provider's own header name; only the projection adds llm_provider-
 fn raw_group_headers() {
-    let input = strings(&[IMAGE_URI]);
+    let images = strings(&[IMAGE_URI]);
     let secret = key("case-key");
-    let mut call = request(MODEL, &input);
-    call.api_key = Some(&secret);
+    let mut image_call = request(MODEL, &images);
+    image_call.api_key = Some(&secret);
     let english = [("azureml-model-group", "offer-cohere-embed-english-paygo")];
-    let factory = Factory::new(Answer::headed(&english, IMAGE_ONE));
-    let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
-    assert_eq!(response.model.as_deref(), Some("Cohere-embed-v3-english"));
-    let input = strings(&["hello"]);
-    let mut call = request(MODEL, &input);
-    call.api_key = Some(&secret);
-    let multilingual = [("azureml-model-group", "offer-cohere-embed-multili-paygo")];
-    let factory = Factory::new(Answer::json(IMAGE_ONE));
-    let response = run(
-        &call,
+    let image_factory = Factory::new(Answer::headed(&english, IMAGE_ONE));
+    let image_response = run(
+        &image_call,
         None,
-        &factory,
+        &image_factory,
+        &Text::replying(TEXT_EMPTY),
+    )
+    .unwrap();
+    assert_eq!(
+        image_response.model.as_deref(),
+        Some("Cohere-embed-v3-english")
+    );
+    let texts = strings(&["hello"]);
+    let mut text_call = request(MODEL, &texts);
+    text_call.api_key = Some(&secret);
+    let multilingual = [("azureml-model-group", "offer-cohere-embed-multili-paygo")];
+    let text_factory = Factory::new(Answer::json(IMAGE_ONE));
+    let text_response = run(
+        &text_call,
+        None,
+        &text_factory,
         &Text::headed(&multilingual, TEXT_ONE),
     )
     .unwrap();
     assert_eq!(
-        response.model.as_deref(),
+        text_response.model.as_deref(),
         Some("Cohere-embed-v3-multilingual")
     );
 }
@@ -188,15 +186,15 @@ fn filtered_only_tests_emptiness() {
 
 fn all_text_and_all_images() {
     let texts = strings(&["one", "two"]);
-    let plan = transform_request(&texts, &FoundryEmbeddingOptions::default());
-    assert!(plan.image.input.is_empty());
-    assert!(plan.image_indices.is_empty());
-    assert_eq!(plan.text_input, vec!["one", "two"]);
+    let text_plan = transform_request(&texts, &FoundryEmbeddingOptions::default());
+    assert!(text_plan.image.input.is_empty());
+    assert!(text_plan.image_indices.is_empty());
+    assert_eq!(text_plan.text_input, vec!["one", "two"]);
     let images = strings(&[IMAGE_URI, IMAGE_URI]);
-    let plan = transform_request(&images, &FoundryEmbeddingOptions::default());
-    assert_eq!(plan.image_indices, vec![0, 1]);
-    assert!(plan.text_input.is_empty());
-    assert_eq!(plan.image.input[1].image, IMAGE_URI);
+    let image_plan = transform_request(&images, &FoundryEmbeddingOptions::default());
+    assert_eq!(image_plan.image_indices, vec![0, 1]);
+    assert!(image_plan.text_input.is_empty());
+    assert_eq!(image_plan.image.input[1].image, IMAGE_URI);
 }
 
 pub(super) fn response_model_index_usage() {
@@ -226,25 +224,25 @@ fn combined_order() {
 fn available_lists() {
     let images = strings(&[IMAGE_URI]);
     let secret = key("case-key");
-    let mut call = request(MODEL, &images);
-    call.api_key = Some(&secret);
+    let mut image_call = request(MODEL, &images);
+    image_call.api_key = Some(&secret);
     let factory = Factory::new(Answer::json(IMAGE_TWO));
-    let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
-    assert_eq!(indices(&response.data), vec![5, 6]);
-    assert_eq!(response.model.as_deref(), Some("image-model"));
+    let image_response = run(&image_call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
+    assert_eq!(indices(&image_response.data), vec![5, 6]);
+    assert_eq!(image_response.model.as_deref(), Some("image-model"));
     let texts = strings(&["hello"]);
-    let mut call = request(MODEL, &texts);
-    call.api_key = Some(&secret);
-    let response = run(&call, None, &factory, &Text::replying(TEXT_TWO)).unwrap();
-    assert_eq!(indices(&response.data), vec![7, 9]);
-    assert_eq!(response.model.as_deref(), Some("text-model"));
+    let mut text_call = request(MODEL, &texts);
+    text_call.api_key = Some(&secret);
+    let text_response = run(&text_call, None, &factory, &Text::replying(TEXT_TWO)).unwrap();
+    assert_eq!(indices(&text_response.data), vec![7, 9]);
+    assert_eq!(text_response.model.as_deref(), Some("text-model"));
     let empty: Vec<String> = Vec::new();
-    let mut call = request(MODEL, &empty);
-    call.api_key = Some(&secret);
+    let mut empty_call = request(MODEL, &empty);
+    empty_call.api_key = Some(&secret);
     let fresh = Factory::new(Answer::json(IMAGE_TWO));
     let text = Text::replying(TEXT_TWO);
-    let response = run(&call, None, &fresh, &text).unwrap();
-    assert!(response.data.is_empty());
+    let empty_response = run(&empty_call, None, &fresh, &text).unwrap();
+    assert!(empty_response.data.is_empty());
     assert!(fresh.requests().is_empty());
     assert!(fresh.sync_timeouts().is_empty());
     assert!(text.calls().is_empty());
@@ -262,11 +260,11 @@ fn usage_from_headers() {
     assert_eq!(response.usage.completion_tokens, 0);
     assert_eq!(response.usage.total_tokens, 2);
     let bare = r#"{"object":"list","data":[{"object":"embedding","index":0,"embedding":[0.1]}],"model":"image-model"}"#;
-    let factory = Factory::new(Answer::headed(&tokens, bare));
-    let response = run(&call, None, &factory, &Text::replying(TEXT_EMPTY)).unwrap();
-    assert_eq!(response.usage.prompt_tokens, 9);
-    assert_eq!(response.usage.completion_tokens, 0);
-    assert_eq!(response.usage.total_tokens, 0);
+    let bare_factory = Factory::new(Answer::headed(&tokens, bare));
+    let bare_response = run(&call, None, &bare_factory, &Text::replying(TEXT_EMPTY)).unwrap();
+    assert_eq!(bare_response.usage.prompt_tokens, 9);
+    assert_eq!(bare_response.usage.completion_tokens, 0);
+    assert_eq!(bare_response.usage.total_tokens, 0);
 }
 
 // the reply sends num_tokens; only the projection turns it into the llm_provider-name the transform reads
@@ -380,20 +378,20 @@ fn short_lists() {
     let mixed = strings(&[IMAGE_URI, "hello"]);
     let mut call = request(MODEL, &mixed);
     call.api_key = Some(&secret);
-    let factory = Factory::new(Answer::json(IMAGE_ONE));
+    let image_factory = Factory::new(Answer::json(IMAGE_ONE));
     let empty_text = r#"{"object":"list","data":[],"model":"text-model"}"#;
-    let error = run(&call, None, &factory, &Text::replying(empty_text)).unwrap_err();
+    let text_error = run(&call, None, &image_factory, &Text::replying(empty_text)).unwrap_err();
     assert!(matches!(
-        error,
+        text_error,
         FoundryEmbeddingError::TooFewEntries {
             entries: "text embeddings"
         }
     ));
     let empty_image = r#"{"object":"list","data":[],"model":"image-model"}"#;
-    let factory = Factory::new(Answer::json(empty_image));
-    let error = run(&call, None, &factory, &Text::replying(TEXT_ONE)).unwrap_err();
+    let empty_factory = Factory::new(Answer::json(empty_image));
+    let image_error = run(&call, None, &empty_factory, &Text::replying(TEXT_ONE)).unwrap_err();
     assert!(matches!(
-        error,
+        image_error,
         FoundryEmbeddingError::TooFewEntries {
             entries: "image embeddings"
         }

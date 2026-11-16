@@ -55,16 +55,16 @@ fn keeps_absent_and_null_distinct() {
 #[test]
 fn defaults_usage_counts() {
     let empty = decode_foundry_embedding(br#"{"usage":{}}"#).unwrap();
-    let usage = empty.usage.unwrap();
-    assert_eq!(usage.prompt_tokens, 0);
-    assert_eq!(usage.completion_tokens, 0);
-    assert_eq!(usage.total_tokens, 0);
+    let zero = empty.usage.unwrap();
+    assert_eq!(zero.prompt_tokens, 0);
+    assert_eq!(zero.completion_tokens, 0);
+    assert_eq!(zero.total_tokens, 0);
     let partial =
         decode_foundry_embedding(br#"{"usage":{"prompt_tokens":3,"total_tokens":9}}"#).unwrap();
-    let usage = partial.usage.unwrap();
-    assert_eq!(usage.prompt_tokens, 3);
-    assert_eq!(usage.completion_tokens, 0);
-    assert_eq!(usage.total_tokens, 9);
+    let counted = partial.usage.unwrap();
+    assert_eq!(counted.prompt_tokens, 3);
+    assert_eq!(counted.completion_tokens, 0);
+    assert_eq!(counted.total_tokens, 9);
 }
 
 #[rstest]

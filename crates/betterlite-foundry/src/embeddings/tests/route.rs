@@ -95,11 +95,11 @@ fn image_url() {
     assert_eq!(requests[0].url, format!("{BASE}/models/images/embeddings"));
     let queried = format!("{BASE}?api-version=2024-05-01-preview");
     call.api_base = Some(&queried);
-    let factory = Factory::new(Answer::json(IMAGE_ONE));
-    run(&call, None, &factory, &text).unwrap();
+    let queried_factory = Factory::new(Answer::json(IMAGE_ONE));
+    run(&call, None, &queried_factory, &text).unwrap();
     let routed = format!("{BASE}/models?api-version=2024-05-01-preview");
     assert_eq!(
-        factory.requests()[0].url,
+        queried_factory.requests()[0].url,
         format!("{routed}/images/embeddings")
     );
 }
@@ -192,10 +192,10 @@ fn async_without_guards() {
     assert_eq!(factory.async_timeouts(), vec![Duration::from_secs(5)]);
     assert!(factory.sync_timeouts().is_empty());
     call.api_key = None;
-    let factory = Factory::new(Answer::json(IMAGE_ONE));
-    run(&call, None, &factory, &text).unwrap();
+    let keyless = Factory::new(Answer::json(IMAGE_ONE));
+    run(&call, None, &keyless, &text).unwrap();
     assert_eq!(
-        factory.requests()[0].headers.get("authorization").unwrap(),
+        keyless.requests()[0].headers.get("authorization").unwrap(),
         "Bearer "
     );
 }
