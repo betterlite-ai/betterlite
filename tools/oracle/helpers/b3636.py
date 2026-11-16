@@ -3,7 +3,7 @@ from typing import Literal, NotRequired, TypedDict
 
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.proxy.pass_through_endpoints.llm_provider_handlers import (
-    openai_passthrough_logging_handler,
+    openai_passthrough_logging_handler as passthrough,
 )
 from litellm.types.utils import ModelResponse, TextCompletionResponse
 from pydantic import JsonValue as Json
@@ -132,7 +132,7 @@ def response_view(response: ModelResponse | TextCompletionResponse) -> ResponseV
 
 
 def assemble(input_value: AssembleInput) -> ResponseView | None:
-    response = openai_passthrough_logging_handler.OpenAIPassthroughLoggingHandler()._build_complete_streaming_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L552-L611
+    response = passthrough.OpenAIPassthroughLoggingHandler()._build_complete_streaming_response(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/openai_passthrough_logging_handler.py#L552-L611
         all_chunks=input_value["chunks"],
         litellm_logging_obj=logging_obj(input_value["model"]),
         model=input_value["model"],
@@ -146,7 +146,7 @@ def assemble(input_value: AssembleInput) -> ResponseView | None:
 def run(input_value: Input) -> ResponseView | CountAnswer | None:
     if input_value["function"] == "assemble":
         return assemble(input_value)
-    counted = openai_passthrough_logging_handler.count_relayed_prompt_tokens(
+    counted = passthrough.count_relayed_prompt_tokens(
         input_value["model"], input_value["messages"]
     )
     return {"prompt_tokens": counted}
