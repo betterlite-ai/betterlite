@@ -1,9 +1,10 @@
 task: B1724
 deviations:
   - what: >-
-      A key whose only roles are org_viewer, team_admin or team_member, and a key
-      with no role at all, the master key aside, read only their own per-user spend
-      view on /global/spend/logs, /global/spend/keys and /global/spend/models.
+      A key carrying platform_admin, platform_viewer or org_admin reads the global
+      view. A key whose only roles are org_viewer, team_admin or team_member, and a
+      key with no role at all, the master key aside, read only their own per-user
+      spend view on /global/spend/logs, /global/spend/keys and /global/spend/models.
       LiteLLM scopes only internal_user and internal_user_view_only this way and
       sends every other role down the global path, where a key reads every user's
       spend.
