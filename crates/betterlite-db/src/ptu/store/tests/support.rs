@@ -121,7 +121,7 @@ pub(crate) async fn insert_stored_model(
     model_name: &str,
     model_info: &JsonData,
 ) {
-    let info = Json(model_info.clone());
+    let info = Json(model_info);
     client
         .execute(
             "INSERT INTO \"LiteLLM_ProxyModelTable\" \

@@ -378,7 +378,8 @@ async fn load_models_scans_rows_then_router_entries() {
     insert_stored_model(&client, "db-a", "stored-a", &priced).await;
     insert_stored_model(&client, "db-b", "stored-b", &info(r#"{"other": 1}"#)).await;
     insert_stored_model(&client, "", "anonymous", &priced).await;
-    insert_stored_model(&client, "db-text", "stored-text", &priced).await;
+    let as_text = JsonData::String(format!("{{{terms}}}"));
+    insert_stored_model(&client, "db-text", "stored-text", &as_text).await;
     let entries = [
         router_entry(&format!(r#"{{"id": "cfg-a", {terms}}}"#)),
         router_entry(&format!(r#"{{"id": "db-a", {terms}}}"#)),
