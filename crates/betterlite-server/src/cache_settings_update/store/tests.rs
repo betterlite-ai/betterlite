@@ -11,7 +11,7 @@ use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio_postgres::NoTls;
 
-use super::{CacheConfigRepository, DatabaseCacheConfigStore};
+use super::{CacheConfigRepository as _, DatabaseCacheConfigStore};
 use crate::cache_settings_update::support;
 
 #[derive(Parser)]

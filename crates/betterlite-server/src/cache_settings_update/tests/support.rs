@@ -566,8 +566,7 @@ pub(crate) async fn post_with_header(
     if let Some(context) = auth {
         request.extensions_mut().insert(context);
     }
-    let response = application
-        .oneshot(request)
+    let response = Box::pin(application.oneshot(request))
         .await
         .expect("the router answers");
     let status = response.status();
@@ -595,12 +594,12 @@ impl LogSink {
 }
 
 impl io::Write for LogSink {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.0
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .extend_from_slice(buffer);
-        Ok(buffer.len())
+            .extend_from_slice(buf);
+        Ok(buf.len())
     }
 
     fn flush(&mut self) -> io::Result<()> {
