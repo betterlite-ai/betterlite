@@ -6,8 +6,9 @@ use betterlite_guardrails::content_filter::competitor_intent_airline::MAJOR_AIRL
 use serde::{Deserialize, Serialize};
 
 use crate::auth::auth_identity::AuthContext;
-use crate::error_body::json_error;
 use crate::tracing_routes::router::unauthenticated;
+
+use super::error::CatalogApplyError;
 
 pub(super) const AIRLINES_PATH: &str = "/guardrails/ui/major_airlines";
 
@@ -28,14 +29,8 @@ pub(super) async fn major_airlines(caller: Option<Extension<AuthContext>>) -> Re
     if caller.is_none() {
         return unauthenticated();
     }
-    let Ok(airlines) = serde_json::from_str::<Vec<MajorAirline>>(MAJOR_AIRLINES_JSON) else {
-        tracing::error!("apply_guardrail: major_airlines.json does not parse");
-        return json_error(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "Error reading major_airlines.json: the bundled file does not parse",
-            "internal_server_error",
-            "500",
-        );
-    };
-    (StatusCode::OK, Json(AirlinesBody { airlines })).into_response()
+    match serde_json::from_str::<Vec<MajorAirline>>(MAJOR_AIRLINES_JSON) {
+        Ok(airlines) => (StatusCode::OK, Json(AirlinesBody { airlines })).into_response(),
+        Err(source) => CatalogApplyError::AirlinesRead { source }.into_response(),
+    }
 }

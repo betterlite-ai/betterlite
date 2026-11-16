@@ -13,6 +13,7 @@ use betterlite_config::sections::content_filter_catalog::categories::{
 };
 use betterlite_config::sections::content_filter_catalog::roots::CATEGORIES_DIR;
 use serde::Serialize;
+use tokio_util::task::TaskTracker;
 
 use crate::assets::paths::{is_within, safe_join};
 use crate::auth::auth_identity::AuthContext;
@@ -25,6 +26,7 @@ const CATEGORY_PATH: &str = "/guardrails/ui/category_yaml/{category_name}";
 #[derive(Clone)]
 struct CategoryState {
     roots: Arc<[PathBuf]>,
+    tasks: TaskTracker,
 }
 
 #[derive(Serialize)]
@@ -34,10 +36,10 @@ struct CategoryBody {
     file_type: &'static str,
 }
 
-pub(super) fn routes(roots: Arc<[PathBuf]>) -> Router {
+pub(super) fn routes(roots: Arc<[PathBuf]>, tasks: TaskTracker) -> Router {
     Router::new()
         .route(CATEGORY_PATH, get(category_yaml))
-        .with_state(CategoryState { roots })
+        .with_state(CategoryState { roots, tasks })
 }
 
 async fn category_yaml(
@@ -48,42 +50,50 @@ async fn category_yaml(
     if caller.is_none() {
         return unauthenticated();
     }
+    let roots = Arc::clone(&state.roots);
+    let joined = state
+        .tasks
+        .spawn_blocking(move || read_category(&roots, category_name))
+        .await;
+    let read = match joined {
+        Ok(read) => read,
+        Err(source) => Err(CatalogApplyError::CategoryBlocking { source }),
+    };
+    match read {
+        Ok(body) => (StatusCode::OK, Json(body)).into_response(),
+        Err(error) => error.into_response(),
+    }
+}
+
+// LiteLLM's four steps are blocking calls, so they run together on the blocking pool
+fn read_category(
+    roots: &[PathBuf],
+    category_name: String,
+) -> Result<CategoryBody, CatalogApplyError> {
     let yaml_name = format!("{category_name}.yaml");
     if safe_join(Path::new(CATEGORIES_DIR), &[yaml_name.as_str()]).is_err() {
-        return CatalogApplyError::InvalidCategoryName.into_response();
+        return Err(CatalogApplyError::InvalidCategoryName);
     }
-    let roots: Vec<&Path> = state.roots.iter().map(PathBuf::as_path).collect();
+    let roots: Vec<&Path> = roots.iter().map(PathBuf::as_path).collect();
     let Some(found) = find_category_file(&category_name, &roots) else {
-        return CatalogApplyError::CategoryNotFound { category_name }.into_response();
+        return Err(CatalogApplyError::CategoryNotFound { category_name });
     };
     if !category_dirs(&roots)
         .iter()
         .any(|category_dir| is_within(&found, category_dir))
     {
-        return CatalogApplyError::InvalidCategoryName.into_response();
+        return Err(CatalogApplyError::InvalidCategoryName);
     }
-    read_category(&found, category_name)
-}
-
-fn read_category(found: &Path, category_name: String) -> Response {
     let file_type = if found.to_str().is_some_and(|path| path.ends_with(".yaml")) {
         "yaml"
     } else {
         "json"
     };
-    match fs::read_to_string(found) {
-        Ok(content) => (
-            StatusCode::OK,
-            Json(CategoryBody {
-                category_name,
-                yaml_content: content,
-                file_type,
-            }),
-        )
-            .into_response(),
-        Err(error) => CatalogApplyError::CategoryRead {
-            message: error.to_string(),
-        }
-        .into_response(),
-    }
+    let yaml_content =
+        fs::read_to_string(&found).map_err(|source| CatalogApplyError::CategoryRead { source })?;
+    Ok(CategoryBody {
+        category_name,
+        yaml_content,
+        file_type,
+    })
 }

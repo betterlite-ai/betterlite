@@ -30,7 +30,8 @@ use crate::registry_read_through::lookup::{GuardrailLookup, get_guardrail_with_r
 use crate::tracing_routes::router::unauthenticated;
 
 use super::CatalogApplyState;
-use super::body::{call_data, call_inputs, decode_body, sent_request_data};
+use super::apply_data::{call_data, sent_request_data};
+use super::body::decode_body;
 use super::error::CatalogApplyError;
 use super::input_type::resolve;
 use super::ports::{APPLY_CALL_TYPE, ApplyHooks, ApplyLog, ApplyPorts, Body};
@@ -129,7 +130,15 @@ where
     let returned = invoke(
         ports,
         callback,
-        call_inputs(&request.text),
+        GuardrailApiInputs {
+            texts: Some(vec![request.text.clone()]),
+            images: None,
+            tools: None,
+            tool_calls: None,
+            structured_messages: None,
+            model: None,
+            stream_holdback_chars: None,
+        },
         &mut sent,
         input_type,
     )

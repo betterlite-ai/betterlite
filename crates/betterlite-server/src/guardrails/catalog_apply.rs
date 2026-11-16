@@ -1,5 +1,6 @@
 mod airlines;
 mod apply;
+mod apply_data;
 pub mod blocked_words;
 pub mod body;
 mod category;
@@ -15,6 +16,7 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::routing::{get, post};
+use tokio_util::task::TaskTracker;
 
 use crate::registry_read_through::RegistryReadThrough;
 use crate::registry_read_through::Resync;
@@ -28,6 +30,7 @@ pub struct CatalogApplyState<L, R: Resync> {
     pub lookup: Arc<L>,
     pub read_through: Arc<RegistryReadThrough<R>>,
     pub roots: Arc<[PathBuf]>,
+    pub tasks: TaskTracker,
 }
 
 impl<L, R: Resync> Clone for CatalogApplyState<L, R> {
@@ -37,6 +40,7 @@ impl<L, R: Resync> Clone for CatalogApplyState<L, R> {
             lookup: Arc::clone(&self.lookup),
             read_through: Arc::clone(&self.read_through),
             roots: Arc::clone(&self.roots),
+            tasks: self.tasks.clone(),
         }
     }
 }
@@ -47,6 +51,7 @@ where
     R: Resync + 'static,
 {
     let roots = Arc::clone(&state.roots);
+    let tasks = state.tasks.clone();
     Router::new()
         .route(airlines::AIRLINES_PATH, get(airlines::major_airlines))
         .route(
@@ -54,5 +59,5 @@ where
             post(blocked_words::validate_blocked_words_file),
         )
         .merge(apply::routes(state))
-        .merge(category::routes(roots))
+        .merge(category::routes(roots, tasks))
 }

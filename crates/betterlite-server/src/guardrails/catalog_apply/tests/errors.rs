@@ -38,6 +38,27 @@ fn hook_error_status_comes_from_the_hook_error() {
 }
 
 #[test]
+fn category_read_keeps_the_cause_in_the_detail() {
+    let error = CatalogApplyError::CategoryRead {
+        source: std::io::Error::other("disk on fire"),
+    };
+    assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(error.detail(), "Error reading category file: disk on fire");
+}
+
+#[test]
+fn airlines_read_keeps_the_parser_message_in_the_detail() {
+    let source = serde_json::from_str::<Vec<u8>>("not json").unwrap_err();
+    let message = source.to_string();
+    let error = CatalogApplyError::AirlinesRead { source };
+    assert_eq!(error.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        error.detail(),
+        format!("Error reading major_airlines.json: {message}")
+    );
+}
+
+#[test]
 fn proxy_exception_status_comes_from_its_numeric_code() {
     assert_eq!(proxy_exception().status(), StatusCode::TOO_MANY_REQUESTS);
 }

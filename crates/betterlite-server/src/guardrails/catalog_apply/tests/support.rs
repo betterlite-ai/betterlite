@@ -33,6 +33,7 @@ use betterlite_guardrails::guardrail_registry::callback::{
 };
 use betterlite_guardrails::guardrail_registry::integrations::CompressionKind;
 use tempfile::TempDir;
+use tokio_util::task::TaskTracker;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::AuthContext;
@@ -151,6 +152,7 @@ impl World {
             lookup: Arc::new(registry),
             read_through: Arc::new(read_through),
             roots: Arc::clone(&self.roots),
+            tasks: TaskTracker::new(),
         })
     }
 }

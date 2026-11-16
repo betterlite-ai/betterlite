@@ -1,18 +1,10 @@
-use std::collections::BTreeMap;
-
 use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_config::sections::guardrail_params::opaque::OpaqueParams;
-use betterlite_config::sections::guardrail_params::routes::ApplyGuardrailRequest;
-use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use serde_json::error::Category;
 use serde_path_to_error::{Path, Segment};
-
-use super::ports::Body;
 
 const FIELD_REQUIRED: &str = "Field required";
 const JSON_DECODE_ERROR: &str = "JSON decode error";
@@ -131,62 +123,4 @@ struct ValidationIssue {
 enum LocPart {
     Field(String),
     Index(usize),
-}
-
-// LiteLLM's data dict, the request_data handed to the guardrail, and the inputs of its call
-pub(super) fn call_data(request: &ApplyGuardrailRequest) -> Body {
-    let messages = request.messages.as_deref().unwrap_or_default();
-    let route = GuardrailValue::Text("/apply_guardrail".to_owned());
-    let metadata = BTreeMap::from([("route".to_owned(), route)]);
-    let mut data = Body::new();
-    data.insert(
-        "guardrail_name".to_owned(),
-        GuardrailValue::Text(request.guardrail_name.clone()),
-    );
-    data.insert(
-        "input".to_owned(),
-        GuardrailValue::Array(vec![GuardrailValue::Text(request.text.clone())]),
-    );
-    data.insert(
-        "messages".to_owned(),
-        GuardrailValue::Array(message_values(messages)),
-    );
-    data.insert("metadata".to_owned(), GuardrailValue::Object(metadata));
-    data
-}
-
-pub(super) fn sent_request_data(request: &ApplyGuardrailRequest) -> Body {
-    let mut sent = Body::new();
-    if let Some(messages) = &request.messages {
-        sent.insert(
-            "messages".to_owned(),
-            GuardrailValue::Array(message_values(messages)),
-        );
-    }
-    if let Some(metadata) = &request.metadata {
-        sent.insert(
-            "metadata".to_owned(),
-            GuardrailValue::Object(metadata.0.clone()),
-        );
-    }
-    sent
-}
-
-fn message_values(messages: &[OpaqueParams]) -> Vec<GuardrailValue> {
-    messages
-        .iter()
-        .map(|message| GuardrailValue::Object(message.0.clone()))
-        .collect()
-}
-
-pub(super) fn call_inputs(text: &str) -> GuardrailApiInputs {
-    GuardrailApiInputs {
-        texts: Some(vec![text.to_owned()]),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
-    }
 }

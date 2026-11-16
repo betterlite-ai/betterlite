@@ -20,8 +20,21 @@ pub enum CatalogApplyError {
     InvalidCategoryName,
     #[error("Category file not found: {category_name} (tried .yaml and .json)")]
     CategoryNotFound { category_name: String },
-    #[error("Error reading category file: {message}")]
-    CategoryRead { message: String },
+    #[error("Error reading category file: {source}")]
+    CategoryRead {
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("Error reading category file: {source}")]
+    CategoryBlocking {
+        #[source]
+        source: tokio::task::JoinError,
+    },
+    #[error("Error reading major_airlines.json: {source}")]
+    AirlinesRead {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error(
         "Guardrail '{guardrail_name}' not found. Please ensure the guardrail is configured in your LiteLLM proxy."
     )]
@@ -42,7 +55,11 @@ impl CatalogApplyError {
         let status = match self {
             Self::InvalidCategoryName => 400,
             Self::CategoryNotFound { .. } | Self::GuardrailNotFound { .. } => 404,
-            Self::CategoryRead { .. } | Self::Log(_) | Self::Record(_) => 500,
+            Self::CategoryRead { .. }
+            | Self::CategoryBlocking { .. }
+            | Self::AirlinesRead { .. }
+            | Self::Log(_)
+            | Self::Record(_) => 500,
             Self::Guardrail(failure) => failure_status(failure),
             Self::Hooks(error) => hook_status(error),
         };
@@ -55,6 +72,8 @@ impl CatalogApplyError {
             Self::InvalidCategoryName => INVALID_CATEGORY_NAME.to_owned(),
             Self::CategoryNotFound { .. }
             | Self::CategoryRead { .. }
+            | Self::CategoryBlocking { .. }
+            | Self::AirlinesRead { .. }
             | Self::GuardrailNotFound { .. }
             | Self::Guardrail(_)
             | Self::Hooks(_)
@@ -82,9 +101,10 @@ impl IntoResponse for CatalogApplyError {
             Self::InvalidCategoryName => {
                 detail_response(StatusCode::BAD_REQUEST, INVALID_CATEGORY_NAME)
             }
-            Self::CategoryNotFound { .. } | Self::CategoryRead { .. } => {
-                detail_response(self.status(), &self.detail())
-            }
+            Self::CategoryNotFound { .. }
+            | Self::CategoryRead { .. }
+            | Self::CategoryBlocking { .. }
+            | Self::AirlinesRead { .. } => detail_response(self.status(), &self.detail()),
             Self::GuardrailNotFound { .. } => {
                 let status = self.status().as_u16();
                 proxy_error(
