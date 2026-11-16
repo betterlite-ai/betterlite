@@ -28,10 +28,9 @@ fn join_prompt_items(items: &[GuardrailValue]) -> Result<String, HookDataError> 
     let mut parts = Vec::new();
     for (index, item) in items.iter().enumerate() {
         match item {
-            GuardrailValue::Null => {}
-            GuardrailValue::Text(text) if text.is_empty() => {}
+            GuardrailValue::Text(text) if !text.is_empty() => parts.push(text.clone()),
             GuardrailValue::Array(list) if list.is_empty() => {}
-            GuardrailValue::Text(text) => parts.push(text.clone()),
+            GuardrailValue::Null | GuardrailValue::Text(_) => {}
             GuardrailValue::Boolean(_) | GuardrailValue::Object(_) => {
                 return Err(HookDataError::NotText {
                     field: PROMPT,

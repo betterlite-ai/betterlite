@@ -16,8 +16,6 @@ use crate::panw_prisma_airs::scan::call_panw_api;
 use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_masking::get_masked_text;
 
-const SSE_DATA_PREFIX: &str = "data: ";
-
 // Mirrors LiteLLM's fn _extract_text_from_sse_bytes: lines split on \n only, invalid UTF-8 becomes U+FFFD, strip is Python's.
 #[must_use]
 pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
@@ -38,7 +36,7 @@ pub fn extract_text_from_sse_bytes(chunks: &[StreamChunk]) -> String {
                 line.push('\u{FFFD}');
             }
         }
-        let Some(payload) = line.trim_matches(is_blank).strip_prefix(SSE_DATA_PREFIX) else {
+        let Some(payload) = line.trim_matches(is_blank).strip_prefix("data: ") else {
             continue;
         };
         let Ok(event) = serde_json::from_str::<Data>(payload) else {

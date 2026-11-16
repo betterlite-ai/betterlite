@@ -1,3 +1,5 @@
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use axum::http::StatusCode;
@@ -76,6 +78,25 @@ fn a_malformed_sse_delta_is_skipped(#[case] payload: &str) {
     let ok = "data: {\"type\":\"content_block_delta\",\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n";
     let chunks = vec![sse(&format!("data: {payload}\n")), sse(ok)];
     assert_eq!(extract_text_from_sse_bytes(&chunks), "ok");
+}
+
+#[rstest::rstest]
+fn replays_the_sse_chunk_corpus_through_the_text_extractor(
+    #[files("fuzz/corpus/guardrail_message_scope_sse_chunk/*")] path: PathBuf,
+) {
+    let bytes = fs::read(path).expect("corpus file");
+    drop(extract_text_from_sse_bytes(&[StreamChunk::Bytes(bytes)]));
+}
+
+#[test]
+fn the_line_separator_corpus_seed_keeps_its_full_text() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("fuzz/corpus/guardrail_message_scope_sse_chunk/raw_line_separator_in_text.txt");
+    let bytes = fs::read(path).expect("corpus file");
+    assert_eq!(
+        extract_text_from_sse_bytes(&[StreamChunk::Bytes(bytes)]),
+        "a\u{2028}b"
+    );
 }
 
 #[test]
