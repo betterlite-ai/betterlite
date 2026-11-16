@@ -6,6 +6,7 @@ use betterlite_azure::credentials::source::{
 };
 use betterlite_azure::endpoints::get_client::ClientCache;
 use betterlite_azure::endpoints::projection::{ClientIdentity, ClientKind, ClientOutcome};
+use betterlite_azure::fine_tuning::client::ClientMaterializer;
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
 use betterlite_openai::fine_tuning::client::{BuildError, JobsApi, SdkError};
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
@@ -24,7 +25,7 @@ pub(crate) struct Planned {
     pub(crate) body: Value,
 }
 
-pub(crate) fn planned_reply(planned: &Option<Planned>) -> Reply {
+pub(crate) fn planned_reply(planned: Option<&Planned>) -> Reply {
     let Some(Planned { status, body }) = planned else {
         return Ok(b"{}".to_vec());
     };
@@ -51,7 +52,7 @@ pub(crate) struct Recorded {
 }
 
 impl Recorded {
-    pub(crate) fn new(is_async: bool, reply: Reply, log: Log) -> Self {
+    pub(crate) const fn new(is_async: bool, reply: Reply, log: Log) -> Self {
         Self {
             is_async,
             reply,
@@ -110,7 +111,7 @@ pub(crate) struct Materializer {
     pub(crate) calls: Log,
 }
 
-impl betterlite_azure::fine_tuning::client::ClientMaterializer for Materializer {
+impl ClientMaterializer for Materializer {
     fn materialize(
         &self,
         outcome: &ClientOutcome<'_>,

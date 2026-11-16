@@ -560,18 +560,36 @@ fn run(step: &Step) -> Observation {
     let calls = Calls::default();
     let supplied_calls = Calls::default();
     let reply = planned_reply(step.reply.as_ref());
+    let (client, materializer) = fixtures(step, &reply, &calls, &supplied_calls);
+    Observation {
+        outcome: connect(step, client, &materializer),
+        calls: lock(&calls),
+        supplied_calls: lock(&supplied_calls),
+    }
+}
+
+fn fixtures(
+    step: &Step,
+    reply: &Reply,
+    calls: &Calls,
+    supplied_calls: &Calls,
+) -> (Option<Box<dyn JobsApi>>, Materializer) {
     let client = step.client.map(|kind| -> Box<dyn JobsApi> {
         Box::new(Fake {
             is_async: kind.is_async(),
             reply: reply.clone(),
-            calls: Arc::clone(&supplied_calls),
+            calls: Arc::clone(supplied_calls),
         })
     });
     let materializer = Materializer {
         mode: step.builder,
-        reply,
-        calls: Arc::clone(&calls),
+        reply: reply.clone(),
+        calls: Arc::clone(calls),
     };
+    (client, materializer)
+}
+
+fn connect(step: &Step, client: Option<Box<dyn JobsApi>>, materializer: &Materializer) -> Outcome {
     let endpoints = EndpointSettings::default();
     let environment: BTreeMap<String, String> = BTreeMap::new();
     let sources = Sources;
@@ -588,20 +606,16 @@ fn run(step: &Step) -> Observation {
         refresh_enabled: false,
         cache: &mut cache,
         refresh: &mut refresh,
-        materializer: &materializer,
+        materializer,
     };
-    let outcome = match dispatch(step, connection) {
+    match dispatch(step, connection) {
         Ok(outcome) => outcome,
         Err(error) => Outcome::Raised(raised(&error)),
-    };
-    Observation {
-        outcome,
-        calls: calls.lock().unwrap_or_else(PoisonError::into_inner).clone(),
-        supplied_calls: supplied_calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone(),
     }
+}
+
+fn lock(calls: &Calls) -> Vec<Call> {
+    calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
 fn job_observation(text: &str, calls: Vec<Call>) -> Observation {

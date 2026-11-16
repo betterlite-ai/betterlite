@@ -19,7 +19,7 @@ pub(crate) fn raised(error: &AzureFineTuneError) -> Value {
     }
 }
 
-fn class_name(kind: ClientKind) -> &'static str {
+const fn class_name(kind: ClientKind) -> &'static str {
     match kind {
         ClientKind::AzureOpenAi => "AzureOpenAI",
         ClientKind::AsyncAzureOpenAi => "AsyncAzureOpenAI",

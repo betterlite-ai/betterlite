@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::mem;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 
 use betterlite_azure::credentials::cache::RefreshProviderCache;
 use betterlite_azure::endpoints::projection::SessionKind;
@@ -15,7 +15,7 @@ use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::fixture::{Cache, Log, Materializer, Planned, Recorded, Sources, planned_reply};
+use super::fixture::{Cache, Log, Materializer, Planned, Recorded, Reply, Sources, planned_reply};
 use super::reports::{projection, raised};
 
 #[derive(Deserialize)]
@@ -82,16 +82,20 @@ fn perform(
     }
 }
 
-fn run_step(mut step: Step) -> Value {
-    let (calls, supplied_calls) = (Log::default(), Log::default());
-    let reply = planned_reply(&step.reply);
-    let client = step.client.take().map(|kind| -> Box<dyn JobsApi> {
+fn client_for(step: &mut Step, reply: &Reply, supplied_calls: &Log) -> Option<Box<dyn JobsApi>> {
+    step.client.take().map(|kind| -> Box<dyn JobsApi> {
         Box::new(Recorded::new(
             kind.contains("async"),
             reply.clone(),
-            Arc::clone(&supplied_calls),
+            Arc::clone(supplied_calls),
         ))
-    });
+    })
+}
+
+fn run_step(mut step: Step) -> Value {
+    let (calls, supplied_calls) = (Log::default(), Log::default());
+    let reply = planned_reply(step.reply.as_ref());
+    let client = client_for(&mut step, &reply, &supplied_calls);
     let materializer = Materializer {
         mode: step.builder,
         reply,
@@ -127,9 +131,7 @@ fn run_step(mut step: Step) -> Value {
 }
 
 fn lock(log: &Log) -> Vec<Value> {
-    log.lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone()
+    log.lock().unwrap_or_else(PoisonError::into_inner).clone()
 }
 
 pub(crate) fn run_input(input: &Input) -> Value {
