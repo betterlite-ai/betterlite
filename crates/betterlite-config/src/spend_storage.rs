@@ -1,18 +1,28 @@
 mod tests;
 use crate::loader::{ConfigError, EnvironmentLookup, parse_view};
+use crate::raw::RawNumber;
+use crate::resolve::{parse_money, resolve_number};
 use crate::sections::Section;
 use crate::sections::settings::JsonValue;
 use betterlite_secret_managers::secret_lookup::text_to_bool;
+use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::collections::BTreeMap;
 pub const ENV_STORE_PROMPTS: &str = "STORE_PROMPTS_IN_SPEND_LOGS";
 pub const ENV_MAX_PROMPT_LENGTH: &str = "MAX_STRING_LENGTH_PROMPT_IN_DB";
 pub const DEFAULT_MAX_PROMPT_LENGTH: i64 = 2048;
 const MISSING_SESSION_ID_PATH: &str = "general_settings.missing_session_id";
+const MAX_BUDGET_PATH: &str = "litellm_settings.max_budget";
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Raw {
     pub general_settings: GeneralSettings,
+    pub litellm_settings: LiteLlmSettings,
+}
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct LiteLlmSettings {
+    max_budget: Option<JsonValue>,
 }
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
@@ -39,6 +49,7 @@ pub struct Settings {
     pub max_string_length_prompt_in_db: i64,
     pub missing_session_id: Option<MissingSessionId>,
     pub spend_updates: SpendUpdates,
+    pub max_budget: Decimal,
 }
 impl Section for Raw {
     type Settings = Settings;
@@ -57,6 +68,16 @@ impl Section for Raw {
             )?,
             missing_session_id: missing_session_id(&general.missing_session_id)?,
             spend_updates: spend_updates(&general.disable_spend_updates),
+            max_budget: resolve_number(
+                self.litellm_settings
+                    .max_budget
+                    .map(budget_number)
+                    .transpose()?,
+                MAX_BUDGET_PATH,
+                lookup,
+                parse_money,
+            )?
+            .unwrap_or(Decimal::ZERO),
         })
     }
 }
@@ -71,6 +92,7 @@ where
 #[serde(default)]
 pub struct PolicyInput {
     pub general_settings: GeneralSettings,
+    pub litellm_settings: LiteLlmSettings,
     pub environment: BTreeMap<String, String>,
 }
 #[derive(Debug, thiserror::Error)]
@@ -84,6 +106,7 @@ pub fn decode_spend_storage_policy(bytes: &[u8]) -> Result<Settings, SpendStorag
     let input: PolicyInput = serde_json::from_slice(bytes)?;
     let raw = Raw {
         general_settings: input.general_settings,
+        litellm_settings: input.litellm_settings,
     };
     Ok(Section::convert(raw, &input.environment)?)
 }
@@ -128,4 +151,16 @@ const fn spend_updates(value: &JsonValue) -> SpendUpdates {
     } else {
         SpendUpdates::Allowed
     }
+}
+fn budget_number(configured: JsonValue) -> Result<RawNumber, ConfigError> {
+    let number = match configured {
+        JsonValue::Number(number) => number.as_f64().map(RawNumber::Float),
+        JsonValue::String(text) => Some(RawNumber::Text(text)),
+        JsonValue::Bool(flag) => Some(RawNumber::Boolean(flag)),
+        JsonValue::Null | JsonValue::Array(_) | JsonValue::Object(_) => None,
+    };
+    number.ok_or_else(|| ConfigError::InvalidScalar {
+        path: MAX_BUDGET_PATH.to_owned(),
+        value: false,
+    })
 }

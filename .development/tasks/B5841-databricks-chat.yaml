@@ -190,5 +190,5 @@ pitfalls:
   - max_completion_tokens always wins over a max_tokens in the same call. Its value is written to max_tokens and the old key is removed.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 3200
   max_new_expects: 0

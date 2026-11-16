@@ -157,3 +157,10 @@ path = "fuzz_targets/dashscope_rerank_reply.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "databricks_chat_reply"
+path = "fuzz_targets/databricks_chat_reply.rs"
+test = false
+doc = false
+bench = false

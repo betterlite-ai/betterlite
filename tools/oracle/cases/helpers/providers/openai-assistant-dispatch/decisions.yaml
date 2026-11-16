@@ -1,0 +1,83 @@
+kind: helper
+name: openai-assistant-dispatch-decisions
+call:
+  openai_assistant_dispatch:
+    kind: decisions
+    replies: []
+    operation: request
+    api_base: https://example.test/v1
+    api_key: sk-fixture
+    model: gpt-4o
+    environment: {}
+    decision:
+      input: Check this
+      questions:
+        - {type: predicate, name: valid, instructions: "Is it valid?"}
+        - type: choice
+          name: kind
+          instructions: "Which kind?"
+          choices:
+            - {value: green}
+            - {value: blue}
+      safety_identifier: safe-1
+calls:
+  - openai_assistant_dispatch:
+      kind: decisions
+      replies: []
+      operation: request
+      api_base: null
+      api_key: null
+      model: gpt-4o
+      environment: {}
+      decision:
+        input: Check this
+        questions:
+          - {type: predicate, instructions: "Is it valid?"}
+  - openai_assistant_dispatch:
+      kind: decisions
+      replies: []
+      operation: request
+      api_base: null
+      api_key: null
+      model: gpt-4o
+      environment:
+        OPENAI_API_KEY: sk-env
+        OPENAI_BASE_URL: https://env.test/v1
+      decision:
+        input: Check this
+        questions:
+          - {type: predicate, instructions: "Is it valid?"}
+  - openai_assistant_dispatch:
+      kind: decisions
+      replies: []
+      operation: response
+      api_base: https://example.test/v1
+      api_key: sk-fixture
+      model: gpt-4o
+      environment: {}
+      decision:
+        input: Check this
+        questions:
+          - {type: predicate, name: valid, instructions: "Is it valid?"}
+          - type: choice
+            name: kind
+            instructions: "Which kind?"
+            choices:
+              - {value: green}
+              - {value: blue}
+      payload: '{"model":"gpt-4o","answers":[{"type":"predicate","name":"valid","probability":0.9},{"type":"choice","name":"kind","choice":"green","confidence":0.8,"probabilities":[{"value":"green","probability":0.8},{"value":"blue","probability":0.2}]}],"usage":{"input_tokens":3,"output_tokens":2,"input_tokens_details":{"cached_tokens":0,"cache_write_tokens":0},"output_tokens_details":{"reasoning_tokens":0},"total_tokens":5}}'
+  - openai_assistant_dispatch:
+      kind: decisions
+      replies: []
+      operation: response
+      api_base: null
+      api_key: null
+      model: gpt-4o
+      environment: {}
+      decision:
+        input: Check this
+        questions:
+          - {type: predicate, instructions: "Is it valid?"}
+      payload: "{not json"
+env: {}
+compare: {ignore: []}

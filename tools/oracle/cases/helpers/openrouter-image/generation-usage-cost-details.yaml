@@ -1,0 +1,58 @@
+kind: helper
+name: openrouter-image-generation-usage-cost-details
+call:
+  b5830:
+    op: generation_reply
+    cases:
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":6,"total_tokens":1305,"completion_tokens_details":{"image_tokens":1290},"cost":0.0387243,"cost_details":{"upstream_inference_cost":0.03}}}'
+        status: 200
+        headers: {}
+        created: 1700000010
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":1,"total_tokens":2,"completion_tokens_details":{"image_tokens":1},"cost":5,"cost_details":{"provider":"x","z":2}}}'
+        status: 200
+        headers: {}
+        created: 1700000011
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":2,"cost":null,"cost_details":{}}}'
+        status: 200
+        headers: {}
+        created: 1700000012
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":3}}'
+        status: 200
+        headers: {}
+        created: 1700000013
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[]}'
+        status: 200
+        headers: {}
+        created: 1700000014
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":null}'
+        status: 200
+        headers: {}
+        created: 1700000015
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{}}'
+        status: 200
+        headers: {}
+        created: 1700000016
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"cost":0}}'
+        status: 200
+        headers: {}
+        created: 1700000017
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":10,"completion_tokens_details":{},"prompt_tokens_details":{"image_tokens":5}}}'
+        status: 200
+        headers: {}
+        created: 1700000018
+      - model: google/gemini-2.5-flash-image
+        body: '{"choices":[],"usage":{"prompt_tokens":4,"total_tokens":9,"completion_tokens_details":{"image_tokens":5},"cost_details":{"upstream_inference_cost":0.5,"input_cost":0.25}}}'
+        status: 200
+        headers: {}
+        created: 1700000019
+env: {}
+compare: {ignore: []}
