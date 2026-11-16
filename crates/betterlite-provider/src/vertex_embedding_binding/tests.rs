@@ -6,6 +6,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_core::vertex_embedding_dispatch::Defaults;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -161,6 +162,106 @@ fn assert_multimodal_arguments() {
             Json::Text("two".to_owned()),
         ])
     );
+
+    let tokens = prepared(
+        TEXT_MODEL,
+        EmbeddingInput::Tokens(vec![1, 2]),
+        r#"{"image": "gs://bucket/cat.png"}"#,
+        &ModelCatalog::default(),
+    );
+    let VertexEmbeddingPrepared::Multimodal(tokens) = tokens else {
+        panic!("a token list with a media key selects multimodal prediction");
+    };
+    assert_eq!(
+        tokens.input,
+        Json::List(vec![
+            Json::Number(serde_json::Number::from(1_i32)),
+            Json::Number(serde_json::Number::from(2_i32)),
+        ])
+    );
+}
+
+#[test]
+fn resolved_settings_reach_every_arm() {
+    let vertex = VertexSettings {
+        project: Some("settings-project".to_owned()),
+        location: Some("settings-location".to_owned()),
+        credentials: Some(ConfiguredCredentials::Text(SecretString::from(
+            "settings-key".to_owned(),
+        ))),
+        ..VertexSettings::default()
+    };
+    let embedding = EmbeddingSettings {
+        api_base: Some("https://settings.example".to_owned()),
+        ..EmbeddingSettings::default()
+    };
+    let defaults = Defaults {
+        vertex: &vertex,
+        embedding: &embedding,
+    };
+    let arms = [
+        prepare(
+            request(
+                EMBED_CONTENT_MODEL,
+                EmbeddingInput::Text("hello".to_owned()),
+                "{}",
+            ),
+            defaults,
+            &embed_content_catalog(),
+        )
+        .expect("a prepared request"),
+        prepare(
+            request(
+                TEXT_MODEL,
+                EmbeddingInput::Text("hello".to_owned()),
+                r#"{"image": null}"#,
+            ),
+            defaults,
+            &ModelCatalog::default(),
+        )
+        .expect("a prepared request"),
+        prepare(
+            request(TEXT_MODEL, EmbeddingInput::Text("hello".to_owned()), "{}"),
+            defaults,
+            &ModelCatalog::default(),
+        )
+        .expect("a prepared request"),
+    ];
+    for arm in &arms {
+        let (project, location, credentials, api_base) = match arm {
+            VertexEmbeddingPrepared::EmbedContent(call) => (
+                &call.project,
+                &call.location,
+                &call.credentials,
+                &call.api_base,
+            ),
+            VertexEmbeddingPrepared::Multimodal(call) => (
+                &call.project,
+                &call.location,
+                &call.credentials,
+                &call.api_base,
+            ),
+            VertexEmbeddingPrepared::Text(call) => (
+                &call.project,
+                &call.location,
+                &call.credentials,
+                &call.api_base,
+            ),
+        };
+        assert_eq!(project.as_deref(), Some("settings-project"));
+        assert_eq!(location.as_deref(), Some("settings-location"));
+        assert_eq!(
+            credentials
+                .as_ref()
+                .and_then(ConfiguredCredentials::as_text),
+            Some("settings-key")
+        );
+        // the explicit api_base wins over the setting, as in main.py's or chain
+        assert_eq!(api_base.as_deref(), Some("https://vertex.example"));
+    }
+    assert!(matches!(arms[0], VertexEmbeddingPrepared::EmbedContent(_)));
+    assert!(matches!(arms[1], VertexEmbeddingPrepared::Multimodal(_)));
+    assert!(matches!(arms[2], VertexEmbeddingPrepared::Text(_)));
 }
 
 #[test]
