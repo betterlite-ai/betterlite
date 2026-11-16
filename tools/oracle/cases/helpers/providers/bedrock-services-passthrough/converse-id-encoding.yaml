@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-services-passthrough-converse-id-encoding
+call:
+  bedrock_services_passthrough:
+    kind: url
+    runs:
+      - {model: anthropic.claude-v2, endpoint: /model/anthropic.claude-v2/converse, region: eu-west-1}
+      - {model: anthropic.claude-v2, endpoint: /model/anthropic.claude-v2/converse, region: eu-west-1, model_id: "arn:aws:bedrock:eu-west-1:1:application-inference-profile/xyz"}
+      - {model: anthropic.claude-v2, endpoint: /converse, model_id: "arn:aws:bedrock:eu-west-1:1:application-inference-profile/xyz"}
+      - {model: anthropic.claude-v2, endpoint: "/model/arn%3Aaws%3Abedrock%3Aeu-west-1%3A1%3Amodel%2Fx/converse", region: eu-west-1, model_id: other}
+      - {model: anthropic.claude-v2, endpoint: /model/a/model/b/converse, region: eu-west-1, model_id: m2}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,27 @@
+kind: helper
+name: v1-keeps-model
+call:
+  azure_images:
+    targets:
+      - azure_endpoint: https://example.openai.azure.com
+        api_version: preview
+        model: dall-e-3
+      - azure_endpoint: https://example.openai.azure.com/
+        api_version: v1
+        model: dall-e-3
+    generations:
+      - prompt: a cat
+        model: dall-e-3
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: preview
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+      - prompt: a cat
+        model: deployment-x
+        base_model: gpt-image-1
+        api_key: fixture-api-key
+        api_base: https://example.openai.azure.com
+        api_version: preview
+        reply_body: '{"created": 1700000000, "data": [{"b64_json": "aW1hZ2U="}]}'
+env: {}
+compare: {ignore: []}
