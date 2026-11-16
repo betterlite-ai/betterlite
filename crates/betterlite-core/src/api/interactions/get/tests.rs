@@ -23,9 +23,9 @@ fn get_defaults_to_gemini_when_no_provider_is_named() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
-    let reply = get(&config, harness.deps(), &call.request()).expect("the fixture answers");
-    assert_eq!(reply.id.as_deref(), Some("int_1"));
-    assert_eq!(reply.model.as_deref(), Some("gemini-2.5-flash"));
+    let answer = get(&config, harness.deps(), &call.request()).expect("the fixture answers");
+    assert_eq!(answer.id.as_deref(), Some("int_1"));
+    assert_eq!(answer.model.as_deref(), Some("gemini-2.5-flash"));
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
         environment_params(&config).get("custom_llm_provider"),
@@ -274,8 +274,8 @@ fn get_returns_the_transformed_response_and_records_the_pre_call() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
-    let reply = get(&config, harness.deps(), &call.request()).expect("the fixture answers");
-    assert_eq!(reply.id.as_deref(), Some("int_1"));
+    let answer = get(&config, harness.deps(), &call.request()).expect("the fixture answers");
+    assert_eq!(answer.id.as_deref(), Some("int_1"));
     let (status, input) = response_of(&config);
     assert_eq!(status, 200);
     assert_eq!(input, "int_1");
@@ -332,10 +332,10 @@ async fn aget_answers_through_the_async_transport() {
     let config = fixture();
     let mut harness = Harness::new();
     let call = Call::new("int_1").kwarg("api_base", text(&base(serving.address)));
-    let reply = aget(&config, harness.deps(), &call.request())
+    let answer = aget(&config, harness.deps(), &call.request())
         .await
         .expect("the fixture answers");
-    assert_eq!(reply.id.as_deref(), Some("int_1"));
+    assert_eq!(answer.id.as_deref(), Some("int_1"));
     assert_eq!(harness.state.custom_llm_provider.as_deref(), Some("gemini"));
     assert_eq!(
         request_line(&head_of(serving)),
