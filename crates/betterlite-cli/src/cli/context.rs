@@ -141,11 +141,12 @@ fn stored_api_key(request: StoredKey<'_>) -> Result<Option<SecretString>, Failur
         .enable_all()
         .build()
         .map_err(|source| Failure::Plain(format!("the async runtime could not start: {source}")))?;
+    let http = Arc::clone(&request.client);
     Ok(runtime.block_on(get_stored_api_key(StoredApiKeyRequest {
         expected_base_url: Some(request.base_url),
         files: &files,
         vault: request.vault,
-        http: request.client,
+        http,
         clock: request.clock,
         warn: request.warn,
         token_path: request.token_path,
