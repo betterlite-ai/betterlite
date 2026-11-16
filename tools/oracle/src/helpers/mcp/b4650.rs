@@ -12,7 +12,7 @@ use betterlite_mcp::credential_contracts::auth_config::key_source::{
     ApiKeyConfig, ApiKeySource, SharedKey,
 };
 use betterlite_mcp::credential_contracts::auth_config::oauth::{
-    AuthorizationCodeConfig, ClientCredentialsConfig, TokenExchangeConfig,
+    AuthorizationCodeConfig, ClientCredentialsConfig, TokenExchangeConfig, TokenExchangeProfile,
 };
 use betterlite_mcp::credential_contracts::auth_config::simple::{NoneConfig, PassthroughConfig};
 use betterlite_mcp::credential_contracts::auth_spec::parse_auth_spec_kind;
@@ -29,12 +29,13 @@ use betterlite_mcp::credential_contracts::token_endpoint_auth::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Mutex;
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -165,8 +166,8 @@ fn auth_config_defaults(auth_config: &AuthConfig) -> serde_json::Value {
     match auth_config {
         AuthConfig::TokenExchange(config) => json!({
             "profile": match config.profile {
-                betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile::Rfc8693 => "rfc8693",
-                betterlite_mcp::credential_contracts::auth_config::oauth::TokenExchangeProfile::EntraObo => "entra_obo",
+                TokenExchangeProfile::Rfc8693 => "rfc8693",
+                TokenExchangeProfile::EntraObo => "entra_obo",
             },
             "subject_token_type": config.subject_token_type,
         }),
@@ -219,10 +220,10 @@ fn token_auth_build(
 ) -> Result<serde_json::Value, Failure> {
     let method = auth_method.and_then(normalize_token_auth_method);
     let built = build_token_client_auth(method, client_id, client_secret)?;
-    let expose = |map: std::collections::BTreeMap<String, SecretString>| {
+    let expose = |map: BTreeMap<String, SecretString>| {
         map.into_iter()
             .map(|(key, value)| (key, value.expose_secret().to_owned()))
-            .collect::<std::collections::BTreeMap<_, _>>()
+            .collect::<BTreeMap<_, _>>()
     };
     Ok(json!({ "headers": expose(built.headers), "body": expose(built.body) }))
 }

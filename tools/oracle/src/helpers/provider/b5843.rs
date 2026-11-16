@@ -21,14 +21,16 @@ use indexmap::IndexMap;
 use serde_json::json;
 
 use self::input::{ExchangeCall, Input, ResponseCall};
-use crate::helpers::{HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::{Builder, Runtime};
 
 mod input;
 
 const FIXED_SECONDS: i64 = 1_730_882_977;
 
 fn exchange_values(shared: &Object, calls: &[ExchangeCall]) -> HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;
@@ -48,7 +50,7 @@ fn exchange_values(shared: &Object, calls: &[ExchangeCall]) -> HelperResult {
 }
 
 fn exchange_payload(
-    runtime: &tokio::runtime::Runtime,
+    runtime: &Runtime,
     call: &ExchangeCall,
     params: &Object,
     explicit: &OciExplicitParams,
@@ -177,7 +179,7 @@ impl IdSource for FixedIds {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

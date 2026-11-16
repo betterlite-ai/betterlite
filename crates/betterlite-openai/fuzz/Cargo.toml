@@ -628,3 +628,10 @@ path = "fuzz_targets/host_rerank.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_video_edits"
+path = "fuzz_targets/openai_video_edits.rs"
+test = false
+doc = false
+bench = false

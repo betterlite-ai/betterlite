@@ -15,9 +15,10 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use support::{Logger, ScriptedTransport, event, logger_for};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -154,7 +155,7 @@ fn init_report(scenario: &Scenario, error: &DatadogLlmObsError) -> Value {
 }
 
 fn run_scenarios(input: &Input) -> Result<Value, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .or_value_error()?;
@@ -167,10 +168,10 @@ fn run_scenarios(input: &Input) -> Result<Value, Box<HelperError>> {
     })
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         run_scenarios(input)
     }
 }

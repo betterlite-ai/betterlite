@@ -7,14 +7,15 @@ use serde_json::Value;
 use crate::OracleError;
 use crate::artifacts::{self, SdkArtifactInput};
 use crate::cli::Options;
-use crate::compare::{self, Difference};
-use crate::mock::MockProvider;
+use crate::compare;
 use crate::paths::artifact_root;
-use crate::process::sync_litellm;
-use crate::routing_mock_scripts::MockScript;
 use crate::sdk_http::capture::{Capture, Run, Sdk, capture, observation};
 use crate::sdk_http::python::{ProcessEnvironment, PythonSdk};
 use crate::sdk_http::{OracleLimits, SdkHttpCase, sides};
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::helpers::sync_litellm;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
 
 pub(crate) fn run_cases(
     options: &Options,
@@ -23,11 +24,11 @@ pub(crate) fn run_cases(
     let cancelled = AtomicBool::new(false);
     cases
         .iter()
-        .map(|case| run_case(options, case, &cancelled))
+        .map(|case| run_sdk_http_case(options, case, &cancelled))
         .collect()
 }
 
-fn run_case(
+fn run_sdk_http_case(
     options: &Options,
     case: &SdkHttpCase,
     cancelled: &AtomicBool,

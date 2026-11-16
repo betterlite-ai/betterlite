@@ -12,7 +12,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use super::support::{runtime, value_error};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct BearerInput {

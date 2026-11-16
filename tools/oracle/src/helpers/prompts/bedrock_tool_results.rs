@@ -17,7 +17,8 @@ use betterlite_prompts::message_content::Message;
 use serde::{Deserialize, Serialize};
 use tokio::runtime::{Builder, Runtime};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 // LiteLLM's default MAX_IMAGE_URL_DOWNLOAD_SIZE_MB; the cases never set the variable
 const LIMIT_MB: f64 = 50.0;

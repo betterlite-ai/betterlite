@@ -13,18 +13,20 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 use transport::{block_on, recording_sandbox, request_output, requests_output, single_request};
 
 mod transport;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input.operation {
             Operation::CreateBody => create_output(input),
             Operation::WaitUntilRunning => wait_until_running_output(input),
@@ -34,7 +36,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn create_output(input: &Input) -> crate::helpers::HelperResult {
+fn create_output(input: &Input) -> HelperResult {
     serde_json::to_value(create_body(&CreateSandbox {
         template: input.template.as_deref(),
         timeout: input.timeout,
@@ -50,7 +52,7 @@ fn create_output(input: &Input) -> crate::helpers::HelperResult {
     .map_err(|error| helper_error("BodyEncoding", error))
 }
 
-fn wait_until_running_output(input: &Input) -> crate::helpers::HelperResult {
+fn wait_until_running_output(input: &Input) -> HelperResult {
     let sandbox = recording_sandbox(input);
     let headers = headers(input)?;
     let request = WaitUntilRunning {
@@ -64,7 +66,7 @@ fn wait_until_running_output(input: &Input) -> crate::helpers::HelperResult {
     Ok(serde_json::json!({"requests": requests_output(&sandbox.http)?}))
 }
 
-fn wait_for_endpoint_output(input: &Input) -> crate::helpers::HelperResult {
+fn wait_for_endpoint_output(input: &Input) -> HelperResult {
     let ready_timeout = seconds(input.ready_timeout, "ready_timeout")?;
     let poll_interval = seconds(input.poll_interval, "poll_interval")?;
     let headers = headers(input)?;
@@ -88,7 +90,7 @@ fn wait_for_endpoint_output(input: &Input) -> crate::helpers::HelperResult {
     }))
 }
 
-fn run_output(input: &Input) -> crate::helpers::HelperResult {
+fn run_output(input: &Input) -> HelperResult {
     let sandbox = recording_sandbox(input);
     let lines = block_on(sandbox.post_code(post_request(input)?, Some(&sandbox.http)))?;
     let result = parse_lines(&lines);
@@ -149,7 +151,7 @@ fn seconds(value: Option<f64>, name: &str) -> Result<Duration, Box<HelperError>>
 
 fn helper_error<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),
