@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_models::fireworks_catalog_metadata::Catalog;
 use betterlite_prompts::arguments::json::Json;
-use serde_json::json;
+use rstest::rstest;
+use serde_json::{Value, json};
 
 use super::super::request::{RequestInput, transform_request};
 use super::{message, object, prompt_json, request_body};
@@ -29,19 +30,16 @@ fn transform_request_resolves_a_provider_prefixed_model() {
     );
 }
 
-#[test]
-fn transform_request_defaults_stream_options_for_streaming() {
-    for params in [
-        json!({"stream": true}),
-        json!({"stream": true, "stream_options": null}),
-        json!({"stream": true, "stream_options": {}}),
-    ] {
-        let body = request_body("models/llama", params);
-        assert_eq!(
-            body.get("stream_options"),
-            Some(&prompt_json(json!({"include_usage": true})))
-        );
-    }
+#[rstest]
+#[case::stream_only(json!({"stream": true}))]
+#[case::null_stream_options(json!({"stream": true, "stream_options": null}))]
+#[case::empty_stream_options(json!({"stream": true, "stream_options": {}}))]
+fn transform_request_defaults_stream_options_for_streaming(#[case] params: Value) {
+    let body = request_body("models/llama", params);
+    assert_eq!(
+        body.get("stream_options"),
+        Some(&prompt_json(json!({"include_usage": true})))
+    );
 }
 
 #[test]

@@ -1,7 +1,8 @@
 use betterlite_models::decisions::Json as HiddenJson;
 use betterlite_prompts::arguments::json::Json;
 use indexmap::IndexMap;
-use serde_json::{Number, json};
+use rstest::rstest;
+use serde_json::{Number, Value, json};
 
 use super::super::error::FireworksChatError;
 use super::super::reply::{Reply, ReplyInput, transform_response};
@@ -23,11 +24,14 @@ fn reply_body(body: &[u8], tools: Option<&Json>) -> Result<Reply, FireworksChatE
 }
 
 fn declared() -> Json {
-    serde_json::from_value(json!([{"type": "function", "function": {"name": "lookup"}}]))
-        .expect("declared tools")
+    serde_json::from_value(json!([
+        {"type": "function", "function": {"name": "lookup"}},
+        {"type": "function", "function": {"name": "search"}}
+    ]))
+    .expect("declared tools")
 }
 
-fn choice_body(content: &str) -> Vec<u8> {
+fn message_body(message: &Value) -> Vec<u8> {
     serde_json::to_vec(&json!({
         "id": "chatcmpl-1",
         "object": "chat.completion",
@@ -36,7 +40,7 @@ fn choice_body(content: &str) -> Vec<u8> {
         "choices": [{
             "index": 0_i64,
             "finish_reason": "stop",
-            "message": {"role": "assistant", "content": content}
+            "message": message,
         }]
     }))
     .expect("body JSON")
@@ -44,7 +48,8 @@ fn choice_body(content: &str) -> Vec<u8> {
 
 fn repaired_arguments(content: &str) -> Option<String> {
     let tools = declared();
-    let reply = reply_body(&choice_body(content), Some(&tools)).expect("reply");
+    let body = message_body(&json!({"role": "assistant", "content": content}));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     let choice = &reply.response.choices[0];
     let calls: &Vec<ToolCall> = choice.message.tool_calls.as_ref()?;
     assert_eq!(choice.message.content, None);
@@ -57,52 +62,11 @@ fn repaired_arguments(content: &str) -> Option<String> {
 
 fn content_after_repair(content: &str) -> Option<String> {
     let tools = declared();
-    let reply = reply_body(&choice_body(content), Some(&tools)).expect("reply");
+    let body = message_body(&json!({"role": "assistant", "content": content}));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     let choice = &reply.response.choices[0];
     assert!(choice.message.tool_calls.is_none());
     choice.message.content.clone()
-}
-
-fn tool_calls_body() -> Vec<u8> {
-    serde_json::to_vec(&json!({
-        "id": "chatcmpl-1",
-        "object": "chat.completion",
-        "created": 1_700_000_000_i64,
-        "model": "llama-v3",
-        "choices": [{
-            "index": 0_i64,
-            "finish_reason": "stop",
-            "message": {
-                "role": "assistant",
-                "content": r#"{"name":"lookup","arguments":"{}"}"#,
-                "tool_calls": []
-            }
-        }]
-    }))
-    .expect("body JSON")
-}
-
-fn tool_calls_body_with_one_call() -> Vec<u8> {
-    serde_json::to_vec(&json!({
-        "id": "chatcmpl-1",
-        "object": "chat.completion",
-        "created": 1_700_000_000_i64,
-        "model": "llama-v3",
-        "choices": [{
-            "index": 0_i64,
-            "finish_reason": "stop",
-            "message": {
-                "role": "assistant",
-                "content": r#"{"name":"lookup","arguments":"{}"}"#,
-                "tool_calls": [{
-                    "id": "call-1",
-                    "type": "function",
-                    "function": {"name": "search", "arguments": "{}"}
-                }]
-            }
-        }]
-    }))
-    .expect("body JSON")
 }
 
 #[test]
@@ -261,24 +225,21 @@ fn content_tool_call_becomes_a_tool_call_for_a_declared_name() {
     );
 }
 
-#[test]
-fn content_that_is_not_a_declared_function_stays_content() {
-    for content in [
-        r#"{"name":"json_tool_call","arguments":"{}"}"#,
-        r#"{"name":"undeclared","arguments":"{}"}"#,
-        "not json",
-        "[]",
-        "null",
-        r#"{"name":"lookup","arguments":4}"#,
-        r#"{"name":4,"arguments":"{}"}"#,
-        r#"{"name":"lookup","arguments":[]}"#,
-    ] {
-        assert_eq!(
-            content_after_repair(content),
-            Some(content.to_owned()),
-            "{content}"
-        );
-    }
+#[rstest]
+#[case::json_tool_call(r#"{"name":"json_tool_call","arguments":"{}"}"#)]
+#[case::undeclared(r#"{"name":"undeclared","arguments":"{}"}"#)]
+#[case::not_json("not json")]
+#[case::empty_list("[]")]
+#[case::null("null")]
+#[case::numeric_arguments(r#"{"name":"lookup","arguments":4}"#)]
+#[case::numeric_name(r#"{"name":4,"arguments":"{}"}"#)]
+#[case::list_arguments(r#"{"name":"lookup","arguments":[]}"#)]
+fn content_that_is_not_a_declared_function_stays_content(#[case] content: &str) {
+    assert_eq!(
+        content_after_repair(content),
+        Some(content.to_owned()),
+        "{content}"
+    );
 }
 
 #[test]
@@ -288,7 +249,8 @@ fn a_declared_json_tool_call_function_is_never_converted() {
     ]))
     .expect("declared tools");
     let content = format!(r#"{{"name":"{JSON_TOOL_NAME}","arguments":"{{}}"}}"#);
-    let reply = reply_body(&choice_body(&content), Some(&tools)).expect("reply");
+    let body = message_body(&json!({"role": "assistant", "content": content}));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     let choice = &reply.response.choices[0];
     assert_eq!(choice.message.content.as_deref(), Some(content.as_str()));
     assert!(choice.message.tool_calls.is_none());
@@ -297,7 +259,12 @@ fn a_declared_json_tool_call_function_is_never_converted() {
 #[test]
 fn content_reparsing_treats_an_empty_tool_calls_list_as_absent() {
     let tools = declared();
-    let reply = reply_body(&tool_calls_body(), Some(&tools)).expect("reply");
+    let body = message_body(&json!({
+        "role": "assistant",
+        "content": r#"{"name":"lookup","arguments":"{}"}"#,
+        "tool_calls": [],
+    }));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     let choice = &reply.response.choices[0];
     assert_eq!(choice.message.content, None);
     assert_eq!(choice.message.tool_calls.as_ref().map(Vec::len), Some(1));
@@ -306,7 +273,16 @@ fn content_reparsing_treats_an_empty_tool_calls_list_as_absent() {
 #[test]
 fn content_reparsing_skips_a_non_empty_tool_calls_list() {
     let tools = declared();
-    let reply = reply_body(&tool_calls_body_with_one_call(), Some(&tools)).expect("reply");
+    let body = message_body(&json!({
+        "role": "assistant",
+        "content": r#"{"name":"lookup","arguments":"{}"}"#,
+        "tool_calls": [{
+            "id": "call-1",
+            "type": "function",
+            "function": {"name": "search", "arguments": "{}"},
+        }],
+    }));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     let choice = &reply.response.choices[0];
     assert_eq!(
         choice.message.content.as_deref(),
@@ -317,8 +293,11 @@ fn content_reparsing_skips_a_non_empty_tool_calls_list() {
 
 #[test]
 fn content_reparsing_needs_tools() {
-    let reply =
-        reply_body(&choice_body(r#"{"name":"lookup","arguments":"{}"}"#), None).expect("reply");
+    let body = message_body(&json!({
+        "role": "assistant",
+        "content": r#"{"name":"lookup","arguments":"{}"}"#,
+    }));
+    let reply = reply_body(&body, None).expect("reply");
     assert_eq!(
         reply.response.choices[0].message.content.as_deref(),
         Some(r#"{"name":"lookup","arguments":"{}"}"#)
@@ -328,22 +307,22 @@ fn content_reparsing_needs_tools() {
 #[test]
 fn content_reparsing_is_skipped_for_a_malformed_tools_value() {
     let tools = serde_json::from_value(json!([{"type": "function"}])).expect("tools");
-    let reply = reply_body(
-        &choice_body(r#"{"name":"lookup","arguments":"{}"}"#),
-        Some(&tools),
-    )
-    .expect("reply");
+    let body = message_body(&json!({
+        "role": "assistant",
+        "content": r#"{"name":"lookup","arguments":"{}"}"#,
+    }));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     assert!(reply.response.choices[0].message.tool_calls.is_none());
 }
 
 #[test]
 fn content_reparsing_is_skipped_for_a_null_tools_value() {
     let tools = Json::Null;
-    let reply = reply_body(
-        &choice_body(r#"{"name":"lookup","arguments":"{}"}"#),
-        Some(&tools),
-    )
-    .expect("reply");
+    let body = message_body(&json!({
+        "role": "assistant",
+        "content": r#"{"name":"lookup","arguments":"{}"}"#,
+    }));
+    let reply = reply_body(&body, Some(&tools)).expect("reply");
     assert!(reply.response.choices[0].message.tool_calls.is_none());
 }
 

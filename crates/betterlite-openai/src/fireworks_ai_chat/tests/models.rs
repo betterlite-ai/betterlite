@@ -23,31 +23,19 @@ fn models_request_builds_the_default_account_url() {
     assert_eq!(request.headers.len(), 1);
 }
 
-#[test]
-fn models_request_trims_the_base() {
-    for (api_base, expected) in [
-        (
-            "https://custom/v1",
-            "https://custom/v1/accounts/acct/models",
-        ),
-        (
-            "https://custom/v1/",
-            "https://custom/v1/accounts/acct/models",
-        ),
-        ("https://custom/", "https://custom/v1/accounts/acct/models"),
-        (
-            "https://custom/v1/v1",
-            "https://custom/v1/v1/accounts/acct/models",
-        ),
-    ] {
-        let request = get_models_request(
-            Some(api_base),
-            Some(&secret("key")),
-            &models_env(None, Some("acct")),
-        )
-        .expect("request");
-        assert_eq!(request.url, expected);
-    }
+#[rstest]
+#[case::versioned("https://custom/v1", "https://custom/v1/accounts/acct/models")]
+#[case::versioned_with_slash("https://custom/v1/", "https://custom/v1/accounts/acct/models")]
+#[case::bare_host("https://custom/", "https://custom/v1/accounts/acct/models")]
+#[case::doubled_version("https://custom/v1/v1", "https://custom/v1/v1/accounts/acct/models")]
+fn models_request_trims_the_base(#[case] api_base: &str, #[case] expected: &str) {
+    let request = get_models_request(
+        Some(api_base),
+        Some(&secret("key")),
+        &models_env(None, Some("acct")),
+    )
+    .expect("request");
+    assert_eq!(request.url, expected);
 }
 
 #[test]

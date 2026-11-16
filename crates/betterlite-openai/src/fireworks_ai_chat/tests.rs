@@ -339,10 +339,9 @@ fn transform_tools_removes_strict_and_unpacks_legacy_definitions() {
     assert!(!function.contains_key("strict"));
     let parameters = function["parameters"].as_object().expect("parameters");
     assert!(!parameters.contains_key("definitions"));
-    assert_eq!(
-        parameters["properties"]["city"]["type"],
-        prompt_json(json!("string"))
-    );
+    let properties = parameters["properties"].as_object().expect("properties");
+    let city = properties["city"].as_object().expect("city");
+    assert_eq!(city["type"], prompt_json(json!("string")));
     assert_eq!(entries[1], prompt_json(json!({"type": "web_search"})));
 }
 
