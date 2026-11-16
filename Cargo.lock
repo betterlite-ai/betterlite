@@ -4390,6 +4390,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-core",
  "betterlite-server",
+ "form_urlencoded",
  "libfuzzer-sys",
  "serde_json",
 ]
