@@ -1,0 +1,19 @@
+kind: helper
+name: chirp-adapter-append-before-config
+call:
+  chirp_adapter:
+    function: commands
+    project: oracle-project
+    location: null
+    model: chirp_2
+    session_id: null
+    steps:
+      - '{"type":"input_audio_buffer.append","audio":"AAAA"}'
+      - '{"type":"input_audio_buffer.append"}'
+      - '{"type":"session.update","session":{"audio":{"input":{"format":{"type":"audio/pcm","rate":24000},"transcription":{"model":"chirp_2","language":"en"}}}}}'
+      - '{"type":"input_audio_buffer.append","audio":"AAAAAA=="}'
+      - '{"type":"input_audio_buffer.append","audio":"AAAA"}'
+      - '{"type":"input_audio_buffer.append","audio":"%%%"}'
+      - '{"type":"input_audio_buffer.append","audio":null}'
+env: {}
+compare: {ignore: []}

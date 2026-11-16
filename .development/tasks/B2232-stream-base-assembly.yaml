@@ -155,7 +155,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/stream_base_assembly*")"
       && grep -lq 'stream_base_assembly' tools/oracle/fuzz/corpus/helper_case/stream_base_assembly* && cargo nextest
-      run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_stream_base_assembly$/)'
+      run --locked -p betterlite-oracle-streaming --no-tests=fail -E 'test(/::helper_seeds_select_stream_base_assembly$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-conditional-sort-original-first
     why: Only a truthy created_at in the original first chunk hidden dict enables stable ascending sorting; absent

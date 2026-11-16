@@ -1,0 +1,44 @@
+{
+  "checks": {
+    "default_value": null,
+    "description": "Predicates the decision model answers about each request or response. A check flagged at or above its threshold blocks (action 'block') or is recorded (action 'log').",
+    "required": true,
+    "type": "string"
+  },
+  "decision_model": {
+    "default_value": null,
+    "description": "Decisions-API model that scores each check (e.g. a Jev deployment on this proxy)",
+    "required": true,
+    "type": "string"
+  },
+  "max_concurrent_decision_calls": {
+    "default_value": 8,
+    "description": "Maximum decisions calls in flight at once on this guardrail in each proxy worker. Calls beyond it wait for a free slot",
+    "required": false,
+    "type": "number"
+  },
+  "max_input_chars": {
+    "default_value": 24000,
+    "description": "Character budget for each text sent to the decision model. Texts longer than this are split into overlapping chunks that are each checked, so long inputs are fully screened",
+    "required": false,
+    "type": "number"
+  },
+  "optional_params": {
+    "description": "Optional parameters for the guardrail",
+    "required": false,
+    "type": "string"
+  },
+  "streaming_end_of_stream_only": {
+    "default_value": false,
+    "description": "For streamed responses, skip the scan every streaming_sampling_rate chunks and score the assembled response once at end of stream",
+    "required": false,
+    "type": "boolean"
+  },
+  "streaming_sampling_rate": {
+    "default_value": 5,
+    "description": "For streamed responses, score the accumulated response every Nth chunk. Each scan is a decisions call",
+    "required": false,
+    "type": "number"
+  },
+  "ui_friendly_name": "Decision Model"
+}
