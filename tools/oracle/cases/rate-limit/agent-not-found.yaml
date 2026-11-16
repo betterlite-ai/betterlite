@@ -1,0 +1,13 @@
+kind: helper
+name: rate-limit-agent-not-found
+call:
+  b3017:
+    agent_lookup:
+      config_agents:
+        - agent_name: alpha
+          agent_card_params: {model: gpt-4o}
+          litellm_params: {max_budget_per_session: 1}
+      registered_agents: []
+      lookup_id: missing
+env: {}
+compare: {ignore: []}
