@@ -524,6 +524,26 @@ async fn optional_extra_headers_of_the_wrong_shape_are_named(
 }
 
 #[tokio::test]
+async fn an_inner_header_the_wire_cannot_carry_is_a_500_before_the_record() {
+    let wire = Wire::ready();
+    let mut optional_params = ImageParams::new();
+    let inner = IndexMap::from([(String::from("bad name"), Json::Text(String::from("inner")))]);
+    optional_params.insert(String::from("extra_headers"), Json::Object(inner));
+    let mut image = SuppliedMedia::Bytes(IMAGE.to_vec());
+    let mut call = edit_call(&mut image, &optional_params, &[], Some(PROMPT));
+
+    let outcome = run(&wire, &mut call).await;
+
+    let error = outcome
+        .result
+        .expect_err("the seeded header cannot reach the wire");
+    assert!(matches!(error, EditCallError::HeaderName { .. }));
+    assert_eq!(error.status(), Some(500));
+    assert!(outcome.details.get("log_event_type").is_none());
+    assert!(wire.posts().is_empty());
+}
+
+#[tokio::test]
 async fn the_submission_carries_the_requested_timeout() {
     let wire = Wire::ready();
     let optional_params = ImageParams::new();
