@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::mcp_user_env_vars::error::UserEnvVarsError;
@@ -19,6 +19,12 @@ struct RowState {
     rows: Vec<JsonData>,
     events: Vec<String>,
     locks: Vec<i64>,
+}
+
+fn recording<'state>(state: &'state Mutex<RowState>, event: &str) -> MutexGuard<'state, RowState> {
+    let mut guard = state.lock().unwrap_or_else(PoisonError::into_inner);
+    guard.events.push(event.to_owned());
+    guard
 }
 
 impl RowStore {
@@ -58,10 +64,6 @@ impl RowStore {
 }
 
 impl RowState {
-    fn record(&mut self, event: &str) {
-        self.events.push(event.to_owned());
-    }
-
     fn find(&self, user_id: &str, server_id: &str) -> Option<JsonData> {
         self.rows
             .iter()
@@ -69,6 +71,22 @@ impl RowState {
                 text(row, "user_id") == Some(user_id) && text(row, "server_id") == Some(server_id)
             })
             .cloned()
+    }
+
+    fn select(&self, user_id: &str, server_ids: &[String]) -> Vec<JsonData> {
+        let mut selected = Vec::new();
+        for row in &self.rows {
+            let Some(row_user) = text(row, "user_id") else {
+                continue;
+            };
+            let Some(row_server) = text(row, "server_id") else {
+                continue;
+            };
+            if row_user == user_id && server_ids.iter().any(|wanted| wanted == row_server) {
+                selected.push(row.clone());
+            }
+        }
+        selected
     }
 
     fn put_row(&mut self, user_id: &str, server_id: &str, values_b64: &str) {
@@ -83,22 +101,18 @@ impl RowState {
                 return;
             }
         }
-        self.rows.push(row_json(user_id, server_id, values_b64));
-    }
-}
-
-fn row_json(user_id: &str, server_id: &str, values_b64: &str) -> JsonData {
-    JsonData::Object(BTreeMap::from([
-        ("user_id".to_owned(), JsonData::String(user_id.to_owned())),
-        (
+        let mut fields = BTreeMap::new();
+        fields.insert("user_id".to_owned(), JsonData::String(user_id.to_owned()));
+        fields.insert(
             "server_id".to_owned(),
             JsonData::String(server_id.to_owned()),
-        ),
-        (
+        );
+        fields.insert(
             "values_b64".to_owned(),
             JsonData::String(values_b64.to_owned()),
-        ),
-    ]))
+        );
+        self.rows.push(JsonData::Object(fields));
+    }
 }
 
 pub(super) fn text<'row>(row: &'row JsonData, name: &str) -> Option<&'row str> {
@@ -121,8 +135,7 @@ impl UserEnvVarTable for RowStore {
         user_id: &str,
         server_id: &str,
     ) -> Result<Option<JsonData>, UserEnvVarsError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.record("find_unique");
+        let state = recording(&self.state, "find_unique");
         Ok(state.find(user_id, server_id))
     }
 
@@ -131,84 +144,64 @@ impl UserEnvVarTable for RowStore {
         user_id: &str,
         server_ids: &[String],
     ) -> Result<Vec<JsonData>, UserEnvVarsError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.record("find_many");
-        Ok(state
-            .rows
-            .iter()
-            .filter(|row| {
-                text(row, "user_id") == Some(user_id)
-                    && server_ids
-                        .iter()
-                        .any(|wanted| text(row, "server_id") == Some(wanted.as_str()))
-            })
-            .cloned()
-            .collect())
+        Ok(recording(&self.state, "find_many").select(user_id, server_ids))
     }
 
-    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<usize, UserEnvVarsError> {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        state.record("delete_many");
-        let before = state.rows.len();
+    async fn delete_many(&self, user_id: &str, server_id: &str) -> Result<(), UserEnvVarsError> {
+        let mut state = recording(&self.state, "delete_many");
         state.rows.retain(|row| {
             text(row, "user_id") != Some(user_id) || text(row, "server_id") != Some(server_id)
         });
-        Ok(before.saturating_sub(state.rows.len()))
+        drop(state);
+        Ok(())
     }
 }
 
 struct RowsTransaction {
-    state: Arc<Mutex<RowState>>,
+    store: RowStore,
 }
 
 impl UserEnvVarsTransaction for RowsTransaction {
-    fn execute_raw<'a>(&'a self, _statement: &'a str, key: i64) -> TransactionFuture<'a, ()> {
+    fn execute_raw<'tx>(&'tx self, _statement: &'tx str, key: i64) -> TransactionFuture<'tx, ()> {
         Box::pin(async move {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.record("lock");
+            let mut state = recording(&self.store.state, "lock");
             state.locks.push(key);
+            drop(state);
             Ok(())
         })
     }
 
-    fn find_unique<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-    ) -> TransactionFuture<'a, Option<JsonData>> {
-        Box::pin(async move {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.record("find_unique");
-            Ok(state.find(user_id, server_id))
-        })
+    fn find_unique<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+    ) -> TransactionFuture<'tx, Option<JsonData>> {
+        Box::pin(async move { self.store.find_unique(user_id, server_id).await })
     }
 
-    fn upsert<'a>(
-        &'a self,
-        user_id: &'a str,
-        server_id: &'a str,
-        values_b64: &'a str,
-    ) -> TransactionFuture<'a, ()> {
+    fn upsert<'tx>(
+        &'tx self,
+        user_id: &'tx str,
+        server_id: &'tx str,
+        values_b64: &'tx str,
+    ) -> TransactionFuture<'tx, ()> {
         Box::pin(async move {
-            let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-            state.record("upsert");
+            let mut state = recording(&self.store.state, "upsert");
             state.put_row(user_id, server_id, values_b64);
+            drop(state);
             Ok(())
         })
     }
 }
 
 impl UserEnvVarsTransactions for RowStore {
-    fn in_transaction<'a>(
-        &'a self,
-        step: &'a dyn UserEnvVarsMergeStep,
-    ) -> TransactionFuture<'a, UserEnvVars> {
-        self.state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .record("tx");
+    fn in_transaction<'tx>(
+        &'tx self,
+        step: &'tx dyn UserEnvVarsMergeStep,
+    ) -> TransactionFuture<'tx, UserEnvVars> {
+        drop(recording(&self.state, "tx"));
         let transaction = RowsTransaction {
-            state: Arc::clone(&self.state),
+            store: self.clone(),
         };
         Box::pin(async move { step.apply(&transaction).await })
     }
