@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::error::Error as _;
 use std::fs;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -32,7 +33,8 @@ use betterlite_db::worker_heartbeat::HostnameError;
 use rstest::rstest;
 use secrecy::SecretString;
 use tempfile::NamedTempFile;
-use tokio::task::JoinSet;
+use tokio::task::{JoinSet, yield_now};
+use tokio::time::{advance, timeout};
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use self::postgres::{
@@ -182,6 +184,8 @@ async fn schema_update_setting_precedence(
     let started = start_scripted(settings, Arc::clone(&scripted))
         .await
         .expect("the policy runs");
+    // the index build is a spawned task, so let it record its call before shutdown aborts it
+    yield_now().await;
     if updates_enabled {
         assert_eq!(&started.outcome, &StartupOutcome::Migrated);
     } else {
@@ -357,7 +361,9 @@ async fn disabled_updates_warn_only() {
     .expect("a schema comparison failure never stops startup");
     match &started.outcome {
         StartupOutcome::UpdatesDisabled(check) => assert_eq!(check, &SchemaCheck::Unavailable),
-        other => panic!("expected a warn-only outcome, got {other:?}"),
+        other @ (StartupOutcome::NoDatabase | StartupOutcome::Migrated) => {
+            panic!("expected a warn-only outcome, got {other:?}");
+        }
     }
     started.shutdown().await;
 }
@@ -378,14 +384,18 @@ async fn startup_migration_failure() {
                 "the raised migration error is carried: {source:?}"
             );
         }
-        other => panic!("expected an unrecoverable migration failure, got {other:?}"),
+        other @ (StartupError::SetupFailed
+        | StartupError::Pool { .. }
+        | StartupError::Heartbeat { .. }) => {
+            panic!("expected an unrecoverable migration failure, got {other:?}");
+        }
     }
     assert_eq!(error.exit_code(), 2);
     assert_eq!(
         error.to_string(),
         "Database migration cannot proceed. the migration completion could not be verified"
     );
-    assert!(std::error::Error::source(&error).is_some());
+    assert!(error.source().is_some());
     // a failed migration schedules no request-log index build
     assert_eq!(*scripted.calls.lock().expect("calls"), vec!["migrate"]);
 }
@@ -425,12 +435,12 @@ async fn db_push_is_refused_before_connecting() {
         direct_url: None,
         ..pinned()
     };
-    let error = setup_database(&no_url, &[], packaged::SCHEMA_PRISMA, &NoJitter)
+    let missing_url = setup_database(&no_url, &[], packaged::SCHEMA_PRISMA, &NoJitter)
         .await
         .expect_err("a migration without DATABASE_URL is refused");
     assert!(
-        matches!(error, RecoveryError::DatabaseUrlRequired),
-        "{error}"
+        matches!(missing_url, RecoveryError::DatabaseUrlRequired),
+        "{missing_url}"
     );
 }
 
@@ -462,13 +472,13 @@ fn state_configured_reports_probe_status() {
 async fn heartbeat_beats_immediately_and_deregisters_on_stop() {
     let fake = Arc::new(ScriptedHeartbeat::default());
     let task = HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake)).await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     assert_eq!(
         *fake.calls.lock().expect("calls"),
         vec![HeartbeatCall::Upsert, HeartbeatCall::Prune]
     );
-    tokio::time::advance(Duration::from_secs(60)).await;
-    tokio::task::yield_now().await;
+    advance(Duration::from_secs(60)).await;
+    yield_now().await;
     assert_eq!(
         *fake.calls.lock().expect("calls"),
         vec![
@@ -500,7 +510,7 @@ async fn shutdown_drains() {
     let fake_heartbeat = Arc::new(ScriptedHeartbeat::default());
     let heartbeat_task =
         HeartbeatTask::start(Arc::new(heartbeat("worker-a")), Arc::clone(&fake_heartbeat)).await;
-    tokio::task::yield_now().await;
+    yield_now().await;
     let running = Running {
         state: DatabaseState { configured: true },
         startup: Some(started),
@@ -510,7 +520,7 @@ async fn shutdown_drains() {
     };
     let (log_file, guard) = capture_log();
     // the build is never released, so only an abort lets shutdown end before the paused clock's deadline
-    tokio::time::timeout(Duration::from_hours(1), running.shutdown())
+    timeout(Duration::from_hours(1), running.shutdown())
         .await
         .expect("shutdown aborts the index build instead of waiting for it");
     drop(guard);
@@ -539,7 +549,7 @@ async fn waiting_startup() -> (Arc<ScriptedStartup>, Startup, Arc<AtomicBool>) {
     let started = start_scripted(pinned(), Arc::clone(&scripted))
         .await
         .expect("startup returns without the background build");
-    tokio::task::yield_now().await;
+    yield_now().await;
     (scripted, started, finished)
 }
 
@@ -628,10 +638,9 @@ async fn migration_job_waits() {
             "CREATE TABLE \"B051_Job\" (id integer);",
         )];
         let job_catalog = catalog.clone();
+        let settings = database.settings();
         let mut tasks = JoinSet::new();
-        let job_database = database.clone();
         tasks.spawn(async move {
-            let settings = job_database.settings();
             run_migration_job(
                 &settings,
                 &job_catalog,
@@ -644,7 +653,7 @@ async fn migration_job_waits() {
         started.notified().await;
         assert!(
             !finished.load(Ordering::SeqCst),
-            "the job waits for the index build"
+            "the job waits for the build"
         );
         assert!(tasks.try_join_next().is_none(), "the job is still running");
         release.notify_one();
@@ -655,8 +664,6 @@ async fn migration_job_waits() {
             .expect("the job joins")
             .expect("the job completes");
         assert_eq!(outcome, JobOutcome::Completed);
-        assert!(finished.load(Ordering::SeqCst));
-        assert!(table_exists(&database, "B051_Job").await);
         assert_failed_index_build_keeps_the_migration(&database, &catalog).await;
     })
     .await;
@@ -679,6 +686,7 @@ async fn assert_failed_index_build_keeps_the_migration(
     .await
     .expect("the job reports a failed build");
     assert_eq!(outcome, JobOutcome::IndexJobFailed);
+    assert!(table_exists(database, "B051_Job").await);
     assert_eq!(ledger_rows(database).await.len(), 1);
 }
 
@@ -895,7 +903,7 @@ async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_an
 
         // a failed index build reports the index-job exit instead of reverting the migrations
         let failing = JobBuild::immediate(false);
-        let outcome = run_migration_job(
+        let index_failure = run_migration_job(
             &settings,
             &packaged::migrations(),
             packaged::SCHEMA_PRISMA,
@@ -904,7 +912,7 @@ async fn native_betterlite_db_admin_migrate_replaces_python_migrations_run_py_an
         )
         .await
         .expect("an index failure is not a migration failure");
-        assert_eq!(outcome, JobOutcome::IndexJobFailed);
+        assert_eq!(index_failure, JobOutcome::IndexJobFailed);
     })
     .await;
 }

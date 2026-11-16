@@ -30,8 +30,8 @@ enum DisableUpdate {
 }
 
 // The loader reads YAML, and a JSON scalar is a YAML scalar with its quoting already decided
-fn config_source(disable: Option<&DisableUpdate>) -> String {
-    let Some(disable) = disable else {
+fn config_source(setting: Option<&DisableUpdate>) -> String {
+    let Some(disable) = setting else {
         return "general_settings: {}\n".to_owned();
     };
     let rendered = match disable {

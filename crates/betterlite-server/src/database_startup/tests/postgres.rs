@@ -10,6 +10,7 @@ use clap::Parser;
 use deadpool_postgres::{Manager, Pool};
 use secrecy::{ExposeSecret as _, SecretString};
 use sha2::{Digest as _, Sha256};
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_postgres::types::{FromSql, ToSql};
@@ -19,6 +20,10 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(240);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCK_TIMEOUT: Duration = Duration::from_secs(120);
 const DEPLOY_TIMEOUT: Duration = Duration::from_secs(120);
+
+// The packaged catalog's constraint guards scan every schema in the database, so the fixtures
+// run one at a time and a finished test drops its schema before the next one migrates.
+static SCHEMA_LOCK: Mutex<()> = Mutex::const_new(());
 
 // The retry pauses are not under test here, and a fixed zero keeps the ledger ids and passes reproducible
 pub(crate) struct NoJitter;
@@ -76,6 +81,7 @@ where
     F: FnOnce(SchemaDatabase) -> Fut + Send + 'static,
     Fut: Future<Output = ()> + Send + 'static,
 {
+    let _guard = SCHEMA_LOCK.lock().await;
     let (database, fixture) = provision().await;
     let pool = database.pool.clone();
     let mut tasks = JoinSet::new();
