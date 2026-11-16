@@ -1,13 +1,10 @@
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 
 use betterlite_openai::api::container_contracts::error::ContainerError;
 use betterlite_openai::batches::error::BatchesError;
-use betterlite_openai::batches::records::BatchPage;
-use betterlite_openai::batches::sdk::{BatchesSdk, ClientConstructor};
 use betterlite_openai::evals::error::EvalsError;
 use betterlite_openai::files::error::FilesError;
-use betterlite_openai::files::transport::FileTransport;
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::vector_stores::error::VectorStoreError;
 use thiserror::Error;
@@ -33,6 +30,8 @@ type FilesFuture<'a> =
     Pin<Box<dyn Future<Output = Result<files::Outcome, FilesError>> + Send + 'a>>;
 type BatchesFuture<'a> =
     Pin<Box<dyn Future<Output = Result<batches::Outcome, BatchesError>> + Send + 'a>>;
+type DispatchFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<OpenAiResourceResult, OpenAiResourceError>> + Send + 'a>>;
 
 pub enum OpenAiResourceOperation<'a> {
     Files(FilesFuture<'a>),
@@ -42,25 +41,6 @@ pub enum OpenAiResourceOperation<'a> {
     Evals(Box<evals::Dispatch<'a>>),
     VectorStores(Box<vector_stores::Dispatch<'a>>),
     Unsupported { operation: &'static str },
-}
-
-impl<'a> OpenAiResourceOperation<'a> {
-    #[must_use]
-    pub fn files<T>(dispatch: files::Dispatch<'a, T>) -> Self
-    where
-        T: FileTransport + 'a,
-    {
-        Self::Files(Box::pin(dispatch.run()))
-    }
-
-    #[must_use]
-    pub fn batches<C>(dispatch: batches::Dispatch<'a, C>) -> Self
-    where
-        C: ClientConstructor + 'a,
-        C::Client: BatchesSdk<Page = BatchPage> + 'a,
-    {
-        Self::Batches(Box::pin(dispatch.run()))
-    }
 }
 
 pub enum OpenAiResourceResult {
@@ -93,29 +73,38 @@ pub enum OpenAiResourceError {
 }
 
 // The only dispatch a leaf call goes through; leaf errors are passed on unchanged, never rewritten
+// The four sync leaves run here, so the returned future carries only Send values
 #[must_use]
-pub async fn dispatch(
-    operation: OpenAiResourceOperation<'_>,
-) -> Result<OpenAiResourceResult, OpenAiResourceError> {
+pub fn dispatch(operation: OpenAiResourceOperation<'_>) -> DispatchFuture<'_> {
     match operation {
-        OpenAiResourceOperation::Files(future) => Ok(OpenAiResourceResult::Files(future.await?)),
+        OpenAiResourceOperation::Files(future) => {
+            Box::pin(async move { Ok(OpenAiResourceResult::Files(future.await?)) })
+        }
         OpenAiResourceOperation::Batches(future) => {
-            Ok(OpenAiResourceResult::Batches(future.await?))
+            Box::pin(async move { Ok(OpenAiResourceResult::Batches(future.await?)) })
         }
-        OpenAiResourceOperation::FineTuning(dispatch) => {
-            Ok(OpenAiResourceResult::FineTuning(dispatch.run()?))
-        }
-        OpenAiResourceOperation::Containers(dispatch) => {
-            Ok(OpenAiResourceResult::Containers(dispatch.run()?))
-        }
-        OpenAiResourceOperation::Evals(dispatch) => {
-            Ok(OpenAiResourceResult::Evals(dispatch.run()?))
-        }
-        OpenAiResourceOperation::VectorStores(dispatch) => {
-            Ok(OpenAiResourceResult::VectorStores(dispatch.run()?))
-        }
+        OpenAiResourceOperation::FineTuning(leaf) => Box::pin(ready(
+            leaf.run()
+                .map(OpenAiResourceResult::FineTuning)
+                .map_err(OpenAiResourceError::FineTuning),
+        )),
+        OpenAiResourceOperation::Containers(leaf) => Box::pin(ready(
+            leaf.run()
+                .map(OpenAiResourceResult::Containers)
+                .map_err(OpenAiResourceError::Containers),
+        )),
+        OpenAiResourceOperation::Evals(leaf) => Box::pin(ready(
+            leaf.run()
+                .map(OpenAiResourceResult::Evals)
+                .map_err(OpenAiResourceError::Evals),
+        )),
+        OpenAiResourceOperation::VectorStores(leaf) => Box::pin(ready(
+            leaf.run()
+                .map(OpenAiResourceResult::VectorStores)
+                .map_err(OpenAiResourceError::VectorStores),
+        )),
         OpenAiResourceOperation::Unsupported { operation } => {
-            Err(OpenAiResourceError::Unsupported { operation })
+            Box::pin(ready(Err(OpenAiResourceError::Unsupported { operation })))
         }
     }
 }
