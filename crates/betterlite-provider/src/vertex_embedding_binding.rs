@@ -22,10 +22,15 @@ use self::arguments::{
 
 pub mod adapter;
 pub mod arguments;
+pub mod calls;
 mod tests;
 
+// the framework's OperationRequest tests build this variant from its bare name, so it stays a unit; the call's data is VertexEmbeddingInput
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct VertexEmbeddingRequest;
+
 #[derive(Debug, Clone)]
-pub struct VertexEmbeddingRequest {
+pub struct VertexEmbeddingInput {
     pub model: String,
     pub input: EmbeddingInput,
     pub optional_params: Extra,
@@ -67,7 +72,7 @@ pub enum VertexEmbeddingError {
 }
 
 pub fn prepare(
-    request: VertexEmbeddingRequest,
+    request: VertexEmbeddingInput,
     defaults: Defaults<'_>,
     catalog: &ModelCatalog,
 ) -> Result<VertexEmbeddingPrepared, VertexEmbeddingPrepareError> {

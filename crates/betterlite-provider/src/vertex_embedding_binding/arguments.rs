@@ -11,7 +11,7 @@ use betterlite_vertex::gemini_embedding_records::input::{
 use secrecy::SecretString;
 use serde_json::Number;
 
-use super::{VertexEmbeddingPrepareError, VertexEmbeddingRequest};
+use super::{VertexEmbeddingInput, VertexEmbeddingPrepareError};
 
 // main.py's batch_embeddings call: api_key=None and no timeout, with the caller's headers
 #[derive(Debug, Clone)]
@@ -27,8 +27,7 @@ pub struct EmbedContentArguments {
     pub aembedding: bool,
 }
 
-// main.py's multimodal_embedding call: litellm_params and no timeout, no headers and no api_key.
-// The handler reads litellm_params only where LiteLLM ignores it.
+// main.py's multimodal_embedding call passes litellm_params but no timeout, headers or api_key
 #[derive(Debug, Clone)]
 pub struct MultimodalArguments {
     pub model: String,
@@ -59,7 +58,7 @@ pub struct TextArguments {
 }
 
 pub(super) fn embed_content_arguments(
-    request: VertexEmbeddingRequest,
+    request: VertexEmbeddingInput,
     resolution: Resolution,
 ) -> Result<EmbedContentArguments, VertexEmbeddingPrepareError> {
     Ok(EmbedContentArguments {
@@ -76,7 +75,7 @@ pub(super) fn embed_content_arguments(
 }
 
 pub(super) fn multimodal_arguments(
-    request: VertexEmbeddingRequest,
+    request: VertexEmbeddingInput,
     resolution: Resolution,
 ) -> MultimodalArguments {
     MultimodalArguments {
@@ -93,7 +92,7 @@ pub(super) fn multimodal_arguments(
 }
 
 pub(super) fn text_arguments(
-    request: VertexEmbeddingRequest,
+    request: VertexEmbeddingInput,
     resolution: Resolution,
 ) -> TextArguments {
     TextArguments {

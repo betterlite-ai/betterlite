@@ -1,0 +1,9 @@
+task: B1395
+deviations:
+  - what: An embedding request body that names vertex_credentials or vertex_ai_credentials is refused with a 400 before any Vertex call, and only the deployment's own litellm_params can pin credentials.
+    why: The option is a file path or a service-account document that signs the upstream call, so a client choosing it can read a file on the gateway host or borrow another identity. LiteLLM bans vertex_credentials in a request body by default and leaves vertex_ai_credentials open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L322
+  - what: The text and multimodal handlers receive no litellm_params, so request labels that LiteLLM reads from the deployment's litellm_params metadata are not sent.
+    why: The deployment parameters hold api_key and credentials as plain JSON text, and the handler arguments derive Debug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6837-L6929
+kept_bugs: []

@@ -6,7 +6,9 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
-use betterlite_config::sections::vertex_credential_sources::credential_source::ConfiguredCredentials;
+use betterlite_config::sections::vertex_credential_sources::credential_source::{
+    ConfiguredCredentials, CredentialSource,
+};
 use betterlite_config::sections::vertex_embedding_dispatch::Settings as EmbeddingSettings;
 use betterlite_core::vertex_embedding_dispatch::Defaults;
 use betterlite_models::catalog::{ModelCatalog, UnknownFields};
@@ -21,17 +23,20 @@ use betterlite_vertex::gemini_embedding_records::usage::EmbeddingUsage as Gemini
 use betterlite_vertex::multimodal_embedding_records::response::MultimodalEmbeddingAnswer;
 use betterlite_vertex::multimodal_embedding_records::usage::MediaPromptTokensDetails;
 use betterlite_vertex::vertex_embedding_call::error::VertexEmbeddingCallError;
+use rstest::rstest;
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::arguments::{EmbedContentArguments, MultimodalArguments, TextArguments};
 use super::{
-    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingPrepareError,
-    VertexEmbeddingPrepared, VertexEmbeddingRequest, VertexEmbeddingResult, execute, prepare,
+    VertexEmbeddingError, VertexEmbeddingHandlers, VertexEmbeddingInput,
+    VertexEmbeddingPrepareError, VertexEmbeddingPrepared, VertexEmbeddingResult, execute, prepare,
 };
 
 const TEXT_MODEL: &str = "text-embedding-005";
 const EMBED_CONTENT_MODEL: &str = "gemini-embedding-2";
+const ACCOUNT: &str =
+    r#"{"type": "service_account", "client_email": "sa@example.iam", "private_key": "key"}"#;
 
 fn catalog(source: &str) -> ModelCatalog {
     ModelCatalog::parse(source.as_bytes(), UnknownFields::Reject).expect("a catalog")
@@ -41,8 +46,8 @@ fn params(source: &str) -> Extra {
     serde_json::from_str(source).expect("optional params")
 }
 
-fn request(model: &str, input: EmbeddingInput, optional_params: &str) -> VertexEmbeddingRequest {
-    VertexEmbeddingRequest {
+fn request(model: &str, input: EmbeddingInput, optional_params: &str) -> VertexEmbeddingInput {
+    VertexEmbeddingInput {
         model: model.to_owned(),
         input,
         optional_params: params(optional_params),
@@ -262,6 +267,42 @@ fn resolved_settings_reach_every_arm() {
     assert!(matches!(arms[0], VertexEmbeddingPrepared::EmbedContent(_)));
     assert!(matches!(arms[1], VertexEmbeddingPrepared::Multimodal(_)));
     assert!(matches!(arms[2], VertexEmbeddingPrepared::Text(_)));
+}
+
+#[rstest]
+#[case::embed_content("embed_content", EMBED_CONTENT_MODEL, "", embed_content_catalog())]
+#[case::multimodal(
+    "multimodal",
+    TEXT_MODEL,
+    r#", "image": null"#,
+    ModelCatalog::default()
+)]
+#[case::text("text", TEXT_MODEL, "", ModelCatalog::default())]
+fn an_object_credential_reaches_every_arm(
+    #[case] arm: &str,
+    #[case] model: &str,
+    #[case] media: &str,
+    #[case] catalog: ModelCatalog,
+) {
+    let optional_params = format!(r#"{{"vertex_credentials": {ACCOUNT}{media}}}"#);
+    let call = prepared(
+        model,
+        EmbeddingInput::Text("hello".to_owned()),
+        &optional_params,
+        &catalog,
+    );
+    let (selected, credentials) = match call {
+        VertexEmbeddingPrepared::EmbedContent(call) => ("embed_content", call.credentials),
+        VertexEmbeddingPrepared::Multimodal(call) => ("multimodal", call.credentials),
+        VertexEmbeddingPrepared::Text(call) => ("text", call.credentials),
+    };
+    assert_eq!(selected, arm);
+    assert!(matches!(
+        credentials,
+        Some(ConfiguredCredentials::Source(
+            CredentialSource::ServiceAccount(_)
+        ))
+    ));
 }
 
 #[test]
