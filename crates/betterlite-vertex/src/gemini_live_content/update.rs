@@ -43,9 +43,9 @@ pub fn update_current_chunks(
             if !is_event_type(event, wanted) {
                 return None;
             }
-            let mut chunks = current.unwrap_or_default();
-            chunks.push(event.clone());
-            Some(chunks)
+            let mut appended = current.unwrap_or_default();
+            appended.push(event.clone());
+            Some(appended)
         }
     }
 }
