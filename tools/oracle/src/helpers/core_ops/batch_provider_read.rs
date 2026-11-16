@@ -19,6 +19,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use thiserror::Error;
+use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -230,18 +231,16 @@ impl Helper for Op {
             limits: ApiLimits::default(),
             settings,
         };
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .map_err(|error| {
-                Box::new(HelperError {
-                    class: "RuntimeError".to_owned(),
-                    status: None,
-                    error_type: None,
-                    param: None,
-                    code: None,
-                    message: error.to_string(),
-                })
-            })?;
+        let runtime = Builder::new_current_thread().build().map_err(|error| {
+            Box::new(HelperError {
+                class: "RuntimeError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
         match runtime.block_on(service.run(&input.request)) {
             Ok(result) => call_value(&result),
             Err(error) => Err(failure(&error)),
