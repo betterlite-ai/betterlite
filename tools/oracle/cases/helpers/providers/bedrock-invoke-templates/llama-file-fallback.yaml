@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-invoke-templates-llama-file-fallback
+call:
+  b9962:
+    cases:
+      - model: meta.llama3-8b-instruct-v1:0
+        messages: [{role: user, content: hi}]
+        provider: meta
+        hf_model: meta-llama/Meta-Llama-3-8B-Instruct
+        tokenizer_config:
+          bos_token: '<s>'
+          eos_token: '</s>'
+        template_file: "{{ bos_token }}{% for message in messages %}<{{ message['content'] }}>{% endfor %}{{ eos_token }}"
+env: {}
+compare: {ignore: []}
