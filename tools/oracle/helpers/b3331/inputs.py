@@ -1,4 +1,6 @@
-from typing import Final, Literal, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+
+from litellm.types.router import GenericLiteLLMParams
 
 Headers: TypeAlias = dict[str, str]
 Files: TypeAlias = list[tuple[str, bytes]]
@@ -101,3 +103,40 @@ Output: TypeAlias = (
     | UnsupportedOutput
     | ErrorClassOutput
 )
+
+
+# The inherited methods LiteLLM types with a bare dict or list, which hide their result types
+class EditOps(Protocol):
+    def get_video_edit_prefetch_params(
+        self, video_id: str, api_base: str, litellm_params: GenericLiteLLMParams, headers: Headers
+    ) -> tuple[str, Headers] | None: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_video_create_character_request(
+        self,
+        name: str,
+        video: bytes,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Headers,
+    ) -> tuple[str, Files]: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_video_get_character_request(
+        self,
+        character_id: str,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Headers,
+    ) -> tuple[str, Headers]: ...
+
+    # ast-grep-ignore: no-long-names
+    def transform_video_extension_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L384-L400
+        self,
+        prompt: str,
+        video_id: str,
+        seconds: str,
+        api_base: str,
+        litellm_params: GenericLiteLLMParams,
+        headers: Headers,
+    ) -> tuple[str, Headers]: ...

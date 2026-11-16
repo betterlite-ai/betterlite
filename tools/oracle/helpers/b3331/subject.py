@@ -1,5 +1,5 @@
 import datetime as dt
-from typing import Final, Protocol
+from typing import Final
 
 import httpx
 from litellm.litellm_core_utils.litellm_logging import Logging
@@ -9,7 +9,7 @@ from litellm.types.router import GenericLiteLLMParams
 from litellm.types.videos.main import VideoCreateOptionalRequestParams, VideoObject
 from typing_extensions import override
 
-from .inputs import Files, Headers
+from .inputs import EditOps, Files, Headers
 
 
 class Subject(BaseVideoConfig):
@@ -174,43 +174,6 @@ class Subject(BaseVideoConfig):
         status = "none" if custom_llm_provider is None else custom_llm_provider
         progress = 0 if client is None else 1
         return VideoObject(id=raw_response.text, object="video", status=status, progress=progress)
-
-
-# The inherited methods LiteLLM types with a bare dict or list, which hide their result types
-class EditOps(Protocol):
-    def get_video_edit_prefetch_params(
-        self, video_id: str, api_base: str, litellm_params: GenericLiteLLMParams, headers: Headers
-    ) -> tuple[str, Headers] | None: ...
-
-    # ast-grep-ignore: no-long-names
-    def transform_video_create_character_request(
-        self,
-        name: str,
-        video: bytes,
-        api_base: str,
-        litellm_params: GenericLiteLLMParams,
-        headers: Headers,
-    ) -> tuple[str, Files]: ...
-
-    # ast-grep-ignore: no-long-names
-    def transform_video_get_character_request(
-        self,
-        character_id: str,
-        api_base: str,
-        litellm_params: GenericLiteLLMParams,
-        headers: Headers,
-    ) -> tuple[str, Headers]: ...
-
-    # ast-grep-ignore: no-long-names
-    def transform_video_extension_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/videos/transformation.py#L384-L400
-        self,
-        prompt: str,
-        video_id: str,
-        seconds: str,
-        api_base: str,
-        litellm_params: GenericLiteLLMParams,
-        headers: Headers,
-    ) -> tuple[str, Headers]: ...
 
 
 SUBJECT: Final[Subject] = Subject()

@@ -1,3 +1,7 @@
+from typing import Final
+
+from litellm.llms.base_llm.videos.transformation import BaseVideoConfig
+
 from .inputs import Input, Output
 from .operations import (
     async_content_fallback,
@@ -10,12 +14,14 @@ from .operations import (
 )
 from .subject import SUBJECT
 
+CONFIG: Final[BaseVideoConfig] = SUBJECT
+
 
 def run(input_value: Input) -> Output:
     result: Output = {"value": None}
     match input_value["function"]:
         case "multipart_default":
-            result = {"value": SUBJECT.use_multipart_form_data()}
+            result = {"value": CONFIG.use_multipart_form_data()}
         case "prefetch_default":
             result = prefetch_default()
         case "complete_url":
