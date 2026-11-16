@@ -106,27 +106,27 @@ def request_answer(url: str, body: JsonObject) -> JsonValue:
 
 def run(input_value: Input) -> JsonValue:
     creates: list[JsonValue] = []
-    for step in input_value["creates"]:
+    for create_step in input_value["creates"]:
         body, _files, url = CONFIG.transform_video_create_request(
-            step["model"],
-            step["prompt"],
-            step["api_base"],
-            mapped_params(step),
+            create_step["model"],
+            create_step["prompt"],
+            create_step["api_base"],
+            mapped_params(create_step),
             GenericLiteLLMParams(),
             {},
         )
         creates.append(request_answer(url, body))
     edits: list[JsonValue] = []
-    for step in input_value["edits"]:
+    for edit_step in input_value["edits"]:
         url, body, _files = CONFIG.transform_video_edit_request(
-            step["prompt"],
-            step["video_id"],
-            step["api_base"],
+            edit_step["prompt"],
+            edit_step["video_id"],
+            edit_step["api_base"],
             GenericLiteLLMParams(),
             {},
             None,
-            step["extra_body"],
-            step["prefetched"],
+            edit_step["extra_body"],
+            edit_step["prefetched"],
         )
         edits.append(request_answer(url, body))
     answer: JsonObject = {"creates": creates, "edits": edits}
