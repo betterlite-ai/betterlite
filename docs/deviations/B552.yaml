@@ -18,8 +18,8 @@ deviations:
   - what: "Reply data entries are parsed into B004's embedding record, so entry fields that record does not declare are dropped; LiteLLM copies the raw reply dictionaries through."
     why: "The task binds the response projection to B004's embedding conversion, and its record is the typed entry betterlite carries."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L770
-  - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "+9", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'
-    why: "docs/compatibility.md reads a string into the field's type and refuses what does not fit instead of porting int()'s underscore, sign and unicode-digit parsing."
+  - what: 'An llm_provider-num_tokens value that Python''s int() accepts but a plain decimal count does not, such as "9_0", "-3", a unicode digit string or a count above u32, is a typed TokenCount error naming the value.'
+    why: "docs/compatibility.md reads a string into the field's type and refuses what does not fit instead of porting int()'s underscore, negative-value and unicode-digit parsing."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/cohere_transformation.py#L74-L79
 kept_bugs:
   - what: 'The filtered text input is built and then only tested for emptiness; the inherited OpenAI embedding call receives the original input, image data URIs included.'
