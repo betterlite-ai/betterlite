@@ -7,7 +7,7 @@ use crate::policy_persistence::tests::{Call, Fixture, attachment_row, id_filter}
 async fn returns_the_stored_attachment_or_none() {
     let mut row = attachment_row("a1", "pii", "2026-01-01T00:00:00Z");
     row.scope = Some("*".to_owned());
-    row.priority = Some(-1);
+    row.priority = Some(-1_i32);
     row.is_default = true;
     row.created_by = Some("admin".to_owned());
     row.updated_by = Some("editor".to_owned());

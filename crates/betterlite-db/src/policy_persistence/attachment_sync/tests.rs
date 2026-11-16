@@ -28,7 +28,7 @@ fn fixture() -> Fixture {
     scoped.keys = vec!["key-a".to_owned()];
     scoped.models = vec!["gpt-4".to_owned()];
     scoped.tags = vec!["prod".to_owned()];
-    scoped.priority = Some(5);
+    scoped.priority = Some(5_i32);
     scoped.is_default = true;
     let mut bare = attachment_row("a1", "bare", "2026-01-01T00:00:00Z");
     bare.teams = Vec::new();
@@ -44,8 +44,8 @@ fn fixture() -> Fixture {
 
 #[tokio::test]
 async fn puts_config_attachments_first_then_the_table_newest_first() {
-    let (logs, _guard) = CapturedLogs::install();
     let fixture = fixture();
+    let (logs, _guard) = CapturedLogs::install();
     sync_attachments_from_db(&fixture.attachment_store())
         .await
         .unwrap();

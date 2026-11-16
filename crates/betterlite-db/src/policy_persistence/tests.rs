@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 use std::future::{Future, ready};
 use std::marker::PhantomData;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_policy::attachment::AttachmentRegistry;
 use betterlite_policy::pipeline::json_value::JsonValue;
@@ -156,42 +156,44 @@ impl<Row> FakeTable<Row> {
     where
         Row: DeserializeOwned,
     {
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
         state.calls.push(call.clone());
         if state.failing.contains(&call.method()) {
             return Err(FakeFailure(call.method()));
         }
-        let rows = &mut state.rows;
-        let produced: Vec<JsonObject> = match call {
-            Call::Create(mut created) => {
-                let id = format!("{}-{}", self.id_field, rows.len());
-                created.insert(self.id_field.to_owned(), JsonValue::String(id));
-                rows.push(created.clone());
-                vec![created]
-            }
-            Call::FindUnique(filter) => rows
-                .iter()
-                .filter(|row| matches(row, &filter))
-                .take(1)
-                .cloned()
-                .collect(),
-            Call::FindMany(filter, order) => {
-                ordered(rows, &filter.unwrap_or_default(), order.as_ref())
-            }
-            Call::Update(filter, data) => {
-                let updated = rows.iter_mut().find(|row| matches(row, &filter)).unwrap();
-                updated.extend(data);
-                vec![updated.clone()]
-            }
-            Call::Delete(filter) => {
-                let position = rows.iter().position(|row| matches(row, &filter));
-                position
-                    .map(|index| rows.remove(index))
-                    .into_iter()
-                    .collect()
-            }
-        };
+        let produced = respond(&mut state.rows, self.id_field, call);
+        drop(state);
         Ok(produced.iter().map(decode).collect())
+    }
+}
+
+fn respond(rows: &mut Vec<JsonObject>, id_field: &str, call: Call) -> Vec<JsonObject> {
+    match call {
+        Call::Create(mut created) => {
+            let id = format!("{id_field}-{}", rows.len());
+            created.insert(id_field.to_owned(), JsonValue::String(id));
+            rows.push(created.clone());
+            vec![created]
+        }
+        Call::FindUnique(filter) => rows
+            .iter()
+            .filter(|row| matches(row, &filter))
+            .take(1)
+            .cloned()
+            .collect(),
+        Call::FindMany(filter, order) => ordered(rows, &filter.unwrap_or_default(), order.as_ref()),
+        Call::Update(filter, data) => {
+            let updated = rows.iter_mut().find(|row| matches(row, &filter)).unwrap();
+            updated.extend(data);
+            vec![updated.clone()]
+        }
+        Call::Delete(filter) => {
+            let position = rows.iter().position(|row| matches(row, &filter));
+            position
+                .map(|index| rows.remove(index))
+                .into_iter()
+                .collect()
+        }
     }
 }
 
