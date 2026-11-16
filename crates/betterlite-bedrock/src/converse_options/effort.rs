@@ -32,7 +32,6 @@ pub fn nova_reasoning_config(reasoning_effort: &str) -> Result<ParamMap, Convers
     )]))
 }
 
-// LiteLLM's REASONING_EFFORT_TO_OUTPUT_CONFIG_EFFORT: minimal folds into low, every other level stays.
 #[must_use]
 pub fn output_config_effort(effort: &str) -> Option<&'static str> {
     match effort {
@@ -45,7 +44,6 @@ pub fn output_config_effort(effort: &str) -> Option<&'static str> {
     }
 }
 
-// The membership check runs first; only a permitted effort reaches the model-capability check.
 pub async fn validate_adaptive_effort<Source, Transport>(
     model: &str,
     effort: &ParamValue,
@@ -82,7 +80,6 @@ fn adaptive_error(model: &str, effort: &ParamValue) -> ConverseOptionsError {
     }
 }
 
-// LiteLLM's f-string quotes a string with single quotes; the other JSON shapes keep their Python repr.
 #[must_use]
 pub fn effort_label(effort: &ParamValue) -> String {
     match effort {

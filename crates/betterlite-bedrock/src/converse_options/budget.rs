@@ -5,7 +5,6 @@ use crate::model_routes::{ParamMap, ParamValue};
 const BUDGET_FIELD: &str = "budget_tokens";
 const THINKING_FIELD: &str = "thinking";
 
-// LiteLLM's isinstance(budget, int): JSON booleans count as integers, floats and text do not.
 pub fn clamp_thinking_budget_tokens(optional_params: &mut ParamMap, minimum: i64) {
     let Some(ParamValue::Mapping(thinking)) = optional_params.get_mut(THINKING_FIELD) else {
         return;

@@ -8,7 +8,6 @@ use crate::raw::RawNumber;
 use crate::resolve::{parse_float, resolve_number};
 use crate::sections::Section;
 
-// LiteLLM's AmazonConverseConfig annotates every field None and stores only the values a caller passes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConverseOptionValues {
     pub max_tokens: Option<i64>,
@@ -19,7 +18,6 @@ pub struct ConverseOptionValues {
 }
 
 impl ConverseOptionValues {
-    // A deployment's litellm_params win field by field over litellm_settings.
     #[must_use]
     pub fn merged_with(&self, deployment: &Self) -> Self {
         Self {
@@ -68,7 +66,6 @@ struct RawDeployment {
     litellm_params: RawValues,
 }
 
-// Numbers take a RawNumber so an os.environ/ reference reads into the field's type, not a YAML error.
 #[derive(Debug, Default, Deserialize)]
 struct RawValues {
     #[serde(rename = "maxTokens")]
@@ -128,7 +125,6 @@ fn integer(text: &str, path: &str) -> Result<i64, ConfigError> {
 
 // Keep the integer or decimal spelling the YAML gave, as LiteLLM's Python value does.
 fn number(text: &str, path: &str) -> Result<Number, ConfigError> {
-    // the shared float parser names a non-numeric value the way every other float field does
     let _validated = parse_float(text, path)?;
     text.parse().map_err(|_source| ConfigError::InvalidScalar {
         path: path.to_owned(),

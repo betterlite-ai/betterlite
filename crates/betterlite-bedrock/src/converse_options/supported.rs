@@ -33,7 +33,6 @@ const TOOL_BASE_PREFIXES: [&str; 8] = [
     "amazon.nova",
 ];
 
-// LiteLLM probes the raw cost map per candidate; the regionless base is what it prefixes.
 #[must_use]
 pub fn supports_sampling_params(model: &str, catalogs: &CatalogSources<'_>) -> bool {
     let base_model = get_bedrock_base_model(model);
@@ -60,7 +59,6 @@ pub fn supports_sampling_params(model: &str, catalogs: &CatalogSources<'_>) -> b
     true
 }
 
-// No DeepSeek accepts the Anthropic-shaped thinking field, even when its supports_reasoning flag is true.
 #[must_use]
 pub async fn accepts_thinking_param<Source, Transport>(
     model: &str,
@@ -185,7 +183,6 @@ async fn push_capability_params<Source, Transport>(
     }
 }
 
-// LiteLLM asks the original model and then the regionless base, and either flag can answer.
 async fn supports_on<Source, Transport>(
     environment: &mut CapabilityEnvironment<'_, Source, Transport>,
     model: &str,

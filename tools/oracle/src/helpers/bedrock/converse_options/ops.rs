@@ -31,7 +31,6 @@ use tokio::runtime::{Builder, Runtime};
 use super::fixture::Fixture;
 use super::input::{Flag, Input};
 
-// The budget section only reads the environment, so the case's variables reach it through the loader.
 const FIXTURE_CONFIG: &str =
     "model_list:\n  - model_name: fixture\n    litellm_params: {model: bedrock/fixture}\n";
 
@@ -64,7 +63,6 @@ fn current_thread_runtime() -> Result<Runtime, Box<HelperError>> {
         .map_err(|error| helper_error(error, None))
 }
 
-// The ceiling fields are all normalize_opus_effort reads; the case map supplies them directly.
 struct CaseLookup<'case> {
     model_cost: &'case ParamMap,
 }

@@ -505,13 +505,15 @@ macro_rules! stub_section {
 }
 pub(crate) use stub_section;
 
-// a section's Raw is parsed in a frame of its own and held on the heap, so the frames of RawSections::parse and
-// ConfigLoader::load stay small however many sections there are, and deep YAML keeps its stack
+// each Raw is parsed in its own frame and boxed, so the load frames stay small as sections are added
 #[inline(never)]
-fn parse_section<Raw: DeserializeOwned>(
+fn parse_section<Raw>(
     source: &str,
     ignored: &mut Vec<BTreeSet<String>>,
-) -> Result<Box<Raw>, ConfigError> {
+) -> Result<Box<Raw>, ConfigError>
+where
+    Raw: DeserializeOwned,
+{
     let (raw, paths) = parse_view(source)?;
     ignored.push(paths);
     Ok(Box::new(raw))

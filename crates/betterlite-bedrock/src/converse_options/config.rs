@@ -8,7 +8,6 @@ const BLOCKS: [(&str, &str); 3] = [
     ("serviceTier", "ServiceTierBlock"),
 ];
 
-// LiteLLM's __init__ stores every non-None argument on the class; the bare annotations store nothing.
 #[must_use]
 pub fn class_attributes(arguments: &ParamMap) -> ParamMap {
     let mut attributes = ParamMap::from([(
@@ -30,7 +29,6 @@ pub fn class_attributes(arguments: &ParamMap) -> ParamMap {
     attributes
 }
 
-// get_config keeps the property descriptor that BaseConfig drops, so a caller carries its kind instead.
 #[must_use]
 pub fn get_config(attributes: &ParamMap) -> ParamMap {
     let mut config = ParamMap::new();

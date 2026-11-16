@@ -25,7 +25,6 @@ const EFFORT_FIELD: &str = "effort";
 const OUTPUT_CONFIG_FIELD: &str = "output_config";
 const THINKING_FIELD: &str = "thinking";
 
-// The model-capability probe reads the cost map under bedrock; bedrock_converse only tags raised errors.
 pub struct ReasoningSources<'source, Lookup> {
     pub catalogs: &'source CatalogSources<'source>,
     pub budgets: &'source Settings,

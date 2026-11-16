@@ -3,10 +3,8 @@ use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
 
 use crate::bedrock_model_capabilities::CapabilityError;
 
-// LiteLLM raises BadRequestError from every branch of the reasoning-effort handler.
 pub const BAD_REQUEST_STATUS: u16 = 400;
 pub const BEDROCK_CONVERSE_PROVIDER: &str = "bedrock_converse";
-// LiteLLM tags the Nova 2 rejection with this fixed model rather than the requested one.
 pub const NOVA_2_REJECTION_MODEL: &str = "amazon.nova-2-lite-v1:0";
 
 #[derive(Debug, thiserror::Error)]
@@ -42,7 +40,6 @@ pub enum ConverseOptionsError {
 }
 
 impl ConverseOptionsError {
-    // The capability probe raises an unhashable-value TypeError in LiteLLM, which carries no status.
     #[must_use]
     pub const fn status_code(&self) -> Option<u16> {
         match self {

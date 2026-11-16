@@ -53,7 +53,6 @@ pub fn is_deepseek_model(model: &str, base_model: &str) -> bool {
         .any(|name| name.contains(DEEPSEEK_MARKER))
 }
 
-// DeepSeek R1 always reasons, so it rejects every reasoning request shape the other DeepSeek models accept.
 #[must_use]
 pub fn rejects_reasoning_effort(model: &str, base_model: &str) -> bool {
     [model, base_model]

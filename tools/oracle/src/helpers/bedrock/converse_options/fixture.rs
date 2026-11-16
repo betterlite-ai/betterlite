@@ -44,7 +44,6 @@ pub(super) enum FixtureError {
     Patterns(#[from] CatalogLookupError),
 }
 
-// The cases name no huggingface model, so the transport refuses rather than reaching the network.
 pub(super) struct NoHfTransport;
 
 #[derive(Debug, thiserror::Error)]
@@ -62,7 +61,6 @@ impl ModelInfoClient for NoHfTransport {
     }
 }
 
-// Every capability flag sits in model_cost, so the raw catalog walk sees only the fixture.
 pub(super) struct Fixture {
     entries: ModelCostMap,
     typed: ModelCatalog,
@@ -82,7 +80,6 @@ impl Fixture {
         let bytes = serde_json::to_vec(model_cost)?;
         Ok(Self {
             entries: ModelCostMap::parse(&bytes)?,
-            // every case names its provider, so resolution never reads the typed catalog
             typed: ModelCatalog::parse(b"{}", UnknownFields::Warn)?,
             provider_catalog: Catalog::new(),
             hf: HfConfigClient {

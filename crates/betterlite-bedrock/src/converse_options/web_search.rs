@@ -1,6 +1,5 @@
 use crate::model_routes::{ParamMap, ParamValue};
 
-// LiteLLM ignores every web_search_options member, so an empty mapping enables grounding by itself.
 #[must_use]
 pub fn map_web_search_options(model: &str) -> Option<ParamMap> {
     if !model.to_lowercase().contains("nova") {
