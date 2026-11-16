@@ -1,0 +1,6 @@
+kind: helper
+name: responses-scannable-instructions-skip-system
+call:
+  b3671: {"function": "request_view", "scenarios": [{"data": {"instructions": "be brief"}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"instructions": "be brief"}, "skip_system": true, "covers_full": false, "reply": null}, {"data": {"instructions": ""}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {"instructions": null}, "skip_system": false, "covers_full": false, "reply": null}, {"data": {}, "skip_system": false, "covers_full": false, "reply": null}]}
+env: {}
+compare: {ignore: []}

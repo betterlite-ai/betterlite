@@ -187,6 +187,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "workflow_event_body"
+path = "fuzz_targets/workflow_event_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "workflow_run_body"
 path = "fuzz_targets/workflow_run_body.rs"
 test = false
@@ -210,6 +217,20 @@ bench = false
 [[bin]]
 name = "spend_totals_query"
 path = "fuzz_targets/spend_totals_query.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "guardrail_write_body"
+path = "fuzz_targets/guardrail_write_body.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "blocked_words_file"
+path = "fuzz_targets/blocked_words_file.rs"
 test = false
 doc = false
 bench = false
