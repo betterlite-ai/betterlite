@@ -15,8 +15,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L301-L312
   - what: >-
       A file record whose position cannot be read, whose rewind fails or whose read fails ends in a typed Stream error
-      carrying the io error, where LiteLLM's BytesIO branch, its BufferedReader branch and its generic read() branch
-      let the OSError escape the transform as an unhandled 500.
+      carrying the io error, where LiteLLM's BytesIO and BufferedReader branches at L318-L335 and its generic read()
+      branch at L346-L350 let the OSError escape the transform as an unhandled 500.
     why: The record is the caller's upload, so the failure is named and chained instead of crashing the request; no
       working setup sends a stream that refuses to be read.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_edit/vertex_imagen_transformation.py#L318-L350
