@@ -6,4 +6,7 @@ deviations:
   - what: The polling timeout is the configured polling_timeout_seconds rather than the fixed 600 second constant.
     why: RunwaySettings (B1534) reads RUNWAYML_POLLING_TIMEOUT with 600 as its default, and the image transform passes that value to the shared poller. LiteLLM always passes its RUNWAYML_POLLING_TIMEOUT constant, so the two agree unless an operator sets the env var.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L357-L363
+  - what: A mapping output member whose url or b64_json holds a non-string value keeps its image entry with that field dropped; LiteLLM raises a validation error for the whole response.
+    why: B1534 hands this task an undecoded member when any value in the mapping is not a string, and the entry is appended the way LiteLLM's dict branch appends it while the one malformed field is left out. LiteLLM passes the raw field to its pydantic ImageObject, whose str fields reject other JSON types, so a working RunwayML setup (string URLs only) never meets the rejection, while one odd member would otherwise fail every image in the job and its charge.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L142-L149
 kept_bugs: []
