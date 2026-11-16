@@ -4,7 +4,7 @@ use rstest::rstest;
 use serde_json::json;
 
 use super::{
-    MODEL, OPERATION, PROVIDER, encoded, number, object, request_data, settings, text, utc,
+    MODEL, OPERATION, PROVIDER, context, encoded, number, object, request_data, settings, text, utc,
 };
 use crate::vertex_veo_operation::error::VeoOperationError;
 use crate::vertex_veo_operation::response::{create_response, edit_response, status_response};
@@ -95,7 +95,7 @@ fn a_vertex_create_time_becomes_the_created_at() {
 }
 
 #[rstest]
-#[case::unparseable(text("not a time"))]
+#[case::unparsable(text("not a time"))]
 #[case::empty(text(""))]
 #[case::null(Json::Null)]
 fn an_invalid_create_time_uses_the_current_second(#[case] create_time: Json) {
@@ -120,8 +120,12 @@ fn create_encodes_the_provider_and_returns_processing() {
         ("durationSeconds", number(6)),
         ("resolution", text("1080p")),
     ]));
-    let video = create_response(MODEL, &body, Some(PROVIDER), Some(&data), &settings(8))
-        .expect("the create converts");
+    let video = create_response(
+        MODEL,
+        &body,
+        &context(Some(PROVIDER), Some(&data), &settings(8)),
+    )
+    .expect("the create converts");
     assert_eq!(video.status, "processing");
     assert_eq!(video.model.as_deref(), Some(MODEL));
     assert_eq!(
@@ -140,8 +144,8 @@ fn create_encodes_the_provider_and_returns_processing() {
 #[test]
 fn create_without_a_provider_keeps_the_operation_name() {
     let body = encoded(&json!({"name": OPERATION}));
-    let video =
-        create_response(MODEL, &body, None, None, &settings(8)).expect("the create converts");
+    let video = create_response(MODEL, &body, &context(None, None, &settings(8)))
+        .expect("the create converts");
     assert_eq!(video.id, OPERATION);
     assert_eq!(
         serde_json::to_value(&video.usage).expect("the usage converts"),
@@ -149,26 +153,37 @@ fn create_without_a_provider_keeps_the_operation_name() {
     );
 }
 
+// create and edit refuse the same absent or null name, each with its own message
+#[derive(Clone, Copy, Debug)]
+enum Start {
+    Create,
+    Edit,
+}
+
 #[rstest]
-#[case::absent(b"{}".as_slice())]
-#[case::null(br#"{"name": null}"#.as_slice())]
-fn create_requires_an_operation_name(#[case] body: &[u8]) {
-    assert!(matches!(
-        create_response(MODEL, body, None, None, &settings(8)),
-        Err(VeoOperationError::MissingName)
-    ));
-    assert_eq!(
-        VeoOperationError::MissingName.to_string(),
-        "No operation name in Veo response"
-    );
+#[case::create_absent(Start::Create, b"{}".as_slice())]
+#[case::create_null(Start::Create, br#"{"name": null}"#.as_slice())]
+#[case::edit_absent(Start::Edit, b"{}".as_slice())]
+#[case::edit_null(Start::Edit, br#"{"name": null}"#.as_slice())]
+fn a_missing_operation_name_is_rejected(#[case] start: Start, #[case] body: &[u8]) {
+    let error = match start {
+        Start::Create => create_response(MODEL, body, &context(None, None, &settings(8))),
+        Start::Edit => edit_response(body, &context(None, None, &settings(8))),
+    }
+    .expect_err("the operation name is missing");
+    let message = match start {
+        Start::Create => "No operation name in Veo response",
+        Start::Edit => "No operation name in Veo edit response",
+    };
+    assert_eq!(error.to_string(), message);
 }
 
 #[test]
 fn edit_reads_the_model_and_the_request_usage() {
     let body = encoded(&json!({"name": OPERATION}));
     let data = request_data(object([("durationSeconds", number(4))]));
-    let video =
-        edit_response(&body, Some(PROVIDER), Some(&data), &settings(8)).expect("the edit converts");
+    let video = edit_response(&body, &context(Some(PROVIDER), Some(&data), &settings(8)))
+        .expect("the edit converts");
     assert_eq!(video.status, "processing");
     assert_eq!(video.model.as_deref(), Some(MODEL));
     assert_eq!(
@@ -184,21 +199,8 @@ fn edit_reads_the_model_and_the_request_usage() {
 #[test]
 fn edit_without_a_model_keeps_an_empty_model() {
     let body = encoded(&json!({"name": "operations/op-1"}));
-    let video = edit_response(&body, None, None, &settings(8)).expect("the edit converts");
+    let video =
+        edit_response(&body, &context(None, None, &settings(8))).expect("the edit converts");
     assert_eq!(video.model.as_deref(), Some(""));
     assert_eq!(video.id, "operations/op-1");
-}
-
-#[rstest]
-#[case::absent(b"{}".as_slice())]
-#[case::null(br#"{"name": null}"#.as_slice())]
-fn edit_requires_an_operation_name(#[case] body: &[u8]) {
-    assert!(matches!(
-        edit_response(body, None, None, &settings(8)),
-        Err(VeoOperationError::MissingEditName)
-    ));
-    assert_eq!(
-        VeoOperationError::MissingEditName.to_string(),
-        "No operation name in Veo edit response"
-    );
 }

@@ -5,6 +5,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use betterlite_config::sections::vertex_credential_sources::VertexSettings;
+use betterlite_config::sections::vertex_credential_sources::vertex_settings::AdcEnvironment;
 use betterlite_prompts::arguments::json::{Json, Object};
 use jiff::tz::TimeZone;
 use rstest::rstest;
@@ -12,6 +13,7 @@ use serde_json::Number;
 
 use super::content::content_response;
 use super::decode::decode_vertex_veo_operation;
+use super::response::VideoContext;
 use crate::provider_metadata::timestamp::LocalTimeContext;
 
 mod contents;
@@ -51,8 +53,23 @@ fn request_data(parameters: Object) -> Object {
 
 fn settings(default_video_duration_seconds: i64) -> VertexSettings {
     VertexSettings {
+        project: None,
+        location: None,
+        credentials: None,
+        adc: AdcEnvironment::default(),
         default_video_duration_seconds,
-        ..VertexSettings::default()
+    }
+}
+
+fn context<'a>(
+    provider: Option<&'a str>,
+    request_data: Option<&'a Object>,
+    settings: &'a VertexSettings,
+) -> VideoContext<'a> {
+    VideoContext {
+        provider,
+        request_data,
+        settings,
     }
 }
 
@@ -88,7 +105,9 @@ fn replays_the_vertex_veo_operation_corpus(
     let content = content_response(&bytes);
     if name.starts_with("content-video") {
         assert!(content.is_ok(), "{name}");
-    } else if name.starts_with("content-") {
+        return;
+    }
+    if name.starts_with("content-") {
         assert!(content.is_err(), "{name}");
     }
 }

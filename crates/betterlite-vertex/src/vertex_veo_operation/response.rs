@@ -3,24 +3,41 @@ use betterlite_openai::openai_video_identifiers::ids::encode_video_id_with_provi
 use betterlite_openai::videos::reply::{VideoObject, VideoObjectType};
 use betterlite_prompts::arguments::json::Object;
 
-use super::decode::{decode_vertex_veo_operation, decoded_json};
+use super::decode::{VertexVeoOperation, decode_vertex_veo_operation, decoded_json};
 use super::error::VeoOperationError;
 use super::usage::video_usage;
 use crate::provider_metadata::timestamp::{LocalTimeContext, decode_vertex_timestamp};
+
+// the caller-side inputs a processing response reads: whose provider it is, the options it asked for and the loaded settings
+pub struct VideoContext<'a> {
+    pub provider: Option<&'a str>,
+    pub request_data: Option<&'a Object>,
+    pub settings: &'a VertexSettings,
+}
 
 // transform_video_create_response: the operation name is the polling id, and the model is the one the caller asked for
 pub fn create_response(
     model: &str,
     body: &[u8],
-    provider: Option<&str>,
-    request_data: Option<&Object>,
-    settings: &VertexSettings,
+    context: &VideoContext<'_>,
 ) -> Result<VideoObject, VeoOperationError> {
     let operation = decode_vertex_veo_operation(body)?;
+    processing_video(
+        required_name(&operation, VeoOperationError::MissingName)?,
+        model,
+        context,
+    )
+}
+
+// both transforms refuse a response whose name is absent or empty, with the message their LiteLLM method raises
+fn required_name(
+    operation: &VertexVeoOperation,
+    missing: VeoOperationError,
+) -> Result<&str, VeoOperationError> {
     if operation.name.is_empty() {
-        return Err(VeoOperationError::MissingName);
+        return Err(missing);
     }
-    processing_video(&operation.name, provider, model, request_data, settings)
+    Ok(&operation.name)
 }
 
 // transform_video_status_retrieve_response: a truthy error wins over done, and usage is never inferred
@@ -69,32 +86,22 @@ pub fn status_response(
 // transform_video_edit_response: the model comes from the operation name, and the request data carries the usage
 pub fn edit_response(
     body: &[u8],
-    provider: Option<&str>,
-    request_data: Option<&Object>,
-    settings: &VertexSettings,
+    context: &VideoContext<'_>,
 ) -> Result<VideoObject, VeoOperationError> {
     let operation = decode_vertex_veo_operation(body)?;
-    if operation.name.is_empty() {
-        return Err(VeoOperationError::MissingEditName);
-    }
-    let model = operation.name.split('/').nth(7).unwrap_or_default();
-    processing_video(&operation.name, provider, model, request_data, settings)
+    let name = required_name(&operation, VeoOperationError::MissingEditName)?;
+    let model = name.split('/').nth(7).unwrap_or_default();
+    processing_video(name, model, context)
 }
 
 // transform_video_create_response and transform_video_edit_response both start a processing video with request usage
 fn processing_video(
-    operation_name: &str,
-    provider: Option<&str>,
+    name: &str,
     model: &str,
-    request_data: Option<&Object>,
-    settings: &VertexSettings,
+    context: &VideoContext<'_>,
 ) -> Result<VideoObject, VeoOperationError> {
     Ok(VideoObject {
-        id: encode_video_id_with_provider(
-            operation_name,
-            provider.unwrap_or_default(),
-            Some(model),
-        ),
+        id: encode_video_id_with_provider(name, context.provider.unwrap_or_default(), Some(model)),
         object: VideoObjectType::Video,
         status: "processing".to_owned(),
         created_at: None,
@@ -106,6 +113,9 @@ fn processing_video(
         seconds: None,
         size: None,
         model: Some(model.to_owned()),
-        usage: Some(decoded_json(video_usage(request_data, settings)?)?),
+        usage: Some(decoded_json(video_usage(
+            context.request_data,
+            context.settings,
+        )?)?),
     })
 }
