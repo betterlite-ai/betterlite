@@ -61,7 +61,9 @@ where
     Clock: Fn() -> DateTime<Utc> + Sync,
 {
     let scope = page_scope(request)?;
-    let Some(page_size) = NonZeroI64::new(request.page_size).filter(|size| size.get() > 0) else {
+    let Some(page_size) =
+        NonZeroI64::new(request.page_size).filter(|size| size.get().is_positive())
+    else {
         return Err(PagesError::Repository(
             DailyActivityRepositoryError::Pagination,
         ));
