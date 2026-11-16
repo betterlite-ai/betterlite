@@ -1,0 +1,30 @@
+task: B5841
+deviations:
+  - what: A tool message without tool_call_id next to a multi-call assistant message leaves the whole group untouched.
+    why: LiteLLM reads tool_call["tool_call_id"] there, and the raw KeyError becomes a generic 500. Malformed history is better sent on unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L63-L148
+  - what: _handle_invalid_parallel_tool_calls and _should_convert_tool_call_to_json_mode are built privately in databricks_chat.
+    why: No backlog entry owns convert_dict_to_response.py and Databricks is the only caller in this folder. They keep LiteLLM's exact behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L374-L416
+  - what: A reply tool call without an id gets one from an injected IdSource instead of a fresh uuid4.
+    why: LiteLLM draws uuid4 inside Message(), so a replay could not compare two runs; betterlite injects the source so tests and the oracle pin it. The expanded multi_tool_use.parallel ids stay "{parent id}_{position}" as LiteLLM builds them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1288-L1310
+  - what: A tool call of type custom in a reply is rejected with a 500 instead of being passed through.
+    why: Databricks never sends them, and the typed reply has no custom shape; passing an unvalidated payload would hide a broken upstream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L1329-L1340
+  - what: The multi_tool_use.parallel repair expands each original call at its own position instead of rewriting the list in place while shifting the index.
+    why: LiteLLM's in-place rewrite reads past a longer expansion and drops or repeats later calls, which loses user-visible tool results.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L374-L416
+  - what: A stream chunk whose created is null is a shape error.
+    why: LiteLLM fills in int(time.time()). A transform with no clock cannot, and reading the wall clock would make the parser's output untestable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2130-L2157
+kept_bugs:
+  - what: A reply tool call with dict arguments serializes as standard JSON instead of json.dumps text, whose separators and ensure_ascii differ.
+    why: docs/compatibility.md keeps standard JSON output rather than Python's formatting.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L502-L703
+  - what: A non-gateway get_complete_url keeps a trailing slash on the api base, so the URL carries a double slash.
+    why: A working Databricks setup can send that exact URL and Databricks accepts it, so betterlite sends it too.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/chat/transformation.py#L160-L282
+  - what: A falsy tool_calls value in a delta ({}, "", 0, false) is dumped as it came instead of becoming null, and a choice index passes through unvalidated, so "3" stays "3".
+    why: LiteLLM's Delta and StreamingChoices assign both values raw, and a client streaming Databricks output may already match that shape.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006-L2038
