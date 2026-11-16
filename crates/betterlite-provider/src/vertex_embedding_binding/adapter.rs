@@ -52,7 +52,11 @@ where
         async move {
             let embedding_call = EmbeddingCall {
                 provider: TargetProvider::Vertex,
-                execution: execution(call.aembedding),
+                execution: if call.aembedding {
+                    Execution::Async
+                } else {
+                    Execution::Sync
+                },
                 model: &call.model,
                 input: &call.input,
                 optional_params: &call.optional_params,
@@ -99,7 +103,9 @@ where
             };
             let clients = MultimodalClients {
                 pooled: self.pooled,
-                caller: self.supplied.map(|supplied| supplied as &dyn EmbeddingPost),
+                caller: self
+                    .supplied
+                    .map(|supplied| -> &dyn EmbeddingPost { supplied }),
             };
             multimodal_embedding(&multimodal_call, self.catalog, self.cache, &clients).await
         }
@@ -132,17 +138,11 @@ where
             };
             let clients = TextClients {
                 pooled: self.pooled,
-                caller: self.supplied.map(|supplied| supplied as &dyn EmbeddingPost),
+                caller: self
+                    .supplied
+                    .map(|supplied| -> &dyn EmbeddingPost { supplied }),
             };
             text_embedding(&text_call, self.catalog, &auth, &clients).await
         }
-    }
-}
-
-const fn execution(aembedding: bool) -> Execution {
-    if aembedding {
-        Execution::Async
-    } else {
-        Execution::Sync
     }
 }
