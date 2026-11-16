@@ -1,9 +1,20 @@
 #![cfg(test)]
 
+use std::future::Future;
+
+use betterlite_anthropic::anthropic_capability_catalog::OptionalParams;
+use betterlite_anthropic::anthropic_capability_catalog::thinking::ThinkingError;
+use betterlite_anthropic::capabilities::reasoning::ReasoningEffortError;
+use betterlite_core::api::messages_native_transform::capabilities::{
+    ADAPTIVE_THINKING, LegacyShapes, Thinking, ThinkingCapabilities,
+};
+use betterlite_models::decisions::Json as DecisionJson;
 use betterlite_prompts::arguments::json::{Json, Object};
+use indexmap::IndexMap;
 use rstest::rstest;
 use serde_json::{Number, Value, json};
 
+use crate::databricks_chat::request::params::map_openai_params;
 use crate::databricks_chat::request::{
     SUPPORTED_OPENAI_PARAMS, get_complete_url, get_config, get_required_params, pop_user_agent,
     pop_user_agent_parameter, should_fake_stream,
@@ -94,11 +105,11 @@ fn an_empty_user_agent_falls_through_to_the_databricks_one(#[case] value: Value)
 }
 
 #[rstest]
-#[case(json!(5), "user_agent")]
-#[case(json!([]), "user_agent")]
-#[case(json!({}), "databricks_user_agent")]
-fn a_non_string_user_agent_is_a_bad_request(#[case] value: Value, #[case] name: &str) {
-    let mut params = object(json!({ (name): value }));
+#[case(json!({"user_agent": 5}), "user_agent")]
+#[case(json!({"user_agent": []}), "user_agent")]
+#[case(json!({"databricks_user_agent": {}}), "databricks_user_agent")]
+fn a_non_string_user_agent_is_a_bad_request(#[case] fixture: Value, #[case] name: &str) {
+    let mut params = object(fixture);
     let error = pop_user_agent_parameter(&mut params).expect_err("the user agent is invalid");
     assert_eq!(error.status_code(), 400);
     assert!(
@@ -155,4 +166,385 @@ fn the_supported_params_are_the_openai_subset_databricks_maps() {
     assert!(SUPPORTED_OPENAI_PARAMS.contains(&"response_format"));
     assert!(SUPPORTED_OPENAI_PARAMS.contains(&"thinking"));
     assert!(!SUPPORTED_OPENAI_PARAMS.contains(&"presence_penalty"));
+}
+
+// The capability answers map_openai_params asks for: the static effort budgets of a
+// non-adaptive model, and an adaptive model whose legacy thinking becomes an output_config.
+struct FakeCapabilities {
+    adaptive: bool,
+}
+
+impl ThinkingCapabilities for FakeCapabilities {
+    fn supports(
+        &mut self,
+        model: &str,
+        key: &str,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        let matched = self.adaptive && model.contains("adaptive") && key == ADAPTIVE_THINKING;
+        async move { matched }
+    }
+
+    fn map_effort<'seam>(
+        &'seam mut self,
+        _model: &'seam str,
+        effort: &'seam str,
+        _provider: &'seam str,
+    ) -> impl Future<Output = Result<Option<Thinking>, ReasoningEffortError>> + Send + 'seam {
+        async move { effort_budget(effort) }
+    }
+
+    fn validate_effort(
+        &mut self,
+        _model: &str,
+        _effort: Option<&str>,
+        _provider: &str,
+    ) -> impl Future<Output = Option<String>> + Send {
+        async { None }
+    }
+
+    fn supports_effort_param(
+        &mut self,
+        _model: &str,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        async { false }
+    }
+
+    fn drop_disabled_thinking(
+        &mut self,
+        _model: &str,
+        _params: &mut OptionalParams,
+        _provider: &str,
+    ) -> impl Future<Output = bool> + Send {
+        async { false }
+    }
+
+    // B569's adaptive translation: a legacy thinking block becomes an output_config effort
+    fn translate_legacy_thinking<'seam>(
+        &'seam mut self,
+        request: &'seam mut LegacyShapes<'seam>,
+    ) -> impl Future<Output = Result<(), ThinkingError>> + Send + 'seam {
+        let adaptive = self.adaptive && request.model.contains("adaptive");
+        async move {
+            if !adaptive || request.params.thinking.is_none() {
+                return Ok(());
+            }
+            request.params.thinking = None;
+            request.params.output_config = Some(translated_output_config());
+            Ok(())
+        }
+    }
+}
+
+// _map_reasoning_effort's static budgets for a model that is not adaptive
+fn effort_budget(effort: &str) -> Result<Option<Thinking>, ReasoningEffortError> {
+    let budget: i64 = match effort {
+        "none" => return Ok(None),
+        "minimal" | "low" => 1024,
+        "medium" => 2048,
+        "high" => 4096,
+        "xhigh" => 8192,
+        "max" => 16384,
+        _ => {
+            return Err(ReasoningEffortError::Unmapped {
+                value: effort.to_owned(),
+                model: String::new(),
+                provider: String::new(),
+            });
+        }
+    };
+    let mut thinking = Thinking::new();
+    thinking.insert(
+        "type".to_owned(),
+        DecisionJson::Text(String::from("enabled")),
+    );
+    thinking.insert(
+        "budget_tokens".to_owned(),
+        DecisionJson::Number(Number::from(budget)),
+    );
+    Ok(Some(thinking))
+}
+
+fn translated_output_config() -> DecisionJson {
+    let mut fields = IndexMap::new();
+    fields.insert("effort".to_owned(), DecisionJson::Text(String::from("low")));
+    DecisionJson::Object(fields)
+}
+
+async fn mapped(model: &str, non_default: Value, adaptive: bool) -> Object {
+    let mut optional = Object::new();
+    let mut capabilities = FakeCapabilities { adaptive };
+    map_openai_params(
+        &object(non_default),
+        &mut optional,
+        model,
+        true,
+        &mut capabilities,
+    )
+    .await
+    .expect("the params map");
+    optional
+}
+
+fn assert_params(params: &Object, expected: Value) {
+    assert_eq!(
+        serde_json::to_value(params).expect("the params render"),
+        expected
+    );
+}
+
+#[tokio::test]
+async fn a_claude_tool_gains_an_empty_properties_map_and_its_description() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({
+            "tools": [{"type": "function", "function": {"name": "f", "description": "d", "parameters": {"type": "object"}}}],
+            "tool_choice": "auto",
+            "temperature": 0.2
+        }),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object", "properties": {}}, "description": "d"}}],
+            "tool_choice": "auto",
+            "temperature": 0.2
+        }),
+    );
+}
+
+#[tokio::test]
+async fn a_json_schema_response_format_becomes_the_json_tool() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({
+            "response_format": {"type": "json_schema", "json_schema": {"name": "out", "schema": {"type": "object", "properties": {"a": {"type": "string"}}}}}
+        }),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object", "properties": {"a": {"type": "string"}}}}}],
+            "json_mode": true,
+            "tool_choice": {"type": "function", "function": {"name": "json_tool_call"}}
+        }),
+    );
+}
+
+#[tokio::test]
+async fn a_json_object_response_format_is_only_removed() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({"response_format": {"type": "json_object"}, "temperature": 0.3}),
+        false,
+    )
+    .await;
+    assert_params(&params, json!({"temperature": 0.3}));
+}
+
+#[tokio::test]
+async fn a_json_schema_format_with_thinking_installs_no_tool_choice() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({
+            "response_format": {"type": "json_schema", "json_schema": {"name": "out", "schema": {"type": "object", "properties": {"a": {"type": "string"}}}}},
+            "thinking": {"type": "enabled", "budget_tokens": 2048}
+        }),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "thinking": {"type": "enabled", "budget_tokens": 2048},
+            "tools": [{"type": "function", "function": {"name": "json_tool_call", "parameters": {"type": "object", "properties": {"a": {"type": "string"}}}}}],
+            "json_mode": true,
+            "max_tokens": 6144
+        }),
+    );
+}
+
+#[tokio::test]
+async fn a_non_claude_model_keeps_its_tools_and_response_format() {
+    let params = mapped(
+        "databricks-meta-llama-3-1-70b",
+        json!({
+            "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}],
+            "response_format": {"type": "json_object"},
+            "max_completion_tokens": 50,
+            "temperature": 0.2
+        }),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "tools": [{"type": "function", "function": {"name": "f", "parameters": {"type": "object"}}}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.2,
+            "max_tokens": 50
+        }),
+    );
+}
+
+#[tokio::test]
+async fn an_uppercase_claude_model_keeps_response_format_but_maps_the_effort() {
+    let params = mapped(
+        "databricks-Claude-3",
+        json!({"response_format": {"type": "json_object"}, "reasoning_effort": "low"}),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({
+            "response_format": {"type": "json_object"},
+            "thinking": {"type": "enabled", "budget_tokens": 1024},
+            "max_tokens": 5120
+        }),
+    );
+}
+
+#[tokio::test]
+async fn a_reasoning_effort_fills_the_thinking_budget() {
+    for (effort, budget, max_tokens) in [
+        ("minimal", 1024, 5120),
+        ("low", 1024, 5120),
+        ("medium", 2048, 6144),
+        ("high", 4096, 8192),
+        ("xhigh", 8192, 12288),
+        ("max", 16384, 20480),
+    ] {
+        let params = mapped(
+            "databricks-claude-3-5-sonnet",
+            json!({"reasoning_effort": effort}),
+            false,
+        )
+        .await;
+        assert_params(
+            &params,
+            json!({"thinking": {"type": "enabled", "budget_tokens": budget}, "max_tokens": max_tokens}),
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_adaptive_model_also_gets_an_output_config_effort() {
+    for (effort, level, budget, max_tokens) in [
+        ("minimal", "low", 1024, 5120),
+        ("low", "low", 1024, 5120),
+        ("medium", "medium", 2048, 6144),
+        ("high", "high", 4096, 8192),
+        ("xhigh", "xhigh", 8192, 12288),
+        ("max", "max", 16384, 20480),
+    ] {
+        let params = mapped(
+            "databricks-claude-adaptive",
+            json!({"reasoning_effort": effort}),
+            true,
+        )
+        .await;
+        assert_params(
+            &params,
+            json!({
+                "thinking": {"type": "enabled", "budget_tokens": budget},
+                "output_config": {"effort": level},
+                "max_tokens": max_tokens
+            }),
+        );
+    }
+}
+
+#[tokio::test]
+async fn an_adaptive_model_translates_a_legacy_thinking_block() {
+    let params = mapped(
+        "databricks-claude-adaptive",
+        json!({"thinking": {"type": "enabled", "budget_tokens": 2048}}),
+        true,
+    )
+    .await;
+    assert_params(&params, json!({"output_config": {"effort": "low"}}));
+}
+
+#[tokio::test]
+async fn a_none_effort_drops_thinking() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({"reasoning_effort": "none", "thinking": {"type": "enabled", "budget_tokens": 2048}}),
+        false,
+    )
+    .await;
+    assert_params(&params, json!({}));
+}
+
+#[tokio::test]
+async fn an_unknown_reasoning_effort_is_a_bad_request() {
+    let mut optional = Object::new();
+    let error = map_openai_params(
+        &object(json!({"reasoning_effort": "banana"})),
+        &mut optional,
+        "databricks-claude-3-5-sonnet",
+        true,
+        &mut FakeCapabilities { adaptive: false },
+    )
+    .await
+    .expect_err("banana is not an effort");
+    assert_eq!(error.status_code(), 400);
+}
+
+#[tokio::test]
+async fn a_non_string_reasoning_effort_is_a_bad_request() {
+    let mut optional = Object::new();
+    let error = map_openai_params(
+        &object(json!({"reasoning_effort": 5})),
+        &mut optional,
+        "databricks-claude-3-5-sonnet",
+        true,
+        &mut FakeCapabilities { adaptive: false },
+    )
+    .await
+    .expect_err("a number is not an effort");
+    assert_eq!(error.status_code(), 400);
+}
+
+#[tokio::test]
+async fn max_completion_tokens_wins_over_max_tokens() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({"max_tokens": 10, "max_completion_tokens": 20}),
+        false,
+    )
+    .await;
+    assert_params(&params, json!({"max_tokens": 20}));
+}
+
+#[tokio::test]
+async fn a_thinking_budget_raises_the_default_max_tokens() {
+    let params = mapped(
+        "databricks-claude-3-5-sonnet",
+        json!({"thinking": {"type": "enabled", "budget_tokens": 2048}}),
+        false,
+    )
+    .await;
+    assert_params(
+        &params,
+        json!({"thinking": {"type": "enabled", "budget_tokens": 2048}, "max_tokens": 6144}),
+    );
+}
+
+#[tokio::test]
+async fn a_non_claude_model_keeps_its_reasoning_effort() {
+    let params = mapped(
+        "databricks-meta-llama-3-1-70b",
+        json!({"reasoning_effort": "low"}),
+        false,
+    )
+    .await;
+    assert_params(&params, json!({"reasoning_effort": "low"}));
 }
