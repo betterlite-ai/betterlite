@@ -178,12 +178,18 @@ def case_entry(call: CustomDiffusionPathInput, case: MappingCase) -> JsonValue:
 
 def custom_diffusion_path(call: CustomDiffusionPathInput) -> JsonValue:
     apply_environment(call["environment"])
+    optional_params: dict[str, JsonValue] = {}
+    litellm_params: dict[str, JsonValue] = {}
     urls: list[JsonValue] = []
     for api_base in call["api_bases"]:
         for model in call["models"]:
-            pair = {
-                "ideogram": IDEOGRAM.get_complete_url(api_base, None, model, {}, {}),
-                "stable_diffusion": DIFFUSION.get_complete_url(api_base, None, model, {}, {}),
+            pair: dict[str, JsonValue] = {
+                "ideogram": IDEOGRAM.get_complete_url(
+                    api_base, None, model, optional_params, litellm_params
+                ),
+                "stable_diffusion": DIFFUSION.get_complete_url(
+                    api_base, None, model, optional_params, litellm_params
+                ),
             }
             urls.append(JSON.validate_python(pair))
     cases = [case_entry(call, case) for case in call["cases"]]
