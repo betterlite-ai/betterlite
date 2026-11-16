@@ -16,7 +16,8 @@ use betterlite_openai::api::image_contracts::records::ImageParams;
 use betterlite_openai::image_edits::request::ImageEditForm;
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{Environment, Input, PrepareImage, ReplyCase, Source};
 use super::slots::{Sources, collect_slots, fixture_path, reader_positions, request_arrays};

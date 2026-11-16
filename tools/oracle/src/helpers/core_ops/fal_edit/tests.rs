@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use betterlite_oracle::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
 use serde_json::Value;
 
 use super::input::Input;

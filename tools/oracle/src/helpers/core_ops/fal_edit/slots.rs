@@ -4,7 +4,7 @@ use std::slice::{Iter, IterMut};
 
 use betterlite_core::api::fal::edit::image_input::EditImage;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::input::PrepareImage;
 
