@@ -1,17 +1,16 @@
-use std::collections::BTreeMap;
 use std::str::from_utf8;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::api::messages_chat_output::records::ResponseRecord;
 use betterlite_core::guardrails::model_armor::streams::assembly::Assembly;
-use betterlite_core::guardrails::model_armor::streams::chunk::{Chunk, field, text_field};
+use betterlite_core::guardrails::model_armor::streams::chunk::Chunk;
 use betterlite_core::guardrails::model_armor::streams::errors::HttpError;
-use betterlite_server::guardrails::anthropic_sse::sse_chunks_from_response::sse_chunks_from_response;
+use betterlite_guardrails::anthropic_sse::sse_chunks_from_response::sse_chunks_from_response;
+use serde_json::{Map, Value, json};
 
 use super::WireError;
 
 const DATA_PREFIX: &str = "data:";
-const COMPLETION_OBJECT: &str = "chat.completion";
 
 #[derive(Default)]
 struct Assembled {
@@ -37,82 +36,112 @@ pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
         let Some(event) = event_payload(frame) else {
             continue;
         };
-        absorb(&event, &mut state);
+        state.absorb(&event);
     }
     if !state.started {
         return None;
     }
-    Some(Assembly::Model(state.into_body()))
+    Some(Assembly::Model(state.into_body()?))
 }
 
-fn event_payload(frame: &str) -> Option<GuardrailValue> {
+fn event_payload(frame: &str) -> Option<Value> {
     let data = frame
         .lines()
         .find_map(|line| line.strip_prefix(DATA_PREFIX))?;
     serde_json::from_str(data.trim()).ok()
 }
 
-fn absorb(event: &GuardrailValue, state: &mut Assembled) {
-    match text_field(field(event, "type")) {
-        Some("message_start") => absorb_start(event, state),
-        Some("content_block_delta") => absorb_delta(event, state),
-        Some("message_delta") => absorb_stop(event, state),
-        Some(_) | None => {}
+impl Assembled {
+    fn absorb(&mut self, event: &Value) {
+        match event.get("type").and_then(Value::as_str) {
+            Some("message_start") => {
+                self.started = true;
+                let Some(message) = event.get("message") else {
+                    return;
+                };
+                if let Some(id) = message.get("id").and_then(Value::as_str) {
+                    self.id = Some(id.to_owned());
+                }
+                if let Some(model) = message.get("model").and_then(Value::as_str) {
+                    self.model = Some(model.to_owned());
+                }
+                if let Some(usage) = message.get("usage").filter(|usage| !usage.is_null()) {
+                    self.input_tokens = usage.get("input_tokens").and_then(integer);
+                    self.output_tokens = usage.get("output_tokens").and_then(integer);
+                }
+            }
+            Some("content_block_delta") => {
+                if let Some(text) = event
+                    .get("delta")
+                    .and_then(|fields| fields.get("text"))
+                    .and_then(Value::as_str)
+                {
+                    self.text.push_str(text);
+                }
+            }
+            Some("message_delta") => {
+                if let Some(reason) = event
+                    .get("delta")
+                    .and_then(|fields| fields.get("stop_reason"))
+                    .and_then(Value::as_str)
+                {
+                    self.stop_reason = Some(reason.to_owned());
+                }
+                if let Some(tokens) = event
+                    .get("usage")
+                    .and_then(|fields| fields.get("output_tokens"))
+                    .and_then(integer)
+                {
+                    self.output_tokens = Some(tokens);
+                }
+            }
+            Some(_) | None => {}
+        }
+    }
+
+    fn into_body(self) -> Option<GuardrailValue> {
+        let reason = self.stop_reason.as_deref().map_or_else(
+            || "stop".to_owned(),
+            |reason| openai_reason(reason).to_owned(),
+        );
+        let mut body = Map::new();
+        if let Some(id) = self.id {
+            body.insert("id".to_owned(), Value::String(id));
+        }
+        if let Some(model) = self.model {
+            body.insert("model".to_owned(), Value::String(model));
+        }
+        body.insert(
+            "object".to_owned(),
+            Value::String("chat.completion".to_owned()),
+        );
+        body.insert(
+            "choices".to_owned(),
+            json!([{
+                "index": 0,
+                "message": {"role": "assistant", "content": self.text},
+                "finish_reason": reason,
+            }]),
+        );
+        body.insert(
+            "usage".to_owned(),
+            json!({
+                "prompt_tokens": self.input_tokens.unwrap_or(0),
+                "completion_tokens": self.output_tokens.unwrap_or(0),
+            }),
+        );
+        serde_json::from_value(Value::Object(body)).ok()
     }
 }
 
-fn absorb_start(event: &GuardrailValue, state: &mut Assembled) {
-    state.started = true;
-    let Some(message) = field(event, "message") else {
-        return;
-    };
-    if let Some(GuardrailValue::Text(id)) = field(message, "id") {
-        state.id = Some(id.clone());
-    }
-    if let Some(GuardrailValue::Text(model)) = field(message, "model") {
-        state.model = Some(model.clone());
-    }
-    if let Some(accounting) = field(message, "usage") {
-        state.input_tokens = integer(field(accounting, "input_tokens"));
-        state.output_tokens = integer(field(accounting, "output_tokens"));
-    }
-}
-
-fn absorb_delta(event: &GuardrailValue, state: &mut Assembled) {
-    let Some(delta) = field(event, "delta") else {
-        return;
-    };
-    if let Some(GuardrailValue::Text(text)) = field(delta, "text") {
-        state.text.push_str(text);
-    }
-}
-
-fn absorb_stop(event: &GuardrailValue, state: &mut Assembled) {
-    if let Some(delta) = field(event, "delta")
-        && let Some(GuardrailValue::Text(reason)) = field(delta, "stop_reason")
-    {
-        state.stop_reason = Some(reason.clone());
-    }
-    if let Some(accounting) = field(event, "usage")
-        && let Some(tokens) = integer(field(accounting, "output_tokens"))
-    {
-        state.output_tokens = Some(tokens);
-    }
-}
-
-fn integer(value: Option<&GuardrailValue>) -> Option<i64> {
+fn integer(value: &Value) -> Option<i64> {
     match value {
-        Some(GuardrailValue::SignedInteger(number)) => Some(*number),
-        Some(GuardrailValue::UnsignedInteger(number)) => i64::try_from(*number).ok(),
-        Some(
-            GuardrailValue::Null
-            | GuardrailValue::Boolean(_)
-            | GuardrailValue::Decimal(_)
-            | GuardrailValue::Text(_)
-            | GuardrailValue::Array(_)
-            | GuardrailValue::Object(_),
-        )
-        | None => None,
+        Value::Number(number) => number
+            .as_i64()
+            .or_else(|| number.as_u64().and_then(|raw| i64::try_from(raw).ok())),
+        Value::Null | Value::Bool(_) | Value::String(_) | Value::Array(_) | Value::Object(_) => {
+            None
+        }
     }
 }
 
@@ -125,61 +154,6 @@ fn openai_reason(reason: &str) -> &str {
     }
 }
 
-impl Assembled {
-    fn into_body(self) -> GuardrailValue {
-        let finish_reason = match &self.stop_reason {
-            Some(reason) => openai_reason(reason).to_owned(),
-            None => "stop".to_owned(),
-        };
-        let mut message = BTreeMap::new();
-        message.insert(
-            "role".to_owned(),
-            GuardrailValue::Text("assistant".to_owned()),
-        );
-        message.insert("content".to_owned(), GuardrailValue::Text(self.text));
-        let mut choice = BTreeMap::new();
-        choice.insert("index".to_owned(), GuardrailValue::SignedInteger(0));
-        choice.insert("message".to_owned(), GuardrailValue::Object(message));
-        choice.insert(
-            "finish_reason".to_owned(),
-            GuardrailValue::Text(finish_reason),
-        );
-        let mut body = BTreeMap::new();
-        if let Some(id) = self.id {
-            body.insert("id".to_owned(), GuardrailValue::Text(id));
-        }
-        if let Some(model) = self.model {
-            body.insert("model".to_owned(), GuardrailValue::Text(model));
-        }
-        body.insert(
-            "object".to_owned(),
-            GuardrailValue::Text(COMPLETION_OBJECT.to_owned()),
-        );
-        body.insert(
-            "choices".to_owned(),
-            GuardrailValue::Array(vec![GuardrailValue::Object(choice)]),
-        );
-        body.insert(
-            "usage".to_owned(),
-            GuardrailValue::Object(usage(self.input_tokens, self.output_tokens)),
-        );
-        GuardrailValue::Object(body)
-    }
-}
-
-fn usage(input: Option<i64>, output: Option<i64>) -> BTreeMap<String, GuardrailValue> {
-    let mut usage = BTreeMap::new();
-    usage.insert(
-        "prompt_tokens".to_owned(),
-        GuardrailValue::SignedInteger(input.unwrap_or(0)),
-    );
-    usage.insert(
-        "completion_tokens".to_owned(),
-        GuardrailValue::SignedInteger(output.unwrap_or(0)),
-    );
-    usage
-}
-
 // LiteLLM's anthropic_sse_chunks_from_response: the sanitized response replayed as Anthropic frames.
 pub(super) fn emit(body: &GuardrailValue) -> Result<Vec<Chunk>, WireError> {
     let plain = serde_json::to_value(body).map_err(WireError::Decode)?;
@@ -189,58 +163,46 @@ pub(super) fn emit(body: &GuardrailValue) -> Result<Vec<Chunk>, WireError> {
 }
 
 // LiteLLM's build_stream_error_items: one ErrorEvent carrying the status the frame would otherwise lose.
-pub(super) fn error_item(error: &HttpError) -> GuardrailValue {
-    let mut detail = BTreeMap::new();
-    detail.insert(
-        "type".to_owned(),
-        GuardrailValue::Text("guardrail_error".to_owned()),
-    );
-    detail.insert(
-        "code".to_owned(),
-        GuardrailValue::Text(error.status.to_string()),
-    );
-    detail.insert(
-        "message".to_owned(),
-        GuardrailValue::Text(detail_message(&error.detail)),
-    );
-    detail.insert("param".to_owned(), GuardrailValue::Null);
-    let mut item = BTreeMap::new();
-    item.insert("type".to_owned(), GuardrailValue::Text("error".to_owned()));
-    item.insert(
-        "sequence_number".to_owned(),
-        GuardrailValue::UnsignedInteger(0),
-    );
-    item.insert("error".to_owned(), GuardrailValue::Object(detail));
-    GuardrailValue::Object(item)
+pub(super) fn error_item(error: &HttpError) -> Option<GuardrailValue> {
+    let item = json!({
+        "type": "error",
+        "sequence_number": 0,
+        "error": {
+            "type": "guardrail_error",
+            "code": error.status.to_string(),
+            "message": detail_message(&error.detail),
+            "param": null,
+        },
+    });
+    serde_json::from_value(item).ok()
 }
 
 fn detail_message(detail: &GuardrailValue) -> String {
-    let GuardrailValue::Object(fields) = detail else {
-        return plain_text(detail);
+    let Ok(value) = serde_json::to_value(detail) else {
+        return String::new();
     };
-    if let Some(GuardrailValue::Text(error)) = fields.get("error") {
-        return error.clone();
+    let Value::Object(fields) = &value else {
+        return text_or_encoded(&value);
+    };
+    if let Some(text) = fields.get("error").and_then(Value::as_str) {
+        return text.to_owned();
     }
-    if let Some(GuardrailValue::Object(error)) = fields.get("error")
-        && let Some(GuardrailValue::Text(message)) = error.get("message")
+    if let Some(message) = fields
+        .get("error")
+        .and_then(|error| error.get("message"))
+        .and_then(Value::as_str)
     {
-        return message.clone();
+        return message.to_owned();
     }
-    if let Some(GuardrailValue::Text(message)) = fields.get("message") {
-        return message.clone();
+    if let Some(message) = fields.get("message").and_then(Value::as_str) {
+        return message.to_owned();
     }
-    serde_json::to_string(detail).unwrap_or_default()
+    serde_json::to_string(&value).unwrap_or_default()
 }
 
-fn plain_text(detail: &GuardrailValue) -> String {
+fn text_or_encoded(detail: &Value) -> String {
     match detail {
-        GuardrailValue::Text(text) => text.clone(),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Array(_)
-        | GuardrailValue::Object(_) => serde_json::to_string(detail).unwrap_or_default(),
+        Value::String(text) => text.clone(),
+        other => serde_json::to_string(other).unwrap_or_default(),
     }
 }

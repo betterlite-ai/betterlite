@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_core::guardrails::model_armor::streams::assembly::Assembly;
-use betterlite_core::guardrails::model_armor::streams::chunk::{Chunk, field, text_field};
+use betterlite_core::guardrails::model_armor::streams::chunk::Chunk;
+use serde_json::{Map, Value, json};
 
 use super::WireError;
 
@@ -27,12 +28,22 @@ pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
             continue;
         };
         seen = true;
-        take_text(payload, "id", &mut id);
-        take_text(payload, "model", &mut model);
-        if let Some(GuardrailValue::SignedInteger(value)) = field(payload, "created") {
-            created = Some(*value);
+        let Ok(value) = serde_json::to_value(payload) else {
+            continue;
+        };
+        if id.is_none() {
+            id = value.get("id").and_then(Value::as_str).map(str::to_owned);
         }
-        let Some(GuardrailValue::Array(items)) = field(payload, "choices") else {
+        if model.is_none() {
+            model = value
+                .get("model")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+        }
+        if let Some(number) = value.get("created").and_then(Value::as_i64) {
+            created = Some(number);
+        }
+        let Some(items) = value.get("choices").and_then(Value::as_array) else {
             continue;
         };
         for choice in items {
@@ -42,120 +53,101 @@ pub(super) fn assemble(chunks: &[Chunk]) -> Option<Assembly> {
     if !seen {
         return None;
     }
-    let mut entries = Vec::with_capacity(choices.len());
-    for (index, piece) in choices {
-        entries.push(piece.into_choice(index));
-    }
-    Some(Assembly::Model(body(id, model, created, entries)))
+    let entries = choices
+        .into_iter()
+        .map(|(index, piece)| piece.into_choice(index))
+        .collect();
+    let body = completion_body(id, model, created, entries);
+    serde_json::from_value(body).ok().map(Assembly::Model)
 }
 
-fn take_text(payload: &GuardrailValue, name: &str, slot: &mut Option<String>) {
-    if slot.is_none()
-        && let Some(GuardrailValue::Text(text)) = field(payload, name)
-    {
-        *slot = Some(text.clone());
-    }
-}
-
-fn absorb(choice: &GuardrailValue, choices: &mut BTreeMap<i64, Piece>) {
-    let index = match field(choice, "index") {
-        Some(GuardrailValue::SignedInteger(index)) => *index,
-        _ => 0,
-    };
+fn absorb(choice: &Value, choices: &mut BTreeMap<i64, Piece>) {
+    let index = choice.get("index").and_then(Value::as_i64).unwrap_or(0);
     let piece = choices.entry(index).or_default();
-    if let Some(delta) = field(choice, "delta")
-        && let Some(GuardrailValue::Text(text)) = field(delta, "content")
+    let delta = choice.get("delta");
+    if let Some(content) = delta
+        .and_then(|fields| fields.get("content"))
+        .and_then(Value::as_str)
     {
-        piece.content.push_str(text);
+        piece.content.push_str(content);
     }
-    if let Some(delta) = field(choice, "delta")
-        && let Some(GuardrailValue::Text(role)) = field(delta, "role")
+    if let Some(role) = delta
+        .and_then(|fields| fields.get("role"))
+        .and_then(Value::as_str)
     {
-        piece.role = Some(role.clone());
+        piece.role = Some(role.to_owned());
     }
-    if let Some(GuardrailValue::Text(reason)) = field(choice, "finish_reason") {
-        piece.finish_reason = Some(reason.clone());
+    if let Some(reason) = choice.get("finish_reason").and_then(Value::as_str) {
+        piece.finish_reason = Some(reason.to_owned());
     }
 }
 
 impl Piece {
-    fn into_choice(self, index: i64) -> GuardrailValue {
-        let role = match self.role {
-            Some(role) => role,
-            None => DEFAULT_ROLE.to_owned(),
-        };
-        let mut message = BTreeMap::new();
-        message.insert("role".to_owned(), GuardrailValue::Text(role));
-        message.insert("content".to_owned(), GuardrailValue::Text(self.content));
-        let mut choice = BTreeMap::new();
-        choice.insert("index".to_owned(), GuardrailValue::SignedInteger(index));
-        choice.insert("message".to_owned(), GuardrailValue::Object(message));
-        choice.insert("finish_reason".to_owned(), option_text(self.finish_reason));
-        GuardrailValue::Object(choice)
+    fn into_choice(self, index: i64) -> Value {
+        json!({
+            "index": index,
+            "message": {
+                "role": self.role.unwrap_or_else(|| DEFAULT_ROLE.to_owned()),
+                "content": self.content,
+            },
+            "finish_reason": self.finish_reason.map_or(Value::Null, Value::String),
+        })
     }
 }
 
-fn option_text(value: Option<String>) -> GuardrailValue {
-    value.map_or(GuardrailValue::Null, GuardrailValue::Text)
-}
-
-fn body(
+fn completion_body(
     id: Option<String>,
     model: Option<String>,
     created: Option<i64>,
-    entries: Vec<GuardrailValue>,
-) -> GuardrailValue {
-    let mut body = BTreeMap::new();
+    entries: Vec<Value>,
+) -> Value {
+    let mut body = Map::new();
     body.insert(
         "object".to_owned(),
-        GuardrailValue::Text("chat.completion".to_owned()),
+        Value::String("chat.completion".to_owned()),
     );
     if let Some(id) = id {
-        body.insert("id".to_owned(), GuardrailValue::Text(id));
+        body.insert("id".to_owned(), Value::String(id));
     }
     if let Some(model) = model {
-        body.insert("model".to_owned(), GuardrailValue::Text(model));
+        body.insert("model".to_owned(), Value::String(model));
     }
     if let Some(created) = created {
-        body.insert("created".to_owned(), GuardrailValue::SignedInteger(created));
+        body.insert("created".to_owned(), Value::from(created));
     }
-    body.insert("choices".to_owned(), GuardrailValue::Array(entries));
-    GuardrailValue::Object(body)
+    body.insert("choices".to_owned(), Value::Array(entries));
+    Value::Object(body)
 }
 
 // LiteLLM's MockResponseIterator: the sanitized response replayed as one stream chunk.
 pub(super) fn emit(body: &GuardrailValue) -> Result<Vec<Chunk>, WireError> {
-    let id = required_text(body, "id")?;
-    let model = required_text(body, "model")?;
-    let created = match field(body, "created") {
-        Some(GuardrailValue::SignedInteger(value)) => *value,
-        _ => return Err(WireError::Missing("created")),
-    };
-    let choices = emitted_choices(body)?;
-    let mut chunk = BTreeMap::new();
-    chunk.insert("id".to_owned(), GuardrailValue::Text(id.to_owned()));
-    chunk.insert(
-        "object".to_owned(),
-        GuardrailValue::Text("chat.completion.chunk".to_owned()),
-    );
-    chunk.insert("created".to_owned(), GuardrailValue::SignedInteger(created));
-    chunk.insert("model".to_owned(), GuardrailValue::Text(model.to_owned()));
-    chunk.insert("choices".to_owned(), GuardrailValue::Array(choices));
-    Ok(vec![Chunk::Json(GuardrailValue::Object(chunk))])
+    let plain = serde_json::to_value(body).map_err(WireError::Decode)?;
+    let id = required(&plain, "id")?;
+    let model = required(&plain, "model")?;
+    let created = plain
+        .get("created")
+        .and_then(Value::as_i64)
+        .ok_or(WireError::Missing("created"))?;
+    let chunk = json!({
+        "id": id,
+        "object": "chat.completion.chunk",
+        "created": created,
+        "model": model,
+        "choices": emitted_choices(&plain)?,
+    });
+    Ok(vec![Chunk::Json(
+        serde_json::from_value(chunk).map_err(WireError::Decode)?,
+    )])
 }
 
-fn required_text<'value>(
-    body: &'value GuardrailValue,
-    name: &'static str,
-) -> Result<&'value str, WireError> {
-    match field(body, name) {
-        Some(GuardrailValue::Text(text)) => Ok(text),
-        _ => Err(WireError::Missing(name)),
-    }
+fn required<'value>(body: &'value Value, name: &'static str) -> Result<&'value str, WireError> {
+    body.get(name)
+        .and_then(Value::as_str)
+        .ok_or(WireError::Missing(name))
 }
 
-fn emitted_choices(body: &GuardrailValue) -> Result<Vec<GuardrailValue>, WireError> {
-    let Some(GuardrailValue::Array(items)) = field(body, "choices") else {
+fn emitted_choices(body: &Value) -> Result<Vec<Value>, WireError> {
+    let Some(items) = body.get("choices").and_then(Value::as_array) else {
         return Err(WireError::Missing("choices"));
     };
     let mut emitted = Vec::with_capacity(items.len());
@@ -167,33 +159,25 @@ fn emitted_choices(body: &GuardrailValue) -> Result<Vec<GuardrailValue>, WireErr
     Ok(emitted)
 }
 
-fn emitted_choice(item: &GuardrailValue, position: i64) -> Result<GuardrailValue, WireError> {
-    let Some(message) = field(item, "message") else {
+fn emitted_choice(item: &Value, position: i64) -> Result<Value, WireError> {
+    let Some(message) = item.get("message") else {
         return Err(WireError::Missing("message"));
     };
-    let content = match field(message, "content") {
-        Some(GuardrailValue::Text(text)) => text.clone(),
-        _ => String::new(),
-    };
-    let role = match text_field(field(message, "role")) {
-        Some(role) => role.to_owned(),
-        None => DEFAULT_ROLE.to_owned(),
-    };
-    let index = match field(item, "index") {
-        Some(GuardrailValue::SignedInteger(index)) => *index,
-        _ => position,
-    };
-    let finish_reason = plain(field(item, "finish_reason"));
-    let mut delta = BTreeMap::new();
-    delta.insert("role".to_owned(), GuardrailValue::Text(role));
-    delta.insert("content".to_owned(), GuardrailValue::Text(content));
-    let mut choice = BTreeMap::new();
-    choice.insert("index".to_owned(), GuardrailValue::SignedInteger(index));
-    choice.insert("delta".to_owned(), GuardrailValue::Object(delta));
-    choice.insert("finish_reason".to_owned(), finish_reason);
-    Ok(GuardrailValue::Object(choice))
-}
-
-fn plain(value: Option<&GuardrailValue>) -> GuardrailValue {
-    value.cloned().unwrap_or(GuardrailValue::Null)
+    let content = message
+        .get("content")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let role = message
+        .get("role")
+        .and_then(Value::as_str)
+        .unwrap_or(DEFAULT_ROLE);
+    let index = item
+        .get("index")
+        .and_then(Value::as_i64)
+        .unwrap_or(position);
+    Ok(json!({
+        "index": index,
+        "delta": {"role": role, "content": content},
+        "finish_reason": item.get("finish_reason").cloned().unwrap_or(Value::Null),
+    }))
 }

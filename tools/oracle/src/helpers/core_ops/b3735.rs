@@ -14,6 +14,10 @@ use betterlite_core::guardrails::model_armor::streams::wire::{
     OutputParts, ScanFailure, StreamWire,
 };
 use betterlite_core::guardrails::streaming_rewrite::shapes::RequestData;
+use betterlite_guardrails::anthropic_sse::error::AnthropicSseError;
+use betterlite_guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
+use betterlite_guardrails::anthropic_sse::is_anthropic_sse_stream::is_anthropic_sse_stream;
+use betterlite_guardrails::anthropic_sse::is_sse_error_stream::is_sse_error_stream;
 use betterlite_guardrails::guardrail_message_scope::StreamItem;
 use betterlite_guardrails::model_armor::decisions::model_response::{
     CallResponse, ModelResponse, ResponseContentError, extract_content_from_response,
@@ -25,10 +29,6 @@ use betterlite_guardrails::model_armor::decisions::{
 };
 use betterlite_oracle_helper_api::error::OrHelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
-use betterlite_server::guardrails::anthropic_sse::error::AnthropicSseError;
-use betterlite_server::guardrails::anthropic_sse::error_frames::anthropic_sse_error_frames;
-use betterlite_server::guardrails::anthropic_sse::is_anthropic_sse_stream::is_anthropic_sse_stream;
-use betterlite_server::guardrails::anthropic_sse::is_sse_error_stream::is_sse_error_stream;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -41,8 +41,6 @@ const GUARDRAIL_NAME: &str = "model-armor";
 const METADATA_KEY: &str = "metadata";
 const LITELLM_METADATA_KEY: &str = "litellm_metadata";
 const APPLIED_KEY: &str = "applied_guardrails";
-const RESPONSE_KEY: &str = "_model_armor_response";
-const STATUS_KEY: &str = "_model_armor_status";
 
 #[derive(Debug, Deserialize)]
 struct Input {
@@ -72,7 +70,7 @@ impl Helper for Op {
             .enable_all()
             .build()
             .or_config_error()?;
-        runtime.block_on(run_case(input))
+        runtime.block_on(evaluate(input))
     }
 }
 
@@ -215,7 +213,7 @@ impl StreamWire for Wire {
     }
 
     fn responses_error_items(&self, error: &HttpError) -> Option<Vec<Chunk>> {
-        Some(vec![Chunk::Json(frames::error_item(error))])
+        frames::error_item(error).map(|item| vec![Chunk::Json(item)])
     }
 
     fn applied_guardrail(&self, data: &mut RequestData, guardrail_name: &str) {
@@ -232,10 +230,10 @@ impl StreamWire for Wire {
             Some(GuardrailValue::Array(names)) => names,
             _ => Vec::new(),
         };
-        let applied = names.iter().any(
+        let known = names.iter().any(
             |name| matches!(name, GuardrailValue::Text(existing) if existing == guardrail_name),
         );
-        if !applied {
+        if !known {
             names.push(GuardrailValue::Text(guardrail_name.to_owned()));
         }
         bucket.insert(APPLIED_KEY.to_owned(), GuardrailValue::Array(names));
@@ -253,21 +251,21 @@ fn stream_items(chunks: &[Chunk]) -> Vec<StreamItem> {
         .collect()
 }
 
-fn chunk(input: &ChunkInput) -> Chunk {
-    match input {
-        ChunkInput::Bytes(text) => Chunk::Bytes(text.as_bytes().to_vec()),
-        ChunkInput::Json(payload) => Chunk::Json(payload.clone()),
-    }
-}
-
-async fn run_case(input: &Input) -> HelperResult {
+async fn evaluate(input: &Input) -> HelperResult {
     let wire = Wire::new(input).or_value_error()?;
     let mut data = RequestData::new();
     let settings = StreamSettings {
         fail_on_error: input.fail_on_error,
         mask_response_content: input.mask_response_content,
     };
-    let chunks = input.chunks.iter().map(chunk).collect();
+    let chunks = input
+        .chunks
+        .iter()
+        .map(|chunk| match chunk {
+            ChunkInput::Bytes(text) => Chunk::Bytes(text.as_bytes().to_vec()),
+            ChunkInput::Json(payload) => Chunk::Json(payload.clone()),
+        })
+        .collect();
     let items = buffered_stream(StreamHook {
         wire: &wire,
         request_data: &mut data,
