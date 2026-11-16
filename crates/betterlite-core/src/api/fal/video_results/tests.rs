@@ -724,33 +724,48 @@ fn the_sync_and_async_paths_share_the_content_decisions() {
 }
 
 #[rstest]
-#[case::remix(UnsupportedOperation::Remix, "video remix is not supported for fal.ai")]
+#[case::remix(
+    UnsupportedOperation::Remix,
+    "video remix is not supported for fal.ai",
+    "remix"
+)]
 #[case::list(
     UnsupportedOperation::List,
-    "video listing is not supported for fal.ai"
+    "video listing is not supported for fal.ai",
+    "list"
 )]
 #[case::delete(
     UnsupportedOperation::Delete,
-    "video delete is not supported for fal.ai"
+    "video delete is not supported for fal.ai",
+    "delete"
 )]
 #[case::character_create(
     UnsupportedOperation::CreateCharacter,
-    "video character creation is not supported for fal.ai"
+    "video character creation is not supported for fal.ai",
+    "character_create"
 )]
 #[case::character_get(
     UnsupportedOperation::GetCharacter,
-    "video character retrieval is not supported for fal.ai"
+    "video character retrieval is not supported for fal.ai",
+    "character_get"
 )]
-#[case::edit(UnsupportedOperation::Edit, "video edit is not supported for fal.ai")]
+#[case::edit(
+    UnsupportedOperation::Edit,
+    "video edit is not supported for fal.ai",
+    "edit"
+)]
 #[case::extension(
     UnsupportedOperation::Extension,
-    "video extension is not supported for fal.ai"
+    "video extension is not supported for fal.ai",
+    "extension"
 )]
 fn the_unsupported_operations_carry_the_provider_messages(
     #[case] operation: UnsupportedOperation,
     #[case] expected: &str,
+    #[case] name: &str,
 ) {
     assert_eq!(operation.to_string(), expected);
+    assert_eq!(operation.name(), name);
     let error = VideoResultsError::from(operation);
     assert_eq!(error.to_string(), expected);
 }
