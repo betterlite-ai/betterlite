@@ -3,7 +3,7 @@ import openai
 from pydantic import JsonValue
 from typing_extensions import TypedDict
 
-from .types import ORG, JSON, Canned, Input
+from .types import JSON, ORG, Canned, Input
 
 
 class ClientOptions(TypedDict):
