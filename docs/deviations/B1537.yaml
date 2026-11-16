@@ -1,0 +1,26 @@
+task: B1537
+deviations:
+  - what: "The reported cost is a Decimal product of the credit count and 0.01, where LiteLLM multiplies two binary floats. For credits such as 0.7, 0.9 or 0.14 the usage value differs in its last bits (0.007 here, 0.006999999999999999 there)."
+    why: "The task pins Decimal for credit arithmetic and rule money-is-decimal requires it; no setup can rely on which way binary rounding falls."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L93-L100
+  - what: "A task's progress rounds half-even on the exact decimal share, where LiteLLM rounds the binary float: 0.545 gives 54 here and 55 there, 0.575 gives 58 here and 57 there."
+    why: "The task pins Decimal for the shared progress rounding, so the tie rule applies to the decimal share rather than to the float's representation error."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L103-L104
+  - what: "A seconds text that converts to an infinity, such as \"inf\" or \"1e400\", omits the duration and lets the request proceed; LiteLLM raises OverflowError out of int() and the request fails with a 500."
+    why: "An unrepresentable duration is a bad request value, and a 500 for it helps nobody; the task says a failed conversion omits the duration."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L183-L196
+  - what: "A seconds number or a credit count outside Decimal's range, such as 1e40, omits the duration or the reported cost. LiteLLM carries the huge integer through and, for credits beyond float range, writes an Infinity that is not valid JSON."
+    why: "Decimal is the house number type and JSON has no Infinity; a non-finite or out-of-range number is not something a client can read back."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L93-L100
+  - what: "Numeric seconds strings parse with Rust's f64 grammar, so texts Python accepts, such as \"1_0\" or one written in non-ASCII digits, fail the conversion and omit the duration."
+    why: "Python's float() tolerates underscores and Unicode digits; docs/compatibility.md says Python's runtime grammar is not ported, and a JSON request carries ASCII digits."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L183-L196
+  - what: "An ISO timestamp without an offset is read as UTC. LiteLLM's datetime.timestamp() reads a naive timestamp in the process's local timezone, so the value depends on the server's TZ."
+    why: "betterlite has one clock and a deployment's local timezone is not part of the provider API; the oracle cases pin TZ=UTC, where both agree."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L379-L396
+  - what: "A ratio written with non-ASCII decimal digits, such as ١٢٨٠:720, leaves the resolution out. LiteLLM's str.isdigit() accepts them and int() converts them, so it reports a resolution."
+    why: "The area comparison reads ASCII digits only; the Unicode digit grammar is a Python runtime habit that docs/compatibility.md does not port."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L74-L81
+  - what: "A provider reply whose id or status is not a string yields an empty id and the queued status instead of a validation failure. LiteLLM's pydantic VideoObject rejects a null or numeric id and status with a 500."
+    why: "The task record decoder names the wrong field and the projection stays readable; the creation reply for a working provider always carries both as strings."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L306-L318
