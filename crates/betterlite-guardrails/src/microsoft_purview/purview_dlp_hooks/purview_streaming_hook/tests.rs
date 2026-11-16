@@ -24,14 +24,14 @@ use super::services::{NoCosts, SilentConsole, SilentCounter, SilentLogger};
 
 const CHAT_REQUEST: &str = r#"{"model":"gpt","messages":[{"role":"user","content":"hi"}]}"#;
 const CHAT_CHUNKS: &str = r#"[
-    {"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"hel"}}]},
-    {"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"lo"},"finish_reason":"stop"}]}
+    {"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"role":"assistant","content":"hell"}}]},
+    {"id":"c1","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"o"},"finish_reason":"stop"}]}
 ]"#;
 const RESPONSES_DELTA: &str = r#"[
-    {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":0,"delta":"hel"}
+    {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":0,"delta":"hell"}
 ]"#;
 const RESPONSES_COMPLETED: &str = r#"[
-    {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":0,"delta":"hel"},
+    {"type":"response.output_text.delta","item_id":"i","output_index":0,"content_index":0,"delta":"hell"},
     {"type":"response.completed","response":{"id":"r1","created_at":1,"object":"response","output":[{"type":"message","id":"m","status":"completed","role":"assistant","content":[{"type":"output_text","text":"hello"}]}]}}
 ]"#;
 
@@ -220,8 +220,8 @@ async fn scans_the_assembled_text_of_a_completion_stream() {
     let mut harness = Harness::new(data(r#"{"model":"m","prompt":"hi"}"#));
     let chunks = values(
         r#"[
-            {"id":"t1","object":"text_completion","created":1,"model":"m","choices":[{"index":0,"text":"hel"}]},
-            {"id":"t1","object":"text_completion","created":1,"model":"m","choices":[{"index":0,"text":"lo","finish_reason":"stop"}]}
+            {"id":"t1","object":"text_completion","created":1,"model":"m","choices":[{"index":0,"text":"hell"}]},
+            {"id":"t1","object":"text_completion","created":1,"model":"m","choices":[{"index":0,"text":"o","finish_reason":"stop"}]}
         ]"#,
     );
     let mut context = hook_context(

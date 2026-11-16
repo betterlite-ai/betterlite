@@ -19,7 +19,7 @@ const CHAT_RESULT: &str = r#"{"id":"c1","object":"chat.completion","choices":[{"
 const AUDITED_KWARGS: &str = r#"{"model":"gpt","messages":[{"role":"user","content":"hello"}],"litellm_params":{"metadata":{"user_api_key_user_id":"user-1"}}}"#;
 
 fn engine(base: &str, sink: &Arc<TestSink>) -> AuditEngine {
-    let sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::clone(sink);
+    let sink: Arc<dyn GuardrailSpanSink + Send + Sync> = Arc::<TestSink>::clone(sink);
     AuditEngine {
         guardrail: Arc::new(guardrail_at(base)),
         record_base: record_base(),
@@ -166,7 +166,7 @@ async fn skips_the_response_scan_when_the_result_has_no_text() {
 }
 
 #[tokio::test]
-async fn handles_an_unparseable_responses_result_without_raising() {
+async fn handles_an_unparsable_responses_result_without_raising() {
     let mock = start(Script::passing());
     let sink = Arc::new(TestSink::default());
     let engine = engine(&mock.base, &sink);

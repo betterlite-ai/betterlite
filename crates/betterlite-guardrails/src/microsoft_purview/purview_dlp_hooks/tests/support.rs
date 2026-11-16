@@ -123,27 +123,33 @@ impl GraphMock {
     }
 
     pub(super) fn correlation_ids(&self) -> Vec<Option<String>> {
-        self.seen()
-            .iter()
-            .filter(|request| request.path.ends_with("/processContent"))
-            .map(|request| {
-                let body: ProcessBody = serde_json::from_str(&request.body).unwrap();
-                let entry = body.content_to_process.content_entries.first().unwrap();
-                entry.correlation_id.clone()
-            })
+        self.scans()
+            .into_iter()
+            .map(|scan| scan.correlation_id)
             .collect()
     }
 
     pub(super) fn scanned(&self) -> Vec<Scan> {
+        self.scans()
+            .into_iter()
+            .map(|scan| Scan {
+                activity: scan.activity,
+                data: scan.data,
+            })
+            .collect()
+    }
+
+    fn scans(&self) -> Vec<RecordedScan> {
         self.seen()
             .iter()
             .filter(|request| request.path.ends_with("/processContent"))
             .map(|request| {
                 let body: ProcessBody = serde_json::from_str(&request.body).unwrap();
                 let entry = body.content_to_process.content_entries.first().unwrap();
-                Scan {
+                RecordedScan {
                     activity: body.content_to_process.activity_metadata.activity.clone(),
                     data: entry.content.data.clone(),
+                    correlation_id: entry.correlation_id.clone(),
                 }
             })
             .collect()
@@ -154,6 +160,12 @@ impl GraphMock {
 pub(super) struct Scan {
     pub(super) activity: String,
     pub(super) data: String,
+}
+
+struct RecordedScan {
+    activity: String,
+    data: String,
+    correlation_id: Option<String>,
 }
 
 #[derive(serde::Deserialize)]
