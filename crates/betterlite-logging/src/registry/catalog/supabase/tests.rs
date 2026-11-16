@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -18,7 +19,6 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use super::{build, build_callback};
-use crate::callback_logger::CallbackLogger as _;
 use crate::callback_logger::event::LoggerEvent;
 use crate::logging_pre_post::env::{DebugSettings, GlobalFlags, LogRecord, LogSink, PrePostEnv};
 use crate::logging_pre_post::hooks::InputCallback;
@@ -69,13 +69,13 @@ fn json(text: &str) -> Json {
 }
 
 fn payload_text(response: &str, error: Option<&str>) -> String {
-    let error = error.map_or_else(
+    let error_json = error.map_or_else(
         || "null".to_owned(),
         |message| serde_json::to_string(message).expect("the error encodes as a JSON string"),
     );
     TEMPLATE
         .replace("RESPONSE", response)
-        .replace("ERROR_STR", &error)
+        .replace("ERROR_STR", &error_json)
 }
 
 fn event_from(payload: &str) -> LoggerEvent {
@@ -103,11 +103,11 @@ fn environment_map(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn inputs(environment: &[(&str, &str)], config: &str) -> CatalogInputs {
+fn inputs(environment: &[(&str, &str)], yaml: &str) -> CatalogInputs {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
-    .load(config)
+    .load(yaml)
     .expect("the fixture config loads");
     let callback_settings = config.sections.callback_settings.callback_settings.clone();
     let policy = Arc::new(
@@ -395,7 +395,7 @@ fn pre_call_state(user: Option<&str>) -> LoggingState {
         },
         &Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).expect("the default redactor compiles"),
         || "generated".to_owned(),
-        std::time::Duration::default,
+        Duration::default,
     )
     .expect("the fixture state builds");
     update_environment_variables(

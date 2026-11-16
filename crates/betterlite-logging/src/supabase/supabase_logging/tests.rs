@@ -70,14 +70,14 @@ fn text(value: &Json) -> &str {
 }
 
 fn payload_text(response: &str, error: Option<&str>, call_id: Option<&str>) -> String {
-    let error = error.map_or_else(
+    let error_json = error.map_or_else(
         || "null".to_owned(),
         |message| serde_json::to_string(message).expect("the error encodes as a JSON string"),
     );
     TEMPLATE
         .replace("CALL_ID", call_id.unwrap_or("null"))
         .replace("RESPONSE", response)
-        .replace("ERROR_STR", &error)
+        .replace("ERROR_STR", &error_json)
 }
 
 fn success_event() -> LoggerEvent {
@@ -930,35 +930,34 @@ async fn callback_logger_input_event_writes_the_initiated_row() {
     );
 }
 
-async fn initiated_end_user(details: &str) -> Json {
+async fn initiated_request(details: &str) -> Recorded {
     let (callback, captured, tracker) = callback_fixture(201);
     let messages = json(MESSAGES);
-    let details = json(details);
+    let details_json = json(details);
     callback
         .log_input_event(&PreCallEvent {
             model: "gpt-4o",
             messages: &messages,
-            details: &details,
+            details: &details_json,
         })
         .expect("the pre-call event is accepted");
     tracker.close();
     tracker.wait().await;
-    captured.only_request().field("end_user").clone()
+    captured.only_request()
 }
 
 #[tokio::test]
 async fn callback_logger_input_event_writes_a_null_user_as_null() {
-    assert_eq!(
-        initiated_end_user(r#"{"user": null, "litellm_call_id": "call-1"}"#).await,
-        Json::Null
-    );
+    let recorded = initiated_request(r#"{"user": null, "litellm_call_id": "call-1"}"#).await;
+    assert_eq!(recorded.field("end_user"), &Json::Null);
 }
 
 #[tokio::test]
 async fn callback_logger_input_event_defaults_a_missing_user() {
+    let recorded = initiated_request(r#"{"litellm_call_id": "call-1"}"#).await;
     assert_eq!(
-        initiated_end_user(r#"{"litellm_call_id": "call-1"}"#).await,
-        Json::Text("default".to_owned())
+        recorded.field("end_user"),
+        &Json::Text("default".to_owned())
     );
 }
 
