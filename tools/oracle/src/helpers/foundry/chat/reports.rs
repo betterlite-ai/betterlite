@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_azure::azure_default_chain::grant::{ClientSecretRecord, UsernamePasswordRecord};
@@ -6,21 +5,21 @@ use betterlite_azure::credentials::source::{
     CallableTokenProvider, CredentialSources, SourceFailure,
 };
 use betterlite_azure::oidc_exchange::OidcExchangeInput;
+use betterlite_config::sections::Section;
 use betterlite_config::sections::azure_credentials::DeploymentSettings;
-use betterlite_foundry::chat::CUSTOM_LLM_PROVIDER;
+use betterlite_config::sections::azure_url_policy::Raw as KeyRaw;
 use betterlite_foundry::chat::capabilities::{RequestParams, map_params, supported_params};
 use betterlite_foundry::chat::environment::{
     EnvironmentRequest, TokenSource, validate_environment,
 };
-use betterlite_foundry::chat::fields::required_params;
 use betterlite_foundry::chat::provider::{
     OpenAiModelLists, ProviderEnvironment, ProviderRequest, get_openai_compatible_provider_info,
 };
 use betterlite_foundry::chat::request::transform_request;
 use betterlite_foundry::chat::response::transform_response;
 use betterlite_foundry::chat::url::get_complete_url;
+use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::chat::response::{ChatChoice, ChatResponse};
-use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::reasoning_models::DropParams;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -28,6 +27,8 @@ use serde_json::{Value, json};
 use tokio::runtime::Runtime;
 
 use super::fixture::Installed;
+use crate::helpers::{HelperError, OrHelperError as _};
+
 use super::input::{AuthCall, MapCall, ProviderCall, RequestCall, ResponseCall, UrlCall};
 
 pub(super) fn url_report(call: &UrlCall) -> Value {
@@ -114,18 +115,25 @@ fn project_choice(choice: &ChatChoice) -> Value {
 }
 
 pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Value {
-    let environment_base = environment_value(&call.environment, "AZURE_AI_API_BASE");
-    let environment_key =
-        environment_value(&call.environment, "AZURE_AI_API_KEY").map(SecretString::from);
+    // an empty variable counts as unset
+    let environment_base = call
+        .environment
+        .get("AZURE_AI_API_BASE")
+        .filter(|value| !value.is_empty());
+    let environment_key = call
+        .environment
+        .get("AZURE_AI_API_KEY")
+        .filter(|value| !value.is_empty())
+        .map(|value| SecretString::from(value.as_str()));
     let key = call.api_key.as_deref().map(SecretString::from);
     // get_llm_provider strips the provider prefix before the config tests the model, one prefix in all
     let info = get_openai_compatible_provider_info(ProviderRequest {
         model: &call.model,
         api_base: call.api_base.as_deref(),
         api_key: key.as_ref(),
-        custom_llm_provider: CUSTOM_LLM_PROVIDER,
+        custom_llm_provider: ProviderId::AzureAi,
         environment: ProviderEnvironment {
-            api_base: environment_base.as_deref(),
+            api_base: environment_base.map(String::as_str),
             api_key: environment_key.as_ref(),
         },
         lists: OpenAiModelLists {
@@ -135,24 +143,42 @@ pub(super) fn provider_report(installed: &Installed, call: &ProviderCall) -> Val
         },
     });
     json!({
-        "provider": info.custom_llm_provider,
+        "provider": info.custom_llm_provider.to_string(),
         "api_base": info.api_base,
         "api_key": info.api_key.as_ref().map(|value| value.expose_secret().to_owned()),
     })
 }
 
-pub(super) fn auth_report(call: &AuthCall) -> Value {
+// litellm.api_key, litellm.azure_key and the Azure key variables, through the production config section
+pub(super) fn auth_report(call: &AuthCall) -> Result<Value, Box<HelperError>> {
     let argument = call.api_key.as_deref().map(SecretString::from);
     let params = call
         .litellm_params
         .get("api_key")
         .and_then(Value::as_str)
         .map(SecretString::from);
-    let configured = configured_key(&call.environment);
-    let credentials = deployment_settings();
-    let headers: Headers = call.headers.clone();
+    let source = json!({
+        "litellm_settings": {"api_key": null, "azure_key": null},
+        "model_list": [{"litellm_params": {}}],
+    });
+    let raw: KeyRaw = serde_json::from_value(source).or_config_error()?;
+    let resolved = Section::convert(raw, &call.environment).or_config_error()?;
+    let configured = resolved
+        .deployments
+        .into_iter()
+        .next()
+        .and_then(|deployment| deployment.api_key);
+    let credentials = DeploymentSettings {
+        azure_ad_token: None,
+        tenant_id: None,
+        client_id: None,
+        client_secret: None,
+        azure_scope: String::from("https://cognitiveservices.azure.com/.default"),
+        azure_username: None,
+        azure_password: None,
+    };
     let validated = validate_environment(EnvironmentRequest {
-        headers,
+        headers: call.headers.clone(),
         argument_key: argument.as_ref(),
         params_key: params.as_ref(),
         configured_key: configured.as_ref(),
@@ -164,70 +190,46 @@ pub(super) fn auth_report(call: &AuthCall) -> Value {
         },
         api_base: call.api_base.as_deref(),
     });
-    match validated {
+    Ok(match validated {
         Ok(headers) => json!(headers),
         Err(_) => json!({"error": {"kind": "EnvironmentError"}}),
-    }
-}
-
-pub(super) fn field_report() -> Value {
-    json!(required_params())
-}
-
-fn environment_value(environment: &BTreeMap<String, String>, name: &str) -> Option<String> {
-    let value = environment.get(name)?;
-    (!value.is_empty()).then(|| value.clone())
-}
-
-fn configured_key(environment: &BTreeMap<String, String>) -> Option<SecretString> {
-    ["AZURE_OPENAI_API_KEY", "AZURE_API_KEY"]
-        .iter()
-        .find_map(|name| environment_value(environment, name))
-        .map(SecretString::from)
-}
-
-fn deployment_settings() -> DeploymentSettings {
-    DeploymentSettings {
-        azure_ad_token: None,
-        tenant_id: None,
-        client_id: None,
-        client_secret: None,
-        azure_scope: String::from("https://cognitiveservices.azure.com/.default"),
-        azure_username: None,
-        azure_password: None,
-    }
+    })
 }
 
 struct NoSources;
-
-fn missing(kind: &str) -> SourceFailure {
-    SourceFailure {
-        class: String::from("ValueError"),
-        status: None,
-        message: format!("no {kind} source is configured"),
-    }
-}
 
 impl CredentialSources for NoSources {
     fn client_secret<'source>(
         &'source self,
         _record: &ClientSecretRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(missing("client secret"))
+        Err(SourceFailure {
+            class: String::from("ValueError"),
+            status: None,
+            message: String::from("no client secret source is configured"),
+        })
     }
 
     fn username_password<'source>(
         &'source self,
         _record: &UsernamePasswordRecord,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(missing("username and password"))
+        Err(SourceFailure {
+            class: String::from("ValueError"),
+            status: None,
+            message: String::from("no username and password source is configured"),
+        })
     }
 
     fn sdk_refresh<'source>(
         &'source self,
         _scope: &str,
     ) -> Result<Arc<dyn CallableTokenProvider + 'source>, SourceFailure> {
-        Err(missing("SDK refresh"))
+        Err(SourceFailure {
+            class: String::from("ValueError"),
+            status: None,
+            message: String::from("no SDK refresh source is configured"),
+        })
     }
 
     fn default_credential<'source>(
@@ -238,6 +240,10 @@ impl CredentialSources for NoSources {
     }
 
     fn oidc(&self, _input: &OidcExchangeInput) -> Result<SecretString, SourceFailure> {
-        Err(missing("OIDC"))
+        Err(SourceFailure {
+            class: String::from("ValueError"),
+            status: None,
+            message: String::from("no OIDC source is configured"),
+        })
     }
 }

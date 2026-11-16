@@ -1,4 +1,6 @@
-use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::openai_base_config::{
+    ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
+};
 use betterlite_prompts::message_content::Message;
 use thiserror::Error;
 
@@ -28,5 +30,11 @@ pub fn transform_request(
     params.remove("max_retries");
     let transformed = messages::transform_messages(messages)?;
     let encoded = serde_json::to_value(transformed)?;
-    Ok(super::base_config().request_body(model, encoded, &params))
+    let config = OpenAiConfig {
+        family: ConfigFamily::AzureAiStudio,
+        api_key: None,
+        headers: Headers::new(),
+        settings: OpenAiSettings::default(),
+    };
+    Ok(config.request_body(model, encoded, &params))
 }

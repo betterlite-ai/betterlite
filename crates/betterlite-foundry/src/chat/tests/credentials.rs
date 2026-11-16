@@ -24,7 +24,8 @@ fn header_identities() {
     let first_headers = validate(
         Keys {
             argument: Some(&first),
-            ..Keys::default()
+            params: None,
+            configured: None,
         },
         &credentials,
         Some(FOUNDRY_BASE),
@@ -32,7 +33,8 @@ fn header_identities() {
     let second_headers = validate(
         Keys {
             argument: Some(&second),
-            ..Keys::default()
+            params: None,
+            configured: None,
         },
         &credentials,
         Some(FOUNDRY_BASE),

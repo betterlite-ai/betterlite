@@ -1,10 +1,11 @@
 use std::collections::BTreeSet;
 
+use betterlite_models::identity::provider_id::ProviderId;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::chat::provider::{
-    AZURE_PROVIDER, OpenAiModelLists, ProviderEnvironment, ProviderRequest,
-    get_openai_compatible_provider_info, is_azure_openai_model,
+    OpenAiModelLists, ProviderEnvironment, ProviderRequest, get_openai_compatible_provider_info,
+    is_azure_openai_model,
 };
 
 use super::support::model_set;
@@ -103,12 +104,12 @@ fn info<'data>(
     api_key: Option<&'data SecretString>,
     environment: ProviderEnvironment<'data>,
     lists: OpenAiModelLists<'data>,
-) -> (Option<String>, Option<String>, String) {
+) -> (Option<String>, Option<String>, ProviderId) {
     let resolved = get_openai_compatible_provider_info(ProviderRequest {
         model,
         api_base,
         api_key,
-        custom_llm_provider: "azure_ai",
+        custom_llm_provider: ProviderId::AzureAi,
         environment,
         lists,
     });
@@ -142,7 +143,7 @@ fn provider_info_prefers_explicit_values_then_the_environment() {
         (
             Some("https://explicit.example".to_owned()),
             Some("explicit-key".to_owned()),
-            AZURE_PROVIDER.to_owned()
+            ProviderId::Azure
         )
     );
     assert_eq!(
@@ -150,7 +151,7 @@ fn provider_info_prefers_explicit_values_then_the_environment() {
         (
             Some("https://env.openai.azure.com".to_owned()),
             Some("env-key".to_owned()),
-            AZURE_PROVIDER.to_owned()
+            ProviderId::Azure
         )
     );
     // no base anywhere means no redirect, and the provider is echoed back
@@ -160,7 +161,7 @@ fn provider_info_prefers_explicit_values_then_the_environment() {
     };
     assert_eq!(
         info("gpt-4o", None, None, empty, all.borrowed()),
-        (None, None, "azure_ai".to_owned())
+        (None, None, ProviderId::AzureAi)
     );
 }
 
@@ -173,6 +174,6 @@ fn provider_info_never_redirects_a_foundry_base() {
     };
     assert_eq!(
         info("gpt-4o", Some(FOUNDRY_HOST), None, empty, all.borrowed()),
-        (Some(FOUNDRY_HOST.to_owned()), None, "azure_ai".to_owned())
+        (Some(FOUNDRY_HOST.to_owned()), None, ProviderId::AzureAi)
     );
 }

@@ -1,5 +1,5 @@
+use betterlite_http::user_url::httpx_url::HttpxUrl;
 use betterlite_openai::openai_base_config::overlapping_api_base_path;
-use url::Url;
 use url::form_urlencoded;
 
 use super::url_error::UrlError;
@@ -17,8 +17,8 @@ pub fn get_complete_url(
     let Some(base) = api_base else {
         return Err(UrlError::MissingApiBase);
     };
-    let original = Url::parse(base).map_err(UrlError::InvalidUrl)?;
-    let mut query = collapsed_query_params(original.query());
+    let original = HttpxUrl::parse(base).map_err(UrlError::InvalidUrl)?;
+    let mut query = collapsed_query_params(original.query.as_deref());
     if !query.iter().any(|(name, _)| name == API_VERSION_PARAM)
         && let Some(version) = api_version.filter(|text| !text.is_empty())
     {
@@ -30,9 +30,9 @@ pub fn get_complete_url(
         STUDIO_ROUTE
     };
     let merged = overlapping_api_base_path(base, ending).map_err(UrlError::Compose)?;
-    let mut url = Url::parse(&merged).map_err(UrlError::InvalidUrl)?;
-    url.set_query(encoded_query(&query).as_deref());
-    Ok(url.to_string())
+    let mut url = HttpxUrl::parse(&merged).map_err(UrlError::InvalidUrl)?;
+    url.query = encoded_query(&query);
+    Ok(url.href())
 }
 
 fn query_pairs(query: Option<&str>) -> Vec<(String, String)> {

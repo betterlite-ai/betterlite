@@ -1,10 +1,9 @@
 use std::collections::BTreeSet;
 
+use betterlite_models::identity::provider_id::ProviderId;
 use secrecy::SecretString;
 
 use crate::credentials::host::is_foundry_base;
-
-pub const AZURE_PROVIDER: &str = "azure";
 
 #[derive(Debug, Clone, Copy)]
 pub struct OpenAiModelLists<'data> {
@@ -24,7 +23,7 @@ pub struct ProviderRequest<'data> {
     pub model: &'data str,
     pub api_base: Option<&'data str>,
     pub api_key: Option<&'data SecretString>,
-    pub custom_llm_provider: &'data str,
+    pub custom_llm_provider: ProviderId,
     pub environment: ProviderEnvironment<'data>,
     pub lists: OpenAiModelLists<'data>,
 }
@@ -33,7 +32,7 @@ pub struct ProviderRequest<'data> {
 pub struct ProviderInfo {
     pub api_base: Option<String>,
     pub api_key: Option<SecretString>,
-    pub custom_llm_provider: String,
+    pub custom_llm_provider: ProviderId,
 }
 
 #[must_use]
@@ -66,9 +65,9 @@ pub fn get_openai_compatible_provider_info(request: ProviderRequest<'_>) -> Prov
         api_base: resolved_base,
         api_key: resolved_key,
         custom_llm_provider: if redirects {
-            AZURE_PROVIDER.to_owned()
+            ProviderId::Azure
         } else {
-            request.custom_llm_provider.to_owned()
+            request.custom_llm_provider
         },
     }
 }

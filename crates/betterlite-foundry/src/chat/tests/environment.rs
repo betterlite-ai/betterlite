@@ -23,7 +23,8 @@ fn explicit_key_routes_by_host() {
     let credentials = settings(None, None);
     let keys = Keys {
         argument: Some(&key),
-        ..Keys::default()
+        params: None,
+        configured: None,
     };
     let api_key = headers(&[
         ("Content-Type", "application/json"),
@@ -56,7 +57,7 @@ fn fallback_keys_and_tokens() {
     let keys = Keys {
         argument: Some(&empty),
         params: Some(&params_key),
-        ..Keys::default()
+        configured: None,
     };
     assert_eq!(validate(keys, &credentials, Some(PLAIN_BASE)), api_key);
     let keys = Keys {

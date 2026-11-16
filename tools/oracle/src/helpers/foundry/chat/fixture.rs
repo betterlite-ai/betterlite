@@ -55,7 +55,6 @@ impl CostMap for CostKeys {
 }
 
 impl ChatCapabilities {
-    // A routing name reads its own entry and, for a key that entry lacks, the bare entry's key.
     // A bare name answers only when the OpenAI catalog lists it, as LiteLLM's lookup does.
     fn field(&self, model: &str, key: &str) -> Option<&Value> {
         let bare = model.split_once('/').map(|(_, name)| name);
@@ -68,11 +67,6 @@ impl ChatCapabilities {
                 .and_then(|entry| entry.get(key))
         })
     }
-
-    fn bool_field(&self, model: &str, key: &str) -> Option<bool> {
-        let value = self.field(model, key)?;
-        value.as_bool()
-    }
 }
 
 impl ReasoningCapabilities for ChatCapabilities {
@@ -81,7 +75,7 @@ impl ReasoningCapabilities for ChatCapabilities {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self.bool_field(request.model, key) == Some(true);
+        let answer = self.field(request.model, key).and_then(Value::as_bool) == Some(true);
         ready(answer)
     }
 
@@ -101,7 +95,7 @@ impl ReasoningCapabilities for ChatCapabilities {
         request: &CapabilityRequest<'_>,
         key: &str,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self.bool_field(request.model, key) == Some(false);
+        let answer = self.field(request.model, key).and_then(Value::as_bool) == Some(false);
         ready(answer)
     }
 
@@ -109,7 +103,10 @@ impl ReasoningCapabilities for ChatCapabilities {
         &mut self,
         request: &CapabilityRequest<'_>,
     ) -> impl Future<Output = bool> + Send {
-        let answer = self.bool_field(request.model, "supports_response_schema") == Some(true);
+        let answer = self
+            .field(request.model, "supports_response_schema")
+            .and_then(Value::as_bool)
+            == Some(true);
         ready(answer)
     }
 

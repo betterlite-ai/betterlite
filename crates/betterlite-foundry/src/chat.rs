@@ -14,28 +14,13 @@ mod tests;
 
 use std::fmt::{self, Formatter};
 
-use betterlite_openai::chat::response::ChatResponse;
-use betterlite_openai::openai_base_config::{
-    ConfigFamily, Headers, Object, OpenAiConfig, OpenAiSettings,
-};
-use betterlite_prompts::arguments::json::Json;
+use betterlite_openai::openai_base_config::{Headers, Object};
 use betterlite_prompts::message_content::Message;
 
 use environment::EnvironmentRequest;
 use error::ChatError;
 
 pub const AZURE_AI_PREFIX: &str = "azure_ai/";
-pub const CUSTOM_LLM_PROVIDER: &str = "azure_ai";
-
-#[must_use]
-pub fn base_config() -> OpenAiConfig {
-    OpenAiConfig {
-        family: ConfigFamily::AzureAiStudio,
-        api_key: None,
-        headers: Headers::new(),
-        settings: OpenAiSettings::default(),
-    }
-}
 
 pub struct FoundryChatOptions<'data> {
     pub model: &'data str,
@@ -52,10 +37,6 @@ impl<'data> FoundryChatOptions<'data> {
         let url = url::get_complete_url(api_base, self.api_version)?;
         let body = request::transform_request(self.model, self.messages, self.optional_params)?;
         Ok(PreparedChat { headers, url, body })
-    }
-
-    pub fn parse(&self, body: Json) -> Result<ChatResponse, ChatError> {
-        Ok(response::transform_response(self.model, body)?)
     }
 }
 

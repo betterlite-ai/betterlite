@@ -1,4 +1,5 @@
-use serde_json::{Map, Value};
+use betterlite_foundry::chat::fields::required_params;
+use serde_json::{Map, Value, json};
 use tokio::runtime::Builder;
 
 use crate::helpers::{Helper, HelperResult, OrHelperError as _};
@@ -54,11 +55,14 @@ impl Helper for Op {
             answer.insert(String::from("providers"), Value::Array(values));
         }
         if let Some(calls) = &input.auths {
-            let values = calls.iter().map(reports::auth_report).collect();
+            let values = calls
+                .iter()
+                .map(reports::auth_report)
+                .collect::<Result<Vec<_>, _>>()?;
             answer.insert(String::from("auths"), Value::Array(values));
         }
         if input.fields == Some(true) {
-            answer.insert(String::from("fields"), reports::field_report());
+            answer.insert(String::from("fields"), json!(required_params()));
         }
         Ok(Value::Object(answer))
     }

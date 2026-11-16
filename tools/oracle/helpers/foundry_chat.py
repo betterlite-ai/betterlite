@@ -17,10 +17,9 @@ from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
 
 litellm.suppress_debug_info = True
 
-Obj: TypeAlias = dict[str, JsonValue]
-Msgs: TypeAlias = list[AllMessageValues]
-Opt: TypeAlias = str | None
-Head: TypeAlias = dict[str, str]
+JsonObject: TypeAlias = dict[str, JsonValue]
+Messages: TypeAlias = list[AllMessageValues]
+Headers: TypeAlias = dict[str, str]
 AZURE_NAMES: Final[tuple[str, ...]] = (
     "AZURE_AI_API_BASE", "AZURE_AI_API_KEY", "AZURE_OPENAI_API_KEY", "AZURE_API_KEY")
 # the exception class carries Any, so the catch names it through a typed alias
@@ -28,22 +27,22 @@ UNSUPPORTED: Final[type[Exception]] = UnsupportedParamsError
 
 
 class UrlCall(TypedDict):
-    api_base: Opt
-    api_version: Opt
+    api_base: str | None
+    api_version: str | None
 
 
 class MapCall(TypedDict):
     model: str
-    non_default: Obj
-    optional: Obj
+    non_default: JsonObject
+    optional: JsonObject
     drop_params: bool
     global_drop_params: bool
 
 
 class RequestCall(TypedDict):
     model: str
-    messages: Msgs
-    optional: Obj
+    messages: Messages
+    optional: JsonObject
 
 
 class ResponseCall(TypedDict):
@@ -53,21 +52,21 @@ class ResponseCall(TypedDict):
 
 class ProviderCall(TypedDict):
     model: str
-    api_base: Opt
-    api_key: Opt
-    environment: Head
+    api_base: str | None
+    api_key: str | None
+    environment: Headers
 
 
 class AuthCall(TypedDict):
-    api_base: Opt
-    api_key: Opt
-    headers: Head
-    litellm_params: Obj
-    environment: Head
+    api_base: str | None
+    api_key: str | None
+    headers: Headers
+    litellm_params: JsonObject
+    environment: Headers
 
 
 class Input(TypedDict):
-    model_cost: dict[str, Obj]
+    model_cost: dict[str, JsonObject]
     chat_models: list[str]
     text_models: list[str]
     # the Rust adapter fills litellm.open_ai_embedding_models, which no typed assignment reaches
@@ -110,7 +109,10 @@ class ResponseRecord(TypedDict):
 
 
 ReplyArgs: TypeAlias = Callable[
-    [str, httpx.Response, ModelResponse, Logging, Obj, Msgs, Obj, Obj, None, Opt, bool | None],
+    [
+        str, httpx.Response, ModelResponse, Logging, JsonObject, Messages,
+        JsonObject, JsonObject, None, str | None, bool | None,
+    ],
     ModelResponse,
 ]
 
@@ -118,21 +120,34 @@ ReplyArgs: TypeAlias = Callable[
 @runtime_checkable
 class ChatConfig(Protocol):
     @property
-    def get_complete_url(self) -> Callable[[Opt, Opt, str, Obj, Obj], str]: ...
+    def get_complete_url(
+        self,
+    ) -> Callable[[str | None, str | None, str, JsonObject, JsonObject], str]: ...
 
     def get_supported_openai_params(self, model: str) -> list[str]: ...
 
     def map_openai_params(
-        self, non_default_params: Obj, optional_params: Obj, model: str, *, drop_params: bool
-    ) -> Obj: ...
+        self,
+        non_default_params: JsonObject,
+        optional_params: JsonObject,
+        model: str,
+        *,
+        drop_params: bool,
+    ) -> JsonObject: ...
 
     def get_required_params(self) -> list[ProviderField]: ...
 
     @property
-    def transform_request(self) -> Callable[[str, Msgs, Obj, Obj, Obj], Obj]: ...
+    def transform_request(
+        self,
+    ) -> Callable[[str, Messages, JsonObject, JsonObject, JsonObject], JsonObject]: ...
 
     @property
-    def validate_environment(self) -> Callable[[Head, str, Msgs, Obj, Obj, Opt, Opt], Head]: ...
+    def validate_environment(
+        self,
+    ) -> Callable[
+        [Headers, str, Messages, JsonObject, JsonObject, str | None, str | None], Headers
+    ]: ...
 
     @property
     def transform_response(self) -> ReplyArgs: ...
@@ -152,14 +167,14 @@ RESPONSE: Final[TypeAdapter[ResponseRecord]] = TypeAdapter(ResponseRecord)
 JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 
 
-def apply_environment(environment: Head) -> None:
+def apply_environment(environment: Headers) -> None:
     for name in AZURE_NAMES:
         os.environ.pop(name, None)
     os.environ.update(environment)
 
 
 def url_value(call: UrlCall) -> JsonValue:
-    params: Obj = {"api_version": call["api_version"]}
+    params: JsonObject = {"api_version": call["api_version"]}
     try:
         url = CONFIG.get_complete_url(call["api_base"], None, "fixture-model", {}, params)
     except ValueError:
@@ -169,7 +184,7 @@ def url_value(call: UrlCall) -> JsonValue:
 
 def map_value(call: MapCall) -> JsonValue:
     litellm.drop_params = call["global_drop_params"]
-    optional: Obj = dict(call["optional"])
+    optional: JsonObject = dict(call["optional"])
     try:
         mapped = CONFIG.map_openai_params(
             dict(call["non_default"]), optional, call["model"], drop_params=call["drop_params"]
@@ -254,7 +269,7 @@ def auth_value(call: AuthCall) -> JsonValue:
 
 
 def run(values: Input) -> JsonValue:
-    answer: Obj = {}
+    answer: JsonObject = {}
     with redirect_stdout(io.StringIO()):
         litellm.model_cost = values["model_cost"]
         litellm.open_ai_chat_completion_models = set(values["chat_models"])

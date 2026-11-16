@@ -4,13 +4,14 @@ use std::future::Future;
 use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::model_capability_predicates::CapabilityRequest;
 use betterlite_openai::openai_base_config::{
-    CatalogCapabilities, ModelFamily, Object, model_family,
+    CatalogCapabilities, ConfigFamily, Headers, ModelFamily, Object, OpenAiConfig, OpenAiSettings,
+    model_family,
 };
 use betterlite_openai::reasoning_models::gpt_5::{self, Mapping as Gpt5Mapping};
 use betterlite_openai::reasoning_models::{DropParams, ReasoningCapabilities, ReasoningError};
 use betterlite_openai::xai_chat::params::supported_with;
 
-use super::{AZURE_AI_PREFIX, base_config};
+use super::AZURE_AI_PREFIX;
 
 pub const TOOL_CHOICE: &str = "supports_tool_choice";
 
@@ -122,7 +123,13 @@ where
         };
         gpt_5::supported_params(&mut wrapped, model, catalog).await
     } else {
-        base_config().supported_params(model, catalog)
+        let config = OpenAiConfig {
+            family: ConfigFamily::AzureAiStudio,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        };
+        config.supported_params(model, catalog)
     };
     if !supports_tool_choice(capabilities, model).await {
         params.retain(|param| *param != "tool_choice");
@@ -143,7 +150,13 @@ where
 {
     if !gpt_reasoning_name(request.model) {
         // the superclass copy reads the plain GPT allowlist, not this provider's filtered one
-        base_config().map_params(
+        let config = OpenAiConfig {
+            family: ConfigFamily::AzureAiStudio,
+            api_key: None,
+            headers: Headers::new(),
+            settings: OpenAiSettings::default(),
+        };
+        config.map_params(
             request.model,
             request.non_default_params,
             request.optional_params,

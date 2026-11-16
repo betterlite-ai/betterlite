@@ -1853,6 +1853,7 @@ dependencies = [
  "betterlite-azure",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-prompts",

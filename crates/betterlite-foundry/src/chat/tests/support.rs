@@ -56,9 +56,7 @@ pub(super) fn model_set(models: &[&str]) -> BTreeSet<String> {
     models.iter().map(|model| (*model).to_owned()).collect()
 }
 
-// A double for the model cost map and the capability helper that reads it. A routing name
-// reads its own entry and, for a key that entry lacks, the bare entry's key; a bare name
-// answers only when the OpenAI catalog lists it, as LiteLLM's provider resolution does.
+// A bare name answers only when the OpenAI catalog lists it, as LiteLLM's provider resolution does
 pub(super) struct CapabilityFixture {
     entries: BTreeMap<String, JsonObject>,
     resolvable: BTreeSet<String>,

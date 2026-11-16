@@ -1,3 +1,4 @@
+use betterlite_http::user_url::error::InvalidUrl;
 use betterlite_openai::openai_base_config::forwarding::BaseConfigError;
 use thiserror::Error;
 
@@ -8,7 +9,7 @@ pub enum UrlError {
     )]
     MissingApiBase,
     #[error("api_base is not a valid URL")]
-    InvalidUrl(#[source] url::ParseError),
+    InvalidUrl(#[source] InvalidUrl),
     #[error("api_base cannot take the route")]
     Compose(#[source] BaseConfigError),
 }
