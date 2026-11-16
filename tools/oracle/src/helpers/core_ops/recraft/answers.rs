@@ -5,6 +5,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::types::RoutingStrategy;
 use betterlite_core::api::recraft::cost::cost_calculator;
 use betterlite_core::api::recraft::edit::RecraftImageEditConfig;
+use betterlite_core::api::recraft::error::RecraftError;
 use betterlite_core::api::recraft::generation::RecraftImageGenerationConfig;
 // ast-grep-ignore: no-long-names
 use betterlite_core::api::recraft::generation::get_recraft_image_generation_config as generation_config;
@@ -13,14 +14,16 @@ use betterlite_core::api::recraft::settings::RecraftImageSettings;
 use betterlite_core::cost::image_dispatch::policy::ImageResponseView;
 use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::price_lookup::{PriceLookup, PriceRecord, PricedModel};
-use betterlite_models::tiered_pricing::Scalar;
 use betterlite_openai::api::image_contracts::records::{
-    ImageData, ImageFile, ImageHeaders, ImageHttpResponse, ImageParams, ImageResponse,
+    ImageFile, ImageHeaders, ImageHttpResponse, ImageResponse,
 };
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use super::{Endpoint, ImageSeed};
+use super::{
+    CostCall, EditMapCall, EditRequestCall, Endpoint, EnvironmentCall, ImageSeed, MapCall,
+    ReplyCall, RequestCall, UrlCall,
+};
 use crate::helpers::HelperError;
 
 // No case replaces the shared cost map, so every price comes from the record the call carries.
@@ -48,53 +51,41 @@ impl PriceLookup for NoPrices {
     }
 }
 
-pub(super) fn supported_answer(endpoint: Endpoint, _model: &str) -> Value {
-    let supported: &[&str] = match endpoint {
-        Endpoint::Generation => &RecraftImageGenerationConfig::SUPPORTED_OPENAI_PARAMS,
-        Endpoint::Edit => &RecraftImageEditConfig::SUPPORTED_OPENAI_PARAMS,
-    };
-    Value::Array(
-        supported
-            .iter()
-            .map(|name| Value::String((*name).to_owned()))
-            .collect(),
-    )
+// LiteLLM resolves the url and the headers through one class per endpoint, so the answers pick a config the same way
+enum Configured {
+    Generation(RecraftImageGenerationConfig),
+    Edit(RecraftImageEditConfig),
 }
 
-pub(super) fn map_answer(
-    model: &str,
-    non_default_params: &ImageParams,
-    optional_params: &ImageParams,
-    drop_params: bool,
-) -> Value {
-    let attempt = RecraftImageGenerationConfig::map_openai_params(
-        non_default_params,
-        optional_params.clone(),
-        model,
-        drop_params,
-    );
-    match attempt {
-        Ok(mapped) => json!({"mapped": mapped}),
-        Err(_unsupported) => json!({"unsupported": true}),
+impl Configured {
+    fn complete_url(&self, api_base: Option<&str>) -> String {
+        match self {
+            Self::Generation(config) => config.get_complete_url(api_base),
+            Self::Edit(config) => config.get_complete_url(api_base),
+        }
+    }
+
+    fn validate_environment(
+        &self,
+        headers: ImageHeaders,
+        api_key: Option<&SecretString>,
+    ) -> Result<ImageHeaders, RecraftError> {
+        match self {
+            Self::Generation(config) => config.validate_environment(headers, api_key),
+            Self::Edit(config) => config.validate_environment(headers, api_key),
+        }
     }
 }
 
-pub(super) fn edit_map_answer(model: &str, params: &ImageParams, drop_params: bool) -> Value {
-    json!({
-        "mapped": RecraftImageEditConfig::map_openai_params(params.clone(), model, drop_params)
-    })
-}
-
-pub(super) fn url_answer(
+fn endpoint_config(
     endpoint: Endpoint,
     model: &str,
-    api_base: Option<&str>,
     environment: &BTreeMap<String, String>,
-) -> Value {
-    if matches!(endpoint, Endpoint::Edit) {
-        return json!({"url": edit_config(environment).get_complete_url(api_base)});
+) -> Configured {
+    match endpoint {
+        Endpoint::Generation => Configured::Generation(generation_config(model, environment)),
+        Endpoint::Edit => Configured::Edit(edit_config(environment)),
     }
-    json!({"url": generation_config(model, environment).get_complete_url(api_base)})
 }
 
 fn edit_config(environment: &BTreeMap<String, String>) -> RecraftImageEditConfig {
@@ -104,55 +95,78 @@ fn edit_config(environment: &BTreeMap<String, String>) -> RecraftImageEditConfig
     }
 }
 
-pub(super) fn environment_answer(
-    endpoint: Endpoint,
-    model: &str,
-    api_key: Option<&str>,
-    headers: &ImageHeaders,
-    environment: &BTreeMap<String, String>,
-) -> Value {
-    let explicit = api_key.map(SecretString::from);
-    let validated = match endpoint {
-        Endpoint::Generation => generation_config(model, environment)
-            .validate_environment(headers.clone(), explicit.as_ref()),
-        Endpoint::Edit => {
-            edit_config(environment).validate_environment(headers.clone(), explicit.as_ref())
-        }
+pub(super) fn supported_answer(endpoint: Endpoint, _model: &str) -> Value {
+    let supported: &[&str] = match endpoint {
+        Endpoint::Generation => &RecraftImageGenerationConfig::SUPPORTED_OPENAI_PARAMS,
+        Endpoint::Edit => &RecraftImageEditConfig::SUPPORTED_OPENAI_PARAMS,
     };
-    validated.map_or_else(
-        |_missing_key| json!({"missing_key": true}),
-        |validated_headers| json!({"headers": validated_headers}),
-    )
+    json!(supported)
 }
 
-pub(super) fn request_answer(
-    model: &str,
-    prompt: &str,
-    optional_params: &ImageParams,
-) -> Result<Value, Box<HelperError>> {
+pub(super) fn map_answer(call: &MapCall) -> Value {
+    let attempt = RecraftImageGenerationConfig::map_openai_params(
+        &call.non_default_params,
+        call.optional_params.clone(),
+        &call.model,
+        call.drop_params,
+    );
+    match attempt {
+        Ok(mapped) => json!({"mapped": mapped}),
+        Err(_unsupported) => json!({"unsupported": true}),
+    }
+}
+
+pub(super) fn edit_map_answer(call: &EditMapCall) -> Value {
+    json!({
+        "mapped": RecraftImageEditConfig::map_openai_params(
+            call.params.clone(),
+            &call.model,
+            call.drop_params,
+        )
+    })
+}
+
+pub(super) fn url_answer(call: &UrlCall) -> Value {
+    json!({
+        "url": endpoint_config(call.endpoint, &call.model, &call.environment)
+            .complete_url(call.api_base.as_deref())
+    })
+}
+
+pub(super) fn environment_answer(call: &EnvironmentCall) -> Value {
+    let explicit = call.api_key.as_deref().map(SecretString::from);
+    endpoint_config(call.endpoint, &call.model, &call.environment)
+        .validate_environment(call.headers.clone(), explicit.as_ref())
+        .map_or_else(
+            |_missing_key| json!({"missing_key": true}),
+            |headers| json!({"headers": headers}),
+        )
+}
+
+pub(super) fn request_answer(call: &RequestCall) -> Result<Value, Box<HelperError>> {
     // ast-grep-ignore: no-long-names
-    RecraftImageGenerationConfig::transform_image_generation_request(model, prompt, optional_params)
-        .map(|request| json!({"request": request}))
-        .map_err(|error| helper_error("TypeError", error.to_string()))
+    RecraftImageGenerationConfig::transform_image_generation_request(
+        &call.model,
+        &call.prompt,
+        &call.optional_params,
+    )
+    .map(|request| json!({"request": request}))
+    .map_err(|error| helper_error("TypeError", error.to_string()))
 }
 
-pub(super) fn edit_request_answer(
-    model: &str,
-    prompt: Option<&str>,
-    images: &[ImageSeed],
-    optional_params: &ImageParams,
-) -> Result<Value, Box<HelperError>> {
-    let files = images
+pub(super) fn edit_request_answer(call: &EditRequestCall) -> Result<Value, Box<HelperError>> {
+    let files = call
+        .images
         .iter()
         .map(seed_file)
         .collect::<Result<Vec<ImageFile>, Box<HelperError>>>()?;
-    let (data, parts) = RecraftImageEditConfig::transform_image_edit_request(
-        model,
-        prompt,
+    let (data, uploaded) = RecraftImageEditConfig::transform_image_edit_request(
+        &call.model,
+        call.prompt.as_deref(),
         Some(files.as_slice()),
-        optional_params.clone(),
+        call.optional_params.clone(),
     );
-    let parts = parts.iter().map(part_value).collect::<Vec<Value>>();
+    let parts = uploaded.iter().map(part_value).collect::<Vec<Value>>();
     Ok(json!({"data": data, "files": parts}))
 }
 
@@ -177,44 +191,38 @@ fn part_value((field, file): &(String, ImageFile)) -> Value {
 }
 
 pub(super) fn response_answer(
-    status: u16,
-    headers: &ImageHeaders,
-    body: &str,
-    created: i64,
-    data: &[ImageData],
+    endpoint: Endpoint,
+    call: &ReplyCall,
 ) -> Result<Value, Box<HelperError>> {
-    let upstream = upstream_response(status, headers, body);
-    let mut response = ImageResponse {
-        created,
-        data: (!data.is_empty()).then(|| data.to_vec()),
-        usage: None,
-    };
-    // ast-grep-ignore: no-long-names
-    match RecraftImageGenerationConfig::transform_image_generation_response(
-        &upstream,
-        &mut response,
-    ) {
-        Ok(()) => Ok(json!({"response": response})),
-        Err(error) => Err(reply_error(&error)),
+    let upstream = upstream_response(call);
+    match endpoint {
+        Endpoint::Generation => {
+            let mut response = ImageResponse {
+                created: call.created,
+                data: (!call.data.is_empty()).then(|| call.data.clone()),
+                usage: None,
+            };
+            // ast-grep-ignore: no-long-names
+            RecraftImageGenerationConfig::transform_image_generation_response(
+                &upstream,
+                &mut response,
+            )
+            .map_err(|error| reply_error(&error))?;
+            Ok(json!({"response": response}))
+        }
+        Endpoint::Edit => {
+            RecraftImageEditConfig::transform_image_edit_response(&upstream, call.created)
+                .map(|edited| json!({"data": edited.data, "usage": edited.usage}))
+                .map_err(|error| reply_error(&error))
+        }
     }
 }
 
-pub(super) fn edit_response_answer(
-    status: u16,
-    headers: &ImageHeaders,
-    body: &str,
-) -> Result<Value, Box<HelperError>> {
-    let upstream = upstream_response(status, headers, body);
-    RecraftImageEditConfig::transform_image_edit_response(&upstream, 0)
-        .map(|response| json!({"data": response.data, "usage": response.usage}))
-        .map_err(|error| reply_error(&error))
-}
-
-fn upstream_response(status: u16, headers: &ImageHeaders, body: &str) -> ImageHttpResponse {
+fn upstream_response(call: &ReplyCall) -> ImageHttpResponse {
     ImageHttpResponse {
-        status_code: status,
-        headers: headers.clone(),
-        body: body.as_bytes().to_vec(),
+        status_code: call.status,
+        headers: call.headers.clone(),
+        body: call.body.as_bytes().to_vec(),
     }
 }
 
@@ -224,28 +232,23 @@ fn reply_error(error: &RecraftReplyError) -> Box<HelperError> {
     failure
 }
 
-pub(super) fn cost_answer(
-    model: &str,
-    output_cost_per_image: Option<&Scalar>,
-    image_count: i64,
-    other: bool,
-) -> Result<Value, Box<HelperError>> {
+pub(super) fn cost_answer(call: &CostCall) -> Result<Value, Box<HelperError>> {
     let mut model_info = PriceRecord::new();
-    if let Some(rate) = output_cost_per_image {
+    if let Some(rate) = call.output_cost_per_image.as_ref() {
         model_info.insert("output_cost_per_image".to_owned(), rate.clone());
     }
     let billing = ImageBilling {
-        image_count,
+        image_count: call.image_count,
         size: None,
         quality: None,
         usage: None,
     };
-    let response = if other {
+    let response = if call.other {
         ImageResponseView::Other
     } else {
         ImageResponseView::Image(&billing)
     };
-    let cost = cost_calculator(model, response, Some(&model_info), &NoPrices)
+    let cost = cost_calculator(&call.model, response, Some(&model_info), &NoPrices)
         .map_err(|error| helper_error("ImageCostError", error.to_string()))?;
     Ok(json!({"cost": cost.normalize().to_string()}))
 }

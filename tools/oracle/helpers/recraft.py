@@ -162,6 +162,7 @@ GENERATION, EDIT, COST = PROVIDERS
 
 def environment_call(call: EnvironmentCall) -> JsonValue:
     headers = dict(call["headers"])
+    validated: Obj
     try:
         match call["endpoint"]:
             case "generation":
@@ -224,12 +225,11 @@ def cost_call(call: CostCall) -> JsonValue:
     model_info: Obj = {"output_cost_per_image": call["output_cost_per_image"]}
     response: ImageResponse | str = "other"
     if not call["other"]:
-        images: list[Image] = [
+        response = ImageResponse(created=1)
+        response.data = [
             ImageObject(b64_json=None, url=f"https://recraft.test/{index}.png", revised_prompt=None)
             for index in range(call["image_count"])
         ]
-        response = ImageResponse(created=1)
-        response.data = images
     return {"cost": format(COST(call["model"], response, model_info), "g")}
 
 
@@ -295,4 +295,5 @@ def call_value(call: Call) -> JsonValue:
 
 
 def run(input_value: Input) -> JsonValue:
-    return [call_value(call) for call in input_value["calls"]]
+    answers: list[JsonValue] = [call_value(call) for call in input_value["calls"]]
+    return answers
