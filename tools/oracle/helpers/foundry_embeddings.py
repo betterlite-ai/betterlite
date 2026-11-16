@@ -3,7 +3,7 @@ import json
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
 from functools import partial
-from typing import Final, Literal, Protocol, TypeAlias, TypedDict
+from typing import Final, Literal, Protocol, TypeAlias, TypedDict, cast
 
 import httpx
 import litellm
@@ -131,16 +131,6 @@ class FlowState:
         self.constructed: list[JsonValue] = []
 
 
-def image_call(request: httpx.Request) -> JsonValue:
-    return {
-        "kind": "image",
-        "url": str(request.url),
-        "authorization": request.headers["authorization"],
-        "content_type": request.headers["content-type"],
-        "body": JSON_OBJECT.validate_json(request.content),
-    }
-
-
 def text_call(request: httpx.Request) -> JsonValue:
     body = JSON_OBJECT.validate_json(request.content)
     text = TEXT_BODY.validate_json(request.content)
@@ -161,16 +151,21 @@ class Transport(httpx.MockTransport):
         self.kind = kind
 
     def respond(self, request: httpx.Request) -> httpx.Response:
-        match self.kind:
-            case "built":
+        if self.kind == "text":
+            self.state.calls.append(text_call(request))
+        else:
+            image: JsonValue = {
+                "kind": "image",
+                "url": str(request.url),
+                "authorization": request.headers["authorization"],
+                "content_type": request.headers["content-type"],
+                "body": JSON_OBJECT.validate_json(request.content),
+            }
+            if self.kind == "built":
                 timeout = RequestFacts.model_validate(request).extensions.timeout
                 read = None if timeout is None else timeout.read
                 self.state.constructed.append({"kind": "sync", "timeout": read})
-                self.state.calls.append(image_call(request))
-            case "image":
-                self.state.calls.append(image_call(request))
-            case "text":
-                self.state.calls.append(text_call(request))
+            self.state.calls.append(image)
         headers = [(header["name"], header["value"]) for header in self.reply["headers"]]
         return httpx.Response(
             self.reply["status"], headers=headers, content=self.reply["body"], request=request
@@ -206,20 +201,20 @@ def build_client(flow: FlowCall, image: Transport, text: Transport) -> Client:
 def flow_response(flow: FlowCall, client: Client) -> EmbeddingResponse:
     log = Logging(model=flow["model"], messages=None, stream=False, call_type="embedding",
                   start_time=LOG_START, litellm_call_id="", function_id="embedding")
-    api: EmbeddingApi = AzureAIEmbedding()
+    api = cast(EmbeddingApi, AzureAIEmbedding())  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L207-L241
     pending = api.embedding(flow["model"], flow["input"], float(flow["timeout"]), log,
                             EmbeddingResponse(), flow["options"], flow["api_key"],
                             flow["api_base"], client, flow["mode"] == "async")
-    if asyncio.iscoroutine(pending):
-        return asyncio.run(pending)
-    return pending
+    if flow["mode"] == "async":
+        return asyncio.run(cast(Pending, pending))  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L230-L241
+    return cast(EmbeddingResponse, pending)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L288-L294
 
 
 def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     state = FlowState()
     image = Transport(state, flow["image_reply"], "image")
     text = Transport(state, flow["text_reply"], "text")
-    litellm.sync_transport = Transport(state, flow["image_reply"], "built")  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1699
+    litellm.sync_transport = Transport(state, flow["image_reply"], "built")  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1699
     embed_handler.get_async_httpx_client = partial(async_client, state, image)  # type: ignore[attr-defined]  # pyright: ignore[reportPrivateImportUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/embed/handler.py#L77
     status: JsonValue = None
     try:
@@ -241,7 +236,7 @@ def flow_outcome(flow: FlowCall) -> dict[str, JsonValue]:
     else:
         return answer_outcome(state, response)
     finally:
-        litellm.sync_transport = None  # type: ignore[attr-defined]  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1699
+        litellm.sync_transport = None  # pyright: ignore[reportAttributeAccessIssue]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1699
     return outcome(state, None, {"kind": kind, "status": status})
 
 
