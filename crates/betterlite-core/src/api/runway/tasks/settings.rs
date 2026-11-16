@@ -10,6 +10,15 @@ const DEFAULT_API_BASE: &str = "https://api.dev.runwayml.com";
 const DEFAULT_API_VERSION: &str = "2024-11-06";
 const DEFAULT_TIMEOUT_SECONDS: u64 = 600;
 
+// LiteLLM's RUNWAYML_DEFAULT_API_VERSION is read once at import; an empty value is unset for every other env field
+#[must_use]
+pub fn api_version(lookup: &dyn EnvironmentLookup) -> String {
+    lookup
+        .lookup("RUNWAYML_DEFAULT_API_VERSION")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_API_VERSION.to_owned())
+}
+
 #[derive(Debug, Clone)]
 pub struct RunwaySettings {
     pub api_base: String,
@@ -31,8 +40,7 @@ impl RunwaySettings {
             api_base: present("RUNWAYML_API_BASE").unwrap_or_else(|| DEFAULT_API_BASE.to_owned()),
             api_secret: present("RUNWAYML_API_SECRET").map(SecretString::from),
             api_key: present("RUNWAYML_API_KEY").map(SecretString::from),
-            api_version: present("RUNWAYML_DEFAULT_API_VERSION")
-                .unwrap_or_else(|| DEFAULT_API_VERSION.to_owned()),
+            api_version: api_version(lookup),
             polling_timeout_seconds,
         })
     }

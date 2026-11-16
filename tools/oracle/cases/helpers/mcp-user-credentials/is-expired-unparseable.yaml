@@ -1,0 +1,19 @@
+kind: helper
+name: mcp-user-credentials-is-expired-unparseable
+call:
+  b4713:
+    function: is_expired
+    credential: {type: oauth2, access_token: tok-live, expires_at: not-a-date}
+    buffer_seconds: 0
+calls:
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-live, expires_at: "2024-13-45T99:99:99+00:00"}
+      buffer_seconds: 0
+  - b4713:
+      function: is_expired
+      credential: {type: oauth2, access_token: tok-live, expires_at: ""}
+      buffer_seconds: 0
+env:
+  LITELLM_SALT_KEY: b4713-salt
+compare: {ignore: []}

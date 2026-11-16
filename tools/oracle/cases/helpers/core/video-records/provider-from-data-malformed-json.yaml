@@ -1,0 +1,10 @@
+kind: helper
+name: b3330-provider-from-data-malformed-json
+call:
+  b3330: {function: custom_provider, value: {extra_body: '{"custom_llm_provider": '}}
+calls:
+  - b3330: {function: custom_provider, value: {extra_body: "not json"}}
+  - b3330: {function: custom_provider, value: {extra_body: '{"custom_llm_provider": "openai"'}}
+  - b3330: {function: custom_provider, value: {extra_body: null}}
+env: {}
+compare: {ignore: []}

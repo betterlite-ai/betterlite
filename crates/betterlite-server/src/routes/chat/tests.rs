@@ -103,19 +103,23 @@ async fn exchange(
         ("OPENAI_API_KEY".to_owned(), "env-key".to_owned()),
         ("OPENAI_ORGANIZATION".to_owned(), "org-9".to_owned()),
     ]);
-    let loader = ConfigLoader {
-        lookup: environment.clone(),
+    // a loaded Config is large, so it drops here instead of sitting in this future across the join
+    let call = {
+        let loader = ConfigLoader {
+            lookup: environment.clone(),
+        };
+        let config = loader.load(&source).unwrap();
+        let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
+        let mut builder = Request::post(path).header("content-type", "application/json");
+        if !call_id.is_empty() {
+            builder = builder.header("x-litellm-call-id", call_id);
+        }
+        chat_routes_with_call_id(Arc::new(executor), false)
+            .unwrap()
+            .oneshot(builder.body(Body::from(request.to_owned())).unwrap())
     };
-    let config = loader.load(&source).unwrap();
-    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(3)).unwrap();
-    let mut builder = Request::post(path).header("content-type", "application/json");
-    if !call_id.is_empty() {
-        builder = builder.header("x-litellm-call-id", call_id);
-    }
-    let call = chat_routes_with_call_id(Arc::new(executor), false)
-        .unwrap()
-        .oneshot(builder.body(Body::from(request.to_owned())).unwrap());
-    let (sent, answered) = tokio::join!(provider(listener, reply, delay), call);
+    let upstream = Box::pin(provider(listener, reply, delay));
+    let (sent, answered) = tokio::join!(upstream, Box::pin(call));
     let response = answered.unwrap();
     let status = response.status().as_u16();
     let headers = response.headers().clone();
@@ -129,6 +133,19 @@ async fn exchange(
         body,
         sent,
     }
+}
+
+#[test]
+fn exchange_future_stays_small() {
+    let future = exchange(
+        "/v1/chat/completions",
+        "{}",
+        "",
+        (200, ANSWER),
+        (NO_DELAY, "30"),
+    );
+    let size = size_of_val(&future);
+    assert!(size < 8192, "{size}");
 }
 
 fn header<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {

@@ -1,0 +1,8 @@
+masterKey:
+  secretName: litellm-master-key-secret
+database:
+  writer:
+    host: postgres.example.com
+    dbname: litellm
+    passwordSecret:
+      name: litellm-writer-secret
