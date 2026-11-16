@@ -9,6 +9,9 @@ use betterlite_db::{
 pub const SCHEMA_PRISMA: &[u8] =
     include_bytes!("../../../../betterlite-db/src/schema_contract/fixtures/proxy/schema.prisma");
 
+// The catalog's guards read pg_constraint database-wide, so fixtures applying it hold this one lock
+pub const FIXTURE_LOCK_KEY: i64 = i64::from_be_bytes(*b"ds_migfx");
+
 // The migration files the crates ship, in the timestamp order prisma migrate applies them.
 #[must_use]
 pub fn migrations() -> Vec<Migration> {

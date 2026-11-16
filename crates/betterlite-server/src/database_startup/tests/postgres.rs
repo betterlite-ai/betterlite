@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::time::Duration;
 
+use betterlite_config::sections::database_startup::packaged::FIXTURE_LOCK_KEY;
 use betterlite_config::sections::database_startup::startup::{StartupSettings, StartupSwitch};
 use betterlite_db::migration_deploy::catalog::Migration;
 use betterlite_db::migration_ledger::lock::JitterSource;
@@ -19,8 +20,6 @@ const TEST_TIMEOUT: Duration = Duration::from_secs(240);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(60);
 const LOCK_TIMEOUT: Duration = Duration::from_secs(120);
 const DEPLOY_TIMEOUT: Duration = Duration::from_secs(120);
-// A database-wide session lock serializes the fixtures, whose schemas share one pg_constraint space
-const FIXTURE_LOCK_KEY: i64 = i64::from_be_bytes(*b"b051_fix");
 
 // The retry pauses are not under test here, and a fixed zero keeps the ledger ids and passes reproducible
 pub(crate) struct NoJitter;
