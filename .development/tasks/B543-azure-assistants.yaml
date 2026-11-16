@@ -151,7 +151,7 @@ checks:
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/azure_assistants*")"
       && grep -lq 'azure_assistants' tools/oracle/fuzz/corpus/helper_case/azure_assistants* && cargo nextest run
       --locked -p betterlite-oracle-azure --no-tests=fail -E 'test(/::helper_seeds_select_azure_assistants$/)' && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-azure --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-run-dispatch
     why: Only arun_thread=True selects async and only stream=True selects streaming; other truthy values do not.
       B686 receives api_key/base/version/token/timeout/retries/client/litellm_params in each construction path.
