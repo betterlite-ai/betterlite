@@ -3,7 +3,7 @@ import base64
 from collections.abc import Callable, Coroutine
 from functools import partial
 from types import SimpleNamespace
-from typing import Final, Literal, NotRequired, Protocol, TypeAlias, TypedDict, cast
+from typing import Final, Generic, Literal, Protocol, TypeAlias, TypeVar, TypedDict, cast
 
 import httpx
 import litellm
@@ -24,13 +24,14 @@ JSON: Final[TypeAdapter[JsonValue]] = TypeAdapter(JsonValue)
 CONFIG: Final = Config.__new__(Config)
 HANDLER: Final = Handler()
 FileMap: TypeAlias = dict[str, tuple[str, bytes, str]]
+Result = TypeVar("Result")
 
 
-class Answer(TypedDict):
+class Answer(TypedDict, total=False):
     status: int
     headers: dict[str, str]
     body: str
-    fail: NotRequired[bool]
+    fail: bool
 
 
 class BaseCall(TypedDict):
@@ -73,7 +74,7 @@ class Timers(Protocol):
     asyncio: SimpleNamespace
 
 
-SONIOX: Final[Timers] = cast(Timers, soniox_handler)  # noqa: E501  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L18-L20
+SONIOX: Final[Timers] = cast(Timers, soniox_handler)  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L18-L20
 
 
 class Script:
@@ -82,6 +83,9 @@ class Script:
         self.auth_headers = auth_headers
         self.sent: list[dict[str, JsonValue]] = []
         self.sleeps: list[int] = []
+        # The source helpers look up time.sleep and asyncio.sleep on their own module when they run
+        SONIOX.time = SimpleNamespace(sleep=self.sleep)
+        SONIOX.asyncio = SimpleNamespace(sleep=self.async_sleep)
 
     def sleep(self, seconds: float) -> None:
         milliseconds = round(seconds * 1000)
@@ -120,46 +124,59 @@ class SyncClient(Script):
 
 class AsyncClient(Script):
     async def post(
-        self, url: str, headers: dict[str, str], files: FileMap, timeout: float
+        self, url: str, headers: dict[str, str], files: FileMap, timeout: float  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799
     ) -> httpx.Response:
         entry = record("POST", url, headers, self.auth_headers, timeout)
         entry["files"] = files_sent(files)
         return self.reply(entry)
 
-    async def get(self, url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
+    async def get(self, url: str, headers: dict[str, str], timeout: float) -> httpx.Response:  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713
         return self.reply(record("GET", url, headers, self.auth_headers, timeout))
 
-    async def delete(self, url: str, headers: dict[str, str], timeout: float) -> httpx.Response:
+    async def delete(self, url: str, headers: dict[str, str], timeout: float) -> httpx.Response:  # noqa: ASYNC109  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1011
         return self.reply(record("DELETE", url, headers, self.auth_headers, timeout))
 
 
-class CommonArgs(TypedDict):
-    http_client: SyncClient | AsyncClient
-    base_url: str
-    auth_headers: dict[str, str]
-    timeout: float
+UploadArguments: TypeAlias = tuple[
+    Script, str, dict[str, str], FileTypes, str | None, float, Config]
+PollArguments: TypeAlias = tuple[
+    Script, str, dict[str, str], str, float, int, float, Config]
+CleanupArguments: TypeAlias = tuple[
+    Script, str, dict[str, str], list[str], str | None, str | None, float]
+
+SyncUpload: TypeAlias = Callable[
+    [Script, str, dict[str, str], FileTypes, str | None, float, Config], str
+]
+AsyncUpload: TypeAlias = Callable[
+    [Script, str, dict[str, str], FileTypes, str | None, float, Config],
+    Coroutine[None, None, str]]
+SyncPoll: TypeAlias = Callable[
+    [Script, str, dict[str, str], str, float, int, float, Config], JsonValue
+]
+AsyncPoll: TypeAlias = Callable[
+    [Script, str, dict[str, str], str, float, int, float, Config],
+    Coroutine[None, None, JsonValue]]
+SyncCleanup: TypeAlias = Callable[
+    [Script, str, dict[str, str], list[str], str | None, str | None, float], None
+]
+AsyncCleanup: TypeAlias = Callable[
+    [Script, str, dict[str, str], list[str], str | None, str | None, float],
+    Coroutine[None, None, None]]
+
+SYNC_UPLOAD: SyncUpload = cast(SyncUpload, HANDLER._sync_upload_file)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L482
+ASYNC_UPLOAD: AsyncUpload = cast(AsyncUpload, HANDLER._async_upload_file)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L716
+SYNC_POLL: SyncPoll = cast(SyncPoll, HANDLER._sync_poll_until_completed)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L509
+ASYNC_POLL: AsyncPoll = cast(AsyncPoll, HANDLER._async_poll_until_completed)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L742
+SYNC_CLEANUP: SyncCleanup = cast(SyncCleanup, HANDLER._sync_cleanup)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L550
+ASYNC_CLEANUP: AsyncCleanup = cast(AsyncCleanup, HANDLER._async_cleanup)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L783
 
 
-class UploadArgs(CommonArgs):
-    audio_file: FileTypes
-    filename_override: str | None
-    provider_config: Config
+class CoroutineJob(Generic[Result]):
+    def __init__(self, coroutine: Coroutine[None, None, Result]) -> None:
+        self.coroutine = coroutine
 
-
-class PollArgs(CommonArgs):
-    transcription_id: str
-    poll_interval: float
-    max_attempts: int
-    provider_config: Config
-
-
-class CleanupArgs(CommonArgs):
-    cleanup: list[str]
-    file_id_to_cleanup: str | None
-    transcription_id: str | None
-
-
-SYNC_UPLOAD, ASYNC_UPLOAD, SYNC_POLL, ASYNC_POLL, SYNC_CLEANUP, ASYNC_CLEANUP = cast(Callable[..., JsonValue], HANDLER._sync_upload_file), cast(Callable[..., Coroutine[None, None, JsonValue]], HANDLER._async_upload_file), cast(Callable[..., JsonValue], HANDLER._sync_poll_until_completed), cast(Callable[..., Coroutine[None, None, JsonValue]], HANDLER._async_poll_until_completed), cast(Callable[..., JsonValue], HANDLER._sync_cleanup), cast(Callable[..., Coroutine[None, None, JsonValue]], HANDLER._async_cleanup)  # noqa: E501, SLF001  # pyright: ignore[reportPrivateUsage]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/audio_transcription/handler.py#L482-L588
+    def __call__(self) -> Result:
+        return asyncio.run(self.coroutine)
 
 
 class ErrorRecord(BaseModel):
@@ -174,10 +191,8 @@ def provider_outcome(error: Exception, answers: list[Answer]) -> JsonValue:
     names = {name.lower() for answer in answers for name in answer["headers"]}
     pictured = {name: value for name, value in furnished.items() if name.lower() in names}
     return {
-        "kind": "provider",
-        "status": captured.status_code,
-        "message": captured.message,
-        "headers": JSON.validate_python(pictured),
+        "kind": "provider", "status": captured.status_code,
+        "message": captured.message, "headers": JSON.validate_python(pictured),
     }
 
 
@@ -186,114 +201,98 @@ def record(
 ) -> dict[str, JsonValue]:
     pictured = {name.lower(): headers.get(name) for name in expected}
     return {
-        "method": method,
-        "url": url,
-        "headers": JSON.validate_python(pictured),
-        "timeout_ms": round(timeout * 1000),
+        "method": method, "url": url,
+        "headers": JSON.validate_python(pictured), "timeout_ms": round(timeout * 1000),
     }
 
 
 def files_sent(files: FileMap) -> JsonValue:
     parts = [
         {
-            "name": name,
-            "filename": file_name,
-            "content_type": content_type,
-            "body": base64.b64encode(content).decode(),
+            "name": name, "filename": file_name,
+            "content_type": content_type, "body": base64.b64encode(content).decode(),
         }
         for name, (file_name, content, content_type) in files.items()
     ]
     return JSON.validate_python(parts)
 
 
-def client_for(call: Call, *, asynchronous: bool) -> SyncClient | AsyncClient:
-    if asynchronous:
-        return AsyncClient(call["answers"], call["auth_headers"])
-    return SyncClient(call["answers"], call["auth_headers"])
-
-
-def observe(
-    kwargs: CommonArgs,
-    answers: list[Answer],
-    sync_fn: Callable[..., JsonValue],
-    asynchronous_fn: Callable[..., Coroutine[None, None, JsonValue]],
-    *,
-    asynchronous: bool,
-) -> JsonValue:
-    client = kwargs["http_client"]
-    SONIOX.time = SimpleNamespace(sleep=client.sleep)
-    SONIOX.asyncio = SimpleNamespace(sleep=client.async_sleep)
-    invoke: Callable[[], JsonValue] = (
-        partial(asyncio.run, asynchronous_fn(**kwargs))
-        if asynchronous
-        else partial(sync_fn, **kwargs)
-    )
+def observe(client: Script, answers: list[Answer], invoke: Callable[[], Result]) -> JsonValue:
     outcome: JsonValue
     try:
-        outcome = {"kind": "returned", "value": invoke()}
-    except SonioxException as error:
+        outcome = {"kind": "returned", "value": JSON.validate_python(invoke())}
+    except SonioxException as error:  # type: ignore[misc]  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/soniox/common_utils.py#L53-L56
         outcome = provider_outcome(error, answers)
     except httpx.HTTPError:
         outcome = {"kind": "transport"}
     return {
         "requests": JSON.validate_python(client.sent),
-        "sleeps": JSON.validate_python(client.sleeps),
-        "outcome": outcome,
+        "sleeps": JSON.validate_python(client.sleeps), "outcome": outcome,
     }
 
 
-def upload_once(call: UploadCall, *, asynchronous: bool) -> JsonValue:
-    kwargs: UploadArgs = {
-        "http_client": client_for(call, asynchronous=asynchronous),
-        "base_url": call["api_base"],
-        "auth_headers": call["auth_headers"],
-        "audio_file": (call["filename"], call["content"].encode()),
-        "filename_override": call["filename_override"],
-        "timeout": call["timeout_ms"] / 1000,
-        "provider_config": CONFIG,
-    }
-    return observe(kwargs, call["answers"], SYNC_UPLOAD, ASYNC_UPLOAD, asynchronous=asynchronous)
+def upload_arguments(call: UploadCall, client: Script) -> UploadArguments:
+    audio: FileTypes = (call["filename"], call["content"].encode())
+    return (client, call["api_base"], call["auth_headers"], audio,
+            call["filename_override"], call["timeout_ms"] / 1000, CONFIG)
 
 
-def poll_once(call: PollCall, *, asynchronous: bool) -> JsonValue:
-    kwargs: PollArgs = {
-        "http_client": client_for(call, asynchronous=asynchronous),
-        "base_url": call["api_base"],
-        "auth_headers": call["auth_headers"],
-        "transcription_id": call["transcription_id"],
-        "poll_interval": call["poll_interval"],
-        "max_attempts": call["max_attempts"],
-        "timeout": call["timeout_ms"] / 1000,
-        "provider_config": CONFIG,
-    }
-    return observe(kwargs, call["answers"], SYNC_POLL, ASYNC_POLL, asynchronous=asynchronous)
+def poll_arguments(call: PollCall, client: Script) -> PollArguments:
+    return (client, call["api_base"], call["auth_headers"], call["transcription_id"],
+            call["poll_interval"], call["max_attempts"], call["timeout_ms"] / 1000, CONFIG)
 
 
-def cleanup_once(call: CleanupCall, *, asynchronous: bool) -> JsonValue:
-    kwargs: CleanupArgs = {
-        "http_client": client_for(call, asynchronous=asynchronous),
-        "base_url": call["api_base"],
-        "auth_headers": call["auth_headers"],
-        "cleanup": call["cleanup"],
-        "file_id_to_cleanup": call["file_id"],
-        "transcription_id": call["transcription_id"],
-        "timeout": call["timeout_ms"] / 1000,
-    }
-    return observe(kwargs, call["answers"], SYNC_CLEANUP, ASYNC_CLEANUP, asynchronous=asynchronous)
+def cleanup_arguments(call: CleanupCall, client: Script) -> CleanupArguments:
+    return (client, call["api_base"], call["auth_headers"], call["cleanup"],
+            call["file_id"], call["transcription_id"], call["timeout_ms"] / 1000)
+
+
+def upload_sync(call: UploadCall) -> JsonValue:
+    client = SyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], str] = partial(SYNC_UPLOAD, *upload_arguments(call, client))
+    return observe(client, call["answers"], invoke)
+
+
+def upload_async(call: UploadCall) -> JsonValue:
+    client = AsyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], str] = CoroutineJob(ASYNC_UPLOAD(*upload_arguments(call, client)))
+    return observe(client, call["answers"], invoke)
+
+
+def poll_sync(call: PollCall) -> JsonValue:
+    client = SyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], JsonValue] = partial(SYNC_POLL, *poll_arguments(call, client))
+    return observe(client, call["answers"], invoke)
+
+
+def poll_async(call: PollCall) -> JsonValue:
+    client = AsyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], JsonValue] = CoroutineJob(ASYNC_POLL(*poll_arguments(call, client)))
+    return observe(client, call["answers"], invoke)
+
+
+def cleanup_sync(call: CleanupCall) -> JsonValue:
+    client = SyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], None] = partial(SYNC_CLEANUP, *cleanup_arguments(call, client))
+    return observe(client, call["answers"], invoke)
+
+
+def cleanup_async(call: CleanupCall) -> JsonValue:
+    client = AsyncClient(call["answers"], call["auth_headers"])
+    invoke: Callable[[], None] = CoroutineJob(ASYNC_CLEANUP(*cleanup_arguments(call, client)))
+    return observe(client, call["answers"], invoke)
 
 
 def answer(call: Call) -> JsonValue:
     match call["function"]:
         case "upload":
-            sync = upload_once(call, asynchronous=False)
-            return {"sync": sync, "async": upload_once(call, asynchronous=True)}
+            return {"sync": upload_sync(call), "async": upload_async(call)}
         case "poll":
-            sync = poll_once(call, asynchronous=False)
-            return {"sync": sync, "async": poll_once(call, asynchronous=True)}
+            return {"sync": poll_sync(call), "async": poll_async(call)}
         case "cleanup":
-            sync = cleanup_once(call, asynchronous=False)
-            return {"sync": sync, "async": cleanup_once(call, asynchronous=True)}
+            return {"sync": cleanup_sync(call), "async": cleanup_async(call)}
 
 
 def run(input_value: Input) -> JsonValue:
-    return {"calls": [answer(call) for call in input_value["calls"]]}
+    answers: list[JsonValue] = [answer(call) for call in input_value["calls"]]
+    return {"calls": answers}
