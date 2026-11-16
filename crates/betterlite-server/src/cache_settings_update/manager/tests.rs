@@ -133,7 +133,7 @@ async fn init_from_db_reinitializes_changed_params() {
 async fn init_from_db_ignores_a_missing_or_empty_row() {
     let (fake, erased) = support::fake_repository();
     fake.push_read(Ok(None));
-    fake.push_read(Ok(Some(JsonValue::Object(Default::default()))));
+    fake.push_read(Ok(Some(support::json("{}"))));
     let manager = CacheSettingsManager::default();
     let reinit = support::reinit();
     let cipher = support::cipher();

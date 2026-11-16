@@ -84,13 +84,12 @@ pub(crate) fn json(text: &str) -> JsonValue {
 }
 
 pub(crate) fn object(entries: &[(&str, JsonValue)]) -> JsonValue {
-    let mut value = JsonValue::Object(Default::default());
-    if let JsonValue::Object(map) = &mut value {
-        for (key, entry) in entries {
-            map.insert((*key).to_owned(), entry.clone());
-        }
-    }
-    value
+    JsonValue::Object(
+        entries
+            .iter()
+            .map(|(key, entry)| ((*key).to_owned(), entry.clone()))
+            .collect(),
+    )
 }
 
 pub(crate) fn params(text: &str) -> CacheParams {
@@ -110,25 +109,22 @@ pub(crate) fn decrypt_all(value: &JsonValue) -> JsonValue {
     let Some(map) = value.as_object() else {
         return JsonValue::Null;
     };
-    let mut plain = JsonValue::Object(Default::default());
-    if let JsonValue::Object(target) = &mut plain {
-        for (key, entry) in map {
-            let next = match entry {
-                JsonValue::String(text) => {
-                    let stored = StoredValue::<()>::Text(SecretString::from(text.clone()));
-                    match cipher().decrypt_value(stored, key, KEEP_ORIGINAL) {
-                        Some(StoredValue::Text(plain)) => {
-                            JsonValue::String(plain.expose_secret().to_owned())
-                        }
-                        Some(StoredValue::Other(())) | None => JsonValue::Null,
-                    }
-                }
-                other => other.clone(),
-            };
-            target.insert(key.clone(), next);
-        }
+    JsonValue::Object(
+        map.iter()
+            .map(|(key, entry)| (key.clone(), decrypt_entry(key, entry)))
+            .collect(),
+    )
+}
+
+fn decrypt_entry(key: &str, entry: &JsonValue) -> JsonValue {
+    let JsonValue::String(text) = entry else {
+        return entry.clone();
+    };
+    let stored = StoredValue::<()>::Text(SecretString::from(text.clone()));
+    match cipher().decrypt_value(stored, key, KEEP_ORIGINAL) {
+        Some(StoredValue::Text(plain)) => JsonValue::String(plain.expose_secret().to_owned()),
+        Some(StoredValue::Other(())) | None => JsonValue::Null,
     }
-    plain
 }
 
 pub(crate) fn database_error(error_type: ErrorType, message: &str) -> DbError {
@@ -216,7 +212,7 @@ impl CacheConfigRepository for FakeRepository {
 
 pub(crate) fn fake_repository() -> (Arc<FakeRepository>, Arc<dyn CacheConfigRepository>) {
     let fake = Arc::new(FakeRepository::new());
-    let erased: Arc<dyn CacheConfigRepository> = Arc::clone(&fake);
+    let erased: Arc<dyn CacheConfigRepository> = Arc::<FakeRepository>::clone(&fake);
     (fake, erased)
 }
 
@@ -272,7 +268,6 @@ impl DbReconnect for FakeReconnect {
     }
 }
 
-#[derive(Default)]
 pub(crate) struct RecordingReinit {
     calls: Mutex<Vec<String>>,
     params: Mutex<Vec<CacheParams>>,
@@ -280,6 +275,14 @@ pub(crate) struct RecordingReinit {
 }
 
 impl RecordingReinit {
+    fn new(failing: bool) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            params: Mutex::new(Vec::new()),
+            failing,
+        }
+    }
+
     pub(crate) fn calls(&self) -> Vec<String> {
         self.calls
             .lock()
@@ -326,14 +329,11 @@ impl CacheReinit for RecordingReinit {
 }
 
 pub(crate) fn reinit() -> Arc<RecordingReinit> {
-    Arc::new(RecordingReinit::default())
+    Arc::new(RecordingReinit::new(false))
 }
 
 pub(crate) fn failing_reinit() -> Arc<RecordingReinit> {
-    Arc::new(RecordingReinit {
-        failing: true,
-        ..RecordingReinit::default()
-    })
+    Arc::new(RecordingReinit::new(true))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -459,8 +459,8 @@ impl Harness {
 
 pub(crate) fn harness(
     repository: Option<Arc<dyn CacheConfigRepository>>,
-    reinit: Arc<dyn CacheReinit>,
-    audit: Arc<dyn CacheSettingsAudit>,
+    reinit: Arc<RecordingReinit>,
+    audit: Arc<RecordingAudit>,
 ) -> Harness {
     let manager = Arc::new(CacheSettingsManager::default());
     let spawner = Arc::new(CollectingSpawner::default());
@@ -696,7 +696,7 @@ pub(crate) fn sink(enabled: bool) -> (Arc<AuditEventSink>, Arc<CapturingReposito
         Arc::new(CollectingSpawner::default()),
     ));
     let repository = Arc::new(CapturingRepository::default());
-    let erased: Arc<dyn AuditLogRepository> = Arc::clone(&repository);
+    let erased: Arc<dyn AuditLogRepository> = Arc::<CapturingRepository>::clone(&repository);
     let sink = AuditEventSink {
         settings,
         callbacks,

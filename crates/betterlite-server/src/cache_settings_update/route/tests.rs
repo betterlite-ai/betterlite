@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::sync::Arc;
+
 use axum::http::StatusCode;
 use betterlite_auth::resolved_key::credential::safe_hash_api_key;
 use betterlite_config::sections::settings::JsonValue;
@@ -114,7 +116,7 @@ async fn route_creates_the_row_and_reinitializes_the_cache() {
     let (fake, repository) = support::fake_repository();
     let reinit = support::reinit();
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), reinit.clone(), audit.clone());
+    let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
     let body = support::request_body(support::json(
         r#"{"type":"redis","host":"h","password":"new-secret","ttl":60}"#,
     ));
@@ -163,9 +165,9 @@ async fn route_creates_the_row_and_reinitializes_the_cache() {
 #[tokio::test]
 async fn route_marks_an_existing_row_as_updated() {
     let (fake, repository) = support::fake_repository();
-    fake.push_read(Ok(Some(JsonValue::Object(Default::default()))));
+    fake.push_read(Ok(Some(support::json("{}"))));
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let harness = support::harness(Some(repository), support::reinit(), Arc::clone(&audit));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, _text) = support::post(&harness, Some(support::master_key()), &body).await;
     assert_eq!(status, StatusCode::OK);
@@ -180,7 +182,7 @@ async fn route_merges_the_saved_secret_and_keeps_redis_type_out_of_the_cache() {
     fake.push_read(Ok(Some(saved_target())));
     let reinit = support::reinit();
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), reinit.clone(), audit.clone());
+    let harness = support::harness(Some(repository), Arc::clone(&reinit), Arc::clone(&audit));
     let body = support::request_body(support::json(
         r#"{"type":"redis","host":"saved-host","password":"***REDACTED***","redis_type":"cluster"}"#,
     ));
@@ -252,7 +254,7 @@ async fn route_answers_a_string_detail_when_the_row_cannot_be_saved() {
         "the row cannot be saved",
     ));
     let reinit = support::reinit();
-    let harness = support::harness(Some(repository), reinit.clone(), support::audit(true));
+    let harness = support::harness(Some(repository), Arc::clone(&reinit), support::audit(true));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, text) = support::post(&harness, Some(support::master_key()), &body).await;
     assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
@@ -268,7 +270,7 @@ async fn route_answers_a_string_detail_when_the_row_cannot_be_saved() {
 async fn route_audits_a_keyless_admin_with_no_changed_by() {
     let (_fake, repository) = support::fake_repository();
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let harness = support::harness(Some(repository), support::reinit(), Arc::clone(&audit));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, _text) = support::post(&harness, Some(support::platform_admin()), &body).await;
     assert_eq!(status, StatusCode::OK);
@@ -284,7 +286,7 @@ async fn route_audits_a_keyless_admin_with_no_changed_by() {
 async fn route_audits_the_key_identity_and_the_changed_by_header() {
     let (_fake, repository) = support::fake_repository();
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let harness = support::harness(Some(repository), support::reinit(), Arc::clone(&audit));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, _text) = support::post_with_header(
         &harness,
@@ -311,7 +313,7 @@ async fn route_audits_the_key_identity_and_the_changed_by_header() {
 async fn route_decodes_a_non_ascii_changed_by_header_as_latin1() {
     let (_fake, repository) = support::fake_repository();
     let audit = support::audit(true);
-    let harness = support::harness(Some(repository), support::reinit(), audit.clone());
+    let harness = support::harness(Some(repository), support::reinit(), Arc::clone(&audit));
     let body = support::request_body(support::json(r#"{"type":"local"}"#));
     let (status, _text) = support::post_with_header(
         &harness,
@@ -324,6 +326,6 @@ async fn route_decodes_a_non_ascii_changed_by_header_as_latin1() {
     support::run_tasks(&harness.spawner).await;
     assert_eq!(
         audit.entries()[0].litellm_changed_by.as_deref(),
-        Some("José")
+        Some("Jos\u{e9}")
     );
 }

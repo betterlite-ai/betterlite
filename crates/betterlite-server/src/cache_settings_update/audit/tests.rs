@@ -140,7 +140,7 @@ async fn enabled_audit_logging_spawns_the_task() {
 async fn the_spawned_task_writes_the_entry_without_being_awaited() {
     let audit = support::audit(true);
     let spawner = support::CollectingSpawner::default();
-    let erased: Arc<dyn CacheSettingsAudit> = Arc::clone(&audit);
+    let erased: Arc<dyn CacheSettingsAudit> = Arc::<support::RecordingAudit>::clone(&audit);
     spawn_cache_settings_audit(
         erased,
         &spawner,
@@ -160,7 +160,7 @@ async fn a_failing_sink_only_warns() {
     let (logs, _guard) = support::capture_logs();
     let audit = support::failing_audit();
     let spawner = support::CollectingSpawner::default();
-    let erased: Arc<dyn CacheSettingsAudit> = Arc::clone(&audit);
+    let erased: Arc<dyn CacheSettingsAudit> = Arc::<support::RecordingAudit>::clone(&audit);
     spawn_cache_settings_audit(erased, &spawner, entry(AuditAction::Updated, None, None));
     support::run_tasks(&spawner).await;
     assert_eq!(audit.len(), 1);
