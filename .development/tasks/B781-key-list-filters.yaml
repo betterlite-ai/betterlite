@@ -132,7 +132,7 @@ checks:
       why: The new typed operation has no seed or the existing HelperCase decoder fails replay.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/key-list-filters-*")"
         && grep -rlq "key_list_filters" tools/oracle/fuzz/corpus/helper_case/key-list-filters-* && cargo
-        nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+        nextest run --locked -p betterlite-oracle-groups --features betterlite-oracle-groups/betterlite-oracle-server --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
 oracle_cases:
   - tools/oracle/cases/helpers/key-list-filters/admin-team-scope.yaml
   - tools/oracle/cases/helpers/key-list-filters/member-team-scope.yaml
