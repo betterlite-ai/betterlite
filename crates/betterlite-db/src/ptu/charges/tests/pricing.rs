@@ -1,3 +1,4 @@
+use chrono::NaiveDate;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -135,7 +136,7 @@ fn an_unrepresentable_amount_is_an_error() {
 #[test]
 fn the_day_after_the_last_date_is_an_error() {
     let model = windowed("2026-01-01T00:00:00Z", None);
-    let result = active_hours_on_day(&model, day("9999-12-31"));
+    let result = active_hours_on_day(&model, NaiveDate::MAX);
     assert!(matches!(result, Err(ChargeError::DayOverflow { .. })));
 }
 

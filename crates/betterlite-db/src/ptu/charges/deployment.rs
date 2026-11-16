@@ -47,6 +47,7 @@ pub fn config_deployments(
         .collect()
 }
 
+#[must_use]
 pub fn parse_ptu_model(
     model_id: &str,
     model_name: &str,

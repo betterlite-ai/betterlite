@@ -71,7 +71,6 @@ pub fn daily_flat_cost(model: &PtuModel, day: NaiveDate) -> Result<Decimal, Char
         })
 }
 
-#[must_use]
 pub fn aggregate_charges(
     models: &[PtuModel],
     day: NaiveDate,

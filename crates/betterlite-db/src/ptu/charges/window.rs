@@ -27,15 +27,15 @@ pub fn lapsed_models(models: &[PtuModel], now: DateTime<Utc>) -> Vec<String> {
 
 #[must_use]
 pub fn backfill_window(models: &[PtuModel], end: NaiveDate) -> Vec<NaiveDate> {
-    let earliest = models
+    let Some(first_start) = models
         .iter()
         .map(|model| model.effective_from.date_naive())
-        .min();
-    let Some(earliest) = earliest else {
+        .min()
+    else {
         return Vec::new();
     };
     let floor = end.checked_sub_days(Days::new(MAX_BACKFILL_DAYS));
-    let start = floor.map_or(earliest, |floor| earliest.max(floor));
+    let start = floor.map_or(first_start, |bound| first_start.max(bound));
     let mut days = Vec::new();
     let mut day = start;
     while day <= end {
