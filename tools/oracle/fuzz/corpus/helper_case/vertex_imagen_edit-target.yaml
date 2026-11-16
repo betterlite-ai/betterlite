@@ -1,0 +1,30 @@
+kind: helper
+name: vertex-imagen-edit-target-seed
+call:
+  vertex_imagen_edit:
+    model: vertex_ai/imagen-3.0-capability-001
+    prompt: paint the sky teal
+    image:
+      - kind: mapping
+        data: "not base64!"
+        bytes: iVBORw0KGgo=
+        content: null
+        path: null
+      - kind: sequence
+        items:
+          - null
+          - {kind: bytes, data_base64: iVBORw0KGgo=}
+    mask: null
+    optional_params: {}
+    target:
+      api_base: null
+      params_api_base: https://proxy.example/v1
+      project: demo-project
+      location: europe-west4
+      headers: {x-goog-user-project: billing}
+    response:
+      predictions:
+        - {bytesBase64Encoded: AAA}
+        - {raiFilteredReason: blocked}
+env: {}
+compare: {ignore: []}
