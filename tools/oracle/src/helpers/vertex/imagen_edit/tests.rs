@@ -78,6 +78,9 @@ fn helper_seeds_select_vertex_imagen_edit() {
 #[case::tuple_filename_rejected("tuple-filename-rejected")]
 #[case::base64_key_fallback("base64-key-fallback")]
 #[case::depth_boundary("depth-boundary")]
+#[case::empty_image_list_mask("empty-image-list-mask")]
+#[case::base64_stops_at_pad("base64-stops-at-pad")]
+#[case::reply_created_and_usage("reply-created-and-usage")]
 fn the_edit_cases_match_litellm(#[case] name: &str) {
     let path = Path::new(ORACLE_DIR).join(format!("cases/helpers/vertex-imagen-edit/{name}.yaml"));
     let source = fs::read_to_string(&path).expect("the case should be readable");
@@ -130,6 +133,60 @@ fn a_mask_takes_the_reference_count_and_may_repeat_an_id() {
         json!({"maskMode": "MASK_MODE_USER_PROVIDED", "dilation": 0.03})
     );
     assert_eq!(parsed["payload"]["parameters"]["sampleCount"], json!(2));
+}
+
+#[test]
+fn an_empty_image_list_sends_the_mask_alone() {
+    let parsed = Op::run(&input(json!({
+        "model": "imagen-3.0-capability-001",
+        "prompt": "fill the sky",
+        "image": [],
+        "mask": {"kind": "bytes", "data_base64": MASK},
+        "optional_params": {},
+        "target": null,
+        "response": null,
+    })))
+    .expect("a mask alone is a request");
+    assert_eq!(
+        reference(&parsed, 0)["referenceType"],
+        json!("REFERENCE_TYPE_MASK")
+    );
+    assert_eq!(reference(&parsed, 0)["referenceId"], json!(1));
+    let absent = Op::run(&input(json!({
+        "model": "imagen-3.0-capability-001",
+        "prompt": "fill the sky",
+        "mask": {"kind": "bytes", "data_base64": MASK},
+        "optional_params": {},
+        "target": null,
+        "response": null,
+    })))
+    .expect_err("an absent image is no request");
+    assert_eq!(absent.class, "ValueError");
+}
+
+#[test]
+fn a_pad_run_that_completes_a_quad_ends_the_base64_text() {
+    let parsed = Op::run(&input(json!({
+        "model": "imagen-3.0-capability-001",
+        "prompt": "paint",
+        "image": [
+            {"kind": "mapping", "data": "QQ==QUJDRA==", "bytes": null, "content": null, "path": null},
+            {"kind": "mapping", "data": "QUI=QUJD", "bytes": null, "content": null, "path": null},
+        ],
+        "mask": null,
+        "optional_params": {},
+        "target": null,
+        "response": null,
+    })))
+    .expect("the text before the pad run answers");
+    assert_eq!(
+        reference(&parsed, 0)["referenceImage"]["bytesBase64Encoded"],
+        json!("QQ==")
+    );
+    assert_eq!(
+        reference(&parsed, 1)["referenceImage"]["bytesBase64Encoded"],
+        json!("QUI=")
+    );
 }
 
 #[test]
@@ -304,5 +361,17 @@ fn a_prediction_with_the_bytes_key_becomes_an_image() {
         },
     })))
     .expect("the reply transforms");
-    assert_eq!(parsed["response"], json!({"data": [{"b64_json": "AAA"}]}));
+    assert_eq!(
+        parsed["response"],
+        json!({
+            "created": 0,
+            "data": [{"b64_json": "AAA"}],
+            "usage": {
+                "input_tokens": 0,
+                "input_tokens_details": {"image_tokens": 0, "text_tokens": 0},
+                "output_tokens": 0,
+                "total_tokens": 0,
+            },
+        })
+    );
 }

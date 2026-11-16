@@ -106,8 +106,22 @@ class EditDatum(TypedDict):
     provider_specific_fields: dict[str, JsonValue] | None
 
 
+class EditUsageDetails(TypedDict):
+    image_tokens: int
+    text_tokens: int
+
+
+class EditUsage(TypedDict):
+    input_tokens: int
+    input_tokens_details: EditUsageDetails
+    output_tokens: int
+    total_tokens: int
+
+
 class EditReply(TypedDict):
+    created: int
     data: list[EditDatum]
+    usage: EditUsage
 
 
 REPLY: Final[TypeAdapter[EditReply]] = TypeAdapter(EditReply)
@@ -167,7 +181,17 @@ def reply_value(model: str, reply: JsonObject) -> JsonObject:
     finished = CONFIG.transform_image_edit_response(model, raw, None)
     parsed = REPLY.validate_json(finished.model_dump_json())
     data: list[JsonValue] = [datum_value(datum) for datum in parsed["data"]]
-    return {"data": data}
+    details: Final = parsed["usage"]["input_tokens_details"]
+    usage: JsonObject = {
+        "input_tokens": parsed["usage"]["input_tokens"],
+        "input_tokens_details": {
+            "image_tokens": details["image_tokens"],
+            "text_tokens": details["text_tokens"],
+        },
+        "output_tokens": parsed["usage"]["output_tokens"],
+        "total_tokens": parsed["usage"]["total_tokens"],
+    }
+    return {"created": parsed["created"], "data": data, "usage": usage}
 
 
 def run(input_value: Input) -> JsonValue:

@@ -27,4 +27,6 @@ call:
         - {bytesBase64Encoded: AAA}
         - {raiFilteredReason: blocked}
 env: {}
-compare: {ignore: []}
+compare:
+  ignore:
+    - {pointer: /value/response/created, why: ImageResponse() stamps the current time}

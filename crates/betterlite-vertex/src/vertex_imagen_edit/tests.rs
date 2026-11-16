@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use betterlite_config::sections::vertex_schema_shaping::Settings;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_models::decisions::Json;
-use betterlite_openai::api::image_contracts::records::ImageParams;
+use betterlite_openai::api::image_contracts::records::{ImageParams, ImageResponse};
 use betterlite_prompts::media::data_url::MAX_MEDIA_BYTES;
 use http::header::{HeaderMap, HeaderValue};
 use rstest::rstest;
@@ -19,7 +19,7 @@ use super::input::{
 };
 use super::options::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::request::transform_image_edit_request;
-use super::response::{ImagenEditResponse, transform_image_edit_response};
+use super::response::transform_image_edit_response;
 use super::target::predict_url;
 use crate::credential_sources::getters::VertexParams;
 use crate::vertex_image_identity::error::ImageIdentityError;
@@ -42,7 +42,7 @@ fn payload(
     mapped: &ImageParams,
     max_depth: i64,
 ) -> Json {
-    let (text, files) = transform_image_edit_request(prompt, images, mask, mapped, max_depth)
+    let (text, files) = transform_image_edit_request(prompt, Some(images), mask, mapped, max_depth)
         .expect("the request builds");
     assert!(files.is_empty());
     json_value(&text)
@@ -91,6 +91,8 @@ fn identity(project: Option<&str>, location: Option<&str>) -> ImageIdentitySetti
     settings
 }
 
+const NOW: i64 = 1_700_000_000;
+
 fn reply(status: u16, headers: HeaderMap, body: &str) -> UpstreamResponse {
     UpstreamResponse {
         status,
@@ -99,7 +101,7 @@ fn reply(status: u16, headers: HeaderMap, body: &str) -> UpstreamResponse {
     }
 }
 
-fn encoded(response: &ImagenEditResponse) -> Json {
+fn encoded(response: &ImageResponse) -> Json {
     serde_json::from_str(&serde_json::to_string(response).expect("the response encodes"))
         .expect("the response is JSON")
 }
@@ -240,9 +242,14 @@ fn an_optional_param_outside_the_supported_set_is_dropped() {
 #[test]
 fn the_body_carries_the_inpainting_parameters_and_one_raw_reference() {
     let mut images = [Some(ImagenFileInput::Bytes(b"\x89PNG\r\n\x1a\n".to_vec()))];
-    let (text, files) =
-        transform_image_edit_request(Some("make it blue"), &mut images, None, &params("{}"), 100)
-            .expect("the request builds");
+    let (text, files) = transform_image_edit_request(
+        Some("make it blue"),
+        Some(&mut images),
+        None,
+        &params("{}"),
+        100,
+    )
+    .expect("the request builds");
     assert!(files.is_empty());
     assert!(text.starts_with(r#"{"instances":[{"prompt":"make it blue","referenceImages":["#));
     assert_eq!(
@@ -299,29 +306,50 @@ fn a_mask_alone_follows_an_all_none_image_list() {
 fn an_absent_image_is_refused_before_the_mask_is_read() {
     let mut mask = ImagenFileInput::Text("never read".to_owned());
     let error =
-        transform_image_edit_request(Some("fill"), &mut [], Some(&mut mask), &params("{}"), 100)
+        transform_image_edit_request(Some("fill"), None, Some(&mut mask), &params("{}"), 100)
             .expect_err("an absent image is no request");
     assert!(matches!(error, ImagenEditError::MissingImage));
     assert!(error.upstream_answer().is_none());
 }
 
 #[test]
+fn an_empty_image_list_sends_the_mask_alone() {
+    let mut mask = ImagenFileInput::Bytes(b"mask-bytes".to_vec());
+    let body = payload(Some("fill"), &mut [], Some(&mut mask), &params("{}"), 100);
+    assert_eq!(
+        body,
+        json_value(
+            r#"{"instances":[{"prompt":"fill","referenceImages":[{"referenceType":"REFERENCE_TYPE_MASK","referenceId":1,"referenceImage":{"bytesBase64Encoded":"bWFzay1ieXRlcw=="},"maskImageConfig":{"maskMode":"MASK_MODE_USER_PROVIDED","dilation":0.03}}]}],"parameters":{"sampleCount":1,"editMode":"EDIT_MODE_INPAINT_INSERTION","editConfig":{"baseSteps":50},"guidanceScale":7.5,"seed":null}}"#
+        )
+    );
+}
+
+#[test]
+fn an_empty_image_list_without_a_mask_is_refused() {
+    let error = transform_image_edit_request(Some("fill"), Some(&mut []), None, &params("{}"), 100)
+        .expect_err("no reference image");
+    assert!(matches!(error, ImagenEditError::MissingImage));
+}
+
+#[test]
 fn an_all_none_image_list_without_a_mask_is_refused() {
     let mut images = [None, None];
-    let error = transform_image_edit_request(Some("fill"), &mut images, None, &params("{}"), 100)
-        .expect_err("no reference image");
+    let error =
+        transform_image_edit_request(Some("fill"), Some(&mut images), None, &params("{}"), 100)
+            .expect_err("no reference image");
     assert!(matches!(error, ImagenEditError::MissingImage));
 }
 
 #[test]
 fn a_missing_prompt_is_refused_after_the_references_are_read() {
     let mut images = [Some(ImagenFileInput::Bytes(b"raw-one".to_vec()))];
-    let error = transform_image_edit_request(None, &mut images, None, &params("{}"), 100)
+    let error = transform_image_edit_request(None, Some(&mut images), None, &params("{}"), 100)
         .expect_err("a prompt is required");
     assert!(matches!(error, ImagenEditError::MissingPrompt));
     let mut broken = [Some(ImagenFileInput::Text("raw-one".to_owned()))];
-    let read_error = transform_image_edit_request(None, &mut broken, None, &params("{}"), 100)
-        .expect_err("the image is read first");
+    let read_error =
+        transform_image_edit_request(None, Some(&mut broken), None, &params("{}"), 100)
+            .expect_err("the image is read first");
     assert!(matches!(read_error, ImagenEditError::PlainString));
 }
 
@@ -376,7 +404,7 @@ fn a_non_numeric_sample_count_names_the_field() {
     let mut images = [Some(ImagenFileInput::Bytes(b"abc".to_vec()))];
     let error = transform_image_edit_request(
         Some("fill"),
-        &mut images,
+        Some(&mut images),
         None,
         &params(r#"{"sampleCount":"3"}"#),
         100,
@@ -396,7 +424,7 @@ fn the_mapped_aspect_ratio_never_reaches_the_body() {
     let mut images = [Some(ImagenFileInput::Bytes(b"abc".to_vec()))];
     let (text, _files) = transform_image_edit_request(
         Some("fill"),
-        &mut images,
+        Some(&mut images),
         None,
         &params(r#"{"aspectRatio":"16:9"}"#),
         100,
@@ -720,6 +748,13 @@ fn a_reader_that_fails_is_a_stream_error() {
 #[case::padding("YQ==", b"a")]
 #[case::missing_padding("MDEy", b"012")]
 #[case::empty("", b"")]
+#[case::text_after_a_full_pad_run_is_ignored("QQ==QUJDRA==", b"A")]
+#[case::text_after_a_padded_quad_is_ignored("QUI=QUJD", b"AB")]
+#[case::pads_split_by_junk_complete_the_quad("YQ=\n=QUJD", b"a")]
+#[case::a_leading_pad_is_skipped("=YQ==", b"a")]
+#[case::four_pads_after_a_whole_quad_are_skipped("QUJD====QUJD", b"ABCABC")]
+#[case::pads_after_one_symbol_are_skipped("Q===QUJ", &[0x41, 0x05, 0x09])]
+#[case::a_symbol_restarts_the_pad_count("YQ=YWJj=Y=", &[0x61, 0x06, 0x16, 0x26, 0x36])]
 fn permissive_base64_decodes(#[case] text: &str, #[case] expected: &[u8]) {
     assert_eq!(
         decode_imagen_edit_input(text).expect("the text decodes"),
@@ -733,6 +768,8 @@ fn permissive_base64_decodes(#[case] text: &str, #[case] expected: &[u8]) {
 #[case::three_symbols("YWJ")]
 #[case::junk_symbols("not base64!")]
 #[case::non_ascii("héllo")]
+#[case::a_short_pad_run_leaves_a_partial_quad("YQ=Q")]
+#[case::non_ascii_text_after_the_stop("YQ==é")]
 fn an_undecodable_text_is_a_base64_error(#[case] text: &str) {
     let error = decode_imagen_edit_input(text).expect_err("the text does not decode");
     assert!(matches!(error, ImagenEditError::Base64(_)));
@@ -949,26 +986,33 @@ fn a_location_the_host_builder_refuses_is_a_target_error() {
 #[test]
 fn only_predictions_holding_the_bytes_key_become_images() {
     let body = r#"{"predictions":[{"bytesBase64Encoded":"AAA","prompt":"ignored"},{"raiFilteredReason":"blocked"},{"bytesBase64Encoded":null}]}"#;
-    let response = transform_image_edit_response(&reply(200, HeaderMap::new(), body))
+    let response = transform_image_edit_response(&reply(200, HeaderMap::new(), body), NOW)
         .expect("the reply decodes");
     assert_eq!(
         encoded(&response),
-        json_value(r#"{"data":[{"b64_json":"AAA"},{}]}"#)
+        json_value(
+            r#"{"created":1700000000,"data":[{"b64_json":"AAA"},{}],"usage":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"total_tokens":0}}"#
+        )
     );
 }
 
 #[test]
 fn a_reply_without_predictions_is_an_empty_data_list() {
-    let response = transform_image_edit_response(&reply(200, HeaderMap::new(), "{}"))
+    let response = transform_image_edit_response(&reply(200, HeaderMap::new(), "{}"), NOW)
         .expect("the reply decodes");
-    assert_eq!(encoded(&response), json_value(r#"{"data":[]}"#));
+    assert_eq!(
+        encoded(&response),
+        json_value(
+            r#"{"created":1700000000,"data":[],"usage":{"input_tokens":0,"input_tokens_details":{"image_tokens":0,"text_tokens":0},"output_tokens":0,"total_tokens":0}}"#
+        )
+    );
 }
 
 #[test]
 fn a_non_json_reply_keeps_the_upstream_answer() {
     let mut headers = HeaderMap::new();
     headers.insert("x-request-id", HeaderValue::from_static("req-1"));
-    let error = transform_image_edit_response(&reply(502, headers, r#"{"predictions": ["#))
+    let error = transform_image_edit_response(&reply(502, headers, r#"{"predictions": ["#), NOW)
         .expect_err("a truncated reply fails");
     let (status, kept) = error
         .upstream_answer()
@@ -987,7 +1031,7 @@ fn a_non_json_reply_keeps_the_upstream_answer() {
 #[test]
 fn a_predictions_value_that_is_not_a_list_is_a_shape_error() {
     let error =
-        transform_image_edit_response(&reply(200, HeaderMap::new(), r#"{"predictions":5}"#))
+        transform_image_edit_response(&reply(200, HeaderMap::new(), r#"{"predictions":5}"#), NOW)
             .expect_err("a number is not a list");
     assert!(matches!(
         error,

@@ -1,4 +1,4 @@
-use betterlite_models::decisions::{Extra, Json};
+use betterlite_models::decisions::Json;
 use betterlite_prompts::media::data_url::MAX_MEDIA_BYTES;
 use betterlite_streaming::stream_content_assembly::decode_stream_audio_fragment;
 
@@ -10,7 +10,30 @@ pub fn decode_imagen_edit_input(text: &str) -> Result<Vec<u8>, ImagenEditError> 
     if text.len() > MAX_MEDIA_BYTES {
         return Err(ImagenEditError::TooLarge { size: text.len() });
     }
-    decode_stream_audio_fragment(text, MAX_MEDIA_BYTES).map_err(ImagenEditError::Base64)
+    // a2b_base64 stops at the first pad run that completes a quad and ignores the rest of the text
+    let mut end = text.len();
+    if text.is_ascii() {
+        let mut quad_position = 0_usize;
+        let mut pads = 0_usize;
+        for (index, byte) in text.bytes().enumerate() {
+            match byte {
+                b'=' if quad_position >= 2 => {
+                    pads = pads.saturating_add(1);
+                    if quad_position.saturating_add(pads) >= 4 {
+                        end = index.saturating_add(1);
+                        break;
+                    }
+                }
+                b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'+' | b'/' => {
+                    pads = 0;
+                    quad_position = quad_position.saturating_add(1) & 3;
+                }
+                _ => {}
+            }
+        }
+    }
+    let read = text.get(..end).unwrap_or(text);
+    decode_stream_audio_fragment(read, MAX_MEDIA_BYTES).map_err(ImagenEditError::Base64)
 }
 
 pub fn parse_imagen_edit_input(
@@ -34,17 +57,23 @@ pub fn project_imagen_edit_input(document: Json) -> Option<ImagenFileInput<'stat
         Json::List(items) => Some(ImagenFileInput::Sequence(
             items.into_iter().map(project_imagen_edit_input).collect(),
         )),
-        Json::Object(fields) => Some(ImagenFileInput::Mapping(ImagenFields {
-            data: named_field(&fields, "data"),
-            bytes: named_field(&fields, "bytes"),
-            content: named_field(&fields, "content"),
-            path: named_field(&fields, "path"),
+        Json::Object(mut fields) => Some(ImagenFileInput::Mapping(ImagenFields {
+            data: fields
+                .swap_remove("data")
+                .and_then(project_imagen_edit_input)
+                .map(Box::new),
+            bytes: fields
+                .swap_remove("bytes")
+                .and_then(project_imagen_edit_input)
+                .map(Box::new),
+            content: fields
+                .swap_remove("content")
+                .and_then(project_imagen_edit_input)
+                .map(Box::new),
+            path: fields
+                .swap_remove("path")
+                .and_then(project_imagen_edit_input)
+                .map(Box::new),
         })),
     }
-}
-
-fn named_field(fields: &Extra, name: &str) -> Option<Box<ImagenFileInput<'static>>> {
-    let value = fields.get(name)?;
-    let image = project_imagen_edit_input(value.clone())?;
-    Some(Box::new(image))
 }

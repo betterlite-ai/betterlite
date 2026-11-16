@@ -39,6 +39,8 @@ use tokio::runtime::Builder;
 
 // the depth setting is B1307's section, read from the same variable the Python helper's import reads
 const DEPTH_VARIABLE: &str = "DEFAULT_MAX_RECURSE_DEPTH";
+// the reply's created is a wall-clock stamp in LiteLLM, so cases ignore it and the helper pins it
+const CREATED: i64 = 0;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -93,7 +95,7 @@ pub(super) fn run_cases(input: &Input) -> HelperResult {
     let max_depth = depth_limit(input)?;
     let (payload, files) = transform_image_edit_request(
         input.prompt.as_deref(),
-        &mut images,
+        images.as_deref_mut(),
         mask.as_mut(),
         &mapped,
         max_depth,
@@ -129,15 +131,15 @@ fn depth_limit(input: &Input) -> Result<i64, Box<HelperError>> {
 
 fn image_list(
     specs: Option<&[Option<ImageSpec>]>,
-) -> Result<Vec<Option<ImagenFileInput<'static>>>, Box<HelperError>> {
+) -> Result<Option<Vec<Option<ImagenFileInput<'static>>>>, Box<HelperError>> {
     let Some(entries) = specs else {
-        return Ok(Vec::new());
+        return Ok(None);
     };
     let mut images = Vec::with_capacity(entries.len());
     for spec in entries {
         images.push(spec.as_ref().map(image_input).transpose()?);
     }
-    Ok(images)
+    Ok(Some(images))
 }
 
 fn image_input(spec: &ImageSpec) -> Result<ImagenFileInput<'static>, Box<HelperError>> {
@@ -243,11 +245,14 @@ fn target_headers(
 
 fn reply_value(reply: &IndexMap<String, Value>) -> Result<Value, Box<HelperError>> {
     let body = serde_json::to_vec(reply).or_config_error()?;
-    let response = transform_image_edit_response(&UpstreamResponse {
-        status: 200,
-        headers: HeaderMap::new(),
-        body,
-    })
+    let response = transform_image_edit_response(
+        &UpstreamResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            body,
+        },
+        CREATED,
+    )
     .or_value_error()?;
     serde_json::to_value(response).or_config_error()
 }

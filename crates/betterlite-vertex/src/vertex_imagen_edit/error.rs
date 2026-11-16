@@ -11,7 +11,7 @@ use crate::vertex_imagen_generation::error::ImagenGenerationError;
 
 #[derive(Debug, Error)]
 pub enum ImagenEditError {
-    // LiteLLM raises one ValueError for an absent, empty or all-None reference list
+    // LiteLLM raises one ValueError for an absent image, or for a list that leaves no reference and no mask
     #[error("Vertex AI Imagen image edit requires at least one reference image")]
     MissingImage,
     // the prompt check runs after every reference was read, and an empty prompt is allowed
