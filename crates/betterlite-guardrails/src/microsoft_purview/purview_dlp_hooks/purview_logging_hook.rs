@@ -1,3 +1,5 @@
+use std::thread::Builder;
+
 use tokio::runtime::Handle;
 
 use super::purview_async_logging_hook::{AuditEngine, DeferredCall};
@@ -10,7 +12,7 @@ pub struct ThreadAuditSpawner;
 
 impl AuditSpawner for ThreadAuditSpawner {
     fn spawn(&self, job: Box<dyn FnOnce() + Send + 'static>) {
-        let spawned = std::thread::Builder::new()
+        let spawned = Builder::new()
             .name("purview-dlp-audit".to_owned())
             .spawn(job);
         if let Err(error) = spawned {

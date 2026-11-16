@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::mem;
 use std::sync::{Arc, Mutex};
 
 use betterlite_core::routes::CallType;
@@ -27,7 +28,7 @@ struct RecordingSpawner {
 
 impl RecordingSpawner {
     fn take(&self) -> Vec<Job> {
-        std::mem::take(&mut *self.jobs.lock().unwrap())
+        mem::take(&mut *self.jobs.lock().unwrap())
     }
 
     fn scheduled(&self) -> usize {

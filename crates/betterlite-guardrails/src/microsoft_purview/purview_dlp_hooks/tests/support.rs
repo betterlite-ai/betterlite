@@ -1,7 +1,9 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::net::TcpListener;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::{Builder, JoinHandle};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use axum::Router;
@@ -14,8 +16,10 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_config::sections::local_ttl_cache::Settings;
 use betterlite_context::local_ttl_cache::dual::{Diagnostics, DualLocalCache};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use reqwest::Client;
 use secrecy::SecretString;
-use tokio::runtime::Builder;
+use tokio::net::TcpListener as AsyncListener;
+use tokio::runtime::Builder as RuntimeBuilder;
 use uuid::Uuid;
 
 use crate::guardrail_base::GuardrailBase;
@@ -100,7 +104,7 @@ struct MockState {
 pub(super) struct GraphMock {
     pub(super) base: String,
     seen: Arc<Mutex<Vec<SeenRequest>>>,
-    _server: std::thread::JoinHandle<()>,
+    _server: JoinHandle<()>,
 }
 
 impl GraphMock {
@@ -200,7 +204,7 @@ async fn serve(State(state): State<Arc<MockState>>, request: Request) -> Respons
 }
 
 pub(super) fn start(script: Script) -> GraphMock {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let seen = Arc::new(Mutex::new(Vec::new()));
@@ -211,12 +215,15 @@ pub(super) fn start(script: Script) -> GraphMock {
         seen: Arc::clone(&seen),
     });
     let router = Router::new().fallback(serve).with_state(state);
-    let server = std::thread::Builder::new()
+    let server = Builder::new()
         .name("purview-graph-mock".to_owned())
         .spawn(move || {
-            let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+            let runtime = RuntimeBuilder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
             runtime.block_on(async move {
-                let listener = tokio::net::TcpListener::from_std(listener).unwrap();
+                let listener = AsyncListener::from_std(listener).unwrap();
                 axum::serve(listener, router).await.unwrap();
             });
         })
@@ -244,7 +251,7 @@ pub(super) fn guardrail_at(base: &str) -> MicrosoftPurviewDLPGuardrail {
         user_id_field: None,
         timeout: Some(Duration::from_secs(5)),
     };
-    let mut guardrail = MicrosoftPurviewDLPGuardrail::new(params, reqwest::Client::default());
+    let mut guardrail = MicrosoftPurviewDLPGuardrail::new(params, Client::default());
     guardrail.base.graph_api_base = base.to_owned();
     guardrail.base.login_authority = base.to_owned();
     guardrail.base.clock = fixed_clock;

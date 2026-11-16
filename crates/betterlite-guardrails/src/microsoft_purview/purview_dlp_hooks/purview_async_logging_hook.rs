@@ -4,6 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_context::local_ttl_cache::dual::DualLocalCache;
 use betterlite_core::routes::CallType;
 use betterlite_prompts::arguments::json::Object;
+use tokio::runtime::Builder;
 
 use crate::guardrail_base::GuardrailBase;
 use crate::guardrail_records::record::GuardrailSpanSink;
@@ -50,10 +51,7 @@ impl AuditEngine {
     }
 
     pub(super) fn audit_blocking(&self, mut call: DeferredCall) {
-        let runtime = match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
+        let runtime = match Builder::new_current_thread().enable_all().build() {
             Ok(runtime) => runtime,
             Err(error) => {
                 tracing::error!("Purview audit background logging error: {error}");
