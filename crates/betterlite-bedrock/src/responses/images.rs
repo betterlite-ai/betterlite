@@ -56,45 +56,49 @@ pub fn collect_remote_image_urls(input: &ResponsesInput) -> Vec<String> {
 }
 
 fn inline_block(block: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
-    let (Some(url), Json::Object(fields)) = (remote_image_url(block), block) else {
+    let Some(url) = remote_image_url(block) else {
         return Ok(block.clone());
     };
-    let data_url = inlined
-        .get(url)
-        .ok_or_else(|| ResponsesError::MissingInlined {
+    let Some(data_url) = inlined.get(url) else {
+        return Err(ResponsesError::MissingInlined {
             url: url.to_owned(),
-        })?;
-    let mut replaced = fields.clone();
-    replaced.insert("image_url".to_owned(), Json::Text(data_url.clone()));
-    Ok(Json::Object(replaced))
+        });
+    };
+    let mut replaced = block.clone();
+    if let Json::Object(fields) = &mut replaced {
+        fields.insert("image_url".to_owned(), Json::Text(data_url.clone()));
+    }
+    Ok(replaced)
 }
 
 fn inline_item(item: &Json, inlined: &BTreeMap<String, String>) -> Result<Json, ResponsesError> {
-    let Json::Object(fields) = item else {
-        return Ok(item.clone());
-    };
-    fields
-        .iter()
-        .map(|(key, value)| {
-            let image_key = IMAGE_BLOCK_KEYS.contains(&key.as_str());
-            let inlined_value = match value {
-                Json::List(blocks) if image_key => blocks
-                    .iter()
-                    .map(|block| inline_block(block, inlined))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map(Json::List)?,
-                Json::Object(_) if image_key => inline_block(value, inlined)?,
-                Json::Null
-                | Json::Bool(_)
-                | Json::Number(_)
-                | Json::Text(_)
-                | Json::List(_)
-                | Json::Object(_) => value.clone(),
-            };
-            Ok((key.clone(), inlined_value))
-        })
-        .collect::<Result<_, _>>()
-        .map(Json::Object)
+    match item {
+        Json::Object(fields) => fields
+            .iter()
+            .map(|(key, value)| {
+                let image_key = IMAGE_BLOCK_KEYS.contains(&key.as_str());
+                let inlined_value = match value {
+                    Json::List(blocks) if image_key => blocks
+                        .iter()
+                        .map(|block| inline_block(block, inlined))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map(Json::List)?,
+                    Json::Object(_) if image_key => inline_block(value, inlined)?,
+                    Json::Null
+                    | Json::Bool(_)
+                    | Json::Number(_)
+                    | Json::Text(_)
+                    | Json::List(_)
+                    | Json::Object(_) => value.clone(),
+                };
+                Ok((key.clone(), inlined_value))
+            })
+            .collect::<Result<_, _>>()
+            .map(Json::Object),
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
+            Ok(item.clone())
+        }
+    }
 }
 
 // A missing mapping entry is an error, never a fresh download
