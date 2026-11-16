@@ -26,7 +26,7 @@ use super::ports::{
 use super::store::{UserEnvVars, UserEnvVarsStore};
 
 // the composite key LiteLLM's find_unique and delete_many both use
-fn composite_key(user_id: &str, server_id: &str) -> KeyValues {
+pub(crate) fn composite_key(user_id: &str, server_id: &str) -> KeyValues {
     KeyValues::from([
         ("user_id", user_id.to_owned()),
         ("server_id", server_id.to_owned()),

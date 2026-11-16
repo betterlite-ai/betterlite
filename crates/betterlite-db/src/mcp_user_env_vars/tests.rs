@@ -19,6 +19,7 @@ use tracing_subscriber::fmt::MakeWriter;
 use super::codec::{USER_ENV_VARS_KEY, decode_user_env_vars, parse_user_env_vars};
 use super::error::UserEnvVarsError;
 use super::lock::user_env_vars_lock_key;
+use super::postgres::composite_key;
 use super::store::UserEnvVars;
 
 use fakes::{
@@ -335,6 +336,14 @@ async fn bulk_propagates_a_database_error() {
         .get_user_env_vars_bulk("alice", &["srv-1".to_owned()])
         .await;
     assert!(matches!(result, Err(UserEnvVarsError::Database(_))));
+}
+
+#[test]
+fn composite_key_names_both_columns() {
+    let key = composite_key("user-1", "srv-1");
+    assert_eq!(key.len(), 2);
+    assert_eq!(key.get("user_id").map(String::as_str), Some("user-1"));
+    assert_eq!(key.get("server_id").map(String::as_str), Some("srv-1"));
 }
 
 #[test]
