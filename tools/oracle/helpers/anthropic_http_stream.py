@@ -137,8 +137,8 @@ def _logging(messages: list[dict[str, JsonValue]]) -> Logging:
 def _text(body: bytes) -> str:
     try:
         return body.decode("utf-8")
-    except UnicodeDecodeError as error:
-        return f"{len(error.object)} bytes that are not text"
+    except UnicodeDecodeError:
+        return f"{len(body)} bytes that are not text"
 
 
 def _request_value(request: httpx.Request, names: list[str]) -> dict[str, JsonValue]:
