@@ -1,8 +1,7 @@
 mock_provider "google" {
   override_during = plan
 
-  # Only a type with a mock_resource block gets its computed values during plan, so the
-  # accessor assertions can compare the secret ids and the runtime account email.
+  # plan fills computed ids only for mocked types, so the accessor asserts can compare them
   mock_resource "google_secret_manager_secret" {}
   mock_resource "google_service_account" {}
 
