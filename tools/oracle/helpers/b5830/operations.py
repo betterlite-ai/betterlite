@@ -130,6 +130,11 @@ def edit_request(case: EditRequestCase) -> JsonValue:
     }
 
 
+def edit_requests(cases: list[EditRequestCase]) -> JsonValue:
+    answers = [edit_request(case) for case in cases]
+    return JSON.validate_python(answers)
+
+
 def edit_reply(cases: list[ReplyCase]) -> JsonValue:
     answers: list[JsonValue] = []
     for case in cases:
@@ -150,6 +155,6 @@ def run(input_value: Input) -> JsonValue:
         case "edit_params":
             return edit_params(input_value["cases"])
         case "edit_request":
-            return JSON.validate_python([edit_request(case) for case in input_value["cases"]])
+            return edit_requests(input_value["cases"])
         case "edit_reply":
             return edit_reply(input_value["cases"])

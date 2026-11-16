@@ -29,12 +29,21 @@ use serde_json::{Value, json};
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::GenerationParams { cases } => generation_params(cases),
-        Input::GenerationRequest { cases } => generation_request(cases),
+        Input::GenerationRequest { cases } => Ok(generation_request(cases)),
         Input::GenerationReply { cases } => replies(cases, generation_reply),
         Input::EditParams { cases } => edit_params(cases),
         Input::EditRequest { cases } => edit_requests(cases),
         Input::EditReply { cases } => replies(cases, edit_reply),
     }
+}
+fn keys(case: &RequestCase) -> [Option<SecretString>; 3] {
+    let environment = case.environment.get("OPENROUTER_API_KEY").cloned();
+    [
+        case.api_key.clone(),
+        case.global_api_key.clone(),
+        environment,
+    ]
+    .map(|key| key.map(SecretString::from))
 }
 fn generation_params(cases: &[GenerationParamsCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
@@ -54,16 +63,10 @@ fn generation_params(cases: &[GenerationParamsCase]) -> HelperResult {
     }
     Ok(Value::Array(answers))
 }
-fn generation_request(cases: &[RequestCase]) -> HelperResult {
+fn generation_request(cases: &[RequestCase]) -> Value {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        let api_key = case.api_key.clone().map(SecretString::from);
-        let global_api_key = case.global_api_key.clone().map(SecretString::from);
-        let environment_key = case
-            .environment
-            .get("OPENROUTER_API_KEY")
-            .cloned()
-            .map(SecretString::from);
+        let [api_key, global_api_key, environment_key] = keys(case);
         let headers = generation_headers(
             case.headers.clone(),
             api_key.as_ref(),
@@ -80,7 +83,7 @@ fn generation_request(cases: &[RequestCase]) -> HelperResult {
             ),
         }));
     }
-    Ok(Value::Array(answers))
+    Value::Array(answers)
 }
 fn edit_params(cases: &[ImageParams]) -> HelperResult {
     let config = edit_config("");
@@ -97,13 +100,7 @@ fn edit_params(cases: &[ImageParams]) -> HelperResult {
 fn edit_requests(cases: &[RequestCase]) -> HelperResult {
     let mut answers = Vec::with_capacity(cases.len());
     for case in cases {
-        let api_key = case.api_key.clone().map(SecretString::from);
-        let global_api_key = case.global_api_key.clone().map(SecretString::from);
-        let environment_key = case
-            .environment
-            .get("OPENROUTER_API_KEY")
-            .cloned()
-            .map(SecretString::from);
+        let [api_key, global_api_key, environment_key] = keys(case);
         let headers = edit_headers(
             case.headers.clone(),
             api_key.as_ref(),
