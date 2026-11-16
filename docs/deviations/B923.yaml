@@ -12,6 +12,12 @@ deviations:
   - what: A sequence number or a tool output index at i64::MAX is an error (SequenceOverflow, IndexOverflow); Python integers have no bound.
     why: The counters are i64 in the shared state, so the overflow is reported instead of wrapping to a negative event index.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L546-L611
+  - what: A system clock reading before the Unix epoch or past the i64 second range is an error (ClockBeforeEpoch, ClockOutOfRange); Python writes the negative or huge created_at.
+    why: created_at is an i64 in the event payload, and an error names the clock instead of writing a timestamp no caller can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L502
+  - what: output_item.done with no stored model response is a MissingModelResponse error; LiteLLM raises AttributeError dereferencing the None response.
+    why: The stored response is absent only when assembly produced nothing, and the typed error names that state instead of a crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/litellm_completion_transformation/streaming_iterator.py#L780-L784
 kept_bugs:
   - what: output_item.done stamps sequence_number 1 whatever the stream sequence is, because LiteLLM passes the OutputItemDoneEvent default.
     why: A working setup sees 1 in every message item done event, so the value stays.
