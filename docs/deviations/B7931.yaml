@@ -1,0 +1,42 @@
+task: B7931
+deviations:
+  - what: >-
+      The ported models derive from ResponseObject, whose model_config allows extra fields, instead of
+      LiteLLM's plain BaseModel, which drops them: ContentFilterConfigModel and its two parts, Mode,
+      GuardrailInfoResponse, ListGuardrailsResponse, GuardrailUIAddGuardrailSettings,
+      PresidioPerRequestConfig, ApplyGuardrailRequest, ApplyGuardrailResponse and PatchGuardrailRequest.
+      An unknown key survives validation and appears in model_dump().
+    why: Pydantic models in the Python wheel go on ResponseObject, as in B7930.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L836
+  - what: >-
+      ContentFilterAction, GuardrailEventHooks and GUARDRAIL_DEFINITION_LOCATION subclass enum.StrEnum
+      instead of (str, Enum).
+    why: >-
+      Ruff UP042 requires StrEnum for a str-mixin Enum. Member names, values, comparisons to str and JSON
+      output are unchanged; str() and repr text is not part of parity.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305
+  - what: >-
+      The ported models carry no pydantic Field descriptions and no class docstrings, so
+      model_json_schema() has no description keys where LiteLLM's does.
+    why: >-
+      The repository keeps no docstrings and caps a module at 300 lines; the description prose is most of
+      the BaseLitellmParams block. Keys, required keys, types, Literal values, defaults and constraints
+      are unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L907-L1187
+  - what: >-
+      Fields LiteLLM types as a bare dict or dict[str, object] are dict[str, JsonValue] here:
+      detect_secrets_config, additional_provider_specific_params, guardrail_info, content_filter_settings,
+      messages, metadata and DynamicGuardrailParams.extra_body.
+    why: >-
+      The Python rules forbid object and unparameterized containers in annotations. A non-JSON Python
+      value, which a bare dict accepts, is rejected here, and the JSON schema shows additionalProperties
+      as a reference to JsonValue where LiteLLM shows true.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1061
+  - what: >-
+      LitellmParams takes its get, __getitem__ and __contains__ from ResponseObject instead of defining
+      them with getattr and hasattr.
+    why: >-
+      The Python rules ban getattr and hasattr. ResponseObject answers the same for fields, extra keys
+      and absent names, and the names test compares the three against LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1278-L1288
+kept_bugs: []
