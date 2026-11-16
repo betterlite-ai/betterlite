@@ -1,0 +1,24 @@
+kind: helper
+name: remix-request
+call:
+  openai_videos:
+    calls:
+      - op: remix_request
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkL29uZSB0d28=
+        prompt: make it blue
+        api_base: https://mock.example/v1/videos/
+      - op: remix_request
+        video_id: vid-plain
+        prompt: ''
+        api_base: https://mock.example/v1/videos
+      - op: remix_response
+        provider: openai
+        body_base64: eyJpZCI6InZpZC00Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJzZWNvbmRzIjoiNCIsInVzYWdlIjp7Imlnbm9yZWQiOnRydWV9fQ==
+      - op: remix_response
+        provider: null
+        body_base64: eyJpZCI6InZpZC00Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQiLCJzZWNvbmRzIjoiYWJjIn0=
+      - op: remix_response
+        provider: openai
+        body_base64: eyJpZCI6InZpZC00Iiwib2JqZWN0IjoidmlkZW8iLCJzdGF0dXMiOiJxdWV1ZWQifQ==
+env: {}
+compare: {ignore: []}

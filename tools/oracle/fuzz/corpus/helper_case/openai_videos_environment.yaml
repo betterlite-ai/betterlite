@@ -1,0 +1,22 @@
+kind: helper
+name: openai-videos-environment-seed
+call:
+  openai_videos:
+    calls:
+      - op: validate_environment
+        headers:
+          X-Trace: trace-1
+        api_key: null
+        params_api_key: params
+        global_api_key: null
+        openai_key: null
+        environment_api_key: null
+      - op: complete_url
+        api_base: null
+      - op: error_class
+        message: rate limited
+        status: 429
+        headers:
+          retry-after: '1'
+env: {}
+compare: {ignore: []}

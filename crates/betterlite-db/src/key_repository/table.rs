@@ -1,6 +1,6 @@
 pub mod columns;
 
-pub(super) mod converted;
+pub(crate) mod converted;
 
 use self::columns::{TokenColumn, TokenSqlType};
 use crate::budget_permission_rows::{JsonData, Timestamp};

@@ -1,0 +1,36 @@
+kind: helper
+name: recraft-empty-image-data
+call:
+  recraft:
+    calls:
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"data": []}'
+        created: 3
+        data: []
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"data": []}'
+        created: 4
+        data:
+          - b64_json: null
+            url: https://existing.test/0.png
+            revised_prompt: null
+      - function: response
+        status: 200
+        headers: {}
+        body: '{"data": [{"url": "https://added.test/1.png"}]}'
+        created: 5
+        data: []
+      - function: edit_response
+        status: 200
+        headers: {}
+        body: '{"data": []}'
+      - function: edit_response
+        status: 200
+        headers: {}
+        body: '{"data": [{"url": "https://edited.test/1.png", "revised_prompt": "provider text"}]}'
+env: {}
+compare: {ignore: []}
