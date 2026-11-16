@@ -2,15 +2,50 @@
 
 use betterlite_db::auxiliary_repository::repository::TableError;
 use betterlite_db::postgres_store::{errors::DbError, session::PostgresStore};
+use betterlite_postgres_fixture::connection::PostgresFixture;
+use clap::Parser;
+use deadpool_postgres::{Manager, Pool};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 use serde_json::json;
+use tokio_postgres::NoTls;
 
 use crate::cache_settings_test::support;
 use crate::cache_settings_test::support::SavedReply;
 
+use super::CACHE_CONFIG_ROW_ID;
 use super::SavedCacheConfig;
 use super::saved_settings;
+
+const CACHE_CONFIG_SCHEMA: &str = r#"
+CREATE TABLE "LiteLLM_CacheConfig" (
+    id TEXT PRIMARY KEY,
+    cache_settings TEXT NOT NULL
+);
+"#;
+
+#[derive(Parser)]
+struct Environment {
+    #[arg(long, env = "POSTGRES_TEST_URL")]
+    url: Option<String>,
+}
+
+async fn database() -> (PostgresFixture, Pool) {
+    let url = Environment::parse_from(["cache-settings-test-tests"])
+        .url
+        .map(SecretString::from);
+    let fixture = PostgresFixture::provision_schema(url.as_ref())
+        .resolve()
+        .await
+        .unwrap();
+    let manager = Manager::new(fixture.options.url.expose_secret().parse().unwrap(), NoTls);
+    let pool = Pool::builder(manager).max_size(1).build().unwrap();
+    let client = pool.get().await.unwrap();
+    client.batch_execute(CACHE_CONFIG_SCHEMA).await.unwrap();
+    drop(client);
+    (fixture, pool)
+}
 
 #[tokio::test]
 async fn saved_settings_decrypts_only_string_values() {
@@ -111,4 +146,26 @@ async fn postgres_adapter_reports_a_missing_database() {
         error,
         TableError::Database(DbError::NoDbConnected)
     ));
+}
+
+#[tokio::test]
+async fn postgres_adapter_reads_the_cache_config_row() {
+    let (fixture, pool) = database().await;
+    let client = pool.get().await.unwrap();
+    let text = r#"{"type":"redis","host":"127.0.0.1"}"#;
+    client
+        .execute(
+            r#"INSERT INTO "LiteLLM_CacheConfig" (id, cache_settings) VALUES ($1, $2)"#,
+            &[&CACHE_CONFIG_ROW_ID, &text],
+        )
+        .await
+        .unwrap();
+    drop(client);
+    let store = PostgresStore {
+        pool: Some(pool.clone()),
+    };
+    let stored = SavedCacheConfig::cache_settings(&store).await.unwrap();
+    assert_eq!(stored, Some(json!({"type": "redis", "host": "127.0.0.1"})));
+    pool.close();
+    fixture.close_async().await.unwrap();
 }
