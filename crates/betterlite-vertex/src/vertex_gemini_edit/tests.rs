@@ -12,6 +12,7 @@ use super::error::GeminiEditError;
 use super::options::{SUPPORTED_OPENAI_PARAMS, map_openai_params};
 use super::request::{GeminiEditFile, transform_image_edit_request};
 use super::response::{GeminiEditResponse, transform_image_edit_response};
+use crate::gemini_response::decode::MAX_RESPONSE_BYTES;
 use crate::vertex_gemini_images::error::GeminiImageError;
 
 fn params(source: &str) -> ImageParams {
@@ -257,4 +258,16 @@ fn a_non_json_reply_keeps_the_upstream_answer() {
         kept.get("x-request-id"),
         Some(&HeaderValue::from_static("req-1"))
     );
+}
+
+#[test]
+fn a_reply_past_the_shared_cap_is_refused() {
+    let mut over = reply(200, HeaderMap::new(), "");
+    over.body = vec![b'{'; MAX_RESPONSE_BYTES + 1];
+    let error = transform_image_edit_response(&over)
+        .expect_err("a body past the cap is refused before it parses");
+    assert!(matches!(
+        error,
+        GeminiEditError::Reply(GeminiImageError::TooLarge { size }) if size == MAX_RESPONSE_BYTES + 1
+    ));
 }
