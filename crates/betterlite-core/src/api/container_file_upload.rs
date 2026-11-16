@@ -49,6 +49,20 @@ pub struct ContainerFileUploadRequest<'request> {
     pub kwargs: &'request IndexMap<String, Json>,
 }
 
+// the caller's named arguments after their declared defaults: the openai provider and 600 seconds
+#[derive(Clone, Copy)]
+pub(crate) struct Caller<'caller> {
+    pub(crate) provider: &'caller str,
+    pub(crate) timeout_seconds: f64,
+}
+
+pub(crate) fn caller_defaults(request: &ContainerFileUploadRequest<'_>) -> Caller<'_> {
+    Caller {
+        provider: request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
+        timeout_seconds: request.timeout.unwrap_or(DEFAULT_TIMEOUT_SECONDS),
+    }
+}
+
 // the collaborators the operation needs: B247's logging object, B185's redactor and REQUEST_TIMEOUT's seconds
 #[derive(Clone, Copy)]
 pub struct ContainerFileUploadDeps<'deps> {
@@ -67,10 +81,11 @@ pub fn upload_container_file<Executor>(
 where
     Executor: UploadExecutor,
 {
+    let caller = caller_defaults(request);
     let adapter = BlockingAsAsync { executor };
     match poll_once(aupload_container_file(&adapter, deps, request)) {
         Some(outcome) => outcome,
-        None => Err(suspended(request, deps.redactor)),
+        None => Err(suspended(caller, deps.redactor)),
     }
 }
 
@@ -83,7 +98,8 @@ pub async fn aupload_container_file<Executor>(
 where
     Executor: AsyncUploadExecutor,
 {
-    let prepared = prepare_upload::<Executor::Failure>(&deps, request)?;
+    let caller = caller_defaults(request);
+    let prepared = prepare_upload::<Executor::Failure>(&deps, request, caller)?;
     let prepared_upload = match prepared {
         Prepared::Mock(object) => return Ok(object),
         Prepared::Call(upload) => upload,
@@ -130,9 +146,9 @@ fn poll_once<Running>(future: Running) -> Option<Running::Output>
 where
     Running: Future,
 {
-    let mut future = pin!(future);
+    let mut pinned = pin!(future);
     let mut context = Context::from_waker(Waker::noop());
-    match future.as_mut().poll(&mut context) {
+    match pinned.as_mut().poll(&mut context) {
         Poll::Ready(outcome) => Some(outcome),
         Poll::Pending => None,
     }
@@ -140,7 +156,7 @@ where
 
 // the adapter cannot park, so the sync entry reaches this only if the poll contract breaks
 fn suspended<Failure>(
-    request: &ContainerFileUploadRequest<'_>,
+    caller: Caller<'_>,
     redactor: &Redactor,
 ) -> ContainerFileUploadFailure<Failure>
 where
@@ -148,7 +164,7 @@ where
 {
     error::failure(
         ContainerFileUploadError::Suspended,
-        request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER),
+        caller.provider,
         redactor,
     )
 }

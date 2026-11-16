@@ -12,10 +12,7 @@ use secrecy::ExposeSecret as _;
 use super::error::{ContainerFileUploadError, ContainerFileUploadFailure, failure};
 use super::execution::UploadFailure;
 use super::mock::mock_response;
-use super::{
-    CALL_TYPE, ContainerFileUploadDeps, ContainerFileUploadRequest, DEFAULT_PROVIDER,
-    DEFAULT_TIMEOUT_SECONDS,
-};
+use super::{CALL_TYPE, Caller, ContainerFileUploadDeps, ContainerFileUploadRequest};
 use crate::containers::container_request_parameters::ContainerProviderConfig;
 // ast-grep-ignore: no-long-names
 use crate::containers::container_request_parameters::decode_managed_container_id_for_request;
@@ -38,11 +35,11 @@ pub(crate) struct PreparedUpload {
 pub(crate) fn prepare_upload<Failure>(
     deps: &ContainerFileUploadDeps<'_>,
     request: &ContainerFileUploadRequest<'_>,
+    caller: Caller<'_>,
 ) -> Result<Prepared, ContainerFileUploadFailure<Failure>>
 where
     Failure: UploadFailure,
 {
-    let caller_provider = request.custom_llm_provider.unwrap_or(DEFAULT_PROVIDER);
     let kwargs = call_kwargs(request);
     match mock_response(&kwargs) {
         Ok(Some(object)) => return Ok(Prepared::Mock(object)),
@@ -50,13 +47,13 @@ where
         Err(error) => {
             return Err(failure(
                 ContainerFileUploadError::Mock(error),
-                caller_provider,
+                caller.provider,
                 deps.redactor,
             ));
         }
     }
     let litellm_params = request_params(request, &kwargs);
-    let upload = resolve_call(deps, request, &kwargs, &litellm_params, caller_provider)?;
+    let upload = resolve_call(deps, request, &kwargs, &litellm_params, caller)?;
     Ok(Prepared::Call(upload))
 }
 
@@ -66,7 +63,7 @@ fn resolve_call<Failure>(
     request: &ContainerFileUploadRequest<'_>,
     kwargs: &IndexMap<String, Json>,
     litellm_params: &IndexMap<String, JsonValue>,
-    caller_provider: &str,
+    caller: Caller<'_>,
 ) -> Result<PreparedUpload, ContainerFileUploadFailure<Failure>>
 where
     Failure: UploadFailure,
@@ -74,13 +71,13 @@ where
     // ast-grep-ignore: no-long-names
     let decoded = decode_managed_container_id_for_request(
         request.container_id,
-        caller_provider,
+        caller.provider,
         litellm_params,
     )
     .map_err(|error| {
         failure(
             ContainerFileUploadError::Decode(error),
-            caller_provider,
+            caller.provider,
             deps.redactor,
         )
     })?;
@@ -106,7 +103,7 @@ where
         provider,
         provider_config,
         litellm_params: decoded.litellm_params,
-        timeout_seconds: timeout_seconds(request.timeout, deps.request_timeout_seconds),
+        timeout_seconds: timeout_seconds(caller.timeout_seconds, deps.request_timeout_seconds),
     })
 }
 
@@ -137,8 +134,8 @@ fn request_params(
         ("api_base", request.api_base.map(str::to_owned)),
         ("api_version", request.api_version.map(str::to_owned)),
     ];
-    for (name, value) in credentials {
-        if let Some(value) = value {
+    for (name, candidate) in credentials {
+        if let Some(value) = candidate {
             params.insert(name.to_owned(), JsonValue::Text(value));
         }
     }
@@ -161,13 +158,12 @@ fn json_value(value: &Json) -> JsonValue {
     }
 }
 
-// Python's `timeout or DEFAULT_REQUEST_TIMEOUT`: an omitted argument keeps its declared 600, while a zero picks the request timeout
-fn timeout_seconds(timeout: Option<f64>, request_timeout_seconds: f64) -> f64 {
-    match timeout {
-        None => DEFAULT_TIMEOUT_SECONDS,
-        Some(seconds) if seconds == 0.0_f64 => request_timeout_seconds,
-        Some(seconds) => seconds,
+// Python's `timeout or DEFAULT_REQUEST_TIMEOUT`: the declared default is already applied, and a zero picks the request timeout
+fn timeout_seconds(timeout: f64, request_timeout_seconds: f64) -> f64 {
+    if timeout == 0.0_f64 {
+        return request_timeout_seconds;
     }
+    timeout
 }
 
 // update_from_kwargs(kwargs, model="", optional_params={"container_id": ...}, litellm_params={"litellm_call_id": ...}, custom_llm_provider=...)
