@@ -4,7 +4,7 @@ use betterlite_core::api::responses_tool_namespaces::values::Fields;
 
 use super::indexed_key::IndexedKey;
 
-pub const NAMESPACE_DESCRIPTION_SEPARATOR: &str = "\n\n";
+pub const DESCRIPTION_SEPARATOR: &str = "\n\n";
 pub const CHAT_MEMBER_TYPES: [&str; 2] = ["function", "custom"];
 
 // One original tool's flattened chat tools, their indexed keys and the guardrailed tools by key.

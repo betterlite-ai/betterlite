@@ -71,13 +71,32 @@ async fn block_only_writes_the_rewrite_into_the_first_chunk_and_blanks_the_rest(
 async fn block_only_rewrites_the_text_of_list_content_per_item() {
     let guardrail = FakeGuardrail::upper_casing();
     let mut stream = chunks(
-        r#"[{"choices": [{"index": 0, "delta": {"content": [{"type": "text", "text": "ab"}]}}]}]"#,
+        r#"[{"choices": [{"index": 0, "delta": {"content": "x"}}]},
+            {"choices": [{"index": 0, "delta": {"content": [{"type": "text", "text": "ab"}]}}]}]"#,
     );
     run(&mut stream, &guardrail, false).await.unwrap();
+    let calls = guardrail.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(
+        calls[0].inputs.texts,
+        Some(vec!["x".to_owned(), "ab".to_owned()])
+    );
     let expected = chunks(
-        r#"[{"choices": [{"index": 0, "delta": {"content": [{"type": "text", "text": "AB"}]}}]}]"#,
+        r#"[{"choices": [{"index": 0, "delta": {"content": "X"}}]},
+            {"choices": [{"index": 0, "delta": {"content": [{"type": "text", "text": "AB"}]}}]}]"#,
     );
     assert_eq!(stream, expected);
+}
+
+#[tokio::test]
+async fn block_only_skips_a_stream_whose_only_content_is_a_list() {
+    let guardrail = FakeGuardrail::upper_casing();
+    let source =
+        r#"[{"choices": [{"index": 0, "delta": {"content": [{"type": "text", "text": "ab"}]}}]}]"#;
+    let mut stream = chunks(source);
+    run(&mut stream, &guardrail, false).await.unwrap();
+    assert!(guardrail.calls().is_empty());
+    assert_eq!(stream, chunks(source));
 }
 
 #[tokio::test]

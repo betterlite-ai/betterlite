@@ -11,7 +11,7 @@ use crate::guardrails::chat_guardrail_translation::rewrites::rebuild_ended_strea
 mod tests;
 
 // A sink asks for the transform path, which only reads the chunks; without one the block-only path runs and may write rewrites into them.
-pub async fn process_output_streaming_response<G, A>(
+pub async fn process_streaming_response<G, A>(
     responses_so_far: &mut [Object],
     guardrail: &G,
     assembler: &A,

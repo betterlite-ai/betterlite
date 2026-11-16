@@ -9,7 +9,7 @@ deviations:
   - what: 'assemble_anthropic_sse_stream takes the assembler as an argument (SseAssembler) and answers None when it does, instead of importing AnthropicPassthroughLoggingHandler and catching every exception.'
     why: 'The passthrough handler is not built in the server crate yet and dependencies come in through constructors; the implementor maps its own failures to None.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L84-L132
-  - what: 'anthropic_sse_chunks_from_response returns an error when the response cannot be translated (tool arguments that are not an object, a block that is not a mapping), where LiteLLM raises from the adapter.'
+  - what: 'sse_chunks_from_response (LiteLLM anthropic_sse_chunks_from_response) returns an error when the response cannot be translated (tool arguments that are not an object, a block that is not a mapping), where LiteLLM raises from the adapter.'
     why: 'A function that can fail returns its typed error instead of raising.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/anthropic_sse.py#L169-L180
 kept_bugs:

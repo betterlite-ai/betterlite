@@ -5,7 +5,7 @@ use betterlite_guardrails::guardrail_message_scope::Object;
 use betterlite_guardrails::guardrail_translation::StreamTransformSink;
 use indexmap::IndexMap;
 
-use super::process_output_streaming_response;
+use super::process_streaming_response;
 use crate::guardrails::chat_guardrail_translation::rewrites::error::EndedStreamError;
 use crate::guardrails::chat_guardrail_translation::streaming::tests::support::{
     ConcatenatingAssembler, ENDED, FakeGuardrail, TWO_CHOICES, chunks, ended, principal,
@@ -18,8 +18,7 @@ async fn run(
 ) -> Result<(), EndedStreamError> {
     let principal = principal();
     let context = ended(&principal, true);
-    process_output_streaming_response(stream, guardrail, &ConcatenatingAssembler, &context, sink)
-        .await
+    process_streaming_response(stream, guardrail, &ConcatenatingAssembler, &context, sink).await
 }
 
 #[tokio::test]

@@ -72,9 +72,6 @@ fn is_anthropic_sse_stream_joins_a_character_split_across_chunks() {
         .position(|byte| *byte == 0xC3)
         .unwrap()
         .saturating_add(1);
-    let chunks = [
-        bytes_chunk(frame.get(..split).unwrap()),
-        bytes_chunk(frame.get(split..).unwrap()),
-    ];
+    let chunks = [bytes_chunk(&frame[..split]), bytes_chunk(&frame[split..])];
     assert!(is_anthropic_sse_stream(&chunks));
 }

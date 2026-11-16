@@ -66,5 +66,9 @@ fn indexed_key_is_empty_for_no_tools() {
 fn indexed_key_fails_on_the_first_tool_with_a_bad_field() {
     let tools = field_list(r#"[{"type": "function"}, {"type": 1}]"#);
     let references: Vec<_> = tools.iter().collect();
-    assert!(indexed_keys(&references).is_err());
+    let error = indexed_keys(&references).unwrap_err();
+    assert!(matches!(
+        error,
+        NamespaceToolsError::WrongType { field: "type", .. }
+    ));
 }

@@ -19,13 +19,13 @@ use crate::guardrails::chat_guardrail_translation::rewrites::response::{
 };
 
 pub(crate) const TWO_CHOICES: &str = r#"[
-    {"model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hel"}}]},
+    {"model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "He"}}]},
     {"choices": [{"index": 1, "delta": {"content": "Hi"}}]},
-    {"choices": [{"index": 0, "delta": {"content": "lo"}}]}]"#;
+    {"choices": [{"index": 0, "delta": {"content": "llo"}}]}]"#;
 
 pub(crate) const ENDED: &str = r#"[
-    {"id": "c1", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "Hel"}}]},
-    {"id": "c1", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "lo"}}]},
+    {"id": "c1", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"role": "assistant", "content": "He"}}]},
+    {"id": "c1", "model": "gpt-4o", "choices": [{"index": 0, "delta": {"content": "llo"}}]},
     {"choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]}]"#;
 
 pub(crate) type Reply = Box<dyn Fn(GuardrailApiInputs) -> GuardrailApiInputs + Send + Sync>;

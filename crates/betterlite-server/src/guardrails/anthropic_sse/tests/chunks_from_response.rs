@@ -1,14 +1,17 @@
-#![cfg(test)]
+#[cfg(test)]
+use self::error::AnthropicSseError;
+#[cfg(test)]
+use self::sse_chunks_from_response::sse_chunks_from_response;
+#[cfg(test)]
+use self::tests::support::record;
 
-use super::anthropic_sse_chunks_from_response;
-use crate::guardrails::anthropic_sse::error::AnthropicSseError;
-use crate::guardrails::anthropic_sse::tests::support::record;
-
+#[cfg(test)]
 const TEXT_RESPONSE: &str = r#"{"id": "chatcmpl-1", "model": "gpt-4o", "choices": [{"message": {"content": "hello"}, "finish_reason": "stop"}], "usage": {"prompt_tokens": 3, "completion_tokens": 2}}"#;
 
+#[cfg(test)]
 #[test]
 fn anthropic_sse_chunks_from_response_replays_a_message_as_frames() {
-    let frames = anthropic_sse_chunks_from_response(&record(TEXT_RESPONSE)).unwrap();
+    let frames = sse_chunks_from_response(&record(TEXT_RESPONSE)).unwrap();
     let events: Vec<String> = frames
         .iter()
         .map(|frame| {
@@ -29,9 +32,10 @@ fn anthropic_sse_chunks_from_response_replays_a_message_as_frames() {
     );
 }
 
+#[cfg(test)]
 #[test]
 fn anthropic_sse_chunks_from_response_carries_the_id_model_and_text() {
-    let frames = anthropic_sse_chunks_from_response(&record(TEXT_RESPONSE)).unwrap();
+    let frames = sse_chunks_from_response(&record(TEXT_RESPONSE)).unwrap();
     assert_eq!(frames.len(), 6);
     let start = String::from_utf8(frames[0].clone()).unwrap();
     let delta = String::from_utf8(frames[2].clone()).unwrap();
@@ -40,11 +44,12 @@ fn anthropic_sse_chunks_from_response_carries_the_id_model_and_text() {
     assert!(delta.contains("\"text\": \"hello\""));
 }
 
+#[cfg(test)]
 #[test]
 fn anthropic_sse_chunks_from_response_fails_on_tool_arguments_that_are_not_an_object() {
     let response = record(
         r#"{"id": "x", "choices": [{"message": {"tool_calls": [{"id": "t", "function": {"name": "f", "arguments": "[1]"}}]}}]}"#,
     );
-    let failure = anthropic_sse_chunks_from_response(&response).unwrap_err();
+    let failure = sse_chunks_from_response(&response).unwrap_err();
     assert!(matches!(failure, AnthropicSseError::Output(_)));
 }

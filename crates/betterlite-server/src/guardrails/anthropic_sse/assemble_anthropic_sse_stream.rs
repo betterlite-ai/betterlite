@@ -41,15 +41,15 @@ where
         )
         | None => "",
     };
-    let mut assembled = assembler.assemble(&sse_stream, model).await?;
+    let mut response = assembler.assemble(&sse_stream, model).await?;
     if !restore_identity {
-        return Some(assembled);
+        return Some(response);
     }
     if let Some(Json::Text(message_id)) = message_start.get("id") {
-        assembled.id.clone_from(message_id);
+        response.id.clone_from(message_id);
     }
     if !model.is_empty() {
-        model.clone_into(&mut assembled.model);
+        model.clone_into(&mut response.model);
     }
-    Some(assembled)
+    Some(response)
 }

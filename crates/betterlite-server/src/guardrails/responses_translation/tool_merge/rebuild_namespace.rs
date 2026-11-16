@@ -5,7 +5,7 @@ use betterlite_models::decisions::Json;
 
 use super::as_tool::as_tool;
 use super::error::ToolMergeError;
-use super::group::{CHAT_MEMBER_TYPES, FlattenedGroup, NAMESPACE_DESCRIPTION_SEPARATOR};
+use super::group::{CHAT_MEMBER_TYPES, DESCRIPTION_SEPARATOR, FlattenedGroup};
 
 mod tests;
 
@@ -40,7 +40,7 @@ pub fn rebuilt_member(
     let prefix = if namespace_description.is_empty() {
         String::new()
     } else {
-        format!("{namespace_description}{NAMESPACE_DESCRIPTION_SEPARATOR}")
+        format!("{namespace_description}{DESCRIPTION_SEPARATOR}")
     };
     let suffix = if tool_type(member) == "custom" {
         grammar_suffix(member.get("format"))?

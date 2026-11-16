@@ -5,10 +5,8 @@ use betterlite_models::decisions::Json;
 
 use super::error::AnthropicSseError;
 
-mod tests;
-
 // The assembled response is translated to an Anthropic message and replayed as the frames of a stream.
-pub fn anthropic_sse_chunks_from_response(
+pub fn sse_chunks_from_response(
     assembled: &ResponseRecord,
 ) -> Result<Vec<Vec<u8>>, AnthropicSseError> {
     let message = response_message(assembled, None, None)?;

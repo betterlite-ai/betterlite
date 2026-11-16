@@ -49,11 +49,11 @@ impl SseAssembler for FakeAssembler {
 async fn assemble_anthropic_sse_stream_keeps_the_wire_shape_by_default() {
     let assembler = FakeAssembler::answering(Some(record(UPSTREAM)));
     let chunks = [text_chunk(PING), bytes_chunk(MESSAGE_START.as_bytes())];
-    let assembled = assemble_anthropic_sse_stream(&chunks, &assembler, false)
+    let restored = assemble_anthropic_sse_stream(&chunks, &assembler, false)
         .await
         .unwrap();
-    assert_eq!(assembled.id, "chatcmpl-up");
-    assert_eq!(assembled.model, "up-model");
+    assert_eq!(restored.id, "chatcmpl-up");
+    assert_eq!(restored.model, "up-model");
     let joined = format!("{PING}{MESSAGE_START}");
     assert_eq!(assembler.calls(), [(joined, String::new())]);
 }
@@ -62,11 +62,11 @@ async fn assemble_anthropic_sse_stream_keeps_the_wire_shape_by_default() {
 async fn assemble_anthropic_sse_stream_restores_the_message_id_and_model() {
     let assembler = FakeAssembler::answering(Some(record(UPSTREAM)));
     let chunks = [text_chunk(MESSAGE_START)];
-    let assembled = assemble_anthropic_sse_stream(&chunks, &assembler, true)
+    let restored = assemble_anthropic_sse_stream(&chunks, &assembler, true)
         .await
         .unwrap();
-    assert_eq!(assembled.id, "msg_1");
-    assert_eq!(assembled.model, "claude-x");
+    assert_eq!(restored.id, "msg_1");
+    assert_eq!(restored.model, "claude-x");
     assert_eq!(
         assembler.calls(),
         [(MESSAGE_START.to_owned(), "claude-x".to_owned())]
@@ -77,11 +77,11 @@ async fn assemble_anthropic_sse_stream_restores_the_message_id_and_model() {
 async fn assemble_anthropic_sse_stream_restores_only_what_message_start_carries() {
     let start = "data: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_2\", \"model\": \"\"}}\n\n";
     let assembler = FakeAssembler::answering(Some(record(UPSTREAM)));
-    let assembled = assemble_anthropic_sse_stream(&[text_chunk(start)], &assembler, true)
+    let restored = assemble_anthropic_sse_stream(&[text_chunk(start)], &assembler, true)
         .await
         .unwrap();
-    assert_eq!(assembled.id, "msg_2");
-    assert_eq!(assembled.model, "up-model");
+    assert_eq!(restored.id, "msg_2");
+    assert_eq!(restored.model, "up-model");
     let bare = "data: {\"type\": \"message_start\", \"message\": {}}\n\n";
     let unchanged = assemble_anthropic_sse_stream(&[text_chunk(bare)], &assembler, true)
         .await
