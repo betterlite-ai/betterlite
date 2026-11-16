@@ -18,7 +18,7 @@ use betterlite_mcp::server_record::OAuth2Flow;
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 pub(crate) struct Op;
 #[derive(Debug, Deserialize)]
@@ -63,9 +63,19 @@ impl Helper for Op {
     fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ValidatePayload(call) => validate_payload(call),
-            Input::NewRequest(call) => new_request(call),
-            Input::UpdateRequest(call) => update_request(call),
-            Input::StampFlow(call) => stamp_flow(call),
+            Input::NewRequest(call) => {
+                serialized(NewMCPServerRequest::from_value(&call.payload, &call.stdio))
+            }
+            Input::UpdateRequest(call) => serialized(UpdateMCPServerRequest::from_value(
+                &call.payload,
+                &call.stdio,
+            )),
+            Input::StampFlow(call) => serialized(
+                NewMCPServerRequest::from_value(&call.payload, &call.stdio).map(|mut request| {
+                    stamp_omitted_oauth2_flow(&mut request);
+                    request
+                }),
+            ),
             Input::Eligibility {
                 auth_type,
                 oauth2_flow,
@@ -88,6 +98,12 @@ impl Helper for Op {
         }
     }
 }
+fn serialized<T: Serialize>(built: Result<T, RequestError>) -> HelperResult {
+    match built {
+        Ok(request) => Ok(serde_json::to_value(&request)?),
+        Err(error) => Ok(request_error(error)),
+    }
+}
 fn validate_payload(call: &PayloadInput) -> HelperResult {
     let mut request = match NewMCPServerRequest::from_value(&call.payload, &call.stdio) {
         Ok(request) => request,
@@ -100,27 +116,6 @@ fn validate_payload(call: &PayloadInput) -> HelperResult {
     match validate_and_normalize_payload(&mut request, &rules) {
         Ok(()) => Ok(serde_json::to_value(&request)?),
         Err(error) => Ok(validation_error(&error)),
-    }
-}
-fn new_request(call: &PayloadInput) -> HelperResult {
-    match NewMCPServerRequest::from_value(&call.payload, &call.stdio) {
-        Ok(request) => Ok(serde_json::to_value(&request)?),
-        Err(error) => Ok(request_error(error)),
-    }
-}
-fn update_request(call: &PayloadInput) -> HelperResult {
-    match UpdateMCPServerRequest::from_value(&call.payload, &call.stdio) {
-        Ok(request) => Ok(serde_json::to_value(&request)?),
-        Err(error) => Ok(request_error(error)),
-    }
-}
-fn stamp_flow(call: &PayloadInput) -> HelperResult {
-    match NewMCPServerRequest::from_value(&call.payload, &call.stdio) {
-        Ok(mut request) => {
-            stamp_omitted_oauth2_flow(&mut request);
-            Ok(serde_json::to_value(&request)?)
-        }
-        Err(error) => Ok(request_error(error)),
     }
 }
 fn conflict_message(field: ConflictField, value: &str, server_id: &str) -> Value {

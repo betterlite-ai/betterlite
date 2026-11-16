@@ -9,9 +9,6 @@ deviations:
   - what: The required field list comes from the mcp_required_fields config section, where LiteLLM reads proxy_general_settings on every call.
     why: Settings reach this crate as a parsed config section; a change through the config update route takes effect when the section reloads rather than on the next call.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L356-L362
-  - what: A field of the wrong type fails with RequestError::Shape carrying serde_json's message, where pydantic raises a ValidationError whose msg reads Input should be ... . Both reject the payload before conversion.
-    why: The request models deserialize with serde, whose type error text the task specifies as Shape; docs/compatibility.md makes a wrong-typed value an error that names the field instead of copying pydantic's wording.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1615-L1676
 kept_bugs:
   - what: The tool display name pattern accepts one trailing newline, so "name\n" saves where a strict ^[a-zA-Z0-9_-]+$ would reject it.
     why: Python's $ matches before a trailing newline and the task says to mirror the pattern rather than tighten it; the oracle case display-name-pattern pins the accepted value.

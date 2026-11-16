@@ -17,14 +17,6 @@ pub struct StdioPolicy {
     pub enabled: bool,
     pub allowed_commands: BTreeSet<String>,
 }
-impl Default for StdioPolicy {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            allowed_commands: default_allowed_commands(),
-        }
-    }
-}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PayloadRules {
     pub prefix_separator: String,
@@ -35,7 +27,10 @@ impl Default for PayloadRules {
     fn default() -> Self {
         Self {
             prefix_separator: DEFAULT_PREFIX_SEPARATOR.to_owned(),
-            stdio: StdioPolicy::default(),
+            stdio: StdioPolicy {
+                enabled: false,
+                allowed_commands: default_allowed_commands(),
+            },
         }
     }
 }

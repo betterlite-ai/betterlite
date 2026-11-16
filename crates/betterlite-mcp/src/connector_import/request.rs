@@ -5,7 +5,6 @@ use serde::Serialize;
 use serde::de::Error as _;
 use serde_with::rust::double_option;
 mod tests;
-pub type ConnectorMap = IndexMap<String, ConnectorEntry>;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConnectorEntry {
     pub name: Option<String>,
@@ -20,7 +19,7 @@ pub struct ConnectorEntry {
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectorServers {
-    Mapping(ConnectorMap),
+    Mapping(IndexMap<String, ConnectorEntry>),
     List(Vec<ConnectorEntry>),
 }
 #[derive(Clone, Debug, PartialEq, Eq)]
