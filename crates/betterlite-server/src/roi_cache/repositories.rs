@@ -47,6 +47,30 @@ where
     }
 }
 
+fn ordered_queue(groups: Vec<RepositoryPulls>) -> Vec<(String, GitHubPullListItem)> {
+    groups
+        .into_iter()
+        .flat_map(|group| {
+            let repo = group.repo;
+            group
+                .pulls
+                .into_iter()
+                .map(move |pull| (repo.clone(), pull))
+        })
+        .collect()
+}
+
+fn unavailable_notice(unavailable: &[String]) -> (Vec<String>, &'static str) {
+    if unavailable.is_empty() {
+        return (Vec::new(), COMPLETE_STAGE);
+    }
+    let warning = format!(
+        "Incomplete report: could not read {}. Results include only accessible repositories. Spend-per-hour figures are unavailable until all selected repositories can be read. Check repository access or run analysis again to retry.",
+        unavailable.join(", ")
+    );
+    (vec![warning], PARTIAL_STAGE)
+}
+
 pub async fn read_repositories<T>(
     github: &GitHub<T>,
     repos: &[String],
@@ -70,34 +94,13 @@ where
     if unavailable.len() == repos.len() {
         return Err(ReportBlocked::NoRepositoryReadable);
     }
-    let queue: Vec<(String, GitHubPullListItem)> = groups
-        .into_iter()
-        .flat_map(|group| {
-            let repo = group.repo;
-            group
-                .pulls
-                .into_iter()
-                .map(move |pull| (repo.clone(), pull))
-        })
-        .collect();
+    let queue = ordered_queue(groups);
     if !unavailable.is_empty() && queue.is_empty() {
         return Err(ReportBlocked::NoPullRequests {
             repos: unavailable.join(", "),
         });
     }
-    let warnings = if unavailable.is_empty() {
-        Vec::new()
-    } else {
-        vec![format!(
-            "Incomplete report: could not read {}. Results include only accessible repositories. Spend-per-hour figures are unavailable until all selected repositories can be read. Check repository access or run analysis again to retry.",
-            unavailable.join(", ")
-        )]
-    };
-    let stage = if unavailable.is_empty() {
-        COMPLETE_STAGE
-    } else {
-        PARTIAL_STAGE
-    };
+    let (warnings, stage) = unavailable_notice(&unavailable);
     Ok(RepositoryBatch {
         queue,
         unavailable_repos: unavailable,

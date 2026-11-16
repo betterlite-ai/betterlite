@@ -10,6 +10,26 @@ use crate::roi_github::transport::Transport;
 
 const DELETED_USER: &str = "deleted-user";
 
+fn sourceless_estimate(status: ROIEstimateStatus, reasoning: String) -> ROIEstimate {
+    ROIEstimate {
+        status,
+        hours: None,
+        reasoning,
+        model: None,
+        evidence_source: None,
+        effort_basis: None,
+        cached: None,
+    }
+}
+
+fn login_or_deleted(pull: &GitHubPullListItem) -> &str {
+    pull.user
+        .as_ref()
+        .and_then(|user| user.login.as_deref())
+        .filter(|login| !login.is_empty())
+        .unwrap_or(DELETED_USER)
+}
+
 pub async fn estimate_with_fallback<Predicates>(
     estimator: &Estimator,
     evidence: &ROIPullEvidence,
@@ -20,15 +40,7 @@ where
 {
     match estimator.estimate(evidence, predicates).await {
         Ok(estimate) => estimate,
-        Err(error) => ROIEstimate {
-            status: ROIEstimateStatus::Error,
-            hours: None,
-            reasoning: error.to_string(),
-            model: None,
-            evidence_source: None,
-            effort_basis: None,
-            cached: None,
-        },
+        Err(error) => sourceless_estimate(ROIEstimateStatus::Error, error.to_string()),
     }
 }
 
@@ -41,18 +53,15 @@ pub async fn unavailable_record<T>(
 where
     T: Transport,
 {
-    let login = pull
-        .user
-        .as_ref()
-        .and_then(|user| user.login.as_deref())
-        .filter(|login| !login.is_empty())
-        .unwrap_or(DELETED_USER);
+    let login = login_or_deleted(pull);
     let profile = profile_email(github, login, "").await;
     let emails = if profile.is_empty() {
         Vec::new()
     } else {
         vec![profile.clone()]
     };
+    let reasoning =
+        format!("PR metadata could not be read: {error} Run analysis again to retry this PR.");
     ROIPullRecord {
         repo: repo.to_owned(),
         number: pull.number,
@@ -75,17 +84,7 @@ where
         changed_files: 0,
         commit_count: 0,
         incomplete_metadata: true,
-        estimate: ROIEstimate {
-            status: ROIEstimateStatus::NeedsReview,
-            hours: None,
-            reasoning: format!(
-                "PR metadata could not be read: {error} Run analysis again to retry this PR."
-            ),
-            model: None,
-            evidence_source: None,
-            effort_basis: None,
-            cached: None,
-        },
+        estimate: sourceless_estimate(ROIEstimateStatus::NeedsReview, reasoning),
         cache_key: None,
     }
 }

@@ -110,16 +110,24 @@ pub(super) fn pull_item(number: i64, login: Option<&str>, sha: Option<&str>) -> 
     }
 }
 
-pub(super) fn pulls_body(numbers: &[i64]) -> String {
-    let items: Vec<String> = numbers
+pub(super) fn pulls_merged_on(merged: &[(i64, &str)]) -> String {
+    let items: Vec<String> = merged
         .iter()
-        .map(|number| {
+        .map(|(number, day)| {
             format!(
-                r#"{{"number":{number},"html_url":"https://github.com/o/r/pull/{number}","merged_at":"2026-01-05T00:00:00Z","updated_at":"2026-01-06T00:00:00Z","title":"Pull {number}","body":"Body","head":{{"sha":"sha{number}"}},"user":{{"login":"dev"}}}}"#
+                r#"{{"number":{number},"html_url":"https://github.com/o/r/pull/{number}","merged_at":"{day}T00:00:00Z","updated_at":"2026-12-31T00:00:00Z","title":"Pull {number}","body":"Body","head":{{"sha":"sha{number}"}},"user":{{"login":"dev"}}}}"#
             )
         })
         .collect();
     format!("[{}]", items.join(","))
+}
+
+pub(super) fn pulls_body(numbers: &[i64]) -> String {
+    let merged: Vec<(i64, &str)> = numbers
+        .iter()
+        .map(|number| (*number, "2026-01-05"))
+        .collect();
+    pulls_merged_on(&merged)
 }
 
 pub(super) fn estimate(status: ROIEstimateStatus) -> ROIEstimate {
@@ -217,6 +225,8 @@ pub(super) fn report() -> ROIReport {
 pub(super) enum MemoryError {
     #[error("the memory repository refused the write")]
     Refused,
+    #[error("the memory repository refused the read")]
+    Unreadable,
 }
 
 #[derive(Default)]
@@ -224,6 +234,7 @@ pub(super) struct MemoryRepository {
     pub(super) params: Mutex<BTreeMap<String, JsonData>>,
     pub(super) writes: Mutex<Vec<(String, JsonData)>>,
     pub(super) refuse_writes: bool,
+    pub(super) refuse_reads: bool,
 }
 
 impl MemoryRepository {
@@ -260,6 +271,9 @@ impl ReportRepository for MemoryRepository {
         &self,
         param_name: &str,
     ) -> impl Future<Output = Result<Option<JsonData>, MemoryError>> + Send {
+        if self.refuse_reads {
+            return ready(Err(MemoryError::Unreadable));
+        }
         ready(Ok(self.params.lock().unwrap().get(param_name).cloned()))
     }
 

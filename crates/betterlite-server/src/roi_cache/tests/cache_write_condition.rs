@@ -54,6 +54,7 @@ async fn a_refused_write_is_reported_as_a_store_error() {
         params: Mutex::default(),
         writes: Mutex::default(),
         refuse_writes: true,
+        refuse_reads: false,
     };
     let record = record(ROIEstimateStatus::Estimated);
     let error = cache_estimated_pull(&repository, Some("key-1"), &record, None)
