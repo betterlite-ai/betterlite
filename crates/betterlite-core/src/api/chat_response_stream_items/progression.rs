@@ -46,7 +46,7 @@ fn default_done_event<Context>(
     Ok(Some(message_done_event(state, sources, completion, kind)?))
 }
 
-fn next_done_kind<Context>(state: &ChatStreamState<Context>) -> Option<MessageDone> {
+const fn next_done_kind<Context>(state: &ChatStreamState<Context>) -> Option<MessageDone> {
     if !state.progress.sent_output_text_done {
         return Some(MessageDone::Text);
     }
