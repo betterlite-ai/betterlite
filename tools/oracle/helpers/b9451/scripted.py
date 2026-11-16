@@ -125,7 +125,8 @@ def outcome_view(
     for call in server.seen:
         checked: dict[str, Json] = {name: call["headers"].get(name) == value for name, value in secrets.items()}
         shown: dict[str, Json] = {name: call["headers"][name] for name in names if name in call["headers"]}
-        view: dict[str, Json] = {"path": call["path"], "query": call["query"], "headers": shown, "secrets": checked}
+        query: dict[str, Json] = {**call["query"]}
+        view: dict[str, Json] = {"path": call["path"], "query": query, "headers": shown, "secrets": checked}
         requests.append({**view, "body": call["body"]})
     match outcome:
         case BaseException():

@@ -51,7 +51,8 @@ def decoded_body(body: Json) -> Json:
 async def call_hook(guardrail: AktoHooks, case: AktoCase) -> dict[str, Json]:
     inputs: GenericGuardrailAPIInputs = {"texts": case["texts"]}
     returned = await guardrail.apply_guardrail(inputs, case["request_data"], case["input_type"])
-    return {"texts": returned.get("texts")}
+    texts = returned.get("texts")
+    return {"texts": None if texts is None else [*texts]}
 
 
 async def run_akto(case: AktoCase) -> Json:
