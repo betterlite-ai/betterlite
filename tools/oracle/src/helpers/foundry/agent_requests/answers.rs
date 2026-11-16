@@ -30,16 +30,16 @@ pub(super) fn run_calls(input: &Input) -> Calls {
         Input::AgentIds(calls) => collect(calls, |call| {
             outcome(agent_id(&call.model, &call.optional_params))
         }),
-        Input::Params(calls) => collect(calls, params_answer),
+        Input::Params(calls) => collect(calls, |call| Ok(params_answer(call))),
         Input::ProviderInfos(calls) => collect(calls, resolved_provider),
         Input::CompleteUrls(calls) => collect(calls, |call| {
             outcome(complete_url(call.api_base.as_deref()))
         }),
         Input::Requests(calls) => collect(calls, transformed_request),
         Input::Preparations(calls) => collect(calls, prepared_call),
-        Input::Validations(calls) => collect(calls, validated),
+        Input::Validations(calls) => collect(calls, |call| Ok(validated(call))),
         Input::Checks(calls) => collect(calls, checked),
-        Input::Errors(calls) => collect(calls, error_class),
+        Input::Errors(calls) => collect(calls, |call| Ok(error_class(call))),
         Input::Paths(calls) => collect(calls, |call| {
             outcome(endpoint_url(
                 segment(call),
@@ -47,7 +47,7 @@ pub(super) fn run_calls(input: &Input) -> Calls {
                 &call.api_version,
             ))
         }),
-        Input::Flags(calls) => collect(calls, flag_answer),
+        Input::Flags(calls) => collect(calls, |call| Ok(flag_answer(call))),
     }
 }
 
@@ -90,11 +90,11 @@ pub(super) fn secret_headers(headers: &BTreeMap<String, String>) -> Headers {
         .collect()
 }
 
-fn params_answer(call: &ParamsCall) -> CallAnswer {
-    Ok(json!({
+fn params_answer(call: &ParamsCall) -> Value {
+    json!({
         "supported": SUPPORTED_OPENAI_PARAMS,
         "mapped": call.optional_params,
-    }))
+    })
 }
 
 fn resolved_provider(call: &ProviderInfoCall) -> CallAnswer {
@@ -148,10 +148,10 @@ fn prepared_call(call: &PreparationCall) -> CallAnswer {
     }))
 }
 
-fn validated(call: &ValidationCall) -> CallAnswer {
+fn validated(call: &ValidationCall) -> Value {
     let key = call.api_key.as_deref().map(SecretString::from);
     let headers = validate_environment(&secret_headers(&call.headers), key.as_ref());
-    Ok(json!({"ok": true, "value": {"headers": shown_headers(&headers)}}))
+    json!({"ok": true, "value": {"headers": shown_headers(&headers)}})
 }
 
 fn checked(call: &CheckCall) -> CallAnswer {
@@ -161,23 +161,23 @@ fn checked(call: &CheckCall) -> CallAnswer {
     }
 }
 
-fn error_class(call: &ErrorCall) -> CallAnswer {
+fn error_class(call: &ErrorCall) -> Value {
     let error = AgentRequestError::Upstream {
         status: call.status,
         message: call.message.clone(),
     };
-    Ok(json!({"status": error.status(), "headers_dropped": true}))
+    json!({"status": error.status(), "headers_dropped": true})
 }
 
-fn flag_answer(call: &FlagCall) -> CallAnswer {
-    Ok(json!({
+fn flag_answer(call: &FlagCall) -> Value {
+    json!({
         "model": call.model,
         "stream": call.stream,
         "should_fake_stream": SHOULD_FAKE_STREAM,
         "has_custom_stream_wrapper": HAS_CUSTOM_STREAM_WRAPPER,
         "supports_stream_param_in_request_body": SUPPORTS_STREAM_PARAM_IN_BODY,
         "transform_response_is_noop": true,
-    }))
+    })
 }
 
 fn segment(call: &PathCall) -> AgentEndpoint<'_> {
