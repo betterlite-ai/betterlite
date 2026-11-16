@@ -8,7 +8,8 @@ deviations:
       accepts a corrupt row whenever the remaining characters decode. betterlite strips the ASCII whitespace
       PostgreSQL's encode(..., 'base64') inserts and rejects anything else, because that whitespace is the only
       non-alphabet form a working database read produces. The strict rejection is proven by
-      skill_to_typed_conversion_rejects_malformed_base64.
+      skill_to_typed_conversion_rejects_malformed_base64, which feeds "aGVs!bG8=": LiteLLM drops
+      the '!' and decodes b"hello", while betterlite reports FileContent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/handler.py#L49
   - what: >-
       The skill row cache belongs to the StoredSkillReads value the caller injects, so two services over one

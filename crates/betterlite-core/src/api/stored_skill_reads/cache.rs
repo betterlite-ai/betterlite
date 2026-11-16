@@ -62,7 +62,8 @@ impl SkillRowCache {
 
     pub(crate) fn lookup(&self, skill_id: &str) -> Result<CachedSkill, StoredSkillReadError> {
         let found = {
-            let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+            let mut guard = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+            let rows = &mut *guard;
             lookup_marked(&mut rows.markers, &mut rows.values, skill_id)?
         };
         Ok(match found.0 {
@@ -77,16 +78,17 @@ impl SkillRowCache {
         skill_id: &str,
         skill: Option<&SkillTable>,
     ) -> Result<(), StoredSkillReadError> {
-        let mut rows = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
         let value = skill.cloned();
-        let (_evicted, _replaced) = store_marked(
+        let mut guard = self.rows.lock().unwrap_or_else(PoisonError::into_inner);
+        let rows = &mut *guard;
+        store_marked(
             &mut rows.markers,
             &mut rows.values,
             skill_id.to_owned(),
             value,
             None,
         )?;
-        drop(rows);
+        drop(guard);
         Ok(())
     }
 }

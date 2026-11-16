@@ -28,8 +28,9 @@ impl<R: SkillRepository> StoredSkillReads<R> {
         limits: SkillCacheLimits,
         clock: Clock,
     ) -> Result<Self, StoredSkillReadError> {
-        let cache = SkillRowCache::new(limits, clock)?;
-        Ok(Self { repository, cache })
+        SkillRowCache::new(limits, clock)
+            .map(|cache| Self { repository, cache })
+            .map_err(StoredSkillReadError::Cache)
     }
 
     pub async fn list_skills(

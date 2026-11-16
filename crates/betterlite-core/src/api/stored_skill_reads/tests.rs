@@ -232,7 +232,8 @@ impl ScriptedRepository {
         }
         let offset = usize::try_from(page.offset).unwrap_or(usize::MAX);
         let limit = usize::try_from(page.limit).unwrap_or(0);
-        rows.into_iter()
+        Ok(rows
+            .into_iter()
             .filter(|row| match &created_by {
                 Some(scopes) => row
                     .created_by
@@ -242,7 +243,7 @@ impl ScriptedRepository {
             })
             .skip(offset)
             .take(limit)
-            .collect()
+            .collect())
     }
 }
 
@@ -504,6 +505,11 @@ fn skill_to_typed_conversion_rejects_malformed_base64() {
     let alphabet =
         StoredSkill::from_row(row_with_content(ALICE_SKILL, Some("alice"), "ab-_")).unwrap_err();
     assert!(matches!(alphabet, StoredSkillReadError::FileContent(_)));
+    // LiteLLM drops '!' and decodes this row to b"hello", so a lenient decoder would accept it
+    let discarded =
+        StoredSkill::from_row(row_with_content(ALICE_SKILL, Some("alice"), "aGVs!bG8="))
+            .unwrap_err();
+    assert!(matches!(discarded, StoredSkillReadError::FileContent(_)));
 }
 
 #[tokio::test]
