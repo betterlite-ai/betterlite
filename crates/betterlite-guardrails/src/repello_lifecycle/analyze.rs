@@ -160,7 +160,9 @@ impl RepelloAILifecycle {
             .timeout(self.settings.request_timeout)
             .send()
             .await
-            .map_err(send_error)?;
+            .map_err(|error| PostError::Transient {
+                reason: error.to_string(),
+            })?;
         let status = response.status();
         let code = status.as_u16();
         if CONFIG_ERROR_STATUS_CODES.contains(&code) {
@@ -212,16 +214,11 @@ fn detail(message: &str, status: Option<u16>, error_type: Option<&str>) -> Detai
     detail
 }
 
-// A transport error, a timeout included, is httpx's HTTPError, which LiteLLM sends to _handle_unreachable.
-fn send_error(error: reqwest::Error) -> PostError {
-    PostError::Transient {
-        reason: error.to_string(),
-    }
-}
-
 fn read_error(error: ReadError) -> PostError {
     match error {
-        ReadError::Failed(source) => send_error(source),
+        ReadError::Failed(source) => PostError::Transient {
+            reason: source.to_string(),
+        },
         ReadError::TooLarge { limit } => PostError::Unexpected {
             reason: format!("the RepelloAI Argus response body is larger than {limit} bytes"),
         },

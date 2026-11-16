@@ -54,8 +54,7 @@ impl ConsoleSink for SilentConsole {
     }
 }
 
-// The guardrail only needs the assembled text, so no value these services answer reaches its output,
-// and a mutant of their bodies reads back into nothing.
+// The guardrail only needs the assembled text, so no value these services answer reaches its output.
 struct NoServices;
 
 impl StreamCostCalculator for NoServices {
@@ -163,9 +162,8 @@ pub(super) async fn assemble(
     guardrail: &RepelloAILifecycle,
     chunks: &[Chunk],
 ) -> Result<Assembled, StreamScanError> {
-    let elapsed = (guardrail.clock)()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default();
+    let started = (guardrail.clock)();
+    let elapsed = started.duration_since(UNIX_EPOCH).unwrap_or_default();
     let request = Request {
         chunks: Some(chunks),
         messages: None,

@@ -128,6 +128,15 @@ where
     Ok(guardrail)
 }
 
+// The Repello hooks are undecorated, so _call_analyze's finally is the only record it writes.
+const REPELLO_SWITCHES: GuardrailSwitches = GuardrailSwitches {
+    use_native_during_call_hook: false,
+    use_native_lifecycle_hooks: false,
+    records_own_information: true,
+    uses_apply_guardrail_interface: false,
+    deny_text_on_error: false,
+};
+
 #[must_use]
 pub fn guardrail_settings(
     params: &RepelloAIParams,
@@ -138,12 +147,19 @@ pub fn guardrail_settings(
         supported_event_hooks: Some(SUPPORTED_EVENT_HOOKS.to_vec()),
         event_hook: Some(event_hook),
         default_on: params.default_on,
+        mask_request_content: false,
+        mask_response_content: false,
+        violation_message_template: None,
+        end_session_after_n_fails: None,
+        on_violation: None,
+        realtime_violation_message: None,
+        on_sensitive_data: None,
+        sensitive_data_route_to_model: None,
+        sticky_session_routing: true,
+        run_in_parallel: false,
+        scan_raw_request: false,
+        only_scan_new_messages: false,
         timeout: params.timeout,
-        // The Repello hooks are undecorated, so _call_analyze's finally is the only record it writes.
-        switches: GuardrailSwitches {
-            records_own_information: true,
-            ..GuardrailSwitches::default()
-        },
-        ..GuardrailSettings::default()
+        switches: REPELLO_SWITCHES,
     }
 }

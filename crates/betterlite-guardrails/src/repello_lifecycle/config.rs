@@ -118,8 +118,7 @@ where
         .map(SecretString::from)
 }
 
-// LiteLLM's _event_hook_from_mode: a tagged Mode comes back untouched, and every name of a string
-// or a list becomes a GuardrailEventHooks member, so an unknown hook fails the startup.
+// LiteLLM's _event_hook_from_mode: a tagged Mode passes through and every string name must be a known hook.
 pub fn event_hook_from_mode(
     mode: &LitellmParamsMode,
 ) -> Result<LitellmParamsMode, RepelloLifecycleError> {

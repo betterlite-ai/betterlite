@@ -22,7 +22,7 @@ use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::runtime::{Builder, Runtime};
+use tokio::runtime::Builder;
 
 use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
@@ -84,8 +84,8 @@ struct Output {
 struct Metadata {
     #[serde(default)]
     applied_guardrails: Vec<String>,
-    #[serde(default)]
-    standard_logging_guardrail_information: Vec<RecordedGuardrail>,
+    #[serde(default, rename = "standard_logging_guardrail_information")]
+    records: Vec<RecordedGuardrail>,
 }
 
 #[derive(Deserialize)]
@@ -142,7 +142,10 @@ fn base_output(call: &Call, settings: &RepelloAISettings) -> Output {
         api_base: Some(settings.api_base.clone()),
         asset_id: Some(settings.asset_id.clone()),
         key_source: Some(key_source(call, settings.api_key.expose_secret())),
-        ..Output::default()
+        requests: Vec::new(),
+        applied: Vec::new(),
+        status: None,
+        caught: None,
     }
 }
 
@@ -172,13 +175,17 @@ fn hook_output(call: &Call, params: &RepelloAIParams) -> Result<Output, Box<Help
     let mut registry = NoRegistry;
     let guardrail = initialize_guardrail(&pointed, &call.env, base_builder(), &mut registry)
         .map_err(|error| failure("ValueError", error.to_string()))?;
-    let (result, data) = build_runtime()?.block_on(run_pre_call(&guardrail, call.data.clone()))?;
+    let runtime = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| failure("RuntimeError", error.to_string()))?;
+    let (result, data) = runtime.block_on(run_pre_call(&guardrail, call.data.clone()))?;
     let meta = metadata(&data);
     Ok(Output {
         requests: request_records(mock)?,
         applied: meta.applied_guardrails,
         status: meta
-            .standard_logging_guardrail_information
+            .records
             .last()
             .and_then(|record| record.guardrail_status.clone()),
         caught: caught(&result),
@@ -262,13 +269,6 @@ fn script(call: &Call) -> Result<MockScript, Box<HelperError>> {
         .ok_or_else(|| failure("MockError", "the case has no answer".to_owned()))?;
     MockScript::try_from(slice::from_ref(answer))
         .map_err(|error| failure("MockError", error.to_string()))
-}
-
-fn build_runtime() -> Result<Runtime, Box<HelperError>> {
-    Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| failure("RuntimeError", error.to_string()))
 }
 
 fn failure(class: &str, message: String) -> Box<HelperError> {

@@ -35,15 +35,14 @@ class Caught(TypedDict):
     detail: JsonValue
 
 
-class HookMetadata(TypedDict, total=False):
-    applied_guardrails: list[str]
-    standard_logging_guardrail_information: list[dict[str, str]]
+class GuardrailRecord(TypedDict):
+    guardrail_status: str
 
 
 class HookData(TypedDict, total=False):
     messages: list[dict[str, str]]
-    metadata: HookMetadata
-    litellm_metadata: HookMetadata
+    metadata: dict[str, JsonValue]
+    litellm_metadata: dict[str, JsonValue]
 
 
 class Output(TypedDict):
@@ -120,26 +119,23 @@ def build_guardrail(call: Input) -> Guardrail:
 
 
 def key_source(call: Input, key: str) -> str:
-    explicit = call["api_key"] or ""
-    if explicit != "" and explicit == key:
+    if call["api_key"] == key:
         return "explicit"
-    argus = call["env"].get("ARGUS_API_KEY") or ""
-    if argus != "" and argus == key:
+    if call["env"].get("ARGUS_API_KEY") == key:
         return "argus"
     return "repelloai"
 
 
-def metadata_bucket(data: HookData) -> HookMetadata | None:
-    return data.get("litellm_metadata") or data.get("metadata")
-
-
 def hook_facts(data: HookData) -> tuple[list[str], str | None]:
-    bucket = metadata_bucket(data)
+    bucket = data.get("litellm_metadata") or data.get("metadata")
     if bucket is None:
         return [], None
-    applied = list(bucket.get("applied_guardrails") or [])
-    recorded = bucket.get("standard_logging_guardrail_information")
-    return applied, recorded[-1]["guardrail_status"] if recorded else None
+    applied = bucket.get("applied_guardrails")
+    names = TypeAdapter(list[str]).validate_python(applied) if applied is not None else []
+    recorded = TypeAdapter(list[GuardrailRecord]).validate_python(
+        bucket["standard_logging_guardrail_information"]
+    )
+    return names, recorded[-1]["guardrail_status"] if recorded else None
 
 
 def empty_output() -> Output:

@@ -30,13 +30,10 @@ pub fn verdict_blocks(response: Option<&RepelloAIAnalyzeResponse>) -> bool {
 // LiteLLM's _format_blocked_detail: only the policies that name an action or a score are listed.
 #[must_use]
 pub fn format_blocked_detail(response: &RepelloAIAnalyzeResponse) -> String {
-    let Some(policies) = response
-        .policies_violated
-        .as_deref()
-        .filter(|policies| !policies.is_empty())
-    else {
+    let policies = response.policies_violated.as_deref().unwrap_or_default();
+    if policies.is_empty() {
         return BLOCKED_DETAIL.to_owned();
-    };
+    }
     let formatted: Vec<String> = policies.iter().map(format_policy).collect();
     format!("{POLICIES_PREFIX}{}.", formatted.join("; "))
 }
@@ -93,7 +90,7 @@ pub fn log_flagged_verdict(response: &RepelloAIAnalyzeResponse) {
     match serde_json::to_string(policies) {
         Ok(text) => tracing::warn!("RepelloAI Argus flagged content (allowed): {text}"),
         Err(error) => {
-            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}");
+            tracing::warn!("RepelloAI Argus flagged policies could not be logged: {error}")
         }
     }
 }
