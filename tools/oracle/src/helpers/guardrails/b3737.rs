@@ -4,8 +4,8 @@ mod hooks;
 use betterlite_guardrails::ibm_hooks::config::EventHook;
 use serde_json::Value;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
 
 pub(crate) struct Op;
 
@@ -49,7 +49,7 @@ pub(crate) enum Input {
     ShouldRun(ShouldRunInput),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

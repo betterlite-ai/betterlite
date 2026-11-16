@@ -14,6 +14,7 @@ use super::support::Decision;
 use super::support::EntrySpec;
 use super::support::OutcomeSpec;
 use super::support::helper_error;
+use betterlite_oracle_helper_api::error::HelperError;
 
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -55,7 +56,7 @@ pub(crate) struct Input {
     pub(super) credentials: Vec<CredentialSpec>,
 }
 
-pub(super) fn request_map(value: &Value) -> Result<RequestMap, Box<crate::helpers::HelperError>> {
+pub(super) fn request_map(value: &Value) -> Result<RequestMap, Box<HelperError>> {
     if value.is_null() {
         return Ok(IndexMap::new());
     }
@@ -63,7 +64,7 @@ pub(super) fn request_map(value: &Value) -> Result<RequestMap, Box<crate::helper
         .map_err(|error| helper_error("InvalidInput", error.to_string()))
 }
 
-pub(super) fn redactor() -> Result<Redactor, Box<crate::helpers::HelperError>> {
+pub(super) fn redactor() -> Result<Redactor, Box<HelperError>> {
     Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|error| helper_error("Redaction", error.to_string()))
 }

@@ -28,8 +28,8 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::{HeadersStep, ReplyStep, Step, StreamEvent, Url};
 

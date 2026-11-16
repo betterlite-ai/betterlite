@@ -7,8 +7,9 @@ use betterlite_models::compatible_api_selection::{MESSAGES_ENDPOINT, RESPONSES_E
 use serde_json::{Value, json};
 
 use super::{Family, Input, Op};
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 fn answer(calls: &Value) -> Value {
     let input: Input = serde_json::from_value(json!({ "calls": calls })).unwrap();
@@ -16,7 +17,7 @@ fn answer(calls: &Value) -> Value {
 }
 
 fn seeds() -> Vec<(String, Input)> {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())

@@ -9,7 +9,7 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 
 use super::helper_error;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Call {

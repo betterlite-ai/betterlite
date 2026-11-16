@@ -5,7 +5,9 @@ use std::net::SocketAddr;
 use std::str;
 use std::sync::{Arc, Mutex, MutexGuard};
 
-use tokio::io::{AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::io::{
+    AsyncBufRead, AsyncBufReadExt as _, AsyncReadExt as _, AsyncWriteExt as _, BufReader, split,
+};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
@@ -81,8 +83,8 @@ async fn accept_loop(listener: TcpListener, lists: Arc<Mutex<Lists>>, log: LpopL
 }
 
 async fn serve(stream: TcpStream, lists: Arc<Mutex<Lists>>, log: LpopLog) {
-    let (read_half, mut write_half) = tokio::io::split(stream);
-    let mut reader = tokio::io::BufReader::new(read_half);
+    let (read_half, mut write_half) = split(stream);
+    let mut reader = BufReader::new(read_half);
     let mut session = Session::default();
     while let Ok(Some(command)) = read_command(&mut reader).await {
         if command.name == "LPOP" {

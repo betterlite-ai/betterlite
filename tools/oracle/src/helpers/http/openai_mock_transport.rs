@@ -2,6 +2,8 @@ use betterlite_http::openai_mock_transport::{
     DecodeMockRequestError, MockModel, TransportChoice, decode_mock_request, mock_chat_completion,
     select_transport,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde_json::value::RawValue;
 use uuid::Uuid;
 
@@ -58,9 +60,9 @@ fn decode_probe(probe: &Probe) -> serde_json::Value {
     }
 }
 
-fn reply_literals(model: &str, clock: i64, uuid: &str) -> crate::helpers::HelperResult {
+fn reply_literals(model: &str, clock: i64, uuid: &str) -> HelperResult {
     let identifier = Uuid::parse_str(uuid).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
             error_type: None,
@@ -71,7 +73,7 @@ fn reply_literals(model: &str, clock: i64, uuid: &str) -> crate::helpers::Helper
     })?;
     let raw = RawValue::from_string(serde_json::to_string(model).unwrap_or_default()).map_err(
         |error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
@@ -99,10 +101,10 @@ fn selection_outcome(scenario: &SelectionScenario) -> &'static str {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ReplyLiterals { model, clock, uuid } => reply_literals(model, *clock, uuid),
             Input::RequestDecoder { probes } => Ok(serde_json::Value::Array(

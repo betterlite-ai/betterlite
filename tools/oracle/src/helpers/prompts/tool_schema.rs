@@ -1,4 +1,4 @@
-use crate::helpers::{Helper, HelperResult};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json, Object};
 use betterlite_prompts::schema::drop_non_python_regex_patterns as drop_regex;
 use betterlite_prompts::schema::flatten::{

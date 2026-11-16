@@ -20,7 +20,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 const MODEL: &str = "gdc/gemini-2.5-pro";
 const FIXTURE_TOKEN: &str = "fixture-token";
@@ -99,7 +101,7 @@ fn validation_outcome(call: &ValidationCall, settings: &Settings, auth: &GdcAuth
     let api_key = SecretString::from(call.api_key.clone());
     let headers = call.headers.iter().map(|pair| (pair.name.clone(), SecretString::from(pair.value.clone()))).collect::<Headers>();
     let validation = GdcValidation { model: MODEL, api_base: base, api_key: Some(&api_key), headers, optional_params: &call.optional_params, call: deployment, global: &settings.global, ssl_verify, caching, deadline: Duration::from_secs(30), source_identity: "source-handle" };
-    let runtime = tokio::runtime::Builder::new_current_thread().build().map_err(|error| failure(error.to_string()))?;
+    let runtime = Builder::new_current_thread().build().map_err(|error| failure(error.to_string()))?;
     match runtime.block_on(auth.validate_environment(validation)) {
         Ok(projected) => Ok(json!({ "ok": true, "headers": exposed(&projected), "cache": cache_identities(auth) })),
         Err(error) => Ok(json!({ "ok": false, "status": error.class().metadata().status_code })),

@@ -5,12 +5,13 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
-fn run_case(file: &str) -> Value {
-    use crate::helpers::Helper as _;
+fn run_case_file(file: &str) -> Value {
+    use betterlite_oracle_helper_api::helper::Helper as _;
 
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/studio-interactions")
         .join(file);
     let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
@@ -28,7 +29,7 @@ fn bodies(result: &Value) -> Vec<&Value> {
 
 #[test]
 fn helper_seeds_select_studio_interactions() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<String> = fs::read_dir(corpus)
         .expect("helper corpus")
         .map(|entry| entry.expect("corpus entry").path())
@@ -49,7 +50,7 @@ fn helper_seeds_select_studio_interactions() {
 
 #[test]
 fn oracle_model_wins_over_agent() {
-    let result = run_case("model-over-agent.yaml");
+    let result = run_case_file("model-over-agent.yaml");
     assert_eq!(
         bodies(&result),
         [
@@ -63,7 +64,7 @@ fn oracle_model_wins_over_agent() {
 
 #[test]
 fn oracle_false_and_empty_values_are_kept() {
-    let result = run_case("false-optional-values.yaml");
+    let result = run_case_file("false-optional-values.yaml");
     let calls = bodies(&result);
     assert_eq!(
         calls[0],
@@ -78,7 +79,7 @@ fn oracle_false_and_empty_values_are_kept() {
 
 #[test]
 fn oracle_mime_type_wraps_the_legacy_schema() {
-    let result = run_case("mime-wrap-schema.yaml");
+    let result = run_case_file("mime-wrap-schema.yaml");
     let formats: Vec<&Value> = bodies(&result)
         .into_iter()
         .map(|body| &body["response_format"])
@@ -97,7 +98,7 @@ fn oracle_mime_type_wraps_the_legacy_schema() {
 
 #[test]
 fn oracle_image_config_moves_into_the_format() {
-    let result = run_case("image-format-append.yaml");
+    let result = run_case_file("image-format-append.yaml");
     let calls = bodies(&result);
     assert_eq!(
         calls[0]["response_format"],
@@ -122,7 +123,7 @@ fn oracle_image_config_moves_into_the_format() {
 
 #[test]
 fn oracle_image_type_comes_from_the_config() {
-    let result = run_case("image-type-override.yaml");
+    let result = run_case_file("image-type-override.yaml");
     assert_eq!(
         bodies(&result)[0]["response_format"],
         json!({"type": "custom", "image_size": "1K"})
@@ -131,7 +132,7 @@ fn oracle_image_type_comes_from_the_config() {
 
 #[test]
 fn oracle_create_keeps_the_projection_and_get_does_not() {
-    let result = run_case("create-get-header-difference.yaml");
+    let result = run_case_file("create-get-header-difference.yaml");
     let calls = result["calls"].as_array().unwrap();
     let raw = json!({
         "content-length": "62", "x-ratelimit-remaining-requests": "9",
@@ -157,7 +158,7 @@ fn oracle_create_keeps_the_projection_and_get_does_not() {
 
 #[test]
 fn oracle_lifecycle_ids_are_one_encoded_segment() {
-    let result = run_case("encoded-cancel-id.yaml");
+    let result = run_case_file("encoded-cancel-id.yaml");
     let calls = result["calls"].as_array().unwrap();
     let base = "https://generativelanguage.googleapis.com/v1beta";
     assert_eq!(
@@ -174,7 +175,7 @@ fn oracle_lifecycle_ids_are_one_encoded_segment() {
 
 #[test]
 fn oracle_delete_succeeds_on_any_2xx_without_reading_the_body() {
-    let result = run_case("delete-204.yaml");
+    let result = run_case_file("delete-204.yaml");
     assert_eq!(
         result["calls"],
         json!([

@@ -12,7 +12,9 @@ use betterlite_openai::openai_base_config::{Headers, Object};
 use serde_json::{Value, json};
 
 use super::input::Call;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use std::fmt::Display;
 
 type Failure = Box<HelperError>;
 
@@ -93,7 +95,7 @@ fn response_answer(payload: &Object, response_format: Option<&str>) -> HelperRes
 
 fn failure<Error>(error: Error) -> Failure
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
     Box::new(HelperError {
         class: "ValueError".to_owned(),
