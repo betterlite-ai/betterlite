@@ -102,6 +102,20 @@ fn fails_on_missing_empty_and_unknown_parts() {
 }
 
 #[test]
+fn rejects_turns_and_parts_that_are_not_objects() {
+    let scalar = value("5");
+    assert!(matches!(
+        map_model_turn_event(&scalar),
+        Err(ContentError::ModelTurnNotObject)
+    ));
+    let numeric_part = value(r#"{"parts": [5]}"#);
+    assert!(matches!(
+        map_model_turn_event(&numeric_part),
+        Err(ContentError::PartNotObject)
+    ));
+}
+
+#[test]
 fn maps_generation_complete_only_with_a_prior_delta_type() {
     assert_eq!(
         map_generation_complete_event(Some(AllDeltaType::Text)).unwrap(),
@@ -200,6 +214,15 @@ fn maps_only_the_current_key_and_value() {
         map_openai_event("setupComplete", &setup, None).unwrap(),
         MappedEvent::SessionCreated
     );
+    let scalar = value("5");
+    assert_eq!(
+        map_openai_event("setupComplete", &scalar, None).unwrap(),
+        MappedEvent::SessionCreated
+    );
+    assert!(matches!(
+        map_openai_event("serverContent", &scalar, Some(AllDeltaType::Text)),
+        Err(ContentError::UnknownEvent(key)) if key == "serverContent"
+    ));
     let usage = value(r#"{"totalTokenCount": 3}"#);
     assert!(matches!(
         map_openai_event("usageMetadata", &usage, Some(AllDeltaType::Text)),
@@ -317,6 +340,28 @@ fn starts_with_default_modalities_when_setup_is_absent_or_invalid() {
     };
     let events = serde_json::to_value(start_content_events(&invalid, &mut ids()).unwrap()).unwrap();
     assert_eq!(events[0]["response"]["modalities"], json!(["audio"]));
+    let empty_modalities = StartContent {
+        setup_request: Some(r#"{"setup":{"generationConfig":{"responseModalities":[]}}}"#),
+        ..invalid
+    };
+    let events =
+        serde_json::to_value(start_content_events(&empty_modalities, &mut ids()).unwrap()).unwrap();
+    assert_eq!(events[0]["response"]["modalities"], json!([]));
+}
+
+#[test]
+fn rejects_a_setup_that_is_not_an_object() {
+    let content = StartContent {
+        setup_request: Some(r#"{"setup": 5}"#),
+        response_id: "resp_1",
+        output_item_id: "item_1",
+        conversation_id: "conv_1",
+        delta_type: AllDeltaType::Text,
+    };
+    assert!(matches!(
+        start_content_events(&content, &mut ids()),
+        Err(ContentError::Setup(_))
+    ));
 }
 
 #[test]
@@ -353,6 +398,82 @@ fn concatenates_every_model_turn_part() {
     let none =
         content_delta_event(&empty, "item_1", "resp_1", AllDeltaType::Text, &mut ids).unwrap();
     assert_eq!(event(&none)["delta"], "");
+}
+
+#[test]
+fn rejects_malformed_delta_frames() {
+    let mut ids = ids();
+    let scalar = value("5");
+    assert!(matches!(
+        content_delta_event(&scalar, "item_1", "resp_1", AllDeltaType::Text, &mut ids),
+        Err(ContentError::ContentNotObject)
+    ));
+    let scalar_turn = value(r#"{"modelTurn": 5}"#);
+    assert!(matches!(
+        content_delta_event(
+            &scalar_turn,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::ModelTurnNotObject)
+    ));
+    let numeric_parts = value(r#"{"modelTurn": {"parts": 5}}"#);
+    assert!(matches!(
+        content_delta_event(
+            &numeric_parts,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::PartsNotList)
+    ));
+    let numeric_part = value(r#"{"modelTurn": {"parts": [5]}}"#);
+    assert!(matches!(
+        content_delta_event(
+            &numeric_part,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::PartNotObject)
+    ));
+    let numeric_text = value(r#"{"modelTurn": {"parts": [{"text": 5}]}}"#);
+    assert!(matches!(
+        content_delta_event(
+            &numeric_text,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::PartValueNotString)
+    ));
+    let scalar_inline = value(r#"{"modelTurn": {"parts": [{"inlineData": 5}]}}"#);
+    assert!(matches!(
+        content_delta_event(
+            &scalar_inline,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::PartNotObject)
+    ));
+    let numeric_data = value(r#"{"modelTurn": {"parts": [{"inlineData": {"data": 5}}]}}"#);
+    assert!(matches!(
+        content_delta_event(
+            &numeric_data,
+            "item_1",
+            "resp_1",
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::PartValueNotString)
+    ));
 }
 
 #[test]
@@ -472,6 +593,44 @@ fn empty_completed_text_yields_an_audio_part() {
 }
 
 #[test]
+fn rejects_malformed_done_chunks() {
+    let mut ids = ids();
+    let scalar = chunks("[5]");
+    assert!(matches!(
+        content_done_event(
+            Some(scalar.as_slice()),
+            Some("item_1"),
+            Some("resp_1"),
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::DeltaChunkNotObject)
+    ));
+    let missing = chunks(r#"[{"type": "response.output_text.delta"}]"#);
+    assert!(matches!(
+        content_done_event(
+            Some(missing.as_slice()),
+            Some("item_1"),
+            Some("resp_1"),
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::MissingDeltaField)
+    ));
+    let numeric = chunks(r#"[{"delta": 5}]"#);
+    assert!(matches!(
+        content_done_event(
+            Some(numeric.as_slice()),
+            Some("item_1"),
+            Some("resp_1"),
+            AllDeltaType::Text,
+            &mut ids
+        ),
+        Err(ContentError::MissingDeltaField)
+    ));
+}
+
+#[test]
 fn done_generates_missing_ids_and_additional_events_reuse_them() {
     let mut ids = ids();
     let done = content_done_event(None, None, None, AllDeltaType::Text, &mut ids).unwrap();
@@ -578,6 +737,33 @@ fn delta_events_reuse_present_ids_without_starting_content() {
 }
 
 #[test]
+fn delta_events_require_server_content() {
+    let mut state = ContentState::default();
+    let without_server_content = value(r#"{"setupComplete": {}}"#);
+    let mut ids = ids();
+    assert!(matches!(
+        handle_openai_modality_event(
+            &mut state,
+            ModalityEvent::TextDelta,
+            &without_server_content,
+            None,
+            &mut ids
+        ),
+        Err(ContentError::MissingServerContent)
+    ));
+    assert!(matches!(
+        handle_openai_modality_event(
+            &mut state,
+            ModalityEvent::AudioDelta,
+            &Json::Null,
+            None,
+            &mut ids
+        ),
+        Err(ContentError::MissingServerContent)
+    ));
+}
+
+#[test]
 fn done_events_do_not_replace_caller_state_ids() {
     let frame = value(r#"{"serverContent": {"generationComplete": true}}"#);
     let mut state = ContentState {
@@ -654,6 +840,19 @@ fn list_chunk_updates_replace_and_single_text_deltas_append() {
             ChunkKind::Delta,
         )
         .is_none()
+    );
+    assert!(
+        update_current_chunks(ChunkSource::Single(&value("5")), None, ChunkKind::Delta).is_none()
+    );
+    let with_scalar = [text_chunk("e"), value("5")];
+    let filtered = update_current_chunks(
+        ChunkSource::List(with_scalar.as_slice()),
+        None,
+        ChunkKind::Delta,
+    );
+    assert_eq!(
+        serde_json::to_value(&filtered).unwrap(),
+        json!([{"type": "response.output_text.delta", "delta": "e"}])
     );
 }
 
