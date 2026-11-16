@@ -69,6 +69,10 @@ fn ignores_non_string_defender_fields_and_correlation_id() {
     .unwrap();
     assert_eq!(verdict.defender, DefenderResult::default());
     assert!(verdict.correlation_id.is_none());
+    assert_eq!(
+        verdict.blocked_message("run_sql"),
+        "Invocation of 'run_sql' is blocked by Microsoft Threat Detection policies configured by your administrator."
+    );
 }
 
 #[test]

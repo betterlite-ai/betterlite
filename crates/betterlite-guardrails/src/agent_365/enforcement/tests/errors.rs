@@ -92,6 +92,29 @@ async fn evaluation_400_uses_the_truncated_body_as_its_message() {
     );
 }
 
+// LiteLLM decodes the body with replacement characters; betterlite reads it strictly and keeps no text
+#[tokio::test]
+async fn a_rejection_body_that_is_not_utf8_contributes_no_message_text() {
+    let Harness {
+        guardrail,
+        poster,
+        mut data,
+    } = harness(UnreachableFallback::FailClosed);
+    poster.enqueue(vec![
+        token(),
+        ScriptedReply::Reply(PostReply {
+            status: StatusCode::BAD_REQUEST,
+            body: vec![0xff, 0xfe],
+        }),
+    ]);
+    let failure = run(&guardrail, &mut data).await.unwrap_err();
+    let (status, detail) = http_detail(&failure);
+    assert_eq!(status, 400);
+    assert_eq!(detail_text(detail, "message"), "");
+    let recorded = response(record_fields(&data));
+    assert_eq!(text(recorded.get("reason").unwrap()), "HTTP 400: ");
+}
+
 fn assert_throttled(failure: &EnforcementError, status: u16) {
     let (code, detail) = http_detail(failure);
     assert_eq!(code, 503);
