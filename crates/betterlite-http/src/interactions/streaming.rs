@@ -2,12 +2,13 @@ use reqwest::blocking::Response as BlockingResponse;
 use reqwest::{Client, Response};
 use tokio_util::task::TaskTracker;
 
-use crate::interactions::base::transport::response::{read_body, response_headers};
+use crate::interactions::base::transport::response::response_headers;
 use crate::interactions::base::{
     ErrorClasses, Logging, MAX_RESPONSE_BYTES, RequestFailure, UpstreamResponse,
 };
 use crate::interactions::create::{CreateInteractionError, handle_failure};
 use crate::interactions::lifecycle::check_status;
+use crate::interactions::lifecycle::synchronous::finish_blocking;
 use crate::proxy::StreamResponse;
 use crate::proxy::limits::read_bounded;
 use crate::proxy::stream::Lease;
@@ -37,14 +38,6 @@ pub trait AsyncStreamingConfig: ErrorClasses {
     ) -> Result<Self::AsyncStream, Self::Error>;
 }
 
-// reads a blocking answer whole, up to the shared cap, and lets only a 2xx status through
-pub(crate) fn check_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
-    let status_code = sent.status().as_u16();
-    let headers = response_headers(sent.headers());
-    let body = read_body(sent, MAX_RESPONSE_BYTES)?;
-    check_status(status_code, headers, body)
-}
-
 // LiteLLM's _create_sync_streaming_iterator: the config builds the iterator from the whole buffered body
 pub fn create_sync_iterator<C>(
     response: BlockingResponse,
@@ -55,7 +48,7 @@ pub fn create_sync_iterator<C>(
 where
     C: SyncStreamingConfig,
 {
-    let buffered = check_blocking(response)
+    let buffered = finish_blocking(response)
         .map_err(|failure| handle_failure(interactions_api_config, failure))?;
     interactions_api_config
         .create_sync_stream_iterator(buffered, model, logging_obj)

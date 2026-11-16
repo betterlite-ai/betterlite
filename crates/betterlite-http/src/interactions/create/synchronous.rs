@@ -12,7 +12,8 @@ use super::{
 use crate::interactions::base::clients::HttpClients;
 use crate::interactions::base::transport::{refuse_unusable_proxy, request_headers};
 use crate::interactions::base::{Logging, RequestFailure};
-use crate::interactions::streaming::{check_blocking, create_sync_iterator};
+use crate::interactions::lifecycle::synchronous::finish_blocking;
+use crate::interactions::streaming::create_sync_iterator;
 
 pub fn create_interaction<C>(
     config: &C,
@@ -34,7 +35,7 @@ where
     let sent = send_blocking(&client, proxy, &prepared, deadline)
         .map_err(|failure| handle_failure(config, failure))?;
     if !request.stream {
-        let response = check_blocking(sent).map_err(|failure| handle_failure(config, failure))?;
+        let response = finish_blocking(sent).map_err(|failure| handle_failure(config, failure))?;
         return finish(config, logging, request.model, &response).map(CreateOutcome::Response);
     }
     create_sync_iterator(sent, request.model, logging, config).map(CreateOutcome::Stream)
