@@ -5,8 +5,8 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 
-use crate::case::HelperCase;
-use crate::case::helper::validate_helper;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 fn run(value: Value) -> Value {
     let input = serde_json::from_value(value).unwrap();
@@ -15,7 +15,7 @@ fn run(value: Value) -> Value {
 
 #[test]
 fn helper_seeds_select_vertex_files() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<HelperCase> = fs::read_dir(corpus)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -32,6 +32,26 @@ fn helper_seeds_select_vertex_files() {
         serde_json::from_value::<super::ops::Input>(seed.call.input.clone()).unwrap();
         seed.call.operation == "vertex_files"
     }));
+}
+
+#[test]
+fn every_preparation_case_matches_litellm() {
+    let cases = Path::new(ORACLE_DIR).join("cases/helpers/vertex-files");
+    let paths: Vec<_> = fs::read_dir(cases)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(!paths.is_empty());
+    for path in paths {
+        let source = fs::read_to_string(&path).unwrap();
+        let case: HelperCase = serde_saphyr::from_str(&source).unwrap();
+        let run = run_case(&[crate::GROUP], &case, false).unwrap();
+        assert!(
+            matches!(run, HelperRun::Match),
+            "{} differs from LiteLLM",
+            path.display()
+        );
+    }
 }
 
 #[test]
