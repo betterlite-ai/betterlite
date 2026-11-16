@@ -15,8 +15,6 @@ pub(super) fn normalize(value: Option<&Json>) -> Result<Json, DatabricksChatErro
         return Ok(Json::Null);
     };
     match value {
-        Json::Null => Ok(Json::Null),
-        Json::List(items) if items.is_empty() => Ok(Json::List(Vec::new())),
         Json::List(items) => {
             let mut calls = Vec::with_capacity(items.len());
             let mut next_index = 0_i64;
