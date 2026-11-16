@@ -8,7 +8,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L36-L43
   - what: A failure event writes its row from a response object betterlite builds out of the payload model and error string; LiteLLM hands log_event None as the result at the failure dispatch, so its choices membership test raises inside the try and no failure row is ever written.
     why: No working setup can rely on a failure row that never exists, and dropping the failure upsert is lost data that leaves the initiated row without a terminal record.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3923
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3727
   - what: The row's total_cost is the standard logging payload's response_cost, the value B068's completion_cost produced for the response, instead of a second completion_cost call inside the logger.
     why: betterlite-core depends on betterlite-logging for the cost_breakdown types, so betterlite-logging cannot call completion_cost without a dependency cycle; the payload carries the identical value, a success event whose payload carries response_cost_failure_debug_info writes no row, as LiteLLM's raising completion_cost does, and the unknown-model zeroing still applies. A failure row is written whether or not the cost failed, since LiteLLM writes no failure row to compare.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/supabase.py#L62

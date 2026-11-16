@@ -527,6 +527,18 @@ async fn a_success_row_with_an_empty_choice_list_is_not_posted() {
 }
 
 #[tokio::test]
+async fn a_success_row_with_non_list_choices_is_not_posted() {
+    let (logger, captured) = fixture(DEFAULT_TABLE_NAME);
+    let mut rows = row_fixture();
+    rows.response = json(r#"{"model": "gpt-4o-2024-08-06", "choices": "hi"}"#);
+    logger
+        .log_event(&rows.row())
+        .await
+        .expect("the event is dropped");
+    assert!(captured.requests().is_empty());
+}
+
+#[tokio::test]
 async fn a_success_row_without_message_content_is_not_posted() {
     let (logger, captured) = fixture(DEFAULT_TABLE_NAME);
     let mut rows = row_fixture();
@@ -775,6 +787,15 @@ async fn callback_logger_success_defaults_a_user_parameter_that_is_not_text() {
 }
 
 #[tokio::test]
+async fn callback_logger_success_defaults_a_null_user_parameter() {
+    let payload = success_payload().replace(WITH_USER, r#""model_parameters": {"user": null}"#);
+    assert_eq!(
+        end_user_written(Outcome::Success, &payload).await,
+        Json::Text("default".to_owned())
+    );
+}
+
+#[tokio::test]
 async fn callback_logger_failure_takes_the_end_user_from_the_user_parameter() {
     assert_eq!(
         end_user_written(Outcome::Failure, &failure_payload()).await,
@@ -785,6 +806,15 @@ async fn callback_logger_failure_takes_the_end_user_from_the_user_parameter() {
 #[tokio::test]
 async fn callback_logger_failure_without_a_user_parameter_writes_a_null_end_user() {
     let payload = failure_payload().replace(WITH_USER, WITHOUT_USER);
+    assert_eq!(
+        end_user_written(Outcome::Failure, &payload).await,
+        Json::Null
+    );
+}
+
+#[tokio::test]
+async fn callback_logger_failure_writes_a_null_user_parameter_as_null() {
+    let payload = failure_payload().replace(WITH_USER, r#""model_parameters": {"user": null}"#);
     assert_eq!(
         end_user_written(Outcome::Failure, &payload).await,
         Json::Null
@@ -959,6 +989,23 @@ async fn callback_logger_input_event_defaults_a_missing_user() {
         recorded.field("end_user"),
         &Json::Text("default".to_owned())
     );
+}
+
+#[tokio::test]
+async fn callback_logger_input_event_with_non_object_details_posts_nothing() {
+    let (callback, captured, tracker) = callback_fixture(201);
+    let messages = json(MESSAGES);
+    let details = json("null");
+    callback
+        .log_input_event(&PreCallEvent {
+            model: "gpt-4o",
+            messages: &messages,
+            details: &details,
+        })
+        .expect("the pre-call event is accepted");
+    tracker.close();
+    tracker.wait().await;
+    assert!(captured.requests().is_empty());
 }
 
 #[tokio::test]
