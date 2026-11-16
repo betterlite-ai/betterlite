@@ -5,6 +5,11 @@ import sys
 from pydantic import BaseModel, ConfigDict, Field
 
 from beta_config_call import BetaConfigCall, run_beta_config
+from file_azure_storage import (
+    DownloadCall,
+    UploadCall,
+    run_file_azure_storage,
+)
 from messages_header_stream import (
     MessagesHeaderStreamCall,
     run_messages_header_stream,
@@ -78,6 +83,12 @@ class ContinuationRequest(BaseModel):
     responses_agentic_continuation: ContinuationCall
 
 
+class FileAzureStorageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    file_azure_storage: UploadCall | DownloadCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -90,6 +101,7 @@ class Request(BaseModel):
         | MessagesStreamLoggingRequest
         | MessagesNativeStreamRequest
         | ContinuationRequest
+        | FileAzureStorageRequest
     )
     api_base: str
 
@@ -121,6 +133,8 @@ def main() -> None:
                 output = run_messages_native_stream(relay_call, request.api_base)
             case ContinuationRequest(responses_agentic_continuation=continuation):
                 output = run_continuation(continuation, request.api_base)
+            case FileAzureStorageRequest(file_azure_storage=storage_call):
+                output = run_file_azure_storage(storage_call, request.api_base)
             case VectorQueryEmbeddingCall(vector_query_embedding=query):
                 output = run_query(query, request.api_base).model_dump_json(
                     by_alias=True, exclude_unset=True

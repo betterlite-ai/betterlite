@@ -1,0 +1,14 @@
+kind: sdk_http
+name: file-azure-storage-download-addressing
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+call:
+  file_azure_storage:
+    operation: download
+    storage_url: https://foreign.blob.example/other/p/a.txt?sig=ignored
+upstream:
+  - {status: 200, headers: {content-type: application/octet-stream}, body: "abc"}
+compare:
+  upstream_headers: [x-ms-version, authorization]
+  ignore: []

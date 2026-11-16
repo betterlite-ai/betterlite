@@ -1,0 +1,20 @@
+kind: sdk_http
+name: file-azure-storage-token-upload-failed-append
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+call:
+  file_azure_storage:
+    operation: upload
+    file_content: [97, 98, 99]
+    filename: a.txt
+    content_type: text/plain
+    file_naming_strategy: original_filename
+upstream:
+  - {status: 201, headers: {}, body: ""}
+  - {status: 403, headers: {}, body: ""}
+compare:
+  upstream_headers: [x-ms-version, authorization]
+  ignore:
+    - pointer: /file_azure_storage/value/error/message
+      why: LiteLLM reports the httpx class and URL while betterlite names the storage operation

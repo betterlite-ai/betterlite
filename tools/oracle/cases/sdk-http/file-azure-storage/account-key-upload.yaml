@@ -1,0 +1,25 @@
+kind: sdk_http
+name: file-azure-storage-account-key-upload
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+  AZURE_STORAGE_ACCOUNT_KEY: a2V5
+call:
+  file_azure_storage:
+    operation: upload
+    file_content: [97, 98, 99]
+    filename: a.txt
+    content_type: text/plain
+    path_prefix: /p/
+    file_naming_strategy: original_filename
+upstream:
+  - {status: 404, headers: {content-type: application/xml}, body: ""}
+  - {status: 201, headers: {content-type: application/xml}, body: ""}
+  - {status: 404, headers: {content-type: application/xml}, body: ""}
+  - {status: 201, headers: {content-type: application/xml}, body: ""}
+  - {status: 201, headers: {content-type: application/xml}, body: ""}
+  - {status: 202, headers: {content-type: application/xml}, body: ""}
+  - {status: 200, headers: {content-type: application/xml}, body: ""}
+compare:
+  upstream_headers: [content-type]
+  ignore: []

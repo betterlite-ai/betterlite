@@ -19,6 +19,7 @@ pub(crate) mod capture;
 mod child;
 pub(crate) mod embedding_executor;
 pub mod error;
+mod file_azure_storage;
 pub(crate) mod messages_header_stream;
 pub mod messages_stream_logging;
 pub(crate) mod native;
@@ -73,6 +74,31 @@ pub enum SdkHttpCall {
     MessagesStreamLogging(MessagesStreamLoggingCall),
     MessagesNativeStream(MessagesNativeStreamCall),
     ResponsesAgenticContinuation(Box<AgenticContinuationCall>),
+    FileAzureStorage(FileAzureStorageCall),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "operation", rename_all = "snake_case")]
+pub enum FileAzureStorageCall {
+    Upload(FileUploadCall),
+    Download(FileDownloadCall),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileUploadCall {
+    pub(crate) file_content: Vec<u8>,
+    pub(crate) filename: String,
+    pub(crate) content_type: String,
+    #[serde(default)]
+    pub(crate) path_prefix: Option<String>,
+    pub(crate) file_naming_strategy: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileDownloadCall {
+    pub(crate) storage_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,7 +278,8 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
         SdkHttpCall::ResponsesAgenticContinuation(_)
         | SdkHttpCall::VectorQueryEmbedding(_)
         | SdkHttpCall::AnthropicBetaConfig(_)
-        | SdkHttpCall::MessagesStreamLogging(_) => {}
+        | SdkHttpCall::MessagesStreamLogging(_)
+        | SdkHttpCall::FileAzureStorage(_) => {}
     }
     Ok(())
 }

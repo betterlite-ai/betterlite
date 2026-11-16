@@ -18,7 +18,24 @@ pub enum SdkResult {
     MessagesStreamLogging { value: StreamLoggingRun },
     MessagesNativeStream { value: Vec<StepOutcome> },
     ResponsesAgenticContinuation { value: AgenticContinuationRun },
+    FileAzureStorage { value: FileStorageRun },
     Failure(Failure),
+}
+
+// the mock origin an upload would echo is stripped, so both sides report the same blob-origin path
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileStorageRun {
+    pub url: Option<String>,
+    pub downloaded: Option<Vec<u8>>,
+    pub error: Option<FileStorageFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FileStorageFailure {
+    pub message: String,
+    pub status: Option<u16>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

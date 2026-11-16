@@ -13,8 +13,8 @@ use super::python::PythonSdk;
 use super::result::SdkResult;
 use super::{OracleLimits, SdkHttpCall, Side};
 use super::{
-    anthropic_beta_config, embedding_executor, messages_header_stream, messages_stream_logging,
-    native, responses_agentic_continuation, vector_query_embedding,
+    anthropic_beta_config, embedding_executor, file_azure_storage, messages_header_stream,
+    messages_stream_logging, native, responses_agentic_continuation, vector_query_embedding,
 };
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
@@ -74,6 +74,9 @@ impl<'sdk> Sdk<'sdk> {
                     responses_agentic_continuation::send(continuation, api_base, env),
                     stop,
                 )
+            }
+            (Self::Native, SdkHttpCall::FileAzureStorage(storage)) => {
+                run_until_stopped(file_azure_storage::send(storage, api_base, env), stop)
             }
         }
     }

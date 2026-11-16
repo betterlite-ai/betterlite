@@ -1,0 +1,20 @@
+kind: sdk_http
+name: file-azure-storage-token-upload-sequence
+env:
+  AZURE_STORAGE_ACCOUNT_NAME: acct
+  AZURE_STORAGE_FILE_SYSTEM: files
+call:
+  file_azure_storage:
+    operation: upload
+    file_content: [97, 98, 99]
+    filename: a b.TXT
+    content_type: text/plain
+    path_prefix: /p/
+    file_naming_strategy: original_filename
+upstream:
+  - {status: 201, headers: {}, body: ""}
+  - {status: 202, headers: {}, body: ""}
+  - {status: 200, headers: {}, body: ""}
+compare:
+  upstream_headers: [x-ms-version, authorization]
+  ignore: []

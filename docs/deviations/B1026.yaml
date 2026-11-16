@@ -1,0 +1,62 @@
+task: B1026
+deviations:
+  - what: >-
+      The account-key branch talks to the Data Lake REST API through B4000's storage primitives with a SharedKey
+      signature instead of constructing the Python DataLakeServiceClient. The paths, methods, bodies and created
+      file locations match the SDK, but the wire carries x-ms-version 2019-07-07 instead of the SDK's negotiated
+      2026-10-06, no x-ms-client-request-id, and Content-Length 0 on the empty create and flush bodies.
+    why: >-
+      No Data Lake SDK exists for Rust, every request must go through B173's pooled transport, and B4000 owns the
+      SharedKey signing and flush primitives that the file backend reuses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L161-L196
+  - what: >-
+      An account-key download is one GET for the whole file. The SDK requests 32 MiB ranges with x-ms-range and
+      paginates, so the wire differs for files larger than one range while the returned bytes are the same.
+    why: >-
+      B4000's storage transport returns a whole response body and has no range reader; adding one would duplicate
+      the download loop the SDK provides.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L282-L293
+  - what: >-
+      On the token path the create and flush requests carry no content-type; LiteLLM's httpx client adds
+      content-type application/octet-stream to those empty bodies. The append carries application/octet-stream as
+      LiteLLM sets it, and every request carries x-ms-version and Authorization.
+    why: >-
+      The octet-stream header on an empty body is an httpx client default rather than a header LiteLLM sets, and
+      the Azure service does not read a content type on a body-less request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/azure_storage/azure_storage.py#L224-L250
+  - what: >-
+      A storage failure surfaces as AzureFileStorageError naming the operation and carrying the HTTP status;
+      LiteLLM raises the SDK's ResourceNotFoundError or httpx's HTTPStatusError for the same response.
+    why: >-
+      FileStorageBackend::Error is B1025's typed Rust error, so the exception class cannot cross, but the status
+      code and the failed operation are kept for callers that branch on them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L153-L158
+  - what: >-
+      An account-key upload whose prefix leaves an empty directory part, such as "/" or "///", fails with
+      AzureFileStorageError::EmptyDirectory before any request is sent. LiteLLM hands the empty string to the SDK's
+      directory client, which sends its own requests and fails there.
+    why: >-
+      An empty directory name is never a valid Data Lake path, and rejecting it before the filesystem and file
+      creates avoids leaving a partially created tree behind.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L170-L182
+kept_bugs:
+  - what: >-
+      An unknown file_naming_strategy silently produces a UUID name instead of raising.
+    why: >-
+      A working setup can call upload_file with a strategy string LiteLLM has not heard of and still get a stored
+      file, so betterlite keeps the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L110-L114
+  - what: >-
+      An original filename whose basename is empty, ".", ".." or holds a NUL becomes the literal name file rather
+      than an error, while the timestamp and uuid strategies keep their generated name.
+    why: >-
+      LiteLLM catches the safe_filename error and stores the file, so a working setup relies on the upload
+      succeeding for these names.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L22-L31
+  - what: >-
+      A timestamp name is int(time.time() * 1000), so a clock at 1.001 seconds yields 1000 because the float
+      product rounds down.
+    why: >-
+      The generated blob name is visible to callers, and a working setup can compare it, so betterlite reproduces
+      the exact truncation instead of rounding to the nearest millisecond.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/files/azure_blob_storage_backend.py#L105-L109
