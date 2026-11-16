@@ -11,7 +11,6 @@ const DEFAULT_PREFIX_SEPARATOR: &str = "-";
 // litellm/constants.py's MCP_STDIO_ALLOWED_COMMANDS base set
 const BASE_ALLOWED_COMMANDS: [&str; 7] =
     ["npx", "uvx", "python", "python3", "node", "docker", "deno"];
-// env-only section: no YAML key is read here
 #[derive(Default, Deserialize)]
 #[serde(transparent)]
 pub struct Raw(pub BTreeMap<String, Box<IgnoredAny>>);

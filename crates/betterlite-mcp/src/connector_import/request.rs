@@ -6,7 +6,6 @@ use serde::Serialize;
 use serde::de::Error as _;
 use serde_with::rust::double_option;
 mod tests;
-// no Debug: the token, the headers and the env hold secrets
 pub struct ConnectorEntry {
     pub name: Option<String>,
     pub entry_type: Option<String>,

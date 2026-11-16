@@ -104,21 +104,6 @@ def stamp_flow(call: PayloadCall) -> JsonValue:
     return OBJECT.validate_json(request.model_dump_json())
 
 
-def eligibility(call: EligibilityCall) -> JsonValue:
-    return {
-        "eligible": is_per_server_oauth_discovery_eligible(
-            call["auth_type"], call["oauth2_flow"], call["delegate_auth_to_upstream"]
-        )
-    }
-
-
-def conflict_message(call: ConflictCall) -> JsonValue:
-    conflict = McpIdentifierConflict(
-        field=call["field"], value=call["value"], server_id=call["server_id"]
-    )
-    return {"message": mcp_identifier_conflict_message(conflict)}
-
-
 def convert_connectors(call: ConvertCall) -> JsonValue:
     request = MCPConnectorImportRequest.model_validate(call["connectors"])
     entries: list[JsonValue] = [outcome(entry) for entry in convert_connector_entries(request)]
@@ -146,9 +131,20 @@ def run(input_value: Input) -> JsonValue:
         case "stamp_flow":
             result = stamp_flow(input_value)
         case "eligibility":
-            result = eligibility(input_value)
+            result = {
+                "eligible": is_per_server_oauth_discovery_eligible(
+                    input_value["auth_type"],
+                    input_value["oauth2_flow"],
+                    input_value["delegate_auth_to_upstream"],
+                )
+            }
         case "conflict_message":
-            result = conflict_message(input_value)
+            conflict = McpIdentifierConflict(
+                field=input_value["field"],
+                value=input_value["value"],
+                server_id=input_value["server_id"],
+            )
+            result = {"message": mcp_identifier_conflict_message(conflict)}
         case "sanitize_name":
             result = {"name": sanitize_connector_name(input_value["name"])}
         case "convert_connectors":
