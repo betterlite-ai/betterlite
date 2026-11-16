@@ -1,10 +1,6 @@
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 use serde_json::Value;
-
-// The Rust helper never sees the case env, so the environment a run depends on travels in the input
-// next to the same values the case sets for the Python subprocess.
+use std::collections::BTreeMap;
 #[derive(Debug, Default, Deserialize)]
 pub(crate) struct Environment {
     #[serde(default)]
@@ -12,7 +8,6 @@ pub(crate) struct Environment {
     #[serde(default)]
     pub(super) runtime_endpoint: Option<String>,
 }
-
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind")]
 pub(crate) enum Input {
@@ -43,7 +38,6 @@ pub(crate) enum Input {
         frames: Vec<Frame>,
     },
 }
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct UrlRun {
     pub(super) model: String,
@@ -59,7 +53,6 @@ pub(crate) struct UrlRun {
     #[serde(default)]
     pub(super) query: Option<BTreeMap<String, String>>,
 }
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct SignRun {
     #[serde(default)]
@@ -67,20 +60,16 @@ pub(crate) struct SignRun {
     #[serde(default)]
     pub(super) data: Option<Value>,
 }
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct ReplyRun {
     pub(super) provider: String,
     pub(super) endpoint: String,
 }
-
 #[derive(Debug, Deserialize)]
 pub(crate) struct SelectionRun {
     pub(super) model: String,
     pub(super) endpoint: String,
 }
-
-// One AWS event-stream message, before the frame's CRC32 bytes are added.
 #[derive(Debug, Deserialize)]
 pub(crate) struct Frame {
     pub(super) event_type: String,

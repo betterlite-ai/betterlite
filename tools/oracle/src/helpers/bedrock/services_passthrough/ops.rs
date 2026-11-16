@@ -1,7 +1,4 @@
-use std::collections::BTreeMap;
-use std::fmt::Display;
-use std::time::SystemTime;
-
+use super::input::{Environment, Frame, Input, ReplyRun, SelectionRun, SignRun, UrlRun};
 use betterlite_bedrock::passthrough::BedrockPassthroughPlan;
 use betterlite_bedrock::passthrough::CollectorClock;
 use betterlite_bedrock::passthrough::PassthroughIdentity;
@@ -30,10 +27,10 @@ use betterlite_streaming::stream_chunk_shaping::creation::StreamInstant;
 use betterlite_streaming::stream_chunk_shaping::records::StreamChunk;
 use secrecy::SecretString;
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
+use std::fmt::Display;
+use std::time::SystemTime;
 use uuid::Uuid;
-
-use super::input::{Environment, Frame, Input, ReplyRun, SelectionRun, SignRun, UrlRun};
-
 fn failure<E>(error: E) -> Box<HelperError>
 where
     E: Display,
@@ -47,20 +44,17 @@ where
         message: error.to_string(),
     })
 }
-
 fn object(pairs: &[(&str, Value)]) -> Object {
     pairs
         .iter()
         .map(|(name, value)| ((*name).to_owned(), value.clone()))
         .collect()
 }
-
 fn strings(map: &BTreeMap<String, String>) -> Object {
     map.iter()
         .map(|(name, value)| (name.clone(), Value::String(value.clone())))
         .collect()
 }
-
 fn environment_of(source: &Environment) -> PassthroughEnvironment {
     PassthroughEnvironment {
         region_name: source.region_name.clone(),
@@ -69,7 +63,6 @@ fn environment_of(source: &Environment) -> PassthroughEnvironment {
         runtime_endpoint: source.runtime_endpoint.clone(),
     }
 }
-
 fn identity(bearer: Option<String>) -> PassthroughIdentity {
     PassthroughIdentity {
         credentials: None,
@@ -77,38 +70,28 @@ fn identity(bearer: Option<String>) -> PassthroughIdentity {
         now: SystemTime::UNIX_EPOCH,
     }
 }
-
 fn fixed_id() -> Uuid {
     Uuid::nil()
 }
-
 fn fixed_now() -> i64 {
     0
 }
-
 fn fixed_instant() -> StreamInstant {
     StreamInstant {
         seconds: 0,
         timestamp: 0.0,
     }
 }
-
 const CLOCK: CollectorClock = CollectorClock {
     next_id: fixed_id,
     now: fixed_now,
     instant: fixed_instant,
 };
-
 struct NullLogging;
-
 impl PassthroughLogging for NullLogging {
-    fn set_call_type(&mut self, _call_type: RelayCallType) {
-        // this fixture only builds logged responses
-    }
+    fn set_call_type(&mut self, _call_type: RelayCallType) {}
 }
-
 struct NoConfig;
-
 impl ChatConfigSelection for NoConfig {
     fn select_chat_config(
         &self,
@@ -118,19 +101,13 @@ impl ChatConfigSelection for NoConfig {
         Ok(None)
     }
 }
-
 struct EchoTransform;
-
 impl NativeReplyTransform for EchoTransform {
     fn transform(&self, _request: &NativeReplyRequest<'_>) -> Result<Json, ProviderError> {
         Ok(Json::Null)
     }
 }
-
-// LiteLLM's stream_chunk_builder reads these fields from the coalesced chunks; ids and clocks stay
-// out because LiteLLM generates them.
 struct ViewAssembler;
-
 impl StreamLogAssembler for ViewAssembler {
     fn assemble(
         &self,
@@ -178,7 +155,6 @@ impl StreamLogAssembler for ViewAssembler {
         serde_json::from_str(&view.to_string()).ok()
     }
 }
-
 fn url_params(run: &UrlRun) -> Object {
     let mut params = Object::new();
     for (name, value) in [
@@ -195,7 +171,6 @@ fn url_params(run: &UrlRun) -> Object {
     }
     params
 }
-
 fn url_run(plan: &BedrockPassthroughPlan<'_>, run: &UrlRun) -> Result<Value, Box<HelperError>> {
     let params = url_params(run);
     let query = run.query.as_ref().map(strings);
@@ -220,7 +195,6 @@ fn url_run(plan: &BedrockPassthroughPlan<'_>, run: &UrlRun) -> Result<Value, Box
         "streaming": streaming,
     }))
 }
-
 fn url_runs(environment: &Environment, runs: &[UrlRun]) -> HelperResult {
     let selector = NoConfig;
     let transform = EchoTransform;
@@ -239,7 +213,6 @@ fn url_runs(environment: &Environment, runs: &[UrlRun]) -> HelperResult {
     }
     Ok(json!({ "runs": values }))
 }
-
 fn sign_plan(bearer: Option<String>) -> BedrockPassthroughPlan<'static> {
     static SELECTOR: NoConfig = NoConfig;
     static TRANSFORM: EchoTransform = EchoTransform;
@@ -253,7 +226,6 @@ fn sign_plan(bearer: Option<String>) -> BedrockPassthroughPlan<'static> {
         clock: CLOCK,
     }
 }
-
 fn request_object(run: &SignRun) -> Result<Option<Object>, Box<HelperError>> {
     match run.data.as_ref() {
         None => Ok(None),
@@ -261,7 +233,6 @@ fn request_object(run: &SignRun) -> Result<Option<Object>, Box<HelperError>> {
         Some(_other) => Err(failure("the sign data is not an object")),
     }
 }
-
 fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> Result<Value, Box<HelperError>> {
     let params = object(&[("api_key", Value::String("sk-ignored".to_owned()))]);
     let data = request_object(run)?;
@@ -285,7 +256,6 @@ fn sign_run(plan: &BedrockPassthroughPlan<'_>, run: &SignRun) -> Result<Value, B
         .collect();
     Ok(json!({ "headers": pairs, "body": text }))
 }
-
 fn sign_runs(bearer: Option<String>, runs: &[SignRun]) -> HelperResult {
     let plan = sign_plan(bearer);
     let mut values = Vec::with_capacity(runs.len());
@@ -294,7 +264,6 @@ fn sign_runs(bearer: Option<String>, runs: &[SignRun]) -> HelperResult {
     }
     Ok(json!({ "runs": values }))
 }
-
 fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> Value {
     let target = PassthroughTarget {
         model: "m",
@@ -316,7 +285,6 @@ fn reply_run(plan: &BedrockPassthroughPlan<'_>, run: &ReplyRun) -> Value {
         Err(_error) => json!({ "logged": null, "raised": true }),
     }
 }
-
 fn reply_runs(runs: &[ReplyRun]) -> HelperResult {
     let selector = NoConfig;
     let transform = EchoTransform;
@@ -332,7 +300,6 @@ fn reply_runs(runs: &[ReplyRun]) -> HelperResult {
     let values: Vec<Value> = runs.iter().map(|run| reply_run(&plan, run)).collect();
     Ok(json!({ "runs": values }))
 }
-
 fn collector_plan() -> BedrockPassthroughPlan<'static> {
     static SELECTOR: NoConfig = NoConfig;
     static TRANSFORM: EchoTransform = EchoTransform;
@@ -346,7 +313,6 @@ fn collector_plan() -> BedrockPassthroughPlan<'static> {
         clock: CLOCK,
     }
 }
-
 fn feed(collector: &mut dyn PassthroughStreamCollector<Logged = Json>, bytes: &[u8], split: bool) {
     let midpoint = bytes.len() / 2;
     if split && midpoint > 0 {
@@ -356,7 +322,6 @@ fn feed(collector: &mut dyn PassthroughStreamCollector<Logged = Json>, bytes: &[
         collector.add(bytes);
     }
 }
-
 fn collect(
     plan: &BedrockPassthroughPlan<'_>,
     model: &str,
@@ -377,13 +342,11 @@ fn collect(
         .build_logged_response(&mut logging)
         .map_err(failure)
 }
-
 fn collector_runs(model: &str, endpoint: &str, split: bool, frames: &[Frame]) -> HelperResult {
     let plan = collector_plan();
     let logged = collect(&plan, model, endpoint, frames, split)?;
     Ok(json!({ "runs": [{ "decoded": logged.is_some(), "view": logged }] }))
 }
-
 fn selection_run(
     plan: &BedrockPassthroughPlan<'_>,
     run: &SelectionRun,
@@ -396,7 +359,6 @@ fn selection_run(
     let decoded = enabled && collect(plan, &run.model, &run.endpoint, frames, false)?.is_some();
     Ok(json!({ "decoded": decoded, "warning": warning }))
 }
-
 fn selection_runs(runs: &[SelectionRun], frames: &[Frame]) -> HelperResult {
     let plan = collector_plan();
     let mut values = Vec::with_capacity(runs.len());
@@ -405,7 +367,6 @@ fn selection_runs(runs: &[SelectionRun], frames: &[Frame]) -> HelperResult {
     }
     Ok(json!({ "runs": values }))
 }
-
 fn crc32(data: &[u8]) -> u32 {
     let mut crc = 0xFFFF_FFFFu32;
     for byte in data {
@@ -417,7 +378,6 @@ fn crc32(data: &[u8]) -> u32 {
     }
     !crc
 }
-
 fn header_bytes(name: &str, value: &str) -> Result<Vec<u8>, Box<HelperError>> {
     let name_len = u8::try_from(name.len()).map_err(failure)?;
     let value_len = u16::try_from(value.len()).map_err(failure)?;
@@ -429,7 +389,6 @@ fn header_bytes(name: &str, value: &str) -> Result<Vec<u8>, Box<HelperError>> {
     bytes.extend_from_slice(value.as_bytes());
     Ok(bytes)
 }
-
 fn encode_frame(message: &Frame) -> Result<Vec<u8>, Box<HelperError>> {
     let mut headers = Vec::new();
     for (name, value) in [
@@ -452,7 +411,6 @@ fn encode_frame(message: &Frame) -> Result<Vec<u8>, Box<HelperError>> {
     bytes.extend_from_slice(&checksum.to_be_bytes());
     Ok(bytes)
 }
-
 fn frames_bytes(frames: &[Frame]) -> Result<Vec<u8>, Box<HelperError>> {
     let mut bytes = Vec::new();
     for message in frames {
@@ -460,7 +418,6 @@ fn frames_bytes(frames: &[Frame]) -> Result<Vec<u8>, Box<HelperError>> {
     }
     Ok(bytes)
 }
-
 pub(super) fn run(input: &Input) -> HelperResult {
     match input {
         Input::Url { environment, runs } => url_runs(environment, runs),

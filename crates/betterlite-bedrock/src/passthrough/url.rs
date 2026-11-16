@@ -1,14 +1,11 @@
-use betterlite_openai::openai_base_config::Object;
-use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest;
-use url::Url;
-
-use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
-use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
-
 use super::error::PassthroughFailure;
 use super::model_id::{encoded_model_id, with_model_id};
 use super::{BedrockPassthroughPlan, PassthroughEnvironment};
-
+use crate::aws_endpoints::region::{LlmRegion, llm_region_name};
+use crate::aws_endpoints::runtime::{BedrockEndpointType, RuntimeEndpointInput, runtime_endpoint};
+use betterlite_openai::openai_base_config::Object;
+use betterlite_openai::passthrough::transformation::types::PassthroughUrlRequest;
+use url::Url;
 pub(super) fn optional_text(
     params: &Object,
     field: &'static str,
@@ -22,9 +19,6 @@ pub(super) fn optional_text(
         },
     }
 }
-
-// LiteLLM's get_complete_url: resolve the region and runtime endpoint, swap in an encoded model_id,
-// then let format_url join the path and the query parameters.
 pub fn complete_url(
     plan: &BedrockPassthroughPlan<'_>,
     request: &PassthroughUrlRequest<'_>,
@@ -60,8 +54,6 @@ pub fn complete_url(
     )?;
     Ok((url, endpoint.endpoint_url))
 }
-
-// The env names LiteLLM reads for a passthrough call; the session region stands in for boto3's session.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PassthroughEnvironment {
     pub region_name: Option<String>,

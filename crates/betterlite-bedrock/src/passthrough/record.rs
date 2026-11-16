@@ -1,3 +1,10 @@
+use super::CollectorClock;
+use super::event::LogEventError;
+use crate::converse_events::ChunkProjection;
+use crate::converse_events::response::{ConverseChunk, ConverseDelta};
+use crate::event_frames::error::EventFrameError;
+use crate::invoke_events::error::InvokeStreamError;
+use crate::invoke_events::{InvokeChunk, InvokeStreamDecoder};
 use betterlite_models::decisions::{Extra, Json};
 use betterlite_streaming::stream_chunk_shaping::extras::{
     convert_generic_chunk, generic_chunk_has_known_fields,
@@ -8,16 +15,6 @@ use betterlite_streaming::stream_chunk_shaping::records::{
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-
-use crate::converse_events::ChunkProjection;
-use crate::converse_events::response::{ConverseChunk, ConverseDelta};
-use crate::event_frames::error::EventFrameError;
-use crate::invoke_events::error::InvokeStreamError;
-use crate::invoke_events::{InvokeChunk, InvokeStreamDecoder};
-
-use super::CollectorClock;
-use super::event::LogEventError;
-
 #[derive(Debug, Error)]
 pub enum StreamLogError {
     #[error(transparent)]
@@ -33,15 +30,11 @@ pub enum StreamLogError {
     #[error("the stream decoder failed: {message}")]
     Decoder { message: String },
 }
-
-// One decoder outcome: a chunk the logging path folds, a generic record that still needs the known-field
-// check, or a record LiteLLM ignores.
 pub enum DecodedChunk {
     Chunk(StreamChunk),
     Generic(Json),
     Ignored,
 }
-
 pub trait EventChunkDecoder: Send {
     fn decode(
         &mut self,
@@ -49,19 +42,16 @@ pub trait EventChunkDecoder: Send {
         clock: CollectorClock,
     ) -> Result<DecodedChunk, StreamLogError>;
 }
-
 fn convert<T: Serialize, U: DeserializeOwned>(value: &T) -> Result<U, StreamLogError> {
     serde_json::from_str(&serde_json::to_string(value).map_err(StreamLogError::Encode)?)
         .map_err(StreamLogError::Decode)
 }
-
 fn extra_object(extra: &Extra) -> Result<Option<JsonObject>, StreamLogError> {
     if extra.is_empty() {
         return Ok(None);
     }
     convert(extra).map(Some)
 }
-
 impl EventChunkDecoder for InvokeStreamDecoder {
     fn decode(
         &mut self,
@@ -82,8 +72,6 @@ impl EventChunkDecoder for InvokeStreamDecoder {
         }
     }
 }
-
-// The converse projection is flat; ModelResponseStream keeps the choice inside the choices list.
 fn converse_stream_chunk(
     chunk: ConverseChunk,
     clock: CollectorClock,
@@ -140,9 +128,6 @@ fn converse_stream_chunk(
         extra: JsonObject::new(),
     })
 }
-
-// LiteLLM's _translate_message generic branch: convert only when every key is one GenericStreamingChunk
-// declares, then hand it to the shared converter.
 pub fn generic_chunk(
     value: &Json,
     clock: CollectorClock,

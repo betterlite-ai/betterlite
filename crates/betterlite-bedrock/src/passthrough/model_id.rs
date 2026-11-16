@@ -1,16 +1,11 @@
 use betterlite_context::bedrock_model::runtime_arn::encode_runtime_modelid_arn;
-
 const MODEL_SEGMENT: &str = "/model/";
-
-// LiteLLM's _encode_model_id_for_endpoint: encode inside a temporary converse path, then keep the first
-// /model/([^/]+)/ group. A non-ARN id with a slash is truncated to its first segment, as re.search does.
 #[must_use]
 pub fn encoded_model_id(model_id: &str) -> String {
     let temporary = format!("/model/{model_id}/converse");
     let encoded = encode_runtime_modelid_arn(&temporary);
     first_model_segment(&encoded).unwrap_or_else(|| model_id.to_owned())
 }
-
 fn first_model_segment(endpoint: &str) -> Option<String> {
     let mut search = endpoint;
     while let Some(offset) = search.find(MODEL_SEGMENT) {
@@ -24,8 +19,6 @@ fn first_model_segment(endpoint: &str) -> Option<String> {
     }
     None
 }
-
-// Python's re.sub(r"model/[^/]+/", ...) scans left to right and resumes after each replacement.
 #[must_use]
 pub fn with_model_id(endpoint: &str, encoded: &str) -> String {
     let mut output = String::with_capacity(endpoint.len());

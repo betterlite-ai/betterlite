@@ -1,30 +1,23 @@
-use std::fmt;
-
+use crate::aws_endpoints::error::AwsEndpointError;
+use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
+use crate::signing::error::SigningError;
 use betterlite_context::chat_config_selection::selection::ChatConfigError;
 use betterlite_openai::error::{ProviderError, ProviderErrorParts};
 use betterlite_openai::openai_base_config::Headers;
 use betterlite_openai::passthrough::transformation::types::PassthroughError;
+use std::fmt;
 use thiserror::Error;
-
-use crate::aws_endpoints::error::AwsEndpointError;
-use crate::bedrock_settings::{BedrockError, ErrorHeaders, ErrorInput};
-use crate::signing::error::SigningError;
-
-// A provider error can carry a credential in its message or body, so Debug and Display hide it.
 pub struct ProviderFailure(pub ProviderError);
-
 impl fmt::Debug for ProviderFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("ProviderFailure([REDACTED])")
     }
 }
-
 impl fmt::Display for ProviderFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("the provider request failed")
     }
 }
-
 #[derive(Debug, Error)]
 pub enum PassthroughFailure {
     #[error(transparent)]
@@ -48,13 +41,11 @@ pub enum PassthroughFailure {
     #[error("the provider request failed")]
     Provider(ProviderFailure),
 }
-
 impl From<ProviderError> for PassthroughFailure {
     fn from(error: ProviderError) -> Self {
         Self::Provider(ProviderFailure(error))
     }
 }
-
 pub fn bedrock_provider_error(message: &str, status_code: u16, headers: &Headers) -> ProviderError {
     let input = ErrorInput {
         status_code,

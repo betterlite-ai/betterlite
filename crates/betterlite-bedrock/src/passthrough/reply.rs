@@ -1,3 +1,5 @@
+use super::BedrockPassthroughPlan;
+use super::error::{PassthroughFailure, ProviderFailure};
 use betterlite_context::chat_config_selection::tags::ChatConfigTag;
 use betterlite_models::decisions::Json;
 use betterlite_models::identity::provider_id::ProviderId;
@@ -5,21 +7,15 @@ use betterlite_openai::error::ProviderError;
 use betterlite_openai::openai_base_config::Object;
 use betterlite_openai::passthrough::transformation::types::{PassthroughTarget, RelayedResponse};
 use serde::Serialize;
-
-use super::BedrockPassthroughPlan;
-use super::error::{PassthroughFailure, ProviderFailure};
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct NativeMessage {
     pub role: &'static str,
     pub content: &'static str,
 }
-
 pub const LOGGED_MESSAGES: [NativeMessage; 1] = [NativeMessage {
     role: "user",
     content: "no-message-pass-through-endpoint",
 }];
-
 pub struct NativeReplyRequest<'request> {
     pub tag: ChatConfigTag,
     pub model: &'request str,
@@ -32,14 +28,9 @@ pub struct NativeReplyRequest<'request> {
     pub litellm_params: &'request Object,
     pub api_key: &'request str,
 }
-
-// The composition boundary installs the transform the selected provider config owns; this task only
-// chooses the tag and builds the arguments.
 pub trait NativeReplyTransform: Sync {
     fn transform(&self, request: &NativeReplyRequest<'_>) -> Result<Json, ProviderError>;
 }
-
-// LiteLLM's logging_non_streaming_response: invoke wins over converse, and every other endpoint logs nothing.
 pub fn logged_reply(
     plan: &BedrockPassthroughPlan<'_>,
     target: &PassthroughTarget<'_>,

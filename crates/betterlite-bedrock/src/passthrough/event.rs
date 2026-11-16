@@ -1,8 +1,6 @@
-use std::str::{Utf8Error, from_utf8};
-
 use betterlite_models::decisions::Json;
+use std::str::{Utf8Error, from_utf8};
 use thiserror::Error;
-
 #[derive(Debug, Error)]
 pub enum LogEventError {
     #[error("the passthrough log event is not valid UTF-8")]
@@ -12,9 +10,6 @@ pub enum LogEventError {
     #[error("the passthrough log event is not a JSON object")]
     NotObject,
 }
-
-// The JSON text one AWS event-stream frame carries for the passthrough logging path; LiteLLM feeds the
-// same text to json.loads before the decoder sees it.
 pub fn decode_passthrough_log_event(bytes: &[u8]) -> Result<Json, LogEventError> {
     let text = from_utf8(bytes).map_err(LogEventError::NotUtf8)?;
     let value: Json = serde_json::from_str(text).map_err(LogEventError::NotJson)?;
