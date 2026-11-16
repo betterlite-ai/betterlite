@@ -447,12 +447,23 @@ fn a_scan_text_absent_from_the_assembled_text_is_added_as_a_message() {
     assert!(matches!(messages[1].role, Role::Assistant));
 }
 
-#[test]
-fn an_unserializable_response_is_reported() {
+#[tokio::test]
+async fn an_unserializable_response_yields_the_scan_error_event() {
+    let guardrail = guardrail(
+        InspectionType::Chat,
+        FallbackAction::Block,
+        "http://127.0.0.1:1".to_owned(),
+    );
+    let mut request_data = obj(r#"{"metadata":{}}"#);
+    let chunks = vec![chunk(FIRST_CHUNK)];
     let mut response = std::collections::BTreeMap::new();
     response.insert(vec![1_u8, 2, 3], "value");
 
-    assert!(super::assembly::response_fields(&response).is_err());
+    let items =
+        super::scan_assembled(&guardrail, &mut request_data, &chunks, &response, None).await;
+
+    assert_eq!(items, vec![StreamItem::Sse(scan_error_event())]);
+    assert!(applied_guardrails(&request_data).is_empty());
 }
 
 #[test]

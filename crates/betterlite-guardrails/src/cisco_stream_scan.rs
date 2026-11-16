@@ -8,6 +8,7 @@ use betterlite_streaming::streamed_response_assembly::records::{Chunk, TextField
 use betterlite_streaming::streamed_response_assembly::response::Response;
 use futures_util::StreamExt as _;
 use futures_util::stream::Stream;
+use serde::Serialize;
 
 use crate::cisco_configuration::records::Direction;
 use crate::cisco_conversation::json::Json;
@@ -138,7 +139,28 @@ async fn scan_chat(
         );
         return events::event(name, events::UNSUPPORTED);
     };
-    let scanned_response = match assembly::response_fields(response.as_ref()) {
+    scan_assembled(
+        guardrail,
+        request_data,
+        chunks,
+        response.as_ref(),
+        key_user_id,
+    )
+    .await
+}
+
+async fn scan_assembled<Value>(
+    guardrail: &CiscoInspectionGuardrail,
+    request_data: &mut Fields,
+    chunks: &[Chunk],
+    response: &Value,
+    key_user_id: Option<&str>,
+) -> Vec<StreamItem>
+where
+    Value: Serialize + ?Sized,
+{
+    let name = guardrail.settings.guardrail_name.as_str();
+    let scanned_response = match assembly::response_fields(response) {
         Ok(fields) => fields,
         Err(error) => return scan_failure(name, &error),
     };
