@@ -1,0 +1,116 @@
+use axum::Json;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
+use betterlite_guardrails::guardrail_registry::error::RegistryError;
+use serde::Serialize;
+use thiserror::Error;
+
+use super::body::BodyError;
+use crate::tracing_routes::router::unauthenticated;
+
+pub(super) const MANAGE_ADMIN_REQUIRED: &str = "Admin access required to manage guardrails";
+pub(super) const REVIEW_ADMIN_REQUIRED: &str = "Admin access required";
+
+#[derive(Debug, Error)]
+pub(super) enum MutationError {
+    #[error("the request has no authenticated caller")]
+    Unauthenticated,
+    #[error("{0}")]
+    Body(Box<BodyError>),
+    #[error("{detail}")]
+    Forbidden { detail: &'static str },
+    #[error("Prisma client not initialized")]
+    NoDatabase,
+    #[error("Guardrail with ID {guardrail_id} not found")]
+    NotFound { guardrail_id: String },
+    #[error("Guardrail submission not found")]
+    SubmissionNotFound,
+    #[error("Guardrail is not pending review (status={status})")]
+    NotPendingReview { status: String },
+    #[error("Guardrail litellm_params is missing or invalid")]
+    MissingParams,
+    #[error("Guardrail configuration error: {source}")]
+    Configuration { source: RegistryError },
+    #[error("Invalid guardrail configuration, update rejected: {source}")]
+    UpdateRejected { source: RegistryError },
+    #[error("{detail}")]
+    Internal { detail: String },
+}
+
+#[derive(Serialize)]
+struct DetailBody {
+    detail: String,
+}
+
+// LiteLLM's ValueError and TypeError from a guardrail constructor, and nothing else
+pub(super) const fn is_configuration_error(error: &RegistryError) -> bool {
+    matches!(
+        error,
+        RegistryError::Unsupported { .. }
+            | RegistryError::MissingGuardrailType
+            | RegistryError::ScanOnlyUnsupported { .. }
+            | RegistryError::ScanOnlyWithSkipTool { .. }
+            | RegistryError::Base(_)
+            | RegistryError::Initializer(_)
+            | RegistryError::InitFailed { .. }
+    )
+}
+
+impl MutationError {
+    pub(super) fn body(error: BodyError) -> Self {
+        Self::Body(Box::new(error))
+    }
+
+    pub(super) fn internal<E>(error: E) -> Self
+    where
+        E: std::fmt::Display,
+    {
+        Self::Internal {
+            detail: error.to_string(),
+        }
+    }
+
+    pub(super) fn missing_after_update(guardrail_id: &str) -> Self {
+        Self::Internal {
+            detail: format!("Guardrail with ID {guardrail_id} not found after the update"),
+        }
+    }
+
+    fn status(&self) -> StatusCode {
+        match self {
+            Self::Unauthenticated => StatusCode::UNAUTHORIZED,
+            Self::Body(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::Forbidden { .. } => StatusCode::FORBIDDEN,
+            Self::NoDatabase | Self::MissingParams | Self::Internal { .. } => {
+                StatusCode::INTERNAL_SERVER_ERROR
+            }
+            Self::NotFound { .. } | Self::SubmissionNotFound => StatusCode::NOT_FOUND,
+            Self::NotPendingReview { .. } | Self::Configuration { .. } => StatusCode::BAD_REQUEST,
+            Self::UpdateRejected { .. } => StatusCode::UNPROCESSABLE_ENTITY,
+        }
+    }
+}
+
+// LiteLLM's eager 500s: verbose_proxy_logger.exception(<context>: %s, e) then str(e) as the detail
+pub(super) fn logged<E>(context: &str, error: &E) -> MutationError
+where
+    E: std::fmt::Display,
+{
+    tracing::error!("{context}: {error}");
+    MutationError::Internal {
+        detail: error.to_string(),
+    }
+}
+
+impl IntoResponse for MutationError {
+    fn into_response(self) -> Response {
+        match self {
+            Self::Unauthenticated => unauthenticated(),
+            Self::Body(error) => (*error).into_response(),
+            other => {
+                let detail = other.to_string();
+                (other.status(), Json(DetailBody { detail })).into_response()
+            }
+        }
+    }
+}
