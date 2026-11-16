@@ -18,7 +18,10 @@ deviations:
   - what: "The named Cache options that only shape caching (mode, namespace, ttl, redis_flush_size, disk_cache_dir, supported_call_types, semantic cache settings and the s3/azure/qdrant credentials) are accepted and ignored instead of being bound into the temporary cache."
     why: "The route only builds the cache to call test_connection, which pings Redis; none of those options reach the connection or the answer, and the temporary cache is dropped before returning."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L80-L218
-  - what: "_backend is accepted and ignored; LiteLLM would use it as the cache object under test."
-    why: "A cache backend is an in-process object. It cannot arrive over HTTP, and constructing one from a JSON member would let the caller choose the answer without touching Redis."
+  - what: "_backend is accepted and ignored; over HTTP LiteLLM assigns the posted JSON value to Cache's backend and the test then fails on it, while a real BaseCache object can only be passed in process."
+    why: "A cache backend is an in-process object. Constructing one from a JSON member would let the caller choose the answer without touching Redis, so the bridge drops the name and tests the connection the rest of the map describes."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L187-L188
+  - what: "The debug line writes the redacted settings as a cache_settings field of the message \"Testing cache connection with settings\", while LiteLLM appends the redacted Python dict to that message with %s."
+    why: "Rust log lines are structured key-value pairs, so the message text and the redacted value are the same but a parser that reads the value out of the message text finds it in the field instead."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L542-L543
 kept_bugs: []
