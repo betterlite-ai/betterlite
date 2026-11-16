@@ -19,6 +19,20 @@ use super::fixtures::sources::NoSources;
 use super::input::{Input, Step};
 
 pub(crate) fn run(input: &Input) -> HelperResult {
+    let targets: Vec<Value> = input
+        .targets
+        .iter()
+        .map(|step| {
+            let params = AzureClientParams {
+                azure_endpoint: step.azure_endpoint.as_deref(),
+                base_url: step.base_url.as_deref(),
+                api_version: step.api_version.as_deref(),
+            };
+            let base =
+                create_azure_base_url(&params, step.model.as_deref(), step.base_model.as_deref());
+            url_value(base)
+        })
+        .collect();
     let models: Vec<Value> = input
         .models
         .iter()
@@ -36,7 +50,7 @@ pub(crate) fn run(input: &Input) -> HelperResult {
         })
         .collect();
     Ok(json!({
-        "targets": input.targets.iter().map(target_value).collect::<Vec<_>>(),
+        "targets": targets,
         "models": models,
         "forms": forms,
         "urls": input.urls.iter().map(edit_value).collect::<Vec<_>>(),
@@ -62,19 +76,6 @@ fn url_value<E: Display>(result: Result<String, E>) -> Value {
         Ok(url) => json!({"url": url}),
         Err(error) => failure(&error),
     }
-}
-
-fn target_value(step: &Step) -> Value {
-    let params = AzureClientParams {
-        azure_endpoint: step.azure_endpoint.as_deref(),
-        base_url: step.base_url.as_deref(),
-        api_version: step.api_version.as_deref(),
-    };
-    url_value(create_azure_base_url(
-        &params,
-        step.model.as_deref(),
-        step.base_model.as_deref(),
-    ))
 }
 
 fn edit_value(step: &Step) -> Value {

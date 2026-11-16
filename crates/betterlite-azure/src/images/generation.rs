@@ -85,10 +85,10 @@ where
     let config = image_config(body_model.as_deref());
     let url = match target_url(&prepared, body_model.as_deref()) {
         Ok(url) => url,
-        Err(error) => return failed(&prepared, error, runtime.logger),
+        Err(error) => return Err(fail(&prepared, error, runtime.logger)),
     };
     if let Err(error) = pre_call(&prepared, &url, runtime.logger) {
-        return failed(&prepared, error, runtime.logger);
+        return Err(fail(&prepared, error, runtime.logger));
     }
     Ok(Begun {
         prepared,
@@ -100,7 +100,7 @@ where
 // What LiteLLM resolves before the async leg takes over: the body, the auth headers and the send inputs
 fn prepare_call<C, K>(
     call: Generation<'_>,
-    runtime: &mut Runtime<'_, C, K>,
+    runtime: &Runtime<'_, C, K>,
 ) -> Result<Prepared, ImageError> {
     prepare(
         call,
@@ -180,17 +180,14 @@ pub fn finish(
     sent: Result<ImageResponse, ImageError>,
     logger: &mut dyn ImageGenerationLogger,
 ) -> Result<GeneratedImage, ImageError> {
-    let result = sent.and_then(|response| convert(begun, response, logger));
-    if !begun.prepared.async_mode {
-        return result.map_err(ImageError::into_sync);
-    }
-    result.map_err(|error| log_failure(&begun.prepared, error, logger))
+    let result = sent.and_then(|response| convert(begun, &response, logger));
+    result.map_err(|error| fail(&begun.prepared, error, logger))
 }
 
 // The async leg applies the selected family's reply transform; the sync leg special-cases only MAI
 fn convert(
     begun: &Begun,
-    response: ImageResponse,
+    response: &ImageResponse,
     logger: &mut dyn ImageGenerationLogger,
 ) -> Result<GeneratedImage, ImageError> {
     let prepared = &begun.prepared;
@@ -243,24 +240,15 @@ fn client_params(prepared: &Prepared) -> AzureClientParams<'_> {
     }
 }
 
-// The sync leg wraps the failure; the async leg logs it and re-raises it as it was
-fn failed(
-    prepared: &Prepared,
-    error: ImageError,
-    logger: &mut dyn ImageGenerationLogger,
-) -> Result<Begun, ImageError> {
-    if !prepared.async_mode {
-        return Err(error.into_sync());
-    }
-    Err(log_failure(prepared, error, logger))
-}
-
-// The async leg logs the prompt and the error text as the reply, then re-raises
-fn log_failure(
+// The sync leg wraps the failure; the async leg logs the prompt and the error text, then re-raises it as it was
+fn fail(
     prepared: &Prepared,
     error: ImageError,
     logger: &mut dyn ImageGenerationLogger,
 ) -> ImageError {
+    if !prepared.async_mode {
+        return error.into_sync();
+    }
     logger.post_call(PostCallRecord {
         input: prepared.prompt.clone(),
         original_response: Json::Text(error.to_string()),

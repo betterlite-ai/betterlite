@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::mem::take;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::Duration;
 
@@ -224,7 +225,7 @@ impl RecordedCall {
     pub(super) fn body_field(&self, name: &str) -> Option<&Json> {
         match self.body.as_ref()? {
             Json::Object(fields) => fields.get(name),
-            _ => None,
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => None,
         }
     }
 }
@@ -403,18 +404,18 @@ pub(super) struct Harness {
 
 impl Harness {
     pub(super) fn new(environment: &[(&str, &str)]) -> Self {
-        let environment: BTreeMap<String, String> = environment
+        let variables: BTreeMap<String, String> = environment
             .iter()
             .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
             .collect();
         let config = ConfigLoader {
-            lookup: environment.clone(),
+            lookup: variables.clone(),
         }
         .load("")
         .unwrap();
         Self {
             config,
-            environment,
+            environment: variables,
             replies: Vec::new(),
         }
     }
@@ -467,7 +468,7 @@ impl Harness {
         FixtureConstructor {
             transport: FixtureTransport {
                 state: Arc::new(FixtureState {
-                    replies: Mutex::new(std::mem::take(&mut self.replies)),
+                    replies: Mutex::new(take(&mut self.replies)),
                     calls: Mutex::default(),
                 }),
             },
