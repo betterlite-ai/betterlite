@@ -33,7 +33,7 @@ pub(super) struct UpstreamCase {
 }
 
 #[derive(Debug, Deserialize)]
-pub(super) struct DispatchCase {
+pub(crate) struct DispatchCase {
     pub(super) platform: Platform,
     pub(super) model: String,
     pub(super) messages: Vec<Message>,

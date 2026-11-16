@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_oracle_helper_api::error::{HelperError, OrHelperError};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
 use betterlite_prompts::arguments::json::Json;
 use betterlite_provider::a2a_chat::records::A2aReply;
 use betterlite_provider::a2a_chat::reply as a2a_reply;
@@ -110,32 +110,47 @@ impl Answer {
                 let Some(choice) = reply.choices.into_iter().next() else {
                     return Err(HandlerError::EmptyReply);
                 };
-                Ok(json!({
-                    "model": reply.model,
-                    "content": choice.message.content,
-                    "role": choice.message.role,
-                    "finish_reason": choice.finish_reason,
-                }))
+                let content = Some(choice.message.content.as_str());
+                Ok(reply_value(
+                    &reply.model,
+                    content,
+                    choice.message.role,
+                    choice.finish_reason,
+                ))
             }
             Self::Langgraph(reply) => {
                 let Some(choice) = reply.choices.into_iter().next() else {
                     return Err(HandlerError::EmptyReply);
                 };
-                Ok(json!({
-                    "model": reply.model,
-                    "content": choice.content,
-                    "role": role_text(choice.role),
-                    "finish_reason": choice.finish_reason,
-                }))
+                Ok(reply_value(
+                    &reply.model,
+                    choice.content.as_deref(),
+                    role_text(choice.role),
+                    choice.finish_reason,
+                ))
             }
-            Self::Langflow(reply) => Ok(json!({
-                "model": reply.model,
-                "content": reply.choice.message.content,
-                "role": reply.choice.message.role,
-                "finish_reason": reply.choice.finish_reason,
-            })),
+            Self::Langflow(reply) => {
+                let message = &reply.choice.message;
+                let content = Some(message.content.as_str());
+                Ok(reply_value(
+                    &reply.model,
+                    content,
+                    &message.role,
+                    &reply.choice.finish_reason,
+                ))
+            }
         }
     }
+}
+
+// the compared projection of a reply: its model, the first choice's content and role, and the finish reason
+fn reply_value(model: &str, content: Option<&str>, role: &str, finish_reason: &str) -> Value {
+    json!({
+        "model": model,
+        "content": content,
+        "role": role,
+        "finish_reason": finish_reason,
+    })
 }
 
 impl ChatCompletionHandler for Handler {
