@@ -1,0 +1,37 @@
+kind: helper
+name: database-startup-invalid-timeout-warning
+call:
+  database_startup:
+    function: settings
+    environment:
+      LITELLM_PRISMA_COMMAND_TIMEOUT: "abc"
+      LITELLM_MIGRATION_LOCK_TIMEOUT: "abc"
+      LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "abc"
+calls:
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "0"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "1e3"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "-5"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_MIGRATION_LOCK_TIMEOUT: "NaN"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+        LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "inf"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: " 120 "
+env: {}
+compare: {ignore: []}

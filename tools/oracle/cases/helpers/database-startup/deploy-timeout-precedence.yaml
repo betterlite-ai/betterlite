@@ -1,0 +1,38 @@
+kind: helper
+name: database-startup-deploy-timeout-precedence
+call:
+  database_startup:
+    function: settings
+    environment:
+      LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+calls:
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+        LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "1200"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+        LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "soon"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+        LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "0"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "abc"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "1200"
+  - database_startup:
+      function: settings
+      environment:
+        LITELLM_PRISMA_COMMAND_TIMEOUT: "900"
+        LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "30"
+env: {}
+compare: {ignore: []}

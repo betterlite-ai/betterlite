@@ -1,0 +1,32 @@
+kind: helper
+name: database-startup-schema-update-setting-precedence
+call:
+  database_startup:
+    function: settings
+    disable_prisma_schema_update: false
+    environment:
+      DISABLE_SCHEMA_UPDATE: "true"
+calls:
+  - database_startup:
+      function: settings
+      disable_prisma_schema_update: true
+      environment:
+        DISABLE_SCHEMA_UPDATE: "false"
+  - database_startup:
+      function: settings
+      disable_prisma_schema_update: null
+      environment:
+        DISABLE_SCHEMA_UPDATE: "true"
+  - database_startup:
+      function: settings
+      disable_prisma_schema_update: "TRUE"
+      environment: {}
+  - database_startup:
+      function: settings
+      environment:
+        DISABLE_SCHEMA_UPDATE: "true"
+  - database_startup:
+      function: settings
+      environment: {}
+env: {}
+compare: {ignore: []}

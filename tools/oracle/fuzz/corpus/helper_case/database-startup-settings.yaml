@@ -1,0 +1,13 @@
+kind: helper
+name: database-startup-settings-seed
+call:
+  database_startup:
+    function: settings
+    disable_prisma_schema_update: true
+    environment:
+      DISABLE_SCHEMA_UPDATE: "true"
+      LITELLM_PRISMA_COMMAND_TIMEOUT: "90"
+      LITELLM_MIGRATION_LOCK_TIMEOUT: "600"
+      LITELLM_PRISMA_MIGRATE_DEPLOY_TIMEOUT: "1200"
+env: {}
+compare: {ignore: []}
