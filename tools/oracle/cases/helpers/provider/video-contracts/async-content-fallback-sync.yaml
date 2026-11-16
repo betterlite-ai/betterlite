@@ -1,0 +1,8 @@
+kind: helper
+name: async-content-fallback-sync
+call:
+  b3331:
+    function: async_content_fallback
+    body: video bytes
+env: {}
+compare: {ignore: []}

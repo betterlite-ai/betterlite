@@ -1,0 +1,10 @@
+kind: helper
+name: error-class-with-headers
+call:
+  b3331:
+    function: error_class
+    error_message: slow down
+    status_code: 429
+    headers: {retry-after: '2', x-request-id: abc}
+env: {}
+compare: {ignore: []}
