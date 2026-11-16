@@ -299,7 +299,7 @@ fn a_reply_that_is_not_a_task_is_a_decode_error() {
     let Err(RunwayVideoError::Task(error)) = failed else {
         panic!("a numeric id has to fail the decode as a task error");
     };
-    assert!(error.to_string().contains("id"));
+    assert!(error.to_string().contains("id: "));
 }
 
 #[test]
