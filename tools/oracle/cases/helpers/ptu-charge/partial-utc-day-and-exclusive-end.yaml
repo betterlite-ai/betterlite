@@ -1,0 +1,131 @@
+kind: helper
+name: partial-utc-day-and-exclusive-end
+call:
+  ptu_charge:
+    steps:
+      hours_late_open:
+        kind: hours
+        model:
+          model_id: dep-late
+          model_name: late
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772406000000000
+          effective_to_micros: null
+        day: "2026-03-01"
+      cost_late_open:
+        kind: cost
+        model:
+          model_id: dep-late
+          model_name: late
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772406000000000
+          effective_to_micros: null
+        day: "2026-03-01"
+      hours_closing_at_midnight:
+        kind: hours
+        model:
+          model_id: dep-closed
+          model_name: closed
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772236800000000
+          effective_to_micros: 1772323200000000
+        day: "2026-03-01"
+      cost_closing_at_midnight:
+        kind: cost
+        model:
+          model_id: dep-closed
+          model_name: closed
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772236800000000
+          effective_to_micros: 1772323200000000
+        day: "2026-03-01"
+      hours_ending_at_noon:
+        kind: hours
+        model:
+          model_id: dep-noon
+          model_name: noon
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772236800000000
+          effective_to_micros: 1772366400000000
+        day: "2026-03-01"
+      cost_ending_at_noon:
+        kind: cost
+        model:
+          model_id: dep-noon
+          model_name: noon
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772236800000000
+          effective_to_micros: 1772366400000000
+        day: "2026-03-01"
+      hours_eighth:
+        kind: hours
+        model:
+          model_id: dep-eighth
+          model_name: eighth
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772323200000000
+          effective_to_micros: 1772323650000000
+        day: "2026-03-01"
+      cost_eighth:
+        kind: cost
+        model:
+          model_id: dep-eighth
+          model_name: eighth
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772323200000000
+          effective_to_micros: 1772323650000000
+        day: "2026-03-01"
+      hours_after_close:
+        kind: hours
+        model:
+          model_id: dep-yesterday
+          model_name: yesterday
+          team_id: team-1
+          ptu_count: 4
+          cost_per_ptu_per_hour: "0.5"
+          effective_from_micros: 1772236800000000
+          effective_to_micros: 1772406000000000
+        day: "2026-03-02"
+      aggregate:
+        kind: aggregate
+        day: "2026-03-01"
+        models:
+          - model_id: dep-b
+            model_name: b
+            team_id: team-b
+            ptu_count: 1
+            cost_per_ptu_per_hour: "1.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: null
+          - model_id: dep-zero
+            model_name: zero
+            team_id: team-a
+            ptu_count: 2
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772323200000000
+          - model_id: dep-a
+            model_name: a
+            team_id: team-a
+            ptu_count: 4
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772406000000000
+            effective_to_micros: null
+env: {}
+compare: {ignore: []}

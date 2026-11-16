@@ -1,0 +1,61 @@
+kind: helper
+name: public-name-with-distinct-deployment-ids
+call:
+  ptu_charge:
+    steps:
+      parse_shared_name:
+        kind: parse
+        model_id: dep-a
+        model_name: team_1_abc
+        model_info:
+          id: dep-a
+          team_public_model_name: shared-name
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_blank_public_name:
+        kind: parse
+        model_id: dep-blank
+        model_name: team_1_blank
+        model_info:
+          team_public_model_name: ""
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_numeric_public_name:
+        kind: parse
+        model_id: dep-numeric
+        model_name: team_1_numeric
+        model_info:
+          team_public_model_name: 7
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_json_text:
+        kind: parse
+        model_id: dep-text
+        model_name: team_1_text
+        model_info: '{"id": "dep-text", "team_public_model_name": "text-name", "team_id": "team-1", "ptu_count": 2, "cost_per_ptu_per_hour": 0.5, "ptu_effective_from": "2026-03-01T00:00:00Z"}'
+      aggregate:
+        kind: aggregate
+        day: "2026-03-01"
+        models:
+          - model_id: dep-a
+            model_name: shared-name
+            team_id: team-1
+            ptu_count: 2
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772323200000000
+            effective_to_micros: null
+          - model_id: dep-b
+            model_name: shared-name
+            team_id: team-1
+            ptu_count: 2
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772323200000000
+            effective_to_micros: null
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,44 @@
+kind: helper
+name: ninety-day-floor-is-inclusive
+call:
+  ptu_charge:
+    steps:
+      floor_window:
+        kind: backfill
+        end: "2026-03-01"
+        models:
+          - model_id: dep-floor
+            model_name: floor
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1764547200000000
+            effective_to_micros: null
+      above_floor_window:
+        kind: backfill
+        end: "2026-03-01"
+        models:
+          - model_id: dep-above
+            model_name: above
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1771977600000000
+            effective_to_micros: null
+      future_window:
+        kind: backfill
+        end: "2026-03-01"
+        models:
+          - model_id: dep-future
+            model_name: future
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1775001600000000
+            effective_to_micros: null
+      no_models:
+        kind: backfill
+        end: "2026-03-01"
+        models: []
+env: {}
+compare: {ignore: []}

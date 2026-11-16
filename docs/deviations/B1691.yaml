@@ -1,0 +1,12 @@
+task: B1691
+deviations:
+  - what: PTU overlap hours and daily flat cost are multiplied in checked Decimal arithmetic, and an unrepresentable product or day bound is a ChargeError instead of the float infinity or the OverflowError LiteLLM raises.
+    why: Daily reserved-capacity spend has to stay finite and exactly serializable in the existing DOUBLE PRECISION column, so a bad rate fails the one charge instead of writing inf.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L186-L199
+  - what: A stored model_info string is decoded by betterlite-db's bounded parser, which rejects text above 1 MiB, nesting deeper than 64 levels, and an object that repeats a key; LiteLLM's json.loads accepts all three, the last keeping the final value.
+    why: The decoder is the database crate's own, shared with the row parsers that already run under those bounds, and a truncated or duplicated config read as terms could bill a reservation twice.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L112-L125
+  - what: When end minus 90 days falls before year 1 the backfill window starts at the earliest declared effective_from date; LiteLLM's date subtraction raises OverflowError there instead.
+    why: A DATE column cannot hold a year-0 floor, and the declared start is already the tightest bound the table can express.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/ptu_flat_cost_rollup.py#L497-L512
+kept_bugs: []

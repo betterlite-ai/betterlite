@@ -1,0 +1,29 @@
+kind: helper
+name: prune-sentinel-date-and-scanned-id-filter
+call:
+  ptu_charge:
+    steps:
+      unsorted_scan:
+        kind: prune
+        date: "2026-03-01"
+        run_started_micros: 1772366400123456
+        scanned_ids:
+          - model-c
+          - model-a
+          - model-b
+          - model-a
+      empty_scan:
+        kind: prune
+        date: "2026-03-01"
+        run_started_micros: 1772323200000000
+        scanned_ids: []
+      another_day:
+        kind: prune
+        date: "2026-03-02"
+        run_started_micros: 1772323200000000
+        scanned_ids:
+          - dep-2
+          - dep-10
+          - dep-1
+env: {}
+compare: {ignore: []}

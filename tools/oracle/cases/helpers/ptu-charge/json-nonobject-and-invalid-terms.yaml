@@ -1,0 +1,98 @@
+kind: helper
+name: json-nonobject-and-invalid-terms
+call:
+  ptu_charge:
+    steps:
+      decode_mapping:
+        kind: decode
+        raw:
+          ptu_count: 2
+          team_id: team-1
+      decode_text_object:
+        kind: decode
+        raw: '{"ptu_count": 2, "team_id": "team-1"}'
+      decode_text_list:
+        kind: decode
+        raw: "[1]"
+      decode_text_scalar:
+        kind: decode
+        raw: "3"
+      decode_malformed:
+        kind: decode
+        raw: "{"
+      decode_list:
+        kind: decode
+        raw:
+          - 1
+          - 2
+      decode_number:
+        kind: decode
+        raw: 3
+      decode_null:
+        kind: decode
+        raw: null
+      decode_bool:
+        kind: decode
+        raw: true
+      parse_valid:
+        kind: parse
+        model_id: dep-valid
+        model_name: row-name
+        model_info:
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_count_zero:
+        kind: parse
+        model_id: dep-count-zero
+        model_name: row-name
+        model_info:
+          team_id: team-1
+          ptu_count: 0
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_negative_rate:
+        kind: parse
+        model_id: dep-negative-rate
+        model_name: row-name
+        model_info:
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: -0.5
+          ptu_effective_from: "2026-03-01T00:00:00Z"
+      parse_missing_start:
+        kind: parse
+        model_id: dep-missing-start
+        model_name: row-name
+        model_info:
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+      parse_inverted_window:
+        kind: parse
+        model_id: dep-inverted
+        model_name: row-name
+        model_info:
+          team_id: team-1
+          ptu_count: 2
+          cost_per_ptu_per_hour: 0.5
+          ptu_effective_from: "2026-03-02T00:00:00Z"
+          ptu_effective_to: "2026-03-01T00:00:00Z"
+      parse_malformed_text:
+        kind: parse
+        model_id: dep-malformed
+        model_name: row-name
+        model_info: "{"
+      parse_nonobject_text:
+        kind: parse
+        model_id: dep-nonobject
+        model_name: row-name
+        model_info: "[1]"
+      parse_null_model_info:
+        kind: parse
+        model_id: dep-null
+        model_name: row-name
+        model_info: null
+env: {}
+compare: {ignore: []}

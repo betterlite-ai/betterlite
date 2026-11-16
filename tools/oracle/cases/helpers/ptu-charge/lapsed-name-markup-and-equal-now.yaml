@@ -1,0 +1,53 @@
+kind: helper
+name: lapsed-name-markup-and-equal-now
+call:
+  ptu_charge:
+    steps:
+      lapsed:
+        kind: lapsed
+        now_micros: 1772366400000000
+        models:
+          - model_id: dep-markup
+            model_name: "team & <alpha>"
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772366400000000
+          - model_id: dep-beta
+            model_name: beta
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772366400000000
+          - model_id: dep-future
+            model_name: future
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772370000000000
+          - model_id: dep-open
+            model_name: open
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: null
+          - model_id: dep-older-markup
+            model_name: "gamma & <delta>"
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772359200000000
+          - model_id: dep-escaped
+            model_name: "already &amp;"
+            team_id: team-1
+            ptu_count: 1
+            cost_per_ptu_per_hour: "0.5"
+            effective_from_micros: 1772236800000000
+            effective_to_micros: 1772355600000000
+env: {}
+compare: {ignore: []}
