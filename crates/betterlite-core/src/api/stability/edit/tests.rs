@@ -259,10 +259,8 @@ fn litellm_params_base_follows_the_environment(
     #[case] expected: &str,
 ) {
     let config = config(environment);
-    let litellm_params = match litellm_base {
-        Some(base) => params(&[("api_base", text(base))]),
-        None => ImageParams::new(),
-    };
+    let litellm_params =
+        litellm_base.map_or_else(ImageParams::new, |base| params(&[("api_base", text(base))]));
 
     assert_eq!(
         config.get_complete_url(None, &litellm_params, INPAINT),
@@ -807,32 +805,36 @@ fn a_catalog_cost_is_read_as_a_decimal(#[case] entry: &str, #[case] expected: &s
     assert_eq!(header(&reply), Some(&price(expected)));
 }
 
-#[rstest]
-#[case::text(r#"{"output_cost_per_image": "abc"}"#)]
-#[case::nan(r#"{"output_cost_per_image": "nan"}"#)]
-#[case::infinity(r#"{"output_cost_per_image": "inf"}"#)]
-#[case::out_of_range(r#"{"output_cost_per_image": 1e400}"#)]
-fn a_cost_that_is_not_a_decimal_keeps_its_parse_error(#[case] entry: &str) {
-    let error = response(&catalog(entry), r#"{"image": "abc"}"#)
-        .expect_err("the cost is not a decimal price");
-
-    assert!(matches!(
-        error,
-        StabilityEditError::CostValue(CostValueError::Parse { .. })
-    ));
+#[derive(Debug, Clone, Copy)]
+enum CostFailure {
+    Parse,
+    NotNumber,
 }
 
 #[rstest]
-#[case::list(r#"{"output_cost_per_image": [1]}"#)]
-#[case::object(r#"{"output_cost_per_image": {"amount": 1}}"#)]
-fn a_cost_that_is_not_a_scalar_fails(#[case] entry: &str) {
-    let error =
-        response(&catalog(entry), r#"{"image": "abc"}"#).expect_err("the cost is not a number");
+#[case::text(r#"{"output_cost_per_image": "abc"}"#, CostFailure::Parse)]
+#[case::nan(r#"{"output_cost_per_image": "nan"}"#, CostFailure::Parse)]
+#[case::infinity(r#"{"output_cost_per_image": "inf"}"#, CostFailure::Parse)]
+#[case::out_of_range(r#"{"output_cost_per_image": 1e400}"#, CostFailure::Parse)]
+#[case::list(r#"{"output_cost_per_image": [1]}"#, CostFailure::NotNumber)]
+#[case::object(r#"{"output_cost_per_image": {"amount": 1}}"#, CostFailure::NotNumber)]
+fn a_cost_that_is_not_a_decimal_price_names_the_failure(
+    #[case] entry: &str,
+    #[case] expected: CostFailure,
+) {
+    let error = response(&catalog(entry), r#"{"image": "abc"}"#)
+        .expect_err("the cost is not a decimal price");
 
-    assert!(matches!(
-        error,
-        StabilityEditError::CostValue(CostValueError::NotNumber)
-    ));
+    match expected {
+        CostFailure::Parse => assert!(matches!(
+            error,
+            StabilityEditError::CostValue(CostValueError::Parse { .. })
+        )),
+        CostFailure::NotNumber => assert!(matches!(
+            error,
+            StabilityEditError::CostValue(CostValueError::NotNumber)
+        )),
+    }
 }
 
 #[test]

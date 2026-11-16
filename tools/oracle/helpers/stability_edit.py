@@ -106,7 +106,7 @@ class Hidden(TypedDict):
 
 OPTIONS: Final = TypeAdapter(EditOptions)
 MAPPED: Final = TypeAdapter(dict[str, JsonValue])
-HEADERS: Final = TypeAdapter(dict[str, str])
+HEADERS: Final = TypeAdapter(dict[str, JsonValue])
 FORM: Final = TypeAdapter(tuple[dict[str, JsonValue], dict[str, bytes]])
 HIDDEN: Final = TypeAdapter(Hidden)
 
@@ -154,8 +154,7 @@ def apply_environment(environment: dict[str, str]) -> None:
         os.environ[name] = value
 
 
-def map_answer(call: MapCall) -> JsonValue:
-    config: EditConfig = edit_config(call["model"])
+def map_answer(config: EditConfig, call: MapCall) -> JsonValue:
     options = OPTIONS.validate_python(call["options"])
     try:
         mapped = MAPPED.validate_python(
@@ -166,10 +165,9 @@ def map_answer(call: MapCall) -> JsonValue:
     return {"mapped": mapped}
 
 
-def url_answer(call: UrlCall) -> JsonValue:
+def url_answer(config: EditConfig, call: UrlCall) -> JsonValue:
     environment = call.get("environment")
     apply_environment({} if environment is None else environment)
-    config: EditConfig = edit_config(call["model"])
     params = call.get("litellm_params")
     url = config.get_complete_url(
         call["model"], call.get("api_base"), {} if params is None else params
@@ -177,10 +175,9 @@ def url_answer(call: UrlCall) -> JsonValue:
     return {"url": url}
 
 
-def environment_answer(call: EnvironmentCall) -> JsonValue:
+def environment_answer(config: EditConfig, call: EnvironmentCall) -> JsonValue:
     environment = call.get("environment")
     apply_environment({} if environment is None else environment)
-    config: EditConfig = edit_config(call["model"])
     headers: dict[str, str] = {}
     given = call.get("headers")
     if given is not None:
@@ -200,8 +197,7 @@ def first_image(specs: list[FileSpec] | None) -> bytes | None:
     return base64.b64decode(specs[0]["content_base64"])
 
 
-def request_answer(call: RequestCall) -> JsonValue:
-    config: EditConfig = edit_config(call["model"])
+def request_answer(config: EditConfig, call: RequestCall) -> JsonValue:
     options = OPTIONS.validate_python(call["options"])
     try:
         mapped = MAPPED.validate_python(
@@ -245,8 +241,7 @@ def image_entries(response: ImageResponse) -> list[JsonValue]:
     ]
 
 
-def response_answer(call: ResponseCall) -> JsonValue:
-    config: EditConfig = edit_config(call["model"])
+def response_answer(config: EditConfig, call: ResponseCall) -> JsonValue:
     time.time = partial(float, call["created"])
     upstream = httpx.Response(
         call["status"], headers=call.get("headers"), content=call["body"].encode()
@@ -260,17 +255,18 @@ def response_answer(call: ResponseCall) -> JsonValue:
 
 
 def call_value(call: Call) -> JsonValue:
+    config: EditConfig = edit_config(call["model"])
     match call["function"]:
         case "map":
-            return map_answer(call)
+            return map_answer(config, call)
         case "url":
-            return url_answer(call)
+            return url_answer(config, call)
         case "environment":
-            return environment_answer(call)
+            return environment_answer(config, call)
         case "request":
-            return request_answer(call)
+            return request_answer(config, call)
         case "response":
-            return response_answer(call)
+            return response_answer(config, call)
 
 
 def run(input_value: Input) -> JsonValue:

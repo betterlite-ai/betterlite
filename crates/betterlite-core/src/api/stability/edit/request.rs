@@ -70,6 +70,16 @@ pub fn transform_image_edit_request(
     if let Some(images) = image {
         files.push(("image".to_owned(), first_file("image", images)?));
     }
+    apply_options(&mut data, &mut files, options)?;
+    Ok(StabilityImageEditRequest { data, files })
+}
+
+// the allowlisted text fields and the three file parts, in the options' own order
+fn apply_options(
+    data: &mut ImageParams,
+    files: &mut ImageFiles,
+    options: &EditOptions,
+) -> Result<(), StabilityEditError> {
     for (name, value) in options {
         if name.starts_with('_') || matches!(value, EditValue::Json(Json::Null)) {
             continue;
@@ -99,7 +109,7 @@ pub fn transform_image_edit_request(
             data.insert(name.clone(), kept);
         }
     }
-    Ok(StabilityImageEditRequest { data, files })
+    Ok(())
 }
 
 fn first_file(field: &'static str, files: &[ImageFile]) -> Result<ImageFile, StabilityEditError> {
