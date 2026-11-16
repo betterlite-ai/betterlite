@@ -3,8 +3,8 @@ deviations:
   - what: >-
       get_provider_container_config names the provider (ContainerProviderConfig::OpenAi or
       ContainerProviderConfig::Azure) instead of returning an OpenAIContainerConfig or
-      AzureContainerConfig instance, and get_optional_params_container_create reads the supported
-      parameter list and the OpenAI identity mapping from that name.
+      AzureContainerConfig instance, and get_optional_params_container_create filters with the
+      shared OpenAI supported-parameter list and the OpenAI identity mapping for both providers.
     why: >-
       The concrete config objects carry credentials, the logging globals and a container cost source
       that this core layer doesn't hold, so the caller that has them builds the config from the name;

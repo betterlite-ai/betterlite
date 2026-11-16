@@ -4,7 +4,6 @@ use betterlite_models::controls::json_value::JsonValue;
 use betterlite_openai::api::container_contracts::records::{
     ContainerCreateOptionalParams, ContainerCreateRequestParams, ContainerListOptionalParams,
 };
-use betterlite_openai::containers::requests::SUPPORTED_PARAMS;
 use indexmap::IndexMap;
 use rstest::rstest;
 
@@ -171,30 +170,22 @@ fn filter_create_params_drops_extra_body() {
     let expected = create_optional(
         r#"{"expires_after": {"anchor": "last_active_at", "minutes": 30}, "file_ids": ["file_1"], "extra_headers": {"X-A": "b"}}"#,
     );
-    assert_eq!(
-        get_optional_params_container_create(ContainerProviderConfig::OpenAi, &params),
-        expected
-    );
+    assert_eq!(get_optional_params_container_create(&params), expected);
 }
 
-#[rstest]
-#[case::openai(ContainerProviderConfig::OpenAi)]
-#[case::azure(ContainerProviderConfig::Azure)]
-fn filter_create_params_keeps_the_supported_parameters(#[case] provider: ContainerProviderConfig) {
+#[test]
+fn filter_create_params_keeps_the_supported_parameters() {
     let params = create_optional(
         r#"{"expires_after": {"anchor": "last_active_at", "minutes": 30}, "file_ids": ["file_1"]}"#,
     );
-    assert_eq!(
-        get_optional_params_container_create(provider, &params),
-        params
-    );
+    assert_eq!(get_optional_params_container_create(&params), params);
 }
 
 #[test]
 fn filter_create_params_returns_an_empty_set_when_only_extra_body_is_set() {
     let params = create_optional(r#"{"extra_body": {"k": "v"}}"#);
     assert_eq!(
-        get_optional_params_container_create(ContainerProviderConfig::OpenAi, &params),
+        get_optional_params_container_create(&params),
         create_optional("{}")
     );
 }
@@ -248,7 +239,7 @@ fn encode_container_id_uses_the_model_info_id() {
 
 #[test]
 fn encode_container_id_uses_the_first_target_model_name() {
-    let extra_body = json_map(r#"{"target_model_names": "m1, m2"}"#);
+    let extra_body = json_map(r#"{"target_model_names": " m1 , m2"}"#);
     let encoded =
         encode_container_id_in_response("container_1", Some("azure"), None, Some(&extra_body))
             .expect("a target model name encodes");
@@ -411,7 +402,7 @@ fn encode_container_id_rejects_a_non_text_target_model() {
 #[test]
 fn provider_config_selects_openai() {
     assert_eq!(
-        get_provider_container_config(Some("openai")),
+        get_provider_container_config("openai"),
         Some(ContainerProviderConfig::OpenAi)
     );
 }
@@ -421,28 +412,15 @@ fn provider_config_selects_openai() {
 #[case::azure_text("azure_text")]
 fn provider_config_selects_azure(#[case] provider: &str) {
     assert_eq!(
-        get_provider_container_config(Some(provider)),
+        get_provider_container_config(provider),
         Some(ContainerProviderConfig::Azure)
     );
 }
 
 #[rstest]
-#[case::absent(None)]
-#[case::empty(Some(""))]
-#[case::capitalized(Some("OpenAI"))]
-#[case::anthropic(Some("anthropic"))]
-fn provider_config_returns_none_for_other_providers(#[case] provider: Option<&str>) {
+#[case::empty("")]
+#[case::capitalized("OpenAI")]
+#[case::anthropic("anthropic")]
+fn provider_config_returns_none_for_other_providers(#[case] provider: &str) {
     assert_eq!(get_provider_container_config(provider), None);
-}
-
-#[test]
-fn provider_config_supports_the_openai_create_params() {
-    assert_eq!(
-        ContainerProviderConfig::OpenAi.get_supported_openai_params(),
-        SUPPORTED_PARAMS.as_slice()
-    );
-    assert_eq!(
-        ContainerProviderConfig::Azure.get_supported_openai_params(),
-        ContainerProviderConfig::OpenAi.get_supported_openai_params()
-    );
 }

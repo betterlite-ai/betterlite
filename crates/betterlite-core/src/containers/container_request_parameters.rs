@@ -15,15 +15,6 @@ pub enum ContainerProviderConfig {
     Azure,
 }
 
-impl ContainerProviderConfig {
-    #[must_use]
-    pub const fn get_supported_openai_params(self) -> &'static [&'static str] {
-        match self {
-            Self::OpenAi | Self::Azure => &SUPPORTED_PARAMS,
-        }
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, Eq, Error)]
 #[error("the {field} field has the wrong type")]
 pub struct ContainerFieldTypeError {
@@ -39,10 +30,8 @@ pub struct DecodedContainerRequest {
 
 // LiteLLM takes the LlmProviders enum here; an unknown provider is the caller's ValueError and this lookup only answers None
 #[must_use]
-pub fn get_provider_container_config(
-    custom_llm_provider: Option<&str>,
-) -> Option<ContainerProviderConfig> {
-    match custom_llm_provider? {
+pub fn get_provider_container_config(custom_llm_provider: &str) -> Option<ContainerProviderConfig> {
+    match custom_llm_provider {
         "openai" => Some(ContainerProviderConfig::OpenAi),
         "azure" | "azure_text" => Some(ContainerProviderConfig::Azure),
         _ => None,
@@ -107,11 +96,11 @@ pub fn get_requested_container_create_optional_param(
 #[must_use]
 // ast-grep-ignore: no-long-names
 pub fn get_optional_params_container_create(
-    provider: ContainerProviderConfig,
     optional_params: &ContainerCreateOptionalParams,
 ) -> ContainerCreateOptionalParams {
-    let supported = provider.get_supported_openai_params();
-    // OpenAI's map_openai_params returns the filtered params unchanged, and Azure inherits it
+    // Both providers' supported_params are the same list, and OpenAI's map_openai_params
+    // returns the filtered params unchanged (Azure inherits it)
+    let supported = &SUPPORTED_PARAMS;
     ContainerCreateOptionalParams {
         expires_after: optional_params
             .expires_after

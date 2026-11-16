@@ -95,7 +95,7 @@ impl Helper for Op {
             })),
             Input::EncodeContainerId(call) => encode(call),
             Input::ProviderConfig(call) => Ok(json!({
-                "config": get_provider_container_config(Some(call.custom_llm_provider.as_str()))
+                "config": get_provider_container_config(&call.custom_llm_provider)
                     .map(config_name),
             })),
         }
@@ -117,7 +117,7 @@ fn decode(call: &DecodeCall) -> HelperResult {
 }
 
 fn filter(call: &FilterCall) -> HelperResult {
-    let Some(config) = get_provider_container_config(Some(call.provider.as_str())) else {
+    if get_provider_container_config(&call.provider).is_none() {
         return Err(Box::new(HelperError {
             class: "ValueError".to_owned(),
             status: None,
@@ -126,9 +126,9 @@ fn filter(call: &FilterCall) -> HelperResult {
             code: None,
             message: format!("{} is not a known provider", call.provider),
         }));
-    };
+    }
     let optional_params = extract_create_params(&call.passed_params);
-    let params = map_create_params(config, &optional_params);
+    let params = map_create_params(&optional_params);
     Ok(json!({"params": params}))
 }
 
