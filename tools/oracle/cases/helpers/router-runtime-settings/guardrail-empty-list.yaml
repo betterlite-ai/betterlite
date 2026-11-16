@@ -1,0 +1,9 @@
+kind: helper
+name: router-runtime-settings-guardrail-empty-list
+call:
+  b9711:
+    function: guardrail
+    guardrails: []
+    guardrail_name: "pii"
+env: {}
+compare: {ignore: []}

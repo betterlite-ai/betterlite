@@ -23,6 +23,7 @@ betterlite-prompts = { path = "../../../../../crates/betterlite-prompts" }
 betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
 betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
 betterlite-vertex = { path = "../../../../../crates/betterlite-vertex" }
+chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false }
 google-cloud-speech-v2 = "=1.15.0"
 google-cloud-wkt = "=1.11.0"

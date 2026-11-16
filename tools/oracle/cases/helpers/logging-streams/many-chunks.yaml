@@ -1,0 +1,11 @@
+kind: helper
+name: logging-streams-many-chunks
+call:
+  logging_streams:
+    probes:
+      - operation: stream
+        chunk_lists:
+          - [{choices: [{index: 0, delta: {content: "0"}}]}, {choices: [{index: 0, delta: {content: "1"}}]}, {choices: [{index: 0, delta: {content: "2"}}]}, {choices: [{index: 0, delta: {content: "3"}}]}, {choices: [{index: 0, delta: {content: "4"}}]}, {choices: [{index: 0, delta: {content: "5"}}]}, {choices: [{index: 0, delta: {content: "6"}}]}, {choices: [{index: 0, delta: {content: "7"}}]}, {choices: [{index: 0, delta: {content: "8"}}]}, {choices: [{index: 0, delta: {content: "9"}}]}, {choices: [{index: 1, delta: {content: "second"}}]}]
+          - [{choices: [{index: 0, delta: {content: "alpha"}}]}, {choices: [{index: 0, delta: {content: "beta"}}]}, {choices: [{index: 0, delta: {content: "gamma"}}]}, {choices: [{index: 0, delta: {content: "delta"}}]}, {choices: [{index: 0, delta: {content: "epsilon"}}]}, {choices: [{index: 0, delta: {content: "zeta"}}]}]
+env: {}
+compare: {ignore: []}

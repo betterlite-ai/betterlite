@@ -1,0 +1,16 @@
+kind: helper
+name: vertex-imagen-edit-mask-seed
+call:
+  vertex_imagen_edit:
+    model: imagen-3.0-capability-001
+    prompt: fill the sky
+    image:
+      - {kind: bytes, data_base64: cmF3LW9uZQ==}
+      - null
+      - {kind: bytes, data_base64: cmF3LXR3bw==}
+    mask: {kind: bytes, data_base64: bWFzay1ieXRlcw==}
+    optional_params: {n: 2, size: 1024x1024}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

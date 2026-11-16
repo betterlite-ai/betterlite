@@ -233,12 +233,6 @@ def _total_usage(wrapper: CustomStreamWrapper, _step: Step) -> Json:
     return _usage(shaping.calculate_total_usage(cast("list[ModelResponse]", wrapper.chunks)))
 
 
-def _backfill_usage(_wrapper: CustomStreamWrapper, step: Step) -> Json:
-    usage = Usage(**cast("dict[str, object]", _as_object(step.get("usage", {}))))  # pyright: ignore[reportArgumentType, reportUnknownArgumentType]
-    shaping.backfill_missing_cache_usage_fields(usage)
-    return _usage(usage)
-
-
 def _propagate_cost(wrapper: CustomStreamWrapper, step: Step) -> Json:
     response = _model_response(step.get("chunk", {}))
     wrapper._propagate_usage_cost_to_hidden_params(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
@@ -284,7 +278,6 @@ _HANDLERS: dict[str, Callable[[CustomStreamWrapper, Step], Json]] = {
     "generic_known": _generic_known,
     "convert_generic": _convert_generic,
     "total_usage": _total_usage,
-    "backfill_usage": _backfill_usage,
     "propagate_cost": _propagate_cost,
     "provider_response_model": _provider_response_model,
     "provider_hidden_params": _provider_hidden_params,
