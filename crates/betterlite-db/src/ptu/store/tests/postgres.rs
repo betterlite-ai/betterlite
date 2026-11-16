@@ -6,7 +6,7 @@ use deadpool_postgres::Client;
 use rust_decimal::Decimal;
 use tokio_postgres::types::Json;
 
-use super::support::{Recorder, capture_logs, charge, database, write_for};
+use super::support::{Recorder, capture_logs, charge, close, database, write_for};
 use crate::budget_permission_rows::JsonData;
 use crate::ptu::charges::deployment::RouterEntry;
 use crate::ptu::store::StoreError;
@@ -77,7 +77,7 @@ async fn upsert_attempts(client: &Client) -> i64 {
 
 #[tokio::test]
 async fn an_update_replaces_the_charge_and_the_display_name() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     seed(
         &client,
@@ -107,11 +107,12 @@ async fn an_update_replaces_the_charge_and_the_display_name() {
     assert_eq!(row.get::<_, i64>("api_requests"), 2);
     assert_eq!(row.get::<_, i64>("prompt_tokens"), 7);
     assert_eq!(row_count(&client).await, 1);
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn a_create_writes_the_identity_columns_and_leaves_defaults() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     let charge = charge("team-1", "model-a", "display", Decimal::from(3));
     let write = write_for(&charge, DAY);
@@ -144,11 +145,12 @@ async fn a_create_writes_the_identity_columns_and_leaves_defaults() {
     assert_eq!(row.get::<_, i64>("prompt_tokens"), 0);
     assert_eq!(row.get::<_, i64>("completion_tokens"), 0);
     assert_eq!(row.get::<_, i64>("successful_requests"), 0);
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn a_permanent_failure_retries_three_times_and_reports_false() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     fail_upserts_for(&client, "model-a", 100).await;
     let charge = charge("team-1", "model-a", "display", Decimal::ONE);
@@ -171,11 +173,12 @@ async fn a_permanent_failure_retries_three_times_and_reports_false() {
         "{captured}"
     );
     assert!(captured.contains("model=display"), "{captured}");
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn transient_failures_recover_on_the_third_attempt() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     fail_upserts_for(&client, "model-a", 2).await;
     let charge = charge("team-1", "model-a", "display", Decimal::ONE);
@@ -188,11 +191,12 @@ async fn transient_failures_recover_on_the_third_attempt() {
     );
     assert_eq!(upsert_attempts(&client).await, 4);
     assert_eq!(row_count(&client).await, 1);
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn a_failed_charge_leaves_another_charges_row_in_place() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     fail_upserts_for(&client, "model-a", 100).await;
     let mut sleeper = Recorder::default();
@@ -208,11 +212,12 @@ async fn a_failed_charge_leaves_another_charges_row_in_place() {
         .await
         .unwrap();
     assert_eq!(row.get::<_, String>("model"), "model-b");
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn existing_keys_read_sentinel_rows_in_the_inclusive_range() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     seed(
         &client,
@@ -246,11 +251,12 @@ async fn existing_keys_read_sentinel_rows_in_the_inclusive_range() {
             },
         ])
     );
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn null_identity_columns_read_as_empty_text() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     seed(
         &client,
@@ -268,11 +274,12 @@ async fn null_identity_columns_read_as_empty_text() {
             date: DAY.to_owned(),
         }])
     );
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn prune_deletes_only_stale_scanned_sentinel_rows_of_the_day() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     seed(
         &client,
@@ -312,11 +319,12 @@ async fn prune_deletes_only_stale_scanned_sentinel_rows_of_the_day() {
         .unwrap();
     let ids: Vec<String> = rows.iter().map(|row| row.get("id")).collect();
     assert_eq!(ids, ["edge", "fresh", "other-day", "unscanned", "usage"]);
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn an_empty_scan_deletes_nothing() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     seed(
         &client,
@@ -337,11 +345,12 @@ async fn an_empty_scan_deletes_nothing() {
     assert_eq!(deleted, 0);
     assert!(!logs.contents().contains("pruned"));
     assert_eq!(row_count(&client).await, 1);
+    close(fixture, pool, client).await;
 }
 
 #[tokio::test]
 async fn a_cutoff_before_the_first_instant_is_an_error() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     let result = prune_unrefreshed_rows(
         &client,
@@ -351,6 +360,7 @@ async fn a_cutoff_before_the_first_instant_is_an_error() {
     )
     .await;
     assert!(matches!(result, Err(StoreError::GraceUnderflow { .. })));
+    close(fixture, pool, client).await;
 }
 
 fn router_entry(source: &str) -> RouterEntry {
@@ -362,7 +372,7 @@ fn router_entry(source: &str) -> RouterEntry {
 
 #[tokio::test]
 async fn load_models_scans_rows_then_router_entries() {
-    let (_fixture, pool) = database().await;
+    let (fixture, pool) = database().await;
     let client = pool.get().await.unwrap();
     client
         .batch_execute(
@@ -419,4 +429,5 @@ async fn load_models_scans_rows_then_router_entries() {
             "db-text".to_owned(),
         ])
     );
+    close(fixture, pool, client).await;
 }

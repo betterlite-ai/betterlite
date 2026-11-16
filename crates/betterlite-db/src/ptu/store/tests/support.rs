@@ -4,11 +4,13 @@ use std::str;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use betterlite_postgres_fixture::connection::PostgresFixture;
+use betterlite_postgres_fixture::connection::{PostgresFixture, RandomDatabaseName};
+use betterlite_postgres_fixture::seed::FixtureSeed;
 use clap::Parser as _;
-use deadpool_postgres::{Manager, Pool};
+use deadpool_postgres::{Client, Manager, Pool};
 use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::task::yield_now;
 use tracing::Subscriber;
 use tracing_subscriber::fmt::MakeWriter;
 
@@ -30,14 +32,19 @@ struct Environment {
     url: Option<String>,
 }
 
+// Each test gets its own database, so concurrent migrations cannot see each other's constraints.
 pub(crate) async fn database() -> (PostgresFixture, Pool) {
     let url = Environment::parse_from(["ptu-store-tests"])
         .url
         .map(SecretString::from);
-    let fixture = PostgresFixture::provision_schema(url.as_ref())
-        .resolve()
-        .await
-        .unwrap();
+    let fixture = PostgresFixture::provision_with_name_generator(
+        url.as_ref(),
+        &FixtureSeed::default(),
+        &mut RandomDatabaseName,
+    )
+    .resolve()
+    .await
+    .unwrap();
     let manager = Manager::new(
         fixture.options.url.expose_secret().parse().unwrap(),
         tokio_postgres::NoTls,
@@ -60,6 +67,13 @@ pub(crate) async fn database() -> (PostgresFixture, Pool) {
         }
     }
     (fixture, pool)
+}
+
+pub(crate) async fn close(fixture: PostgresFixture, pool: Pool, client: Client) {
+    drop(client);
+    pool.close();
+    yield_now().await;
+    fixture.close_async().await.unwrap();
 }
 
 #[derive(Default)]
