@@ -1,0 +1,19 @@
+kind: helper
+name: stock-voice-warning
+call:
+  gemini_live_setup:
+    calls:
+      - op: session_update
+        model: gemini-2.5-flash
+        session: {voice: Alloy}
+      - op: session_update
+        model: gemini-2.5-flash
+        session: {voice: VERSE}
+      - op: session_update
+        model: gemini-2.5-flash
+        session: {voice: Puck}
+      - op: session_update
+        model: gemini-2.5-flash
+        session: {voice: ""}
+env: {}
+compare: {ignore: []}

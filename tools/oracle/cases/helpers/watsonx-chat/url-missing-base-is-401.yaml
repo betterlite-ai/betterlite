@@ -1,0 +1,12 @@
+kind: helper
+name: watsonx-chat-url-missing-base-is-401
+env: {}
+compare: {ignore: []}
+call:
+  b5971:
+    env: {}
+    maps: []
+    infos: []
+    urls:
+      - {api_base: null, model: granite, stream: false, options: {api_version: "2025-01-01"}}
+    plans: []
