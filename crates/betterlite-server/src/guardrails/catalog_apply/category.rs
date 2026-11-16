@@ -90,7 +90,7 @@ fn read_category(
         "json"
     };
     let yaml_content =
-        fs::read_to_string(&found).map_err(|source| CatalogApplyError::CategoryRead { source })?;
+        fs::read_to_string(found).map_err(|source| CatalogApplyError::CategoryRead { source })?;
     Ok(CategoryBody {
         category_name,
         yaml_content,
