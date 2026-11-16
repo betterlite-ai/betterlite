@@ -17,13 +17,14 @@ deviations:
       forwarding a decoder message.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L159-L166
   - what: >-
-      The synchronous branch buffers a request whose optional stream value is truthy but not the literal True (for
-      example stream=1 or stream="true"), where LiteLLM sends that value to the OpenAI SDK anyway, gets a Stream
-      back and fails with a wrapped 500 "'Stream' object has no attribute 'model_dump'".
+      Both the synchronous and the asynchronous branch stream only for a literal boolean true. A stream value that
+      is not a boolean (for example 1 or "true") takes the buffered path here, where LiteLLM's async branch streams
+      for any truthy value and its sync branch sends the value to the OpenAI SDK, gets a Stream back and fails with
+      a wrapped 500 "'Stream' object has no attribute 'model_dump'".
     why: >-
-      the branch selector is the declared check optional_params["stream"] is True; the typed transport decides the
-      wire shape from the answer, so a truthy non-boolean stays on the buffered path.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L114-L122
+      docs/compatibility.md leaves Python truthiness out and stream is declared as a boolean, so a value of another
+      type is outside the declared input.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure/completion/handler.py#L86-L122
   - what: >-
       AzureOpenAITextConfig keeps its eight settings per instance, each defaulting to None, where LiteLLM's parent
       OpenAITextCompletionConfig.__init__ runs setattr on the class, so a later constructor call in the same process

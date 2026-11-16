@@ -33,7 +33,7 @@ call:
         api_version: "2024-02-01"
         timeout: 30.0
         acompletion: true
-        optional_params: {stream: 1}
+        optional_params: {stream: true}
         answer:
           events:
             - "data: {\"id\":\"cmpl-1\",\"object\":\"text_completion\",\"created\":1700000000,\"model\":\"gpt-35-turbo-instruct\",\"choices\":[{\"text\":\"Hel\",\"index\":0,\"finish_reason\":null}]}\n\n"
