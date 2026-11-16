@@ -1,0 +1,38 @@
+kind: helper
+name: metric-duration-api-latency
+call:
+  b3857:
+    function: record_success
+    config: {enable_events: false}
+    kwargs:
+      model: gpt-4o
+      messages:
+      - {role: user, content: hello}
+      call_type: acompletion
+      optional_params: {}
+      litellm_params:
+        custom_llm_provider: openai
+        metadata: {}
+      standard_logging_object:
+        call_type: acompletion
+        request_id: request-1
+        litellm_call_id: call-1
+        metadata:
+          user_api_key_alias: key-a
+          requester_metadata: {team: 1}
+        hidden_params: {api_base: 'https://api.openai.com'}
+      api_call_start_time: 10.5
+      end_time: 12.0
+    response:
+      id: chatcmpl-1
+      model: gpt-4o
+      choices:
+      - index: 0
+        finish_reason: stop
+        message: {role: assistant, content: hi}
+      usage: {prompt_tokens: 2, completion_tokens: 4, total_tokens: 6}
+    start_time: 10.0
+    end_time: 13.0
+env: {}
+compare:
+  ignore: []
