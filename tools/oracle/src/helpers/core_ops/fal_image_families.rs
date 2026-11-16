@@ -1,14 +1,14 @@
 use betterlite_core::api::fal::bytedance::{BytedanceModel, MAPPING_PROFILE};
 use betterlite_core::api::fal::flux::{FluxImageResponse, project_response as project_flux};
+use betterlite_core::api::fal::imagen::{
+    ENDPOINT as IMAGEN_ENDPOINT, ImagenImageResponse, project_response as project_imagen,
+};
 use betterlite_core::api::fal::images::decode::{
     FalImage, append_generation_images, fal_images_to_image_objects,
 };
 use betterlite_core::api::fal::images::error::FalImageError;
 use betterlite_core::api::fal::images::params::image_generation_body;
 use betterlite_core::api::fal::images::settings::FalImageSettings;
-use betterlite_core::api::fal::imagen::{
-    ENDPOINT as IMAGEN_ENDPOINT, ImagenImageResponse, project_response as project_imagen,
-};
 use betterlite_core::api::fal::{imagen, nano_banana};
 use betterlite_models::decisions::{HiddenParams, Json};
 use betterlite_openai::api::image_contracts::records::{ImageHeaders, ImageParams};
@@ -90,8 +90,7 @@ impl Family {
         let optional = case.optional.clone();
         match self {
             Self::Imagen => {
-                imagen::map_openai_params(&case.non_default, optional, MODEL, case.drop_params)
-                    .ok()
+                imagen::map_openai_params(&case.non_default, optional, MODEL, case.drop_params).ok()
             }
             Self::NanoBanana => {
                 nano_banana::map_openai_params(&case.non_default, optional, MODEL, case.drop_params)
@@ -181,7 +180,9 @@ impl Helper for Op {
                 api_bases,
                 cases,
             } => Ok(bytedance_outcomes(prompt, families, api_bases, cases)),
-            Input::FamilyReplyMetadata { families, replies } => Ok(reply_outcomes(families, replies)),
+            Input::FamilyReplyMetadata { families, replies } => {
+                Ok(reply_outcomes(families, replies))
+            }
         }
     }
 }
