@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from io import BytesIO
 from typing import Final
 
+import httpx
 import litellm
 from litellm.types.router import GenericLiteLLMParams
 from litellm.types.utils import ImageResponse
@@ -20,7 +21,7 @@ from .inputs import (
     Object,
     ReplyCase,
 )
-from .replies import edit_fields, generation_fields, raw_response
+from .replies import edit_fields, generation_fields
 
 MANAGED_ENV: Final = ("OPENROUTER_API_KEY", "OPENROUTER_API_BASE")
 
@@ -85,8 +86,9 @@ def generation_reply(cases: list[ReplyCase]) -> JsonValue:
     answers: list[JsonValue] = []
     for case in cases:
         response = ImageResponse(created=case["created"])
+        raw = httpx.Response(case["status"], content=case["body"].encode(), headers=case["headers"])
         finished = GENERATION.transform_image_generation_response(
-            case["model"], raw_response(case), response, None, {}, {}, {}, None
+            case["model"], raw, response, None, {}, {}, {}, None
         )
         answers.append(generation_fields(finished))
     return JSON.validate_python(answers)
@@ -124,7 +126,8 @@ def edit_request(cases: list[EditRequestCase]) -> JsonValue:
 def edit_reply(cases: list[ReplyCase]) -> JsonValue:
     answers: list[JsonValue] = []
     for case in cases:
-        finished = EDIT.transform_image_edit_response(case["model"], raw_response(case), None)
+        raw = httpx.Response(case["status"], content=case["body"].encode(), headers=case["headers"])
+        finished = EDIT.transform_image_edit_response(case["model"], raw, None)
         answers.append(edit_fields(finished))
     return JSON.validate_python(answers)
 

@@ -1,10 +1,9 @@
 from typing import Final, TypedDict
 
-import httpx
 from litellm.types.utils import ImageResponse
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter
 
-from .inputs import Object, ReplyCase
+from .inputs import Object
 
 
 class ImageDatum(TypedDict):
@@ -46,10 +45,6 @@ class Hidden(BaseModel):
 REPLY: Final[TypeAdapter[ImageReply]] = TypeAdapter(ImageReply)
 
 
-def raw_response(case: ReplyCase) -> httpx.Response:
-    return httpx.Response(case["status"], content=case["body"].encode(), headers=case["headers"])
-
-
 def image_values(data: list[ImageDatum]) -> list[JsonValue]:
     values: list[JsonValue] = []
     for datum in data:
@@ -87,11 +82,11 @@ def hidden_fields(reply: ImageResponse) -> Object:
     return fields
 
 
-def reply_usage(parsed: ImageReply) -> UsageFields:
+def reply_usage(parsed: ImageReply) -> Object | None:
     usage = parsed["usage"]
     if usage is None:
-        raise ValueError("the OpenRouter image transform left the usage unset")
-    return usage
+        return None
+    return usage_fields(usage)
 
 
 def generation_fields(reply: ImageResponse) -> Object:
@@ -99,7 +94,7 @@ def generation_fields(reply: ImageResponse) -> Object:
     return {
         "created": parsed["created"],
         "data": image_values(parsed["data"]),
-        "usage": usage_fields(reply_usage(parsed)),
+        "usage": reply_usage(parsed),
         "hidden": hidden_fields(reply),
     }
 
@@ -108,6 +103,6 @@ def edit_fields(reply: ImageResponse) -> Object:
     parsed = REPLY.validate_json(reply.model_dump_json())
     return {
         "data": image_values(parsed["data"]),
-        "usage": usage_fields(reply_usage(parsed)),
+        "usage": reply_usage(parsed),
         "hidden": hidden_fields(reply),
     }

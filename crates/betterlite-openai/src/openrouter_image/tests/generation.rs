@@ -444,7 +444,6 @@ fn generation_responses_skip_an_empty_cost_details() {
     "usage.completion_tokens_details.image_tokens must be a whole number"
 )]
 #[case::cost_text(r#"{"cost": "0.5"}"#, "usage.cost must be a finite number")]
-#[case::cost_infinite(r#"{"cost": 1e400}"#, "usage.cost must be a finite number")]
 #[case::cost_details_text(r#"{"cost_details": "x"}"#, "usage.cost_details must be an object")]
 fn generation_responses_reject_a_usage_field_of_the_wrong_type(
     #[case] usage: &str,

@@ -9,12 +9,15 @@ use betterlite_openai::openrouter_image::edit::{
     transform_response as edit_response, validate_environment as edit_headers,
 };
 use std::io::Cursor;
+
 // ast-grep-ignore: no-long-names
 use betterlite_openai::openrouter_image::edit::get_openrouter_image_edit_config as edit_config;
-// ast-grep-ignore: no-long-names
+
 use super::input::{
     EditRequestCase, GenerationParamsCase, GenerationRequestCase, ImageCase, Input, ReplyCase,
 };
+
+// ast-grep-ignore: no-long-names
 use betterlite_openai::openrouter_image::generation::get_openrouter_image_generation_config as generation_config;
 use betterlite_openai::openrouter_image::generation::{
     complete_url as generation_url, request_body as generation_request_body,

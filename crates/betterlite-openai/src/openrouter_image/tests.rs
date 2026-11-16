@@ -333,6 +333,15 @@ fn a_body_that_is_not_json_is_a_parse_error() {
 }
 
 #[rstest]
+#[case::nan(r#"{"usage": {"cost": NaN}}"#)]
+#[case::infinity(r#"{"usage": {"cost": Infinity}}"#)]
+#[case::overflowing_exponent(r#"{"usage": {"cost": 1e400}}"#)]
+fn non_standard_json_is_a_parse_error(#[case] body: &str) {
+    let error = decode_openrouter_image_reply(body.as_bytes()).expect_err("the body is not JSON");
+    assert!(matches!(error, ReplyDecodeError::Json { .. }));
+}
+
+#[rstest]
 #[case::body_list("[]")]
 #[case::body_null("null")]
 #[case::body_number("5")]

@@ -9,9 +9,9 @@ use secrecy::SecretString;
 
 use crate::api::image_contracts::records::{ImageInputTokens, ImageParams, ImageUsage};
 use crate::openrouter_image::edit::{
-    SourceImage, complete_url as edit_url, get_openrouter_image_edit_config as edit_config,
-    request_body as edit_request_body, transform_response as edit_response,
-    validate_environment as edit_headers,
+    MULTIPART_FORM_DATA, SourceImage, complete_url as edit_url,
+    get_openrouter_image_edit_config as edit_config, request_body as edit_request_body,
+    transform_response as edit_response, validate_environment as edit_headers,
 };
 use crate::openrouter_image::shared::{ImageConfigError, ImageHiddenParams};
 
@@ -19,6 +19,11 @@ use super::{
     COST_HEADER, CREATED, FailingReader, GIF, HEIC, JPEG, PNG, WEBP, b64, content_parts, headers,
     image_part, json, number, ok, params, raw, text,
 };
+
+#[test]
+fn edit_requests_use_json_not_multipart() {
+    assert!(!MULTIPART_FORM_DATA);
+}
 
 #[test]
 fn edit_params_build_a_new_mapping_from_supported_keys() {
