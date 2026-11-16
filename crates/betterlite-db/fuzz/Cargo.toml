@@ -147,6 +147,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "tool_record"
+path = "fuzz_targets/tool_record.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "ptu_model_info"
 path = "fuzz_targets/ptu_model_info.rs"
 test = false
