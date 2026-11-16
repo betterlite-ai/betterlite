@@ -1,0 +1,20 @@
+kind: helper
+name: count-tokens-endpoint
+call:
+  foundry_anthropic_count:
+    function: endpoint
+    api_bases:
+      - https://r.services.ai.azure.com
+      - https://r.services.ai.azure.com/
+      - https://r.services.ai.azure.com//
+      - https://r.services.ai.azure.com/anthropic
+      - https://r.services.ai.azure.com/Anthropic
+      - https://r.services.ai.azure.com/anthropic/
+      - https://r.services.ai.azure.com/anthropic/v1/messages/count_tokens
+      - https://r.services.ai.azure.com/v1/messages/count_tokens
+      - https://r.services.ai.azure.com/anthropic/?x=1
+      - https://r.services.ai.azure.com?x=1
+      - https://r.services.ai.azure.com/my-anthropic-proxy
+      - ""
+env: {}
+compare: {ignore: []}

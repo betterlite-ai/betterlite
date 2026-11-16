@@ -1,0 +1,47 @@
+kind: helper
+name: azure-auth-and-beta
+call:
+  foundry_anthropic_count:
+    function: handle
+    cases:
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        request_timeout: 17.0
+        environment: {ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        timeout: 0.0
+        litellm_params: {api_key: params-key}
+        environment: {ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com/anthropic
+        litellm_params: {api_key: null, azure_ad_token: fixture-token}
+        environment: {ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        litellm_params: {api_key: ""}
+        globals: {azure_key: global-azure-key}
+        environment: {ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+      - model: claude-sonnet-4-5
+        messages: [{role: user, content: hi}]
+        api_key: argument-key
+        api_base: https://r.services.ai.azure.com
+        system: you count tokens
+        tools: [{name: count, input_schema: {type: object}}]
+        environment: {ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01}
+        reply: {status: 200, body: '{"input_tokens":5}'}
+env:
+  ANTHROPIC_TOKEN_COUNTING_BETA_VERSION: token-counting-2025-01-01
+compare: {ignore: []}
