@@ -1,0 +1,35 @@
+kind: helper
+name: messages-chat-output-stream-delta-precedence
+call:
+  messages_chat_output:
+    operation: delta
+    choices:
+    - finish_reason: null
+      delta:
+        content: T
+        tool_calls:
+        - id: a
+          index: 0
+          function:
+            name: Bash
+            arguments: '{a'
+        reasoning_content: null
+        thinking_blocks: null
+        refusal: null
+        provider_specific_fields: null
+    - finish_reason: null
+      delta:
+        content: U
+        tool_calls:
+        - id: b
+          index: 0
+          function:
+            name: Bash
+            arguments: '{b'
+        reasoning_content: null
+        thinking_blocks: null
+        refusal: null
+        provider_specific_fields: null
+env: {}
+compare:
+  ignore: []

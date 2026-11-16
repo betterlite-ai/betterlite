@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::content_filter_streaming::error::StreamFilterError;
 use serde_json::{Map, Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 const RECORDS_KEY: &str = "standard_logging_guardrail_information";
 // The scan and trim durations differ between the two sides, so the case never compares them

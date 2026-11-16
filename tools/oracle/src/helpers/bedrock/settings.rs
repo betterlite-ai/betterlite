@@ -5,14 +5,15 @@ use betterlite_bedrock::bedrock_settings::{
     error_response_text,
 };
 use betterlite_config::loader::{ConfigError, ConfigLoader};
-use betterlite_config::sections::bedrock_settings::AwsSettings;
+use betterlite_config::sections::bedrock_settings::{AwsSettings, SessionTagValue};
 use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use secrecy::ExposeSecret;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -54,7 +55,7 @@ pub(crate) struct Deployment {
     #[serde(rename = "aws_external_id")]
     external_id: Option<String>,
     #[serde(rename = "aws_session_tags")]
-    session_tags: Option<betterlite_config::sections::bedrock_settings::SessionTagValue>,
+    session_tags: Option<SessionTagValue>,
 }
 
 #[derive(Debug, Deserialize)]

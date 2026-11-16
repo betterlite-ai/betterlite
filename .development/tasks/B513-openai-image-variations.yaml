@@ -179,7 +179,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/openai_image_variations*")"
       && grep -lq 'openai_image_variations' tools/oracle/fuzz/corpus/helper_case/openai_image_variations* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_variations$/)'
+      nextest run --locked -p betterlite-oracle-openai --no-tests=fail -E 'test(/::helper_seeds_select_openai_image_variations$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-variation-missing-config-data
     why: Missing config or a false data field raises ValueError at the inner seam and is wrapped as OpenAIError

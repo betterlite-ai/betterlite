@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_server::list_api::memory::Cell;
 use betterlite_server::list_api::plan::types::{
     AnyOf, Compare, ComparisonOp, FilterValue, IsNull, Predicate, SortKey, Within,
@@ -84,9 +85,7 @@ pub(super) struct CompareInput {
     value: ValueInput,
 }
 
-pub(super) fn predicate(
-    input: PredicateInput,
-) -> Result<Predicate, Box<crate::helpers::HelperError>> {
+pub(super) fn predicate(input: PredicateInput) -> Result<Predicate, Box<HelperError>> {
     match input {
         PredicateInput::Compare {
             field,
@@ -121,7 +120,7 @@ pub(super) fn predicate(
                         value: filter_value(clause.value, None)?,
                     })
                 })
-                .collect::<Result<Vec<_>, Box<crate::helpers::HelperError>>>()?;
+                .collect::<Result<Vec<_>, Box<HelperError>>>()?;
             Ok(Predicate::AnyOf(AnyOf {
                 clauses: parsed_clauses,
             }))
@@ -132,7 +131,7 @@ pub(super) fn predicate(
 fn filter_value(
     value: ValueInput,
     value_type: Option<&str>,
-) -> Result<FilterValue, Box<crate::helpers::HelperError>> {
+) -> Result<FilterValue, Box<HelperError>> {
     if value_type == Some("timestamp") {
         return timestamp_filter(value);
     }
@@ -142,7 +141,7 @@ fn filter_value(
     }
 }
 
-fn timestamp_filter(value: ValueInput) -> Result<FilterValue, Box<crate::helpers::HelperError>> {
+fn timestamp_filter(value: ValueInput) -> Result<FilterValue, Box<HelperError>> {
     let ValueInput::Text(raw) = value else {
         return Err(helper_error!(
             "InvalidInput",

@@ -1,0 +1,32 @@
+kind: helper
+name: ids-floats-and-nesting
+call:
+  b4776:
+    config:
+      - agent_name: floats
+        agent_card_params:
+          a: 1
+          b: 1.0
+          c: 1e16
+          d: 1e-5
+          e: 1.5e-7
+          f: 100000.0
+          g: 0.0001
+          h: -0.0
+          i: 1.2345678901234567
+          j: 5e-324
+          nested: [true, false, null, {z: 1, A: [2, {é: 3}]}]
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 4b379441613442e9bd746f463554d9e27aa22d4d4aa4aa7c84f3192997bc2200
+    stable_ids:
+      - da711e04632a269baea7837b076f61e3309bd15ae9c5353ce63650ee4434e55a
+    by_id: []
+    by_name: []
+    deregister: []
+env: {}
+compare:
+  ignore: []

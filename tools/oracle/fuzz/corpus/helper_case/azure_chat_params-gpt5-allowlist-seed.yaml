@@ -1,0 +1,19 @@
+kind: helper
+name: azure-chat-params-gpt5-allowlist-seed
+call:
+  azure_chat_params:
+    function: gpt5_allowlist
+    install:
+      model_cost:
+        azure/gpt-5.2:
+          supports_tool_choice: true
+          supports_reasoning: true
+          supports_none_reasoning_effort: true
+          default_reasoning_effort: medium
+      chat_models: [azure/gpt-5.2]
+      text_models: []
+      drop_params: false
+      openai_system_messages_first: false
+    models: [gpt5_series/gpt-5.2, my-gpt5-deployment]
+env: {}
+compare: {ignore: []}

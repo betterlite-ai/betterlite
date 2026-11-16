@@ -1,0 +1,41 @@
+[package]
+name = "betterlite-oracle-a2a"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+betterlite-a2a = { path = "../../../../../crates/betterlite-a2a" }
+betterlite-bedrock = { path = "../../../../../crates/betterlite-bedrock" }
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-oracle-runner = { path = "../../../runner" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-server = { path = "../../../../../crates/betterlite-server" }
+betterlite-tokenizer = { path = "../../../../../crates/betterlite-tokenizer" }
+chrono.workspace = true
+futures-util = { version = "0.3.34", default-features = false }
+indexmap = { version = "2.14.2", features = ["serde"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+url = "2.5.8"
+uuid = { version = "1.28.0", default-features = false }
+
+[dev-dependencies]
+rstest = "=0.27.0"
+serde-saphyr = "2.0.0"
+
+[lints]
+workspace = true

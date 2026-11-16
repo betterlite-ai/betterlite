@@ -1,6 +1,8 @@
 use betterlite_core::rag::upload_security::{
     self, EicarTestMalwareScanner, MalwareScanner, ScanResult, ScanVerdict,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -27,11 +29,11 @@ fn default_uuid() -> String {
 }
 
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let content = hex::decode(&input.content_hex).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
@@ -41,7 +43,7 @@ impl crate::helpers::Helper for Op {
             })
         })?;
         let id = uuid::Uuid::parse_str(&input.uuid).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,
@@ -75,7 +77,7 @@ enum Output {
     },
 }
 
-fn output(result: upload_security::UploadValidation) -> crate::helpers::HelperResult {
+fn output(result: upload_security::UploadValidation) -> HelperResult {
     let value = match result {
         upload_security::UploadValidation::Secured(upload) => Output::Secured {
             safe_filename: upload.safe_filename,
@@ -92,7 +94,7 @@ fn output(result: upload_security::UploadValidation) -> crate::helpers::HelperRe
         },
     };
     serde_json::to_value(value).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "SerializationError".to_owned(),
             status: None,
             error_type: None,

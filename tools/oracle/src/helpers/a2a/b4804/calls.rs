@@ -17,8 +17,8 @@ use tokio::runtime::{Builder, Runtime};
 
 use super::fixture::{Failure, FixtureRuntime, Source};
 use super::{Answer, StreamAnswer, Transport};
-use crate::compare::helper::HelperError;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 fn helper_failure(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {

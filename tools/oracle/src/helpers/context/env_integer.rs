@@ -1,3 +1,5 @@
+use betterlite_config::env_integer;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 
@@ -10,23 +12,17 @@ pub(crate) struct Input {
     maximum: Option<i64>,
 }
 pub(crate) struct Op;
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let value = input.value.as_deref();
-        let parsed = betterlite_config::env_integer::get_env_int(value, input.default);
+        let parsed = env_integer::get_env_int(value, input.default);
         let range = match (input.minimum, input.maximum) {
-            (Some(min), Some(max)) => betterlite_config::env_integer::get_env_int_in_range(
-                "VALUE",
-                value,
-                input.default,
-                min,
-                max,
-            ),
+            (Some(min), Some(max)) => {
+                env_integer::get_env_int_in_range("VALUE", value, input.default, min, max)
+            }
             _ => parsed,
         };
-        Ok(
-            json!({"int":parsed,"range":range,"optional":betterlite_config::env_integer::get_env_int_or_none(value)}),
-        )
+        Ok(json!({"int":parsed,"range":range,"optional":env_integer::get_env_int_or_none(value)}))
     }
 }

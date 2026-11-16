@@ -1,7 +1,7 @@
 id: B532
 milestone: M3 providers
 title: Azure chat parameters and message conversion
-status: todo
+status: done
 depends_on: [B531, B502, B182, B178, B193, B171, B684, B668, B205, B206, B174, B198, B2221, B2225, B2230]
 file: tasks/B532-azure-chat-params.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/llms/azure/chat/o_series_transformation.py"
 parent: B025
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1966

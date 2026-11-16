@@ -1,7 +1,11 @@
 use std::cell::Cell;
 use std::sync::Arc;
 
-use betterlite_logging::verbose_hooks::{ConsoleSink, LoggerSink, VerboseHooks};
+use betterlite_logging::verbose_hooks::{
+    ConsoleSink, HookResult, LogRecord, LoggerSink, VerboseHooks,
+};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use betterlite_redact::structured::Payload;
 use serde_json::json;
@@ -47,7 +51,7 @@ const fn default_logger_only() -> Payload {
 struct FixtureLogger {
     fails: bool,
     debug_enabled: bool,
-    records: Cell<Vec<betterlite_logging::verbose_hooks::LogRecord>>,
+    records: Cell<Vec<LogRecord>>,
 }
 
 impl LoggerSink for FixtureLogger {
@@ -74,7 +78,7 @@ impl FixtureLogger {
             return false;
         }
         let mut records = self.records.take();
-        records.push(betterlite_logging::verbose_hooks::LogRecord {
+        records.push(LogRecord {
             level: level.to_owned(),
             payload: payload.clone(),
         });
@@ -93,9 +97,9 @@ impl ConsoleSink for FixtureConsole {
     }
 }
 
-fn redactor() -> Result<Arc<Redactor>, Box<crate::helpers::HelperError>> {
+fn redactor() -> Result<Arc<Redactor>, Box<HelperError>> {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "RedactionError".to_owned(),
             status: None,
             error_type: Some(None),
@@ -111,7 +115,7 @@ fn build_hooks(
     sink_fails: (bool, bool),
     logger_debug_enabled: bool,
     set_verbose: &Payload,
-) -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<crate::helpers::HelperError>> {
+) -> Result<VerboseHooks<FixtureLogger, FixtureConsole>, Box<HelperError>> {
     let (logger_fails, console_fails) = sink_fails;
     let redactor = redactor()?;
     Ok(VerboseHooks {
@@ -130,10 +134,10 @@ fn build_hooks(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Main {
                 payload,
@@ -164,15 +168,9 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn run_logged<F>(
-    set_verbose: &Payload,
-    sink_fails: (bool, bool),
-    operation: F,
-) -> crate::helpers::HelperResult
+fn run_logged<F>(set_verbose: &Payload, sink_fails: (bool, bool), operation: F) -> HelperResult
 where
-    F: FnOnce(
-        &VerboseHooks<FixtureLogger, FixtureConsole>,
-    ) -> betterlite_logging::verbose_hooks::HookResult,
+    F: FnOnce(&VerboseHooks<FixtureLogger, FixtureConsole>) -> HookResult,
 {
     let hooks = build_hooks(sink_fails, false, set_verbose)?;
     let mut result = operation(&hooks);

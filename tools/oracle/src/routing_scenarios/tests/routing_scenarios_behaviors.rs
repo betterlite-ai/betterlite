@@ -9,8 +9,10 @@ use super::{answer, provider_request, request, response};
 use crate::OracleError;
 use crate::case::Compare;
 use crate::http;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, Outcome, ScriptSpec, ScriptedReply, Wait};
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, Outcome, ScriptSpec, ScriptedReply, Wait,
+};
 
 fn provider(deadline_ms: u64, replies: Vec<ScriptedReply>) -> MockProvider {
     MockProvider::start(

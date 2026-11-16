@@ -1,0 +1,13 @@
+id: B9960
+milestone: R2 bug fixes
+title: OpenAI chat content fetches request media
+status: todo
+depends_on: [B503, B5083, B183]
+file: tasks/B9960-openai-chat-content-fetch.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

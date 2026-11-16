@@ -21,7 +21,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::support::{cred_tag, is_hex_32, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
+use tokio::time;
 
 const POLL_INTERVAL: Duration = Duration::from_millis(5);
 const REFRESH_DELAY: Duration = Duration::from_millis(50);
@@ -165,7 +166,7 @@ fn refresh_step(refreshes: &AtomicUsize) -> RefreshStep<'_, String, String> {
     Box::new(move || {
         refreshes.fetch_add(1, Ordering::SeqCst);
         Box::pin(async {
-            tokio::time::sleep(REFRESH_DELAY).await;
+            time::sleep(REFRESH_DELAY).await;
             Ok("fresh".to_owned())
         })
     })
@@ -178,7 +179,7 @@ fn reread_step(rereads: &AtomicUsize) -> RefreshStep<'_, String, String> {
     })
 }
 
-async fn run_pair(
+async fn race_two_refreshes(
     coordinator: &Coordinator,
     refreshes: &AtomicUsize,
     rereads: &AtomicUsize,
@@ -227,5 +228,5 @@ pub(super) fn coordinator() -> HelperResult {
         wait_timeout: DEFAULT_WAIT_TIMEOUT,
         poll_interval: POLL_INTERVAL,
     };
-    Ok(runtime()?.block_on(run_pair(&coordinator, &refreshes, &rereads)))
+    Ok(runtime()?.block_on(race_two_refreshes(&coordinator, &refreshes, &rereads)))
 }
