@@ -236,7 +236,7 @@ fn reply_outcome(
                 frames: VecDeque::from(frames),
                 gate,
                 effects: effects.clone(),
-                labels: ("followup-read", "followup-end"),
+                labels: FOLLOW_UP_LABELS,
             }))
         }
         HookReply::Message(message) => Ok(MessagesAgenticStreamResult::Message(message)),
@@ -263,93 +263,62 @@ fn resolved_interceptor(
     }
 }
 
-struct ScriptedFollowUp {
+// a scripted provider or follow-up stream; its labels name the read, end and close effects
+struct ScriptedStream {
     frames: VecDeque<Vec<u8>>,
     gate: Option<Arc<AtomicBool>>,
     effects: EffectLog,
-    labels: (&'static str, &'static str),
+    labels: (&'static str, &'static str, &'static str),
 }
 
-async fn next_frame(
-    frames: &mut VecDeque<Vec<u8>>,
-    gate: Option<&Arc<AtomicBool>>,
-    effects: &EffectLog,
-    labels: (&str, &str),
-) -> Result<Option<Vec<u8>>, Infallible> {
-    if let Some(held) = gate {
-        wait_for(held).await;
-    }
-    let frame = frames.pop_front();
-    effects.record(if frame.is_some() { labels.0 } else { labels.1 });
-    Ok(frame)
-}
+type ScriptedInner = ScriptedStream;
+type ScriptedFollowUp = ScriptedStream;
 
-#[async_trait]
-impl MessagesProviderStream for ScriptedFollowUp {
-    type Error = Infallible;
+const INNER_LABELS: (&str, &str, &str) = ("inner-read", "inner-end", "inner-close");
+const FOLLOW_UP_LABELS: (&str, &str, &str) = ("followup-read", "followup-end", "followup-close");
 
-    async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, Infallible> {
-        next_frame(
-            &mut self.frames,
-            self.gate.as_ref(),
-            &self.effects,
-            self.labels,
-        )
-        .await
-    }
-
-    async fn aclose(&mut self) -> Option<Result<(), Infallible>> {
-        self.effects.record("followup-close");
-        Some(Ok(()))
-    }
-}
-
-impl AgenticFollowUp for ScriptedFollowUp {
-    fn from_response(response: &Json) -> Result<Self, MessagesFakeStreamError> {
-        Ok(Self {
-            frames: MessagesFakeStream::new(response)?.collect(),
-            gate: None,
-            effects: EffectLog::default(),
-            labels: ("followup-read", "followup-end"),
-        })
-    }
-}
-
-struct ScriptedInner {
-    frames: VecDeque<Vec<u8>>,
-    gate: Option<Arc<AtomicBool>>,
-    effects: EffectLog,
-    labels: (&'static str, &'static str),
-}
-
-impl ScriptedInner {
+impl ScriptedStream {
     fn open(frames: Vec<Vec<u8>>, effects: &EffectLog) -> Self {
         Self {
             frames: VecDeque::from(frames),
             gate: None,
             effects: effects.clone(),
-            labels: ("inner-read", "inner-end"),
+            labels: INNER_LABELS,
         }
     }
 }
 
 #[async_trait]
-impl MessagesProviderStream for ScriptedInner {
+impl MessagesProviderStream for ScriptedStream {
     type Error = Infallible;
 
     async fn next_chunk(&mut self) -> Result<Option<Vec<u8>>, Infallible> {
-        next_frame(
-            &mut self.frames,
-            self.gate.as_ref(),
-            &self.effects,
-            self.labels,
-        )
-        .await
+        if let Some(held) = self.gate.as_ref() {
+            wait_for(held).await;
+        }
+        let frame = self.frames.pop_front();
+        self.effects.record(if frame.is_some() {
+            self.labels.0
+        } else {
+            self.labels.1
+        });
+        Ok(frame)
     }
 
     async fn aclose(&mut self) -> Option<Result<(), Infallible>> {
-        self.effects.record("inner-close");
+        self.effects.record(self.labels.2);
         Some(Ok(()))
+    }
+}
+
+impl AgenticFollowUp for ScriptedStream {
+    fn from_response(response: &Json) -> Result<Self, MessagesFakeStreamError> {
+        Ok(Self {
+            frames: MessagesFakeStream::new(response)?.collect(),
+            gate: None,
+            effects: EffectLog::default(),
+            labels: FOLLOW_UP_LABELS,
+        })
     }
 }
 
@@ -713,7 +682,7 @@ async fn cancel_drains_owned_task(#[case] intercepting: bool) {
         frames: VecDeque::from(text_stream()),
         gate: Some(Arc::new(AtomicBool::new(intercepting))),
         effects: effects.clone(),
-        labels: ("inner-read", "inner-end"),
+        labels: INNER_LABELS,
     };
     let interceptor = ScriptedInterceptor {
         gate: Arc::clone(&hook_gate),
