@@ -1,0 +1,15 @@
+task: B9711
+deviations:
+  - what: The closing debug line "Updated Router settings" prints the stored setting values, not the get_settings answer.
+    why: update_settings takes no SettingsView, so it cannot build the routing groups and the latency args that get_settings adds. The line is a debug log and no client sees it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12290-L12291
+  - what: The five integer settings (timeout, num_retries, retry_after, allowed_fails, cooldown_time) keep an int() result only from -9223372036854775808 to 18446744073709551615, and a retry_policy count only inside the i64 range. A float whose truncation is past that range or past rust_decimal's range (such as 1e30), an integer outside it and a numeric string past i64 are a NotAnInteger or retry policy error naming the key. A string is read as an optional sign and base-10 digits after trimming, so the forms Python's int() also takes, such as "1_000" and non-ASCII digits, are refused the same way.
+    why: LiteLLM keeps Python's arbitrary-precision int, but a retry count, timeout or cooldown that large has no meaning, and the JSON number type and B306's retry policy hold 64-bit integers, so the value is refused with an error that names the key instead of being kept. The task text names the base-10 form; Python's remaining string leniencies are runtime duck typing that docs/compatibility.md does not copy.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12244-L12246
+kept_bugs:
+  - what: A retry_policy that is neither an object nor null (a list, a string, a number) is ignored with no error and the old policy stays.
+    why: A saved router setting with such a value loads today and a setup may carry one, so rejecting it would break that setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12249-L12256
+  - what: There is no rollback. When the routing group rebuild fails, every pair before it stays applied and the stored groups input keeps its old value.
+    why: A working setup that sends one bad routing_groups value alongside other settings sees the other settings applied; undoing them would change that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L12286-L12290
