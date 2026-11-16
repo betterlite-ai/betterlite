@@ -1,0 +1,106 @@
+[package]
+name = "betterlite-oracle-groups"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+betterlite-oracle-a2a = { path = "../src/helpers/a2a", optional = true }
+betterlite-oracle-anthropic = { path = "../src/helpers/anthropic", optional = true }
+betterlite-oracle-auth = { path = "../src/helpers/auth", optional = true }
+betterlite-oracle-azure = { path = "../src/helpers/azure", optional = true }
+betterlite-oracle-bedrock = { path = "../src/helpers/bedrock", optional = true }
+betterlite-oracle-cache = { path = "../src/helpers/cache", optional = true }
+betterlite-oracle-cli = { path = "../src/helpers/cli", optional = true }
+betterlite-oracle-config = { path = "../src/helpers/config", optional = true }
+betterlite-oracle-context = { path = "../src/helpers/context", optional = true }
+betterlite-oracle-core-ops = { path = "../src/helpers/core_ops", optional = true }
+betterlite-oracle-cost = { path = "../src/helpers/cost", optional = true }
+betterlite-oracle-db = { path = "../src/helpers/db", optional = true }
+betterlite-oracle-error = { path = "../src/helpers/error", optional = true }
+betterlite-oracle-foundry = { path = "../src/helpers/foundry", optional = true }
+betterlite-oracle-guardrails = { path = "../src/helpers/guardrails", optional = true }
+betterlite-oracle-harness = { path = "../src/helpers/harness", optional = true }
+betterlite-oracle-helper-api = { path = "../helper-api" }
+betterlite-oracle-http = { path = "../src/helpers/http", optional = true }
+betterlite-oracle-lens = { path = "../src/helpers/lens", optional = true }
+betterlite-oracle-logging = { path = "../src/helpers/logging", optional = true }
+betterlite-oracle-mcp = { path = "../src/helpers/mcp", optional = true }
+betterlite-oracle-models = { path = "../src/helpers/models", optional = true }
+betterlite-oracle-ocr = { path = "../src/helpers/ocr", optional = true }
+betterlite-oracle-openai = { path = "../src/helpers/openai", optional = true }
+betterlite-oracle-openapi = { path = "../src/helpers/openapi", optional = true }
+betterlite-oracle-paths = { path = "../src/helpers/paths", optional = true }
+betterlite-oracle-policy = { path = "../src/helpers/policy", optional = true }
+betterlite-oracle-prometheus = { path = "../src/helpers/prometheus", optional = true }
+betterlite-oracle-prompts = { path = "../src/helpers/prompts", optional = true }
+betterlite-oracle-provider = { path = "../src/helpers/provider", optional = true }
+betterlite-oracle-proxy = { path = "../src/helpers/proxy", optional = true }
+betterlite-oracle-pyhost = { path = "../src/helpers/pyhost", optional = true }
+betterlite-oracle-rate-limit = { path = "../src/helpers/rate_limit", optional = true }
+betterlite-oracle-redact = { path = "../src/helpers/redact", optional = true }
+betterlite-oracle-redis = { path = "../src/helpers/redis", optional = true }
+betterlite-oracle-reporting = { path = "../src/helpers/reporting", optional = true }
+betterlite-oracle-roi = { path = "../src/helpers/roi", optional = true }
+betterlite-oracle-runner = { path = "../runner" }
+betterlite-oracle-sdk = { path = "../src/helpers/sdk", optional = true }
+betterlite-oracle-secret-store = { path = "../src/helpers/secret_managers", optional = true }
+betterlite-oracle-secrets = { path = "../src/helpers/secrets", optional = true }
+betterlite-oracle-server = { path = "../src/helpers/server", optional = true }
+betterlite-oracle-streaming = { path = "../src/helpers/streaming", optional = true }
+betterlite-oracle-tokenizer = { path = "../src/helpers/tokenizer", optional = true }
+betterlite-oracle-vertex = { path = "../src/helpers/vertex", optional = true }
+betterlite-oracle-websearch = { path = "../src/helpers/websearch", optional = true }
+
+[features]
+# every group, for the oracle crate; a check passes only the group crates its cases call
+all = [
+  "betterlite-oracle-a2a",
+  "betterlite-oracle-anthropic",
+  "betterlite-oracle-auth",
+  "betterlite-oracle-azure",
+  "betterlite-oracle-bedrock",
+  "betterlite-oracle-cache",
+  "betterlite-oracle-cli",
+  "betterlite-oracle-config",
+  "betterlite-oracle-context",
+  "betterlite-oracle-core-ops",
+  "betterlite-oracle-cost",
+  "betterlite-oracle-db",
+  "betterlite-oracle-error",
+  "betterlite-oracle-foundry",
+  "betterlite-oracle-guardrails",
+  "betterlite-oracle-harness",
+  "betterlite-oracle-http",
+  "betterlite-oracle-lens",
+  "betterlite-oracle-logging",
+  "betterlite-oracle-mcp",
+  "betterlite-oracle-models",
+  "betterlite-oracle-ocr",
+  "betterlite-oracle-openai",
+  "betterlite-oracle-openapi",
+  "betterlite-oracle-paths",
+  "betterlite-oracle-policy",
+  "betterlite-oracle-prometheus",
+  "betterlite-oracle-prompts",
+  "betterlite-oracle-provider",
+  "betterlite-oracle-proxy",
+  "betterlite-oracle-pyhost",
+  "betterlite-oracle-rate-limit",
+  "betterlite-oracle-redact",
+  "betterlite-oracle-redis",
+  "betterlite-oracle-reporting",
+  "betterlite-oracle-roi",
+  "betterlite-oracle-sdk",
+  "betterlite-oracle-secret-store",
+  "betterlite-oracle-secrets",
+  "betterlite-oracle-server",
+  "betterlite-oracle-streaming",
+  "betterlite-oracle-tokenizer",
+  "betterlite-oracle-vertex",
+  "betterlite-oracle-websearch",
+]
+
+[lints]
+workspace = true
