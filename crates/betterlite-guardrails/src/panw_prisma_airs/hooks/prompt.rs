@@ -23,18 +23,32 @@ pub fn extract_prompt_from_request(data: &Data) -> Result<String, HookDataError>
     }
 }
 
-// LiteLLM str()s any truthy list item; a prompt list holds strings, so anything else names its item.
+// A prompt list holds strings, token lists or string lists; LiteLLM joins every non-empty one, a list rendered as JSON text.
 fn join_prompt_items(items: &[GuardrailValue]) -> Result<String, HookDataError> {
     let mut parts = Vec::new();
     for (index, item) in items.iter().enumerate() {
         match item {
-            GuardrailValue::Text(text) if !text.is_empty() => parts.push(text.as_str()),
-            GuardrailValue::Text(_) | GuardrailValue::Null => {}
-            _ => {
+            GuardrailValue::Null => {}
+            GuardrailValue::Text(text) if text.is_empty() => {}
+            GuardrailValue::Array(list) if list.is_empty() => {}
+            GuardrailValue::Text(text) => parts.push(text.clone()),
+            GuardrailValue::Boolean(_) | GuardrailValue::Object(_) => {
                 return Err(HookDataError::NotText {
                     field: PROMPT,
                     index,
                 });
+            }
+            GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Array(_) => {
+                let rendered =
+                    serde_json::to_string(item).map_err(|source| HookDataError::Item {
+                        field: PROMPT,
+                        index,
+                        source,
+                    })?;
+                parts.push(rendered);
             }
         }
     }
