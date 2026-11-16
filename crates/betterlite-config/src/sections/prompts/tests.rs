@@ -183,6 +183,86 @@ fn an_empty_variable_becomes_null() {
     assert_eq!(settings.prompts[0].get("api_key"), Some(&Json::Null));
 }
 
+#[rstest]
+#[case::true_value("true", Json::Bool(true))]
+#[case::false_value("false", Json::Bool(false))]
+#[case::empty_value("", Json::Null)]
+fn a_flag_reference_in_litellm_params_reads_as_a_bool(#[case] value: &str, #[case] expected: Json) {
+    let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      prompt_integration: dotprompt\n      ignore_prompt_manager_model: os.environ/IGNORE_MODEL\n      ignore_prompt_manager_optional_params: os.environ/IGNORE_PARAMS\n";
+    let settings = settings_with(
+        source,
+        &[("IGNORE_MODEL", value), ("IGNORE_PARAMS", "false")],
+    );
+    let Some(Json::Object(params)) = settings.prompts[0].get("litellm_params") else {
+        panic!("litellm_params is a mapping");
+    };
+    assert_eq!(params.get("ignore_prompt_manager_model"), Some(&expected));
+    assert_eq!(
+        params.get("ignore_prompt_manager_optional_params"),
+        Some(&Json::Bool(false))
+    );
+}
+
+#[test]
+fn a_missing_flag_variable_becomes_null() {
+    let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      ignore_prompt_manager_model: os.environ/ABSENT\n";
+    let settings = settings_with(source, &[]);
+    let Some(Json::Object(params)) = settings.prompts[0].get("litellm_params") else {
+        panic!("litellm_params is a mapping");
+    };
+    assert_eq!(params.get("ignore_prompt_manager_model"), Some(&Json::Null));
+}
+
+#[test]
+fn a_flag_variable_that_is_not_a_bool_is_a_load_error_naming_it() {
+    let source = "prompts:\n  - prompt_id: greeting\n    litellm_params:\n      ignore_prompt_manager_optional_params: os.environ/IGNORE_PARAMS\n";
+    let error = loaded_with(source, &[("IGNORE_PARAMS", "maybe")]).expect_err("maybe is no bool");
+    assert!(matches!(&error, ConfigError::Environment { .. }));
+    assert!(error.to_string().contains("IGNORE_PARAMS"), "{error}");
+    assert!(!error.to_string().contains("maybe"), "{error}");
+}
+
+#[rstest]
+#[case::two("2", Json::Number(2.into()))]
+#[case::negative("-3", Json::Number((-3).into()))]
+#[case::empty("", Json::Null)]
+fn a_version_reference_reads_as_a_number(#[case] value: &str, #[case] expected: Json) {
+    let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/PROMPT_VERSION\n";
+    let settings = settings_with(source, &[("PROMPT_VERSION", value)]);
+    assert_eq!(settings.prompts[0].get("version"), Some(&expected));
+}
+
+#[test]
+fn a_missing_version_variable_becomes_null() {
+    let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/ABSENT\n";
+    let settings = settings_with(source, &[]);
+    assert_eq!(settings.prompts[0].get("version"), Some(&Json::Null));
+}
+
+#[test]
+fn a_version_variable_that_is_not_a_number_is_a_load_error_naming_it() {
+    let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/PROMPT_VERSION\n";
+    let error =
+        loaded_with(source, &[("PROMPT_VERSION", "latest")]).expect_err("latest is no number");
+    assert!(matches!(&error, ConfigError::Environment { .. }));
+    assert!(error.to_string().contains("PROMPT_VERSION"), "{error}");
+    assert!(!error.to_string().contains("latest"), "{error}");
+}
+
+#[test]
+fn a_flag_key_outside_litellm_params_keeps_its_text() {
+    let source = "prompts:\n  - prompt_id: greeting\n    ignore_prompt_manager_model: os.environ/IGNORE_MODEL\n    litellm_params:\n      version: os.environ/PROMPT_VERSION\n";
+    let settings = settings_with(source, &[("IGNORE_MODEL", "true"), ("PROMPT_VERSION", "2")]);
+    assert_eq!(
+        settings.prompts[0].get("ignore_prompt_manager_model"),
+        Some(&Json::Text("true".to_owned()))
+    );
+    let Some(Json::Object(params)) = settings.prompts[0].get("litellm_params") else {
+        panic!("litellm_params is a mapping");
+    };
+    assert_eq!(params.get("version"), Some(&Json::Text("2".to_owned())));
+}
+
 #[test]
 fn a_string_that_only_contains_the_prefix_later_is_left_as_written() {
     let source = "prompts:\n  - prompt_id: greeting\n    api_base: https://example.test/os.environ/PROMPT_BASE\n";

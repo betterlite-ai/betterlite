@@ -2,7 +2,7 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde::Deserialize;
 
-use self::environment::{ENTRY_DEPTH, resolve_mapping};
+use self::environment::resolve_entry;
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::sections::Section;
 
@@ -48,7 +48,7 @@ impl Section for Raw {
                     value: false,
                 });
             };
-            configured.push(resolve_mapping(fields, ENTRY_DEPTH, lookup));
+            configured.push(resolve_entry(fields, lookup)?);
         }
         Ok(Settings {
             prompts: configured,

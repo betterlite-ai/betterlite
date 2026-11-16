@@ -1,9 +1,11 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use betterlite_config::loader::ConfigLoader;
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::PromptManagementClient;
 use indexmap::IndexMap;
@@ -147,6 +149,37 @@ fn prompt_info_without_a_prompt_type_gets_the_config_default() {
     assert_eq!(registered.len(), 1);
     assert_eq!(registered[0].prompt_info.prompt_type, "config");
     assert_eq!(registered[0].prompt_info.environment, "staging");
+}
+
+#[test]
+fn an_entry_with_typed_environment_references_registers() {
+    let source = "prompts:\n  - prompt_id: greeting\n    version: os.environ/PROMPT_VERSION\n    litellm_params:\n      prompt_integration: dotprompt\n      ignore_prompt_manager_model: os.environ/IGNORE_MODEL\n      ignore_prompt_manager_optional_params: os.environ/IGNORE_PARAMS\n";
+    let lookup = BTreeMap::from([
+        ("PROMPT_VERSION".to_owned(), "2".to_owned()),
+        ("IGNORE_MODEL".to_owned(), "true".to_owned()),
+        ("IGNORE_PARAMS".to_owned(), "false".to_owned()),
+    ]);
+    let config = ConfigLoader { lookup }
+        .load(source)
+        .expect("the config loads");
+    let mut registry = InMemoryPromptRegistry::default();
+    let mut callbacks = RecordingCallbacks::default();
+    let registered = init_prompts(
+        &mut registry,
+        &config.sections.prompts.prompts,
+        None,
+        &mut callbacks,
+    )
+    .expect("the prompt registers");
+    assert_eq!(registered.len(), 1);
+    assert_eq!(registered[0].version, Some(2));
+    assert!(registered[0].litellm_params.ignore_model);
+    assert!(!registered[0].litellm_params.ignore_optional_params);
+    assert!(
+        registry
+            .in_memory_prompts
+            .contains_key("greeting::development")
+    );
 }
 
 #[test]
