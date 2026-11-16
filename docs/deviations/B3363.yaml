@@ -1,0 +1,27 @@
+task: B3363
+deviations:
+  - what: The handler does not pass timeout to the HTTP send methods. The selected client keeps its own deadline.
+    why: LiteLLM's handle accepts timeout and never forwards it to httpx, so passing it would promise behavior the source does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L332-L410
+  - what: When the query is empty the request carries no params, so a query string already in api_base stays on the URL.
+    why: An empty dict passed as params to httpx strips the URL's own query string and breaks Azure container URLs with api-version, so LiteLLM passes None and betterlite sends no params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L383-L387
+  - what: A 2xx JSON body with an error field that is not an object with a string message raises with the body's JSON text as the message.
+    why: LiteLLM calls .get on the error value and fails with an AttributeError when it is not a dict, which is a crash on a provider answer and not an error with a status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L186-L191
+  - what: A response body that is not UTF-8 is named by its size in the error message, where LiteLLM reads response.text with replacement characters.
+    why: clippy.toml refuses lossy decoding across betterlite, and only the wording of an error message changes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L142-L153
+  - what: The error status is raised through the provider config's get_error_class, where LiteLLM's _transform_response builds a BaseLLMException directly.
+    why: The task asks for the provider's error class. Every config in betterlite returns the same BaseLlmException, so the status, message and headers are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L156-L163
+kept_bugs:
+  - what: Only 4xx and 5xx statuses count as errors. A 1xx or 3xx answer goes on to JSON parsing and fails there with a decode error instead of a status error.
+    why: httpx.codes.is_error is what LiteLLM checks, and a setup that works today never sees these statuses reach the handler.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L173-L178
+  - what: The multipart upload removes only the headers spelled content-type and Content-Type. Any other casing of the name stays in the headers.
+    why: A caller who sends another casing gets that header on the wire today, and removing it would change what those requests send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L217-L220
+  - what: Values in extra_query replace a declared query value of the same name and add names the endpoint does not declare.
+    why: LiteLLM updates the query dict with extra_query after building it, and callers rely on the overlay to pass provider-specific params.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/container_handler.py#L371-L374
