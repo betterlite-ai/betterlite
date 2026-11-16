@@ -1,6 +1,6 @@
 use axum::Json;
 use axum::http::StatusCode;
-use axum::response::{IntoResponse as _, Response};
+use axum::response::{IntoResponse, Response};
 use serde::Serialize;
 use serde_json::{Map, Value};
 

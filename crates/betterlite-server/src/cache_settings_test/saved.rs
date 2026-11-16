@@ -53,10 +53,10 @@ pub(crate) async fn saved_settings(
     repository: Option<&dyn SavedCacheConfig>,
     cipher: &DbCipher,
 ) -> Map<String, Value> {
-    let Some(repository) = repository else {
+    let Some(source) = repository else {
         return Map::new();
     };
-    let Ok(Some(stored)) = repository.cache_settings().await else {
+    let Ok(Some(stored)) = source.cache_settings().await else {
         return Map::new();
     };
     let Ok(mut settings) = parse_stored_settings(&stored) else {

@@ -413,8 +413,11 @@ fn changed_body(changed: ChangedTarget, redis: &FakeRedis) -> String {
 async fn route_never_sends_the_saved_password_to_another_target(#[case] changed: ChangedTarget) {
     let redis = FakeRedis::start().await;
     let other_port = support::closed_port().await;
-    let saved = saved_row_for(changed, redis.port(), other_port);
-    let (saved_row, repository) = support::fake_saved(SavedReply::Stored(saved));
+    let (saved_row, repository) = support::fake_saved(SavedReply::Stored(saved_row_for(
+        changed,
+        redis.port(),
+        other_port,
+    )));
     let body = changed_body(changed, &redis);
     let (status, text) =
         support::post(support::state(repository), Some(support::admin()), &body).await;
@@ -519,6 +522,24 @@ async fn route_logs_the_settings_after_url_precedence() {
     assert!(!logged.contains("unused.example"), "{logged}");
     assert!(logged.contains(support::REDACTED), "{logged}");
     assert!(!logged.contains(support::TYPED_SECRET), "{logged}");
+}
+
+// The merged map holds the decrypted saved secret, so the redaction covers a value no caller typed.
+#[tokio::test]
+async fn route_logs_the_saved_secret_redacted() {
+    let (records, _captured) = capture_logs();
+    let redis = FakeRedis::start().await;
+    let (_, repository) = support::fake_saved(SavedReply::Stored(saved_target(&redis)));
+    let body = support::request(redis_target(&redis));
+    let (_, text) = support::post(support::state(repository), Some(support::admin()), &body).await;
+    assert_eq!(text, SUCCESS_BODY);
+    assert!(
+        !redis.auth_passwords().is_empty(),
+        "the saved password reached the redis"
+    );
+    let logged = captured(&records);
+    assert!(logged.contains(support::REDACTED), "{logged}");
+    assert!(!logged.contains(support::SAVED_SECRET), "{logged}");
 }
 
 #[derive(Clone)]

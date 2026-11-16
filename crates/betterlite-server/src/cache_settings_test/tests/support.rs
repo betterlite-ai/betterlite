@@ -75,7 +75,7 @@ pub(crate) fn sealed(text: &str) -> String {
         .encrypt_value(StoredValue::<()>::Text(SecretString::from(text)), None)
         .expect("the test value seals");
     match sealed {
-        StoredValue::Text(value) => value.expose_secret().clone(),
+        StoredValue::Text(value) => value.expose_secret().to_owned(),
         StoredValue::Other(()) => panic!("a string seals as text"),
     }
 }
