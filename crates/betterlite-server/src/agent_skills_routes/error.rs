@@ -49,7 +49,12 @@ impl IntoResponse for AgentSkillsError {
                 }),
             )
                 .into_response(),
-            internal => {
+            internal @ (Self::List(_)
+            | Self::Read(_)
+            | Self::Timestamp(_)
+            | Self::MissingBuild
+            | Self::Build(_)
+            | Self::Header(_)) => {
                 // Starlette answers an unhandled exception with a plain 500 body
                 tracing::warn!(error = %internal, "agent skills route failed");
                 (StatusCode::INTERNAL_SERVER_ERROR, "Internal Server Error").into_response()

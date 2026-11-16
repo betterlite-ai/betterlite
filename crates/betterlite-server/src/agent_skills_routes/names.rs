@@ -9,15 +9,13 @@ const MAX_SKILL_DESCRIPTION_LENGTH: usize = 1_024;
 const FALLBACK_SKILL_NAME: &str = "skill";
 
 pub(crate) fn base_name(skill: &StoredSkill, archive: &SkillArchive) -> String {
-    [
-        archive.declared_name.as_deref(),
-        skill.display_title.as_deref(),
-        Some(skill.skill_id.as_str()),
-    ]
-    .into_iter()
-    .flatten()
-    .find_map(slugify)
-    .unwrap_or_else(|| FALLBACK_SKILL_NAME.to_owned())
+    if let Some(name) = archive.declared_name.as_deref().and_then(slugify) {
+        return name;
+    }
+    if let Some(name) = skill.display_title.as_deref().and_then(slugify) {
+        return name;
+    }
+    slugify(&skill.skill_id).unwrap_or_else(|| FALLBACK_SKILL_NAME.to_owned())
 }
 
 // LiteLLM's _deduplicated: a name's ordinal is its position inside its group, and a stable sort keeps the original order
@@ -56,9 +54,12 @@ fn slugify(raw: &str) -> Option<String> {
     for character in raw.to_lowercase().chars() {
         if character.is_ascii_lowercase() || character.is_ascii_digit() {
             slug.push(character);
-        } else if !slug.ends_with('-') {
-            slug.push('-');
+            continue;
         }
+        if slug.ends_with('-') {
+            continue;
+        }
+        slug.push('-');
     }
     let cut: String = slug
         .trim_matches('-')

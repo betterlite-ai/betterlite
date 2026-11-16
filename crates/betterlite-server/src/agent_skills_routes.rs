@@ -1,10 +1,10 @@
 mod archive;
 mod archive_cache;
-mod archives;
+pub mod archives;
 mod error;
 mod index;
 mod names;
-mod skills;
+pub mod skills;
 mod tests;
 
 use std::sync::Arc;
@@ -29,7 +29,8 @@ use skills::StoredSkills;
 const AGENT_SKILLS_INDEX_PATH: &str = "/.well-known/agent-skills/index.json";
 const SKILLS_INDEX_ALIAS_PATH: &str = "/.well-known/skills/index.json";
 const SKILL_ARCHIVE_PATH: &str = "/v1/skills/{skill_id}/archive";
-const MAX_CACHED_ARCHIVE_BYTES: usize = 524_288;
+// LiteLLM's MAX_CACHED_ARCHIVE_BYTES: 512 KiB
+const MAX_CACHED_ARCHIVE_BYTES: usize = 0x0008_0000;
 
 #[derive(Clone)]
 pub struct AgentSkillsState {
@@ -75,18 +76,18 @@ async fn archive_for(
         return Ok(None);
     };
     let key = cache_key(skill)?;
-    if let Some(key) = &key
-        && let Some(cached) = state.archive_cache.lookup(key)
+    if let Some(lookup_key) = &key
+        && let Some(cached) = state.archive_cache.lookup(lookup_key)
     {
         return Ok(Some(cached));
     }
     let Some(archive) = build_archive(&skill.skill_id, &state.archives, upload).await? else {
         return Ok(None);
     };
-    if let Some(key) = key
+    if let Some(store_key) = key
         && archive.content.len() <= MAX_CACHED_ARCHIVE_BYTES
     {
-        state.archive_cache.store(&key, &archive);
+        state.archive_cache.store(&store_key, &archive);
     }
     Ok(Some(archive))
 }

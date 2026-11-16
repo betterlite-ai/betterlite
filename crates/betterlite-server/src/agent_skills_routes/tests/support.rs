@@ -26,11 +26,10 @@ use tower::ServiceExt as _;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
+use crate::agent_skills_routes::archives::ArchiveBuilder;
+use crate::agent_skills_routes::skills::StoredSkills;
+use crate::agent_skills_routes::{AgentSkillsState, routes};
 use crate::custom_url::CustomUrls;
-
-use super::archives::ArchiveBuilder;
-use super::skills::StoredSkills;
-use super::{AgentSkillsState, routes};
 
 pub(super) const STAMP: &str = "2026-01-01T00:00:00.123456";
 pub(super) const LATER_STAMP: &str = "2026-02-02T00:00:00";
@@ -84,7 +83,10 @@ impl Reply {
         String::from_utf8(self.body.clone()).unwrap()
     }
 
-    pub(super) fn json<T: DeserializeOwned>(&self) -> T {
+    pub(super) fn json<T>(&self) -> T
+    where
+        T: DeserializeOwned,
+    {
         serde_json::from_slice(&self.body).unwrap()
     }
 }
@@ -179,6 +181,13 @@ pub(super) enum Call {
     },
 }
 
+#[derive(Clone, Copy)]
+enum RepositoryMode {
+    Listing,
+    Unavailable,
+    Failing,
+}
+
 struct RepositoryState {
     available: bool,
     failing: bool,
@@ -198,35 +207,36 @@ pub(super) struct ScriptedRepository {
 }
 
 impl ScriptedRepository {
-    fn listing(rows: Vec<SkillTable>) -> Self {
+    fn scripted(rows: Vec<SkillTable>, mode: RepositoryMode) -> Self {
         Self {
             state: Arc::new(Mutex::new(RepositoryState {
-                available: true,
-                failing: false,
+                available: !matches!(mode, RepositoryMode::Unavailable),
+                failing: matches!(mode, RepositoryMode::Failing),
                 rows,
                 calls: Vec::new(),
             })),
         }
     }
 
+    fn listing(rows: Vec<SkillTable>) -> Self {
+        Self::scripted(rows, RepositoryMode::Listing)
+    }
+
     pub(super) fn unavailable() -> Self {
-        let repository = Self::listing(Vec::new());
-        repository
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .available = false;
-        repository
+        Self::scripted(Vec::new(), RepositoryMode::Unavailable)
     }
 
     pub(super) fn failing_reads() -> Self {
-        let repository = Self::listing(Vec::new());
-        repository
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .failing = true;
-        repository
+        Self::scripted(Vec::new(), RepositoryMode::Failing)
+    }
+
+    fn record_read(&self, call: Call) -> Result<Vec<SkillTable>, TableError> {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.calls.push(call);
+        if state.failing {
+            return Err(scripted_failure());
+        }
+        Ok(state.rows.clone())
     }
 
     pub(super) fn replace_row(&self, replacement: SkillTable) {
@@ -260,13 +270,13 @@ impl ScriptedRepository {
     }
 
     pub(super) fn find_unique_calls(&self) -> Vec<String> {
-        self.calls()
-            .into_iter()
-            .filter_map(|call| match call {
-                Call::FindUnique(skill_id) => Some(skill_id),
-                Call::FindMany { .. } => None,
-            })
-            .collect()
+        let mut found = Vec::new();
+        for call in self.calls() {
+            if let Call::FindUnique(skill_id) = call {
+                found.push(skill_id);
+            }
+        }
+        found
     }
 }
 
@@ -296,22 +306,10 @@ impl SkillRepository for ScriptedRepository {
     ) -> impl Future<Output = Result<Option<SkillTable>, TableError>> + Send {
         let skill_id = skill_id.to_owned();
         async move {
-            let (found, failing) = {
-                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-                state.calls.push(Call::FindUnique(skill_id.clone()));
-                (
-                    state
-                        .rows
-                        .iter()
-                        .find(|existing| existing.skill_id == skill_id)
-                        .cloned(),
-                    state.failing,
-                )
-            };
-            if failing {
-                return Err(scripted_failure());
-            }
-            Ok(found)
+            let rows = self.record_read(Call::FindUnique(skill_id.clone()))?;
+            Ok(rows
+                .into_iter()
+                .find(|existing| existing.skill_id == skill_id))
         }
     }
 
@@ -320,17 +318,7 @@ impl SkillRepository for ScriptedRepository {
         page: SkillPage,
         created_by: Option<Vec<String>>,
     ) -> impl Future<Output = Result<Vec<SkillTable>, TableError>> + Send {
-        async move {
-            let (found, failing) = {
-                let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-                state.calls.push(Call::FindMany { page, created_by });
-                (state.rows.clone(), state.failing)
-            };
-            if failing {
-                return Err(scripted_failure());
-            }
-            Ok(found)
-        }
+        async move { self.record_read(Call::FindMany { page, created_by }) }
     }
 
     fn delete(&self, _skill_id: &str) -> impl Future<Output = Result<(), TableError>> + Send {

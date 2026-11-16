@@ -1,6 +1,7 @@
 use axum::Json;
 use axum::extract::{Request, State};
 use axum::http::header;
+use axum::http::uri::Authority;
 use betterlite_core::api::stored_skill_reads::stored_skill::StoredSkill;
 use betterlite_http::skill_archive::SkillArchive;
 use serde::Serialize;
@@ -16,7 +17,7 @@ const AGENT_SKILLS_DISCOVERY_SCHEMA: &str =
 const ARCHIVE_ENTRY_TYPE: &str = "archive";
 
 #[derive(Debug, Serialize)]
-struct AgentSkillsIndex {
+pub(super) struct AgentSkillsIndex {
     #[serde(rename = "$schema")]
     discovery_schema: &'static str,
     skills: Vec<AgentSkillsIndexEntry>,
@@ -102,7 +103,7 @@ fn request_base_url(request: &Request, root_path: &str) -> String {
     let scheme = uri.scheme_str().unwrap_or("http");
     let host = uri
         .authority()
-        .map(|authority| authority.as_str())
+        .map(Authority::as_str)
         .or_else(|| {
             request
                 .headers()

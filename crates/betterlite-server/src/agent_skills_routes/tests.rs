@@ -14,7 +14,7 @@ use crate::custom_url::CustomUrls;
 use crate::middleware::request_root_paths::RequestRootPath;
 
 use super::archives::ZipArchiveBuilder;
-use super::{AGENT_SKILLS_INDEX_PATH, SKILLS_INDEX_ALIAS_PATH};
+use super::{AGENT_SKILLS_INDEX_PATH, MAX_CACHED_ARCHIVE_BYTES, SKILLS_INDEX_ALIAS_PATH};
 
 use self::support::{
     BOGUS_KEY, CLOCK_START, DetailWire, Harness, IndexWire, LATER_STAMP, REAL_MANIFEST, STAMP,
@@ -262,7 +262,7 @@ async fn index_url_uses_the_request_authority() {
 #[case::separator_runs("a///b  c", "a-b-c")]
 #[case::edges("--Hello--", "hello")]
 #[case::digits("V2 Beta", "v2-beta")]
-#[case::non_ascii("café au lait", "caf-au-lait")]
+#[case::non_ascii("Ünïcode", "n-code")]
 #[tokio::test]
 async fn name_slugifies_the_declared_name(#[case] declared: &str, #[case] expected: &str) {
     let harness = Harness::new(vec![row("skill-1", Some(b"upload-1"), Some(STAMP))]);
@@ -591,7 +591,7 @@ async fn cache_keeps_an_archive_at_the_size_limit() {
     let harness = Harness::new(vec![row("skill-1", Some(b"upload-1"), Some(STAMP))]);
     harness
         .archives
-        .answering(b"upload-1", sized_archive(524_288));
+        .answering(b"upload-1", sized_archive(MAX_CACHED_ARCHIVE_BYTES));
     let router = harness.router();
     get(&router, &archive_path("skill-1")).await;
     get(&router, &archive_path("skill-1")).await;
@@ -603,7 +603,7 @@ async fn cache_rebuilds_an_archive_over_the_size_limit() {
     let harness = Harness::new(vec![row("skill-1", Some(b"upload-1"), Some(STAMP))]);
     harness
         .archives
-        .answering(b"upload-1", sized_archive(524_289));
+        .answering(b"upload-1", sized_archive(MAX_CACHED_ARCHIVE_BYTES + 1));
     let router = harness.router();
     get(&router, &archive_path("skill-1")).await;
     get(&router, &archive_path("skill-1")).await;
