@@ -5,7 +5,6 @@ import httpx
 import litellm
 from litellm.litellm_core_utils.litellm_logging import Logging
 from litellm.types.utils import LlmProviders
-from litellm.types.vector_stores import VectorStoreSearchResponse
 from litellm.utils import ProviderConfigManager
 from pydantic import JsonValue, TypeAdapter
 
@@ -42,27 +41,28 @@ class SearchReply(TypedDict, total=False):
 
 
 class VertexConfig(Protocol):
-    def get_complete_url(self, api_base: str | None, litellm_params: dict[str, JsonValue]) -> str: ...
+    def get_complete_url(
+        self, api_base: str | None, litellm_params: dict[str, JsonValue]
+    ) -> str: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_request(  # noqa: PLR0913, PLR0917  # https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vector_stores/search_api/transformation.py#L394-L430
         self,
         vector_store_id: str,
         query: str | list[str],
-        # ast-grep-ignore: no-long-names
         vector_store_search_optional_params: SearchOptions,
         api_base: str,
         litellm_logging_obj: Logging,
         litellm_params: dict[str, JsonValue],
         extra_body: dict[str, JsonValue] | None = None,
-    ) -> tuple[str, dict[str, object]]: ...  # ast-grep-ignore: no-loose-types
+    ) -> tuple[str, dict[str, object]]: ...
 
-    # ast-grep-ignore: no-long-names
     def transform_search_vector_store_response(
         self, response: httpx.Response, litellm_logging_obj: Logging
     ) -> SearchReply: ...
 
-    def calculate_vector_store_cost(self, response: VectorStoreSearchResponse) -> tuple[float, float]: ...
+    def calculate_vector_store_cost(
+        self, response: SearchReply
+    ) -> tuple[float, float]: ...
 
 
 class Reply(TypedDict):
@@ -169,7 +169,7 @@ def results_value(reply: SearchReply) -> JsonValue:
 
 
 def cost_outcome() -> JsonValue:
-    input_cost, output_cost = config().calculate_vector_store_cost(VectorStoreSearchResponse())
+    input_cost, output_cost = config().calculate_vector_store_cost(SearchReply())
     return {"input": f"{input_cost:.6f}", "output": f"{output_cost:.6f}"}
 
 

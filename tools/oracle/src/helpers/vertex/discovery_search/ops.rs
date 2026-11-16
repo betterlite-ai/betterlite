@@ -13,8 +13,9 @@ use betterlite_vertex::vertex_discovery_search::records::payload::{
     Reply, transform_search_response,
 };
 use betterlite_vertex::vertex_discovery_search::records::search::{
-    SearchQuery, SearchRequest, transform_search_request,
+    SearchRequest, transform_search_request,
 };
+use betterlite_vertex::vertex_rag_store::records::search::SearchQuery;
 use rust_decimal::Decimal;
 use rust_decimal::RoundingStrategy;
 use serde::Deserialize;
@@ -100,7 +101,8 @@ fn target_outcome(call: &TargetCall) -> Result<Value, Box<HelperError>> {
             ai_project: text(&call.litellm_params, "vertex_ai_project"),
             location: text(&call.litellm_params, "vertex_location"),
             ai_location: text(&call.litellm_params, "vertex_ai_location"),
-            ..VertexParams::default()
+            credentials: None,
+            ai_credentials: None,
         },
         &VertexSettings::default(),
         &options,
