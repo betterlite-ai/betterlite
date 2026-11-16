@@ -1,0 +1,12 @@
+task: B1538
+deviations:
+  - what: "A retrieved task's progress rounds half-even on the exact decimal share, where LiteLLM rounds the binary float: 0.545 gives 54 here and 55 there, 0.575 gives 58 here and 57 there. The rounding lives in the shared B1537 helper this task's retrieval calls."
+    why: "The task pins Decimal for the shared progress rounding, so the tie rule applies to the decimal share rather than to the float's representation error; docs/deviations/B1537.yaml records the same deviation for creation."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L103-L104
+  - what: "The artifact download stops at ApiLimits.max_json_bytes (16 MiB) and reports the limit error, where LiteLLM reads the whole response body into memory without a bound."
+    why: "The task requires the bounded read through B1087 so one provider artifact cannot exhaust proxy memory; a video larger than the limit is refused rather than buffered."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L468-L471
+kept_bugs:
+  - what: "The cancel reply always reports status cancelled, keeps the provider's raw id and drops usage, even when the upstream task body still carries RUNNING or another status."
+    why: "LiteLLM's delete endpoint answers with a cancelled video object, and an OpenAI-style client that deletes a task reads that status back as the result of the call."
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/videos/transformation.py#L576-L590
