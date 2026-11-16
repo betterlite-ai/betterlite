@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use deadpool_postgres::GenericClient;
 use tokio_postgres::Row;
 
-use crate::key_repository::decode::decode_token_record;
+use crate::key_repository::table::converted::ConvertedTokenTable;
 use crate::postgres_store::errors::{DbError, backend};
 use crate::postgres_store::repository::Repository;
 use crate::postgres_store::rows::KeyColumn;
@@ -17,7 +17,6 @@ use super::records::{LiteLLMToolTableRow, ToolDiscoveryUser, ToolInputPolicy};
 // LiteLLM leaves rows that share a created_at unordered; the id keeps the read deterministic
 const LIST_TOOLS_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_ToolTable\" AS entry WHERE $1::text IS NULL OR entry.\"input_policy\" = $1 ORDER BY entry.\"created_at\" DESC, entry.\"tool_id\"";
 const GET_TOOL_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_ToolTable\" AS entry WHERE entry.\"tool_name\" = $1";
-const TOKEN_OWNER_SQL: &str = "SELECT row_to_json(entry)::text FROM \"LiteLLM_VerificationToken\" AS entry WHERE entry.\"token\" = ANY($1::text[])";
 
 pub async fn list_tools<Client>(
     client: Option<&Client>,
@@ -144,23 +143,13 @@ where
         source: DbError::NoDbConnected,
     })?;
     let hashes: Vec<String> = key_hashes.iter().cloned().collect();
-    let rows = client
-        .query(TOKEN_OWNER_SQL, &[&hashes])
-        .await
-        .map_err(|source| ToolRecordsError::Tokens {
-            source: backend(source),
-        })?;
-    let mut tokens = Vec::with_capacity(rows.len());
-    for row in &rows {
-        let text: String = row.try_get(0).map_err(|source| ToolRecordsError::Tokens {
-            source: backend(source),
-        })?;
-        tokens.push(decode_token_record(text.as_bytes()).map_err(|source| {
-            ToolRecordsError::Tokens {
-                source: DbError::InvalidRecord { source },
-            }
-        })?);
+    let tokens = Repository {
+        client: Some(client),
+        table: ConvertedTokenTable,
     }
+    .find_many_in(KeyColumn::Id, hashes)
+    .await
+    .map_err(|source| ToolRecordsError::Tokens { source })?;
     let owner_ids: Vec<String> = tokens
         .iter()
         .filter_map(|token| token.user_id.clone())
