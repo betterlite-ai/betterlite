@@ -3,6 +3,8 @@ use std::collections::BTreeMap;
 use betterlite_error::facts::presence::Field;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::rerank_contracts::records::{RerankBilledUnits, RerankDocument};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_provider::api::rerank_contracts::{RerankCostError, RerankModelInfo};
 use serde::Deserialize;
 use serde_json::Value;
@@ -99,10 +101,10 @@ enum ContractError {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::WireRecords { params } => Ok(wire_records::run(params)),
             Input::OptionProjection { params } => projection::run(params),
@@ -110,7 +112,7 @@ impl crate::helpers::Helper for Op {
             Input::QueryCost { params } => query_cost::run(params),
         };
         output.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

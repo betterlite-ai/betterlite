@@ -23,7 +23,7 @@ use serde_json::{Map, Value, json};
 use super::fake_server::FakeServer;
 use super::helper_error;
 use super::input::{EntryInput, ReadCall, ReadOperation, WriteCall, WriteOperation};
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 struct NoopHooks;
 

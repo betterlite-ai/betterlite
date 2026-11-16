@@ -1,0 +1,17 @@
+kind: helper
+name: master-key-boot-migration-required
+call:
+  master_key_boot:
+    master_key: ""
+    environment_master_key: null
+    general_settings:
+      master_key: ""
+    config_file_path: /app/config.yaml
+    override_env_is_on: false
+    database:
+      salt_key_is_set: false
+      is_configured: true
+    stored_secret_count: 4
+env: {}
+compare:
+  ignore: []

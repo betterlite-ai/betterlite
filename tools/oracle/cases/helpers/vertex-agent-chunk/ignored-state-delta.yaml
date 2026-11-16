@@ -1,0 +1,14 @@
+kind: helper
+name: vertex-agent-chunk-ignored-state-delta
+call:
+  vertex_agent_chunk:
+    chunks:
+      - actions: {state_delta: {answer: buffered only}}
+      - actions: {state_delta: {answer: delta}}
+        content: {parts: [{text: streamed}]}
+      - actions: {state_delta: {answer: delta}}
+        finish_reason: STOP
+      - content: {parts: [{text: real}, {text: ignored}]}
+        actions: {state_delta: {k: delta}}
+env: {}
+compare: {ignore: []}

@@ -10,7 +10,8 @@ use betterlite_models::cost_usage::{CompletionDetails, CostUsage, PromptDetails}
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,10 +24,10 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Input) -> crate::helpers::HelperResult {
+    fn run(input: &Input) -> HelperResult {
         let transcription: Vec<Value> = input
             .transcription
             .iter()
@@ -44,7 +45,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn interactions_result(raw: &Value) -> crate::helpers::HelperResult {
+fn interactions_result(raw: &Value) -> HelperResult {
     if !raw.is_object() {
         return Ok(json!({"recognized": false, "usage": null}));
     }

@@ -8,7 +8,7 @@ use serde_json::json;
 
 use super::errors;
 use super::fixture::Session;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]

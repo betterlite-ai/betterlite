@@ -18,14 +18,16 @@ use serde_json::value::RawValue;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{
     MockScript, Outcome, ProviderCall, ScriptSpec, ScriptedReply, Wait,
 };
 
 use super::scripted::Reply;
+use tokio::runtime::{Builder, Runtime};
 
 const UNREACHABLE: &str = "http://127.0.0.1:1";
 const CALL_ID_KEY: &str = "litellm_call_id";
@@ -234,8 +236,8 @@ fn described(calls: &[ProviderCall]) -> Vec<Value> {
         .collect()
 }
 
-fn runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
+fn runtime() -> Result<Runtime, Box<HelperError>> {
+    Builder::new_current_thread()
         .enable_all()
         .build()
         .or_config_error()

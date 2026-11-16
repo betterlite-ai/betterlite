@@ -1,6 +1,6 @@
 use reqwest::blocking::Client;
 use std::fs::File;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -90,20 +90,6 @@ impl Gateway {
         }
         self.child.wait().map_err(OracleError::ProcessStop)?;
         Ok(())
-    }
-}
-
-pub(crate) fn sync_litellm(root: &Path) -> Result<(), OracleError> {
-    let project = root.join("tools/oracle/litellm");
-    let status = Command::new("uv")
-        .args(["sync", "--locked"])
-        .current_dir(project)
-        .status()
-        .map_err(OracleError::ProcessSync)?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(OracleError::ProcessSyncExited(status))
     }
 }
 

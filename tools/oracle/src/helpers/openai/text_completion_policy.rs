@@ -1,4 +1,3 @@
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_models::identity::provider_id::ProviderId;
 use betterlite_openai::base_helpers::provider_config;
 use betterlite_openai::text_completion_policy::reply::to_chat_model_response;
@@ -6,6 +5,8 @@ use betterlite_openai::text_completion_policy::{
     SUPPORTED_PARAMS, TextCompletionSettings, select_completion_provider,
     transform_completion_request,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -86,7 +87,7 @@ fn request(input: &RequestInput) -> Result<Value, Box<HelperError>> {
         .map_err(|error| invalid_input(error.to_string()))
 }
 
-fn invoke(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
+fn invoke_policy_call(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
     match input {
         TextCompletionCall::TextConfigValues(value) => config_values(value),
         TextCompletionCall::TextParameterAllowlist(_) => Ok(json!(SUPPORTED_PARAMS)),
@@ -111,10 +112,10 @@ fn invoke(input: &TextCompletionCall) -> Result<Value, Box<HelperError>> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = TextCompletionCall;
 
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_policy_call(input)
     }
 }

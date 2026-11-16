@@ -22,6 +22,8 @@ use serde_json::{Value, json};
 
 use self::base::BaseInput;
 use self::values::{destination_value, settings_value};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod base;
 mod tests;
@@ -97,10 +99,10 @@ impl Input {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let values = input.string_params();
         let hosts = input.hosts();
         let callback_name = Some(input.callback_name.as_deref().unwrap_or_default());
@@ -144,7 +146,7 @@ fn builder_result(
     function: Function,
     values: &BTreeMap<String, String>,
     hosts: &[AllowedDestination],
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     match function {
         Function::NewrelicDynamicHeaders => Ok(json!(newrelic_dynamic_headers(values))),
         Function::NewrelicDynamicEndpoint => Ok(json!(newrelic_dynamic_endpoint(values))),
@@ -168,7 +170,7 @@ fn preset_result(
     preset: &dyn Preset,
     input: &Input,
     allow_missing_credentials: bool,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let Some(base) = input.base.as_ref() else {
         return Err(invalid("the preset needs a base config"));
     };
@@ -193,8 +195,8 @@ fn destination_result(input: &Input, hosts: &[AllowedDestination]) -> Value {
     destination.as_ref().map_or(Value::Null, destination_value)
 }
 
-fn invalid(message: &str) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn invalid(message: &str) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

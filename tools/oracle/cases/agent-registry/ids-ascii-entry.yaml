@@ -1,0 +1,25 @@
+kind: helper
+name: ids-ascii-entry
+call:
+  b4776:
+    config:
+      - agent_name: alpha
+        agent_card_params:
+          model: gpt-4o
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8
+      - 00afdb1e315efd7d8d96382f3925c7d46dee40711cffe80449b0dcb21f731322
+    stable_ids:
+      - 00afdb1e315efd7d8d96382f3925c7d46dee40711cffe80449b0dcb21f731322
+      - 8ed3f6ad685b959ead7022518e1af76cd816f8e8ec7ccdda1ed4018e8f2223f8
+      - missing
+    by_id: []
+    by_name: []
+    deregister: []
+env: {}
+compare:
+  ignore: []

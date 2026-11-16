@@ -1,0 +1,13 @@
+task: B2415
+deviations:
+  - what: >-
+      A non-object response_override (false, a string, a list) is returned as the final response of
+      the request. LiteLLM's response API wrapper assumes any override is a response object, so the
+      public litellm.aresponses call cannot surface one and the case is proven by the Rust test
+      agentic_override_termination_and_safety instead of an oracle row.
+    why: >-
+      The plan type declares response_override as Any and the dispatcher treats only null as absent,
+      so a false override is a result rather than "no override". No working setup can depend on the
+      wrapper's crash, and betterlite handing the value back keeps the documented contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L5827-L5828
+kept_bugs: []

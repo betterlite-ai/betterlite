@@ -2,12 +2,13 @@ use betterlite_guardrails::pangea::error::PangeaGuardrailError;
 use betterlite_guardrails::pangea::hooks::{GuardrailResponse, RequestData};
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
-use crate::mock::MockProvider;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::mock::MockProvider;
 
 mod request;
 mod setup;
 
+use betterlite_oracle_helper_api::error::HelperError;
 use request::{Input, PostCall, PreCall, ResponseKind};
 use setup::{Common, fail, prepare, runtime};
 
@@ -15,7 +16,7 @@ const COMPLETION_CALL_TYPES: [&str; 2] = ["text_completion", "atext_completion"]
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -29,7 +30,7 @@ impl crate::helpers::Helper for Op {
 
 type Call = (Option<String>, Option<Value>);
 
-fn take_call(mock: MockProvider) -> Result<Call, Box<crate::helpers::HelperError>> {
+fn take_call(mock: MockProvider) -> Result<Call, Box<HelperError>> {
     let calls = mock
         .finish()
         .map_err(|error| fail("MockError", error.to_string(), None))?;

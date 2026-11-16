@@ -18,7 +18,11 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_config::loader::EnvironmentLookup;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
+use tokio::task;
 
 pub(crate) struct Op;
 
@@ -97,7 +101,7 @@ impl S3HttpClient for ScriptedS3 {
         }
         drop(script);
         Box::pin(async move {
-            tokio::task::yield_now().await;
+            task::yield_now().await;
             Ok(S3Response {
                 status: reply.status,
                 body: reply.body.into_bytes(),
@@ -119,7 +123,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .start_paused(true)
             .build()
@@ -163,7 +167,7 @@ fn build_logger(
     input: &Input,
     client: &Arc<ScriptedS3>,
 ) -> Result<Arc<S3BatchLogger>, Box<HelperError>> {
-    let environment: Arc<dyn betterlite_config::loader::EnvironmentLookup + Send + Sync> =
+    let environment: Arc<dyn EnvironmentLookup + Send + Sync> =
         Arc::new(BTreeMap::<String, String>::new());
     let parameters = resolve_s3_parameters::<()>(
         &Source::default(),

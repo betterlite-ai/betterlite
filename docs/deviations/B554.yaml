@@ -1,0 +1,12 @@
+task: B554
+deviations:
+  - what: A reply body that is valid JSON but not an object fails with a 500 before the post-call logging hook runs.
+    why: LiteLLM fails with an unhandled TypeError or AttributeError, on the usage check for null and in the response conversion for a list, which is a 500 as well; betterlite refuses the shape where it decodes the reply and calls the hook only for replies it can use.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L253-L267
+  - what: Token counters that do not fit i64, and sums of counters past i64::MAX, fail with a 500 field-type or overflow error instead of returning Python's arbitrary-size integer.
+    why: betterlite's usage counts and sums are i64 with checked arithmetic, and no provider reports counts near that size.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L95-L121
+kept_bugs:
+  - what: An explicit width or height in the request is passed to the endpoint without the 768 pixel minimum and total pixel checks that a size string gets.
+    why: A working LiteLLM setup that sends width and height directly relies on them reaching the endpoint untouched, so betterlite validates only what a size string derives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/azure_ai/image_generation/mai_transformation.py#L167-L168

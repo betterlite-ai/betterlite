@@ -60,7 +60,7 @@ description: >-
   B700 supplies typed sessions for catalog/default/constraint checks. B860 supplies independent
   databases through POSTGRES_TEST_URL, using testcontainers only when absent, and cleans up after
   failure. The rename guard case deliberately uses two schemas. Static SQL needs no HTTP adapter or
-  byte decoder. Runtime managed files/batches remain B087's open product decision. There are 264
+  byte decoder. Runtime managed files/batches stay with B087, and betterlite builds no managed service. There are 264
   nonblank, noncomment SQL lines and 431 physical lines to copy; allow 320 tests and 30 registration
   lines, 781 within 800. Keep Rust test/registration modules below 300 lines.
 scope:

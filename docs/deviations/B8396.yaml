@@ -1,0 +1,23 @@
+task: B8396
+deviations:
+  - what: >-
+      The Prisma engine process watcher (waitpid, pidfd, polling, zombie reaping and its re-arm after a
+      replacement) is not built.
+    why: betterlite has no query engine process; a dead connection shows up in the probe and B713 replaces the pool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5793-L6151
+  - what: >-
+      check_view_exists runs once per view setup attempt, where LiteLLM's backoff decorator above it retries the
+      call three times in ten seconds.
+    why: >-
+      the decorator sits above the referenced range L4642-L4729, and the view setup loop already retries the whole
+      attempt every five seconds until its fifteen-minute deadline, so a transient failure still recovers.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4635-L4641
+  - what: >-
+      The warning about missing spend views is one log line with the missing view names comma-joined in the order
+      LiteLLM declares them; LiteLLM wraps the message in ANSI colour escapes and newlines and prints a Python set
+      repr, whose order changes between processes.
+    why: >-
+      betterlite writes structured log lines without terminal escapes, and docs/compatibility.md keeps Python repr
+      text out of the contract.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4721
+kept_bugs: []

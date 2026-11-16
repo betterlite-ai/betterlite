@@ -11,6 +11,7 @@ use betterlite_bedrock::agentcore_request::url::complete_url;
 use betterlite_bedrock::bedrock_settings::ErrorHeaders;
 use betterlite_bedrock::model_routes::ParamMap;
 use betterlite_models::decisions::Json;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,10 +22,10 @@ mod tests;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Ok(run_scenario(input))
     }
 }

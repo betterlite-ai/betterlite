@@ -8,7 +8,7 @@ use indexmap::IndexSet;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod tests;
 
@@ -42,7 +42,7 @@ struct PlanCase {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

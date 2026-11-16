@@ -9,7 +9,8 @@ use crate::case::Compare;
 use crate::case::browser_flow::Step;
 use crate::compare;
 use crate::http::Response;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 #[derive(Clone, Copy)]
 pub(crate) struct StepsCompareInput<'input> {
@@ -60,16 +61,16 @@ pub(crate) fn compare_steps(
     steps: &[Step],
     first: &[Response],
     second: &[Response],
-) -> Result<(), compare::Difference> {
+) -> Result<(), Difference> {
     for (index, step) in steps.iter().enumerate() {
-        let missing = || compare::Difference {
+        let missing = || Difference {
             message: "a step's response was not captured".to_owned(),
             pointer: format!("/steps/{index}"),
         };
         let left = first.get(index).ok_or_else(missing)?;
         let right = second.get(index).ok_or_else(missing)?;
         compare::compare(left, right, &[], &[], &step.compare).map_err(|difference| {
-            compare::Difference {
+            Difference {
                 message: difference.message,
                 pointer: format!("/steps/{index}{}", difference.pointer),
             }
@@ -82,7 +83,7 @@ fn compare_transcript(
     steps: &[Step],
     first_requests: &[ProviderRequest],
     second_requests: &[ProviderRequest],
-) -> Result<(), compare::Difference> {
+) -> Result<(), Difference> {
     let mut upstream_headers = steps
         .iter()
         .flat_map(|step| step.compare.upstream_headers.iter().cloned())

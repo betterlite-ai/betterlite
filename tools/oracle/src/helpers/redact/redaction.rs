@@ -1,3 +1,5 @@
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 
 #[derive(serde::Deserialize)]
@@ -36,10 +38,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let minimum_custom_key_length = match input {
             Input::Text {
                 minimum_custom_key_length,
@@ -55,7 +57,7 @@ impl crate::helpers::Helper for Op {
             } => minimum_custom_key_length.0,
         };
         let redactor = Redactor::new(minimum_custom_key_length).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "PatternError".to_owned(),
                 status: None,
                 error_type: None,

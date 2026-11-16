@@ -110,7 +110,7 @@ deviations:
   - what: The tests folder is tests/, not test/.
     why: The gate's line budget skips folders named tests.
   - what: Nothing is published. The gate builds and lists the package only.
-    why: A marketplace release needs a publisher account and a token, which no check can hold; the architect publishes by hand when Max decides.
+    why: A marketplace release needs a publisher account and a token, which no check can hold; the architect publishes by hand at the first release, under the publisher betterlite-ai.
 out_of_scope:
   - "README content for betterlite users, and the oracle cases plus the contract test that tie the extension's requests to the gateway (B156)."
   - "Publishing to the VS Code marketplace or Open VSX, and the publisher account behind the name betterlite-ai."

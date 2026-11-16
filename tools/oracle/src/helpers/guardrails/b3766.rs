@@ -6,8 +6,8 @@ use serde_json::Value;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::guardrail_base::inputs::GuardrailApiInputs;
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
 
 mod ops;
 mod support;
@@ -81,7 +81,7 @@ fn default_input_type() -> String {
     "request".to_owned()
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

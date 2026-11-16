@@ -324,9 +324,8 @@ oracle_cases:
 deviations:
 - what: >-
     Managed multi-model uploads currently return 500/internal_server_error/param=null/code="500" with "Managed files
-    hook not found" and make no provider calls. Whether betterlite should implement managed files/batches remains
-    Max's decision; this task does not create an enterprise replacement.
-  why: The pinned open-source installation has no managed_files hook. Max's managed files and batches choice is still open; keep MIT behavior without adding a license check.
+    hook not found" and make no provider calls. betterlite builds no managed files.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L471-L480
 - what: >-
     The B1101 native multipart cap rejects a request over 16 MiB with 413/invalid_request_error/param=file/code=request_too_large,

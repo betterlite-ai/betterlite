@@ -1,0 +1,17 @@
+model_list:
+  - model_name: gpt-4o
+    litellm_params:
+      model: openai/gpt-4o
+general_settings:
+  master_key: sk-master
+litellm_settings:
+  callbacks: ["prometheus"]
+guardrails:
+  - guardrail_name: vigil
+    litellm_params:
+      guardrail: vigil_guard
+      mode: pre_call
+      api_base: https://vigil.example
+      api_key: sk-vigil
+      unreachable_fallback: fail_open
+      timeout: 2.5

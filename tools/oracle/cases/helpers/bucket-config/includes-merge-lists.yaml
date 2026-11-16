@@ -1,0 +1,23 @@
+kind: helper
+name: bucket-config-includes-merge-lists
+call:
+  b4143:
+    operation: load_config
+    object_key: config.yaml
+    objects:
+      config.yaml:
+        model_list:
+          - model_name: root
+        litellm_settings:
+          drop_params: true
+        include:
+          - child.yaml
+      child.yaml:
+        model_list:
+          - model_name: child
+        litellm_settings:
+          num_retries: 2
+        router_settings:
+          routing_strategy: simple-shuffle
+env: {}
+compare: {ignore: []}

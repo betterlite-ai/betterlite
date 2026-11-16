@@ -7,6 +7,7 @@ use betterlite_core::cost::special::policy::{SearchQuery, SpecialPricePolicy};
 use betterlite_logging::cost_breakdown::{CostBreakdownInput, CostBreakdownTarget};
 use betterlite_models::decisions::Json;
 use betterlite_models::token_cost::GenericCostResult;
+use betterlite_oracle_helper_api::error::HelperError;
 use betterlite_tokenizer::count::error::CountError;
 use rust_decimal::Decimal;
 
@@ -64,8 +65,8 @@ impl CostBreakdownTarget for Breakdown {
     }
 }
 
-pub(super) fn failure(class: &str, message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+pub(super) fn failure(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: class.to_owned(),
         status: None,
         error_type: None,

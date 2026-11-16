@@ -1,0 +1,30 @@
+task: B4143
+deviations:
+  - what: betterlite downloads a Python module from s3:// or gcs:// and writes it to the local path, but does not run it.
+    why: betterlite has no Python interpreter. LiteLLM's exec_module step is in get_instance_fn, which B8042 owns; a callback given as an s3:// or gcs:// module URL needs the architect's decision.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L68-L201
+  - what: The bucket readers and the module download take their transport, environment and GCS auth as injected ports. download_module is a method on BucketModuleDownloader, whose fields are those ports; its four parameters are source_type, bucket_name, object_key and local_file_path.
+    why: No production VertexAuth or GcsHttpClient exists under B3997, and the pooled client and proxy policy are built from config by tasks outside this one (B173, B8379). The ports are constructor fields, so each call still builds a fresh S3 reader with freshly resolved credentials or a fresh GCS client, which is LiteLLM's per-call behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L201-L297
+  - what: The S3 GET is built by betterlite and signed with its shared aws-sigv4 S3 signer (betterlite-logging) instead of by boto3; the URL is https://{bucket}.s3.{region}.{dns-suffix}/{key} with a percent-encoded key, and https://s3.{region}.{dns-suffix}/{bucket}/{key} when boto3 would not virtual-host the bucket name (a dot, an uppercase letter, a character other than a lowercase letter, digit or hyphen, a hyphen at either end, or a length outside 3 to 63). The suffix is amazonaws.com.cn for a cn-* region.
+    why: betterlite has no botocore. The signing settings match botocore's S3 signer (no path normalization, single percent encoding, headers-only signature), the host carries the partition's DNS suffix like botocore's endpoint rules, and the path-style choice is botocore's aws.isVirtualHostableS3Bucket check, which runs with subdomains disallowed so the wildcard certificate still matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L41-L82
+  - what: The S3 region is AWS_DEFAULT_REGION, else us-east-1; boto3 also reads the shared config file and the SDK profile region.
+    why: betterlite has no botocore config loader, and the region only picks the signing scope and the host for reading a bucket. A bucket in another region answers with a redirect error, which reads as a missing object.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L41-L60
+  - what: A failed module download is a typed Rust error, not a False result.
+    why: Rust rules forbid dropping the cause. The caller turns it into the same ImportError text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L68-L201
+  - what: download_module writes the module text as UTF-8 and skips the directory step when the local path has no parent folder; LiteLLM re-encodes with the locale encoding and os.makedirs("") raises, so a bare file name fails there.
+    why: betterlite's output is UTF-8 everywhere, and a bare file name is a path a caller can mean. Writing nothing on a fetch or decode failure, which the task requires, is unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L201-L247
+  - what: The module text is not logged; LiteLLM logs the whole downloaded file at debug level.
+    why: a callback module can hold credentials, so the same text in a log line is a leak.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L228-L230
+  - what: An include list holding a value that is not a string raises "'include' entry at index {index} must be a string path"; LiteLLM raises "'include' must be a list of file paths" for both a non-list value and a non-string entry.
+    why: the task reuses B4142's include-entry validation instead of porting the walker's own check, so the bucket loader shares the file loader's message; the class stays ValueError.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L73-L85
+  - what: Bucket config text is parsed with the workspace YAML parser (serde-saphyr, the one B4142 loads config files with), not PyYAML; a document with duplicate mapping keys is a YAML error and reads as a missing object, where yaml.safe_load keeps the last value.
+    why: betterlite keeps one YAML dialect for a config read from a file and from a bucket, and YAML 1.1 boolean forms and merge keys are accepted by both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L32-L38
+kept_bugs: []

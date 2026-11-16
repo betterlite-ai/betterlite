@@ -1,0 +1,10 @@
+kind: helper
+name: vertex-agent-chunk-empty-text-role
+call:
+  vertex_agent_chunk:
+    chunks:
+      - content: {parts: [{text: ""}]}
+      - content: {parts: [{text: ""}, {text: later}]}
+      - content: {parts: [{thought: true}, {text: ""}]}
+env: {}
+compare: {ignore: []}

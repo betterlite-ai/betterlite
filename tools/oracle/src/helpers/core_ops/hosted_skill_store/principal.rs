@@ -5,10 +5,9 @@ use betterlite_core::skills::store::NewSkill;
 use serde_json::json;
 
 use super::{NewSkillFields, PrincipalFields};
+use betterlite_oracle_helper_api::error::HelperError;
 
-pub(super) fn principal_of(
-    fields: &PrincipalFields,
-) -> Result<Principal, Box<crate::helpers::HelperError>> {
+pub(super) fn principal_of(fields: &PrincipalFields) -> Result<Principal, Box<HelperError>> {
     let mut teams = Vec::new();
     if let Some(id) = &fields.team_id {
         teams.push(json!({"id": id}));
@@ -31,7 +30,7 @@ pub(super) fn principal_of(
     serde_json::from_value(value).map_err(|error| super::invalid_input(error.to_string()))
 }
 
-fn decode_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box<crate::helpers::HelperError>> {
+fn decode_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box<HelperError>> {
     let Some(encoded) = text else {
         return Ok(None);
     };
@@ -41,9 +40,7 @@ fn decode_content(text: Option<&str>) -> Result<Option<Vec<u8>>, Box<crate::help
         .map_err(|error| super::invalid_input(error.to_string()))
 }
 
-pub(super) fn new_skill(
-    fields: &NewSkillFields,
-) -> Result<NewSkill, Box<crate::helpers::HelperError>> {
+pub(super) fn new_skill(fields: &NewSkillFields) -> Result<NewSkill, Box<HelperError>> {
     Ok(NewSkill {
         display_title: fields.display_title.clone(),
         description: fields.description.clone(),

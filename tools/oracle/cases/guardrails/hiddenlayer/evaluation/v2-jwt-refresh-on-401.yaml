@@ -1,0 +1,47 @@
+{
+  "kind": "helper",
+  "name": "v2-jwt-refresh-on-401",
+  "call": {
+    "b3776": {
+      "function": "apply",
+      "params": {
+        "guardrail": "hiddenlayer",
+        "mode": "pre_call",
+        "version": 2,
+        "api_id": "id",
+        "api_key": "key"
+      },
+      "guardrail_name": "hiddenlayer-eval",
+      "inputs": {
+        "texts": [
+          "hi"
+        ]
+      },
+      "request_data": {},
+      "input_type": "request",
+      "answers": [
+        {
+          "status": 401,
+          "headers": {},
+          "body": {}
+        },
+        {
+          "status": 200,
+          "headers": {},
+          "body": {
+            "messages": []
+          }
+        }
+      ],
+      "saas": true,
+      "tokens": [
+        "jwt-one",
+        "jwt-two"
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

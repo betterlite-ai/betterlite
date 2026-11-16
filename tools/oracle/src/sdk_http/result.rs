@@ -17,7 +17,29 @@ pub enum SdkResult {
     MessagesHeaderStream { value: HeaderStreamRun },
     MessagesStreamLogging { value: StreamLoggingRun },
     MessagesNativeStream { value: Vec<StepOutcome> },
+    ResponsesAgenticContinuation { value: AgenticContinuationRun },
     Failure(Failure),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticContinuationRun {
+    pub returned: Option<AgenticIdentity>,
+    pub error: Option<AgenticFailure>,
+}
+
+// the provider answer carries the whole response object, so only these two fields are read
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgenticIdentity {
+    pub created_at: i64,
+    pub status: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct AgenticFailure {
+    pub class: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

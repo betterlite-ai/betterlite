@@ -1,0 +1,32 @@
+kind: helper
+name: openai-video-edits-unused-prefetched-source
+call:
+  openai_video_edits:
+    calls:
+      - op: edit_request
+        prompt: extend it
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTk=
+        api_base: 'https://mock.example/v1'
+        fixture: null
+        extra_body: {duration: 4}
+        prefetched_source_data: {video: {id: prefetched}, url: 'https://prefetched.invalid/v.mp4'}
+      - op: edit_request
+        prompt: extend it
+        video_id: vid-9
+        api_base: 'https://mock.example/v1'
+        fixture:
+          kind: bytes
+          data_base64: bm90IHZpZGVv
+        extra_body: null
+        prefetched_source_data: {video: {id: prefetched}}
+      - op: edit_response
+        body: '{"id":"video_7","object":"video","status":"completed"}'
+        provider: openai
+        request_data: {prompt: extend it, video: {id: vid-9}}
+      - op: edit_response
+        body: '{"id":"video_7","object":"video","status":"completed"}'
+        provider: openai
+        request_data: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-mai-images-default-dimensions
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {width: 800, height: 5}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {width: 800}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {width: 1, height: 2}, optional_params: {width: 2000}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x1024, n: 3}, optional_params: {size: huge, n: 1}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: ""}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {width: 700, height: 900}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}

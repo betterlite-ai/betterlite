@@ -1,7 +1,7 @@
 id: B3271
 milestone: M5 api families
 title: Search tool database registry
-status: todo
+status: done
 depends_on: [B3270, B726, B872, B192]
 file: tasks/B3271-search-tool-registry.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/search_endpoints/__init__.py"
 parent: B091
 split_from: B091
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 1972

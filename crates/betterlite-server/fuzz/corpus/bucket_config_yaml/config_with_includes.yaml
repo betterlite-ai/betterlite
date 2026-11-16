@@ -1,0 +1,5 @@
+include:
+  - shared/models.yaml
+  - /team/router.yaml
+litellm_settings:
+  drop_params: true

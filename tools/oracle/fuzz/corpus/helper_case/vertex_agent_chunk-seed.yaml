@@ -1,0 +1,12 @@
+kind: helper
+name: vertex-agent-chunk-seed
+call:
+  vertex_agent_chunk:
+    chunks:
+      - content: {parts: [{text: seed}, {text: ignored}]}
+        finish_reason: STOP
+        usage_metadata: {prompt_token_count: 2, candidates_token_count: 1, total_token_count: 3}
+      - content: {parts: [{text: ""}]}
+      - actions: {state_delta: {answer: seed}}
+env: {}
+compare: {ignore: []}

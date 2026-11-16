@@ -1,0 +1,14 @@
+kind: helper
+name: foundry-mai-images-drop-unsupported-fields
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {quality: hd}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {quality: hd}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {response_format: b64_json, n: 1}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {quality: hd, width: 900}, optional_params: {user: u}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {quality: hd, width: 900}, optional_params: {quality: kept, user: u}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {width: 900, height: 700}, optional_params: {user: u}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {user: someone}, optional_params: {}, drop_params: false}
+env: {}
+compare: {ignore: []}

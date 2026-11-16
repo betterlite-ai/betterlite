@@ -1,0 +1,18 @@
+kind: helper
+name: vertex-gemini-images-empty-base-difference
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings:
+      - prompt: a red fox
+        non_default_params: {size: 1024x1792}
+        optional_params: {}
+    target:
+      api_base: ""
+      params_api_base: null
+      project: proj
+      location: us-central1
+      headers: {x-goog-user-project: billing}
+    response: null
+env: {}
+compare: {ignore: []}

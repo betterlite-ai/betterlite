@@ -13,7 +13,10 @@ pub(crate) struct Facts {
     pub(crate) numstat: Vec<NumStat>,
     pub(crate) added_rust_lines: Vec<String>,
     pub(crate) added_python_lines: Vec<String>,
+    pub(crate) added_helper_lines: Vec<String>,
 }
+
+const ORACLE_HELPERS: &str = "tools/oracle/helpers/*.py";
 
 pub(crate) struct Tree {
     pub(crate) head: String,
@@ -38,12 +41,7 @@ impl Facts {
     pub(crate) fn collect(root: &Path) -> Result<Self, GateError> {
         let base = resolve_base(root)?;
         let tree = Tree::read(root)?;
-        let untracked: Vec<String> =
-            git(root, &["ls-files", "-z", "--others", "--exclude-standard"])?
-                .split('\0')
-                .filter(|path| !path.is_empty())
-                .map(str::to_owned)
-                .collect();
+        let untracked = untracked_paths(root, &[])?;
         let mut changed: Vec<String> =
             git(root, &["diff", "--name-only", "--no-renames", "-z", &base])?
                 .split('\0')
@@ -66,9 +64,11 @@ impl Facts {
                 Some(NumStat { lines, path })
             })
             .collect();
+        let outside_helpers = format!(":(exclude){ORACLE_HELPERS}");
         Ok(Self {
-            added_rust_lines: added_lines(root, &base, &untracked, "rs")?,
-            added_python_lines: added_lines(root, &base, &untracked, "py")?,
+            added_rust_lines: added_lines(root, &base, &["*.rs"])?,
+            added_python_lines: added_lines(root, &base, &["*.py", &outside_helpers])?,
+            added_helper_lines: added_lines(root, &base, &[ORACLE_HELPERS])?,
             base,
             tree,
             changed,
@@ -78,42 +78,39 @@ impl Facts {
     }
 }
 
-fn added_lines(
-    root: &Path,
-    base: &str,
-    untracked: &[String],
-    extension: &str,
-) -> Result<Vec<String>, GateError> {
-    let pathspec = format!("*.{extension}");
-    let patch = git(
-        root,
-        &[
-            "diff",
-            "--unified=0",
-            "--no-color",
-            "--no-renames",
-            base,
-            "--",
-            &pathspec,
-        ],
-    )?;
-    let mut lines: Vec<String> = patch
+fn added_lines(root: &Path, base: &str, pathspecs: &[&str]) -> Result<Vec<String>, GateError> {
+    let mut arguments = vec![
+        "diff",
+        "--unified=0",
+        "--no-color",
+        "--no-renames",
+        base,
+        "--",
+    ];
+    arguments.extend_from_slice(pathspecs);
+    let mut lines: Vec<String> = git(root, &arguments)?
         .lines()
         .filter(|line| !line.starts_with("+++"))
         .filter_map(|line| line.strip_prefix('+'))
         .map(str::to_owned)
         .collect();
-    for path in untracked.iter().filter(|path| {
-        Path::new(path)
-            .extension()
-            .is_some_and(|found| found == extension)
-    }) {
+    for path in untracked_paths(root, pathspecs)? {
         let file = root.join(path);
         let text =
             fs::read_to_string(&file).map_err(|source| GateError::Read { path: file, source })?;
         lines.extend(text.lines().map(str::to_owned));
     }
     Ok(lines)
+}
+
+fn untracked_paths(root: &Path, pathspecs: &[&str]) -> Result<Vec<String>, GateError> {
+    let mut arguments = vec!["ls-files", "-z", "--others", "--exclude-standard", "--"];
+    arguments.extend_from_slice(pathspecs);
+    Ok(git(root, &arguments)?
+        .split('\0')
+        .filter(|path| !path.is_empty())
+        .map(str::to_owned)
+        .collect())
 }
 
 pub(crate) fn resolve_base(root: &Path) -> Result<String, GateError> {

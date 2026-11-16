@@ -1,0 +1,10 @@
+kind: helper
+name: stable-id-non-ascii
+call:
+  b3682:
+    function: stable_guardrail_id
+    guardrail_name: "garde-écran"
+    existing_ids: []
+env: {}
+compare:
+  ignore: []

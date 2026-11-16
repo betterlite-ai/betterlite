@@ -66,10 +66,20 @@ description: >-
 
 scope:
   paths:
+    - "crates/betterlite-db/src/policy_persistence*"
     - crates/betterlite-db/src/policy_persistence.rs
     - crates/betterlite-db/src/policy_persistence/**
     - crates/betterlite-db/Cargo.toml
     - Cargo.lock
+    - crates/betterlite-routes/src/wildcard.rs
+    - crates/betterlite-routes/src/wildcard/**
+    - tools/oracle/src/helpers/server/route_match.rs
+    - crates/betterlite-auth/src/route_match/templates.rs
+    - crates/betterlite-auth/src/route_match/classifier.rs
+    - crates/betterlite-auth/src/route_match/tests.rs
+    - crates/betterlite-auth/src/auth_route_patterns/public_routes.rs
+    - crates/betterlite-policy/src/scope.rs
+    - crates/betterlite-policy/src/scope/**
   lint_tables: false
 
 references:
@@ -236,5 +246,5 @@ pitfalls:
 
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2400
   max_new_expects: 0

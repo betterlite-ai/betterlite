@@ -10,7 +10,7 @@ use secrecy::SecretString;
 use serde_json::{Value, json};
 
 use super::{User, failure};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 struct Rows(Mutex<Vec<(String, String)>>);
 

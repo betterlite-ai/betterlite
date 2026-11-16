@@ -1,0 +1,31 @@
+[package]
+name = "betterlite-oracle-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+async-trait = "0.1.92"
+betterlite-config = { path = "../../../../../crates/betterlite-config" }
+betterlite-core = { path = "../../../../../crates/betterlite-core" }
+betterlite-http = { path = "../../../../../crates/betterlite-http" }
+betterlite-logging = { path = "../../../../../crates/betterlite-logging" }
+betterlite-models = { path = "../../../../../crates/betterlite-models" }
+betterlite-oracle-helper-api = { path = "../../../helper-api" }
+betterlite-redact = { path = "../../../../../crates/betterlite-redact" }
+betterlite-sdk = { path = "../../../../../crates/betterlite-sdk" }
+chrono.workspace = true
+indexmap = { version = "2.14.2", features = ["serde"] }
+secrecy = { version = "0.10.3", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
+thiserror = "2.0.17"
+tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
+url = "2.5.8"
+
+[lints]
+workspace = true

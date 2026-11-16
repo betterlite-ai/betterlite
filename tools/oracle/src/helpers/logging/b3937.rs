@@ -7,7 +7,8 @@ use betterlite_logging::datadog_llm_metrics::span_kind::span_kind;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use serde::Deserialize;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -39,10 +40,10 @@ pub(crate) struct ErrorInfoInput {
     payload: Box<StandardLoggingPayload>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::SpanKind(kind) => serde_json::to_value(span_kind(
                 kind.call_type.as_deref(),

@@ -1,0 +1,43 @@
+kind: sdk_http
+name: continuation-patch-failures
+env: {}
+call:
+  responses_agentic_continuation:
+    model: gpt-4o-mini
+    input: hello
+    params: {}
+    kwargs:
+      custom_llm_provider: openai
+      _agentic_loop_depth: 0
+      max_agentic_loops: 2
+      _agentic_loop_fingerprints: []
+    callbacks: []
+    dynamic:
+      - name: patchless-callback
+        gate:
+          run: true
+          tools:
+            tool_calls:
+              - {id: call-ws, name: web_search}
+        plan:
+          run_agentic_loop: true
+          request_patch:
+            model: gpt-4o-mini
+            optional_params:
+              temperature: 0.2
+      - name: overriding-callback
+        gate:
+          run: true
+        plan:
+          response_override:
+            created_at: 7
+            status: override
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_first, object: response, created_at: 1, status: completed, output: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

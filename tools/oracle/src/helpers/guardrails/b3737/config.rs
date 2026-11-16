@@ -9,7 +9,7 @@ use betterlite_guardrails::ibm_hooks::IbmGuardrail;
 use betterlite_guardrails::ibm_hooks::config::EventHook;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(crate) type Settings = BTreeMap<String, GuardrailValue>;
 

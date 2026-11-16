@@ -10,10 +10,14 @@ use betterlite_guardrails::cato::{
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::{HelperError, HelperResult};
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::{MockScript, redact};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::{MockScript, redact_credentials};
+use std::io::Error;
+use std::net::TcpListener;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -63,7 +67,7 @@ pub(crate) enum Input {
     Analyze(Box<Analyze>),
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
@@ -117,10 +121,10 @@ fn construct_answer(construct: &Construct) -> HelperResult {
 
 fn upstream(
     analyze: &Analyze,
-) -> Result<(Option<MockProvider>, std::net::TcpListener, String), Box<HelperError>> {
-    let io = |error: std::io::Error| fail("OSError", error.to_string());
+) -> Result<(Option<MockProvider>, TcpListener, String), Box<HelperError>> {
+    let io = |error: Error| fail("OSError", error.to_string());
     // with no answer the listener stays bound and silent, so the call fails instead of reaching Cato
-    let silent = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
+    let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let address = silent.local_addr().map_err(io)?;
     let mock = analyze
         .answer
@@ -136,9 +140,9 @@ fn upstream(
 }
 
 fn analyze_answer(analyze: &Analyze) -> HelperResult {
-    let io = |error: std::io::Error| fail("OSError", error.to_string());
+    let io = |error: Error| fail("OSError", error.to_string());
     let (mock, silent, base) = upstream(analyze)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(io)?;
@@ -178,7 +182,7 @@ fn headers_summary(headers: &BTreeMap<String, String>, guardrail: &CatoGuardrail
     // the mock stores credential headers as a hash, so the expected header goes through the same hash
     let bearer = format!("Bearer {}", guardrail.api_key.expose_secret());
     let mut expected = BTreeMap::from([("authorization".to_owned(), bearer)]);
-    redact(&mut expected);
+    redact_credentials(&mut expected);
     json!({
         "authorization_bearer_ok": headers.get("authorization") == expected.get("authorization"),
         "x-cato-litellm-hook": headers.get("x-cato-litellm-hook"),

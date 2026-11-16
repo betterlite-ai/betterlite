@@ -1,6 +1,9 @@
 #![cfg(test)]
 
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 use rstest::rstest;
+use std::path::Path;
 
 #[rstest]
 #[case::agentops_preset_defaults("agentops-preset-defaults.yaml")]
@@ -54,15 +57,15 @@ use rstest::rstest;
 #[case::destination_service_name_attribute("destination-service-name-attribute.yaml")]
 #[case::destination_signoz_not_capable("destination-signoz-not-capable.yaml")]
 fn helper_case_matches_litellm(#[case] name: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(ORACLE_DIR)
         .join("cases/helpers/otel-routing")
         .join(name);
-    let cases = crate::case::load_cases(&[path]).expect("the case loads");
-    let Some(crate::case::LoadedCase::Helper(case)) = cases.first() else {
+    let cases = load_helper_cases(&[path]).expect("the case loads");
+    let Some(case) = cases.first() else {
         panic!("expected a helper case");
     };
     assert!(matches!(
-        crate::helpers::run_case(case, false).expect("the case runs"),
-        crate::helpers::HelperRun::Match
+        run_case(&[crate::GROUP], case, false).expect("the case runs"),
+        HelperRun::Match
     ));
 }

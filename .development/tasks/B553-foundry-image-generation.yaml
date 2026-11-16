@@ -180,7 +180,7 @@ checks:
     why: New variant-specific valid HelperCase seeds are absent or do not parse/replay.
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/foundry_image_generation*")"
       && grep -lq 'foundry_image_generation' tools/oracle/fuzz/corpus/helper_case/foundry_image_generation* && cargo
-      nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_generation$/)'
+      nextest run --locked -p betterlite-oracle-foundry --no-tests=fail -E 'test(/::helper_seeds_select_foundry_image_generation$/)'
       && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
   - id: case-flux-non-v2-policy
     why: Non-Flux2 allowlist and mapping delegate B511 GPT image config with copied input maps; do not apply the

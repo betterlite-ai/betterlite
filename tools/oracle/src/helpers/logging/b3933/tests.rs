@@ -1,20 +1,21 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::Path;
+use std::{fs, str};
 
 use betterlite_logging::datadog_logging::settings::{DD_MAX_BATCH_SIZE, resolve_batch_size};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 use rstest::rstest;
 
 #[rstest]
 fn replays_the_datadog_logs_corpus() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/datadog_logs");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/datadog_logs");
     let mut seen = 0_usize;
     for entry in fs::read_dir(corpus).unwrap() {
         let path = entry.unwrap().path();
         let bytes = fs::read(&path).unwrap();
-        let Ok(text) = std::str::from_utf8(&bytes) else {
+        let Ok(text) = str::from_utf8(&bytes) else {
             continue;
         };
         seen = seen.saturating_add(1);

@@ -3,6 +3,8 @@ use betterlite_db::key_attribution::history::window::{
     HistoryWindow, is_spend_log_digest, spend_log_cache_key,
 };
 use betterlite_db::key_attribution::metadata::KeyMetadata;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use chrono::NaiveDateTime;
 
 pub(crate) struct Op;
@@ -28,10 +30,10 @@ struct Output {
     metadata: Vec<KeyMetadata>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = Output {
             digests: input
                 .keys
@@ -52,7 +54,7 @@ impl crate::helpers::Helper for Op {
             metadata: input.rows.iter().map(SpendLogDigestRow::metadata).collect(),
         };
         serde_json::to_value(output).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

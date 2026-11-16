@@ -4,8 +4,8 @@ use std::path::Path;
 
 use rstest::rstest;
 
-use crate::case::{LoadedCase, load_cases};
-use crate::helpers::{HelperRun, run_case};
+use betterlite_oracle_runner::case::load_helper_cases;
+use betterlite_oracle_runner::helpers::{HelperRun, ORACLE_DIR, run_case};
 
 #[rstest]
 #[case::config_empty_litellm_params("config-empty-litellm-params")]
@@ -35,11 +35,11 @@ use crate::helpers::{HelperRun, run_case};
 #[case::validate_session_32_chars("validate-session-32-chars")]
 #[case::validate_session_33_chars("validate-session-33-chars")]
 fn agentcore_transform_cases(#[case] name: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("cases/helpers/agentcore-transform/{name}.yaml"));
-    let cases = load_cases(&[path]).unwrap();
-    let LoadedCase::Helper(case) = &cases[0] else {
-        panic!("expected helper");
-    };
-    assert!(matches!(run_case(case, false).unwrap(), HelperRun::Match));
+    let path = Path::new(ORACLE_DIR).join(format!("cases/helpers/agentcore-transform/{name}.yaml"));
+    let cases = load_helper_cases(&[path]).unwrap();
+    let case = &cases[0];
+    assert!(matches!(
+        run_case(&[crate::GROUP], case, false).unwrap(),
+        HelperRun::Match
+    ));
 }

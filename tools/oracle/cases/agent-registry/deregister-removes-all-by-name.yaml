@@ -1,0 +1,28 @@
+kind: helper
+name: deregister-removes-all-by-name
+call:
+  b4776:
+    config: null
+    reload: true
+    reload_config: []
+    db_agents:
+      - agent_id: a1
+        agent_name: alpha
+        agent_card_params: {}
+      - agent_id: a2
+        agent_name: alpha
+        agent_card_params: {}
+      - agent_id: b1
+        agent_name: beta
+        agent_card_params: {}
+    public_groups: null
+    ids_for: []
+    stable_ids: []
+    by_id: []
+    by_name: []
+    deregister:
+      - alpha
+      - missing
+env: {}
+compare:
+  ignore: []

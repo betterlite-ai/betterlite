@@ -1,0 +1,48 @@
+kind: helper
+name: bedrock-messages-beta-beta-provider-filter
+call:
+  bedrock_messages_beta:
+    function: beta_headers
+    model_cost:
+      anthropic/claude-sonnet-4-5: {litellm_provider: anthropic}
+      anthropic/fixture-mid-system: {litellm_provider: anthropic, mode: chat, supports_mid_conversation_system: true}
+      bedrock/claude-sonnet-4-5: {litellm_provider: bedrock, supports_tool_search: false}
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    calls:
+      - model: claude-sonnet-4-5
+        subclass_provider: anthropic
+        messages: [{role: user, content: [{type: file, file: {file_id: file-abc}}]}]
+        mcp_servers: [{type: url, url: https://example.test/mcp}]
+        tools:
+          - {type: computer_20250124, name: computer}
+          - {name: geo, input_schema: {}, eager_input_streaming: true}
+        injected: true
+        safeguards: []
+        headers: {anthropic-beta: mcp-client-2025-04-04}
+        outgoing: {context_management: {edits: [{type: clear_thinking_20251015}]}}
+      - model: fixture-mid-system
+        subclass_provider: anthropic
+        messages:
+          - {role: user, content: hi}
+          - {role: assistant, content: x, output_config: {format: {type: json_schema}}}
+          - {role: system, content: [{type: tool_addition, tool: {type: tool_reference, name: geo}}]}
+        outgoing:
+          messages:
+            - {role: user, content: hi}
+            - {role: assistant, content: x, output_config: {format: {type: json_schema}}}
+            - {role: system, content: [{type: tool_addition, tool: {type: tool_reference, name: geo}}]}
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        safeguards: []
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        safeguards: null
+      - model: fixture-tool-search
+        subclass_provider: bedrock_mantle
+        tools: [{type: tool_search_tool_regex_20251119, name: tool_search}]
+        headers: {anthropic-beta: advanced-tool-use-2025-11-20}
+        outgoing:
+          messages: []
+          context_management: {edits: [{type: clear_thinking_20251015}, {type: compact_20260112}]}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

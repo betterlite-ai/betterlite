@@ -5,7 +5,7 @@ use betterlite_models::image_cost::ImageBilling;
 use betterlite_models::price_lookup::PriceRecord;
 use betterlite_models::tiered_pricing::Scalar;
 use betterlite_models::token_rates::ModelInfo;
-use betterlite_models::token_rates::deployment::deployment_pricing;
+use betterlite_models::token_rates::deployment::{DeploymentPricing, deployment_pricing};
 use rust_decimal::Decimal;
 
 use super::error::ImageDispatchError;
@@ -34,6 +34,19 @@ struct Resolved<'call> {
     image_count: i64,
 }
 
+// Each valid deployment price as an exact JSON number in the catalog-shaped record the provider calculators read.
+pub fn deployment_price_record(
+    pricing: &DeploymentPricing,
+) -> Result<PriceRecord, serde_json::Error> {
+    let text = serde_json::to_string(pricing)?;
+    let fields: BTreeMap<String, String> = serde_json::from_str(&text)?;
+    let mut record = PriceRecord::new();
+    for (key, price) in fields {
+        record.insert(key, Scalar::Number(price.parse()?));
+    }
+    Ok(record)
+}
+
 // The deployment's valid prices as the catalog-shaped record the provider calculators read.
 fn deployment_prices<E>(
     model_info: Option<&ModelInfo>,
@@ -46,18 +59,9 @@ where
     else {
         return Ok(None);
     };
-    let text =
-        serde_json::to_string(&pricing).map_err(|source| ImageDispatchError::Prices { source })?;
-    let fields: BTreeMap<String, String> =
-        serde_json::from_str(&text).map_err(|source| ImageDispatchError::Prices { source })?;
-    let mut record = PriceRecord::new();
-    for (key, price) in fields {
-        let number = price
-            .parse()
-            .map_err(|source| ImageDispatchError::Prices { source })?;
-        record.insert(key, Scalar::Number(number));
-    }
-    Ok(Some(record))
+    deployment_price_record(&pricing)
+        .map(Some)
+        .map_err(|source| ImageDispatchError::Prices { source })
 }
 
 // Explicit arguments beat the response, which beats the request options, which beat the defaults; an empty text is skipped.

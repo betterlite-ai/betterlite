@@ -1,0 +1,37 @@
+kind: helper
+name: foundry-mai-images-response-size
+call:
+  foundry_mai_images:
+    replies:
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA","size":"1x1"}]}'
+        request_data: {prompt: a red fox}
+        optional_params: {}
+        api_key: sk-fixture
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA"}]}'
+        request_data: {}
+        optional_params: {width: 800, height: 900}
+        api_key: null
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA"}]}'
+        request_data: {prompt: p}
+        optional_params: {height: 640}
+        api_key: sk-fixture
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA"}],"usage":{"num_input_text_tokens":3,"num_output_tokens":4}}'
+        request_data: {prompt: p}
+        optional_params: {}
+        api_key: sk-fixture
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA"}],"usage":null}'
+        request_data: {prompt: p}
+        optional_params: {}
+        api_key: sk-fixture
+      - status_code: 502
+        body: '<html>bad gateway</html>'
+        request_data: {prompt: p}
+        optional_params: {}
+        api_key: sk-fixture
+env: {}
+compare: {ignore: []}

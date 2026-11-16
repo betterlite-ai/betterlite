@@ -9,7 +9,8 @@ use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-use crate::helpers::{Helper, HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 mod input;
 mod recording;
@@ -19,6 +20,8 @@ mod tests;
 use self::input::Input;
 use self::recording::{FixedAuth, FixedClock, FixedIds, RecordingClient, requests_json};
 use self::steps::run_step;
+use std::fmt::Display;
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -26,7 +29,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        let runtime = Builder::new_current_thread()
             .enable_time()
             .build()
             .map_err(|error| failure("RuntimeError", error))?;
@@ -97,7 +100,7 @@ fn open(
 
 fn failure<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

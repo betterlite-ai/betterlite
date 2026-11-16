@@ -1,4 +1,5 @@
 use betterlite_models::json_provider_registry::JSONProviderRegistry;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use std::io;
 
@@ -19,10 +20,10 @@ pub(crate) struct Input {
     slugs: Vec<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let registry = load_fixture(input);
         let entries: Vec<_> = registry.providers.values().collect();
         let by_base: Vec<_> = input

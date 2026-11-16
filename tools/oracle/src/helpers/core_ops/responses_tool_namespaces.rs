@@ -15,7 +15,8 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -61,10 +62,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::ToolsToChat { tools } => {
                 let conversion = responses_tools_to_chat(tools).or_value_error()?;
@@ -112,7 +113,7 @@ fn tool_call(call: &CallInput) -> ToolCallRecord {
     }
 }
 
-fn outputs(case: &OutputsCase) -> crate::helpers::HelperResult {
+fn outputs(case: &OutputsCase) -> HelperResult {
     let choices: Vec<ChoiceRecord> = case
         .choices
         .iter()

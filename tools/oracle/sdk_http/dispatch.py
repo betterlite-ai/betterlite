@@ -19,6 +19,7 @@ from messages_stream_logging import (
 )
 from openai_chat import ChatCall, run_chat
 from query_embedding_call import QueryEmbeddingCall, run_query
+from responses_agentic_continuation import ContinuationCall, run_continuation
 from vector_store_embedding_executor import EmbeddingCall, run_embedding
 
 MAX_REQUEST_BYTES = 1048576
@@ -71,6 +72,12 @@ class MessagesNativeStreamRequest(BaseModel):
     messages_native_stream: MessagesNativeStreamCall
 
 
+class ContinuationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    responses_agentic_continuation: ContinuationCall
+
+
 class Request(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -82,6 +89,7 @@ class Request(BaseModel):
         | MessagesHeaderStreamRequest
         | MessagesStreamLoggingRequest
         | MessagesNativeStreamRequest
+        | ContinuationRequest
     )
     api_base: str
 
@@ -111,6 +119,8 @@ def main() -> None:
                 output = run_messages_stream_logging(logging_call, request.api_base)
             case MessagesNativeStreamRequest(messages_native_stream=relay_call):
                 output = run_messages_native_stream(relay_call, request.api_base)
+            case ContinuationRequest(responses_agentic_continuation=continuation):
+                output = run_continuation(continuation, request.api_base)
             case VectorQueryEmbeddingCall(vector_query_embedding=query):
                 output = run_query(query, request.api_base).model_dump_json(
                     by_alias=True, exclude_unset=True

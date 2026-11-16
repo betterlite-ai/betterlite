@@ -14,6 +14,8 @@ use betterlite_openai::deepinfra::rerank::{
     complete_url, map_cohere_rerank_params, transform_rerank_request, validate_environment,
 };
 use betterlite_openai::reasoning_models::DropParams;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::{Json as MessageJson, Object};
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
@@ -138,10 +140,10 @@ impl RerankLogging for Recording {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::ChatMap { params } => Ok(case_values(params, chat_case)),
             Input::ToolContent { params } => case_results(params, tool_content_case),
@@ -150,7 +152,7 @@ impl crate::helpers::Helper for Op {
             Input::ErrorExtraction { params } => Ok(case_values(params, error_extraction_case)),
         };
         output.map_err(|message| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "ValueError".to_owned(),
                 status: None,
                 error_type: None,

@@ -6,7 +6,7 @@ use opentelemetry::{Array, Key, KeyValue, StringValue, Value};
 use opentelemetry_sdk::trace::SpanData;
 use serde_json::{Value as Json, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) fn attributes_of(
     values: &BTreeMap<String, OtelModelValue>,

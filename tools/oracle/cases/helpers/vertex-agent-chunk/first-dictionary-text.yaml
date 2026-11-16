@@ -1,0 +1,24 @@
+kind: helper
+name: vertex-agent-chunk-first-dictionary-text
+call:
+  vertex_agent_chunk:
+    chunks:
+      - content:
+          parts:
+            - {role: model}
+            - {text: first}
+            - {text: second}
+      - content:
+          parts:
+            - 3
+            - null
+            - {text: after scalars}
+      - content: {parts: []}
+      - {}
+      - content: {role: model}
+      - content:
+          parts:
+            - {text: null}
+            - {text: later}
+env: {}
+compare: {ignore: []}

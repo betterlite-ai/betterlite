@@ -9,18 +9,20 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::value::RawValue;
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 use transport::{block_on, handle_output, recording_sandbox, requests_output};
 
 mod transport;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let sandbox = recording_sandbox(input);
         let client = Some(&sandbox.http);
         let api_key = input.api_key.as_deref().map(SecretString::from);
@@ -184,7 +186,7 @@ fn seconds(value: Option<f64>) -> Result<Option<Duration>, Box<HelperError>> {
 
 fn helper_error<Message>(class: &str, message: Message) -> Box<HelperError>
 where
-    Message: std::fmt::Display,
+    Message: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

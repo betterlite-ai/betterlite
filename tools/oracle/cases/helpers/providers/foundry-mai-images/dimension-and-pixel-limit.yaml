@@ -1,0 +1,18 @@
+kind: helper
+name: foundry-mai-images-dimension-and-pixel-limit
+call:
+  foundry_mai_images:
+    params:
+      - {model: MAI-Image-2.5, non_default_params: {size: 768x768}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 768x1376}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x1032}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 767x1024}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1024x767}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: -5x2000}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 768x1377}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 99999999999x99999999999}, optional_params: {}, drop_params: false}
+      - {model: MAI-Image-2.5, non_default_params: {size: 512x512}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {size: 1792x1024}, optional_params: {}, drop_params: true}
+      - {model: MAI-Image-2.5, non_default_params: {size: 767x1024}, optional_params: {}, drop_params: true}
+env: {}
+compare: {ignore: []}

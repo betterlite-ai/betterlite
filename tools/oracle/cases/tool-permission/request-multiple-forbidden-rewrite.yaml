@@ -1,0 +1,24 @@
+kind: helper
+name: request-multiple-forbidden-rewrite
+call:
+  b3812:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+      - {id: deny-write, tool_name: "Write.*", decision: deny}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: pre_call
+    default_on: true
+    data:
+      model: gpt-4o
+      tools:
+        - {type: function, function: {name: Bash}}
+        - {type: function, function: {name: Read}}
+        - {type: function, function: {name: WriteFile}}
+        - {type: function, function: {name: Bash}}
+      functions: [{name: Read}, {name: Unlisted}]
+      tool_choice: WriteFile
+      function_call: {name: Bash}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,10 @@
+kind: helper
+name: foundry-mai-images-urls-seed
+call:
+  foundry_mai_images:
+    urls:
+      - {operation: generation, api_base: "https://hub.example", api_version: null}
+      - {operation: edit, api_base: null, api_version: null}
+    models: [MAI-Image-2.5, gpt-image-1]
+env: {}
+compare: {ignore: []}

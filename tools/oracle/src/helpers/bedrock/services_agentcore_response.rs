@@ -7,6 +7,8 @@ use betterlite_bedrock::agentcore_response::transform::{
     RawResponse, transform_agentcore_response,
 };
 use betterlite_openai::chat::response::ChatResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_tokenizer::count::request::{Message, TokenRequest};
 use serde::Deserialize;
 use serde_json::json;
@@ -77,10 +79,10 @@ fn same_messages(found: &[Message], expected: &[Message]) -> bool {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         Builder::new_current_thread()
             .enable_all()
             .build()
@@ -89,7 +91,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-async fn transform(input: &Input) -> crate::helpers::HelperResult {
+async fn transform(input: &Input) -> HelperResult {
     let raw = RawResponse {
         status_code: input.status,
         headers: input.headers.clone(),
@@ -174,8 +176,8 @@ impl<'response> From<&'response ChatResponse> for Completed<'response> {
     }
 }
 
-fn failure(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
+fn failure(message: String) -> Box<HelperError> {
+    Box::new(HelperError {
         class: "FixtureError".to_owned(),
         status: None,
         error_type: None,

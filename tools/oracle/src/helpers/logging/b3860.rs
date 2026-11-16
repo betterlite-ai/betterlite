@@ -6,6 +6,8 @@ use betterlite_logging::otel::integrations::arize_messages::{
 use betterlite_logging::otel::model::metadata::wire::MetadataMap;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::span_attributes::LLMObsAttributes as _;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use opentelemetry::Value;
 use opentelemetry::trace::{Span as _, Tracer as _, TracerProvider as _};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider, Span as SdkSpan};
@@ -23,10 +25,10 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let value = match input {
             Input::SetMessages { messages } => {
                 let record = span_attributes(|span| {
@@ -53,7 +55,7 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn span_attributes<F>(record: F) -> Result<Map<String, Json>, Box<crate::helpers::HelperError>>
+fn span_attributes<F>(record: F) -> Result<Map<String, Json>, Box<HelperError>>
 where
     F: FnOnce(&mut SdkSpan),
 {
@@ -65,7 +67,7 @@ where
     record(&mut span);
     span.end();
     let spans = exporter.get_finished_spans().map_err(|error| {
-        Box::new(crate::helpers::HelperError {
+        Box::new(HelperError {
             class: "InternalError".to_owned(),
             status: None,
             error_type: None,

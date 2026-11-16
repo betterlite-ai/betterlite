@@ -1,0 +1,19 @@
+kind: helper
+name: foundry-mai-images-mai-generation-edit-url
+call:
+  foundry_mai_images:
+    urls:
+      - {operation: generation, api_base: null, api_version: null}
+      - {operation: edit, api_base: null, api_version: v1}
+      - {operation: generation, api_base: "https://hub.services.ai.azure.com", api_version: null}
+      - {operation: edit, api_base: "https://hub.services.ai.azure.com", api_version: ""}
+      - {operation: edit, api_base: "https://hub.example//", api_version: "2025-11-15"}
+      - {operation: generation, api_base: "https://hub.example/mai/v1/images/edits?x=1", api_version: null}
+      - {operation: edit, api_base: "https://hub.example/mai/v1/images/generations/", api_version: null}
+      - {operation: edit, api_base: "https://hub.example/mai/v2", api_version: a}
+      - {operation: generation, api_base: "https://hub.example/a/images/b/mai/images/c", api_version: null}
+      - {operation: generation, api_base: "https://hub.example?", api_version: v}
+      - {operation: generation, api_base: "https://hub.example/?a=b?c", api_version: v}
+    models: [MAI-Image-2.5, azure_ai/mai_image-1, MAIIMAGE, Mai-Image, gpt-image-1, mai-voice-1]
+env: {}
+compare: {ignore: []}

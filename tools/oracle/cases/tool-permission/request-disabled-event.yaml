@@ -1,0 +1,19 @@
+kind: helper
+name: request-disabled-event
+call:
+  b3812:
+    rules:
+      - {id: deny-bash, tool_name: Bash, decision: deny}
+      - {id: allow-read, tool_name: Read, decision: allow}
+      - {id: deny-write, tool_name: "Write.*", decision: deny}
+    default_action: deny
+    on_disallowed_action: rewrite
+    event_hook: post_call
+    default_on: true
+    data:
+      model: gpt-4o
+      tools:
+        - {type: function, function: {name: Bash}}
+      tool_choice: Bash
+env: {}
+compare: {ignore: []}

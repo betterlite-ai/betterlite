@@ -1,0 +1,17 @@
+kind: helper
+name: vertex-agent-chunk-lowercase-finish
+call:
+  vertex_agent_chunk:
+    chunks:
+      - {finish_reason: STOP}
+      - {finish_reason: MAX_TOKENS}
+      - {finish_reason: tool_use}
+      - {finish_reason: SAFETY}
+      - {finish_reason: ""}
+      - {finish_reason: null}
+      - {finish_reason: weird}
+      - {finish_reason: content_filtered}
+      - content: {parts: [{text: done}]}
+        finish_reason: STOP
+env: {}
+compare: {ignore: []}

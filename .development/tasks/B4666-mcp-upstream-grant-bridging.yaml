@@ -132,7 +132,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::credential_write::authorize::tests::/)'
     - id: helper-tests
       why: the helper adapter does not reach the production functions
-      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4666::/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-oracle-mcp --no-tests=fail -E 'test(/^b4666::/) - test(/replays_the_/)'
     - id: helper-oracle
       why: the helper cases are missing or differ from LiteLLM
       run: >-

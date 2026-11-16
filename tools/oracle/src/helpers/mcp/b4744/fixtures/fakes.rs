@@ -11,6 +11,7 @@ use betterlite_mcp::client::sessions::stream::{MessageHandler, StreamFailure, St
 use betterlite_mcp::client::sessions::transport::TransportContext;
 
 use super::state::{FakeHttp, InitStep, Plan, Script, Step, TestError, enter_result, exit_result};
+use std::future;
 
 pub(crate) struct FakeTransport {
     pub(crate) script: Arc<Script>,
@@ -140,7 +141,7 @@ fn init_future(
             Err(protocol(-32_000_i32, None))
         }
     };
-    std::future::ready(result)
+    future::ready(result)
 }
 
 #[derive(Clone, Copy)]

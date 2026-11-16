@@ -1,0 +1,23 @@
+task: B4776
+deviations:
+  - what: The registry and the reconcile lock are fields of one AgentRegistry value that the server builds and passes around, not module globals (`global_agent_registry`, `AGENT_RECONCILE_LOCK`). Callers take the lock through `reconcile()`.
+    why: betterlite wires dependencies through constructors and keeps no module-level state. Behavior is the same since every LiteLLM user takes the one registry and the one lock.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L959-L960
+  - what: get_public_agent_list takes the public group list as an argument instead of reading `litellm.public_agent_groups`.
+    why: There is no settings global in betterlite. The caller passes the loaded `litellm_settings.public_agent_groups`.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L444-L450
+  - what: Database agents arrive as typed AgentResponse values, so LiteLLM's "db_agents must be a list of dictionaries" error cannot happen. Config entries arrive as JSON values and a non-object entry returns "agent_config must be a list of dictionaries", the same text.
+    why: A typed boundary replaces the runtime isinstance check. The config entry stays raw because the legacy id hashes every field of it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L466-L535
+  - what: A config entry with a key AgentResponse does not have, or that already holds `agent_id`, fails with an error that names the key. LiteLLM ignores unknown keys, and a duplicate `agent_id` raises a Python TypeError.
+    why: B4770's records reject unknown fields. The legacy id still covers the full raw entry, so ids stay the same as LiteLLM's for entries both accept.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L493-L505
+  - what: The lookups cannot fail, so LiteLLM's `except Exception` wrappers that re-raise a generic "Error getting agent from DB" error are not built.
+    why: Nothing inside those try blocks can raise in Rust, and the message was never reachable by a caller at the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L921-L958
+  - what: A config entry whose `agent_name` is not a string or whose `agent_card_params` is not an object fails with "config agent entry field `...` must be ...". LiteLLM lets the pydantic AgentResponse (or the TypeError from a duplicate `agent_id`) report it.
+    why: The raw entry is validated field by field before it reaches a typed record, so the field is named instead of a model path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_registry.py#L493-L505
+  - what: Config entries are `betterlite_models::decisions::Json` values rather than `serde_json::Value`, and the registry's methods live on the `AgentRegistryApi` trait because the workspace denies `multiple_inherent_impl`.
+    why: The workspace denies serde_json::Value in this crate and more than one inherent impl block per type; both changes keep the same JSON tree, method names and behavior, and callers import the trait.
+    link: ""

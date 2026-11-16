@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::ready;
-use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
+use std::{io, mem};
 
 use aws_credential_types::Credentials;
 use betterlite_secret_managers::aws::request_signing::{
@@ -63,7 +63,7 @@ impl Script {
     }
 
     pub(super) fn take_requests(&self) -> Vec<Value> {
-        std::mem::take(
+        mem::take(
             &mut self
                 .state
                 .lock()

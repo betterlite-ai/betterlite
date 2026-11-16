@@ -1,0 +1,19 @@
+kind: helper
+name: vertex-gemini-images-nonobject-config-warning
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings:
+      - prompt: a red fox
+        non_default_params: {imageConfig: "1K"}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {imageConfig: null}
+        optional_params: {}
+      - prompt: a red fox
+        non_default_params: {imageConfig: [square]}
+        optional_params: {}
+    target: null
+    response: null
+env: {}
+compare: {ignore: []}

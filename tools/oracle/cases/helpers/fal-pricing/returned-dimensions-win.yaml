@@ -1,0 +1,33 @@
+kind: helper
+name: fal-pricing-returned-dimensions-win
+call:
+  fal_pricing:
+    operation: returned_dimensions_win
+    model: fal_ai/fal-ai/flux/schnell
+    catalog:
+      fal_ai/fal-ai/flux/schnell: {litellm_provider: fal_ai, output_cost_per_image: 0.5}
+      fal_ai/high/1024-x-768/fal-ai/flux/schnell: {litellm_provider: fal_ai, output_cost_per_image: 0.25}
+      fal_ai/high/512-x-512/fal-ai/flux/schnell: {litellm_provider: fal_ai, output_cost_per_image: 0.125}
+    cases:
+      - images: [{width: 1024, height: 768}]
+        optional_params: {image_size: square}
+        model_info: null
+      - images: [{width: true, height: 768}]
+        optional_params: {image_size: {width: 512, height: 512}}
+        model_info: null
+      - images: [{}]
+        optional_params: {image_size: huge}
+        model_info: null
+      - images: [{}]
+        optional_params: {}
+        model_info: null
+      - images: [{width: 1024, height: 768}, {width: 512, height: 512}]
+        optional_params: {}
+        model_info: null
+      - images: [{width: 2048, height: 2048}]
+        optional_params: {}
+        model_info: null
+    passthrough_cases: []
+env: {}
+compare:
+  ignore: []

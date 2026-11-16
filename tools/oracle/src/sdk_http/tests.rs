@@ -22,11 +22,14 @@ use super::result::{Nullable, SdkResult};
 use super::{
     OracleLimits, SdkHttpCase, Side, child, decode_sdk_http_case, decode_sdk_http_result, sides,
 };
-use crate::case::{Ignore, UpstreamAnswer};
-use crate::mock::{MockProvider, ProviderRequest};
-use crate::process::sync_litellm;
-use crate::routing_mock_scripts::{MockScript, Recording, parse_script, redact};
 use crate::runner::sdk_http::judge;
+use betterlite_oracle_runner::case::{Ignore, UpstreamAnswer};
+use betterlite_oracle_runner::helpers::sync_litellm;
+use betterlite_oracle_runner::mock::{MockProvider, ProviderRequest};
+use betterlite_oracle_runner::routing_mock_scripts::run::Recording;
+use betterlite_oracle_runner::routing_mock_scripts::{
+    MockScript, parse_script, redact_credentials,
+};
 
 const CASE_LIMIT: usize = 0x0010_0000;
 const CASE_OVER: usize = 0x0010_0001;
@@ -99,7 +102,7 @@ fn run_answers(sdk: &Sdk<'_>, case: &SdkHttpCase, answers: &[UpstreamAnswer]) ->
 
 fn redacted(value: &str) -> String {
     let mut headers = BTreeMap::from([("authorization".to_owned(), value.to_owned())]);
-    redact(&mut headers);
+    redact_credentials(&mut headers);
     headers.remove("authorization").unwrap()
 }
 
@@ -329,7 +332,8 @@ fn decoded_kind(text: &str) -> Nullable {
         | SdkResult::BetaConfig { .. }
         | SdkResult::MessagesHeaderStream { .. }
         | SdkResult::MessagesStreamLogging { .. }
-        | SdkResult::MessagesNativeStream { .. } => None,
+        | SdkResult::MessagesNativeStream { .. }
+        | SdkResult::ResponsesAgenticContinuation { .. } => None,
     }
 }
 

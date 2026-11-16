@@ -1,11 +1,11 @@
 use std::collections::BTreeSet;
 
-use super::Difference;
 use super::multipart::{
     captured_parts, first_part_difference, mask_generated_filenames, masked_boundary,
 };
 use crate::case::Compare;
-use crate::mock::ProviderRequest;
+use betterlite_oracle_runner::compare::Difference;
+use betterlite_oracle_runner::mock::ProviderRequest;
 
 mod tests;
 

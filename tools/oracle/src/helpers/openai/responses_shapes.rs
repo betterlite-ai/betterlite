@@ -11,6 +11,8 @@ use betterlite_openai::api::responses_shapes::{
     OutputCodeInterpreterCall, OutputCodeInterpreterCallLog, OutputFunctionToolCall,
     OutputImageGenerationCall, OutputText,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -53,10 +55,10 @@ struct InterpreterOutput {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let output = match input {
             Input::WebSearchSources {
                 tool_id,
@@ -73,7 +75,7 @@ impl crate::helpers::Helper for Op {
             Input::NullableRecords(records) => serde_json::to_value(records),
         };
         output.map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "InvalidInput".to_owned(),
                 status: None,
                 error_type: None,

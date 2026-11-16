@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{Input, Op};
-use crate::helpers::Helper as _;
+use betterlite_oracle_helper_api::helper::Helper as _;
 
 #[test]
 fn empty_groups_leave_the_starting_history_untouched() {

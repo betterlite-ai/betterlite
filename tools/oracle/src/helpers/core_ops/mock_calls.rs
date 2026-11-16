@@ -9,18 +9,20 @@ use betterlite_core::mock::stream::{self, StreamSpec};
 use betterlite_core::mock::timeout::{self, TimeoutValue};
 use betterlite_openai::chat::provider_error::ProviderFailure;
 use betterlite_openai::chat::{client_mock, mock_failure};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde_json::Value;
 use thiserror::Error;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).map_err(|error| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: String::from("Redaction"),
                 status: None,
                 error_type: None,

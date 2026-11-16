@@ -10,7 +10,7 @@ use betterlite_redis::redis_connection_settings::error::RedisSettingsError;
 use thiserror::Error;
 
 use crate::OracleError;
-use crate::multipart_oracle::error::MultipartError;
+use betterlite_oracle_runner::multipart_oracle::error::MultipartError;
 
 #[derive(Debug, Error)]
 pub enum ScenarioError {

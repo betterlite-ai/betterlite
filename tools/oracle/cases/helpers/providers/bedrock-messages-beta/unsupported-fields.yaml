@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-messages-beta-unsupported-fields
+call:
+  bedrock_messages_beta:
+    function: unsupported_fields
+    cases:
+      - request: {max_tokens: 8, metadata: {user_id: u}, mystery: 5}
+      - request: {max_tokens: 8, speed: fast}
+      - request: {max_tokens: 8, mcp_servers: [{type: url, url: https://example.test/mcp}], mystery: x}
+      - request: {max_tokens: 8}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

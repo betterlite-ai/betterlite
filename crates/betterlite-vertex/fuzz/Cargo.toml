@@ -95,6 +95,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "google_image"
+path = "fuzz_targets/google_image.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "google_native_content"
 path = "fuzz_targets/google_native_content.rs"
 test = false

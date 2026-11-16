@@ -1,0 +1,18 @@
+kind: helper
+name: openai-video-edits-replies-seed
+call:
+  openai_video_edits:
+    calls:
+      - op: create_character_response
+        body: '{"id":"char-1","name":"hero"}'
+      - op: get_character_response
+        body: '{"id":"char-1","object":"character","created_at":1700000000,"name":"hero"}'
+      - op: edit_response
+        body: '{"id":"video_1","object":"video","status":"completed"}'
+        provider: openai
+        request_data: {prompt: make it blue}
+      - op: extension_response
+        body: '{"id":"video_1","object":"video","status":"completed"}'
+        provider: null
+env: {}
+compare: {ignore: []}

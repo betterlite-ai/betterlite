@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::input::Step;
 use super::ops::failure;
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 pub(super) struct OwnedRoleAuth {
     role_name: String,

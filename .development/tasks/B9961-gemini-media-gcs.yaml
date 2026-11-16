@@ -1,0 +1,300 @@
+id: B9961
+title: Gemini media resolves GCS object content types
+description: >-
+  B1311's process_media resolves a gs:// reference from a format hint or the file extension, and
+  gemini_media::process::inferred_gcs_mime answers MediaError::RemoteMediaRequired when neither exists.
+  LiteLLM reads the object's content type from the GCS JSON API instead: the gs:// branch of
+  _process_gemini_media calls _get_gcs_object_content_type(image_url, vertex_project, vertex_credentials)
+  for an extensionless reference with no format (transformation.py L522-L527) and raises "Unable to
+  determine mime type for gs URI" when it returns None (L528-L539), taking the two auth arguments from
+  litellm_params.vertex_project or vertex_ai_project and litellm_params.vertex_credentials or
+  vertex_ai_credentials (L711-L715). Row 1 of docs/deviations/B1311.yaml records the refusal. B9965
+  rewrites that row to the extensionless gs:// case alone and adds prepare to
+  gemini_request/media_prepare.rs, which inlines http(s) request media through B5083's fetcher; B183's
+  seam treats only http:// and https:// as remote, so a gs:// reference passes prepare untouched. No
+  route builds CallDeps on main, so nothing in production reaches GeminiCall yet.
+
+
+  On main the conversion is already right for every other gs:// shape. body.rs::transform extracts the
+  system instruction, appends the response-schema prompt, merges the litellm_param_ keys and then calls
+  convert_messages_with_history for vertex_ai and vertex_ai_beta or studio_chat::transform_messages for
+  gemini, and both walkers reach gemini_history::media_source::push_source and
+  gemini_media::process::process_media. A reference with an accepted extension or an explicit format
+  already builds file_data with the inferred or explicit MIME, the Files API, https passthrough and data
+  URL branches already match LiteLLM, and assistant provider_specific_fields.images already convert
+  through push_source. The missing branch is only the extensionless gs:// reference with no hint, on
+  every entry and both providers.
+
+
+  Add crates/betterlite-vertex/src/gemini_media/gcs_metadata.rs (the skeleton creates the file and
+  declares `pub mod gcs_metadata;` in gemini_media.rs) with the lookup _get_gcs_object_content_type
+  performs. GcsTransport is an object-safe Send + Sync trait whose get takes an OutboundRequest and
+  returns a boxed MetadataFuture, implemented for ProxiedClient as
+  send_following(request).await?.buffered(self.limits.body_bytes).await in the shape of
+  google_count_tokens/transport.rs; the boxed future keeps the pass out of the generic parameters of
+  CallRequest and transform. GcsDeps holds transport: &dyn GcsTransport and tokens: &dyn MintAccessToken,
+  which CredentialCache already implements, so no auth code is added. auth_values(litellm_params) reads
+  vertex_project then vertex_ai_project and vertex_credentials then vertex_ai_credentials with Python or
+  truthiness (Json::is_truthy, docs/compatibility.md), so null, false, zero, an empty string, list or
+  object is absent. bucket_is_valid repeats _is_valid_gcs_bucket_name's five checks (L224-L240): length 3
+  to 63, or 3 to 222 when the name holds a dot, dot labels of 1 to 63, the [a-z0-9][a-z0-9._-]*[a-z0-9]
+  pattern, no two dots in a row, and not a dotted quad. metadata_url(gs_uri) returns None unless the uri
+  starts with gs://, splits once at the first slash with both parts non-empty and the bucket passes;
+  otherwise it builds https://storage.googleapis.com/storage/v1/b/{bucket}/o/{object}?fields=contentType
+  with both parts quoted like Python quote(safe=""), which keeps only A to Z, a to z, 0 to 9, dot,
+  hyphen, underscore and tilde, so a slash becomes %2F and a literal percent becomes %25.
+  betterlite_http::url_path::quote_segment is that quoting, split out of encode_segment so both callers
+  share one set, because encode_segment rejects the dot and dot-dot segments that are legal object names.
+  object_content_type(gs_uri, auth, deps) resolves the uri first, so a bad uri or bucket sends no request
+  and mints nothing. The lookup is explicit when either auth value is present. An explicit lookup decodes
+  credentials with ConfiguredCredentials::from_text (an inline object is serialized first), mints with
+  MintAccessToken::mint(credentials, project) and sends the GET with an Authorization: Bearer header, no
+  other header and no body; anything unusable there, a mint error, a transport error, a final status of
+  400 or above, a body that is not JSON, a body that is not an object, or a contentType that is missing,
+  empty or not a string answers Err. An anonymous lookup sends the same GET without the header, and every
+  failure answers Ok(None). Both use METADATA_DEADLINE, Duration::from_secs(5), LiteLLM's shared handler
+  timeout (L99-L103); a final status below 400 is parsed as JSON, matching LiteLLM's is_error check, and
+  redirects go through the shared proxy client as LiteLLM's httpx handlers do.
+
+
+  Add MediaError::UnknownGcsContentType(String) to gemini_media/error.rs with the message "Unable to
+  determine mime type for gs URI: {0}", status 400, type None, param None and code Some("400"), the
+  bodyless BadRequest shape both LiteLLM's explicit failures and its None case produce, and include it in
+  the four methods there. Add pub async fn resolve_gcs_content_types(messages: Vec<Message>,
+  litellm_params: &Object, deps: &GcsDeps<'_>) -> Result<Vec<Message>, HistoryError> to media_prepare.rs
+  after prepare. It walks the messages in order. For the user and system roles it takes content parts
+  that carry a media locator; extract append_user_part's image_url, file and input_audio dispatch into a
+  pub(crate) media_locator in gemini_history/media_source.rs and call it from both. For the assistant role
+  it reads provider_specific_fields.images entries through generated_image. A reference is resolved when
+  its url contains gs://, MimeHints::explicit() is None, and
+  gemini_media::process::splitext_extension (made pub(crate), os.path.splitext semantics at L500-L503) is
+  empty; every other reference stays byte-identical. On Some(content_type) it calls
+  gemini_media::mime::normalize_mime_type (L452-L475) and writes the canonical MIME as the format key
+  into the image_url or file object, wrapping a bare-string image_url in {url, format}; on Ok(None) or
+  Err it returns HistoryError::Media(MediaError::UnknownGcsContentType(url)). It probes every occurrence,
+  in message order, with no dedupe, as LiteLLM's per-part call does. Assistant content parts other than
+  text are never converted, so they are never walked, and tool results never probe.
+
+
+  Wire it through the request. orchestration.rs's CallRequest gains pub gcs: GcsDeps<'request>, body_from
+  passes &request.gcs into transform, and body.rs::transform gains the gcs parameter and calls the pass
+  after extract_system_instruction, append_response_schema_prompt and the litellm_param_ merge and before
+  the provider match, mirroring _transform_request_body's order (L1149-L1194). gemini_call.rs's CallDeps
+  gains pub gcs: &'deps dyn GcsTransport and gemini_call/body.rs builds gcs: GcsDeps { transport:
+  deps.gcs, tokens: deps.llm.cache.as_ref() } beside the fetcher. body_from's signature does not change,
+  so orchestration/async_media.rs is untouched. gemini_call/tests/ordered_effects.rs stays in scope for
+  one assertion B9965's fetch flips (ordered_effects_remote_tool_media_follows_the_branch_transform
+  expects the async branch to refuse); update it only if B9965 lands without that change, because the
+  new GCS field itself is built by support.rs::deps.
+
+
+  Write the tests first. In gemini_request/tests.rs add gcs_ tests that drive transform_request_body and
+  transform_request_body_async through the harness B9965 leaves: the harness owns a map-backed
+  GcsTransport keyed by URL and a MintAccessToken recording each project, and its refusing GcsTransport
+  answers TransportError::Closed; every gcs_ case also leaves the harness's request-media fetch count at
+  zero, because a gs:// reference is never an http(s) fetch. gcs_request_resolves_metadata (an extensionless image_url builds
+  file_data with the mapped MIME, one request and no mint), gcs_request_mints_with_explicit_project (one
+  mint with the project and a Bearer header), gcs_request_uses_the_project_alias (an empty vertex_project
+  falls through to vertex_ai_project), gcs_request_resolves_file_and_assistant_images (a file.file_data
+  reference and an assistant images entry, two requests), gcs_request_normalizes_metadata_type
+  (IMAGE/JPG; charset=utf-8 becomes image/jpeg), gcs_request_skips_explicit_references (an accepted
+  extension, an explicit format, a Files API URI, an https URL and a data URL make no request),
+  gcs_request_fails_without_metadata (a refusing transport answers the bodyless 400 with type None,
+  param None and code "400", raised from HistoryError::Media(MediaError::UnknownGcsContentType)),
+  gcs_request_invalid_bucket_makes_no_request and
+  gcs_request_mint_failure_fails (no request, the same tuple). Every one fails on main because main never
+  builds a metadata request. In gemini_media/gcs_metadata/tests.rs cover the unit tables:
+  gcs_metadata_urls (the bucket and quoting cases), gcs_metadata_auth_aliases (Python or truthiness),
+  gcs_metadata_responses (200 JSON, 200 with {}, 200 with a non-JSON body, 403, 500 and a transport
+  error, anonymous and explicit) and gcs_metadata_request (GET, the fixed url and query, the 5-second
+  deadline, the Bearer header only when explicit, no content-type header).
+
+
+  Compare against LiteLLM through a new helper operation b9961, pre-registered in the vertex group by the
+  skeleton (replace the stub in tools/oracle/src/helpers/vertex/b9961.rs, write ops.rs, tests.rs and
+  tools/oracle/helpers/b9961.py; the registry files and dispatch.py are not this task's to edit). The
+  input per case is messages, model, litellm_params, a metadata script of status plus json or body or
+  error: connect, and mint_error. The Python adapter patches transformation._GCS_METADATA_VERTEX_BASE with
+  a stub whose get_access_token records the project and raises on mint_error, patches
+  transformation._GCS_METADATA_HTTP_HANDLER with a fake get(url, headers) that records the url and the
+  Authorization header and returns httpx.Response(...) or raises httpx.ConnectError, then calls
+  _gemini_convert_messages_with_history(messages, model=model, litellm_params=litellm_params). The Rust
+  adapter builds GcsDeps from a scripted GcsTransport and a recording MintAccessToken, calls
+  resolve_gcs_content_types and then convert_messages_with_history with a fetcher that refuses, and
+  answers requests, mints, contents and the error tuple {status, type, param, code}. Cases:
+  metadata-explicit-project (gs://my-bucket/folder/my photo and gs://my-bucket/100%, two mints and two
+  requests with the quoted path and the Bearer header), metadata-project-aliases (an empty vertex_project
+  with vertex_ai_project and vertex_ai_credentials), metadata-anonymous (no auth, no mint, no header),
+  metadata-reflected-format (image/jpg; charset=utf-8 canonicalizes to image/jpeg),
+  metadata-unsupported-type (application/octet-stream answers 400), skipped-references (extension,
+  format, Files API, https and data URL, zero requests), invalid-bucket (an uppercase name and a
+  two-letter name, zero requests), metadata-not-found (an anonymous 404 answers 400),
+  metadata-auth-failure (an explicit 403 answers 400), metadata-mint-failure (a raising mint answers 400
+  with zero requests), metadata-connect-error (an anonymous transport error answers 400) and
+  assistant-images. All but skipped-references fail on main, where the reference answers the
+  unsupported_remote_media shape. Add the seeds tools/oracle/fuzz/corpus/helper_case/b9961-gcs-metadata.yaml
+  and b9961-gcs-failures.yaml.
+
+
+  Delete row 1 of docs/deviations/B1311.yaml, which is only the extensionless gs:// refusal after B9965
+  rewrote it, and keep rows 2 and 3. Add docs/deviations/B9961.yaml with the four rows listed below: the
+  single 5-second total deadline, the eager probe before conversion, the cache-prefix conversion that
+  still refuses because it has no litellm_params, and the token counter that still refuses for the same
+  reason.
+
+
+  B9965's prepare and this pass meet on the same outcome.messages: prepare runs first and rewrites only
+  http(s) references through the fetcher, this pass reads only gs:// references and calls no fetcher, and
+  both sit where LiteLLM puts its inline and transform steps. The production diff is about 380 lines, the
+  helper adapter about 160 and the deviation rows about 40.
+scope:
+  paths:
+    - crates/betterlite-http/src/url_path.rs
+    - crates/betterlite-http/src/url_path/tests.rs
+    - crates/betterlite-vertex/src/gemini_media/gcs_metadata.rs
+    - crates/betterlite-vertex/src/gemini_media/gcs_metadata/tests.rs
+    - crates/betterlite-vertex/src/gemini_media/error.rs
+    - crates/betterlite-vertex/src/gemini_media/process.rs
+    - crates/betterlite-vertex/src/gemini_history/media_source.rs
+    - crates/betterlite-vertex/src/gemini_request/media_prepare.rs
+    - crates/betterlite-vertex/src/gemini_request/body.rs
+    - crates/betterlite-vertex/src/gemini_request/orchestration.rs
+    - crates/betterlite-vertex/src/gemini_request/tests.rs
+    - crates/betterlite-vertex/src/gemini_call.rs
+    - crates/betterlite-vertex/src/gemini_call/body.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/support.rs
+    - crates/betterlite-vertex/src/gemini_call/tests/ordered_effects.rs
+    - docs/deviations/B1311.yaml
+    - docs/deviations/B9961.yaml
+    - tools/oracle/src/helpers/vertex/b9961.rs
+    - tools/oracle/src/helpers/vertex/b9961/**
+    - tools/oracle/helpers/b9961.py
+    - tools/oracle/helpers/b9961/**
+    - tools/oracle/cases/helpers/gemini-media-gcs/**
+    - tools/oracle/fuzz/corpus/helper_case/b9961*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L99-L103
+    why: The shared metadata HTTP handler and its 5-second timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L214-L252
+    why: The gs URI parse, the bucket name rules and the extensionless check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L329-L449
+    why: The metadata lookup, the explicit auth rule, the url building and every failure branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L452-L475
+    why: The registry normalization applied to the metadata content type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L478-L561
+    why: The gs:// branch and where the probe sits inside per-part media processing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L711-L715
+    why: The two auth values read from litellm_params with Python or.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L735-L774
+    why: The image_url call site and the format aliases read from the part.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L801-L851
+    why: The file call site, file_id before file_data, and the error wrapping that keeps BadRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L946-L971
+    why: The assistant images call site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1149-L1194
+    why: The transform order the pass follows, system extraction, schema prompt, litellm_param_ merge, conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L1330-L1396
+    why: The async entry order, cache first, inline second, transform third.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L161-L202
+    why: The cache-prefix conversion that calls the converter with no litellm_params, recorded as a residual deviation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1289-L1297
+    why: The token counter's conversion with no litellm_params, recorded as a residual deviation.
+dod:
+  - text: An extensionless gs:// image_url and file reach the built body as file_data with the content type the metadata reply names, on vertex_ai, vertex_ai_beta and gemini.
+    proof: [gcs-request-tests, oracle]
+  - text: The metadata request carries ?fields=contentType, quotes bucket and object like Python quote(safe=""), and sends no Authorization header when litellm_params names no project or credentials.
+    proof: [gcs-metadata-tests, oracle]
+  - text: A project or credentials in litellm_params makes the lookup mint once through the injected minter and send the Bearer token, and an empty primary alias falls through to the secondary.
+    proof: [gcs-request-tests, gcs-metadata-tests, oracle]
+  - text: A failed explicit-auth lookup and an anonymous lookup failure both answer the bodyless 400 with type null, param null and code "400", and build no body.
+    proof: [gcs-request-tests, oracle]
+  - text: An invalid gs URI or bucket name sends no request and mints nothing.
+    proof: [gcs-metadata-tests, oracle]
+  - text: A reference with an accepted extension, an explicit format, a Files API URI, an https passthrough or a data URL is never probed.
+    proof: [gcs-request-tests, oracle]
+  - text: docs/deviations/B1311.yaml row 1 is gone and docs/deviations/B9961.yaml records the four remaining differences.
+    proof: [deviation-rows]
+  - text: The new helper seeds decode under call.b9961.
+    proof: [gcs-seed]
+  - text: The gemini_history conversion and the gemini_request and gemini_call suites still pass with the pass wired in.
+    proof: [vertex-history-suite, vertex-request-suite, vertex-call-suite]
+checks:
+  optional: []
+  commands:
+    - id: gcs-metadata-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_media::gcs_metadata::tests::/)'
+      why: The url, bucket, auth, response and request tables must match the pinned lookup.
+    - id: gcs-request-tests
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_request::tests::gcs_/)'
+      why: Both entries must resolve gs:// metadata through the injected transport and fail with the bodyless 400 when it refuses.
+    - id: vertex-history-suite
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_history::/)'
+      why: The conversion must keep its behavior with the shared media locator and the added error variant.
+    - id: vertex-request-suite
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_request::/)'
+      why: The shared body build must keep B9965's inline pass and every existing request test green.
+    - id: vertex-call-suite
+      run: cargo nextest run --locked -p betterlite-vertex --no-tests=fail -E 'test(/^gemini_call::/)'
+      why: CallDeps and body_request must compile and keep their ordered effects with the new transport field.
+    - id: gcs-python
+      run: test -f tools/oracle/helpers/b9961.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+      why: The comparison must call the pinned converter with network and auth replaced by scripts.
+    - id: gcs-seed
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/b9961*')" && cargo nextest run --locked -p betterlite-oracle-vertex --no-tests=fail -E 'test(/^b9961::/)'
+      why: New helper seeds must parse the production operation tag and input type.
+    - id: deviation-rows
+      run: test -f docs/deviations/B9961.yaml && test -z "$(grep -F 'extensionless gs://' docs/deviations/B1311.yaml)" && test "$(grep -c '^  - what:' docs/deviations/B1311.yaml)" -eq 2 && test "$(grep -c '^  - what:' docs/deviations/B9961.yaml)" -eq 4 && grep -q -F 'context_caching/transformation.py#L161-L202' docs/deviations/B9961.yaml
+      why: The fixed no-fetch row must be gone and the residual differences recorded with their pinned lines.
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-explicit-project.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-project-aliases.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-anonymous.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-reflected-format.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-unsupported-type.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/skipped-references.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/invalid-bucket.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-not-found.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-auth-failure.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-mint-failure.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/metadata-connect-error.yaml
+  - tools/oracle/cases/helpers/gemini-media-gcs/assistant-images.yaml
+deviations:
+  - what: The GCS JSON API metadata request carries one 5-second total deadline, where LiteLLM's shared HTTPHandler sets a separate 5-second connect, read, write and pool timeout.
+    why: betterlite's outbound request takes one total deadline and the shared proxy client enforces it; a metadata reply is a few hundred bytes, so the difference is only how a connect stall and a slow read share the 5 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L99-L103
+  - what: Every extensionless gs:// reference in the converted messages is resolved, and its token minted, before any part is converted, in message order; LiteLLM reads each object while converting its part and stops at the first conversion failure, so a request that fails on an earlier part can still have read GCS and minted a token here.
+    why: The pass runs before the shared body build so conversion never performs I/O; the error the caller sees carries the same status, type, param and code in both orders.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini/transformation.py#L523-L539
+  - what: An implicitly cached request whose prefix holds an extensionless gs:// reference without a format still answers 400 with code unsupported_remote_media from the cache-prefix conversion, where LiteLLM's context caching transform converts those messages with no litellm_params and reads the object anonymously, so a public object caches and a private one answers 400.
+    why: The metadata read needs the deployment's litellm_params, and B1317's cache-prefix conversion runs before this pass and has no credentials by design; feeding it the deployment's credentials would attach a token on a path LiteLLM keeps anonymous.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/context_caching/transformation.py#L161-L202
+  - what: The Google token counter's history conversion still answers 400 with code unsupported_remote_media for an extensionless gs:// reference, where LiteLLM's Vertex token counter converts messages without litellm_params and reads the object anonymously, so a public object is counted.
+    why: B197 owns the counter's history conversion; this fix does not thread the transport or the deployment's litellm_params into a path that only counts tokens.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L1289-L1297
+out_of_scope:
+  - B9965 owns the http(s) inline fetch, its fetcher, the prepare signature and the Studio input deletion; this task adds one pass after it and fetches nothing.
+  - The cache-prefix conversion in crates/betterlite-vertex/src/cache_prefix/transform.rs (B1317) and the Google token counter in crates/betterlite-vertex/src/google_token_counter/vertex.rs (B197) do not get the pass; rows 3 and 4 of docs/deviations/B9961.yaml record the difference.
+  - Tool-result media stays with betterlite_prompts::gemini_tool_results (B1128) and never reads GCS metadata in LiteLLM, so it is not walked.
+  - B031 composes the route, builds the shared client and passes it as the GCS transport in CallDeps; no route reaches this code on main, so no end-to-end HTTP case exists here.
+  - The GCS JSON API client used by bucket logging and FOCUS reports in betterlite-logging is a different feature; it is not reused or changed.
+  - The extension classification, Files API passthrough, https passthrough and data URL decoding are B1311's and stay as they are.
+  - The existing gemini_media oracle cases and helper stay as they are; process_media itself still refuses an unprepared extensionless reference as the last-resort guard.
+pitfalls:
+  - The oracle helper for this task is pre-registered as b9961 by the skeleton. Replace the stub and write the Python module; do not edit tools/oracle/src/helpers/vertex/lib.rs or tools/oracle/helpers/dispatch.py.
+  - The probe is explicit only from litellm_params, never from GeminiCall.project or GeminiCall.credentials, and the route's resolved values must not be merged into litellm_params. A deployment whose project comes from litellm_settings or the environment therefore reads GCS anonymously, exactly as LiteLLM does.
+  - The alias chain is Python or truthiness, not Option::is_some. An empty string, zero, false, an empty list or an empty object falls through to the next name or counts as absent (docs/compatibility.md).
+  - Resolve the uri and validate the bucket before any auth. No mint and no request for gs://bucket, gs:///object, an empty object, a name shorter than three characters, an uppercase letter, two dots in a row or a dotted quad.
+  - Quote with betterlite_http::url_path::quote_segment, never cloud_storage::encode_object_name, which percent-decodes first and would send a%20b where LiteLLM sends a%2520b.
+  - Use the splitext semantics, not Path::extension. The extension comes from the whole url after its last slash, so gs://bucket/photo.png?x=1 counts as the extension png?x=1 and is not probed on either side.
+  - Mint once per reference with no hoisting and no dedupe; two references to the same object mint and send twice, as LiteLLM's per-part call does.
+  - The pass runs after extract_system_instruction, append_response_schema_prompt and the litellm_param_ merge and before the provider match in body.rs. Do not move it into prepare, because prepare stays free of gs:// logic and the oracle adapter calls the pass directly.
+  - Normalize the metadata value with normalize_mime_type before writing it as the format hint. process_media's gcs_payload applies only apply_mime_alias to an explicit format, so writing the raw contentType would skip the registry and forward application/octet-stream where LiteLLM answers 400.
+  - A bare-string image_url is rewritten as {url, format}; an object keeps its other keys, detail included, and the assistant entry keeps its shape.
+  - The new error is a bodyless BadRequest with type None, param None and code Some("400"). Do not reuse RemoteMediaRequired, whose code is unsupported_remote_media, and do not route it through HistoryError::FileMedia.
+  - System messages are extracted before the pass, so their media never probes; when the model does not support a system message the extraction leaves it in place and LiteLLM merges it into user content, so the system role is walked too.
+  - Only provider_specific_fields.images and the user and system content parts are walked; assistant content parts other than text are never converted and tool results never probe.
+  - Build the query into the url string (?fields=contentType) and leave OutboundRequest.query empty, so a scripted transport and the real client see one url string.
+  - Keep the helper's refusing fetcher and mint doubles short. The vertex helper crate already has FixedMint impls in lyria_speech.rs and speech.rs, and the duplicate-function check pairs near copies.
+review_level: security
+budget: {max_changed_lines: 1500, max_new_expects: 1}

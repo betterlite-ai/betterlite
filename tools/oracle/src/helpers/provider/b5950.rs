@@ -10,11 +10,12 @@ use betterlite_provider::sap_auth::token::TokenCache;
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 mod support;
 
 use self::support::{MapConfigurations, Scripted, ScriptedClock, ScriptedTransport};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -103,7 +104,7 @@ fn credentials_output(
     environment: &EnvironmentInput,
     service_key: Option<&Json>,
     settings: Option<&Json>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let credentials = fetch_credentials(environment, service_key, settings)
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     let view = CredentialsView {
@@ -126,17 +127,13 @@ fn credentials_output(
     serde_json::to_value(view).map_err(|error| failure("InvalidInput", &error.to_string()))
 }
 
-fn validate_output(input: &CredentialsInput) -> crate::helpers::HelperResult {
+fn validate_output(input: &CredentialsInput) -> HelperResult {
     validate_credentials(&Credentials::from(input))
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     Ok(serde_json::Value::Null)
 }
 
-fn token_output(
-    input: &CredentialsInput,
-    responses: &[String],
-    times: &[i64],
-) -> crate::helpers::HelperResult {
+fn token_output(input: &CredentialsInput, responses: &[String], times: &[i64]) -> HelperResult {
     let cache = TokenCache::new(&Credentials::from(input))
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
     let clock = ScriptedClock {
@@ -170,7 +167,7 @@ fn deployment_output(
     mode: DeploymentMode,
     listing: &Json,
     configurations: &BTreeMap<String, Json>,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let source = MapConfigurations { configurations };
     let url = pick_orchestration_deployment(listing, mode, &source)
         .map_err(|error| failure("SapAuthError", &error.to_string()))?;
@@ -179,10 +176,10 @@ fn deployment_output(
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Credentials {
                 environment,

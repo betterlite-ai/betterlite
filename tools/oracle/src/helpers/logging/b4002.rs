@@ -12,10 +12,13 @@ use tokio::runtime::{Builder, Runtime};
 use tokio_util::sync::CancellationToken;
 use tracing_subscriber::layer::SubscriberExt as _;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 use self::logs::Logs;
 use self::scripted::{ManualClock, Reply, ScriptedTransport};
+use tokio::time;
+use tracing::subscriber;
 
 mod logs;
 mod records;
@@ -97,7 +100,7 @@ impl Helper for Op {
 fn scenario_report(runtime: &Runtime, scenario: &Scenario) -> Value {
     let logs = Logs::default();
     let subscriber = tracing_subscriber::registry().with(logs.clone());
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = subscriber::set_default(subscriber);
     runtime.block_on(drive(scenario, &logs))
 }
 
@@ -141,7 +144,7 @@ async fn drive(scenario: &Scenario, logs: &Logs) -> Value {
     transport.attach(&logger);
     let mut results = Vec::with_capacity(scenario.actions.len());
     for action in &scenario.actions {
-        let outcome = tokio::time::timeout(ACTION_DEADLINE, perform(action, &logger, &clock)).await;
+        let outcome = time::timeout(ACTION_DEADLINE, perform(action, &logger, &clock)).await;
         results.push(match outcome {
             Ok(Ok(value)) => value,
             Ok(Err(error)) => json!({ "error": error.to_string() }),

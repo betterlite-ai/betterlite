@@ -16,7 +16,8 @@ use serde_json::{Value, json};
 
 use super::input::{BodyCall, Input, OverrideCall, RegionCase, UrlCase, WorkspaceCase};
 use super::signing::signing;
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const FIXTURE_CONFIG: &str =
     "model_list:\n- model_name: unit\n  litellm_params: {model: bedrock/unit}\n";

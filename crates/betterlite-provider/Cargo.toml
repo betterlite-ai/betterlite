@@ -26,6 +26,7 @@ betterlite-redact = { path = "../betterlite-redact" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-streaming = { path = "../betterlite-streaming" }
 betterlite-tokenizer = { path = "../betterlite-tokenizer" }
+betterlite-vertex = { path = "../betterlite-vertex" }
 chrono.workspace = true
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 hex.workspace = true

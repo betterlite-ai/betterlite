@@ -13,7 +13,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use tokio::runtime::Builder;
 
 pub(crate) struct Op;
 
@@ -75,18 +77,16 @@ impl MintAccessToken for FixtureMint {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .build()
-            .or_value_error()?;
+    fn run(input: &Self::Input) -> HelperResult {
+        let runtime = Builder::new_current_thread().build().or_value_error()?;
         runtime.block_on(execute(input))
     }
 }
 
-async fn execute(input: &Input) -> crate::helpers::HelperResult {
+async fn execute(input: &Input) -> HelperResult {
     let settings = VertexSettings::default();
     let config = VertexInteractionsConfig {
         mint: Arc::new(FixtureMint {
@@ -130,7 +130,7 @@ async fn resolve(
     config: &VertexInteractionsConfig,
     settings: &VertexSettings,
     call: &Call,
-) -> crate::helpers::HelperResult {
+) -> HelperResult {
     let given = interaction_call(call, settings);
     match call.function {
         Function::Url => {

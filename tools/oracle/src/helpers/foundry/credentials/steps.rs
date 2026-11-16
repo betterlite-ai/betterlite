@@ -18,7 +18,8 @@ use betterlite_foundry::credentials::native::{foundry_rejects_tools, supports_na
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
-use crate::helpers::{HelperError, HelperResult, OrHelperError as _};
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::fixture::{EchoSources, secrets};
 use super::{AgentStep, AuthStep, GateStep, HeaderName, HostStep, Input, NativeStep, SettingsStep};

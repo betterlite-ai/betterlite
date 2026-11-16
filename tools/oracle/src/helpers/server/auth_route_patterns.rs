@@ -2,9 +2,12 @@ use betterlite_auth::auth_route_patterns::canonical::{
     RequestRouteSource, ScopeError, ScopeFields, get_request_route, get_request_route_template,
 };
 use betterlite_auth::auth_route_patterns::normalize::RouteNormalizer;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::{Arc, Mutex, PoisonError};
+use tracing::subscriber;
 use tracing_subscriber::layer::{Context, SubscriberExt as _};
 use tracing_subscriber::{Layer, Registry};
 
@@ -53,15 +56,15 @@ impl<Inner: tracing::Subscriber> Layer<Inner> for Logs {
     }
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::Scope { requests } => Ok(requests.iter().map(run_request).collect()),
             Input::Normalize { routes } => {
                 let normalizer = RouteNormalizer::new().map_err(|error| {
-                    Box::new(crate::helpers::HelperError {
+                    Box::new(HelperError {
                         class: "NormalizeError".to_owned(),
                         message: error.to_string(),
                         status: None,
@@ -82,7 +85,7 @@ impl crate::helpers::Helper for Op {
 fn run_request(input: &RequestInput) -> serde_json::Value {
     let logs = Logs::default();
     let subscriber = Registry::default().with(logs.clone());
-    let _guard = tracing::subscriber::set_default(subscriber);
+    let _guard = subscriber::set_default(subscriber);
     let scope = match input.scope {
         Access::Present => Ok(Some(ScopeFields {
             path: input.path.as_deref(),

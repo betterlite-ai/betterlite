@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-messages-beta-provider-identity
+call:
+  bedrock_messages_beta:
+    function: provider_identity
+    model_cost:
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    cases:
+      - {model: fixture-tool-search}
+      - {model: mystery-model, subclass_provider: ''}
+env: {}
+compare: {ignore: []}

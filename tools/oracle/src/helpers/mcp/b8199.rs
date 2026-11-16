@@ -1,9 +1,11 @@
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = serde_json::Value;
 
-    fn run(_input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(_input: &Self::Input) -> HelperResult {
         Self::not_built("b8199")
     }
 }

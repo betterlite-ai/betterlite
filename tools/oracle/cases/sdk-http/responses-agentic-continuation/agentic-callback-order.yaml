@@ -1,0 +1,61 @@
+kind: sdk_http
+name: agentic-callback-order
+env: {}
+call:
+  responses_agentic_continuation:
+    model: gpt-4o-mini
+    input: hello
+    params: {}
+    kwargs:
+      custom_llm_provider: openai
+      _agentic_loop_depth: 0
+      max_agentic_loops: 3
+      _agentic_loop_fingerprints: []
+    callbacks:
+      - name: skipped-string
+        skip: true
+      - name: throwing-gate
+        gate_error: boom
+    dynamic:
+      - name: false-gate
+        gate:
+          run: false
+      - name: plan-without-rerun
+        gate:
+          run: true
+          tools:
+            tool_calls:
+              - {id: call-ws, name: web_search}
+        plan:
+          run_agentic_loop: false
+          request_patch:
+            model: gpt-4o-mini-skipped
+            messages:
+              - {role: user, content: skipped}
+      - name: throwing-plan
+        gate:
+          run: true
+        plan_error: plan broke
+      - name: rerun-callback
+        gate:
+          run: true
+          tools:
+            tool_calls:
+              - {id: call-ws, name: web_search}
+        plan:
+          run_agentic_loop: true
+          request_patch:
+            messages:
+              - {role: user, content: continue}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_first, object: response, created_at: 1, status: completed, output: []}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {id: resp_next, object: response, created_at: 2, status: completed, output: []}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []

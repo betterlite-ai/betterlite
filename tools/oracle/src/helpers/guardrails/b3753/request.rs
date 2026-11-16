@@ -4,7 +4,7 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailMessage;
 use betterlite_guardrails::guardrails_ai_guardrail::InputFormat;
 
-use crate::case::UpstreamAnswer;
+use betterlite_oracle_runner::case::UpstreamAnswer;
 
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]

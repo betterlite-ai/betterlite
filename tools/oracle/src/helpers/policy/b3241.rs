@@ -7,7 +7,7 @@ mod tests;
 
 use serde::Deserialize;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Deserialize)]
 pub(crate) enum Input {
@@ -23,7 +23,7 @@ pub(crate) enum Input {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

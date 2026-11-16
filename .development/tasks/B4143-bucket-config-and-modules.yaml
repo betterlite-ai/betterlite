@@ -46,6 +46,7 @@ description: >-
   Fuzz target bucket_config_yaml in crates/betterlite-server/fuzz decodes arbitrary bytes through the function that turns an object body into a config value (parse_bucket_object(object_key, bytes)); it must never panic.
 scope:
   paths:
+    - "crates/betterlite-server/src/auth/auth_route_patterns/tests.rs"
     - crates/betterlite-server/src/bucket_config.rs
     - crates/betterlite-server/src/bucket_config/**
     - crates/betterlite-server/Cargo.toml

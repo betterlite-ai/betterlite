@@ -15,7 +15,8 @@ use tokio::sync::Notify;
 use tokio::task::{JoinSet, yield_now};
 
 use super::super::b4290::{failure, runtime};
-use crate::helpers::{HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const WAIT_TIMEOUT: Duration = Duration::from_secs(30);
 

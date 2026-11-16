@@ -17,7 +17,7 @@ use super::support::{
     self, AsCacheStore, AsNativeStore, RecordingBackend, RecordingNative, RecordingStore, failure,
     rebuild,
 };
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 #[derive(Deserialize)]
 pub(crate) struct ConvertInput {

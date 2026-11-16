@@ -1,0 +1,9 @@
+kind: helper
+name: foundry-mai-images-usages-seed
+call:
+  foundry_mai_images:
+    usages:
+      - null
+      - {num_input_text_tokens: 2, num_output_tokens: 3}
+env: {}
+compare: {ignore: []}

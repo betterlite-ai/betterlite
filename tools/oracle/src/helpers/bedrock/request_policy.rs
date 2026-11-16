@@ -1,12 +1,13 @@
 use std::task::{Context, Poll, Waker};
 
-use crate::helpers::{HelperError, HelperResult};
 use betterlite_bedrock::request_policy::aws_params::{map_auth_aliases, merge_aws_request_params};
 use betterlite_bedrock::request_policy::validation::validate_request_metadata;
 use betterlite_bedrock::request_policy::{
     BedrockRequestPolicy, OneResponse, Params, REQUEST_METADATA_HEADER, RequestValue,
     merge_invoke_headers,
 };
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use futures_util::{StreamExt as _, stream};
 use serde_json::{Value, json};
 
@@ -54,7 +55,7 @@ pub(crate) enum IteratorCall {
     Async,
 }
 
-pub(crate) fn invoke(input: &BedrockRequestPolicyInput) -> HelperResult {
+pub(crate) fn invoke_request_policy(input: &BedrockRequestPolicyInput) -> HelperResult {
     let policy = (!input.fields.is_empty()).then_some(BedrockRequestPolicy {
         fields: input.fields.iter().cloned().collect(),
     });
@@ -217,11 +218,11 @@ fn json_value(value: &RequestValue) -> Result<Value, serde_json::Error> {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = BedrockRequestPolicyInput;
 
     fn run(input: &Self::Input) -> HelperResult {
-        invoke(input)
+        invoke_request_policy(input)
     }
 }
 

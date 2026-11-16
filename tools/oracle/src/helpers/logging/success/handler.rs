@@ -13,9 +13,9 @@ use betterlite_logging::logging_success::handler::{async_success_handler, succes
 use betterlite_logging::logging_success::types::SuccessRequest;
 use chrono::{DateTime, FixedOffset};
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
-use crate::compare::helper::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::input::{ContextSpec, HandlerProbe, Mode, ResultKind, ResultSpec, SyncProbe};
 use super::output;
@@ -23,7 +23,7 @@ use super::scenario::{self, Scenario, ScenarioSpec};
 use super::state::{self, StateSpec};
 
 pub(crate) fn handler(probes: &[HandlerProbe]) -> Result<Value, Box<HelperError>> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(|failure| super::value_error(&failure))?;

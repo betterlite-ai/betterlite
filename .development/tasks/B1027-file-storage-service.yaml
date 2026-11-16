@@ -107,7 +107,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/file-storage-service/storage-only-upload.yaml
 deviations:
 - what: Storage-only uploads work, but target_model_names returns 400 invalid_request_error with param=target_model_names and code="400" before a write, even with a database.
-  why: Max has not decided managed files and batches; preserve the absent MIT managed_files hook until then, without a license gate.
+  why: Open-source LiteLLM behaves this way without the enterprise hook, and betterlite builds no managed files (decision 2026-10-31).
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/storage_backend_service.py#L74-L82
 out_of_scope:
 - _discard_orphaned_content, _create_unified_file_id and _store_in_managed_files have no reachable MIT caller without the enterprise hook. The owned upload function's L111-L124 continuation stays inactive; no replacement hook or warning case fabricates that branch.

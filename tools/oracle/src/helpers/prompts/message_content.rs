@@ -1,6 +1,7 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_openai::chat::content::from_model_response;
 use betterlite_openai::chat::response::ChatResponse;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_prompts::arguments::json::Json;
 use betterlite_prompts::message_content::{
     Message, any_messages::to_str_messages, convert_content_list_to_str,

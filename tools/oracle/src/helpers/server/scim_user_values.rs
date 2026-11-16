@@ -1,6 +1,7 @@
-use crate::helpers::{Helper, HelperError, HelperResult};
 use betterlite_auth::user_roles::UserRole;
 use betterlite_config::scim_role_settings::{ScimUserRole, Settings};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use betterlite_server::scim_projections::directory::Metadata;
 use betterlite_server::scim_records::user::User;
 use betterlite_server::scim_role_settings::data::extract_scim_user_data;

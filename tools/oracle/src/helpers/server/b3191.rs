@@ -5,7 +5,9 @@ use betterlite_server::public_endpoints::agent_fields::error::AgentFieldsError;
 use betterlite_server::public_endpoints::agent_fields::types::AgentCreateInfo;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -60,7 +62,7 @@ fn find_agent<'fields>(
 
 fn helper_error<M>(class: &str, message: M) -> Box<HelperError>
 where
-    M: std::fmt::Display,
+    M: Display,
 {
     Box::new(HelperError {
         class: class.to_owned(),

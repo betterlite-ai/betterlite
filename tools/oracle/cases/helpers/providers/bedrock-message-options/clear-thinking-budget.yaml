@@ -1,0 +1,79 @@
+kind: helper
+name: clear-thinking-budget
+call:
+  bedrock_message_options:
+    function: ensure_thinking
+    model_cost:
+      fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      bedrock/fixture-adaptive: {litellm_provider: bedrock, supports_adaptive_thinking: true}
+      fixture-legacy: {litellm_provider: bedrock}
+      bedrock/fixture-legacy: {litellm_provider: bedrock}
+      anthropic.claude-opus-4-5-fixture: {litellm_provider: bedrock}
+      bedrock/anthropic.claude-opus-4-5-fixture: {litellm_provider: bedrock}
+    cases:
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+      - model: anthropic.claude-opus-4-5-fixture
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+      - model: fixture-legacy
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+      - model: fixture-adaptive
+        request: {}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: compact_20260112}]}
+      - model: fixture-adaptive
+        request:
+          context_management: plain
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: plain}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: adaptive}
+      - model: anthropic.claude-opus-4-5-fixture
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 5000}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 5000}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: null}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: "2048"}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: 0}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: -5}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: true}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: [1]}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled, budget_tokens: "nope"}
+      - model: fixture-adaptive
+        request:
+          context_management: {edits: [{type: clear_thinking_20251015}]}
+          thinking: {type: enabled}
+env: {}
+compare: {ignore: []}

@@ -10,7 +10,7 @@ use opentelemetry_sdk::trace::{SpanData, SpanEvents, SpanLinks};
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::failure;
 

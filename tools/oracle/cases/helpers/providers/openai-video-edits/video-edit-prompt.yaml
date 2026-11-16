@@ -1,0 +1,41 @@
+kind: helper
+name: openai-video-edits-video-edit-prompt
+call:
+  openai_video_edits:
+    calls:
+      - op: edit_request
+        prompt: make it blue
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        api_base: 'https://mock.example/v1'
+        fixture: null
+        extra_body: null
+        prefetched_source_data: null
+      - op: edit_request
+        prompt: make it blue
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        api_base: 'https://mock.example/v1/'
+        fixture: null
+        extra_body: {prompt: override, duration: 8}
+        prefetched_source_data: null
+      - op: edit_request
+        prompt: make it blue
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        api_base: 'https://mock.example/v1'
+        fixture:
+          kind: stream
+          data_base64: bm90IHZpZGVv
+          name: clip.webm
+        extra_body: {prompt: override}
+        prefetched_source_data: null
+      - op: edit_request
+        prompt: make it blue
+        video_id: vid-1
+        api_base: 'https://mock.example/v1'
+        fixture:
+          kind: bytes
+          data_base64: ''
+        extra_body: null
+        prefetched_source_data: null
+env: {}
+compare:
+  ignore: []

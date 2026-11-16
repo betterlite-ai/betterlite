@@ -17,7 +17,8 @@ use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::OrHelperError as _;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Padded {
@@ -88,10 +89,10 @@ struct Choices {
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::CustomNames { tools } => Ok(json!(extract_custom_tool_names(tools))),
             Input::CustomSchema { custom_tools } => {
@@ -130,7 +131,7 @@ fn call_items(
         .collect()
 }
 
-fn argument_strings(case: &StringsCase) -> crate::helpers::HelperResult {
+fn argument_strings(case: &StringsCase) -> HelperResult {
     let limits = ApiLimits::default();
     let serialized: Vec<String> = case
         .values
@@ -170,7 +171,7 @@ fn argument_strings(case: &StringsCase) -> crate::helpers::HelperResult {
     }))
 }
 
-fn record_helpers(case: &RecordsCase) -> crate::helpers::HelperResult {
+fn record_helpers(case: &RecordsCase) -> HelperResult {
     let role_names = case
         .roles
         .iter()

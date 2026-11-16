@@ -38,11 +38,12 @@ fn fixture_logger_records_the_level_of_the_method_called() {
     assert!(failing.records.take().is_empty());
 }
 
-use crate::case::{HelperCase, helper::validate_helper};
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::ORACLE_DIR;
 
 #[test]
 fn helper_seeds_select_verbose_hooks() {
-    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let corpus = Path::new(ORACLE_DIR).join("fuzz/corpus/helper_case");
     let seeds: Vec<_> = fs::read_dir(corpus)
         .expect("helper corpus should exist")
         .filter_map(Result::ok)

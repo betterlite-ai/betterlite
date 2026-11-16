@@ -1,0 +1,27 @@
+kind: helper
+name: config-load-name-collision
+call:
+  b4776:
+    config:
+      - agent_name: twin
+        agent_card_params:
+          name: first
+      - agent_name: twin
+        agent_card_params:
+          name: second
+    reload: false
+    reload_config: null
+    db_agents: []
+    public_groups: null
+    ids_for:
+      - 72b33a1cb0bfc9cdd3db0102962414c7a0d85aad94eba64cd8c33265242f7f9f
+    stable_ids:
+      - 3135a366984edaf87e84ab20f6c2d788be57f8c9d00012eaab77122f8282abf4
+      - 3c7e3968e1ad8328444e789f484a796aa09ff66ccea3ce23593a14c882f9cd79
+    by_id: []
+    by_name:
+      - twin
+    deregister: []
+env: {}
+compare:
+  ignore: []

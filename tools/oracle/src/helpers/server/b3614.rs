@@ -5,7 +5,7 @@ use betterlite_server::passthrough_route_registry::listing::registered_route_key
 use betterlite_server::passthrough_route_registry::removal::remove_endpoint_routes;
 use betterlite_server::passthrough_route_registry::route_table::RouteTable;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -60,7 +60,7 @@ enum RouteTypeInput {
     Subpath,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {

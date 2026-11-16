@@ -17,7 +17,9 @@ use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_models::decisions::Json;
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::OrHelperError as _;
+use betterlite_oracle_helper_api::error::{HelperError, OrHelperError as _};
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use std::fmt::Display;
 
 pub(crate) struct Op;
 
@@ -99,10 +101,10 @@ struct CostOutput {
     declared: Vec<String>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::RedactionDecision(decision) => encode(
                 decision.flags.turn_off_message_logging
@@ -149,7 +151,7 @@ fn cost_output(input: &CostInput) -> CostOutput {
     }
 }
 
-fn metadata_output(input: &MetadataInput) -> crate::helpers::HelperResult {
+fn metadata_output(input: &MetadataInput) -> HelperResult {
     let router = router_span_fields(
         input.payload.metadata.routing_decision.as_ref(),
         input.redact_prompt_text,
@@ -167,7 +169,7 @@ fn metadata_output(input: &MetadataInput) -> crate::helpers::HelperResult {
     encode(metadata)
 }
 
-fn encode<T>(value: T) -> crate::helpers::HelperResult
+fn encode<T>(value: T) -> HelperResult
 where
     T: Serialize,
 {
@@ -177,11 +179,11 @@ where
     }
 }
 
-fn value_error<Error>(error: Error) -> Box<crate::helpers::HelperError>
+fn value_error<Error>(error: Error) -> Box<HelperError>
 where
-    Error: std::fmt::Display,
+    Error: Display,
 {
-    Box::new(crate::helpers::HelperError {
+    Box::new(HelperError {
         class: "ValueError".to_owned(),
         status: None,
         error_type: None,

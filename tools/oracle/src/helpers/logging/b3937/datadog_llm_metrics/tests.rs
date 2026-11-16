@@ -5,20 +5,23 @@ use std::path::PathBuf;
 
 use rstest::rstest;
 
-use crate::case::{HelperCase, helper::validate_helper};
-use crate::helpers::{Helper as _, HelperRun, run_case};
+use betterlite_oracle_helper_api::helper::Helper as _;
+use betterlite_oracle_runner::case::helper::{HelperCase, validate_helper};
+use betterlite_oracle_runner::helpers::{HelperRun, run_case};
 
 use super::Op;
 
 #[rstest]
 fn replays_every_datadog_llm_metrics_case_against_litellm(
-    #[files("cases/helpers/datadog-llm-metrics/*.yaml")] path: PathBuf,
+    #[base_dir = "../../.."]
+    #[files("cases/helpers/datadog-llm-metrics/*.yaml")]
+    path: PathBuf,
 ) {
     let source = fs::read_to_string(&path).expect("the case is readable");
     let case = serde_saphyr::from_str::<HelperCase>(&source).expect("the case parses");
     validate_helper(&path, &case).expect("the case validates");
     assert_eq!(case.call.operation, "b3937");
-    let run = run_case(&case, false).expect("the case runs");
+    let run = run_case(&[crate::GROUP], &case, false).expect("the case runs");
     assert!(matches!(run, HelperRun::Match), "{}", path.display());
 }
 

@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-messages-beta-context-filter
+call:
+  bedrock_messages_beta:
+    function: context_filter
+    cases:
+      - request:
+          context_management:
+            edits: [{type: compact_20260112}, {type: clear_thinking_20251015}]
+          max_tokens: 8
+        betas: [effort-2025-11-24]
+env: {}
+compare: {ignore: []}

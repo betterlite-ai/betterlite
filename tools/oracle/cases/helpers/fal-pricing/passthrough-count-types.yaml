@@ -1,0 +1,41 @@
+kind: helper
+name: fal-pricing-passthrough-count-types
+call:
+  fal_pricing:
+    operation: passthrough_count_types
+    model: ""
+    catalog:
+      fal_ai/fal-ai/pass: {litellm_provider: fal_ai, output_cost_per_image: 0.5, output_cost_per_image_1024: 0.25}
+      fal_ai/fal-ai/zero: {litellm_provider: fal_ai, output_cost_per_image: 0}
+      fal_ai/fal-ai/flag: {litellm_provider: fal_ai, output_cost_per_image: true}
+    cases: []
+    passthrough_cases:
+      - model: fal-ai/pass
+        request_body: {resolution: 1024, num_images: 3}
+      - model: fal-ai/pass
+        request_body: {num_images: 3}
+      - model: fal-ai/pass
+        request_body: {resolution: "1024", num_images: 2}
+      - model: fal-ai/pass
+        request_body: {resolution: true, num_images: 2}
+      - model: fal-ai/pass
+        request_body: {num_images: true}
+      - model: fal-ai/pass
+        request_body: {num_images: 0}
+      - model: fal-ai/pass
+        request_body: {num_images: -1}
+      - model: fal-ai/pass
+        request_body: {num_images: 2.0}
+      - model: fal-ai/pass
+        request_body: {}
+      - model: fal-ai/pass
+        request_body: {num_images: 4}
+      - model: fal-ai/zero
+        request_body: {}
+      - model: fal-ai/flag
+        request_body: {}
+      - model: fal-ai/missing
+        request_body: {}
+env: {}
+compare:
+  ignore: []

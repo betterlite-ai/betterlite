@@ -19,7 +19,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::script::{ParamCase, ReplyCase, RequestCase, ValidateCase, runtime};
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 const NOW: i64 = 1_700_000_000;
 

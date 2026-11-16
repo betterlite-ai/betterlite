@@ -16,7 +16,7 @@ use betterlite_openai::volcengine_embedding::request::{
 use secrecy::SecretString;
 use serde_json::Value;
 
-use crate::helpers::HelperResult;
+use betterlite_oracle_helper_api::helper::HelperResult;
 
 use super::input::Step;
 

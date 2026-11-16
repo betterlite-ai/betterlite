@@ -1,0 +1,11 @@
+kind: helper
+name: bucket-config-include-not-mapping
+call:
+  b4143:
+    operation: load_config
+    object_key: config.yaml
+    objects:
+      config.yaml: {include: [list.yaml]}
+      list.yaml: [one, two]
+env: {}
+compare: {ignore: []}

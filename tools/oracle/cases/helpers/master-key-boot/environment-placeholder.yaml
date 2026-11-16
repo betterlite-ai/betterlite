@@ -1,0 +1,17 @@
+kind: helper
+name: master-key-boot-environment-placeholder
+call:
+  master_key_boot:
+    master_key: sk-1234
+    environment_master_key: sk-1234
+    general_settings:
+      master_key: sk-1234
+    config_file_path: /app/config.yaml
+    override_env_is_on: false
+    database:
+      salt_key_is_set: false
+      is_configured: false
+    stored_secret_count: null
+env: {}
+compare:
+  ignore: []

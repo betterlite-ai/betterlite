@@ -1,0 +1,51 @@
+kind: helper
+name: openai-video-edits-video-part-filename
+call:
+  openai_video_edits:
+    calls:
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: stream
+          data_base64: bm90IHZpZGVv
+          name: clip.webm
+        api_base: 'https://mock.example/v1'
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: stream
+          data_base64: bm90IHZpZGVv
+          name: null
+        api_base: 'https://mock.example/v1'
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: stream
+          data_base64: bm90IHZpZGVv
+          name: ''
+        api_base: 'https://mock.example/v1'
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: bytes
+          data_base64: bm90IHZpZGVv
+        api_base: 'https://mock.example/v1'
+      - op: create_character_request
+        name: hero
+        fixture:
+          kind: text
+          value: a supplied string
+        api_base: 'https://mock.example/v1'
+      - op: edit_request
+        prompt: make it blue
+        video_id: vid-1
+        api_base: 'https://mock.example/v1'
+        fixture:
+          kind: stream
+          data_base64: bm90IHZpZGVv
+          name: clip.webm
+        extra_body: null
+        prefetched_source_data: null
+env: {}
+compare:
+  ignore: []

@@ -1,0 +1,17 @@
+kind: helper
+name: bedrock-messages-beta-provider-beta-identity
+call:
+  bedrock_messages_beta:
+    function: provider_identity
+    model_cost:
+      bedrock/claude-sonnet-4-5: {litellm_provider: bedrock, supports_tool_search: false}
+      bedrock/fixture-no-flag: {litellm_provider: bedrock, mode: chat}
+      bedrock/fixture-tool-search: {litellm_provider: bedrock, supports_tool_search: true}
+    cases:
+      - {model: fixture-tool-search}
+      - {model: claude-sonnet-4-5}
+      - {model: fixture-no-flag, subclass_provider: ''}
+      - {model: claude-sonnet-4-5-20990101}
+      - {model: mystery-model, subclass_provider: bedrock_mantle}
+env: {LITELLM_LOCAL_ANTHROPIC_BETA_HEADERS: 'True'}
+compare: {ignore: []}

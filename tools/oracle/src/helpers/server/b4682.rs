@@ -3,14 +3,16 @@ use serde_json::json;
 mod input;
 mod operations;
 mod tests;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
+use betterlite_server::mcp::catalog_guard;
 use input::Input;
 
 pub(crate) struct Op;
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         match input {
             Input::StripPrefix { name, server } => {
                 Ok(operations::run_prefix(name, server.as_ref()))
@@ -48,7 +50,7 @@ impl crate::helpers::Helper for Op {
                 *batch_report,
             ),
             Input::Error { failure } => Ok(json!({
-                "reason": betterlite_server::mcp::catalog_guard::block_reason(failure)
+                "reason": catalog_guard::block_reason(failure)
             })),
         }
     }

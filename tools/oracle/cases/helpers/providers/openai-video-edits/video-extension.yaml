@@ -1,0 +1,43 @@
+kind: helper
+name: openai-video-edits-video-extension
+call:
+  openai_video_edits:
+    calls:
+      - op: extension_request
+        prompt: extend
+        video_id: video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOm9wZW5haTttb2RlbF9pZDpzb3JhLTI7dmlkZW9faWQ6dmlkLTEyMw==
+        seconds: '8'
+        api_base: 'https://mock.example/v1'
+        extra_body: null
+      - op: extension_request
+        prompt: extend
+        video_id: vid-1
+        seconds: '08'
+        api_base: 'https://mock.example/v1/'
+        extra_body: null
+      - op: extension_request
+        prompt: extend
+        video_id: vid-1
+        seconds: '8'
+        api_base: 'https://mock.example/v1'
+        extra_body: {prompt: again, seconds: '12', video: {id: other}}
+      - op: extension_response
+        body: '{"id":"video_1","object":"video","status":"completed","created_at":1700000000,"completed_at":null,"expires_at":null,"error":null,"progress":null,"remixed_from_video_id":null,"seconds":"8","size":"1280x720","model":null,"usage":null}'
+        provider: azure
+      - op: extension_response
+        body: '{"id":"video_1","object":"video","status":"completed"}'
+        provider: null
+      - op: extension_response
+        body: '{"id":"","object":"video","status":"completed"}'
+        provider: openai
+      - op: edit_response
+        body: '{"id":"video_2","object":"video","status":"in_progress"}'
+        provider: openai
+        request_data: null
+      - op: edit_response
+        body: '{"id":"video_2","object":"video","status":"in_progress"}'
+        provider: ''
+        request_data: null
+env: {}
+compare:
+  ignore: []

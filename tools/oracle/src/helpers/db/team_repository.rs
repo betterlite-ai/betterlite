@@ -2,6 +2,8 @@ use betterlite_db::budget_permission_rows::JsonData;
 use betterlite_db::team_repository::decoder::{TeamRecord, TeamRecordError, decode_team_record};
 use betterlite_db::team_rows::decoder::TeamRowError;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
@@ -19,10 +21,10 @@ struct Case {
     records: Vec<Option<JsonData>>,
 }
 
-impl crate::helpers::Helper for Op {
+impl Helper for Op {
     type Input = Input;
 
-    fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+    fn run(input: &Self::Input) -> HelperResult {
         let mut output = BTreeMap::new();
         for (name, case) in &input.cases {
             let outcomes = case
@@ -33,7 +35,7 @@ impl crate::helpers::Helper for Op {
             output.insert(name.clone(), outcomes);
         }
         serde_json::to_value(output).map_err(|source| {
-            Box::new(crate::helpers::HelperError {
+            Box::new(HelperError {
                 class: "Output".to_owned(),
                 status: None,
                 error_type: None,

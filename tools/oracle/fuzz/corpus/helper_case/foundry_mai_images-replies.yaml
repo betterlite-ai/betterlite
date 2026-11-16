@@ -1,0 +1,12 @@
+kind: helper
+name: foundry-mai-images-replies-seed
+call:
+  foundry_mai_images:
+    replies:
+      - status_code: 200
+        body: '{"data":[{"b64_json":"AAAA"}],"usage":{"input_tokens":1}}'
+        request_data: {prompt: seed}
+        optional_params: {width: 800}
+        api_key: sk-seed
+env: {}
+compare: {ignore: []}

@@ -15,7 +15,7 @@ use rust_decimal::Decimal;
 use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
-use crate::helpers::HelperError;
+use betterlite_oracle_helper_api::error::HelperError;
 
 use super::input::{Input, Operation};
 

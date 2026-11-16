@@ -9,10 +9,14 @@ use betterlite_guardrails::cisco_verdict_enforcement::api_error::ApiErrorOutcome
 use betterlite_guardrails::cisco_verdict_enforcement::finalize::FinalizeOutcome;
 use serde_json::{Value, json};
 
-use crate::case::UpstreamAnswer;
-use crate::helpers::HelperError;
-use crate::mock::MockProvider;
-use crate::routing_mock_scripts::MockScript;
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_runner::case::UpstreamAnswer;
+use betterlite_oracle_runner::mock::MockProvider;
+use betterlite_oracle_runner::routing_mock_scripts::MockScript;
+use std::collections::BTreeMap;
+use std::io::Error;
+use std::slice;
+use tokio::runtime::{Builder, Runtime};
 
 pub(super) fn fail(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
@@ -57,7 +61,7 @@ pub(super) fn configure(
     }
     let entry = json!({"guardrail_name": "cisco-ai-defense", "litellm_params": parameters});
     let loaded = ConfigLoader {
-        lookup: std::collections::BTreeMap::<String, String>::new(),
+        lookup: BTreeMap::<String, String>::new(),
     }
     .load(&json!({"guardrails": [entry]}).to_string());
     let outcome = loaded.map(|config| {
@@ -95,28 +99,21 @@ pub(super) fn guardrail(
         .map_err(|error| fail("OSError", error.to_string()))
 }
 
-pub(super) type Prepared = (
-    Option<MockProvider>,
-    TcpListener,
-    String,
-    tokio::runtime::Runtime,
-);
+pub(super) type Prepared = (Option<MockProvider>, TcpListener, String, Runtime);
 
 pub(super) fn prepare(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>> {
-    let io = |error: std::io::Error| fail("OSError", error.to_string());
+    let io = |error: Error| fail("OSError", error.to_string());
     // with no answer this stays bound and silent until the caller drops it, so the call times out instead of being refused
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
     let mock = answer
-        .map(|reply| {
-            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
-        })
+        .map(|reply| MockScript::try_from(slice::from_ref(reply)).and_then(MockProvider::start))
         .transpose()
         .map_err(|error| fail("MockError", error.to_string()))?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
         None => format!("http://{}", silent.local_addr().map_err(io)?),
     };
-    let runtime = tokio::runtime::Builder::new_current_thread()
+    let runtime = Builder::new_current_thread()
         .enable_all()
         .build()
         .map_err(io)?;

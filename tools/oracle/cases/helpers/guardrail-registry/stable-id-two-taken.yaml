@@ -1,0 +1,12 @@
+kind: helper
+name: stable-id-two-taken
+call:
+  b3682:
+    function: stable_guardrail_id
+    guardrail_name: pii-guard
+    existing_ids:
+      - fcb4375e-8649-5343-8c8f-9e59925ae70b
+      - 7ab7011f-602f-5459-8311-adc11c2b2c7a
+env: {}
+compare:
+  ignore: []

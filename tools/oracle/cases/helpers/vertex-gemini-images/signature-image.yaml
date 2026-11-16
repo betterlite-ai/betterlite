@@ -1,0 +1,23 @@
+kind: helper
+name: vertex-gemini-images-signature-image
+call:
+  vertex_gemini_images:
+    model: gemini-2.5-flash-image
+    mappings: []
+    target: null
+    response:
+      candidates:
+        - content:
+            parts:
+              - inlineData: {mimeType: image/png, data: AAA}
+                thoughtSignature: sig-1
+              - inlineData: {data: BBB}
+              - text: not an image
+        - content:
+            parts:
+              - inlineData: {data: CCC}
+                thoughtSignature: ""
+        - content: {}
+        - finishReason: STOP
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,63 @@
+task: B9461
+deviations:
+  - what: >-
+      start_time and end_time reach the guardrail record as Unix epoch seconds from the wall clock, and duration is
+      measured on a monotonic clock. LiteLLM stamps all three fields with two time.monotonic() readings and stores
+      their difference.
+    why: >-
+      The record's start_time and end_time are absolute instants that every guardrail record carries and sinks compare
+      across processes, so betterlite writes epoch seconds there the way noma and CrowdStrike already do. A monotonic
+      reading has no portable zero, so only duration can come from the monotonic clock, and the duration still means
+      the same elapsed time as LiteLLM's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L346-L348
+  - what: >-
+      A wall clock set before the Unix epoch records start_time and end_time as 0.0. LiteLLM's record only ever
+      holds two monotonic readings, which stay usable on such a host.
+    why: >-
+      Rust has no negative reading for a SystemTime before the epoch, and a host clock set before 1970 is a broken
+      setup rather than one a guardrail can rely on; the run still compacts and records the counts.
+    link: ""
+  - what: >-
+      A guardrail record that cannot be written is logged as a warning and the request continues uncompacted or
+      compacted as decided. LiteLLM's add_standard_logging_guardrail_information_to_request_data raises out of
+      apply_guardrail if serializing the entry fails.
+    why: >-
+      betterlite's typed record values serialize for every value this guardrail can produce, so the branch is a
+      backstop, and a logging failure must not turn a served request into an error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L394-L407
+  - what: >-
+      relevance_threshold outside 0.0 to 1.0, min_chars_to_evaluate below 0, and max_result_chars_in_state below 1
+      fail TypeSafeGuard::new with the typed settings error that names the field. LiteLLM's constructor stores
+      whatever number it is handed; its pydantic config model is what rejects those values, with ge/le bounds on the
+      same three fields.
+    why: >-
+      B3798's TypeSafeSettings types the three values with fallible newtypes that carry the same bounds as LiteLLM's
+      config model, so the constructor is where an out-of-range TypeSafeArgs meets the check. No config that reaches
+      the constructor in LiteLLM can carry one of these values past the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/typesafe.py#L11-L34
+  - what: >-
+      The HTTP client is a constructor argument rather than one built inside the constructor. LiteLLM builds an
+      AsyncHTTPHandler with get_async_httpx_client unless the optional async_handler is passed.
+    why: >-
+      Clients are built once by the caller and shared by every guardrail call; the request still carries the
+      guardrail's own timeout, so a working TypeSafe setup reaches the same endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L185-L187
+  - what: >-
+      A timeout that is negative, NaN or outside Duration's range fails TypeSafeGuard::new with the typed error
+      that names the value. LiteLLM's constructor stores the float it is handed as self.timeout and passes it to
+      the POST on every request (typesafe.py L276), where the call fails and unreachable_fallback decides the
+      outcome: fail_open forwards the request uncompacted, fail_closed answers 502.
+    why: >-
+      Duration cannot represent a negative or NaN number of seconds, so such a value can never reach a request;
+      refusing it when the guard is built reports the invalid configuration once instead of turning every
+      request into an unreachable-service record.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L164-L193
+kept_bugs:
+  - what: >-
+      chars_removed subtracts DROPPED_RESULT_TEXT's length once per dropped message, so it goes negative for a tool
+      result shorter than the replacement text and overstates the removed characters when the text is long.
+    why: >-
+      The number is written to spend logs, and a setup that compares or sums it across requests would see a
+      different value if betterlite computed max(len - marker, 0). No shipped behavior is broken by copying LiteLLM's
+      arithmetic, so the recorded value stays identical.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L383-L386

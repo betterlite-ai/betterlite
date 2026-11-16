@@ -14,13 +14,14 @@ use betterlite_server::agent_endpoints::search::{
 };
 use betterlite_server::auth::auth_identity::AuthContext;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
+use tokio::runtime::{Builder, Runtime};
 
 use self::records::{
     EmbeddingProbe, Failure, FailuresInput, MapEmbedder, MissingEmbedders, RankInput, ResultInput,
     SearchAgentsInput,
 };
-use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_oracle_helper_api::error::HelperError;
+use betterlite_oracle_helper_api::helper::{Helper, HelperResult};
 
 pub(crate) struct Op;
 
@@ -47,7 +48,9 @@ fn project(call: &ResultInput) -> HelperResult {
 }
 
 fn rank(call: &RankInput) -> HelperResult {
-    let executor = executor()?;
+    let executor = Builder::new_current_thread()
+        .build()
+        .map_err(helper_error)?;
     let index = AgentSearchIndex::default();
     let embedder = MapEmbedder {
         vectors: call.vectors.clone(),
@@ -65,7 +68,9 @@ fn rank(call: &RankInput) -> HelperResult {
 }
 
 fn search(call: &SearchAgentsInput) -> HelperResult {
-    let executor = executor()?;
+    let executor = Builder::new_current_thread()
+        .build()
+        .map_err(helper_error)?;
     let index = AgentSearchIndex::default();
     let caller = caller();
     let embedders = MissingEmbedders;
@@ -102,7 +107,9 @@ fn search(call: &SearchAgentsInput) -> HelperResult {
 }
 
 fn failures(call: &FailuresInput) -> HelperResult {
-    let executor = executor()?;
+    let executor = Builder::new_current_thread()
+        .build()
+        .map_err(helper_error)?;
     let index = AgentSearchIndex::default();
     let failed = Failure::Value {
         message: call.message.clone(),
@@ -170,12 +177,6 @@ fn outcome_value(outcome: AgentSearchOutcome) -> Value {
         }
         AgentSearchOutcome::EmbeddingFailed { reason } => json!({"failed": {"reason": reason}}),
     }
-}
-
-fn executor() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(helper_error)
 }
 
 fn caller() -> AuthContext {
