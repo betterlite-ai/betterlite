@@ -139,9 +139,10 @@ impl LoggingState {
         let session_id = session_id_from_kwargs(&init.kwargs)?;
         let trace_id = init.litellm_trace_id.clone().unwrap_or_else(next_trace_id);
         let (messages, copy_ms) = normalized_messages(init.messages.as_ref(), &mut clock);
-        let ownership = apply_correlation(&mut correlation, &trace_id, &session_id, redactor);
         let model_call_details = initial_model_call_details(&init, &trace_id);
         Ok(Self {
+            // The literal moves the ids this borrows, so the correlation is built before them
+            correlation: apply_correlation(&mut correlation, &trace_id, &session_id, redactor),
             model: init.model,
             messages,
             stream: init.stream,
@@ -173,7 +174,6 @@ impl LoggingState {
             cost_breakdown: None,
             billed_token_rates: None,
             streamed_anthropic_message_id: None,
-            correlation: ownership,
             deferred: DeferredLogging::default(),
             callback_policy: init.callback_policy,
         })
