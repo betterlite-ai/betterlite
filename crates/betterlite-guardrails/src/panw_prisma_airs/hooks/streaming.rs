@@ -64,13 +64,3 @@ pub enum StreamError {
     #[error(transparent)]
     Masking(#[from] MaskingError),
 }
-
-impl From<assembly::StreamScanError> for StreamError {
-    fn from(error: assembly::StreamScanError) -> Self {
-        match error {
-            assembly::StreamScanError::Http(http) => Self::Http(http),
-            assembly::StreamScanError::Data { source } => Self::Data { source },
-            assembly::StreamScanError::Masking(source) => Self::Masking(source),
-        }
-    }
-}

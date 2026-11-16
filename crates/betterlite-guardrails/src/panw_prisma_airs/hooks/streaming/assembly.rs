@@ -1,37 +1,22 @@
 use std::time::SystemTime;
 
-use thiserror::Error;
-
+use super::StreamError;
 use crate::panw_prisma_airs::audit::Direction;
 use crate::panw_prisma_airs::construct::PanwPrismaAirs;
 use crate::panw_prisma_airs::error_detail::{GuardrailHttpError, build_error_detail};
 use crate::panw_prisma_airs::hooks::data::{Data, call_id};
-use crate::panw_prisma_airs::hooks::error::HookDataError;
 use crate::panw_prisma_airs::hooks::response::extraction_view;
 use crate::panw_prisma_airs::hooks::scan_metadata;
 use crate::panw_prisma_airs::payload::ScanRequest;
 use crate::panw_prisma_airs::scan::call_panw_api;
 use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_extraction::extract_response_text;
-use crate::prisma_airs_masking::{MaskingError, Response, get_masked_text, mask_response};
+use crate::prisma_airs_masking::{Response, get_masked_text, mask_response};
 
 #[derive(Debug)]
 pub struct StreamScan {
     pub modified: bool,
     pub verdict: ScanVerdict,
-}
-
-#[derive(Debug, Error)]
-pub enum StreamScanError {
-    #[error(transparent)]
-    Http(#[from] GuardrailHttpError),
-    #[error("the streamed response metadata could not be read: {source}")]
-    Data {
-        #[source]
-        source: HookDataError,
-    },
-    #[error(transparent)]
-    Masking(#[from] MaskingError),
 }
 
 // Mirrors LiteLLM's fn _scan_and_process_streaming_response; a scan failure returns its verdict to the caller.
@@ -40,7 +25,7 @@ pub async fn scan_streaming_response(
     data: &Data,
     response: &mut Response,
     start_time: SystemTime,
-) -> Result<StreamScan, StreamScanError> {
+) -> Result<StreamScan, StreamError> {
     let response_text = extract_response_text(&extraction_view(response));
     if response_text.trim().is_empty() {
         tracing::info!("PANW Prisma AIRS: No content to scan in streaming response");
@@ -50,7 +35,7 @@ pub async fn scan_streaming_response(
         });
     }
     let metadata =
-        scan_metadata::scan_metadata(data).map_err(|source| StreamScanError::Data { source })?;
+        scan_metadata::scan_metadata(data).map_err(|source| StreamError::Data { source })?;
     let verdict = call_panw_api(
         guardrail,
         ScanRequest {
@@ -77,7 +62,7 @@ fn apply_masking(
     guardrail: &PanwPrismaAirs,
     response: &mut Response,
     verdict: &ScanVerdict,
-) -> Result<bool, StreamScanError> {
+) -> Result<bool, StreamError> {
     let masked = get_masked_text(&verdict.masks, true).filter(|text| !text.is_empty());
     let category = verdict.category.as_deref().unwrap_or("unknown");
     match (verdict.action, masked) {
@@ -102,7 +87,7 @@ fn apply_masking(
         (Action::Block, _) => {
             let detail = build_error_detail(guardrail, verdict, Direction::Response);
             tracing::warn!("PANW Prisma AIRS: {}", detail.error.message);
-            Err(StreamScanError::Http(GuardrailHttpError {
+            Err(StreamError::Http(GuardrailHttpError {
                 status: 400,
                 detail: Box::new(detail),
             }))

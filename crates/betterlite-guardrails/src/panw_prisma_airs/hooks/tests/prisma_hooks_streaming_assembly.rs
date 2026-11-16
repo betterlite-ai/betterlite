@@ -6,9 +6,8 @@ use super::support::{
     settings, text_of,
 };
 use crate::panw_prisma_airs::error_detail::ErrorCode;
-use crate::panw_prisma_airs::hooks::streaming::assembly::{
-    StreamScanError, scan_streaming_response,
-};
+use crate::panw_prisma_airs::hooks::streaming::StreamError;
+use crate::panw_prisma_airs::hooks::streaming::assembly::scan_streaming_response;
 use crate::panw_prisma_airs::verdict::{Action, Failure};
 use crate::prisma_airs_masking::{MaskContent, MaskedResponseMessage};
 
@@ -109,7 +108,7 @@ async fn a_blocked_response_with_a_mask_but_no_flag_errors() {
     .await
     .expect_err("blocked");
     match error {
-        StreamScanError::Http(http) => {
+        StreamError::Http(http) => {
             assert_eq!(http.status, 400);
             assert_eq!(
                 http.detail.error.code,
@@ -282,7 +281,7 @@ async fn an_oversized_mask_errors() {
     )
     .await
     .expect_err("oversized");
-    assert!(matches!(error, StreamScanError::Masking(_)));
+    assert!(matches!(error, StreamError::Masking(_)));
 }
 
 #[tokio::test]
@@ -299,6 +298,6 @@ async fn unreadable_metadata_errors_before_the_scan() {
     )
     .await
     .expect_err("metadata");
-    assert!(matches!(error, StreamScanError::Data { .. }));
+    assert!(matches!(error, StreamError::Data { .. }));
     assert!(server.body_texts().await.is_empty());
 }
