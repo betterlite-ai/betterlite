@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::aliases::add_usage_detail_aliases;
 use super::error::LiveAccountingError;
-use super::usage::{chat_usage, consume_usage_metadata, reencode};
+use super::usage::{chat_usage, consume_usage_metadata};
 use crate::gemini_live_client::records::ServerMessage;
 use crate::gemini_live_client::state::LiveSessionState;
 use crate::gemini_live_setup::decode::decode_gemini_live_setup;
@@ -73,7 +73,7 @@ pub fn transform_response_done_event(
         .as_ref()
         .and_then(|content| content.grounding_metadata.as_ref());
     let chat = chat_usage(reported.as_ref(), grounding)?;
-    let mut usage: Object = reencode(&project_usage(&chat))?;
+    let mut usage: Object = serde_json::from_slice(&serde_json::to_vec(&project_usage(&chat))?)?;
     add_usage_detail_aliases(&mut usage);
     Ok(ResponseDoneEvent {
         event_type: "response.done",
@@ -93,9 +93,9 @@ pub fn transform_response_done_event(
     })
 }
 
-fn generation_config(request: Option<&str>) -> Result<GenerationConfig, LiveAccountingError> {
-    match request.filter(|request| !request.is_empty()) {
-        Some(request) => Ok(decode_gemini_live_setup(request)?.generation_config),
+fn generation_config(stored_setup: Option<&str>) -> Result<GenerationConfig, LiveAccountingError> {
+    match stored_setup.filter(|text| !text.is_empty()) {
+        Some(text) => Ok(decode_gemini_live_setup(text)?.generation_config),
         None => Ok(GenerationConfig::default()),
     }
 }

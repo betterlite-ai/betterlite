@@ -48,7 +48,7 @@ fn the_estimate_rounds_exact_ratios_to_the_even_neighbour(
             usage_type: "tokens",
             input_tokens: audio_tokens,
             output_tokens,
-            total_tokens: audio_tokens + output_tokens,
+            total_tokens: audio_tokens.saturating_add(output_tokens),
             input_token_details: TranscriptionInputDetails {
                 text_tokens: 0,
                 audio_tokens,

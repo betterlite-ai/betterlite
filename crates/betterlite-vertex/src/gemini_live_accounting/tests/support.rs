@@ -69,7 +69,7 @@ pub(crate) fn project(usage: &Usage) -> ResponseApiUsage {
     let grounding: BTreeMap<String, WireJson> = usage
         .prompt_tokens_details
         .iter()
-        .flat_map(|details| details.web_search_requests)
+        .filter_map(|details| details.web_search_requests)
         .map(|count| {
             (
                 "web_search_requests".to_owned(),

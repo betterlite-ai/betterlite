@@ -8,7 +8,7 @@ use crate::gemini_usage::error::UsageError;
 #[derive(Debug, Error)]
 pub enum LiveAccountingError {
     #[error("a Gemini Live usage record could not be converted")]
-    Convert(#[source] serde_json::Error),
+    Convert(#[from] serde_json::Error),
     #[error(transparent)]
     Usage(#[from] UsageError),
     #[error(transparent)]
