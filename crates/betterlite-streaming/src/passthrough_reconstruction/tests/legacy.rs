@@ -166,6 +166,44 @@ async fn skips_a_malformed_event_after_logging_it() {
 }
 
 #[tokio::test]
+async fn truncates_the_skipped_event_preview() {
+    let costs = FixtureCosts;
+    let counter = FixtureCounter;
+    let hooks = fixture_hooks();
+    let services = AssemblyServices {
+        costs: &costs,
+        counter: &counter,
+        logging: None,
+        hooks: &hooks,
+    };
+    let mut converter = ScriptedConverter {
+        seen: Vec::new(),
+        malformed: Some("XXXX"),
+        ended: None,
+        failed: None,
+    };
+    let long = "y".repeat(300);
+    let chunks = [text_chunk(&format!("data: XXXX{long}"))];
+    let request = AssemblyRequest {
+        chunks: &chunks,
+        converter: &mut converter,
+        now: FIXED_NOW,
+    };
+    assert!(
+        assemble_response_legacy(request, &services)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let messages = hooks.logger.messages();
+    let preview = messages[1]
+        .strip_prefix("Skipping non-JSON SSE event: ")
+        .expect("the skip line carries the preview");
+    assert_eq!(preview.chars().count(), 200);
+    assert!(preview.starts_with("data: XXXX"));
+}
+
+#[tokio::test]
 async fn stops_the_chunk_at_an_ended_event() {
     let costs = FixtureCosts;
     let counter = FixtureCounter;

@@ -60,6 +60,8 @@ fn answers_none_without_a_usage_event() {
         text_chunk("data: {not json}"),
         text_chunk("data: {\"type\":\"content_block_delta\",\"index\":0}"),
         text_chunk("event: message_start"),
+        text_chunk("data: [1,2]"),
+        text_chunk("data: 5"),
     ];
     assert!(built(&chunks, &calculator).is_none());
 }
