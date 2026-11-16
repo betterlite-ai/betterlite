@@ -57,6 +57,8 @@ fn merged_options<'media>(
     } = mapped;
     let mut options = mapped_options(parameters, resolution, aspect_ratio, duration_seconds);
     options.extend(extra.clone());
+    // the pipeline pops the extra_body key itself, so a dictionary carrying one sends no such parameter
+    options.shift_remove("extra_body");
     let image = extra.get("image").cloned().map(ImageInput::Json).or(image);
     (options, image)
 }

@@ -518,6 +518,16 @@ fn an_extra_body_image_overrides_the_mapped_image() {
 }
 
 #[test]
+fn an_extra_body_key_is_never_sent_as_a_parameter() {
+    let extra = object([(
+        "extra_body",
+        Json::Object(object([("personGeneration", text("allow"))])),
+    )]);
+    let form = create(mapped(), &extra, &PanickingMime).expect("the create request is built");
+    assert_eq!(parameters(&form), None);
+}
+
+#[test]
 fn create_omits_an_empty_parameters_block() {
     let extra = Object::new();
     let form = create(mapped(), &extra, &PanickingMime).expect("the create request is built");
