@@ -25,7 +25,7 @@ use secrecy::SecretString;
 use tower::ServiceExt as _;
 
 use crate::auth::auth_identity::{
-    AuthBackend, AuthContext, INSTALLED_STAGES, StageInput, dispatch,
+    AuthBackend, AuthContext, INSTALLED_STAGES, StageFailure, StageInput, dispatch,
 };
 use crate::auth::{headers_json, model_stage_input, query_json};
 use crate::error_body::AuthenticationFailure;
@@ -104,8 +104,11 @@ fn master_context(master_key: &SecretString) -> AuthContext {
         master_key,
     ) {
         Ok(context) => context,
-        Err(AuthenticationFailure::Missing | AuthenticationFailure::Invalid) => {
+        Err(StageFailure::Authentication(_)) => {
             panic!("the master key stage authenticates")
+        }
+        Err(StageFailure::ModelAccess(_)) => {
+            panic!("the master key stage reports no model access")
         }
     }
 }
@@ -191,7 +194,8 @@ fn stage_is_registered() {
     let failing_input = StageInput::AuthRequestModels(Box::new(failing_stage));
     assert!(matches!(
         dispatch(AuthBackend::AuthRequestModels, &failing_input, &master_key),
-        Err(AuthenticationFailure::Missing)
+        Err(StageFailure::Authentication(failure))
+            if matches!(*failure, AuthenticationFailure::Missing)
     ));
 }
 
