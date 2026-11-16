@@ -13,13 +13,24 @@ const UNKNOWN_DOCUMENT: &str = "Unknown Document";
 const EXTRACTIVE_SEPARATOR: &str = "\n\n";
 const SNIPPET_SEPARATOR: &str = " ";
 
+#[derive(Clone, Copy)]
+struct Target<'hit> {
+    link: &'hit str,
+    title: &'hit str,
+    document_id: &'hit str,
+}
+
 fn result_with(
     score: Score,
     text: String,
-    file_id: String,
-    title: &str,
+    target: Target<'_>,
     attributes: IndexMap<String, Json>,
 ) -> Result<VectorStoreSearchResult, PayloadError> {
+    let file_id = if target.link.is_empty() {
+        target.document_id.to_owned()
+    } else {
+        target.link.to_owned()
+    };
     Ok(VectorStoreSearchResult {
         score: Some(score),
         content: Some(vec![VectorStoreResultContent {
@@ -28,48 +39,63 @@ fn result_with(
             extra: BTreeMap::new(),
         }]),
         file_id: Some(file_id),
-        filename: Some(if title.is_empty() {
+        filename: Some(if target.title.is_empty() {
             UNKNOWN_DOCUMENT.to_owned()
         } else {
-            title.to_owned()
+            target.title.to_owned()
         }),
         attributes: Some(serde_json::to_value(Json::Object(attributes))?),
         extra: BTreeMap::new(),
     })
 }
 
-// LiteLLM's _chunk_result: the chunk's document id comes from its resource name, not its metadata
-pub(super) fn chunk_result(
-    chunk: &Chunk,
+// LiteLLM's _chunk_result and _document_result: a chunk hit wins over the document it belongs to
+pub(super) fn hit_result(
+    hit: &Hit,
     positional: Score,
 ) -> Result<VectorStoreSearchResult, PayloadError> {
-    let metadata = chunk.document_metadata.as_ref();
-    let uri = metadata
-        .and_then(|details| details.uri.as_deref())
-        .unwrap_or("");
-    let title = metadata
-        .and_then(|details| details.title.as_deref())
-        .unwrap_or("");
-    let document_id = document_id_from_chunk_name(chunk.name.as_deref().unwrap_or(""));
-    let score = match &chunk.relevance_score {
+    if let Some(chunk) = hit.chunk.as_ref() {
+        let metadata = chunk.document_metadata.as_ref();
+        let link = metadata.map_or("", |details| details.uri.as_deref().unwrap_or(""));
+        let title = metadata.map_or("", |details| details.title.as_deref().unwrap_or(""));
+        let document_id = document_id_from_chunk_name(chunk.name.as_deref().unwrap_or(""));
+        let score = chunk_score(chunk, positional)?;
+        let attributes = chunk_attributes(chunk, &document_id, link, title);
+        return result_with(
+            score,
+            chunk.content.clone().unwrap_or_default(),
+            Target {
+                link,
+                title,
+                document_id: &document_id,
+            },
+            attributes,
+        );
+    }
+    let document = hit.document.as_ref();
+    let derived = document.and_then(|entry| entry.derived.as_ref());
+    let target = Target {
+        link: derived
+            .and_then(|fields| fields.link.as_deref())
+            .unwrap_or(""),
+        title: derived
+            .and_then(|fields| fields.title.as_deref())
+            .unwrap_or(""),
+        document_id: hit.id.as_deref().unwrap_or(""),
+    };
+    let attributes = document_attributes(document, derived, target);
+    result_with(positional, document_text(derived), target, attributes)
+}
+
+// LiteLLM's relevanceScore override: a present chunk score wins over the hit's position
+fn chunk_score(chunk: &Chunk, positional: Score) -> Result<Score, PayloadError> {
+    match &chunk.relevance_score {
         Some(number) => Score::try_from(number.clone()).map_err(|source| PayloadError::Score {
             field: "relevanceScore",
             source,
-        })?,
-        None => positional,
-    };
-    let file_id = if uri.is_empty() {
-        document_id.clone()
-    } else {
-        uri.to_owned()
-    };
-    result_with(
-        score,
-        chunk.content.clone().unwrap_or_default(),
-        file_id,
-        title,
-        chunk_attributes(chunk, &document_id, uri, title),
-    )
+        }),
+        None => Ok(positional),
+    }
 }
 
 fn chunk_attributes(
@@ -114,39 +140,15 @@ fn document_id_from_chunk_name(name: &str) -> String {
     after.split('/').next().unwrap_or_default().to_owned()
 }
 
-// LiteLLM's _document_result: the link names the file, and structData stays a document attribute
-pub(super) fn document_result(
-    hit: &Hit,
-    positional: Score,
-) -> Result<VectorStoreSearchResult, PayloadError> {
-    let document = hit.document.as_ref();
-    let derived = document.and_then(|entry| entry.derived.as_ref());
-    let link = derived
-        .and_then(|fields| fields.link.as_deref())
-        .unwrap_or("");
-    let title = derived
-        .and_then(|fields| fields.title.as_deref())
-        .unwrap_or("");
-    let document_id = hit.id.as_deref().unwrap_or("");
-    let file_id = if link.is_empty() { document_id } else { link };
-    result_with(
-        positional,
-        document_text(derived),
-        file_id.to_owned(),
-        title,
-        document_attributes(document, derived, link, title, document_id),
-    )
-}
-
 fn document_attributes(
     document: Option<&Document>,
     derived: Option<&DerivedStructData>,
-    link: &str,
-    title: &str,
-    document_id: &str,
+    target: Target<'_>,
 ) -> IndexMap<String, Json> {
-    let mut attributes =
-        IndexMap::from([("document_id".to_owned(), Json::Text(document_id.to_owned()))]);
+    let mut attributes = IndexMap::from([(
+        "document_id".to_owned(),
+        Json::Text(target.document_id.to_owned()),
+    )]);
     let display_link = derived
         .and_then(|fields| fields.display_link.as_deref())
         .unwrap_or("");
@@ -154,8 +156,8 @@ fn document_attributes(
         .and_then(|fields| fields.formatted_url.as_deref())
         .unwrap_or("");
     for (name, value) in [
-        ("link", link),
-        ("title", title),
+        ("link", target.link),
+        ("title", target.title),
         ("displayLink", display_link),
         ("formattedUrl", formatted_url),
     ] {

@@ -79,11 +79,7 @@ pub fn decode_vertex_search_payload(
         .unwrap_or_default();
     let mut data = Vec::with_capacity(hits.len());
     for (position, hit) in hits.iter().enumerate() {
-        let positional = positional_score(position)?;
-        data.push(match &hit.chunk {
-            Some(chunk) => projection::chunk_result(chunk, positional)?,
-            None => projection::document_result(hit, positional)?,
-        });
+        data.push(projection::hit_result(hit, positional_score(position)?)?);
     }
     Ok(VectorStoreSearchResponse {
         object: Some(SEARCH_PAGE_OBJECT.to_owned()),
