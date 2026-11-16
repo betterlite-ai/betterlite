@@ -88,7 +88,7 @@ fn send_blocking(
         .map_err(RequestFailure::Transport)
 }
 
-fn finish_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
+pub(crate) fn finish_blocking(sent: BlockingResponse) -> Result<UpstreamResponse, RequestFailure> {
     let status_code = sent.status().as_u16();
     let received = response_headers(sent.headers());
     let body = read_body(sent, MAX_RESPONSE_BYTES)?;
