@@ -33,4 +33,4 @@ call:
         event: message_stop
         data: {"type":"message_stop"}
 env: {}
-compare: {ignore: []}
+compare: {ignore: [{"pointer": "/value/chunks/0/events/0/message/id", "why": "The re-encoded message_start id is a generated UUID on both sides"}]}
