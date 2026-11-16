@@ -1,7 +1,7 @@
 id: B3243
 milestone: M6 guardrails
 title: Policy and attachment persistence and refresh
-status: todo
+status: done
 depends_on: [B3240, B3241, B3242, B726]
 file: tasks/B3243-policy-persistence.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/policy_engine/attachment_registry.py"
 parent: B079
 split_from: B079
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 2020
