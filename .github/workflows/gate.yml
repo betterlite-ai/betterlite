@@ -8,10 +8,10 @@ on:
     types: [checks_requested]
   push:
     branches: [main]
-  # the queue already tested each merged tree, and testing only what a push affects still ran 87,708 and 88,290 of 91,578 tests (runs 43789028753, 43793982262), so a push lints, every 2 hours a run tests what changed, and at 01:00 UTC everything runs and refills the cargo cache (Max, 11-16)
+  # the queue already tested each merged tree, and testing only what a push affects still ran 87,708 and 88,290 of 91,578 tests (runs 43789028753, 43793982262), so a push lints, every 2 hours a run tests what changed, and at 01:17 UTC everything runs and refills the cargo cache (Max, 11-16); at minute 17, since GitHub drops scheduled runs at the start of an hour under load and none fired at 08:00 or 10:00 on 11-16
   schedule:
-    - cron: "0 1 * * *"
-    - cron: "0 */2 * * *"
+    - cron: "17 1 * * *"
+    - cron: "17 */2 * * *"
 
 permissions: {}
 
@@ -56,7 +56,7 @@ jobs:
         id: find
         env:
           EVENT: ${{ github.event_name }}
-          NIGHTLY: ${{ github.event.schedule == '0 1 * * *' }}
+          NIGHTLY: ${{ github.event.schedule == '17 1 * * *' }}
           PR_BRANCH: ${{ github.head_ref }}
           QUEUE_BASE: ${{ github.event.merge_group.base_sha }}
           QUEUE_REF: ${{ github.event.merge_group.head_ref }}
