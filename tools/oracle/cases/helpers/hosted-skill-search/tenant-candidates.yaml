@@ -1,0 +1,27 @@
+kind: helper
+name: hosted-skill-search-tenant-candidates
+call:
+  hosted_skill_search:
+    function: hosted
+    custom_llm_provider: litellm_proxy
+    query: q
+    top_k: 5
+    embedding_model: test-embedding
+    router: true
+    principal:
+      user_id: alice
+      team_id: team-1
+      org_id: org-1
+      api_key: alice-key
+      token: alice-token
+    rows:
+      - {skill_id: litellm_skill_alice, display_title: Alpha, created_by: alice}
+      - {skill_id: litellm_skill_team, display_title: Beta, created_by: "team:team-1"}
+      - {skill_id: litellm_skill_bob, display_title: Secret, created_by: bob}
+    vectors:
+      q: [1.0, 0.0]
+      Alpha: [1.0, 1.0]
+      Beta: [1.0, 3.0]
+      Secret: [3.0, 1.0]
+env: {}
+compare: {ignore: []}

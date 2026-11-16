@@ -1,0 +1,5 @@
+kind: helper
+name: azure_native_speech-native_voice_map-seed
+call: {azure_native_speech: {native_voice_map: {voices: [alloy, null, en-GB-SoniaNeural]}}}
+env: {}
+compare: {ignore: []}

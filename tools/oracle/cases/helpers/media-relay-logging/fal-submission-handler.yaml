@@ -1,0 +1,22 @@
+kind: helper
+name: media-relay-logging-fal-submission-handler
+call:
+  media_relay_logging:
+    deepgram_routes: []
+    fal_routes: []
+    deepgram_listens: []
+    fal_passthroughs:
+      - url_route: "https://queue.fal.run/fal-ai/flux/dev"
+        response_body:
+          images:
+            - {url: "https://fal.example/a.png"}
+            - {url: "https://fal.example/b.png"}
+          status: OK
+          request_id: r-1
+        request_body: {num_images: 2}
+        kwargs: {custom: "1"}
+        catalog:
+          fal_ai/fal-ai/flux/dev: {litellm_provider: fal_ai, output_cost_per_image: 0.025}
+        queue_base: null
+env: {}
+compare: {ignore: []}
